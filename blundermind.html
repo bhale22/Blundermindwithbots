@@ -1,16 +1,4 @@
-<!
-// Pause clock when tab is hidden, resume when visible
-document.addEventListener('visibilitychange', ()=>{
-  if(document.hidden){
-    if(clockActive) clockStop();
-  } else {
-    if(typeof clockControl!=='undefined' && clockControl!=='untimed'
-       && !gameOver && clockTimeW>0 && clockTimeB>0){
-      clockStart();
-    }
-  }
-});
-DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -458,7 +446,77 @@ canvas{
 #replayInfo{font-size:9px;color:var(--text-dim);flex:1;text-align:center;}
 .replay-exit{font-size:8px;color:#c06060;border-color:rgba(180,40,40,0.4);}
 
-/* ── Bot panel styles ─────────────────────────────────────────────────────── */
+/* ── Landing page overlay ─────────────────────────────────────────────────── */
+#landingOverlay {
+  position:fixed;top:0;left:0;width:100vw;height:100vh;
+  background:var(--bg-page);
+  z-index:5000;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:20px;
+  transition:opacity 0.4s ease;
+}
+#landingOverlay.fade-out { opacity:0;pointer-events:none; }
+.landing-title {
+  font-size:32px;font-weight:700;color:var(--text-primary);
+  letter-spacing:-0.03em;margin-bottom:4px;
+}
+.landing-title span { color:#4a9fd4; }
+.landing-tagline {
+  font-size:13px;color:var(--text-dim);font-style:italic;
+  margin-bottom:36px;letter-spacing:0.02em;
+}
+.landing-cards {
+  display:flex;flex-wrap:wrap;gap:14px;justify-content:center;
+  max-width:720px;margin-bottom:28px;
+}
+.landing-card {
+  width:160px;padding:20px 14px 18px;
+  background:var(--bg-panel);border:1px solid var(--border);
+  border-radius:10px;cursor:pointer;text-align:center;
+  transition:border-color 0.15s,box-shadow 0.15s,transform 0.12s;
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+}
+.landing-card:hover {
+  border-color:var(--accent);
+  box-shadow:0 0 0 2px rgba(74,159,212,0.18);
+  transform:translateY(-2px);
+}
+.landing-card.green-card:hover {
+  border-color:#22a85a;
+  box-shadow:0 0 0 2px rgba(34,168,90,0.18);
+}
+.landing-card.gold-card:hover {
+  border-color:#c8a000;
+  box-shadow:0 0 0 2px rgba(200,160,0,0.18);
+}
+.landing-card-icon { font-size:36px;line-height:1; }
+.landing-card-title {
+  font-size:12px;font-weight:700;color:var(--text-primary);
+  line-height:1.3;
+}
+.landing-card-desc {
+  font-size:9.5px;color:var(--text-dim);line-height:1.5;
+}
+.landing-upload-row {
+  display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center;
+  margin-bottom:16px;
+}
+.landing-upload-btn {
+  font-size:9.5px;padding:6px 14px;
+  border:0.5px solid var(--border);border-radius:20px;
+  background:transparent;color:var(--text-dim);cursor:pointer;
+  transition:all 0.12s;
+}
+.landing-upload-btn:hover { border-color:var(--accent);color:var(--accent); }
+.landing-footer {
+  font-size:8.5px;color:var(--text-dim);text-align:center;
+  margin-top:8px;
+}
+
+/* ── Bot panel needs wider width ──────────────────────────────────────────── */
+#botPanel { width:340px;right:-365px; }
+#botPanel.open { right:0; }
+
 .bot-tab {
   padding:4px 10px;font-size:9px;border-radius:4px;cursor:pointer;
   background:var(--bg-panel2);border:0.5px solid var(--border);color:var(--text-dim);
@@ -498,6 +556,60 @@ canvas{
 </style>
 </head>
 <body>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     LANDING PAGE OVERLAY
+     ══════════════════════════════════════════════════════════════════════════ -->
+<div id="landingOverlay">
+  <div class="landing-title">♟ Blunder<span>mind</span></div>
+  <div class="landing-tagline">Stop getting blundermined.</div>
+
+  <div class="landing-cards">
+
+    <!-- Solo / Explore -->
+    <div class="landing-card" onclick="landingChoose('solo')">
+      <div class="landing-card-icon">🔍</div>
+      <div class="landing-card-title">Solo Play &amp; Explore</div>
+      <div class="landing-card-desc">Play alone, explore positions, and train board vision with all the indicators.</div>
+    </div>
+
+    <!-- vs Bot -->
+    <div class="landing-card green-card" onclick="landingChoose('bot')">
+      <div class="landing-card-icon">🤖</div>
+      <div class="landing-card-title">Play vs Computer</div>
+      <div class="landing-card-desc">Challenge Stockfish or a human-like Maia-2 bot. Mix engines, set time pressure, see ghost responses.</div>
+    </div>
+
+    <!-- 2 Player -->
+    <div class="landing-card" onclick="landingChoose('mp')">
+      <div class="landing-card-icon">⚔️</div>
+      <div class="landing-card-title">2-Player Online</div>
+      <div class="landing-card-desc">Create a room and share the code with a friend. Play in real time.</div>
+    </div>
+
+    <!-- Load PGN -->
+    <div class="landing-card gold-card" onclick="landingChoose('pgn')">
+      <div class="landing-card-icon">📂</div>
+      <div class="landing-card-title">Load a Saved Game</div>
+      <div class="landing-card-desc">Upload a PGN file and replay or explore any game move by move.</div>
+    </div>
+
+  </div>
+
+  <!-- Upload saved config -->
+  <div class="landing-upload-row">
+    <span style="font-size:9px;color:var(--text-dim);">Have a saved config?</span>
+    <button class="landing-upload-btn" onclick="document.getElementById('landingBotConfigInput').click()">
+      ⚙ Load bot configuration
+    </button>
+    <input type="file" id="landingBotConfigInput" accept=".json" style="display:none"
+      onchange="landingLoadBotConfig(event)">
+  </div>
+
+  <div class="landing-footer">
+    No account · No tracking · Your games are yours · <em>Free forever</em>
+  </div>
+</div>
 
 <!-- ── Site header ──────────────────────────────────────────────────────── -->
 <div id="site-header">
@@ -623,6 +735,16 @@ canvas{
       <span class="s-lbl">Show legal moves:</span>
       <span class="s-spacer"></span>
       <label><input type="checkbox" id="cbLegalToggle" checked onchange="render()"> On</label>
+    </div>
+    <div class="s-row">
+      <span class="s-lbl">👻 Ghost responses (SF depth):</span>
+      <span class="s-spacer"></span>
+      <select id="soloGhostDepth" style="font-size:8px;padding:1px 3px;border:0.5px solid var(--border);border-radius:3px;background:var(--bg-panel2);color:var(--text-secondary);">
+        <option value="0">Off</option>
+        <option value="4">Fast (depth 4)</option>
+        <option value="8" selected>Medium (depth 8)</option>
+        <option value="12">Deep (depth 12)</option>
+      </select>
     </div>
     <div class="s-row">
       <span class="s-lbl">Batteries in threat counts:</span>
@@ -794,22 +916,14 @@ canvas{
       </div>
     </div>
 
-    <!-- Chat (multiplayer only) -->
-    <div id="chatPanel">
-      <div id="chatMessages"></div>
-      <div id="chatInput">
-        <input type="text" id="chatInputText" placeholder="Say something..." maxlength="200" onkeydown="if(event.key==='Enter')sendChat()">
-        <button onclick="sendChat()">Send</button>
-      </div>
-    </div>
-
+    <!-- Chat is in the board area inline for multiplayer -->
     <!-- Bottom controls -->
     <div id="bottom-controls">
       <div class="ctrl-row">
         <button class="ctrl-btn reset-btn" id="resignBtn" onclick="resignOrReset()">⚑ Resign</button>
         <button class="ctrl-btn util-btn" onclick="openPanel('themePanel')">🎨 Theme &amp; Pieces</button>
         <button class="ctrl-btn util-btn" onclick="openPanel('mpPanel')">⚔ 2-Player</button>
-        <button class="ctrl-btn util-btn" onclick="openPanel('botPanel')" style="border-color:rgba(90,212,144,0.4);color:#5ad490;">🤖 vs Bot</button>
+        <button class="ctrl-btn util-btn" onclick="openPanel('botPanel')" style="border-color:rgba(90,212,144,0.4);color:#5ad490;" id="botSidebarBtn">🤖 vs Bot</button>
       </div>
       <div class="ctrl-row">
         <button class="ctrl-btn util-btn" id="btnLoadPgn" onclick="document.getElementById('pgnFileInput').click()">▶ Load game</button>
@@ -892,7 +1006,7 @@ canvas{
 </div>
 
 <!-- ── Bot opponent panel ────────────────────────────────────────────────── -->
-<div class="slide-panel" id="botPanel" style="width:340px;right:-360px;">
+<div class="slide-panel" id="botPanel">
   <div class="panel-header">
     <span class="panel-title">🤖 Play vs Computer</span>
     <button class="panel-close" onclick="closeAllPanels();botStop()">✕</button>
@@ -1012,9 +1126,10 @@ canvas{
     <button id="botStartBtn" onclick="botStart()" style="width:100%;padding:10px;font-size:12px;font-weight:700;background:linear-gradient(135deg,#0f4020,#0a2a15);border:1px solid #22a85a;border-radius:6px;color:#5ad490;cursor:pointer;transition:all 0.15s;margin-bottom:6px;">
       ▶ Start Game vs Bot
     </button>
-    <button id="botStopBtn" onclick="botStop()" style="width:100%;padding:6px;font-size:10px;background:rgba(200,40,40,0.1);border:0.5px solid rgba(200,40,40,0.3);border-radius:4px;color:#c84040;cursor:pointer;display:none;">
-      ✕ Stop Bot Game
-    </button>
+    <div style="display:flex;gap:6px;margin-bottom:4px;">
+      <button onclick="botSaveConfig()" style="flex:1;padding:6px;font-size:9px;background:rgba(200,160,0,0.1);border:0.5px solid rgba(200,160,0,0.3);border-radius:4px;color:#c8a000;cursor:pointer;">↓ Save this config</button>
+      <button id="botStopBtn" onclick="botStop()" style="flex:1;padding:6px;font-size:10px;background:rgba(200,40,40,0.1);border:0.5px solid rgba(200,40,40,0.3);border-radius:4px;color:#c84040;cursor:pointer;display:none;">✕ Stop Bot Game</button>
+    </div>
     <div id="botStatus" style="font-size:9px;color:var(--text-dim);text-align:center;min-height:14px;margin-top:4px;"></div>
   </div>
 </div>
@@ -1061,7 +1176,10 @@ canvas{
     <button class="panel-close" onclick="closeAllPanels()">✕</button>
   </div>
   <div class="panel-body">
-    <p style="font-size:9px;color:var(--text-dim);margin-bottom:12px;">Play against a friend. One player creates a room and shares the code — the other joins.</p>
+    <p style="font-size:9px;color:var(--text-dim);margin-bottom:8px;">Play against a friend. One player creates a room and shares the code — the other joins.</p>
+    <div id="mpServerNote" style="font-size:8.5px;padding:5px 8px;border-radius:4px;margin-bottom:10px;background:rgba(74,159,212,0.08);border:0.5px solid rgba(74,159,212,0.2);color:var(--text-dim);">
+      ℹ️ Multiplayer requires the server. Works on <strong style="color:var(--text-secondary);">blundermind.railway.app</strong> — if you're running locally, only Solo and Bot modes work.
+    </div>
 
     <div style="display:flex;gap:8px;margin-bottom:10px;">
       <button onclick="mpCreateRoom()" style="flex:1;padding:7px;background:rgba(74,159,212,0.15);border:0.5px solid var(--accent);border-radius:5px;color:var(--accent);cursor:pointer;font-size:10px;font-weight:600;">Create room</button>
@@ -1125,17 +1243,6 @@ canvas{
   <div class="panel-body" id="helpPanelBody"></div>
 </div>
 
-<!-- ── Donate panel (placeholder) ────────────────────────────────────────── -->
-<div class="slide-panel" id="donatePanel">
-  <div class="panel-header">
-    <span class="panel-title">Support Blundermind</span>
-    <button class="panel-close" onclick="closeAllPanels()">✕</button>
-  </div>
-  <div class="panel-body">
-    <p>Coming soon — donation support is being set up.</p>
-    <p>If you find Blundermind useful, consider sharing it with other players who are in the same boat.</p>
-  </div>
-</div>
 
 <script>
 
@@ -1517,6 +1624,21 @@ function ibUpdateUI(key){
 }
 function ibRefreshAll(){Object.keys(IND).forEach(k=>ibUpdateUI(k));}
 
+// Aliases so indApply and newer code can call these by either name
+function indUpdateUI(key){ ibUpdateUI(key); }
+function indRefreshPremoveUI(){ ibRefreshAll(); }
+function indInitAll(){ ibRefreshAll(); }
+function indMode(key, mode, e){
+  if(e){ e.stopPropagation(); e.preventDefault(); }
+  if(!IND[key]) return;
+  if(key==='forksw') return; // hold-only, mode can't change
+  // Map new mode names to on/pre flags
+  IND[key].on  = (mode === 'always');
+  IND[key].pre = (mode === 'premove' || mode === 'always');
+  ibUpdateUI(key);
+  indApply();
+}
+
 // Main button click handler (toggle on/off)
 // Attached via onclick on ib-main elements — but we need to avoid
 // firing during hold. Use a threshold: < 200ms = click, >= 200ms = hold
@@ -1718,19 +1840,27 @@ function getWsUrl() {
 
 function mpConnect(onOpen) {
   if (mpWs && mpWs.readyState === WebSocket.OPEN) { onOpen(); return; }
+  // Close any stale connection
+  if (mpWs) { try { mpWs.close(); } catch(e){} mpWs = null; }
+  mpShowStatus('Connecting to server…');
   const url = getWsUrl();
-  mpWs = new WebSocket(url);
+  try {
+    mpWs = new WebSocket(url);
+  } catch(e) {
+    mpShowStatus('⚠ Cannot connect — multiplayer requires the server (Railway deployment).', true);
+    return;
+  }
   mpWs.onopen = () => { mpConnected = true; onOpen(); };
   mpWs.onclose = () => {
     mpConnected = false;
     if(mpRoomId){
       mpShowStatus('Connection lost. Reload the page to reconnect.', true);
     } else {
-      mpShowStatus('Disconnected from server', true);
+      mpShowStatus('⚠ Server not reachable. Multiplayer requires the Railway-deployed server.', true);
     }
   };
   mpWs.onerror = () => {
-    mpShowStatus('Connection error — is the server running?', true);
+    mpShowStatus('⚠ Connection error — multiplayer requires the deployed server.', true);
   };
   mpWs.onmessage = (evt) => {
     let msg; try { msg = JSON.parse(evt.data); } catch { return; }
@@ -2314,6 +2444,7 @@ const ctx=cv.getContext('2d');
 let board={},turn='w',castling={wK:true,wQ:true,bK:true,bQ:true},epSq=-1;
 // mpRoomId declared in UI layer
 let showingCheckThreats=false, checkThreatSquaresW=new Set(), checkThreatSquaresB=new Set();
+let checkThreatPiecesW=new Set(), checkThreatPiecesB=new Set();
 let pinnedWSquares=new Set(), pinnedBSquares=new Set();
 let previewPinsW=new Set(), previewPinsB=new Set();
 let currentlyPreviewing=false; // set by render() before draw calls
@@ -2460,17 +2591,16 @@ function getQueenPinnedSquares(bd, color) {
 }
 
 // ── Check threat detection ──────────────────────────────────────────────────
-// Returns set of DESTINATION squares where a piece of `color` can move to
-// deliver check on the next move. This is what gets highlighted on the board —
-// the squares a piece is heading TO, not the piece's current square.
+// Returns { destSquares, pieceSquares }
+// destSquares: squares a piece CAN MOVE TO to give check (highlighted on board)
+// pieceSquares: the current squares of those threatening pieces (piece glow)
 function getCheckThreats(bd, color, ep, cst) {
-  const destSquares = new Set(); // squares a piece can move TO to give check
+  const destSquares  = new Set();
+  const pieceSquares = new Set();
   const opp = color === 'w' ? 'b' : 'w';
-  if(inCheck(bd, color) || inCheck(bd, opp)) return destSquares;
+  if(inCheck(bd, color) || inCheck(bd, opp)) return { destSquares, pieceSquares };
   const kSq = kingSquare(bd, opp);
-  if(kSq < 0) return destSquares;
-
-  // For every piece of `color`, find all legal moves and check if any give check
+  if(kSq < 0) return { destSquares, pieceSquares };
   for(let s = 0; s < 64; s++) {
     const p = bd[s];
     if(!p || p.color !== color) continue;
@@ -2478,11 +2608,13 @@ function getCheckThreats(bd, color, ep, cst) {
     for(const to of moves) {
       const bd2 = applyMove(s, to, bd, ep, 'Q');
       if(inCheck(bd2, opp)) {
-        destSquares.add(to); // highlight the destination square
+        destSquares.add(to);
+        pieceSquares.add(s);
+        break; // one checking move is enough to flag this piece
       }
     }
   }
-  return destSquares;
+  return { destSquares, pieceSquares };
 }
 
 // Get the king square for a color
@@ -2821,6 +2953,8 @@ function executeMove(from,to,promo){
   if(typeof clockAfterMove==='function') clockAfterMove();
   if(typeof IND!=='undefined'&&typeof indApply==='function')indApply();
   else render();
+  // Bot post-move hook (safe — function defined later in script)
+  if(typeof botPostMoveHook==='function') botPostMoveHook();
 }
 
 function tryCommit(from,to,promo){
@@ -3119,7 +3253,23 @@ function drawThreatCircle(sq, color){
   ctx.restore();
 }
 
+// ── Ghost canvas — declared before render() to avoid TDZ ────────────────────
+const ghostCv = document.getElementById('ghostCanvas');
+const ghostCtx = ghostCv ? ghostCv.getContext('2d') : null;
+let boardFlipped = false; // real variable; bot sets this when human plays black
+
+function syncGhostCanvas() {
+  const mainCv = document.getElementById('cv');
+  if (!ghostCv || !mainCv) return;
+  ghostCv.width  = mainCv.width;
+  ghostCv.height = mainCv.height;
+  ghostCv.style.width  = mainCv.style.width  || mainCv.width + 'px';
+  ghostCv.style.height = mainCv.style.height || mainCv.height + 'px';
+}
+window.addEventListener('resize', syncGhostCanvas);
+
 function render(){
+  syncGhostCanvas();
   const showLayers=indActive('rings');
   const showNums=indActive('counts');
   const showBull=indActive('unprotected');
@@ -3132,7 +3282,7 @@ function render(){
 
   ctx.clearRect(0,0,480,480);
   ctx.setLineDash([]); ctx.globalAlpha=1; ctx.shadowBlur=0; ctx.lineWidth=1; // reset state
-  const _boardFlipped = (typeof mpRole!=='undefined'&&mpRole==='black'&&typeof mpRoomId!=='undefined'&&mpRoomId!==null);
+  const _boardFlipped = boardFlipped || (typeof mpRole!=='undefined'&&mpRole==='black'&&typeof mpRoomId!=='undefined'&&mpRoomId!==null);
 
   for(let r=0;r<8;r++)for(let c=0;c<8;c++){
     // For black: display row r,c → board square at mirrored position
@@ -3190,7 +3340,7 @@ function render(){
 
   // Check threat highlights — orange for white's threats, purple for black's
   if(showingCheckThreats){
-    // White's check threats (moves white can make to check black king) — orange
+    // Highlight DESTINATION squares (where check would occur)
     checkThreatSquaresW.forEach(sq=>{
       const{r,c}=sqCanvas(sq);
       const x=c*SQ, y=r*SQ;
@@ -3200,7 +3350,6 @@ function render(){
       ctx.strokeStyle='rgba(255,220,50,0.5)';ctx.lineWidth=1;
       ctx.strokeRect(x+4,y+4,SQ-8,SQ-8);
     });
-    // Black's check threats (moves black can make to check white king) — red-purple
     checkThreatSquaresB.forEach(sq=>{
       const{r,c}=sqCanvas(sq);
       const x=c*SQ, y=r*SQ;
@@ -3209,6 +3358,27 @@ function render(){
       ctx.strokeRect(x+1.5,y+1.5,SQ-3,SQ-3);
       ctx.strokeStyle='rgba(220,150,255,0.5)';ctx.lineWidth=1;
       ctx.strokeRect(x+4,y+4,SQ-8,SQ-8);
+    });
+    // Highlight PIECE squares (the pieces that can deliver check) with a glow ring
+    checkThreatPiecesW.forEach(sq=>{
+      const{r,c}=sqCanvas(sq);
+      const x=c*SQ+SQ/2, y=r*SQ+SQ/2;
+      ctx.save();
+      ctx.beginPath();ctx.arc(x,y,SQ*0.44,0,Math.PI*2);
+      ctx.strokeStyle='rgba(255,160,0,0.85)';ctx.lineWidth=3;ctx.stroke();
+      ctx.beginPath();ctx.arc(x,y,SQ*0.38,0,Math.PI*2);
+      ctx.strokeStyle='rgba(255,220,80,0.45)';ctx.lineWidth=2;ctx.stroke();
+      ctx.restore();
+    });
+    checkThreatPiecesB.forEach(sq=>{
+      const{r,c}=sqCanvas(sq);
+      const x=c*SQ+SQ/2, y=r*SQ+SQ/2;
+      ctx.save();
+      ctx.beginPath();ctx.arc(x,y,SQ*0.44,0,Math.PI*2);
+      ctx.strokeStyle='rgba(180,40,220,0.85)';ctx.lineWidth=3;ctx.stroke();
+      ctx.beginPath();ctx.arc(x,y,SQ*0.38,0,Math.PI*2);
+      ctx.strokeStyle='rgba(220,150,255,0.45)';ctx.lineWidth=2;ctx.stroke();
+      ctx.restore();
     });
   }
 
@@ -4393,82 +4563,83 @@ function computeDiscoveredData(bd, color) {
   const opp = color === 'w' ? 'b' : 'w';
   const discovered = [];
   const SLIDERS = {Q:true, R:true, B:true};
-  const DIRS = [
-    [-1,0],[1,0],[0,-1],[0,1],
-    [-1,-1],[-1,1],[1,-1],[1,1]
-  ];
+  const DIRS = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
 
+  // For each friendly piece, check if it sits between a friendly slider and an enemy piece
   for (let sq = 0; sq < 64; sq++) {
     const p = bd[sq];
-    if (!p || p.color !== color) continue;
-    if (p.piece === 'K') continue;
+    if (!p || p.color !== color || p.piece === 'K') continue;
+    const {r, c} = sqRC(sq);
 
-    const {r,c} = sqRC(sq);
+    for (const [dr, dc] of DIRS) {
+      const isDiag = dr !== 0 && dc !== 0;
 
-    for (const [dr,dc] of DIRS) {
-      let rb=r-dr, cb=c-dc;
-      while (rb>=0&&rb<8&&cb>=0&&cb<8) {
-        const bs = rcSq(rb,cb);
+      // Walk TOWARD friendly slider (opposite direction of [dr,dc])
+      let rb = r - dr, cb = c - dc;
+      let sliderSq = -1;
+      while (rb >= 0 && rb < 8 && cb >= 0 && cb < 8) {
+        const bs = rcSq(rb, cb);
         if (bd[bs]) {
           if (bd[bs].color === color && SLIDERS[bd[bs].piece]) {
-            const isDiag = dr!==0&&dc!==0;
             const sl = bd[bs];
-            if (sl.piece==='R'&&isDiag) break;
-            if (sl.piece==='B'&&!isDiag) break;
-
-            // ── KEY FIX: check if moving piece has a legal move OFF this ray ──
-            const legalMoves = legalMovesFor(sq, bd, epSq, castling);
-            // A move is "off-ray" if the destination is not on the same
-            // rank/file/diagonal as the ray [dr,dc] passing through sq
-            const hasOffRayMove = legalMoves.some(toSq => {
-              const {r:tr,c:tc} = sqRC(toSq);
-              // Is toSq on the same ray line as this ray through sq?
-              const onSameRay = (dr===0 && tr===r) ||      // same rank
-                                (dc===0 && tc===c) ||       // same file
-                                (dr!==0&&dc!==0 &&
-                                 Math.abs(tr-r)===Math.abs(tc-c) &&
-                                 Math.sign(tr-r)===dr &&
-                                 Math.sign(tc-c)===dc);     // same diagonal direction
-              return !onSameRay; // off-ray move exists
-            });
-            if (!hasOffRayMove) break; // can't open the discovery — skip
-
-            // Find what the revealed slider would threaten
-            const threatened = [];
-            let rf=r+dr, cf=c+dc;
-            while (rf>=0&&rf<8&&cf>=0&&cf<8) {
-              const fs = rcSq(rf,cf);
-              if (bd[fs]) {
-                if (bd[fs].color === opp) threatened.push(fs);
-                break;
-              }
-              rf+=dr; cf+=dc;
-            }
-            const kSq = kingSquare(bd, opp);
-            const isDiscoveredCheck = threatened.includes(kSq) ||
-              (() => {
-                let rk=r+dr,ck=c+dc;
-                while(rk>=0&&rk<8&&ck>=0&&ck<8){
-                  const ks=rcSq(rk,ck);
-                  if(ks===kSq) return true;
-                  if(bd[ks]&&ks!==sq) break;
-                  rk+=dr;ck+=dc;
-                }
-                return false;
-              })();
-
-            if (threatened.length > 0 || isDiscoveredCheck) {
-              discovered.push({
-                movingPieceSq: sq,
-                revealedAttackerSq: bs,
-                threatenedSqs: threatened,
-                isDiscoveredCheck
-              });
-            }
+            if (sl.piece === 'R' && isDiag) break;  // rook can't attack diagonally
+            if (sl.piece === 'B' && !isDiag) break; // bishop can't attack straight
+            sliderSq = bs;
           }
+          break; // blocked by something — stop looking
+        }
+        rb -= dr; cb -= dc;
+      }
+      if (sliderSq < 0) continue;
+
+      // Check if this piece has at least one legal move that leaves this ray
+      // (i.e. actually opens the discovered attack)
+      const lms = legalMovesFor(sq, bd, epSq, castling);
+      const hasOffRayMove = lms.some(toSq => {
+        const {r: tr, c: tc} = sqRC(toSq);
+        // A move stays on-ray if it stays on the same rank/file/diagonal
+        // in the direction dr,dc from sq
+        const onRank = (dr === 0 && tr === r);
+        const onFile = (dc === 0 && tc === c);
+        const onDiag = (isDiag && Math.abs(tr - r) === Math.abs(tc - c));
+        return !(onRank || onFile || onDiag); // true if move goes OFF the ray
+      });
+      if (!hasOffRayMove) continue; // pinned or otherwise can't leave ray
+
+      // Walk AWAY from slider (direction [dr,dc]) to find what the slider would hit
+      const threatened = [];
+      let rf = r + dr, cf = c + dc;
+      while (rf >= 0 && rf < 8 && cf >= 0 && cf < 8) {
+        const fs = rcSq(rf, cf);
+        if (bd[fs]) {
+          if (bd[fs].color === opp) threatened.push(fs);
           break;
         }
-        rb-=dr; cb-=dc;
+        rf += dr; cf += dc;
+      }
+
+      // Also check if slider would give discovered check
+      const kSq = kingSquare(bd, opp);
+      const isDiscoveredCheck = threatened.includes(kSq) ||
+        (() => {
+          let rk = r + dr, ck = c + dc;
+          while (rk >= 0 && rk < 8 && ck >= 0 && ck < 8) {
+            const ks = rcSq(rk, ck);
+            if (ks === kSq) return true;
+            if (bd[ks] && ks !== sq) break;
+            rk += dr; ck += dc;
+          }
+          return false;
+        })();
+
+      if (threatened.length > 0 || isDiscoveredCheck) {
+        discovered.push({
+          movingPieceSq: sq,
+          revealedAttackerSq: sliderSq,
+          threatenedSqs: threatened,
+          isDiscoveredCheck,
+          side: 'own' // caller tags this
+        });
       }
     }
   }
@@ -4477,8 +4648,7 @@ function computeDiscoveredData(bd, color) {
   const seen = new Map();
   for (const d of discovered) {
     const key = d.movingPieceSq;
-    if (!seen.has(key)) seen.set(key, d);
-    else if (d.isDiscoveredCheck) seen.set(key, d);
+    if (!seen.has(key) || d.isDiscoveredCheck) seen.set(key, d);
   }
   return [...seen.values()];
 }
@@ -4545,79 +4715,7 @@ let showingDiscovered = false, discoveredData = null;
 let showingXray = false, xrayData = null;
 
 
-// ── Indicator system v2 ─────────────────────────────────────────────────────
-// mode: 'press' | 'premove' | 'always'
-// pressing: true while button body is held
 
-// indActive() defined at top of script
-
-function ibPress(key, e) {
-  if(e) e.preventDefault();
-  if(!IND[key]) return;
-  // White's forks: suppress entirely during exploration (hold-only AND no premove)
-  if(key === 'discoveredself' && !!previewBoard) return;
-  IND[key].pressing = true;
-  indUpdateUI(key);
-  indApply();
-}
-
-function ibRelease(key) {
-  if(!IND[key]) return;
-  IND[key].pressing = false;
-  indUpdateUI(key);
-  indApply();
-}
-
-function indMode(key, mode, e) {
-  if(e) { e.stopPropagation(); e.preventDefault(); }
-  if(!IND[key]) return;
-  // White's forks is hold-only — mode cannot be changed
-  if(key === 'forksw') return;
-  IND[key].mode = mode;
-  indUpdateUI(key);
-  indApply();
-}
-
-function indUpdateUI(key) {
-  const ind = IND[key]; if(!ind) return;
-  const btn = document.getElementById('ib-'+key);
-  if(!btn) return;
-  // Remove all state classes
-  btn.classList.remove('pressing','premove-active','always-active');
-  // Apply correct class
-  if(ind.pressing) {
-    btn.classList.add('pressing');
-  } else if(ind.mode === 'always') {
-    btn.classList.add('always-active');
-  } else if(ind.mode === 'premove' && (!!previewBoard || currentlyPreviewing)) {
-    btn.classList.add('premove-active');
-  }
-  // Update mode buttons
-  ['press','premove','always'].forEach(m => {
-    const mBtn = btn.querySelector('.ib-mode.m-'+m) ||
-                 Array.from(btn.querySelectorAll('.ib-mode')).find(b=>b.textContent.toLowerCase()===m);
-    if(mBtn) {
-      mBtn.className = 'ib-mode' + (ind.mode===m ? ' m-'+m : '');
-    }
-  });
-}
-
-function indInitAll() {
-  Object.keys(IND).forEach(key => indUpdateUI(key));
-}
-
-// Re-evaluate premove-active states when preview changes
-function indRefreshPremoveUI() {
-  Object.keys(IND).forEach(key => {
-    const ind = IND[key]; if(!ind) return;
-    const btn = document.getElementById('ib-'+key);
-    if(!btn) return;
-    btn.classList.remove('premove-active');
-    if(!ind.pressing && ind.mode==='premove' && (!!previewBoard||currentlyPreviewing)) {
-      btn.classList.add('premove-active');
-    }
-  });
-}
 
 // Captures state
 let showingCaptures = false;
@@ -4630,22 +4728,22 @@ function indApply() {
   // Check threats — use preview board during move exploration
   if(indActive('checkthreats')) {
     checkThreatSquaresW = new Set(); checkThreatSquaresB = new Set();
-    // Skip expensive check threat computation during exploration entirely —
-    // user is exploring their own move, not hunting for check threats.
-    // Also skip if either king is in check in the preview position.
+    checkThreatPiecesW  = new Set(); checkThreatPiecesB  = new Set();
     const ctBd   = previewBoard || board;
     const ctEp   = previewBoard ? previewEpSq : epSq;
     const ctCast = previewBoard ? (previewCastling||castling) : castling;
-    // Skip if either king is already in check (forced state)
-    // Also skip if indApply is already taking too long (prevents hangs)
     if(!inCheck(ctBd,'w') && !inCheck(ctBd,'b') && (Date.now()-_indStart)<200) {
       try {
-        getCheckThreats(ctBd,'w',ctEp,ctCast).forEach(s=>checkThreatSquaresW.add(s));
-        getCheckThreats(ctBd,'b',ctEp,ctCast).forEach(s=>checkThreatSquaresB.add(s));
+        const rW = getCheckThreats(ctBd,'w',ctEp,ctCast);
+        rW.destSquares.forEach(s=>checkThreatSquaresW.add(s));
+        rW.pieceSquares.forEach(s=>checkThreatPiecesW.add(s));
+        const rB = getCheckThreats(ctBd,'b',ctEp,ctCast);
+        rB.destSquares.forEach(s=>checkThreatSquaresB.add(s));
+        rB.pieceSquares.forEach(s=>checkThreatPiecesB.add(s));
       } catch(e) { console.warn('ct err:',e); }
     }
     showingCheckThreats = true;
-  } else { showingCheckThreats=false; checkThreatSquaresW=new Set(); checkThreatSquaresB=new Set(); }
+  } else { showingCheckThreats=false; checkThreatSquaresW=new Set(); checkThreatSquaresB=new Set(); checkThreatPiecesW=new Set(); checkThreatPiecesB=new Set(); }
 
   // Captures possible
   showingCaptures = indActive('captures');
@@ -4746,95 +4844,7 @@ function indApply() {
 }
 // (checkbox shim removed — direct indActive() calls used instead)
 
-// clearAllMarkings — set all to 'press' mode
-function clearAllMarkings(){
-  const btn=document.getElementById('btnClearAll');
-  Object.keys(IND).forEach(key=>{
-    IND[key].mode='press';
-    IND[key].pressing=false;
-    indUpdateUI(key);
-  });
-  if(btn) btn.textContent='Clear all';
-  indApply();
-}
-
-function stopCheckThreats(){showingCheckThreats=false;checkThreatSquaresW=new Set();checkThreatSquaresB=new Set();render();}
-
-// ── Indicator system v2 ─────────────────────────────────────────────────────
-// IND declared in UI layer
-
-function ibPress(key, e) {
-  if(e) e.preventDefault();
-  if(!IND[key]) return;
-  // White's forks: suppress entirely during exploration (hold-only AND no premove)
-  if(key === 'discoveredself' && !!previewBoard) return;
-  IND[key].pressing = true;
-  indUpdateUI(key);
-  indApply();
-}
-function ibRelease(key) {
-  if(!IND[key]) return;
-  IND[key].pressing = false;
-  indUpdateUI(key);
-  indApply();
-}
-function indMode(key, mode, e) {
-  if(e) { e.stopPropagation(); e.preventDefault(); }
-  if(!IND[key]) return;
-  // White's forks is hold-only — mode cannot be changed
-  if(key === 'forksw') return;
-  IND[key].mode = mode;
-  indUpdateUI(key);
-  indApply();
-}
-function indUpdateUI(key) {
-  const ind = IND[key]; if(!ind) return;
-  const btn = document.getElementById('ib-'+key);
-  if(!btn) return;
-  btn.classList.remove('pressing','premove-active','always-active');
-  const isPre = !!previewBoard || currentlyPreviewing;
-  if(ind.pressing) {
-    btn.classList.add('pressing');
-  } else if(ind.mode === 'always') {
-    btn.classList.add('always-active');
-  } else if(ind.mode === 'premove' && isPre) {
-    btn.classList.add('premove-active');
-  }
-  ['press','premove','always'].forEach(m => {
-    const mBtn = Array.from(btn.querySelectorAll('.ib-mode')).find(b=>b.textContent.toLowerCase().trim()===m);
-    if(mBtn) mBtn.className = 'ib-mode' + (ind.mode===m ? ' m-'+m : '');
-  });
-}
-function indInitAll() {
-  Object.keys(IND).forEach(key => indUpdateUI(key));
-}
-function indRefreshPremoveUI() {
-  Object.keys(IND).forEach(key => {
-    const ind = IND[key]; if(!ind) return;
-    const btn = document.getElementById('ib-'+key);
-    if(!btn) return;
-    btn.classList.remove('premove-active');
-    const isPre = !!previewBoard || currentlyPreviewing;
-    if(!ind.pressing && ind.mode==='premove' && isPre) btn.classList.add('premove-active');
-  });
-}
-
-// ── Dynamic board sizing ─────────────────────────────────────────────────────
-function resizeBoard() {
-  const wrap = document.getElementById('wrap');
-  const sidebar = document.querySelector('.sidebar');
-  if (!wrap || !sidebar) return;
-  const wrapW = wrap.clientWidth;
-  const sidebarW = sidebar.offsetWidth || 240;
-  const gap = 12 + 32;
-  const maxFromWidth = wrapW - sidebarW - gap;
-  const vh = window.innerHeight;
-  const topBarH = (document.querySelector('.top-bar')||{offsetHeight:36}).offsetHeight || 36;
-  const maxFromHeight = vh - topBarH - 44*2 - 60 - 80;
-  const boardPx = Math.max(300, Math.min(maxFromWidth, maxFromHeight));
-  cv.style.width = boardPx + 'px';
-  cv.style.height = boardPx + 'px';
-}
+// ── Dynamic board sizing is defined earlier in the script ────────────────────
 window.addEventListener('resize', resizeBoard);
 
 loadPos(0);
@@ -4850,27 +4860,21 @@ loadPrefs();
 loadPos(0);
 resizeBoard();
 
+// Pause clock when tab is hidden, resume when visible
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (typeof clockActive !== 'undefined' && clockActive) clockStop();
+  } else {
+    if (typeof clockControl !== 'undefined' && clockControl !== 'untimed'
+        && !gameOver && clockTimeW > 0 && clockTimeB > 0) {
+      clockStart();
+    }
+  }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // BOT ENGINE SYSTEM — Stockfish + Maia-2 + Hybrid + Ghost Pieces
 // ═══════════════════════════════════════════════════════════════════════════
-
-// ── Ghost canvas setup ───────────────────────────────────────────────────────
-const ghostCv = document.getElementById('ghostCanvas');
-const ghostCtx = ghostCv ? ghostCv.getContext('2d') : null;
-
-// Keep ghost canvas in sync with board canvas size
-function syncGhostCanvas() {
-  const mainCv = document.getElementById('cv');
-  if (!ghostCv || !mainCv) return;
-  ghostCv.width  = mainCv.width;
-  ghostCv.height = mainCv.height;
-  ghostCv.style.width  = mainCv.style.width  || mainCv.width + 'px';
-  ghostCv.style.height = mainCv.style.height || mainCv.height + 'px';
-}
-// Sync on resize
-const _origResizeBoard = typeof resizeBoard === 'function' ? resizeBoard : null;
-window.addEventListener('resize', syncGhostCanvas);
-syncGhostCanvas();
 
 // ── Bot state ────────────────────────────────────────────────────────────────
 let botActive = false;
@@ -4910,15 +4914,16 @@ function sfInit() {
   });
 }
 
-function sfGetMove(fen, level) {
+function sfGetMove(fen, levelOrDepth, isDepth=false) {
   return new Promise((resolve) => {
     if (!sfWorker || !sfReady) { resolve(null); return; }
     sfPendingResolve = resolve;
     sfWorker.postMessage('ucinewgame');
-    sfWorker.postMessage('setoption name Skill Level value ' + Math.max(0, Math.min(20, level)));
+    if (!isDepth) {
+      sfWorker.postMessage('setoption name Skill Level value ' + Math.max(0, Math.min(20, levelOrDepth)));
+    }
     sfWorker.postMessage('position fen ' + fen);
-    // Depth scales with skill
-    const depth = level <= 4 ? 4 : level <= 10 ? 8 : 12;
+    const depth = isDepth ? levelOrDepth : (levelOrDepth <= 4 ? 4 : levelOrDepth <= 10 ? 8 : 12);
     sfWorker.postMessage('go depth ' + depth);
   });
 }
@@ -5154,7 +5159,7 @@ function clearGhostPieces() {
 }
 
 async function showGhostResponses(hypotheticalFrom, hypotheticalTo) {
-  if (!botActive || !document.getElementById('cbGhostPieces').checked) return;
+  if (!ghostIsEnabled()) return;
   clearGhostPieces();
   if (hypotheticalTo < 0) return;
 
@@ -5165,22 +5170,20 @@ async function showGhostResponses(hypotheticalFrom, hypotheticalTo) {
 
   let responses = botGhostResponses[hypotheticalTo];
   if (!responses) {
-    // Fetch responses
     try {
-      if (botTab === 'maia' || botTab === 'hybrid') {
+      if (botActive && (botTab === 'maia' || botTab === 'hybrid')) {
         const probs = await maiaGetMoveProbs(hypFen);
         if (probs) {
           responses = Object.entries(probs)
-            .sort((a,b) => b[1]-a[1])
-            .slice(0,2)
+            .sort((a,b) => b[1]-a[1]).slice(0,2)
             .map(([uci, prob]) => ({ ...uciToSq(uci), prob }));
         }
       }
       if (!responses) {
-        // Use Stockfish for ghost preview
+        // Stockfish fallback — also used for solo mode
         await sfInit();
-        const level = sfEffectiveLevel(botClockMs());
-        const m1 = await sfGetMove(hypFen, level);
+        const depth = botActive ? sfEffectiveLevel(botClockMs()) : ghostSoloDepth();
+        const m1 = await sfGetMove(hypFen, depth, !botActive);
         if (m1) { responses = [{ ...uciToSq(m1), prob: 0.7 }]; }
       }
       botGhostResponses[hypotheticalTo] = responses || [];
@@ -5190,7 +5193,7 @@ async function showGhostResponses(hypotheticalFrom, hypotheticalTo) {
   // Draw ghost pieces
   if (!responses || !responses.length) return;
   const SQ = ghostCv.width / 8;
-  const flipped = typeof boardFlipped !== 'undefined' && boardFlipped;
+  const flipped = boardFlipped;
 
   function sqToXY(sq) {
     let r = Math.floor(sq / 8), c = sq % 8;
@@ -5231,7 +5234,7 @@ async function showGhostResponses(hypotheticalFrom, hypotheticalTo) {
 
 // ── Pre-compute ghost responses for all legal moves ──────────────────────────
 async function botPrecomputeGhosts(fromSq) {
-  if (!botActive || !document.getElementById('cbGhostPieces').checked) return;
+  if (!ghostIsEnabled()) return;
   botGhostResponses = {};
   const lm = legalMovesFor(fromSq, board, epSq, castling);
   // Add origin square too
@@ -5262,17 +5265,8 @@ async function botPrecomputeGhosts(fromSq) {
   }
 }
 
+
 // ── Hook into existing hover/drag system for ghost display ───────────────────
-// We patch the existing hoverSq updates to trigger ghost display
-const _origRender = render;
-function render() {
-  _origRender();
-  syncGhostCanvas();
-  // Redraw ghost if needed
-  if (botActive && botLastHoverSq >= 0) {
-    // Ghost already drawn — just ensure canvas size is right
-  }
-}
 
 // Monkey-patch to detect when user is hovering over legal squares
 // We intercept the canvas mousemove
@@ -5280,15 +5274,18 @@ function render() {
   const cv2 = document.getElementById('cv');
   if (!cv2) return;
   cv2.addEventListener('mousemove', function(e) {
-    if (!botActive) return;
-    const botColor = botPlayerColor === 'white' ? 'b' : 'w';
-    if (turn === botColor) return; // bot's turn, not showing ghosts
+    if (!ghostIsEnabled()) { clearGhostPieces(); return; }
+    // In bot mode, skip ghost display on bot's turn
+    if (botActive) {
+      const botColor = botPlayerColor === 'white' ? 'b' : 'w';
+      if (turn === botColor) return;
+    }
 
     const rect = cv2.getBoundingClientRect();
     const SQ = rect.width / 8;
     let cx2 = Math.floor((e.clientX - rect.left) / SQ);
     let cy2 = Math.floor((e.clientY - rect.top) / SQ);
-    const flipped = typeof boardFlipped !== 'undefined' && boardFlipped;
+    const flipped = boardFlipped;
     if (flipped) { cx2 = 7 - cx2; cy2 = 7 - cy2; }
     const hSq = rcSq(cy2, cx2);
 
@@ -5309,9 +5306,11 @@ function render() {
 
   // Pre-compute when piece is picked up
   cv2.addEventListener('mousedown', function(e) {
-    if (!botActive) return;
-    const botColor = botPlayerColor === 'white' ? 'b' : 'w';
-    if (turn === botColor) return;
+    if (!ghostIsEnabled()) return;
+    if (botActive) {
+      const botColor = botPlayerColor === 'white' ? 'b' : 'w';
+      if (turn === botColor) return;
+    }
     // Small delay to let selSq/dragFrom update
     setTimeout(() => {
       const fromSq2 = (typeof dragFrom !== 'undefined' && dragFrom >= 0) ? dragFrom : selSq;
@@ -5328,10 +5327,22 @@ function render() {
   }, { passive: true });
 })();
 
-// ── Hook executeMove to trigger bot after human moves ───────────────────────
-const _origExecuteMove = executeMove;
-function executeMove(from, to, promo) {
-  _origExecuteMove(from, to, promo);
+function ghostIsEnabled() {
+  // Works in bot mode (cbGhostPieces) or solo mode (soloGhostDepth > 0)
+  if (botActive) {
+    const cb = document.getElementById('cbGhostPieces');
+    return cb ? cb.checked : false;
+  }
+  const sel = document.getElementById('soloGhostDepth');
+  return sel ? parseInt(sel.value) > 0 : false;
+}
+
+function ghostSoloDepth() {
+  const sel = document.getElementById('soloGhostDepth');
+  return sel ? parseInt(sel.value) : 8;
+}
+// We register a callback rather than monkey-patching to avoid hoisting issues
+function botPostMoveHook() {
   clearGhostPieces();
   botGhostResponses = {};
   botLastHoverSq = -1;
@@ -5412,27 +5423,36 @@ async function botStart() {
   botGhostResponses = {};
   botLastHoverSq = -1;
 
-  // Start Stockfish early in background (don't block)
+  // Start Stockfish early in background
   if (botTab !== 'maia') sfInit().catch(() => {});
 
   // Reset game
   resetGame();
+
   // Apply player color
   let pc = botPlayerColor;
   if (pc === 'random') pc = Math.random() < 0.5 ? 'white' : 'black';
+
   // Flip board if human plays black
-  if (typeof boardFlipped !== 'undefined') {
+  if (true) {
     boardFlipped = pc === 'black';
     render();
   }
 
   botActive = true;
-  document.getElementById('botStartBtn').style.display = 'none';
-  document.getElementById('botStopBtn').style.display = '';
-  document.getElementById('botStatus').textContent = 'Bot active · ' + (pc === 'white' ? 'You play White' : 'You play Black');
+
+  // Update UI
+  const startBtn = document.getElementById('botStartBtn');
+  const stopBtn  = document.getElementById('botStopBtn');
+  const sideBtn  = document.getElementById('botSidebarBtn');
+  if (startBtn) startBtn.textContent = '↺ Restart Bot Game';
+  if (stopBtn)  stopBtn.style.display = '';
+  if (sideBtn)  { sideBtn.textContent = '🤖 Bot Active'; sideBtn.style.borderColor = '#22a85a'; }
+  document.getElementById('botStatus').textContent = 'Bot active · You play ' + (pc === 'white' ? 'White ♔' : 'Black ♚');
+
   closeAllPanels();
 
-  // If bot goes first (human plays black → bot is white → turn is 'w')
+  // If bot goes first
   const botColor = pc === 'white' ? 'b' : 'w';
   if (turn === botColor) {
     setTimeout(botMakeMove, 600);
@@ -5444,8 +5464,13 @@ function botStop() {
   botThinking = false;
   clearGhostPieces();
   botGhostResponses = {};
-  document.getElementById('botStartBtn').style.display = '';
-  document.getElementById('botStopBtn').style.display = 'none';
+
+  const startBtn = document.getElementById('botStartBtn');
+  const stopBtn  = document.getElementById('botStopBtn');
+  const sideBtn  = document.getElementById('botSidebarBtn');
+  if (startBtn) startBtn.textContent = '▶ Start Game vs Bot';
+  if (stopBtn)  stopBtn.style.display = 'none';
+  if (sideBtn)  { sideBtn.textContent = '🤖 vs Bot'; sideBtn.style.borderColor = 'rgba(90,212,144,0.4)'; }
   document.getElementById('botStatus').textContent = '';
 }
 
@@ -5513,6 +5538,62 @@ botHybridSlots = [
   { type: 'maia', level: null, weight: 25 }
 ];
 botRenderHybridSlots();
+
+// ── Landing page logic ───────────────────────────────────────────────────────
+function landingDismiss() {
+  const overlay = document.getElementById('landingOverlay');
+  if (!overlay) return;
+  overlay.classList.add('fade-out');
+  setTimeout(() => { overlay.style.display = 'none'; }, 420);
+}
+
+function landingChoose(mode) {
+  landingDismiss();
+  setTimeout(() => {
+    if (mode === 'bot') {
+      openPanel('botPanel');
+    } else if (mode === 'mp') {
+      openPanel('mpPanel');
+    } else if (mode === 'pgn') {
+      document.getElementById('pgnFileInput').click();
+    }
+    // 'solo' just dismisses — board is already set up and ready
+  }, 300);
+}
+
+function landingLoadBotConfig(event) {
+  botLoadConfig(event);
+  landingDismiss();
+  setTimeout(() => openPanel('botPanel'), 350);
+}
+
+// Clicking anywhere on the app area behind the overlay also dismisses it
+document.addEventListener('DOMContentLoaded', () => {
+  // Detect if running on server (vs local file) and update multiplayer UI
+  const isServer = location.protocol !== 'file:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1';
+  const mpNote = document.getElementById('mpServerNote');
+  const mpCard = document.querySelector('.landing-card[onclick*="mp"]');
+  if (isServer) {
+    if (mpNote) {
+      mpNote.style.background = 'rgba(34,168,90,0.08)';
+      mpNote.style.borderColor = 'rgba(34,168,90,0.25)';
+      mpNote.innerHTML = '✅ Server connected — multiplayer is available.';
+    }
+  } else {
+    // Running locally — dim the multiplayer landing card
+    if (mpCard) {
+      mpCard.style.opacity = '0.55';
+      mpCard.title = 'Multiplayer requires the deployed server';
+    }
+  }
+  const cv3 = document.getElementById('cv');
+  if (cv3) cv3.addEventListener('click', () => {
+    const overlay = document.getElementById('landingOverlay');
+    if (overlay && overlay.style.display !== 'none' && !overlay.classList.contains('fade-out')) {
+      landingChoose('solo');
+    }
+  }, { once: true });
+});
 
 // ── Ko-fi update reminder ────────────────────────────────────────────────────
 // Update the Ko-fi link when you have your actual URL
