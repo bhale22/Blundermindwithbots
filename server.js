@@ -70,7 +70,7 @@ wss.on('connection', (ws) => {
         opponent.send(JSON.stringify({ type: 'move', move: msg.move }));
       }
 
-    } else if (msg.type === 'resign' || msg.type === 'rematch' || msg.type === 'chat') {
+    } else if (msg.type === 'resign' || msg.type === 'rematch' || msg.type === 'rematch_offer' || msg.type === 'rematch_declined' || msg.type === 'timeout' || msg.type === 'chat') {
       // Relay resign/rematch/chat to opponent
       const room = rooms[ws.roomCode];
       if (!room) return;

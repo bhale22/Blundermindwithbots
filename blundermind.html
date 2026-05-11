@@ -576,7 +576,7 @@ canvas{
     <!-- vs Bot -->
     <div class="landing-card green-card" onclick="landingChoose('bot')">
       <div class="landing-card-icon">🤖</div>
-      <div class="landing-card-title">Play vs Computer</div>
+      <div class="landing-card-title">Play vs Bots</div>
       <div class="landing-card-desc">Challenge Stockfish or a human-like Maia-2 bot. Mix engines, set time pressure, see ghost responses.</div>
     </div>
 
@@ -1008,7 +1008,7 @@ canvas{
 <!-- ── Bot opponent panel ────────────────────────────────────────────────── -->
 <div class="slide-panel" id="botPanel">
   <div class="panel-header">
-    <span class="panel-title">🤖 Play vs Computer</span>
+    <span class="panel-title">🤖 Play vs Bots</span>
     <button class="panel-close" onclick="closeAllPanels();botStop()">✕</button>
   </div>
   <div class="panel-body" style="font-size:10px;">
@@ -1104,6 +1104,20 @@ canvas{
       </div>
     </div>
 
+    <!-- Time control -->
+    <div style="margin-bottom:8px;">
+      <label style="font-size:9px;color:var(--text-dim);">Time Control</label>
+      <div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px;" id="botTcBtns">
+        <button class="tp-btn active" id="btc-untimed"    onclick="botSetTC('untimed')">∞ None</button>
+        <button class="tp-btn" id="btc-bullet"   onclick="botSetTC('bullet')">1+0</button>
+        <button class="tp-btn" id="btc-blitz3"   onclick="botSetTC('blitz3')">3+2</button>
+        <button class="tp-btn" id="btc-blitz5"   onclick="botSetTC('blitz5')">5+0</button>
+        <button class="tp-btn" id="btc-rapid10"  onclick="botSetTC('rapid10')">10+0</button>
+        <button class="tp-btn" id="btc-rapid15"  onclick="botSetTC('rapid15')">15+10</button>
+        <button class="tp-btn" id="btc-tournament" onclick="botSetTC('tournament')">30+0</button>
+      </div>
+    </div>
+
     <!-- Ghost pieces toggle -->
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
       <label style="font-size:9px;color:var(--text-dim);flex:1;">👻 Ghost response preview</label>
@@ -1124,7 +1138,7 @@ canvas{
 
     <!-- Start button -->
     <button id="botStartBtn" onclick="botStart()" style="width:100%;padding:10px;font-size:12px;font-weight:700;background:linear-gradient(135deg,#0f4020,#0a2a15);border:1px solid #22a85a;border-radius:6px;color:#5ad490;cursor:pointer;transition:all 0.15s;margin-bottom:6px;">
-      ▶ Start Game vs Bot
+      ▶ Start Bot Game
     </button>
     <div style="display:flex;gap:6px;margin-bottom:4px;">
       <button onclick="botSaveConfig()" style="flex:1;padding:6px;font-size:9px;background:rgba(200,160,0,0.1);border:0.5px solid rgba(200,160,0,0.3);border-radius:4px;color:#c8a000;cursor:pointer;">↓ Save this config</button>
@@ -1789,7 +1803,12 @@ function clockTimeout(color) {
   gameOver = true;
   gameOverMsg = color==='w' ? 'White ran out of time — Black wins! ⏰' : 'Black ran out of time — White wins! ⏰';
   updatePlayerBoxes();
+  render();
   showRematchBtn(true);
+  // Notify multiplayer opponent
+  if (typeof mpRoomId !== 'undefined' && mpRoomId && typeof mpWs !== 'undefined' && mpWs) {
+    try { mpWs.send(JSON.stringify({ type: 'timeout', color })); } catch(e) {}
+  }
 }
 
 function clockFmtTime(secs) {
@@ -1885,15 +1904,33 @@ function mpHandleMessage(msg) {
     mpReceiveMove(msg.move);
   } else if (msg.type === 'chat') {
     chatAppend('Opponent', msg.text || '');
-  } else if (msg.type === 'chat') {
-    chatAppend('Opponent', msg.text || '');
   } else if (msg.type === 'resign') {
     gameOver = true;
-    gameOverMsg = (mpRole==='white' ? 'Opponent resigned — You win!' : 'Opponent resigned — You win!');
-    updatePlayerBoxes(); showRematchBtn(true);
+    gameOverMsg = 'Opponent resigned — You win! 🏆';
+    updatePlayerBoxes(); render(); showRematchBtn(true);
+  } else if (msg.type === 'timeout') {
+    // Opponent flagged on their end
+    gameOver = true;
+    const oppColor = mpRole === 'white' ? 'b' : 'w';
+    gameOverMsg = oppColor === 'w' ? 'White ran out of time — Black wins! ⏰' : 'Black ran out of time — White wins! ⏰';
+    updatePlayerBoxes(); render(); showRematchBtn(true);
+  } else if (msg.type === 'rematch_offer') {
+    // Opponent wants a rematch — show accept/decline prompt
+    mpShowStatus('Opponent wants a rematch!');
+    const status = document.getElementById('mpStatus');
+    if (status) {
+      status.innerHTML = 'Opponent wants a rematch! &nbsp;' +
+        '<button onclick="mpAcceptRematch()" style="padding:2px 8px;font-size:9px;background:rgba(34,168,90,0.15);border:0.5px solid #22a85a;border-radius:3px;color:#5ad490;cursor:pointer;margin-right:4px;">Accept</button>' +
+        '<button onclick="mpDeclineRematch()" style="padding:2px 8px;font-size:9px;background:rgba(200,40,40,0.08);border:0.5px solid rgba(200,40,40,0.3);border-radius:3px;color:#c84040;cursor:pointer;">Decline with sincerest apologies</button>';
+    }
   } else if (msg.type === 'rematch') {
+    // Rematch accepted — start new game
     resetGame();
-    mpShowStatus('Rematch — ' + (mpRole==='white' ? 'You are White' : 'You are Black'));
+    clockInit(mpSelectedTC || 'untimed');
+    if (mpSelectedTC && mpSelectedTC !== 'untimed') clockStart();
+    mpShowStatus('Rematch! ' + (mpRole === 'white' ? 'You are White ♔' : 'You are Black ♚'));
+  } else if (msg.type === 'rematch_declined') {
+    mpShowStatus('Rematch declined. Thanks for playing!');
   } else if (msg.type === 'opponent_disconnected') {
     mpShowStatus('Opponent disconnected.', true);
     gameOver = true; updatePlayerBoxes();
@@ -1903,21 +1940,17 @@ function mpHandleMessage(msg) {
 }
 
 function mpStartGame() {
-  // Initialize clock with selected time control
-  clockInit(mpSelectedTC||'untimed');
   resetGame();
+  // Initialize clock AFTER reset so times are set correctly
+  clockInit(mpSelectedTC || 'untimed');
   // Show chat box
   chatShow(true);
-  // Flip board layout for black player
-  const boardCol = document.querySelector('.board-col') || document.getElementById('boardCol');
-  if(boardCol){
-    if(mpRole==='black'){
-      boardCol.classList.add('board-flipped');
-    } else {
-      boardCol.classList.remove('board-flipped');
-    }
-  }
-  // Update player names immediately
+  // Flip board for black player using the real boardFlipped variable
+  boardFlipped = (mpRole === 'black');
+  render();
+  // Start clock immediately (both players start together)
+  if (mpSelectedTC && mpSelectedTC !== 'untimed') clockStart();
+  // Update player names
   updatePlayerBoxes();
   mpUpdateTurnIndicator();
 }
@@ -3996,19 +4029,55 @@ function confirmResign(){
   updatePlayerBoxes();
   showRematchBtn(true);
 }
-function showRematchBtn(show){
-  let btn=document.getElementById('rematchBtn');
-  if(!btn&&show){
-    btn=document.createElement('button');
-    btn.id='rematchBtn';
-    btn.className='ctrl-btn';
-    btn.style.cssText='border-color:var(--accent);color:var(--accent);font-weight:600;';
-    btn.textContent='↺ New game';
-    btn.onclick=()=>{showRematchBtn(false);resetGame();};
-    const row=document.querySelector('#bottom-controls .ctrl-row');
-    if(row) row.insertBefore(btn,row.firstChild);
+function mpAcceptRematch() {
+  if (mpWs && mpWs.readyState === WebSocket.OPEN) {
+    mpWs.send(JSON.stringify({ type: 'rematch' }));
   }
-  if(btn) btn.style.display=show?'':'none';
+  resetGame();
+  clockInit(mpSelectedTC || 'untimed');
+  if (mpSelectedTC && mpSelectedTC !== 'untimed') clockStart();
+  mpShowStatus('Rematch! ' + (mpRole === 'white' ? 'You are White ♔' : 'You are Black ♚'));
+}
+
+function mpDeclineRematch() {
+  if (mpWs && mpWs.readyState === WebSocket.OPEN) {
+    mpWs.send(JSON.stringify({ type: 'rematch_declined' }));
+  }
+  mpShowStatus('Rematch declined.');
+}
+
+function mpOfferRematch() {
+  if (mpWs && mpWs.readyState === WebSocket.OPEN) {
+    mpWs.send(JSON.stringify({ type: 'rematch_offer' }));
+    mpShowStatus('Rematch offered — waiting for opponent…');
+  } else {
+    // Solo / no connection — just reset
+    showRematchBtn(false); resetGame();
+  }
+}
+
+function showRematchBtn(show) {
+  let btn = document.getElementById('rematchBtn');
+  if (!btn && show) {
+    btn = document.createElement('button');
+    btn.id = 'rematchBtn';
+    btn.className = 'ctrl-btn';
+    btn.style.cssText = 'border-color:var(--accent);color:var(--accent);font-weight:600;';
+    btn.textContent = '↺ Rematch';
+    // In multiplayer, offer rematch; in solo/bot, just reset
+    btn.onclick = () => {
+      if (typeof mpRoomId !== 'undefined' && mpRoomId) {
+        mpOfferRematch();
+      } else if (botActive) {
+        showRematchBtn(false); botStart();
+      } else {
+        showRematchBtn(false); resetGame();
+      }
+    };
+    const row = document.querySelector('#bottom-controls .ctrl-row');
+    if (row) row.insertBefore(btn, row.firstChild);
+  }
+  if (btn) btn.style.display = show ? '' : 'none';
 }
 
 function resetGame(){cancelResign();showRematchBtn(false);clockStop();clockInit(clockControl);const sg=document.getElementById("saveGameBtn");if(sg)sg.remove();loadPos(0);}
@@ -5006,27 +5075,6 @@ function positionEntropy(moveProbs) {
   return e;
 }
 
-// ── Bot think time ────────────────────────────────────────────────────────────
-function botThinkTime(moveProbs, clockMs) {
-  const pace = parseInt(document.getElementById('botPace').value) || 40;
-  const baseSec = (5 * 60) / pace;
-  const entropy = moveProbs ? positionEntropy(moveProbs) : 2;
-  const complexity = Math.min(1 + entropy * 0.4, 3.0);
-  let thinkMs = baseSec * complexity * 1000;
-
-  // Time pressure
-  const totalMs = clockMs || 300000;
-  const ratio = clockMs / totalMs; // remaining fraction (0–1 but we use current remaining)
-  // We don't have initial time easily, approximate: if <30s treat as pressure
-  const underPressure = clockMs < 30000;
-  if (underPressure) {
-    thinkMs = Math.min(thinkMs, 3000); // cap at 3s when low
-  }
-  // Add some randomness ±20%
-  thinkMs *= 0.8 + Math.random() * 0.4;
-  return Math.max(300, Math.min(15000, thinkMs));
-}
-
 // ── Effective Stockfish level (degrades under time pressure) ─────────────────
 function sfEffectiveLevel(clockMs) {
   const startLevel = parseInt(document.getElementById('sfLevel').value) || 8;
@@ -5037,16 +5085,30 @@ function sfEffectiveLevel(clockMs) {
   return Math.round(floorLevel + (startLevel - floorLevel) * fraction);
 }
 
-// ── Get current clock remaining for bot's color ──────────────────────────────
+// ── Get current clock remaining for bot's color (returns ms) ─────────────────
 function botClockMs() {
   try {
-    const botColor = botPlayerColor === 'white' ? 'black' : 'white'; // bot's color opposite human
-    if (typeof clockTimeW === 'undefined') return null;
-    return botColor === 'white' ? clockTimeW : clockTimeB;
+    if (typeof clockTimeW === 'undefined' || clockControl === 'untimed') return null;
+    const botColor = botPlayerColor === 'white' ? 'black' : 'white';
+    const secs = botColor === 'white' ? clockTimeW : clockTimeB;
+    return secs * 1000; // clockTimeW/B are in seconds, convert to ms
   } catch(e) { return null; }
 }
 
-// ── Time pressure temperature boost ──────────────────────────────────────────
+// ── Think time: entropy-based, in ms ─────────────────────────────────────────
+function botThinkTime(moveProbs, clockMs) {
+  const pace = parseInt(document.getElementById('botPace').value) || 40;
+  const baseSec = (5 * 60) / pace; // avg seconds per move
+  const entropy = moveProbs ? positionEntropy(moveProbs) : 2;
+  const complexity = Math.min(1 + entropy * 0.35, 2.5);
+  let thinkMs = baseSec * complexity * 1000;
+  // Time pressure: clockMs is real ms now
+  if (clockMs !== null && clockMs < 30000) {
+    thinkMs = Math.min(thinkMs, clockMs * 0.08); // use at most 8% of remaining
+  }
+  thinkMs *= 0.8 + Math.random() * 0.4; // ±20% randomness
+  return Math.max(200, Math.min(8000, thinkMs));
+}
 function timePressureTemp(baseTemp, clockMs) {
   if (!clockMs || clockMs > 30000) return baseTemp;
   const fraction = Math.max(0, 1 - clockMs / 30000); // 0=no pressure, 1=flagging
@@ -5327,6 +5389,40 @@ async function botPrecomputeGhosts(fromSq) {
   }, { passive: true });
 })();
 
+// ── Bot time control selector ─────────────────────────────────────────────────
+let botSelectedTC = 'untimed';
+function botSetTC(key) {
+  botSelectedTC = key;
+  document.querySelectorAll('[id^="btc-"]').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('btc-' + key);
+  if (btn) btn.classList.add('active');
+}
+
+// ── Stockfish / Maia diagnostic ───────────────────────────────────────────────
+function botDiagnose() {
+  const lines = [];
+  lines.push('=== Bot Diagnostic ===');
+  lines.push('sfWorker: ' + (sfWorker ? 'created' : 'null'));
+  lines.push('sfReady: ' + sfReady);
+  lines.push('botActive: ' + botActive);
+  lines.push('botTab: ' + botTab);
+  lines.push('botThinking: ' + botThinking);
+  lines.push('turn: ' + (typeof turn !== 'undefined' ? turn : 'undef'));
+  lines.push('botPlayerColor: ' + botPlayerColor);
+  const botColor = botPlayerColor === 'white' ? 'b' : 'w';
+  lines.push('bot color: ' + botColor + ', turn matches: ' + (turn === botColor));
+  // Test FEN generation
+  try {
+    const fen = boardToFen(board, turn, castling, epSq);
+    lines.push('FEN: ' + fen);
+  } catch(e) { lines.push('FEN error: ' + e.message); }
+  const report = lines.join('\n');
+  console.log(report);
+  const el = document.getElementById('botStatus');
+  if (el) el.textContent = 'sfReady:' + sfReady + ' botThinking:' + botThinking + ' tab:' + botTab;
+  return report;
+}
+
 function ghostIsEnabled() {
   // Works in bot mode (cbGhostPieces) or solo mode (soloGhostDepth > 0)
   if (botActive) {
@@ -5419,25 +5515,23 @@ function botUpdateHybridTotal() {
 // ── Start / Stop bot ─────────────────────────────────────────────────────────
 async function botStart() {
   botActive = false;
+  botThinking = false;
   clearGhostPieces();
   botGhostResponses = {};
   botLastHoverSq = -1;
 
-  // Start Stockfish early in background
-  if (botTab !== 'maia') sfInit().catch(() => {});
+  // Pre-init Stockfish in background
+  if (botTab !== 'maia') sfInit().catch(e => console.warn('SF init:', e));
 
-  // Reset game
+  // Apply time control then reset board
+  clockInit(botSelectedTC || 'untimed');
   resetGame();
 
   // Apply player color
   let pc = botPlayerColor;
   if (pc === 'random') pc = Math.random() < 0.5 ? 'white' : 'black';
-
-  // Flip board if human plays black
-  if (true) {
-    boardFlipped = pc === 'black';
-    render();
-  }
+  boardFlipped = (pc === 'black');
+  render();
 
   botActive = true;
 
@@ -5448,15 +5542,18 @@ async function botStart() {
   if (startBtn) startBtn.textContent = '↺ Restart Bot Game';
   if (stopBtn)  stopBtn.style.display = '';
   if (sideBtn)  { sideBtn.textContent = '🤖 Bot Active'; sideBtn.style.borderColor = '#22a85a'; }
-  document.getElementById('botStatus').textContent = 'Bot active · You play ' + (pc === 'white' ? 'White ♔' : 'Black ♚');
+  document.getElementById('botStatus').textContent =
+    'You play ' + (pc === 'white' ? 'White ♔' : 'Black ♚') +
+    (botSelectedTC !== 'untimed' ? ' · ' + botSelectedTC : '');
 
   closeAllPanels();
 
-  // If bot goes first
+  // Start clock if timed
+  if (botSelectedTC && botSelectedTC !== 'untimed') clockStart();
+
+  // If bot plays White (human is Black), bot moves first
   const botColor = pc === 'white' ? 'b' : 'w';
-  if (turn === botColor) {
-    setTimeout(botMakeMove, 600);
-  }
+  if (turn === botColor) setTimeout(botMakeMove, 800);
 }
 
 function botStop() {
