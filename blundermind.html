@@ -973,35 +973,25 @@ canvas{
     <button class="panel-close" onclick="closeAllPanels()">✕</button>
   </div>
   <div class="panel-body">
-    <p>I created this site in the hopes that I could play some games with other beginners where the games are decided on strategy instead of blunders. I find games decided on strategy, whether won or lost, are fun and interesting. Games won or lost by hanging a queen are just annoying and dispiriting.</p>
-
-    <p>Along the way I think I'm finding that my board vision is getting a little better — something red flashes and I look to see that the move I'm contemplating blocks a rook from protecting my knight, or that I'm setting a piece down where it will be skewered against the king and taken on the next turn. I'm hoping that immediate feedback during move exploration using this site will translate into better board vision in regular games. But I wouldn't be overly surprised if it doesn't, so feedback greatly appreciated.</p>
-
-    <p>If there are instructors willing to have one group of students use the tool in a structured way — such as playing around with the site and using it to play a limited number of games a week for a specific period — and then compare those students to a control group following a normal study routine, I think the results would be very interesting.</p>
-
-    <p>As long as this site is used as an occasional learning tool and not used as a substitute for real play, I think it safely falls under the "shouldn't hurt" category. Though I am not-so-secretly hoping it will turn out to be extremely helpful.</p>
-
+    <p>As a newby, nearly all of the games I play are decided on blundered pieces. I created this site in the hopes that I could see what it was like to play a game that was decided by strategy instead of blunders. I still blunder, but at least the number of blunders is reduced a bit when there is a big red circle around the queen when I hover it over my intended square.</p>
+    <p>I also struggle with seeing or &#8220;getting a grip on the board&#8221; (to steal a useful phrase from the <a href="https://www.youtube.com/watch?v=3jiJn8bjtYk" target="_blank" rel="noopener" style="color:var(--accent);">Chess Dojo</a>), so while my intent was to blundercheck moves before committing, I&#8217;m finding that it also serves as a first order &#8220;get a grip&#8221; check to see if there are any check threats, discovered attacks, etc., that I overlooked.</p>
+    <p>While I added a feature to show the two most likely opponent responses to a move (to test my ability to predict the likely response), the site purposefully does not include any engine analysis or indicators to show if a move is &#8220;good or bad.&#8221; Each game can be downloaded and analyzed in <a href="https://lichess.org/paste" target="_blank" rel="noopener" style="color:var(--accent);">Lichess</a> or a website of your choice. Similarly, the PGN of any game can be uploaded and explored here.</p>
+    <p>While I most enjoy playing people in person, I find playing strangers online less enjoyable, so I added in the feature to play against bots. The problem with the bots I&#8217;ve found is that they don&#8217;t feel time pressure, and their behavior is often sporadic in an unsatisfying way. I&#8217;ve tried to make the bots customizable in a way so that I have more control over how the bot will play.</p>
     <hr>
     <h3>A note on discovered attacks, check threats, forks &amp; skewers</h3>
-    <p>My intention for this site is that it helps novice players like myself get a better feel for the board, without pointing out the "best" move. There is intentionally no engine involved.</p>
-    <p>Highlighting the opponent's potential discovered attacks, check threats, forks, and skewers feels instructive — these are things you need to watch out for. But highlighting the same possible moves for the user feels too much like saying "here is a good move." So I've compromised: those functions are only shown when the button is actively held. Your potential forks and discovered attacks don't just pop up — you have to be actively thinking about them when you press the button.</p>
+    <p>My intention for this site is that it helps novice players like myself get a better feel for the board, without pointing out the &#8220;best&#8221; move. Highlighting the opponent&#8217;s potential discovered attacks, check threats, forks, and skewers feels instructive &#8212; these are things you need to watch out for. But highlighting the same possible moves for the user feels too much like saying &#8220;here is a good move.&#8221; So those functions are only shown when the button is actively held.</p>
     <p>If that restriction is annoying, let me know and I can make some changes.</p>
-
     <hr>
     <h3>Privacy</h3>
-    <p>Blundermind collects no user data, stores no game history, and tracks nothing. Your games are yours.</p>
-
+    <p>Blundermind collects no user data, stores no game history, and tracks nothing. This may be annoying, so there is an option to download the current settings (board &amp; visualization settings and/or bot settings) and upload them when returning.</p>
     <hr>
-<hr>
     <h3>Feedback</h3>
-    <p>Any problems with functionality would be helpful, but I would love feedback on whether this site is beneficial for improving board vision. I created it thinking it will be helpful for me, but it wouldn't be a complete shock to find that assisted board vision doesn't translate to improvement in regular play.</p>
+    <p>Any problems with functionality would be helpful, but I would particularly love feedback on whether any features on this site seem to translate into improvement in &#8216;real&#8217; over-the-board play.</p>
     <textarea id="feedbackText" placeholder="Your thoughts..." style="width:100%;height:90px;background:var(--bg-panel2);border:0.5px solid var(--border);border-radius:4px;color:var(--text-primary);font-family:inherit;font-size:10px;line-height:1.5;padding:8px;resize:vertical;margin-top:6px;"></textarea>
     <button class="panel-send-btn" onclick="sendFeedback()">Send feedback</button>
-    <div id="feedbackThanks" style="display:none;color:#5ad490;font-size:10px;text-align:center;padding:8px;">Thank you — feedback received! ♟</div>
+    <div id="feedbackThanks" style="display:none;color:#5ad490;font-size:10px;text-align:center;padding:8px;">Thank you &#8212; feedback received! &#9887;</div>
     <hr>
-    <p style="font-size:8px;color:var(--text-dim);">© 2026 Blundermind. All rights reserved.<br>
-    Board vision training for we happy few that strive for mediocrity.<br>
-    Staunton pieces: react-chess-pieces (ISC) · RhosGFX pieces: CC0 · @RhosGFX</p>
+    <p style="font-size:8px;color:var(--text-dim);">&#169; 2026 Blundermind. All rights reserved.<br>Board vision training for we happy few that strive for mediocrity.<br>Staunton pieces: react-chess-pieces (ISC) &middot; RhosGFX pieces: CC0 &middot; @RhosGFX</p>
   </div>
 </div>
 
@@ -3078,6 +3068,8 @@ cv.addEventListener('mousedown',e=>{
   if(promotionPending){const ch=getPromoChoice(getEvtPos(e));if(ch){executeMove(promotionPending.from,promotionPending.to,ch);promotionPending=null;}return;}
   if(gameOver)return;
   const pos=getEvtPos(e);const sq=getSq(pos);if(sq<0)return;
+  // Ghost precompute hook
+  if (typeof ghostOnMouseDown === 'function') setTimeout(()=>ghostOnMouseDown(sq), 15);
   if(isHoverMode()){
     if(board[sq]&&board[sq].color===turn){
       if(selSq===sq){selSq=-1;legalMoves=[];clearPreview();atkMap=buildAtk(board);dragFrom=-1;dragMoved=false;render();}
@@ -3103,6 +3095,8 @@ cv.addEventListener('mousedown',e=>{
 
 cv.addEventListener('mousemove',e=>{
   e.preventDefault();const pos=getEvtPos(e);mousePos=pos;const sq=getSq(pos);
+  // Ghost response hook — no duplicate listener needed
+  if (typeof ghostOnMouseMove === 'function') ghostOnMouseMove(sq);
   if(isHoverMode()){
     if(dragFrom>=0&&!dragMoved){const dx=pos.x-dragStartPos.x,dy=pos.y-dragStartPos.y;if(Math.sqrt(dx*dx+dy*dy)>DRAG_THRESHOLD)dragMoved=true;}
     if(selSq>=0){
@@ -3163,6 +3157,7 @@ cv.addEventListener('mousemove',e=>{
 
 cv.addEventListener('mouseup',e=>{
   e.preventDefault();if(promotionPending)return;
+  if (typeof ghostOnMouseUp === 'function') ghostOnMouseUp();
   const pos=getEvtPos(e);const sq=canvasToBoard(pos);
   if(isHoverMode()){
     if(dragFrom>=0){
@@ -4959,27 +4954,39 @@ let botLastHoverSq = -1;
 let botGhostResponses = {}; // sq -> [{from,to,prob}]
 let botPrecomputePending = false;
 
-// ── Stockfish Web Worker ─────────────────────────────────────────────────────
+// ── Stockfish Web Worker (blob pattern — bypasses cross-origin Worker restriction) ──
+const SF_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js';
+
 function sfInit() {
   if (sfWorker) return Promise.resolve();
   return new Promise((resolve, reject) => {
-    try {
-      sfWorker = new Worker('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js');
-      sfWorker.onmessage = (e) => {
-        const line = e.data;
-        if (line === 'uciok') { sfWorker.postMessage('isready'); }
-        if (line === 'readyok') { sfReady = true; resolve(); }
-        if (line.startsWith('bestmove') && sfPendingResolve) {
-          const parts = line.split(' ');
-          const move = parts[1];
-          const res = sfPendingResolve;
-          sfPendingResolve = null;
-          res(move && move !== '(none)' ? move : null);
-        }
-      };
-      sfWorker.onerror = (e) => { console.warn('Stockfish error', e); reject(e); };
-      sfWorker.postMessage('uci');
-    } catch(e) { reject(e); }
+    // Fetch SF script then create a blob URL so the Worker is same-origin
+    fetch(SF_CDN)
+      .then(r => { if (!r.ok) throw new Error('SF fetch ' + r.status); return r.blob(); })
+      .then(blob => {
+        const blobUrl = URL.createObjectURL(blob);
+        sfWorker = new Worker(blobUrl);
+        sfWorker.onmessage = (e) => {
+          const line = e.data;
+          if (line === 'uciok')    { sfWorker.postMessage('isready'); }
+          if (line === 'readyok') { sfReady = true; resolve(); }
+          if (line.startsWith('bestmove') && sfPendingResolve) {
+            const parts = line.split(' ');
+            const move  = parts[1];
+            const res = sfPendingResolve;
+            sfPendingResolve = null;
+            res(move && move !== '(none)' ? move : null);
+          }
+        };
+        sfWorker.onerror = (e) => { console.warn('Stockfish worker error:', e); reject(e); };
+        sfWorker.postMessage('uci');
+        // Safety timeout — if no readyok in 10s, reject
+        setTimeout(() => { if (!sfReady) reject(new Error('SF timeout')); }, 10000);
+      })
+      .catch(err => {
+        console.warn('Stockfish load failed:', err);
+        reject(err);
+      });
   });
 }
 
@@ -5328,66 +5335,43 @@ async function botPrecomputeGhosts(fromSq) {
 }
 
 
-// ── Hook into existing hover/drag system for ghost display ───────────────────
 
-// Monkey-patch to detect when user is hovering over legal squares
-// We intercept the canvas mousemove
-(function() {
-  const cv2 = document.getElementById('cv');
-  if (!cv2) return;
-  cv2.addEventListener('mousemove', function(e) {
-    if (!ghostIsEnabled()) { clearGhostPieces(); return; }
-    // In bot mode, skip ghost display on bot's turn
-    if (botActive) {
-      const botColor = botPlayerColor === 'white' ? 'b' : 'w';
-      if (turn === botColor) return;
-    }
 
-    const rect = cv2.getBoundingClientRect();
-    const SQ = rect.width / 8;
-    let cx2 = Math.floor((e.clientX - rect.left) / SQ);
-    let cy2 = Math.floor((e.clientY - rect.top) / SQ);
-    const flipped = boardFlipped;
-    if (flipped) { cx2 = 7 - cx2; cy2 = 7 - cy2; }
-    const hSq = rcSq(cy2, cx2);
+// ── Ghost display hooks — called FROM existing canvas handlers (no duplicate listeners) ──
+// These are called by the existing mousemove/mousedown/mouseup handlers below
+function ghostOnMouseMove(hSq) {
+  if (!ghostIsEnabled()) { clearGhostPieces(); return; }
+  if (botActive) {
+    const botColor = botPlayerColor === 'white' ? 'b' : 'w';
+    if (turn === botColor) { clearGhostPieces(); return; }
+  }
+  if (hSq === botLastHoverSq) return;
+  botLastHoverSq = hSq;
+  const fromSq = (dragFrom >= 0) ? dragFrom : selSq;
+  if (fromSq < 0) { clearGhostPieces(); return; }
+  const lm = legalMovesFor(fromSq, board, epSq, castling);
+  if (hSq === fromSq || lm.includes(hSq)) {
+    showGhostResponses(fromSq, hSq);
+  } else {
+    clearGhostPieces();
+  }
+}
 
-    if (hSq === botLastHoverSq) return;
-    botLastHoverSq = hSq;
+function ghostOnMouseDown(fromSq) {
+  if (!ghostIsEnabled()) return;
+  if (botActive) {
+    const botColor = botPlayerColor === 'white' ? 'b' : 'w';
+    if (turn === botColor) return;
+  }
+  if (fromSq >= 0 && board[fromSq] && board[fromSq].color === turn) {
+    botGhostResponses = {};
+    botPrecomputeGhosts(fromSq);
+  }
+}
 
-    // Only show ghosts when a piece is selected or being dragged
-    const fromSq = (typeof dragFrom !== 'undefined' && dragFrom >= 0) ? dragFrom : selSq;
-    if (fromSq < 0) { clearGhostPieces(); return; }
-
-    const lm = legalMovesFor(fromSq, board, epSq, castling);
-    if (hSq === fromSq || lm.includes(hSq)) {
-      showGhostResponses(fromSq, hSq);
-    } else {
-      clearGhostPieces();
-    }
-  }, { passive: true });
-
-  // Pre-compute when piece is picked up
-  cv2.addEventListener('mousedown', function(e) {
-    if (!ghostIsEnabled()) return;
-    if (botActive) {
-      const botColor = botPlayerColor === 'white' ? 'b' : 'w';
-      if (turn === botColor) return;
-    }
-    // Small delay to let selSq/dragFrom update
-    setTimeout(() => {
-      const fromSq2 = (typeof dragFrom !== 'undefined' && dragFrom >= 0) ? dragFrom : selSq;
-      if (fromSq2 >= 0 && board[fromSq2] && board[fromSq2].color === turn) {
-        botGhostResponses = {}; // clear cache for new piece
-        botPrecomputeGhosts(fromSq2);
-      }
-    }, 10);
-  }, { passive: true });
-
-  // Clear ghosts when piece is released / move committed
-  cv2.addEventListener('mouseup', function() {
-    setTimeout(() => { if (!selSq || selSq < 0) clearGhostPieces(); }, 50);
-  }, { passive: true });
-})();
+function ghostOnMouseUp() {
+  setTimeout(() => { if (selSq < 0 && dragFrom < 0) clearGhostPieces(); }, 60);
+}
 
 // ── Bot time control selector ─────────────────────────────────────────────────
 let botSelectedTC = 'untimed';
