@@ -19,9 +19,19 @@ body{
   flex-direction:column;
   align-items:center;
   justify-content:flex-start;
-  padding:10px 20px 0;
-  gap:6px;
+  padding:0;
+  gap:0;
   transition:background 0.3s;
+}
+/* Page wrapper aligns header and app together */
+#page-wrap{
+  width:100%;
+  max-width:1400px;
+  padding:10px 20px 0;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  box-sizing:border-box;
 }
 
 /* ── CSS variables — default dark navy theme ─────────────────────────────── */
@@ -43,8 +53,8 @@ body{
 
 /* ── Site header ──────────────────────────────────────────────────────────── */
 #site-header{
-  display:flex;align-items:baseline;gap:10px;
-  width:100%;max-width:1400px;padding:2px 2px 4px;
+  display:flex;align-items:center;gap:10px;
+  width:100%;padding:2px 0 4px;
   flex-shrink:0;
 }
 #site-name{
@@ -63,9 +73,8 @@ body{
   gap:12px;
   align-items:flex-start;
   width:100%;
-  max-width:1400px;
   flex-shrink:0;
-  justify-content:center;
+  justify-content:flex-start;
 }
 
 /* ── Board column ─────────────────────────────────────────────────────────── */
@@ -83,6 +92,8 @@ body{
   border-radius:5px;
   padding:2px 10px;
   width:var(--board-size);
+  max-width:var(--board-size);
+  box-sizing:border-box;
   height:32px;
   display:flex;
   align-items:center;
@@ -115,6 +126,7 @@ canvas{
   cursor:pointer;
   touch-action:none;
   flex-shrink:0;
+  box-sizing:border-box;
 }
 
 /* ── Sidebar ──────────────────────────────────────────────────────────────── */
@@ -611,19 +623,36 @@ canvas{
   </div>
 </div>
 
+<!-- ── Page wrapper: aligns header and board column ──────────────────────── -->
+<div id="page-wrap">
+
 <!-- ── Site header ──────────────────────────────────────────────────────── -->
 <div id="site-header">
   <span id="site-name">♟ Blunder<span>mind</span></span>
   <span id="site-tagline">Stop getting blundermined.</span>
   <span style="flex:1;"></span>
-  <button id="aboutFeedbackBtn" onclick="openPanel('aboutFeedbackPanel')"
-    style="font-size:9px;padding:2px 10px;background:transparent;
-    border:0.5px solid var(--border);border-radius:10px;
-    color:var(--text-dim);cursor:pointer;transition:all 0.15s;white-space:nowrap;"
-    onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
-    onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-dim)'">
-    About &amp; Feedback
-  </button>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <button id="aboutFeedbackBtn" onclick="openPanel('aboutFeedbackPanel')"
+      style="font-size:10px;padding:4px 12px;background:transparent;
+      border:1px solid var(--border);border-radius:12px;
+      color:var(--text-secondary);cursor:pointer;transition:all 0.15s;white-space:nowrap;"
+      onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
+      onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-secondary)'">
+      About &amp; Feedback
+    </button>
+    <button id="donateBtn" onclick="openPanel('donatePanel')"
+      style="font-size:10px;padding:4px 14px;
+      background:rgba(255,94,91,0.1);
+      border:1px solid rgba(255,94,91,0.4);border-radius:12px;
+      color:#ff6b5b;cursor:pointer;transition:all 0.15s;white-space:nowrap;
+      display:flex;align-items:center;gap:6px;"
+      onmouseover="this.style.background='rgba(255,94,91,0.18)';this.style.borderColor='rgba(255,94,91,0.7)'"
+      onmouseout="this.style.background='rgba(255,94,91,0.1)';this.style.borderColor='rgba(255,94,91,0.4)'">
+<img src="data:image/webp;base64,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" width="20" height="20" style="flex-shrink:0;filter:none;" alt="Ko-fi">
+      Support
+      <img src="data:image/webp;base64,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" width="20" height="20" style="flex-shrink:0;filter:none;" alt="Ko-fi">
+    </button>
+  </div>
 </div>
 
 <!-- ── Main app ─────────────────────────────────────────────────────────── -->
@@ -761,11 +790,7 @@ canvas{
       <span class="s-spacer"></span>
       <label><input type="checkbox" id="cbQPins" onchange="rebuildAtk()"> On</label>
     </div>
-    <div class="s-row" style="border-bottom:none;">
-      <span class="s-lbl">Allow en passant:</span>
-      <span class="s-spacer"></span>
-      <label><input type="checkbox" id="cbEP" checked> On</label>
-    </div>
+
 
     <div class="sep"></div>
 
@@ -871,14 +896,7 @@ canvas{
                   </button>
                   <div class="ib-pre" id="pre-weakb" onclick="ibTogglePre('weakb')"><span>Show During Exploration</span></div>
                 </div>
-        <div class="ib" id="ib-rings">
-                  <button class="ib-main" onmousedown="ibMainDown('rings',event)" onmouseup="ibMainUp('rings')" onmouseleave="ibMainUp('rings')" ontouchstart="ibMainDown('rings',event)" ontouchend="ibMainUp('rings')">
-                    <span class="ib-dot" style="background:#22a85a;margin-right:1px;"></span><span class="ib-dot" style="background:#e03535;margin-right:3px;"></span>Threat/Def. halos
-                    <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('rings',event)">?</span>
-                    <span class="ib-dot-status"></span>
-                  </button>
-                  <div class="ib-pre" id="pre-rings" onclick="ibTogglePre('rings')"><span>Show During Exploration</span></div>
-                </div>
+
         <div class="ib" id="ib-xray">
                   <button class="ib-main" onmousedown="ibMainDown('xray',event)" onmouseup="ibMainUp('xray')" onmouseleave="ibMainUp('xray')" ontouchstart="ibMainDown('xray',event)" ontouchend="ibMainUp('xray')">
                     <span class="ib-dot" style="background:#8080ff;"></span>X-ray pressure/threats
@@ -934,14 +952,12 @@ canvas{
 
         <button class="ctrl-btn danger-btn" id="btnClearAll" onclick="clearAllSelections()">Clear all selections</button>
       </div>
-      <div class="util-row">
-        <button class="donate-btn" id="donateBtn" onclick="openPanel('donatePanel')" style="display:inline-block;">☕ Buy me a coffee</button>
-<!-- About/Feedback moved to header button -->
-      </div>
+      <div class="util-row" style="display:none;"></div>
     </div>
 
   </div><!-- end sidebar -->
 </div><!-- end app -->
+</div><!-- end page-wrap -->
 
 <!-- ── Footer ───────────────────────────────────────────────────────────── -->
 <div id="footer">
@@ -977,10 +993,7 @@ canvas{
     <p>I also struggle with seeing or &#8220;getting a grip on the board&#8221; (to steal a useful phrase from the <a href="https://www.youtube.com/watch?v=3jiJn8bjtYk" target="_blank" rel="noopener" style="color:var(--accent);">Chess Dojo</a>), so while my intent was to blundercheck moves before committing, I&#8217;m finding that it also serves as a first order &#8220;get a grip&#8221; check to see if there are any check threats, discovered attacks, etc., that I overlooked.</p>
     <p>While I added a feature to show the two most likely opponent responses to a move (to test my ability to predict the likely response), the site purposefully does not include any engine analysis or indicators to show if a move is &#8220;good or bad.&#8221; Each game can be downloaded and analyzed in <a href="https://lichess.org/paste" target="_blank" rel="noopener" style="color:var(--accent);">Lichess</a> or a website of your choice. Similarly, the PGN of any game can be uploaded and explored here.</p>
     <p>While I most enjoy playing people in person, I find playing strangers online less enjoyable, so I added in the feature to play against bots. The problem with the bots I&#8217;ve found is that they don&#8217;t feel time pressure, and their behavior is often sporadic in an unsatisfying way. I&#8217;ve tried to make the bots customizable in a way so that I have more control over how the bot will play.</p>
-    <hr>
-    <h3>A note on discovered attacks, check threats, forks &amp; skewers</h3>
-    <p>My intention for this site is that it helps novice players like myself get a better feel for the board, without pointing out the &#8220;best&#8221; move. Highlighting the opponent&#8217;s potential discovered attacks, check threats, forks, and skewers feels instructive &#8212; these are things you need to watch out for. But highlighting the same possible moves for the user feels too much like saying &#8220;here is a good move.&#8221; So those functions are only shown when the button is actively held.</p>
-    <p>If that restriction is annoying, let me know and I can make some changes.</p>
+
     <hr>
     <h3>Privacy</h3>
     <p>Blundermind collects no user data, stores no game history, and tracks nothing. This may be annoying, so there is an option to download the current settings (board &amp; visualization settings and/or bot settings) and upload them when returning.</p>
@@ -1141,34 +1154,74 @@ canvas{
 <!-- ── Ko-fi donate panel ──────────────────────────────────────────────────── -->
 <div class="slide-panel" id="donatePanel">
   <div class="panel-header">
-    <span class="panel-title">☕ Buy me a coffee?</span>
+    <span class="panel-title">☕ Support Blundermind</span>
     <button class="panel-close" onclick="closeAllPanels()">✕</button>
   </div>
   <div class="panel-body" style="text-align:center;">
-    <div style="font-size:40px;margin:16px 0 8px;">♟☕♟</div>
-    <p style="font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:10px;">Enjoying Blundermind?</p>
-    <p style="font-size:10px;color:var(--text-secondary);line-height:1.7;margin-bottom:14px;">
-      This app is free, always will be, and collects zero data — we don't even know
-      if you're a grandmaster who's been secretly funding us all along. ♛<br><br>
-      If it's brought you even one moment of board-vision joy, a coffee keeps the pawns moving.
-      No pressure — just vibes and gratitude either way.
+    <div style="margin:12px 0 8px;"><img src="data:image/webp;base64,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" width="64" height="64" alt="Ko-fi" style="display:inline-block;"></div>
+    <p style="font-size:12px;color:var(--text-primary);line-height:1.7;margin-bottom:14px;">
+      Blundermind is free to everyone. No data collected. No ads.<br>
+      Contributions never needed but always extremely appreciated.<br>
+      Thanks for checking out the site!
     </p>
-    <a href="https://ko-fi.com" target="_blank" rel="noopener"
-      style="display:block;padding:12px;margin-bottom:10px;
-      background:linear-gradient(135deg,#FF5E5B,#ff8c42);
-      border-radius:8px;color:#fff;font-size:13px;font-weight:700;
-      text-decoration:none;transition:opacity 0.15s;"
-      onmouseover="this.style.opacity='0.88'" onmouseout="this.style.opacity='1'">
-      ☕ Buy me a coffee on Ko-fi
-    </a>
+
+    <!-- Donation amounts -->
+    <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-bottom:12px;">
+      <a href="https://ko-fi.com" target="_blank" rel="noopener"
+        style="padding:7px 14px;background:rgba(255,94,91,0.1);border:1px solid rgba(255,94,91,0.35);
+        border-radius:8px;color:#ff6b5b;font-size:12px;font-weight:600;text-decoration:none;
+        transition:all 0.15s;"
+        onmouseover="this.style.background='rgba(255,94,91,0.2)'"
+        onmouseout="this.style.background='rgba(255,94,91,0.1)'">$1 ☕</a>
+      <a href="https://ko-fi.com" target="_blank" rel="noopener"
+        style="padding:7px 14px;background:rgba(255,94,91,0.1);border:1px solid rgba(255,94,91,0.35);
+        border-radius:8px;color:#ff6b5b;font-size:12px;font-weight:600;text-decoration:none;
+        transition:all 0.15s;"
+        onmouseover="this.style.background='rgba(255,94,91,0.2)'"
+        onmouseout="this.style.background='rgba(255,94,91,0.1)'">$10 ☕☕</a>
+      <a href="https://ko-fi.com" target="_blank" rel="noopener"
+        style="padding:7px 14px;background:rgba(255,94,91,0.1);border:1px solid rgba(255,94,91,0.35);
+        border-radius:8px;color:#ff6b5b;font-size:12px;font-weight:600;text-decoration:none;
+        transition:all 0.15s;"
+        onmouseover="this.style.background='rgba(255,94,91,0.2)'"
+        onmouseout="this.style.background='rgba(255,94,91,0.1)'">$42 ♟</a>
+      <a href="https://ko-fi.com" target="_blank" rel="noopener"
+        style="padding:7px 14px;background:rgba(255,94,91,0.1);border:1px solid rgba(255,94,91,0.35);
+        border-radius:8px;color:#ff6b5b;font-size:12px;font-weight:600;text-decoration:none;
+        transition:all 0.15s;"
+        onmouseover="this.style.background='rgba(255,94,91,0.2)'"
+        onmouseout="this.style.background='rgba(255,94,91,0.1)'">Custom ✨</a>
+    </div>
+
+    <!-- Haiku / deep thought option — same style as donation buttons -->
+    <div style="margin:10px 0 14px;">
+      <a href="#" onclick="toggleHaikuBox();return false;"
+        style="display:inline-block;padding:7px 14px;background:rgba(74,159,212,0.1);
+        border:1px solid rgba(74,159,212,0.35);border-radius:8px;
+        color:var(--accent);font-size:12px;font-weight:600;text-decoration:none;
+        transition:all 0.15s;"
+        onmouseover="this.style.background='rgba(74,159,212,0.2)'"
+        onmouseout="this.style.background='rgba(74,159,212,0.1)'">✍ Haiku or Deep Thought</a>
+      <div id="haikuBox" style="display:none;margin-top:8px;padding:10px;background:rgba(74,159,212,0.05);border:0.5px solid rgba(74,159,212,0.2);border-radius:8px;">
+        <p style="font-size:9px;color:var(--text-secondary);margin-bottom:6px;">Share a haiku or thought about chess, blunders, or board vision:</p>
+        <textarea id="donateHaiku"
+          style="width:100%;height:64px;background:var(--bg-panel2);border:0.5px solid var(--border);
+          border-radius:4px;color:var(--text-primary);font-family:inherit;font-size:10px;
+          line-height:1.6;padding:6px;resize:none;margin-bottom:6px;"></textarea>
+        <button onclick="submitHaiku()" style="padding:5px 16px;font-size:10px;
+          background:rgba(74,159,212,0.1);border:0.5px solid rgba(74,159,212,0.3);
+          border-radius:6px;color:var(--accent);cursor:pointer;">Send ♟</button>
+        <div id="haikuThanks" style="display:none;font-size:9px;color:#5ad490;margin-top:4px;">Received — thank you! ♟</div>
+      </div>
+    </div>
+
     <button onclick="closeAllPanels()" style="width:100%;padding:8px;background:transparent;
-      border:0.5px solid var(--border2);border-radius:6px;color:var(--text-dim);
-      cursor:pointer;font-size:10px;transition:color 0.1s;"
-      onmouseover="this.style.color='var(--text-secondary)'" onmouseout="this.style.color='var(--text-dim)'">
-      ♥ Maybe next time — thanks for playing!
+      border:0.5px solid var(--border);border-radius:6px;color:var(--text-dim);
+      cursor:pointer;font-size:10px;">
+      Close
     </button>
-    <p style="font-size:8px;color:var(--text-dim);margin-top:14px;">
-      No account needed · No tracking · Just good vibes and chess blunders
+    <p style="font-size:8px;color:var(--text-dim);margin-top:10px;">
+      No account needed · No tracking · Just chess and gratitude
     </p>
   </div>
 </div>
@@ -1254,18 +1307,24 @@ canvas{
 function resizeBoard() {
   const sidebar = document.getElementById('sidebar');
   const sidebarW = sidebar ? sidebar.offsetWidth : 240;
-  const wrapW = window.innerWidth - 24;
+  const pageWrap = document.getElementById('page-wrap');
+  const wrapW = pageWrap ? pageWrap.clientWidth : (window.innerWidth - 40);
   const maxFromWidth = wrapW - sidebarW - 16;
-  const topH = document.getElementById('site-header')?.offsetHeight||32;
-  const footH = document.getElementById('footer')?.offsetHeight||30;
-  const maxFromHeight = window.innerHeight - topH - footH - 52*2 - 80;
-  const boardPx = Math.max(280, Math.min(maxFromWidth, maxFromHeight, 580));
+  const topH = document.getElementById('site-header')?.offsetHeight || 32;
+  const maxFromHeight = window.innerHeight - topH - 52*2 - 70;
+  const boardPx = Math.max(280, Math.min(maxFromWidth, maxFromHeight, 600));
+  const bpx = boardPx + 'px';
   const cv = document.getElementById('cv');
-  if(cv){cv.style.width=boardPx+'px';cv.style.height=boardPx+'px';}
-  ['playerBoxW','playerBoxB'].forEach(id=>{
-    const el=document.getElementById(id);
-    if(el)el.style.width=boardPx+'px';
+  if (cv) { cv.style.width = bpx; cv.style.height = bpx; }
+  // Ghost canvas must match exactly
+  const ghostEl = document.getElementById('ghostCanvas');
+  if (ghostEl) { ghostEl.style.width = bpx; ghostEl.style.height = bpx; }
+  // Player boxes must match exactly — use same value, no rounding difference
+  ['playerBoxW','playerBoxB'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.style.width = bpx; el.style.maxWidth = bpx; }
   });
+  document.documentElement.style.setProperty('--board-size', bpx);
 }
 window.addEventListener('resize', resizeBoard);
 
@@ -1453,8 +1512,8 @@ const BG_THEMES = {
   burgundy:   {bg:'#1f0d0d', panel:'#150808', panel2:'#0a0404', border:'#3a1a1a', border2:'#220d0d', text:'#dcc0c0', textDim:'#6a4040', textSec:'#a07070', name:'Burgundy'},
   slate:      {bg:'#0d1520', panel:'#0a1018', panel2:'#060a10', border:'#1a2a3a', border2:'#101820', text:'#c0ccd8', textDim:'#405060', textSec:'#708090', name:'Slate'},
 };
-let currentBoardTheme = 'classic';
-let currentBgTheme = 'light';
+let currentBoardTheme = 'blue';
+let currentBgTheme = 'slate';
 
 function applyBoardTheme(name) {
   currentBoardTheme = name;
@@ -2867,7 +2926,7 @@ function pseudoMoves(sq,bd,ep,cst){
   if(p.piece==='P'){
     const d=col==='w'?-1:1,start=col==='w'?6:1;
     if(valid(r+d,c)&&!bd[rcSq(r+d,c)]){moves.push(rcSq(r+d,c));if(r===start&&!bd[rcSq(r+2*d,c)])moves.push(rcSq(r+2*d,c));}
-    for(const dc of[-1,1]){if(valid(r+d,c+dc)){const tsq=rcSq(r+d,c+dc);if(bd[tsq]&&bd[tsq].color===opp)moves.push(tsq);if(tsq===ep&&document.getElementById('cbEP').checked)moves.push(tsq);}}
+    for(const dc of[-1,1]){if(valid(r+d,c+dc)){const tsq=rcSq(r+d,c+dc);if(bd[tsq]&&bd[tsq].color===opp)moves.push(tsq);if(tsq===ep)moves.push(tsq);}}
   }else if(p.piece==='K'){
     for(const[dr,dc2]of[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]])if(valid(r+dr,c+dc2))addIfNotOwn(rcSq(r+dr,c+dc2));
     if(c===4){
@@ -3859,26 +3918,8 @@ function drawPieceUnder(sq,p,atk,showLayers,showBull){
     ctx.fillStyle=currentPalette.checkFill;ctx.fill();
   }
   // Status rings removed — Threats/Captures buttons now handle circles
-  if(showLayers){
-    const total=Math.max(def,att,1),lh=Math.max(4,Math.min(10,Math.floor(18/total))),rx=21;
-    // When check threats active, tint defender rings orange as warning for threatening pieces
-    const defColor=(showingCheckThreats&&(checkThreatSquaresW.has(sq)||checkThreatSquaresB.has(sq)))?currentPalette.checkStroke:currentPalette.defRing;
-    // Green halos: stacked upward from center
-    for(let i=0;i<def;i++){
-      const ey=y-rx+2+i*lh;
-      ctx.beginPath();ctx.ellipse(x,ey,rx,lh/2,0,0,Math.PI*2);
-      ctx.fillStyle=defColor;ctx.globalAlpha=0.22+i*0.13;ctx.fill();ctx.globalAlpha=1;
-      ctx.strokeStyle=defColor;ctx.lineWidth=0.8;ctx.stroke();
-    }
-    // Red halos: directly below green halos (start just below center-top area)
-    const redStartY = y - rx + 2 + def*lh + lh;
-    for(let i=0;i<att;i++){
-      const ey=redStartY+i*lh;
-      ctx.beginPath();ctx.ellipse(x,ey,rx,lh/2,0,0,Math.PI*2);
-      ctx.fillStyle=currentPalette.attRing;ctx.globalAlpha=0.22+i*0.13;ctx.fill();ctx.globalAlpha=1;
-      ctx.strokeStyle=currentPalette.attRing;ctx.lineWidth=0.8;ctx.stroke();
-    }
-  }
+  // Halos disabled
+
   if(showBull){
     if(def===0&&p.piece!=='K'){  // All unprotected pieces (whether attacked or not)
       ctx.save();const lightSq=(_r+_c)%2===0;
@@ -4833,18 +4874,9 @@ function indApply() {
     for(let s=0;s<64;s++){if((previewBoard||board)[s])continue;if(atk[s].b.length===0)weakSquaresB.add(s);}
   }
 
-  // Battery
-  const batteryOn = indActive('battery');
-  if(batteryOn !== indActive('battery')) {
-    indActive('battery') = batteryOn;
-    rebuildAtk();
-  }
+  // Battery handled by IND object
 
-  // Pins
-  const pinsOn = indActive('pins');
-  if(pinsOn !== indActive('pins')) {
-    indActive('pins') = pinsOn;
-  }
+  // Pins state handled by IND object directly
 
   // Forks & Skewers — separate for white and black
   const dispBd2 = previewBoard || board;
@@ -4920,6 +4952,10 @@ resizeBoard();
 // Preload all piece sets eagerly at startup
 const ALL_SETS = ['staunton','rhosgfx_solid','rhosgfx_outline','rhosgfx_wood','rhosgfx_flat'];
 ALL_SETS.forEach(s => preloadPieceImages(s));
+// Apply defaults BEFORE loadPrefs so saved prefs override them
+if (!localStorage.getItem('bm_boardTheme')) applyBoardTheme('blue');
+if (!localStorage.getItem('bm_bgTheme')) applyBgTheme('slate');
+if (!localStorage.getItem('bm_pieceSet')) { currentPieceSet = 'staunton'; }
 loadPrefs();
 loadPos(0);
 resizeBoard();
@@ -4946,9 +4982,12 @@ let botPlayerColor = 'white'; // human plays this color
 let botTab = 'sf';
 let botTimePressure = 'steady';
 let botHybridSlots = [];
-let sfWorker = null;
+let sfWorker = null;        // Bot's exclusive SF worker
 let sfReady = false;
 let sfPendingResolve = null;
+let sfGhostWorker = null;   // Ghost's exclusive SF worker (never shared with bot)
+let sfGhostReady = false;
+let sfGhostPending = null;  // separate pending slot
 let botThinking = false;
 let botLastHoverSq = -1;
 let botGhostResponses = {}; // sq -> [{from,to,prob}]
@@ -4990,17 +5029,72 @@ function sfInit() {
   });
 }
 
+// ── Ghost-only Stockfish worker (completely separate from bot's worker) ─────
+function sfGhostInit() {
+  if (sfGhostWorker) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    fetch(SF_CDN)
+      .then(r => r.blob())
+      .then(blob => {
+        const url = URL.createObjectURL(blob);
+        sfGhostWorker = new Worker(url);
+        sfGhostWorker.onmessage = (e) => {
+          const line = e.data;
+          if (line === 'uciok')    sfGhostWorker.postMessage('isready');
+          if (line === 'readyok') { sfGhostReady = true; resolve(); }
+          if (line.startsWith('bestmove') && sfGhostPending) {
+            const parts = line.split(' ');
+            const move = parts[1];
+            const res = sfGhostPending;
+            sfGhostPending = null;
+            res(move && move !== '(none)' ? move : null);
+          }
+        };
+        sfGhostWorker.onerror = (e) => { console.warn('Ghost SF error:', e); reject(e); };
+        sfGhostWorker.postMessage('uci');
+        setTimeout(() => { if (!sfGhostReady) reject(new Error('Ghost SF timeout')); }, 10000);
+      })
+      .catch(reject);
+  });
+}
+
+function sfGhostGetMove(fen, depth) {
+  return new Promise((resolve) => {
+    if (!sfGhostWorker || !sfGhostReady) { resolve(null); return; }
+    // Cancel any pending ghost search
+    if (sfGhostPending) { sfGhostPending(null); sfGhostPending = null; }
+    sfGhostWorker.postMessage('stop');
+    sfGhostPending = resolve;
+    sfGhostWorker.postMessage('position fen ' + fen);
+    sfGhostWorker.postMessage('go depth ' + Math.max(4, Math.min(12, depth)));
+    // 4s timeout
+    setTimeout(() => {
+      if (sfGhostPending === resolve) { sfGhostPending = null; resolve(null); }
+    }, 4000);
+  });
+}
+
 function sfGetMove(fen, levelOrDepth, isDepth=false) {
   return new Promise((resolve) => {
     if (!sfWorker || !sfReady) { resolve(null); return; }
+    // Cancel any pending request
+    if (sfPendingResolve) { sfPendingResolve(null); sfPendingResolve = null; }
     sfPendingResolve = resolve;
+    sfWorker.postMessage('stop'); // cancel any in-progress search
     sfWorker.postMessage('ucinewgame');
     if (!isDepth) {
       sfWorker.postMessage('setoption name Skill Level value ' + Math.max(0, Math.min(20, levelOrDepth)));
     }
     sfWorker.postMessage('position fen ' + fen);
-    const depth = isDepth ? levelOrDepth : (levelOrDepth <= 4 ? 4 : levelOrDepth <= 10 ? 8 : 12);
+    const depth = isDepth ? levelOrDepth : (levelOrDepth <= 4 ? 5 : levelOrDepth <= 10 ? 8 : 12);
     sfWorker.postMessage('go depth ' + depth);
+    // Safety timeout — resolve null after 5s to prevent hangs
+    setTimeout(() => {
+      if (sfPendingResolve === resolve) {
+        sfPendingResolve = null;
+        resolve(null);
+      }
+    }, 5000);
   });
 }
 
@@ -5168,24 +5262,27 @@ async function botMakeMove() {
       const slots = botHybridSlots.filter(s => s.weight > 0);
       if (slots.length) {
         const total = slots.reduce((s, sl) => s + sl.weight, 0);
-        let r = Math.random() * total;
-        let chosen = slots[0];
-        for (const sl of slots) { r -= sl.weight; if (r <= 0) { chosen = sl; break; } }
+        let r2 = Math.random() * total;
+        let chosen = slots[slots.length - 1];
+        for (const sl of slots) { r2 -= sl.weight; if (r2 <= 0) { chosen = sl; break; } }
+        await sfInit(); // always init SF in case maia fails
         if (chosen.type === 'maia') {
           const baseTemp = parseFloat(document.getElementById('maiaTemp').value) || 1.0;
           const effectiveTemp = timePressureTemp(baseTemp, clockMs);
-          const probs = await maiaGetMoveProbs(fen);
-          if (probs) {
+          let probs = null;
+          try { probs = await maiaGetMoveProbs(fen); } catch(e) {}
+          if (probs && Object.keys(probs).length) {
             const delay = botThinkTime(probs, clockMs);
-            await new Promise(r => setTimeout(r, delay));
+            await new Promise(res => setTimeout(res, delay));
             uciMove = sampleFromProbs(probs, effectiveTemp);
+          } else {
+            // Maia failed — fallback to SF
+            uciMove = await sfGetMove(fen, sfEffectiveLevel(clockMs));
           }
         } else {
-          const level = sfEffectiveLevel(clockMs);
-          const effectiveLevel = chosen.level !== undefined ? chosen.level : level;
-          await sfInit();
+          const effectiveLevel = (chosen.level !== undefined && chosen.level > 0) ? chosen.level : sfEffectiveLevel(clockMs);
           const delay = botThinkTime(null, clockMs);
-          await new Promise(r => setTimeout(r, delay));
+          await new Promise(res => setTimeout(res, delay));
           uciMove = await sfGetMove(fen, effectiveLevel);
         }
       }
@@ -5229,6 +5326,8 @@ function clearGhostPieces() {
 
 async function showGhostResponses(hypotheticalFrom, hypotheticalTo) {
   if (!ghostIsEnabled()) return;
+  // CRITICAL: never run ghost while bot is thinking (prevents race conditions)
+  if (botThinking) return;
   clearGhostPieces();
   if (hypotheticalTo < 0) return;
 
@@ -5237,26 +5336,34 @@ async function showGhostResponses(hypotheticalFrom, hypotheticalTo) {
   const hypTurn = turn === 'w' ? 'b' : 'w';
   const hypFen = boardToFen(hypBoard, hypTurn, castling, -1);
 
+  // Validate: only show ghosts for legal moves of the currently-selected piece
+  const _lmCheck = legalMovesFor(hypotheticalFrom, board, epSq, castling);
+  if (hypotheticalTo !== hypotheticalFrom && !_lmCheck.includes(hypotheticalTo)) return;
+
   let responses = botGhostResponses[hypotheticalTo];
-  if (!responses) {
+  if (responses !== undefined) {
+    // Cache hit — use it (even if empty array = no response found)
+  } else {
+    // Fetch on demand
+    responses = null;
     try {
       if (botActive && (botTab === 'maia' || botTab === 'hybrid')) {
         const probs = await maiaGetMoveProbs(hypFen);
-        if (probs) {
+        if (probs && Object.keys(probs).length) {
           responses = Object.entries(probs)
             .sort((a,b) => b[1]-a[1]).slice(0,2)
             .map(([uci, prob]) => ({ ...uciToSq(uci), prob }));
         }
       }
       if (!responses) {
-        // Stockfish fallback — also used for solo mode
-        await sfInit();
-        const depth = botActive ? sfEffectiveLevel(botClockMs()) : ghostSoloDepth();
-        const m1 = await sfGetMove(hypFen, depth, !botActive);
+        // Ghost ALWAYS uses its own separate SF worker — NEVER the bot's sfGetMove
+        const depth = ghostSoloDepth() || 8;
+        await sfGhostInit();
+        const m1 = await sfGhostGetMove(hypFen, depth);
         if (m1) { responses = [{ ...uciToSq(m1), prob: 0.7 }]; }
       }
-      botGhostResponses[hypotheticalTo] = responses || [];
     } catch(e) { responses = []; }
+    botGhostResponses[hypotheticalTo] = responses || [];
   }
 
   // Draw ghost pieces
@@ -5302,36 +5409,15 @@ async function showGhostResponses(hypotheticalFrom, hypotheticalTo) {
 }
 
 // ── Pre-compute ghost responses for all legal moves ──────────────────────────
+let ghostCurrentFromSq = -1; // tracks which piece is selected for ghost
+
 async function botPrecomputeGhosts(fromSq) {
   if (!ghostIsEnabled()) return;
+  // Don't pre-compute all squares serially (causes SF hang).
+  // Instead: clear cache and record which piece is selected.
+  // showGhostResponses will fetch on-demand per hovered square.
   botGhostResponses = {};
-  const lm = legalMovesFor(fromSq, board, epSq, castling);
-  // Add origin square too
-  const squaresToCheck = [...lm, fromSq];
-
-  for (const toSq of squaresToCheck) {
-    const hypBoard = applyMove(fromSq, toSq === fromSq ? fromSq : fromSq, board, epSq, 'Q');
-    // For origin: show current position responses
-    const actualHypBoard = toSq === fromSq ? board : applyMove(fromSq, toSq, board, epSq, 'Q');
-    const hypTurn = turn === 'w' ? 'b' : 'w';
-    const hypFen = boardToFen(actualHypBoard, hypTurn, castling, -1);
-    try {
-      if (botTab === 'maia' || botTab === 'hybrid') {
-        const probs = await maiaGetMoveProbs(hypFen);
-        if (probs) {
-          botGhostResponses[toSq] = Object.entries(probs)
-            .sort((a,b) => b[1]-a[1]).slice(0,2)
-            .map(([uci, prob]) => ({ ...uciToSq(uci), prob }));
-          continue;
-        }
-      }
-      // Stockfish fallback
-      await sfInit();
-      const level = sfEffectiveLevel(botClockMs());
-      const m1 = await sfGetMove(hypFen, level);
-      botGhostResponses[toSq] = m1 ? [{ ...uciToSq(m1), prob: 0.7 }] : [];
-    } catch(e) { botGhostResponses[toSq] = []; }
-  }
+  ghostCurrentFromSq = fromSq;
 }
 
 
@@ -5474,17 +5560,53 @@ function botRenderHybridSlots() {
   const container = document.getElementById('hybridSlots');
   if (!container) return;
   container.innerHTML = '';
-  botHybridSlots.forEach((slot, i) => {
+  botHybridSlots.forEach(function(slot, i) {
     const div = document.createElement('div');
     div.className = 'hybrid-slot';
-    div.innerHTML = `
-      <select onchange="botHybridSlots[${i}].type=this.value;botRenderHybridSlots()">
-        <option value="sf" ${slot.type==='sf'?'selected':''}>Stockfish</option>
-        <option value="maia" ${slot.type==='maia'?'selected':''}>Maia-2</option>
-      </select>
-      ${slot.type==='sf' ? `<label style="font-size:8px;color:var(--text-dim);">Lvl <input type="number" min="1" max="20" value="${slot.level}" style="width:38px;" onchange="botHybridSlots[${i}].level=parseInt(this.value)||8"></label>` : ''}
-      <label style="font-size:8px;color:var(--text-dim);margin-left:auto;">%<input type="number" min="1" max="100" value="${slot.weight}" style="width:38px;" onchange="botHybridSlots[${i}].weight=parseInt(this.value)||0;botUpdateHybridTotal()"></label>
-      <button class="rm-btn" onclick="botHybridSlots.splice(${i},1);botRenderHybridSlots()">✕</button>`;
+
+    // Type selector
+    const sel = document.createElement('select');
+    sel.onchange = function() { botHybridSlots[i].type = this.value; botRenderHybridSlots(); };
+    ['sf','maia'].forEach(function(v) {
+      const opt = document.createElement('option');
+      opt.value = v; opt.textContent = v === 'sf' ? 'Stockfish' : 'Maia-2';
+      if (slot.type === v) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    div.appendChild(sel);
+
+    // Level input (Stockfish only)
+    if (slot.type === 'sf') {
+      const lbl = document.createElement('label');
+      lbl.style.cssText = 'font-size:8px;color:var(--text-dim);';
+      lbl.textContent = 'Lvl ';
+      const lvlIn = document.createElement('input');
+      lvlIn.type = 'number'; lvlIn.min = '1'; lvlIn.max = '20';
+      lvlIn.value = String(slot.level || 8);
+      lvlIn.style.cssText = 'width:38px;';
+      lvlIn.onchange = function() { botHybridSlots[i].level = parseInt(this.value) || 8; };
+      lbl.appendChild(lvlIn);
+      div.appendChild(lbl);
+    }
+
+    // Weight input
+    const wlbl = document.createElement('label');
+    wlbl.style.cssText = 'font-size:8px;color:var(--text-dim);margin-left:auto;';
+    wlbl.textContent = '% ';
+    const wIn = document.createElement('input');
+    wIn.type = 'number'; wIn.min = '1'; wIn.max = '100';
+    wIn.value = String(slot.weight || 0);
+    wIn.style.cssText = 'width:38px;';
+    wIn.onchange = function() { botHybridSlots[i].weight = parseInt(this.value) || 0; botUpdateHybridTotal(); };
+    wlbl.appendChild(wIn);
+    div.appendChild(wlbl);
+
+    // Remove button
+    const rm = document.createElement('button');
+    rm.className = 'rm-btn'; rm.textContent = '✕';
+    rm.onclick = function() { botHybridSlots.splice(i, 1); botRenderHybridSlots(); };
+    div.appendChild(rm);
+
     container.appendChild(div);
   });
   botUpdateHybridTotal();
@@ -5676,9 +5798,20 @@ document.addEventListener('DOMContentLoaded', () => {
   }, { once: true });
 });
 
-// ── Ko-fi update reminder ────────────────────────────────────────────────────
-// Update the Ko-fi link when you have your actual URL
-// document.querySelectorAll('a[href="https://ko-fi.com"]').forEach(a => a.href = 'https://ko-fi.com/YOUR_NAME');
+
+// Donate JS stubs (functionality temporarily disabled)
+function toggleHaikuBox() {
+  var box = document.getElementById('haikuBox');
+  if (box) box.style.display = box.style.display === 'none' ? '' : 'none';
+}
+function submitHaiku() {
+  var txt = document.getElementById('donateHaiku');
+  if (!txt || !txt.value.trim()) return;
+  window.open('mailto:?subject=Blundermind%20Haiku&body=' + encodeURIComponent(txt.value));
+  txt.value = '';
+}
+
+/* Ko-fi URL: update href in donate panel HTML to your actual ko-fi.com page */
 
 </script></body>
 </html>
