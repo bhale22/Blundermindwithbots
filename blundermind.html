@@ -1139,6 +1139,15 @@ canvas{
       <input type="file" id="botConfigInput" accept=".json" style="display:none" onchange="botLoadConfig(event)">
     </div>
 
+    <!-- Bot name -->
+    <div style="margin-bottom:8px;">
+      <label style="font-size:9px;color:var(--text-dim);">Bot name (optional)</label>
+      <input type="text" id="botNameInput" placeholder="e.g. My Panicky Bot"
+        style="width:100%;margin-top:3px;padding:4px 7px;font-size:10px;
+        background:var(--bg-panel2);border:0.5px solid var(--border);border-radius:4px;
+        color:var(--text-primary);box-sizing:border-box;">
+    </div>
+
     <!-- Start button -->
     <button id="botStartBtn" onclick="botStart()" style="width:100%;padding:10px;font-size:12px;font-weight:700;background:linear-gradient(135deg,#0f4020,#0a2a15);border:1px solid #22a85a;border-radius:6px;color:#5ad490;cursor:pointer;transition:all 0.15s;margin-bottom:6px;">
       ▶ Start Bot Game
@@ -4250,6 +4259,8 @@ function updatePlayerBoxes(){
   if(typeof mpRoomId!=='undefined' && mpRoomId && mpRole){
     if(pNameW) pNameW.textContent = mpRole==='white' ? 'You (White)' : 'Opponent (White)';
     if(pNameB) pNameB.textContent = mpRole==='black' ? 'You (Black)' : 'Opponent (Black)';
+  } else if (typeof botActive !== 'undefined' && botActive) {
+    // Bot game — names set by botUpdatePlayerNames, don't overwrite
   } else {
     if(pNameW) pNameW.textContent = 'White';
     if(pNameB) pNameB.textContent = 'Black';
@@ -5418,26 +5429,34 @@ function _drawGhost(bd, fromSq, toSq) {
 // Called from existing canvas mousemove handler
 function ghostOnMouseMove(hSq) {
   if (!ghostEnabled()) { clearGhostPieces(); return; }
+  // Use selSq/dragFrom as the authoritative source — don't rely on _ghostFromSq timing
   var fromSq = (dragFrom >= 0) ? dragFrom : selSq;
-  if (fromSq < 0 || fromSq !== _ghostFromSq) return; // piece not selected
-  if (hSq === (typeof botLastHoverSq !== 'undefined' ? botLastHoverSq : -99)) return;
+  if (fromSq < 0) { clearGhostPieces(); return; }
+  // Skip if bot's turn
+  if (botActive) {
+    var bc = botPlayerColor === 'white' ? 'b' : 'w';
+    if (turn === bc) { clearGhostPieces(); return; }
+  }
+  if (hSq === botLastHoverSq) return; // same square, skip
   botLastHoverSq = hSq;
+  _ghostFromSq = fromSq; // keep in sync
   ghostShowForSquare(fromSq, hSq);
 }
 
 // Called from existing canvas mousedown handler
 function ghostOnMouseDown(sq) {
   if (!ghostEnabled()) return;
-  if (sq < 0 || !board[sq] || board[sq].color !== turn) return;
-  _ghostFromSq = sq;
+  _ghostFromSq = sq; // set immediately (before 15ms delay fires)
   _ghostRequestId++; // cancel any in-flight request
+  botLastHoverSq = -1; // reset so first hover fires
   clearGhostPieces();
 }
 
 // Called from existing canvas mouseup handler  
 function ghostOnMouseUp() {
   _ghostRequestId++; // cancel any in-flight request
-  setTimeout(function() { if (selSq < 0 && dragFrom < 0) clearGhostPieces(); }, 80);
+  botLastHoverSq = -1; // reset hover tracking
+  setTimeout(function() { if (selSq < 0 && dragFrom < 0) { _ghostFromSq = -1; clearGhostPieces(); } }, 80);
 }
 
 // Legacy alias kept so botPostMoveHook still compiles
@@ -5449,6 +5468,7 @@ function botPostMoveHook() {
   clearGhostPieces();
   botGhostResponses = {};
   botLastHoverSq = -1;
+  _ghostFromSq = -1; // reset so ghost re-arms on next piece selection
   if (botActive && !botThinking && !gameOver) {
     const botColor = botPlayerColor === 'white' ? 'b' : 'w';
     if (turn === botColor) {
@@ -5556,6 +5576,42 @@ function botUpdateHybridTotal() {
 }
 
 // ── Start / Stop bot ─────────────────────────────────────────────────────────
+// ── Bot name generation ──────────────────────────────────────────────────────
+function botGenerateName() {
+  // Check if user has set a custom name
+  var nameEl = document.getElementById('botNameInput');
+  if (nameEl && nameEl.value.trim()) return nameEl.value.trim();
+
+  // Auto-generate from settings
+  var tpLabel = { steady: 'Steady', normal: 'Normal', panicky: 'Panicky' }[botTimePressure] || '';
+  var tabLabel = '';
+  if (botTab === 'sf') {
+    var lvl = parseInt(document.getElementById('sfLevel').value) || 8;
+    tabLabel = 'Stockfish ' + lvl;
+  } else if (botTab === 'maia') {
+    var elo = parseInt(document.getElementById('maiaElo').value) || 900;
+    tabLabel = 'Maia ' + elo;
+  } else if (botTab === 'hybrid') {
+    tabLabel = 'Hybrid Bot';
+  }
+  return (tpLabel ? tpLabel + ' ' : '') + tabLabel;
+}
+
+// Sets the player name display for the bot and human
+function botUpdatePlayerNames(humanColor) {
+  var botName   = botGenerateName();
+  var humanName = 'You';
+  var nameW = document.querySelector('#playerBoxW .player-name');
+  var nameB = document.querySelector('#playerBoxB .player-name');
+  if (humanColor === 'white') {
+    if (nameW) nameW.textContent = humanName + ' (White)';
+    if (nameB) nameB.textContent = botName + ' (Black)';
+  } else {
+    if (nameW) nameW.textContent = botName + ' (White)';
+    if (nameB) nameB.textContent = humanName + ' (Black)';
+  }
+}
+
 async function botStart() {
   botActive = false;
   botThinking = false;
@@ -5578,6 +5634,9 @@ async function botStart() {
 
   botActive = true;
 
+  // Update player name displays
+  botUpdatePlayerNames(pc);
+
   // Update UI
   const startBtn = document.getElementById('botStartBtn');
   const stopBtn  = document.getElementById('botStopBtn');
@@ -5585,8 +5644,8 @@ async function botStart() {
   if (startBtn) startBtn.textContent = '↺ Restart Bot Game';
   if (stopBtn)  stopBtn.style.display = '';
   if (sideBtn)  { sideBtn.textContent = '🤖 Bot Active'; sideBtn.style.borderColor = '#22a85a'; }
-  document.getElementById('botStatus').textContent =
-    'You play ' + (pc === 'white' ? 'White ♔' : 'Black ♚') +
+  var bsEl = document.getElementById('botStatus');
+  if (bsEl) bsEl.textContent = 'You play ' + (pc === 'white' ? 'White ♔' : 'Black ♚') +
     (botSelectedTC !== 'untimed' ? ' · ' + botSelectedTC : '');
 
   closeAllPanels();
@@ -5604,6 +5663,11 @@ function botStop() {
   botThinking = false;
   clearGhostPieces();
   botGhostResponses = {};
+  // Reset player names
+  var nW = document.querySelector('#playerBoxW .player-name');
+  var nB = document.querySelector('#playerBoxB .player-name');
+  if (nW) nW.textContent = 'White';
+  if (nB) nB.textContent = 'Black';
 
   const startBtn = document.getElementById('botStartBtn');
   const stopBtn  = document.getElementById('botStopBtn');
@@ -5616,8 +5680,11 @@ function botStop() {
 
 // ── Save / Load bot config ───────────────────────────────────────────────────
 function botSaveConfig() {
+  var botCustomName = document.getElementById('botNameInput');
+  var configName = (botCustomName && botCustomName.value.trim()) || (botGenerateName() + ' — ' + new Date().toLocaleDateString());
   const config = {
-    name: 'My Bot Config — ' + new Date().toLocaleDateString(),
+    name: configName,
+    botName: botCustomName ? botCustomName.value.trim() : '',
     tab: botTab,
     stockfish: {
       level: parseInt(document.getElementById('sfLevel').value),
@@ -5646,6 +5713,10 @@ function botLoadConfig(event) {
   reader.onload = e => {
     try {
       const cfg = JSON.parse(e.target.result);
+      if (cfg.botName !== undefined) {
+        var ni = document.getElementById('botNameInput');
+        if (ni) ni.value = cfg.botName || '';
+      }
       if (cfg.tab) botSetTab(cfg.tab);
       if (cfg.stockfish) {
         document.getElementById('sfLevel').value = cfg.stockfish.level || 8;
