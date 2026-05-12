@@ -4993,68 +4993,57 @@ let botLastHoverSq = -1;
 let botGhostResponses = {}; // sq -> [{from,to,prob}]
 let botPrecomputePending = false;
 
-// ── Stockfish Web Worker (blob pattern — bypasses cross-origin Worker restriction) ──
-const SF_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js';
+// ── Stockfish workers — loaded from same-origin /stockfish.js ────────────────
+// Server.js fetches SF from CDN at startup and serves it locally, avoiding
+// the SecurityError that occurs when constructing Workers from blob: URLs.
+const SF_LOCAL = '/stockfish.js';
 
 function sfInit() {
   if (sfWorker) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    // Fetch SF script then create a blob URL so the Worker is same-origin
-    fetch(SF_CDN)
-      .then(r => { if (!r.ok) throw new Error('SF fetch ' + r.status); return r.blob(); })
-      .then(blob => {
-        const blobUrl = URL.createObjectURL(blob);
-        sfWorker = new Worker(blobUrl);
-        sfWorker.onmessage = (e) => {
-          const line = e.data;
-          if (line === 'uciok')    { sfWorker.postMessage('isready'); }
-          if (line === 'readyok') { sfReady = true; resolve(); }
-          if (line.startsWith('bestmove') && sfPendingResolve) {
-            const parts = line.split(' ');
-            const move  = parts[1];
-            const res = sfPendingResolve;
-            sfPendingResolve = null;
-            res(move && move !== '(none)' ? move : null);
-          }
-        };
-        sfWorker.onerror = (e) => { console.warn('Stockfish worker error:', e); reject(e); };
-        sfWorker.postMessage('uci');
-        // Safety timeout — if no readyok in 10s, reject
-        setTimeout(() => { if (!sfReady) reject(new Error('SF timeout')); }, 10000);
-      })
-      .catch(err => {
-        console.warn('Stockfish load failed:', err);
-        reject(err);
-      });
+  return new Promise(function(resolve, reject) {
+    try {
+      sfWorker = new Worker(SF_LOCAL);
+      sfWorker.onmessage = function(e) {
+        var line = e.data;
+        if (line === 'uciok')   sfWorker.postMessage('isready');
+        if (line === 'readyok') { sfReady = true; resolve(); }
+        if (line.startsWith('bestmove') && sfPendingResolve) {
+          var parts = line.split(' ');
+          var move  = parts[1];
+          var res   = sfPendingResolve;
+          sfPendingResolve = null;
+          res(move && move !== '(none)' ? move : null);
+        }
+      };
+      sfWorker.onerror = function(e) { console.warn('Bot SF error:', e); reject(e); };
+      sfWorker.postMessage('uci');
+      setTimeout(function() { if (!sfReady) reject(new Error('SF timeout')); }, 15000);
+    } catch(e) { reject(e); }
   });
 }
 
-// ── Ghost-only Stockfish worker (completely separate from bot's worker) ─────
+// ── Ghost-only Stockfish worker (completely separate — never shared with bot) ─
 function sfGhostInit() {
   if (sfGhostWorker) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    fetch(SF_CDN)
-      .then(r => r.blob())
-      .then(blob => {
-        const url = URL.createObjectURL(blob);
-        sfGhostWorker = new Worker(url);
-        sfGhostWorker.onmessage = (e) => {
-          const line = e.data;
-          if (line === 'uciok')    sfGhostWorker.postMessage('isready');
-          if (line === 'readyok') { sfGhostReady = true; resolve(); }
-          if (line.startsWith('bestmove') && sfGhostPending) {
-            const parts = line.split(' ');
-            const move = parts[1];
-            const res = sfGhostPending;
-            sfGhostPending = null;
-            res(move && move !== '(none)' ? move : null);
-          }
-        };
-        sfGhostWorker.onerror = (e) => { console.warn('Ghost SF error:', e); reject(e); };
-        sfGhostWorker.postMessage('uci');
-        setTimeout(() => { if (!sfGhostReady) reject(new Error('Ghost SF timeout')); }, 10000);
-      })
-      .catch(reject);
+  return new Promise(function(resolve, reject) {
+    try {
+      sfGhostWorker = new Worker(SF_LOCAL);
+      sfGhostWorker.onmessage = function(e) {
+        var line = e.data;
+        if (line === 'uciok')   sfGhostWorker.postMessage('isready');
+        if (line === 'readyok') { sfGhostReady = true; resolve(); }
+        if (line.startsWith('bestmove') && sfGhostPending) {
+          var parts = line.split(' ');
+          var move  = parts[1];
+          var res   = sfGhostPending;
+          sfGhostPending = null;
+          res(move && move !== '(none)' ? move : null);
+        }
+      };
+      sfGhostWorker.onerror = function(e) { console.warn('Ghost SF error:', e); reject(e); };
+      sfGhostWorker.postMessage('uci');
+      setTimeout(function() { if (!sfGhostReady) reject(new Error('Ghost SF timeout')); }, 15000);
+    } catch(e) { reject(e); }
   });
 }
 
@@ -5319,195 +5308,143 @@ async function botMakeMove() {
 }
 
 // ── Ghost piece rendering ────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// GHOST PIECE SYSTEM — clean minimal rewrite
+// One sfGhostWorker call per hover square. No caching. No Maia. No shared state.
+// ═══════════════════════════════════════════════════════════════════════════
+
 function clearGhostPieces() {
-  if (!ghostCtx) return;
-  ghostCtx.clearRect(0, 0, ghostCv.width, ghostCv.height);
+  if (ghostCtx && ghostCv) ghostCtx.clearRect(0, 0, ghostCv.width, ghostCv.height);
 }
 
-async function showGhostResponses(hypotheticalFrom, hypotheticalTo) {
-  if (!ghostIsEnabled()) return;
-  // CRITICAL: never run ghost while bot is thinking (prevents race conditions)
-  if (botThinking) return;
-  clearGhostPieces();
-  if (hypotheticalTo < 0) return;
+// Ghost is enabled when the soloGhostDepth dropdown is not "Off"
+function ghostEnabled() {
+  var sel = document.getElementById('soloGhostDepth');
+  return sel ? parseInt(sel.value) > 0 : true; // default on if no selector
+}
 
-  // Apply the hypothetical move
-  const hypBoard = applyMove(hypotheticalFrom, hypotheticalTo, board, epSq, 'Q');
-  const hypTurn = turn === 'w' ? 'b' : 'w';
-  const hypFen = boardToFen(hypBoard, hypTurn, castling, -1);
+function ghostDepth() {
+  var sel = document.getElementById('soloGhostDepth');
+  return sel ? Math.max(4, Math.min(12, parseInt(sel.value) || 8)) : 8;
+}
 
-  // Validate: only show ghosts for legal moves of the currently-selected piece
-  const _lmCheck = legalMovesFor(hypotheticalFrom, board, epSq, castling);
-  if (hypotheticalTo !== hypotheticalFrom && !_lmCheck.includes(hypotheticalTo)) return;
+// The one active ghost request — cancel previous if hovering a new square
+var _ghostRequestId = 0;
+var _ghostFromSq = -1;
 
-  let responses = botGhostResponses[hypotheticalTo];
-  if (responses !== undefined) {
-    // Cache hit — use it (even if empty array = no response found)
-  } else {
-    // Fetch on demand
-    responses = null;
-    try {
-      if (botActive && (botTab === 'maia' || botTab === 'hybrid')) {
-        const probs = await maiaGetMoveProbs(hypFen);
-        if (probs && Object.keys(probs).length) {
-          responses = Object.entries(probs)
-            .sort((a,b) => b[1]-a[1]).slice(0,2)
-            .map(([uci, prob]) => ({ ...uciToSq(uci), prob }));
-        }
-      }
-      if (!responses) {
-        // Ghost ALWAYS uses its own separate SF worker — NEVER the bot's sfGetMove
-        const depth = ghostSoloDepth() || 8;
-        await sfGhostInit();
-        const m1 = await sfGhostGetMove(hypFen, depth);
-        if (m1) { responses = [{ ...uciToSq(m1), prob: 0.7 }]; }
-      }
-    } catch(e) { responses = []; }
-    botGhostResponses[hypotheticalTo] = responses || [];
+async function ghostShowForSquare(fromSq, toSq) {
+  // Only show ghosts when human's turn
+  if (botActive && botThinking) return;
+  if (botActive) {
+    var bc = botPlayerColor === 'white' ? 'b' : 'w';
+    if (turn === bc) return;
   }
 
-  // Draw ghost pieces
-  if (!responses || !responses.length) return;
-  const SQ = ghostCv.width / 8;
-  const flipped = boardFlipped;
+  clearGhostPieces();
 
-  function sqToXY(sq) {
-    let r = Math.floor(sq / 8), c = sq % 8;
-    if (flipped) { r = 7 - r; c = 7 - c; }
+  // Validate it's a legal move (or the piece's own square)
+  if (toSq !== fromSq) {
+    var lm = legalMovesFor(fromSq, board, epSq, castling);
+    if (!lm.includes(toSq)) return;
+  }
+
+  // Build position after hypothetical move
+  var hypBoard = (toSq === fromSq) ? board : applyMove(fromSq, toSq, board, epSq, 'Q');
+  var hypTurn  = turn === 'w' ? 'b' : 'w';
+  var hypFen   = boardToFen(hypBoard, hypTurn, castling, -1);
+
+  // Tag this request so stale responses don't draw
+  var myId = ++_ghostRequestId;
+
+  // Init ghost SF worker if needed (fetch once, reuse)
+  try {
+    await sfGhostInit();
+  } catch(e) {
+    console.warn('Ghost SF init failed:', e);
+    return;
+  }
+
+  if (myId !== _ghostRequestId) return; // superseded
+
+  var uci = await sfGhostGetMove(hypFen, ghostDepth());
+
+  if (myId !== _ghostRequestId) return; // superseded while waiting
+  if (!uci) return;
+
+  var mv = uciToSq(uci);
+  if (!mv || mv.from == null || mv.to == null) return;
+
+  // Draw the ghost
+  _drawGhost(hypBoard, mv.from, mv.to);
+}
+
+function _drawGhost(bd, fromSq, toSq) {
+  if (!ghostCtx || !ghostCv) return;
+  var piece = bd[fromSq];
+  if (!piece) return;
+
+  var setKey = (currentPieceSet === 'unicode' ? 'staunton' : currentPieceSet);
+  var img = pieceImgCache[setKey + piece.color + piece.piece];
+  if (!img || !img.complete) return;
+
+  var SQ  = ghostCv.width / 8;
+
+  function sqXY(sq) {
+    var r = Math.floor(sq / 8), c = sq % 8;
+    if (boardFlipped) { r = 7 - r; c = 7 - c; }
     return { x: c * SQ, y: r * SQ };
   }
 
-  for (let i = 0; i < Math.min(2, responses.length); i++) {
-    const resp = responses[i];
-    if (!resp || resp.from == null || resp.to == null) continue;
-    const piece = hypBoard[resp.from];
-    if (!piece) continue;
-    const alpha = i === 0 ? (resp.prob * 0.55 + 0.1) : (resp.prob * 0.35 + 0.05);
-    const alphaOrigin = alpha * 0.5;
+  // Destination: solid ghost with blue outline
+  var dest = sqXY(toSq);
+  ghostCtx.save();
+  ghostCtx.globalAlpha = 0.45;
+  ghostCtx.drawImage(img, dest.x, dest.y, SQ, SQ);
+  ghostCtx.restore();
+  ghostCtx.save();
+  ghostCtx.strokeStyle = 'rgba(74,159,212,0.85)';
+  ghostCtx.lineWidth = 2.5;
+  ghostCtx.strokeRect(dest.x + 1, dest.y + 1, SQ - 2, SQ - 2);
+  ghostCtx.restore();
 
-    const img = pieceImgCache[(currentPieceSet === 'unicode' ? 'staunton' : currentPieceSet) + piece.color + piece.piece];
-    if (!img || !img.complete) continue;
-
-    // Draw ghost at origin (leaving)
-    const orig = sqToXY(resp.from);
-    ghostCtx.save();
-    ghostCtx.globalAlpha = alphaOrigin;
-    ghostCtx.drawImage(img, orig.x, orig.y, SQ, SQ);
-    ghostCtx.restore();
-
-    // Draw ghost at destination (arriving)
-    const dest = sqToXY(resp.to);
-    ghostCtx.save();
-    ghostCtx.globalAlpha = alpha;
-    ghostCtx.drawImage(img, dest.x, dest.y, SQ, SQ);
-    // Subtle colored outline — #1 move blue, #2 move faint
-    ghostCtx.strokeStyle = i === 0 ? 'rgba(74,159,212,0.7)' : 'rgba(180,180,255,0.4)';
-    ghostCtx.lineWidth = 2;
-    ghostCtx.strokeRect(dest.x + 1, dest.y + 1, SQ - 2, SQ - 2);
-    ghostCtx.restore();
-  }
+  // Origin: faint ghost (piece is leaving)
+  var orig = sqXY(fromSq);
+  ghostCtx.save();
+  ghostCtx.globalAlpha = 0.18;
+  ghostCtx.drawImage(img, orig.x, orig.y, SQ, SQ);
+  ghostCtx.restore();
 }
 
-// ── Pre-compute ghost responses for all legal moves ──────────────────────────
-let ghostCurrentFromSq = -1; // tracks which piece is selected for ghost
-
-async function botPrecomputeGhosts(fromSq) {
-  if (!ghostIsEnabled()) return;
-  // Don't pre-compute all squares serially (causes SF hang).
-  // Instead: clear cache and record which piece is selected.
-  // showGhostResponses will fetch on-demand per hovered square.
-  botGhostResponses = {};
-  ghostCurrentFromSq = fromSq;
-}
-
-
-
-
-// ── Ghost display hooks — called FROM existing canvas handlers (no duplicate listeners) ──
-// These are called by the existing mousemove/mousedown/mouseup handlers below
+// Called from existing canvas mousemove handler
 function ghostOnMouseMove(hSq) {
-  if (!ghostIsEnabled()) { clearGhostPieces(); return; }
-  if (botActive) {
-    const botColor = botPlayerColor === 'white' ? 'b' : 'w';
-    if (turn === botColor) { clearGhostPieces(); return; }
-  }
-  if (hSq === botLastHoverSq) return;
+  if (!ghostEnabled()) { clearGhostPieces(); return; }
+  var fromSq = (dragFrom >= 0) ? dragFrom : selSq;
+  if (fromSq < 0 || fromSq !== _ghostFromSq) return; // piece not selected
+  if (hSq === (typeof botLastHoverSq !== 'undefined' ? botLastHoverSq : -99)) return;
   botLastHoverSq = hSq;
-  const fromSq = (dragFrom >= 0) ? dragFrom : selSq;
-  if (fromSq < 0) { clearGhostPieces(); return; }
-  const lm = legalMovesFor(fromSq, board, epSq, castling);
-  if (hSq === fromSq || lm.includes(hSq)) {
-    showGhostResponses(fromSq, hSq);
-  } else {
-    clearGhostPieces();
-  }
+  ghostShowForSquare(fromSq, hSq);
 }
 
-function ghostOnMouseDown(fromSq) {
-  if (!ghostIsEnabled()) return;
-  if (botActive) {
-    const botColor = botPlayerColor === 'white' ? 'b' : 'w';
-    if (turn === botColor) return;
-  }
-  if (fromSq >= 0 && board[fromSq] && board[fromSq].color === turn) {
-    botGhostResponses = {};
-    botPrecomputeGhosts(fromSq);
-  }
+// Called from existing canvas mousedown handler
+function ghostOnMouseDown(sq) {
+  if (!ghostEnabled()) return;
+  if (sq < 0 || !board[sq] || board[sq].color !== turn) return;
+  _ghostFromSq = sq;
+  _ghostRequestId++; // cancel any in-flight request
+  clearGhostPieces();
 }
 
+// Called from existing canvas mouseup handler  
 function ghostOnMouseUp() {
-  setTimeout(() => { if (selSq < 0 && dragFrom < 0) clearGhostPieces(); }, 60);
+  _ghostRequestId++; // cancel any in-flight request
+  setTimeout(function() { if (selSq < 0 && dragFrom < 0) clearGhostPieces(); }, 80);
 }
 
-// ── Bot time control selector ─────────────────────────────────────────────────
-let botSelectedTC = 'untimed';
-function botSetTC(key) {
-  botSelectedTC = key;
-  document.querySelectorAll('[id^="btc-"]').forEach(b => b.classList.remove('active'));
-  const btn = document.getElementById('btc-' + key);
-  if (btn) btn.classList.add('active');
-}
+// Legacy alias kept so botPostMoveHook still compiles
+function ghostIsEnabled() { return ghostEnabled(); }
+function ghostSoloDepth() { return ghostDepth(); }
 
-// ── Stockfish / Maia diagnostic ───────────────────────────────────────────────
-function botDiagnose() {
-  const lines = [];
-  lines.push('=== Bot Diagnostic ===');
-  lines.push('sfWorker: ' + (sfWorker ? 'created' : 'null'));
-  lines.push('sfReady: ' + sfReady);
-  lines.push('botActive: ' + botActive);
-  lines.push('botTab: ' + botTab);
-  lines.push('botThinking: ' + botThinking);
-  lines.push('turn: ' + (typeof turn !== 'undefined' ? turn : 'undef'));
-  lines.push('botPlayerColor: ' + botPlayerColor);
-  const botColor = botPlayerColor === 'white' ? 'b' : 'w';
-  lines.push('bot color: ' + botColor + ', turn matches: ' + (turn === botColor));
-  // Test FEN generation
-  try {
-    const fen = boardToFen(board, turn, castling, epSq);
-    lines.push('FEN: ' + fen);
-  } catch(e) { lines.push('FEN error: ' + e.message); }
-  const report = lines.join('\n');
-  console.log(report);
-  const el = document.getElementById('botStatus');
-  if (el) el.textContent = 'sfReady:' + sfReady + ' botThinking:' + botThinking + ' tab:' + botTab;
-  return report;
-}
-
-function ghostIsEnabled() {
-  // Works in bot mode (cbGhostPieces) or solo mode (soloGhostDepth > 0)
-  if (botActive) {
-    const cb = document.getElementById('cbGhostPieces');
-    return cb ? cb.checked : false;
-  }
-  const sel = document.getElementById('soloGhostDepth');
-  return sel ? parseInt(sel.value) > 0 : false;
-}
-
-function ghostSoloDepth() {
-  const sel = document.getElementById('soloGhostDepth');
-  return sel ? parseInt(sel.value) : 8;
-}
-// We register a callback rather than monkey-patching to avoid hoisting issues
+// // We register a callback rather than monkey-patching to avoid hoisting issues
 function botPostMoveHook() {
   clearGhostPieces();
   botGhostResponses = {};

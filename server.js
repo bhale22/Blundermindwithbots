@@ -2,10 +2,42 @@ const express = require('express');
 const http = require('http');
 const { WebSocketServer } = require('ws');
 const path = require('path');
+const https = require('https');
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
+
+// ── Stockfish: fetch once at startup, cache in memory, serve locally ──────────
+// This avoids browser SecurityError when constructing Workers from blob: URLs.
+const SF_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js';
+let sfScript = null;
+
+function fetchStockfish() {
+  return new Promise((resolve, reject) => {
+    https.get(SF_CDN_URL, (res) => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => { sfScript = Buffer.concat(chunks); resolve(); });
+      res.on('error', reject);
+    }).on('error', reject);
+  });
+}
+
+fetchStockfish()
+  .then(() => console.log(`Stockfish cached (${(sfScript.length/1024).toFixed(0)} KB)`))
+  .catch(e => console.warn('Stockfish fetch failed:', e.message));
+
+// Serve Stockfish as same-origin JS — workers can load it without security errors
+app.get('/stockfish.js', (req, res) => {
+  if (!sfScript) {
+    res.status(503).send('// Stockfish not yet loaded');
+    return;
+  }
+  res.setHeader('Content-Type', 'application/javascript');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.send(sfScript);
+});
 
 // Serve blundermind.html as the root page
 app.get('/', (req, res) => {
