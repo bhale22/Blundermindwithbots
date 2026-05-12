@@ -1310,7 +1310,26 @@ canvas{
 </div>
 
 
-<script>
+<script>// ── Bot & SF state — declared first to avoid TDZ errors ─────────────────────
+// These let variables must be declared before loadPos()/render() runs at startup.
+let botActive = false;
+let botPlayerColor = 'white';
+let botTab = 'sf';
+let botTimePressure = 'steady';
+let botSelectedTC = 'untimed';
+let botHybridSlots = [];
+let sfWorker = null;
+let sfReady = false;
+let sfPendingResolve = null;
+let sfGhostWorker = null;
+let sfGhostReady = false;
+let sfGhostPending = null;
+let botThinking = false;
+let botLastHoverSq = -1;
+let botGhostResponses = {};
+let botPrecomputePending = false;
+
+
 
 // ── Board sizing ──────────────────────────────────────────────────────
 function resizeBoard() {
@@ -4259,7 +4278,7 @@ function updatePlayerBoxes(){
   if(typeof mpRoomId!=='undefined' && mpRoomId && mpRole){
     if(pNameW) pNameW.textContent = mpRole==='white' ? 'You (White)' : 'Opponent (White)';
     if(pNameB) pNameB.textContent = mpRole==='black' ? 'You (Black)' : 'Opponent (Black)';
-  } else if (typeof botActive !== 'undefined' && botActive) {
+  } else if (botActive) {
     // Bot game — names set by botUpdatePlayerNames, don't overwrite
   } else {
     if(pNameW) pNameW.textContent = 'White';
@@ -4987,22 +5006,7 @@ document.addEventListener('visibilitychange', () => {
 // BOT ENGINE SYSTEM — Stockfish + Maia-2 + Hybrid + Ghost Pieces
 // ═══════════════════════════════════════════════════════════════════════════
 
-// ── Bot state ────────────────────────────────────────────────────────────────
-let botActive = false;
-let botPlayerColor = 'white'; // human plays this color
-let botTab = 'sf';
-let botTimePressure = 'steady';
-let botHybridSlots = [];
-let sfWorker = null;        // Bot's exclusive SF worker
-let sfReady = false;
-let sfPendingResolve = null;
-let sfGhostWorker = null;   // Ghost's exclusive SF worker (never shared with bot)
-let sfGhostReady = false;
-let sfGhostPending = null;  // separate pending slot
-let botThinking = false;
-let botLastHoverSq = -1;
-let botGhostResponses = {}; // sq -> [{from,to,prob}]
-let botPrecomputePending = false;
+// (bot state vars moved to top of script)
 
 // ── Stockfish workers — loaded from same-origin /stockfish.js ────────────────
 // Server.js fetches SF from CDN at startup and serves it locally, avoiding
