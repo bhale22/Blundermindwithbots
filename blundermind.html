@@ -3182,13 +3182,14 @@ cv.addEventListener('mousedown',e=>{
 
 cv.addEventListener('mousemove',e=>{
   e.preventDefault();const pos=getEvtPos(e);mousePos=pos;const sq=getSq(pos);
-  // Ghost response hook — no duplicate listener needed
-  if (typeof ghostOnMouseMove === 'function') ghostOnMouseMove(sq);
+  // Ghost call is inside the square-change gates below (not here) to avoid
+  // firing on every pixel of mouse movement
   if(isHoverMode()){
     if(dragFrom>=0&&!dragMoved){const dx=pos.x-dragStartPos.x,dy=pos.y-dragStartPos.y;if(Math.sqrt(dx*dx+dy*dy)>DRAG_THRESHOLD)dragMoved=true;}
     if(selSq>=0){
       if(sq!==hoverSq){ // only recompute when square changes
         hoverSq=sq;
+        if (typeof ghostOnMouseMove === 'function') ghostOnMouseMove(sq);
         if(sq>=0&&sq!==selSq&&legalMoves.includes(sq)){
           startPreview(selSq,sq);
         } else {
@@ -3204,6 +3205,7 @@ cv.addEventListener('mousemove',e=>{
     }else if(dragFrom>=0&&dragMoved){
       if(sq!==dragOver){ // only process when square changes
         dragOver=sq;
+        if (typeof ghostOnMouseMove === 'function') ghostOnMouseMove(sq);
         if(sq>=0&&sq!==dragFrom&&legalMoves.includes(sq)){
           startPreview(dragFrom,sq);
         } else {
@@ -3224,6 +3226,7 @@ cv.addEventListener('mousemove',e=>{
     if(dragFrom>=0&&dragMoved){
       if(sq!==dragOver){ // only process when square changes
         dragOver=sq;
+        if (typeof ghostOnMouseMove === 'function') ghostOnMouseMove(sq);
         if(sq>=0&&sq!==dragFrom&&legalMoves.includes(sq)){
           startPreview(dragFrom,sq);
         } else {
@@ -5433,7 +5436,8 @@ function _drawGhost(bd, fromSq, toSq) {
 // Called from existing canvas mousemove handler
 function ghostOnMouseMove(hSq) {
   if (!ghostEnabled()) { clearGhostPieces(); return; }
-  // Use selSq/dragFrom as the authoritative source — don't rely on _ghostFromSq timing
+  // Square-change gating is handled at the call site (inside sq!==hoverSq/dragOver gates)
+  // so this function is only called once per new square.
   var fromSq = (dragFrom >= 0) ? dragFrom : selSq;
   if (fromSq < 0) { clearGhostPieces(); return; }
   // Skip if bot's turn
@@ -5441,9 +5445,8 @@ function ghostOnMouseMove(hSq) {
     var bc = botPlayerColor === 'white' ? 'b' : 'w';
     if (turn === bc) { clearGhostPieces(); return; }
   }
-  if (hSq === botLastHoverSq) return; // same square, skip
   botLastHoverSq = hSq;
-  _ghostFromSq = fromSq; // keep in sync
+  _ghostFromSq = fromSq;
   ghostShowForSquare(fromSq, hSq);
 }
 
