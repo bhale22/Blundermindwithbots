@@ -185,6 +185,13 @@ canvas{
   color:#5ad490;border-color:#22a85a;
   box-shadow:0 0 0 1.5px rgba(34,168,90,0.25);
 }
+/* Exploration-only (pre) mode: subtle dim highlight, clearly different from always-on */
+.ib.pre .ib-main{
+  background:var(--bg-panel2);
+  color:var(--text-secondary);
+  border-color:rgba(34,168,90,0.25);
+}
+.ib.pre .ib-dot-status{display:block;background:rgba(34,168,90,0.4);}
 .ib.pressing .ib-main{
   background:linear-gradient(135deg,#0d2a3a,#0a1f30);
   color:#6ad4f4;border-color:#4a9fd4;
@@ -1707,9 +1714,10 @@ function ibUpdateUI(key){
   const ind=IND[key]; if(!ind) return;
   const el=document.getElementById('ib-'+key); if(!el) return;
   const isPre=!!previewBoard||currentlyPreviewing;
-  el.classList.remove('on','pressing');
+  el.classList.remove('on','pre','pressing');
   if(ind.pressing) el.classList.add('pressing');
-  else if(ind.on||(ind.pre&&isPre)) el.classList.add('on');
+  else if(ind.on) el.classList.add('on');        // always-on: full green
+  else if(ind.pre && isPre) el.classList.add('pre'); // exploration-only: subtle
   const preBtn=document.getElementById('pre-'+key);
   if(preBtn) preBtn.classList.toggle('active',ind.pre);
 }
@@ -3379,10 +3387,14 @@ let boardFlipped = false; // real variable; bot sets this when human plays black
 function syncGhostCanvas() {
   const mainCv = document.getElementById('cv');
   if (!ghostCv || !mainCv) return;
-  ghostCv.width  = mainCv.width;
-  ghostCv.height = mainCv.height;
-  ghostCv.style.width  = mainCv.style.width  || mainCv.width + 'px';
-  ghostCv.style.height = mainCv.style.height || mainCv.height + 'px';
+  // IMPORTANT: assigning to canvas.width/height clears it even if value unchanged.
+  // Only resize when dimensions actually differ.
+  if (ghostCv.width  !== mainCv.width)  ghostCv.width  = mainCv.width;
+  if (ghostCv.height !== mainCv.height) ghostCv.height = mainCv.height;
+  const wStr = mainCv.style.width  || mainCv.width  + 'px';
+  const hStr = mainCv.style.height || mainCv.height + 'px';
+  if (ghostCv.style.width  !== wStr) ghostCv.style.width  = wStr;
+  if (ghostCv.style.height !== hStr) ghostCv.style.height = hStr;
 }
 window.addEventListener('resize', syncGhostCanvas);
 
@@ -5360,14 +5372,15 @@ async function ghostShowForSquare(fromSq, toSq) {
 
   clearGhostPieces();
 
-  // Validate it's a legal move (or the piece's own square)
+  // Validate it's a legal move — always use real board/epSq, never preview state
+  var realBoard = board; // board is always the real position
   if (toSq !== fromSq) {
-    var lm = legalMovesFor(fromSq, board, epSq, castling);
+    var lm = legalMovesFor(fromSq, realBoard, epSq, castling);
     if (!lm.includes(toSq)) return;
   }
 
-  // Build position after hypothetical move
-  var hypBoard = (toSq === fromSq) ? board : applyMove(fromSq, toSq, board, epSq, 'Q');
+  // Build position after hypothetical move (Q for pawn promotion — only for FEN)
+  var hypBoard = (toSq === fromSq) ? realBoard : applyMove(fromSq, toSq, realBoard, epSq, 'Q');
   var hypTurn  = turn === 'w' ? 'b' : 'w';
   var hypFen   = boardToFen(hypBoard, hypTurn, castling, -1);
 
@@ -5583,6 +5596,14 @@ function botUpdateHybridTotal() {
 }
 
 // ── Start / Stop bot ─────────────────────────────────────────────────────────
+// ── Bot time control selector ────────────────────────────────────────────────
+function botSetTC(key) {
+  botSelectedTC = key;
+  document.querySelectorAll('[id^="btc-"]').forEach(function(b) {
+    b.classList.toggle('active', b.id === 'btc-' + key);
+  });
+}
+
 // ── Bot name generation ──────────────────────────────────────────────────────
 function botGenerateName() {
   // Check if user has set a custom name
