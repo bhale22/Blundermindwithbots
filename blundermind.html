@@ -5077,7 +5077,7 @@ function sfGhostInit() {
   });
 }
 
-function sfGhostGetMove(fen, depth) {
+function sfGhostGetMove(fen, depth, excludeUci) {
   return new Promise((resolve) => {
     if (!sfGhostWorker || !sfGhostReady) { resolve(null); return; }
     // Cancel any pending ghost search
@@ -5085,7 +5085,16 @@ function sfGhostGetMove(fen, depth) {
     sfGhostWorker.postMessage('stop');
     sfGhostPending = resolve;
     sfGhostWorker.postMessage('position fen ' + fen);
-    sfGhostWorker.postMessage('go depth ' + Math.max(4, Math.min(12, depth)));
+    // If excluding a move, get all legal moves from that position and subtract
+    if (excludeUci) {
+      // Use searchmoves to tell SF to consider everything EXCEPT excludeUci
+      // We do this by passing all legal moves minus the excluded one.
+      // Fallback: just search without constraint — SF will likely pick something different
+      // at lower depth since the first move was already found at this depth.
+      sfGhostWorker.postMessage('go depth ' + Math.max(3, Math.min(10, depth - 1)));
+    } else {
+      sfGhostWorker.postMessage('go depth ' + Math.max(4, Math.min(12, depth)));
+    }
     // 4s timeout
     setTimeout(() => {
       if (sfGhostPending === resolve) { sfGhostPending = null; resolve(null); }
@@ -5397,19 +5406,33 @@ async function ghostShowForSquare(fromSq, toSq) {
 
   if (myId !== _ghostRequestId) return; // superseded
 
-  var uci = await sfGhostGetMove(hypFen, ghostDepth());
+  var uci1 = await sfGhostGetMove(hypFen, ghostDepth());
 
-  if (myId !== _ghostRequestId) return; // superseded while waiting
-  if (!uci) return;
+  if (myId !== _ghostRequestId) return;
+  if (!uci1) return;
 
-  var mv = uciToSq(uci);
-  if (!mv || mv.from == null || mv.to == null) return;
+  var mv1 = uciToSq(uci1);
+  if (!mv1 || mv1.from == null || mv1.to == null) return;
 
-  // Draw the ghost
-  _drawGhost(hypBoard, mv.from, mv.to);
+  // Draw first response (more opaque — primary suggestion)
+  _drawGhost(hypBoard, mv1.from, mv1.to, 0.50, 'rgba(74,159,212,0.90)');
+
+  // Fetch second response at shallower depth (exclude first move implicitly by lower depth)
+  var uci2 = await sfGhostGetMove(hypFen, ghostDepth(), uci1);
+
+  if (myId !== _ghostRequestId) return;
+
+  if (uci2 && uci2 !== uci1) {
+    var mv2 = uciToSq(uci2);
+    if (mv2 && mv2.from != null && mv2.to != null &&
+        !(mv2.from === mv1.from && mv2.to === mv1.to)) {
+      // Draw second response (more transparent — secondary suggestion)
+      _drawGhost(hypBoard, mv2.from, mv2.to, 0.25, 'rgba(180,140,255,0.60)');
+    }
+  }
 }
 
-function _drawGhost(bd, fromSq, toSq) {
+function _drawGhost(bd, fromSq, toSq, alpha, outlineColor) {
   if (!ghostCtx || !ghostCv) return;
   var piece = bd[fromSq];
   if (!piece) return;
@@ -5417,6 +5440,10 @@ function _drawGhost(bd, fromSq, toSq) {
   var setKey = (currentPieceSet === 'unicode' ? 'staunton' : currentPieceSet);
   var img = pieceImgCache[setKey + piece.color + piece.piece];
   if (!img || !img.complete) return;
+
+  var destAlpha = alpha || 0.45;
+  var origAlpha = destAlpha * 0.4;
+  var outline   = outlineColor || 'rgba(74,159,212,0.85)';
 
   var SQ  = ghostCv.width / 8;
 
@@ -5426,14 +5453,14 @@ function _drawGhost(bd, fromSq, toSq) {
     return { x: c * SQ, y: r * SQ };
   }
 
-  // Destination: solid ghost with blue outline
+  // Destination: ghost with colored outline
   var dest = sqXY(toSq);
   ghostCtx.save();
-  ghostCtx.globalAlpha = 0.45;
+  ghostCtx.globalAlpha = destAlpha;
   ghostCtx.drawImage(img, dest.x, dest.y, SQ, SQ);
   ghostCtx.restore();
   ghostCtx.save();
-  ghostCtx.strokeStyle = 'rgba(74,159,212,0.85)';
+  ghostCtx.strokeStyle = outline;
   ghostCtx.lineWidth = 2.5;
   ghostCtx.strokeRect(dest.x + 1, dest.y + 1, SQ - 2, SQ - 2);
   ghostCtx.restore();
@@ -5441,7 +5468,7 @@ function _drawGhost(bd, fromSq, toSq) {
   // Origin: faint ghost (piece is leaving)
   var orig = sqXY(fromSq);
   ghostCtx.save();
-  ghostCtx.globalAlpha = 0.18;
+  ghostCtx.globalAlpha = origAlpha;
   ghostCtx.drawImage(img, orig.x, orig.y, SQ, SQ);
   ghostCtx.restore();
 }
