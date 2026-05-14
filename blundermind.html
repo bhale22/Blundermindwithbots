@@ -637,8 +637,7 @@ canvas{
 <div id="site-header">
   <span id="site-name">♟ Blunder<span>mind</span></span>
   <span id="site-tagline">Stop getting blundermined.</span>
-  <span id="headerSpacer" style="flex:1;"></span>
-  <div id="headerBtnGroup" style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
+  <div id="headerBtnGroup" style="display:flex;gap:8px;align-items:center;flex-shrink:0;margin-left:20px;">
     <button id="aboutFeedbackBtn" onclick="openPanel('aboutFeedbackPanel')"
       style="font-size:10px;padding:4px 12px;background:transparent;
       border:1px solid var(--border);border-radius:12px;
@@ -805,114 +804,111 @@ canvas{
     <div class="ind-grid">
       <div class="ind-col">
         <div class="ib" id="ib-checkthreats">
-                  <button class="ib-main" onmousedown="ibMainDown('checkthreats',event)" onmouseup="ibMainUp('checkthreats')" onmouseleave="ibMainUp('checkthreats')" ontouchstart="ibMainDown('checkthreats',event)" ontouchend="ibMainUp('checkthreats')">
-                    <span class="ib-dot" style="background:#e03535;"></span>Check threats
-                    <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('checkthreats',event)">?</span>
-                    <span class="ib-dot-status"></span>
-                  </button>
-                  <div class="ib-pre" id="pre-checkthreats" onclick="ibTogglePre('checkthreats')"><span>Show During Exploration</span></div>
-                </div>
+          <button class="ib-main" onmousedown="ibMainDown('checkthreats',event)" onmouseup="ibMainUp('checkthreats')" onmouseleave="ibMainUp('checkthreats')" ontouchstart="ibMainDown('checkthreats',event)" ontouchend="ibMainUp('checkthreats')">
+            <span class="ib-dot" style="background:#e03535;"></span>Check threats
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('checkthreats',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-checkthreats" onclick="ibTogglePre('checkthreats')"><span>Show During Exploration</span></div>
+        </div>
         <div class="ib" id="ib-threats">
-                  <button class="ib-main" onmousedown="ibMainDown('threats',event)" onmouseup="ibMainUp('threats')" onmouseleave="ibMainUp('threats')" ontouchstart="ibMainDown('threats',event)" ontouchend="ibMainUp('threats')">
-                    <span class="ib-dot" style="background:#e03535;margin-right:1px;"></span><span class="ib-dot" style="background:#1eb446;margin-right:3px;"></span>Threats &amp; Captures
-                    <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('threats',event)">?</span>
-                    <span class="ib-dot-status"></span>
-                  </button>
-                  <div class="ib-pre" id="pre-threats" onclick="ibTogglePre('threats')"><span>Show During Exploration</span></div>
-                </div>
+          <button class="ib-main" onmousedown="ibMainDown('threats',event)" onmouseup="ibMainUp('threats')" onmouseleave="ibMainUp('threats')" ontouchstart="ibMainDown('threats',event)" ontouchend="ibMainUp('threats')">
+            <span class="ib-dot" style="background:#e03535;margin-right:1px;"></span><span class="ib-dot" style="background:#1eb446;margin-right:3px;"></span>Threats &amp; Captures
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('threats',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-threats" onclick="ibTogglePre('threats')"><span>Show During Exploration</span></div>
+        </div>
         <div class="ib" id="ib-counts">
-                  <button class="ib-main" onmousedown="ibMainDown('counts',event)" onmouseup="ibMainUp('counts')" onmouseleave="ibMainUp('counts')" ontouchstart="ibMainDown('counts',event)" ontouchend="ibMainUp('counts')">
-                    <span class="ib-dot" style="background:#22a85a;margin-right:1px;"></span><span class="ib-dot" style="background:#e03535;margin-right:3px;"></span>Threat/Def. counts
-                    <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('counts',event)">?</span>
-                    <span class="ib-dot-status"></span>
-                  </button>
-                  <div class="ib-pre" id="pre-counts" onclick="ibTogglePre('counts')"><span>Show During Exploration</span></div>
-                </div>
+          <button class="ib-main" onmousedown="ibMainDown('counts',event)" onmouseup="ibMainUp('counts')" onmouseleave="ibMainUp('counts')" ontouchstart="ibMainDown('counts',event)" ontouchend="ibMainUp('counts')">
+            <span class="ib-dot" style="background:#22a85a;margin-right:1px;"></span><span class="ib-dot" style="background:#e03535;margin-right:3px;"></span>Threat/Def. counts
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('counts',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-counts" onclick="ibTogglePre('counts')"><span>Show During Exploration</span></div>
+        </div>
         <div class="ib" id="ib-unprotected">
-                  <button class="ib-main" onmousedown="ibMainDown('unprotected',event)" onmouseup="ibMainUp('unprotected')" onmouseleave="ibMainUp('unprotected')" ontouchstart="ibMainDown('unprotected',event)" ontouchend="ibMainUp('unprotected')">
-                    <span class="ib-dot" style="background:#e03535;"></span>Unprotected
-                    <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('unprotected',event)">?</span>
-                    <span class="ib-dot-status"></span>
-                  </button>
-                  <div class="ib-pre" id="pre-unprotected" onclick="ibTogglePre('unprotected')"><span>Show During Exploration</span></div>
-                </div>
+          <button class="ib-main" onmousedown="ibMainDown('unprotected',event)" onmouseup="ibMainUp('unprotected')" onmouseleave="ibMainUp('unprotected')" ontouchstart="ibMainDown('unprotected',event)" ontouchend="ibMainUp('unprotected')">
+            <span class="ib-dot" style="background:#e03535;"></span>Unprotected
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('unprotected',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-unprotected" onclick="ibTogglePre('unprotected')"><span>Show During Exploration</span></div>
+        </div>
         <div class="ib" id="ib-pins">
-                  <button class="ib-main" onmousedown="ibMainDown('pins',event)" onmouseup="ibMainUp('pins')" onmouseleave="ibMainUp('pins')" ontouchstart="ibMainDown('pins',event)" ontouchend="ibMainUp('pins')">
-                    <span class="ib-dot" style="background:#9b59b6;"></span>Pins
-                    <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('pins',event)">?</span>
-                    <span class="ib-dot-status"></span>
-                  </button>
-                  <div class="ib-pre" id="pre-pins" onclick="ibTogglePre('pins')"><span>Show During Exploration</span></div>
-                </div>
+          <button class="ib-main" onmousedown="ibMainDown('pins',event)" onmouseup="ibMainUp('pins')" onmouseleave="ibMainUp('pins')" ontouchstart="ibMainDown('pins',event)" ontouchend="ibMainUp('pins')">
+            <span class="ib-dot" style="background:#9b59b6;"></span>Pins
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('pins',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-pins" onclick="ibTogglePre('pins')"><span>Show During Exploration</span></div>
+        </div>
         <div class="ib" id="ib-forksw">
-                  <button class="ib-main" onmousedown="ibMainDown('forksw',event)" onmouseup="ibMainUp('forksw')" onmouseleave="ibMainUp('forksw')" ontouchstart="ibMainDown('forksw',event)" ontouchend="ibMainUp('forksw')">
-                    <span class="ib-dot" style="background:#f0c040;"></span>My forks &amp; skewers
-                    <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksw',event)">?</span>
-                    <span class="ib-dot-status"></span>
-                  </button>
-                  <div class="ib-pre" id="pre-forksw" onclick="ibTogglePre('forksw')"><span>Show During Exploration</span></div>
-                </div>
+          <button class="ib-main" onmousedown="ibMainDown('forksw',event)" onmouseup="ibMainUp('forksw')" onmouseleave="ibMainUp('forksw')" ontouchstart="ibMainDown('forksw',event)" ontouchend="ibMainUp('forksw')">
+            <span class="ib-dot" style="background:#f0c040;"></span>My forks &amp; skewers
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksw',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-forksw" onclick="ibTogglePre('forksw')"><span>Show During Exploration</span></div>
+        </div>
         <div class="ib" id="ib-forksb">
-                  <button class="ib-main" onmousedown="ibMainDown('forksb',event)" onmouseup="ibMainUp('forksb')" onmouseleave="ibMainUp('forksb')" ontouchstart="ibMainDown('forksb',event)" ontouchend="ibMainUp('forksb')">
-                    <span class="ib-dot" style="background:#e040c0;"></span>Fork &amp; skewer threats
-                    <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksb',event)">?</span>
-                    <span class="ib-dot-status"></span>
-                  </button>
-                  <div class="ib-pre" id="pre-forksb" onclick="ibTogglePre('forksb')"><span>Show During Exploration</span></div>
-                </div>
+          <button class="ib-main" onmousedown="ibMainDown('forksb',event)" onmouseup="ibMainUp('forksb')" onmouseleave="ibMainUp('forksb')" ontouchstart="ibMainDown('forksb',event)" ontouchend="ibMainUp('forksb')">
+            <span class="ib-dot" style="background:#e040c0;"></span>Fork &amp; skewer threats
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksb',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-forksb" onclick="ibTogglePre('forksb')"><span>Show During Exploration</span></div>
+        </div>
       </div>
       <div class="ind-col">
         <div class="ib" id="ib-overloaded">
-                  <button class="ib-main" onmousedown="ibMainDown('overloaded',event)" onmouseup="ibMainUp('overloaded')" onmouseleave="ibMainUp('overloaded')" ontouchstart="ibMainDown('overloaded',event)" ontouchend="ibMainUp('overloaded')">
-                    <span class="ib-dot" style="background:#c8a000;"></span>Overloaded
-                    <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('overloaded',event)">?</span>
-                    <span class="ib-dot-status"></span>
-                  </button>
-                  <div class="ib-pre" id="pre-overloaded" onclick="ibTogglePre('overloaded')"><span>Show During Exploration</span></div>
-                </div
-              </div>
+          <button class="ib-main" onmousedown="ibMainDown('overloaded',event)" onmouseup="ibMainUp('overloaded')" onmouseleave="ibMainUp('overloaded')" ontouchstart="ibMainDown('overloaded',event)" ontouchend="ibMainUp('overloaded')">
+            <span class="ib-dot" style="background:#c8a000;"></span>Overloaded
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('overloaded',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-overloaded" onclick="ibTogglePre('overloaded')"><span>Show During Exploration</span></div>
+        </div>
         <div class="ib" id="ib-discoveredopp">
-                  <button class="ib-main" onmousedown="ibMainDown('discoveredopp',event)" onmouseup="ibMainUp('discoveredopp')" onmouseleave="ibMainUp('discoveredopp')" ontouchstart="ibMainDown('discoveredopp',event)" ontouchend="ibMainUp('discoveredopp')">
-                    <span class="ib-dot" style="background:#dc8200;"></span>Opp. disc. threats
-                    <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredopp',event)">?</span>
-                    <span class="ib-dot-status"></span>
-                  </button>
-                  <div class="ib-pre" id="pre-discoveredopp" onclick="ibTogglePre('discoveredopp')"><span>Show During Exploration</span></div>
-                </div>
+          <button class="ib-main" onmousedown="ibMainDown('discoveredopp',event)" onmouseup="ibMainUp('discoveredopp')" onmouseleave="ibMainUp('discoveredopp')" ontouchstart="ibMainDown('discoveredopp',event)" ontouchend="ibMainUp('discoveredopp')">
+            <span class="ib-dot" style="background:#dc8200;"></span>Opp. disc. threats
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredopp',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-discoveredopp" onclick="ibTogglePre('discoveredopp')"><span>Show During Exploration</span></div>
+        </div>
         <div class="ib" id="ib-discoveredself">
-                  <button class="ib-main" onmousedown="ibMainDown('discoveredself',event)" onmouseup="ibMainUp('discoveredself')" onmouseleave="ibMainUp('discoveredself')" ontouchstart="ibMainDown('discoveredself',event)" ontouchend="ibMainUp('discoveredself')">
-                    <span class="ib-dot" style="background:#a050dc;"></span>My disc. attacks
-                    <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredself',event)">?</span>
-                    <span class="ib-dot-status"></span>
-                  </button>
-                  <div class="ib-pre" id="pre-discoveredself" onclick="ibTogglePre('discoveredself')"><span>Show During Exploration</span></div>
-                </div>
+          <button class="ib-main" onmousedown="ibMainDown('discoveredself',event)" onmouseup="ibMainUp('discoveredself')" onmouseleave="ibMainUp('discoveredself')" ontouchstart="ibMainDown('discoveredself',event)" ontouchend="ibMainUp('discoveredself')">
+            <span class="ib-dot" style="background:#a050dc;"></span>My disc. attacks
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredself',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-discoveredself" onclick="ibTogglePre('discoveredself')"><span>Show During Exploration</span></div>
+        </div>
         <div class="ib" id="ib-weakw">
-                  <button class="ib-main" onmousedown="ibMainDown('weakw',event)" onmouseup="ibMainUp('weakw')" onmouseleave="ibMainUp('weakw')" ontouchstart="ibMainDown('weakw',event)" ontouchend="ibMainUp('weakw')">
-                    <span class="ib-sq"></span>My weak squares
-                    <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakw',event)">?</span>
-                    <span class="ib-dot-status"></span>
-                  </button>
-                  <div class="ib-pre" id="pre-weakw" onclick="ibTogglePre('weakw')"><span>Show During Exploration</span></div>
-                </div>
+          <button class="ib-main" onmousedown="ibMainDown('weakw',event)" onmouseup="ibMainUp('weakw')" onmouseleave="ibMainUp('weakw')" ontouchstart="ibMainDown('weakw',event)" ontouchend="ibMainUp('weakw')">
+            <span class="ib-sq"></span>My weak squares
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakw',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-weakw" onclick="ibTogglePre('weakw')"><span>Show During Exploration</span></div>
+        </div>
         <div class="ib" id="ib-weakb">
-                  <button class="ib-main" onmousedown="ibMainDown('weakb',event)" onmouseup="ibMainUp('weakb')" onmouseleave="ibMainUp('weakb')" ontouchstart="ibMainDown('weakb',event)" ontouchend="ibMainUp('weakb')">
-                    <span class="ib-sq"></span>Opp. weak squares
-                    <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakb',event)">?</span>
-                    <span class="ib-dot-status"></span>
-                  </button>
-                  <div class="ib-pre" id="pre-weakb" onclick="ibTogglePre('weakb')"><span>Show During Exploration</span></div>
-                </div>
-
+          <button class="ib-main" onmousedown="ibMainDown('weakb',event)" onmouseup="ibMainUp('weakb')" onmouseleave="ibMainUp('weakb')" ontouchstart="ibMainDown('weakb',event)" ontouchend="ibMainUp('weakb')">
+            <span class="ib-sq"></span>Opp. weak squares
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakb',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-weakb" onclick="ibTogglePre('weakb')"><span>Show During Exploration</span></div>
+        </div>
         <div class="ib" id="ib-xray">
-                  <button class="ib-main" onmousedown="ibMainDown('xray',event)" onmouseup="ibMainUp('xray')" onmouseleave="ibMainUp('xray')" ontouchstart="ibMainDown('xray',event)" ontouchend="ibMainUp('xray')">
-                    <span class="ib-dot" style="background:#8080ff;"></span>X-ray pressure/threats
-                    <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('xray',event)">?</span>
-                    <span class="ib-dot-status"></span>
-                  </button>
-                  <div class="ib-pre" id="pre-xray" onclick="ibTogglePre('xray')"><span>Show During Exploration</span></div>
-                </div>
-              </div>
+          <button class="ib-main" onmousedown="ibMainDown('xray',event)" onmouseup="ibMainUp('xray')" onmouseleave="ibMainUp('xray')" ontouchstart="ibMainDown('xray',event)" ontouchend="ibMainUp('xray')">
+            <span class="ib-dot" style="background:#8080ff;"></span>X-ray pressure/threats
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('xray',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-xray" onclick="ibTogglePre('xray')"><span>Show During Exploration</span></div>
+        </div>
         <div style="margin-top:4px;">
           <button class="ctrl-btn danger-btn" id="btnClearAll" onclick="clearAllSelections()" style="width:100%;font-size:8.5px;">✕ Clear all</button>
         </div>
@@ -1352,16 +1348,12 @@ function resizeBoard() {
   const wrapW = pageWrap ? pageWrap.clientWidth : (window.innerWidth - 40);
   const maxFromWidth = wrapW - sidebarW - 16;
 
-  // Measure actual vertical space consumed by elements above/below board
-  const headerEl  = document.getElementById('site-header');
-  const footerEl  = document.getElementById('footer');
-  const playerW   = document.getElementById('playerBoxW');
-  const playerB   = document.getElementById('playerBoxB');
-  const topH      = (headerEl  ? headerEl.offsetHeight  : 36) + 10; // +gap
-  const footerH   = (footerEl  ? footerEl.offsetHeight  : 24) + 10;
-  const playerH   = ((playerW  ? playerW.offsetHeight   : 44) +
-                     (playerB  ? playerB.offsetHeight   : 44)) + 8;
-  const maxFromHeight = window.innerHeight - topH - footerH - playerH - 16;
+  // Vertical space: measure header, use fixed estimates for player/footer
+  const headerEl = document.getElementById('site-header');
+  const topH     = (headerEl && headerEl.offsetHeight > 0 ? headerEl.offsetHeight : 40) + 8;
+  const playerH  = 44 * 2 + 8; // two player boxes, fixed height
+  const footerH  = 30;
+  const maxFromHeight = window.innerHeight - topH - playerH - footerH - 12;
   const boardPx = Math.max(280, Math.min(maxFromWidth, maxFromHeight, 900));
   const bpx = boardPx + 'px';
   const cv = document.getElementById('cv');
@@ -1376,22 +1368,6 @@ function resizeBoard() {
   });
   document.documentElement.style.setProperty('--board-size', bpx);
 
-  // Align header button group so its right edge matches sidebar right edge
-  const headerBtns = document.getElementById('headerBtnGroup');
-  if (headerBtns && sidebar) {
-    // sidebar right edge from page-wrap left = (wrapW - sidebarW)... no.
-    // We want: buttons right edge = page-wrap right edge - (wrapW - sidebarW - boardW - gap)
-    // Simpler: set a right-margin on the spacer so buttons align over sidebar
-    // The sidebar is sidebarW wide. page-wrap is wrapW wide.
-    // Buttons should end at: wrapW - 0 (no extra margin needed if sidebar is at right)
-    // The app is flex flex-start, so: board | gap | sidebar
-    // sidebar right edge = wrapW (full width since sidebar is last flex child)
-    // header right edge = wrapW (both inside page-wrap with same padding)
-    // So buttons are ALREADY at the same right edge. The issue is the SUPPORT button
-    // extends BEYOND because it has extra internal padding pushing it wider.
-    // Actually the fix is just ensuring the button group doesn't overflow.
-    headerBtns.style.maxWidth = sidebarW + 'px';
-  }
 }
 window.addEventListener('resize', resizeBoard);
 
