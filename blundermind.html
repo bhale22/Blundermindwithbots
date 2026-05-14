@@ -649,11 +649,11 @@ canvas{
     </button>
     <button id="donateBtn" onclick="openPanel('donatePanel')"
       style="font-size:10px;padding:4px 14px;
-      background:rgba(255,94,91,0.1);
+      background:transparent;
       border:1px solid rgba(255,94,91,0.4);border-radius:12px;
       color:#ff6b5b;cursor:pointer;transition:all 0.15s;white-space:nowrap;
       display:flex;align-items:center;gap:6px;"
-      onmouseover="this.style.background='rgba(255,94,91,0.18)';this.style.borderColor='rgba(255,94,91,0.7)'"
+      onmouseover="this.style.background='rgba(255,94,91,0.12)';this.style.borderColor='rgba(255,94,91,0.7)'"
       onmouseout="this.style.background='rgba(255,94,91,0.1)';this.style.borderColor='rgba(255,94,91,0.4)'">
 <img src="data:image/webp;base64,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" width="20" height="20" style="flex-shrink:0;filter:none;" alt="Ko-fi">
       Support
@@ -1317,7 +1317,11 @@ canvas{
 </div>
 
 
-<script>// ── Bot & SF state — declared first to avoid TDZ errors ─────────────────────
+<script>// ── Last-move tracking — declared early to avoid TDZ ────────────────────────
+let lastMoveFrom = -1; // square the last-moved piece came FROM
+let lastMoveTo   = -1; // square the last-moved piece went TO
+
+// ── Bot & SF state — declared first to avoid TDZ errors ─────────────────────
 // These let variables must be declared before loadPos()/render() runs at startup.
 let botActive = false;
 let botPlayerColor = 'white';
@@ -3056,6 +3060,7 @@ function executeMove(from,to,promo){
   atkMap=buildAtk(board);
   // Recompute pinned squares for rendering
   const _pins=computePins(board);pinnedWSquares=_pins.w;pinnedBSquares=_pins.b;
+  lastMoveFrom=from; lastMoveTo=to; // record for last-move highlight
   selSq=-1;legalMoves=[];clearPreview();hoverSq=-1;dragFrom=-1;dragMoved=false;
   const allMoves=allLegalMoves(board,turn,epSq,castling);
   if(allMoves.length===0){
@@ -3418,6 +3423,10 @@ function render(){
     // For black: display row r,c → board square at mirrored position
     const sq=_boardFlipped?rcSq(7-r,7-c):rcSq(r,c);const light=(r+c)%2===0;
     let fill=sqColor(r,c);
+    // Last-move highlight: standard yellow-green tint (Lichess/Chess.com style)
+    if(!isPreviewing && (sq===lastMoveFrom||sq===lastMoveTo)){
+      fill=light?'#cdd16e':'#aaa23a';
+    }
     if(isPreviewing){if(sq===premoveFrom)fill=light?'#d8d860':'#b0b020';else if(sq===premoveTo)fill=light?'#a0d8a0':'#5a9e5a';}
     else{if(sq===selSq)fill=light?'#f6f669':'#baca2b';else if(sq===dragFrom&&isDragging)fill=light?'#d0d0d0':'#aaa';}
     ctx.fillStyle=fill;ctx.fillRect(c*SQ,r*SQ,SQ,SQ);
@@ -4159,7 +4168,7 @@ function showRematchBtn(show) {
   if (btn) btn.style.display = show ? '' : 'none';
 }
 
-function resetGame(){cancelResign();showRematchBtn(false);clockStop();clockInit(clockControl);const sg=document.getElementById("saveGameBtn");if(sg)sg.remove();loadPos(0);}
+function resetGame(){cancelResign();showRematchBtn(false);clockStop();clockInit(clockControl);lastMoveFrom=-1;lastMoveTo=-1;const sg=document.getElementById("saveGameBtn");if(sg)sg.remove();loadPos(0);}
 function setPalette(name){currentPalette=PALETTES[name]||PALETTES.default;render();}
 
 let _savedMarkings=null;
@@ -5077,7 +5086,15 @@ function sfGhostInit() {
   });
 }
 
-function sfGhostGetMove(fen, depth, excludeUci) {
+// Convert from/to square indices to UCI move string (e.g. "e2e4")
+function sqToUci(from, to, promo) {
+  var files = 'abcdefgh';
+  var fromStr = files[from % 8] + (8 - Math.floor(from / 8));
+  var toStr   = files[to   % 8] + (8 - Math.floor(to   / 8));
+  return fromStr + toStr + (promo || '');
+}
+
+function sfGhostGetMove(fen, depth, excludeUci, hypBoard, hypTurn, hypEp, hypCast) {
   return new Promise((resolve) => {
     if (!sfGhostWorker || !sfGhostReady) { resolve(null); return; }
     // Cancel any pending ghost search
@@ -5085,20 +5102,41 @@ function sfGhostGetMove(fen, depth, excludeUci) {
     sfGhostWorker.postMessage('stop');
     sfGhostPending = resolve;
     sfGhostWorker.postMessage('position fen ' + fen);
-    // If excluding a move, get all legal moves from that position and subtract
-    if (excludeUci) {
-      // Use searchmoves to tell SF to consider everything EXCEPT excludeUci
-      // We do this by passing all legal moves minus the excluded one.
-      // Fallback: just search without constraint — SF will likely pick something different
-      // at lower depth since the first move was already found at this depth.
-      sfGhostWorker.postMessage('go depth ' + Math.max(3, Math.min(10, depth - 1)));
-    } else {
-      sfGhostWorker.postMessage('go depth ' + Math.max(4, Math.min(12, depth)));
+
+    var goCmd = 'go depth ' + Math.max(4, Math.min(12, depth));
+
+    // If excluding a move, build searchmoves list of all legal moves EXCEPT excludeUci
+    if (excludeUci && hypBoard && hypTurn != null) {
+      var allUcis = [];
+      for (var sq = 0; sq < 64; sq++) {
+        var p = hypBoard[sq];
+        if (!p || p.color !== hypTurn) continue;
+        var moves = legalMovesFor(sq, hypBoard, hypEp != null ? hypEp : -1, hypCast || {wK:false,wQ:false,bK:false,bQ:false});
+        for (var mi = 0; mi < moves.length; mi++) {
+          var uci = sqToUci(sq, moves[mi]);
+          // Handle pawn promotion
+          var toR = Math.floor(moves[mi] / 8);
+          if (p.piece === 'P' && (toR === 0 || toR === 7)) {
+            // Add all four promotion options but only keep non-excluded
+            ['q','r','b','n'].forEach(function(pr) {
+              var u = sqToUci(sq, moves[mi], pr);
+              if (u !== excludeUci) allUcis.push(u);
+            });
+            continue;
+          }
+          if (uci !== excludeUci) allUcis.push(uci);
+        }
+      }
+      if (allUcis.length > 0) {
+        goCmd = 'go depth ' + Math.max(4, Math.min(12, depth)) + ' searchmoves ' + allUcis.join(' ');
+      }
     }
-    // 4s timeout
+
+    sfGhostWorker.postMessage(goCmd);
+    // 5s timeout (slightly longer since searchmoves can be slower)
     setTimeout(() => {
       if (sfGhostPending === resolve) { sfGhostPending = null; resolve(null); }
-    }, 4000);
+    }, 5000);
   });
 }
 
@@ -5417,8 +5455,8 @@ async function ghostShowForSquare(fromSq, toSq) {
   // Draw first response (more opaque — primary suggestion)
   _drawGhost(hypBoard, mv1.from, mv1.to, 0.50, 'rgba(74,159,212,0.90)');
 
-  // Fetch second response at shallower depth (exclude first move implicitly by lower depth)
-  var uci2 = await sfGhostGetMove(hypFen, ghostDepth(), uci1);
+  // Fetch second response, explicitly excluding first move via UCI searchmoves
+  var uci2 = await sfGhostGetMove(hypFen, ghostDepth(), uci1, hypBoard, hypTurn, -1, castling);
 
   if (myId !== _ghostRequestId) return;
 
