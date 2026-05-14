@@ -103,7 +103,7 @@ body{
   transition:border-color 0.2s;
 }
 .player-col{display:flex;flex-direction:column;gap:0;flex-shrink:0;}
-.player-name{font-size:7px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.07em;line-height:1.2;}
+.player-name{font-size:10px;font-weight:700;color:var(--text-secondary);letter-spacing:0.02em;line-height:1.3;}
 .player-time{font-family:'Courier New',monospace;font-size:12px;font-weight:700;color:var(--text-secondary);line-height:1.2;}
 .player-time.active{color:#b08020;}
 .player-time.solo{font-size:9px;color:var(--text-dim);}
@@ -638,7 +638,7 @@ canvas{
   <span id="site-name">♟ Blunder<span>mind</span></span>
   <span id="site-tagline">Stop getting blundermined.</span>
   <span style="flex:1;"></span>
-  <div style="display:flex;gap:8px;align-items:center;">
+  <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
     <button id="aboutFeedbackBtn" onclick="openPanel('aboutFeedbackPanel')"
       style="font-size:10px;padding:4px 12px;background:transparent;
       border:1px solid var(--border);border-radius:12px;
@@ -860,6 +860,9 @@ canvas{
                   </button>
                   <div class="ib-pre" id="pre-forksb" onclick="ibTogglePre('forksb')"><span>Show During Exploration</span></div>
                 </div>
+        <div style="margin-top:4px;">
+          <button class="ctrl-btn danger-btn" id="btnClearAll" onclick="clearAllSelections()" style="width:100%;font-size:8.5px;">✕ Clear all</button>
+        </div>
       </div>
       <div class="ind-col">
         <div class="ib" id="ib-overloaded">
@@ -957,7 +960,6 @@ canvas{
         <button class="ctrl-btn util-btn" onclick="toggleClockPanel()">⏱ Time Control</button>
         <span class="ctrl-spacer"></span>
 
-        <button class="ctrl-btn danger-btn" id="btnClearAll" onclick="clearAllSelections()">Clear all selections</button>
       </div>
       <div class="util-row" style="display:none;"></div>
     </div>
@@ -1351,7 +1353,7 @@ function resizeBoard() {
   const maxFromWidth = wrapW - sidebarW - 16;
   const topH = document.getElementById('site-header')?.offsetHeight || 32;
   const maxFromHeight = window.innerHeight - topH - 52*2 - 70;
-  const boardPx = Math.max(280, Math.min(maxFromWidth, maxFromHeight, 600));
+  const boardPx = Math.max(280, Math.min(maxFromWidth, maxFromHeight, 800));
   const bpx = boardPx + 'px';
   const cv = document.getElementById('cv');
   if (cv) { cv.style.width = bpx; cv.style.height = bpx; }
@@ -1697,7 +1699,7 @@ function indActive(key) {
 function ibPress(key,e){
   if(e) e.preventDefault();
   if(!IND[key]) return;
-  if(key==='forksw'&&!!previewBoard) return;
+  // forksw allowed during exploration
   IND[key].pressing=true;
   ibUpdateUI(key);
   indApply();
@@ -1709,7 +1711,6 @@ function ibRelease(key){
   indApply();
 }
 function ibTogglePre(key){
-  if(key==='forksw') return;
   IND[key].pre=!IND[key].pre;
   ibUpdateUI(key);
   indApply();
@@ -1734,7 +1735,7 @@ function indInitAll(){ ibRefreshAll(); }
 function indMode(key, mode, e){
   if(e){ e.stopPropagation(); e.preventDefault(); }
   if(!IND[key]) return;
-  if(key==='forksw') return; // hold-only, mode can't change
+  // forksw mode changes allowed
   // Map new mode names to on/pre flags
   IND[key].on  = (mode === 'always');
   IND[key].pre = (mode === 'premove' || mode === 'always');
@@ -1761,7 +1762,7 @@ function ibMainDown(key,e){
 function ibMainUp(key){
   const dt = Date.now() - (ibPressTime[key]||0);
   ibRelease(key);
-  if(dt < 250 && key!=='discoveredself') {
+  if(dt < 250) {
     const now = Date.now();
     const sinceLastClick = now - (ibLastClick[key]||0);
     if(sinceLastClick < 400) {
