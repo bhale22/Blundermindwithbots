@@ -637,8 +637,8 @@ canvas{
 <div id="site-header">
   <span id="site-name">♟ Blunder<span>mind</span></span>
   <span id="site-tagline">Stop getting blundermined.</span>
-  <span style="flex:1;"></span>
-  <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
+  <span id="headerSpacer" style="flex:1;"></span>
+  <div id="headerBtnGroup" style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
     <button id="aboutFeedbackBtn" onclick="openPanel('aboutFeedbackPanel')"
       style="font-size:10px;padding:4px 12px;background:transparent;
       border:1px solid var(--border);border-radius:12px;
@@ -860,9 +860,6 @@ canvas{
                   </button>
                   <div class="ib-pre" id="pre-forksb" onclick="ibTogglePre('forksb')"><span>Show During Exploration</span></div>
                 </div>
-        <div style="margin-top:4px;">
-          <button class="ctrl-btn danger-btn" id="btnClearAll" onclick="clearAllSelections()" style="width:100%;font-size:8.5px;">✕ Clear all</button>
-        </div>
       </div>
       <div class="ind-col">
         <div class="ib" id="ib-overloaded">
@@ -914,8 +911,11 @@ canvas{
                     <span class="ib-dot-status"></span>
                   </button>
                   <div class="ib-pre" id="pre-xray" onclick="ibTogglePre('xray')"><span>Show During Exploration</span></div>
-                </div
+                </div>
               </div>
+        <div style="margin-top:4px;">
+          <button class="ctrl-btn danger-btn" id="btnClearAll" onclick="clearAllSelections()" style="width:100%;font-size:8.5px;">✕ Clear all</button>
+        </div>
       </div>
     </div><!-- end ind-grid -->
     <!-- Peek / Hide / Show All — larger, below the indicator columns -->
@@ -1351,9 +1351,18 @@ function resizeBoard() {
   const pageWrap = document.getElementById('page-wrap');
   const wrapW = pageWrap ? pageWrap.clientWidth : (window.innerWidth - 40);
   const maxFromWidth = wrapW - sidebarW - 16;
-  const topH = document.getElementById('site-header')?.offsetHeight || 32;
-  const maxFromHeight = window.innerHeight - topH - 52*2 - 70;
-  const boardPx = Math.max(280, Math.min(maxFromWidth, maxFromHeight, 800));
+
+  // Measure actual vertical space consumed by elements above/below board
+  const headerEl  = document.getElementById('site-header');
+  const footerEl  = document.getElementById('footer');
+  const playerW   = document.getElementById('playerBoxW');
+  const playerB   = document.getElementById('playerBoxB');
+  const topH      = (headerEl  ? headerEl.offsetHeight  : 36) + 10; // +gap
+  const footerH   = (footerEl  ? footerEl.offsetHeight  : 24) + 10;
+  const playerH   = ((playerW  ? playerW.offsetHeight   : 44) +
+                     (playerB  ? playerB.offsetHeight   : 44)) + 8;
+  const maxFromHeight = window.innerHeight - topH - footerH - playerH - 16;
+  const boardPx = Math.max(280, Math.min(maxFromWidth, maxFromHeight, 900));
   const bpx = boardPx + 'px';
   const cv = document.getElementById('cv');
   if (cv) { cv.style.width = bpx; cv.style.height = bpx; }
@@ -1366,6 +1375,23 @@ function resizeBoard() {
     if (el) { el.style.width = bpx; el.style.maxWidth = bpx; }
   });
   document.documentElement.style.setProperty('--board-size', bpx);
+
+  // Align header button group so its right edge matches sidebar right edge
+  const headerBtns = document.getElementById('headerBtnGroup');
+  if (headerBtns && sidebar) {
+    // sidebar right edge from page-wrap left = (wrapW - sidebarW)... no.
+    // We want: buttons right edge = page-wrap right edge - (wrapW - sidebarW - boardW - gap)
+    // Simpler: set a right-margin on the spacer so buttons align over sidebar
+    // The sidebar is sidebarW wide. page-wrap is wrapW wide.
+    // Buttons should end at: wrapW - 0 (no extra margin needed if sidebar is at right)
+    // The app is flex flex-start, so: board | gap | sidebar
+    // sidebar right edge = wrapW (full width since sidebar is last flex child)
+    // header right edge = wrapW (both inside page-wrap with same padding)
+    // So buttons are ALREADY at the same right edge. The issue is the SUPPORT button
+    // extends BEYOND because it has extra internal padding pushing it wider.
+    // Actually the fix is just ensuring the button group doesn't overflow.
+    headerBtns.style.maxWidth = sidebarW + 'px';
+  }
 }
 window.addEventListener('resize', resizeBoard);
 
