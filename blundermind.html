@@ -552,6 +552,14 @@ canvas{
 .tp-btn.active {
   background:rgba(90,212,144,0.12);border-color:#22a85a;color:#5ad490;font-weight:600;
 }
+.tc-btn {
+  padding:4px 6px;font-size:9px;font-weight:600;border-radius:4px;cursor:pointer;
+  background:var(--bg-panel2);border:0.5px solid var(--border);color:var(--text-dim);
+  transition:all 0.1s;min-width:28px;text-align:center;
+}
+.tc-btn.tc-active {
+  background:rgba(74,159,212,0.18);border-color:var(--accent);color:var(--accent);
+}
 .hybrid-slot {
   display:flex;align-items:center;gap:5px;padding:5px;margin-bottom:4px;
   background:var(--bg-panel2);border:0.5px solid var(--border);border-radius:4px;
@@ -1021,6 +1029,11 @@ canvas{
   </div>
   <div class="panel-body" style="font-size:10px;">
 
+    <!-- Start button — at top so always visible -->
+    <button id="botStartBtn" onclick="botStart()" style="width:100%;padding:10px;font-size:12px;font-weight:700;background:linear-gradient(135deg,#0f4020,#0a2a15);border:1px solid #22a85a;border-radius:6px;color:#5ad490;cursor:pointer;transition:all 0.15s;margin-bottom:10px;">
+      ▶ Start Bot Game
+    </button>
+
     <!-- Opponent mode -->
     <h3 style="margin-bottom:6px;">Opponent Type</h3>
     <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;">
@@ -1112,18 +1125,31 @@ canvas{
       </div>
     </div>
 
-    <!-- Time control -->
+    <!-- Time control — base time row + increment row -->
     <div style="margin-bottom:8px;">
       <label style="font-size:9px;color:var(--text-dim);">Time Control</label>
-      <div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px;" id="botTcBtns">
-        <button class="tp-btn active" id="btc-untimed"    onclick="botSetTC('untimed')">∞ None</button>
-        <button class="tp-btn" id="btc-bullet"   onclick="botSetTC('bullet')">1+0</button>
-        <button class="tp-btn" id="btc-blitz3"   onclick="botSetTC('blitz3')">3+2</button>
-        <button class="tp-btn" id="btc-blitz5"   onclick="botSetTC('blitz5')">5+0</button>
-        <button class="tp-btn" id="btc-rapid10"  onclick="botSetTC('rapid10')">10+0</button>
-        <button class="tp-btn" id="btc-rapid15"  onclick="botSetTC('rapid15')">15+10</button>
-        <button class="tp-btn" id="btc-tournament" onclick="botSetTC('tournament')">30+0</button>
+      <div style="display:flex;gap:2px;margin-top:4px;flex-wrap:wrap;">
+        <button class="tc-btn tc-active" id="tcm-0"  onclick="botSetBaseMin(0)">∞</button>
+        <button class="tc-btn" id="tcm-1"  onclick="botSetBaseMin(1)">1</button>
+        <button class="tc-btn" id="tcm-2"  onclick="botSetBaseMin(2)">2</button>
+        <button class="tc-btn" id="tcm-3"  onclick="botSetBaseMin(3)">3</button>
+        <button class="tc-btn" id="tcm-5"  onclick="botSetBaseMin(5)">5</button>
+        <button class="tc-btn" id="tcm-10" onclick="botSetBaseMin(10)">10</button>
+        <button class="tc-btn" id="tcm-15" onclick="botSetBaseMin(15)">15</button>
+        <button class="tc-btn" id="tcm-20" onclick="botSetBaseMin(20)">20</button>
+        <button class="tc-btn" id="tcm-30" onclick="botSetBaseMin(30)">30</button>
       </div>
+      <div style="font-size:8px;color:var(--text-dim);margin:3px 0 2px;">+ increment (sec)</div>
+      <div style="display:flex;gap:2px;flex-wrap:wrap;">
+        <button class="tc-btn tc-active" id="tci-0"  onclick="botSetIncSec(0)">0</button>
+        <button class="tc-btn" id="tci-1"  onclick="botSetIncSec(1)">1</button>
+        <button class="tc-btn" id="tci-2"  onclick="botSetIncSec(2)">2</button>
+        <button class="tc-btn" id="tci-3"  onclick="botSetIncSec(3)">3</button>
+        <button class="tc-btn" id="tci-5"  onclick="botSetIncSec(5)">5</button>
+        <button class="tc-btn" id="tci-10" onclick="botSetIncSec(10)">10</button>
+        <button class="tc-btn" id="tci-20" onclick="botSetIncSec(20)">20</button>
+      </div>
+      <div id="tcDisplay" style="font-size:9px;color:var(--text-dim);margin-top:4px;text-align:center;">Untimed</div>
     </div>
 
     <!-- Ghost pieces toggle -->
@@ -1153,10 +1179,6 @@ canvas{
         color:var(--text-primary);box-sizing:border-box;">
     </div>
 
-    <!-- Start button -->
-    <button id="botStartBtn" onclick="botStart()" style="width:100%;padding:10px;font-size:12px;font-weight:700;background:linear-gradient(135deg,#0f4020,#0a2a15);border:1px solid #22a85a;border-radius:6px;color:#5ad490;cursor:pointer;transition:all 0.15s;margin-bottom:6px;">
-      ▶ Start Bot Game
-    </button>
     <div style="display:flex;gap:6px;margin-bottom:4px;">
       <button onclick="botSaveConfig()" style="flex:1;padding:6px;font-size:9px;background:rgba(200,160,0,0.1);border:0.5px solid rgba(200,160,0,0.3);border-radius:4px;color:#c8a000;cursor:pointer;">↓ Save this config</button>
       <button id="botStopBtn" onclick="botStop()" style="flex:1;padding:6px;font-size:10px;background:rgba(200,40,40,0.1);border:0.5px solid rgba(200,40,40,0.3);border-radius:4px;color:#c84040;cursor:pointer;display:none;">✕ Stop Bot Game</button>
@@ -1173,49 +1195,32 @@ canvas{
   </div>
   <div class="panel-body" style="text-align:center;">
     <div style="margin:12px 0 8px;"><img src="data:image/webp;base64,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" width="64" height="64" alt="Ko-fi" style="display:inline-block;"></div>
-    <p style="font-size:12px;color:var(--text-primary);line-height:1.7;margin-bottom:14px;">
+    <p style="font-size:12px;color:var(--text-primary);line-height:1.7;margin-bottom:16px;">
       Blundermind is free to everyone. No data collected. No ads.<br>
-      Contributions never needed but always extremely appreciated.<br>
+      Contributions never needed but extremely appreciated.<br>
       Thanks for checking out the site!
     </p>
 
-    <!-- Donation amounts -->
-    <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-bottom:12px;">
-      <a href="https://ko-fi.com" target="_blank" rel="noopener"
-        style="padding:7px 14px;background:rgba(255,94,91,0.1);border:1px solid rgba(255,94,91,0.35);
-        border-radius:8px;color:#ff6b5b;font-size:12px;font-weight:600;text-decoration:none;
-        transition:all 0.15s;"
+    <!-- Single Ko-fi button -->
+    <div style="margin-bottom:12px;">
+      <a href="https://ko-fi.com/kelpdog" target="_blank" rel="noopener"
+        style="display:block;padding:11px 14px;background:rgba(255,94,91,0.1);
+        border:1px solid rgba(255,94,91,0.45);border-radius:8px;
+        color:#ff6b5b;font-size:13px;font-weight:600;text-decoration:none;
+        transition:all 0.15s;text-align:center;"
         onmouseover="this.style.background='rgba(255,94,91,0.2)'"
-        onmouseout="this.style.background='rgba(255,94,91,0.1)'">$1 ☕</a>
-      <a href="https://ko-fi.com" target="_blank" rel="noopener"
-        style="padding:7px 14px;background:rgba(255,94,91,0.1);border:1px solid rgba(255,94,91,0.35);
-        border-radius:8px;color:#ff6b5b;font-size:12px;font-weight:600;text-decoration:none;
-        transition:all 0.15s;"
-        onmouseover="this.style.background='rgba(255,94,91,0.2)'"
-        onmouseout="this.style.background='rgba(255,94,91,0.1)'">$10 ☕☕</a>
-      <a href="https://ko-fi.com" target="_blank" rel="noopener"
-        style="padding:7px 14px;background:rgba(255,94,91,0.1);border:1px solid rgba(255,94,91,0.35);
-        border-radius:8px;color:#ff6b5b;font-size:12px;font-weight:600;text-decoration:none;
-        transition:all 0.15s;"
-        onmouseover="this.style.background='rgba(255,94,91,0.2)'"
-        onmouseout="this.style.background='rgba(255,94,91,0.1)'">$42 ♟</a>
-      <a href="https://ko-fi.com" target="_blank" rel="noopener"
-        style="padding:7px 14px;background:rgba(255,94,91,0.1);border:1px solid rgba(255,94,91,0.35);
-        border-radius:8px;color:#ff6b5b;font-size:12px;font-weight:600;text-decoration:none;
-        transition:all 0.15s;"
-        onmouseover="this.style.background='rgba(255,94,91,0.2)'"
-        onmouseout="this.style.background='rgba(255,94,91,0.1)'">Custom ✨</a>
+        onmouseout="this.style.background='rgba(255,94,91,0.1)'">☕ Support through Ko-fi</a>
     </div>
 
-    <!-- Haiku / deep thought option — same style as donation buttons -->
-    <div style="margin:10px 0 14px;">
+    <!-- Haiku / deep thought option -->
+    <div style="margin:0 0 14px;">
       <a href="#" onclick="toggleHaikuBox();return false;"
-        style="display:inline-block;padding:7px 14px;background:rgba(74,159,212,0.1);
+        style="display:block;padding:11px 14px;background:rgba(74,159,212,0.08);
         border:1px solid rgba(74,159,212,0.35);border-radius:8px;
-        color:var(--accent);font-size:12px;font-weight:600;text-decoration:none;
-        transition:all 0.15s;"
-        onmouseover="this.style.background='rgba(74,159,212,0.2)'"
-        onmouseout="this.style.background='rgba(74,159,212,0.1)'">✍ Haiku or Deep Thought</a>
+        color:var(--accent);font-size:13px;font-weight:600;text-decoration:none;
+        transition:all 0.15s;text-align:center;"
+        onmouseover="this.style.background='rgba(74,159,212,0.18)'"
+        onmouseout="this.style.background='rgba(74,159,212,0.08)'">✍ Contribute Haiku or Deep Thought</a>
       <div id="haikuBox" style="display:none;margin-top:8px;padding:10px;background:rgba(74,159,212,0.05);border:0.5px solid rgba(74,159,212,0.2);border-radius:8px;">
         <p style="font-size:9px;color:var(--text-secondary);margin-bottom:6px;">Share a haiku or thought about chess, blunders, or board vision:</p>
         <textarea id="donateHaiku"
@@ -1826,13 +1831,15 @@ function chatAppend(from, text){
 // CHESS CLOCK — Fischer increment support
 // ══════════════════════════════════════════════════════════════════════════════
 const TIME_CONTROLS = {
-  untimed:    {label:'Untimed',       time:0,    inc:0},
-  bullet:     {label:'Bullet 1+0',    time:60,   inc:0},
-  blitz3:     {label:'Blitz 3+2',     time:180,  inc:2},
-  blitz5:     {label:'Blitz 5+0',     time:300,  inc:0},
-  rapid10:    {label:'Rapid 10+0',    time:600,  inc:0},
-  rapid15:    {label:'Rapid 15+10',   time:900,  inc:10},
+  untimed:    {label:'Untimed',        time:0,    inc:0},
+  bullet:     {label:'Bullet 1+0',     time:60,   inc:0},
+  blitz3:     {label:'Blitz 3+2',      time:180,  inc:2},
+  blitz5:     {label:'Blitz 5+0',      time:300,  inc:0},
+  rapid10:    {label:'Rapid 10+0',     time:600,  inc:0},
+  rapid15:    {label:'Rapid 15+10',    time:900,  inc:10},
   tournament: {label:'Tournament 30+0',time:1800, inc:0},
+  // Custom: built dynamically from base+increment selectors
+  custom:     {label:'Custom',         time:0,    inc:0},
 };
 
 let clockActive = false;
@@ -5664,12 +5671,54 @@ function botUpdateHybridTotal() {
 }
 
 // ── Start / Stop bot ─────────────────────────────────────────────────────────
-// ── Bot time control selector ────────────────────────────────────────────────
+// ── Bot time control selector (new two-row UI) ───────────────────────────────
+let _botBaseMin = 0;  // 0 = untimed
+let _botIncSec  = 0;
+
+function botSetBaseMin(min) {
+  _botBaseMin = min;
+  document.querySelectorAll('[id^="tcm-"]').forEach(function(b) {
+    b.classList.toggle('tc-active', b.id === 'tcm-' + min);
+  });
+  _botUpdateTCDisplay();
+}
+
+function botSetIncSec(sec) {
+  _botIncSec = sec;
+  document.querySelectorAll('[id^="tci-"]').forEach(function(b) {
+    b.classList.toggle('tc-active', b.id === 'tci-' + sec);
+  });
+  _botUpdateTCDisplay();
+}
+
+function _botUpdateTCDisplay() {
+  var el = document.getElementById('tcDisplay');
+  if (!el) return;
+  if (_botBaseMin === 0) {
+    el.textContent = 'Untimed';
+    botSelectedTC = 'untimed';
+    return;
+  }
+  var incStr = _botIncSec > 0 ? ' + ' + _botIncSec + 's' : '';
+  el.textContent = _botBaseMin + ' min' + incStr;
+  // Store as custom TC
+  var key = 'custom';
+  TIME_CONTROLS.custom = { label: _botBaseMin + '+' + _botIncSec, time: _botBaseMin * 60, inc: _botIncSec };
+  botSelectedTC = key;
+}
+
+// Legacy botSetTC kept for save/load compatibility
 function botSetTC(key) {
   botSelectedTC = key;
-  document.querySelectorAll('[id^="btc-"]').forEach(function(b) {
-    b.classList.toggle('active', b.id === 'btc-' + key);
-  });
+  // Map legacy keys back to new UI
+  var legacyMap = {
+    'untimed': [0,0], 'bullet': [1,0], 'blitz3': [3,2],
+    'blitz5': [5,0], 'rapid10': [10,0], 'rapid15': [15,10], 'tournament': [30,0]
+  };
+  if (legacyMap[key]) {
+    botSetBaseMin(legacyMap[key][0]);
+    botSetIncSec(legacyMap[key][1]);
+  }
 }
 
 // ── Bot name generation ──────────────────────────────────────────────────────
