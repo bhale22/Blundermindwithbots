@@ -604,7 +604,7 @@ canvas{
     <div class="landing-card green-card" onclick="landingChoose('bot')">
       <div class="landing-card-icon">🤖</div>
       <div class="landing-card-title">Play vs Bots</div>
-      <div class="landing-card-desc">Challenge Stockfish or a human-like Maia-2 bot. Mix engines, set time pressure, see ghost responses.</div>
+      <div class="landing-card-desc">Challenge Stockfish or the Lichess Explorer bot. Mix engines, set time pressure, see ghost responses.</div>
     </div>
 
     <!-- 2 Player -->
@@ -1038,7 +1038,7 @@ canvas{
     <h3 style="margin-bottom:6px;">Opponent Type</h3>
     <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;">
       <button class="bot-tab active" id="btab-sf" onclick="botSetTab('sf')">⚙ Stockfish</button>
-      <button class="bot-tab" id="btab-maia" onclick="botSetTab('maia')">🧠 Maia-2</button>
+      <button class="bot-tab" id="btab-maia" onclick="botSetTab('maia')">🔍 Lichess Explorer</button>
       <button class="bot-tab" id="btab-hybrid" onclick="botSetTab('hybrid')">⚗ Hybrid Mix</button>
     </div>
 
@@ -1061,14 +1061,21 @@ canvas{
       </div>
     </div>
 
-    <!-- Maia-2 panel -->
+    <!-- Lichess Explorer panel -->
     <div id="bpanel-maia" style="display:none;">
       <div style="margin-bottom:8px;">
-        <label style="font-size:9px;color:var(--text-dim);">Player Elo to emulate</label>
-        <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
-          <input type="range" id="maiaElo" min="500" max="2000" step="50" value="900" style="flex:1;" oninput="document.getElementById('maiaEloVal').textContent=this.value">
-          <span id="maiaEloVal" style="font-size:11px;font-weight:700;min-width:38px;">900</span>
+        <label style="font-size:9px;color:var(--text-dim);">Rating range to emulate</label>
+        <div style="display:flex;gap:3px;margin-top:4px;flex-wrap:wrap;" id="lcRatingBtns">
+          <button class="tc-btn" id="lcr-400"  onclick="lcSetRating('400')">400</button>
+          <button class="tc-btn" id="lcr-1000" onclick="lcSetRating('1000')">1000</button>
+          <button class="tc-btn tc-active" id="lcr-1200" onclick="lcSetRating('1200')">1200</button>
+          <button class="tc-btn" id="lcr-1400" onclick="lcSetRating('1400')">1400</button>
+          <button class="tc-btn" id="lcr-1600" onclick="lcSetRating('1600')">1600</button>
+          <button class="tc-btn" id="lcr-1800" onclick="lcSetRating('1800')">1800</button>
+          <button class="tc-btn" id="lcr-2000" onclick="lcSetRating('2000')">2000</button>
+          <button class="tc-btn" id="lcr-2200" onclick="lcSetRating('2200')">2200+</button>
         </div>
+        <div style="font-size:8px;color:var(--text-dim);margin-top:3px;">Plays moves most common for that rating in Lichess games</div>
       </div>
       <div style="margin-bottom:8px;">
         <label style="font-size:9px;color:var(--text-dim);">Temperature (move randomness)</label>
@@ -1078,8 +1085,16 @@ canvas{
         </div>
         <div style="font-size:8px;color:var(--text-dim);">Low = always plays top move · High = picks among plausible moves</div>
       </div>
+      <div style="margin-bottom:8px;">
+        <label style="font-size:9px;color:var(--text-dim);">Stockfish fallback level (when position not in database)</label>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
+          <input type="range" id="lcFallbackLevel" min="1" max="20" value="5" style="flex:1;" oninput="document.getElementById('lcFallbackVal').textContent=this.value">
+          <span id="lcFallbackVal" style="font-size:11px;font-weight:700;min-width:20px;">5</span>
+        </div>
+        <div style="font-size:8px;color:var(--text-dim);">Used when position hasn't appeared in Lichess games at that rating</div>
+      </div>
       <div style="background:rgba(74,159,212,0.08);border:0.5px solid rgba(74,159,212,0.2);border-radius:4px;padding:6px;margin-bottom:8px;font-size:8.5px;color:var(--text-secondary);">
-        ℹ️ Maia-2 runs via the Lichess API — no local download needed. Requires internet connection.
+        ℹ️ Uses Lichess game database — not a neural network. Works well in openings; falls back to Stockfish in novel positions. Requires internet.
       </div>
     </div>
 
@@ -5212,20 +5227,38 @@ function uciToSq(uci) {
 
 // ── Maia-2 via Lichess API ───────────────────────────────────────────────────
 // Uses Lichess cloud eval as a proxy — returns top moves with probabilities
+// ── Lichess Explorer API (was "Maia") ────────────────────────────────────────
+let lcSelectedRating = '1200'; // default rating band
+
+function lcSetRating(rating) {
+  lcSelectedRating = rating;
+  document.querySelectorAll('[id^="lcr-"]').forEach(function(b) {
+    b.classList.toggle('tc-active', b.id === 'lcr-' + rating);
+  });
+}
+
+function lcFallbackLevel() {
+  var el = document.getElementById('lcFallbackLevel');
+  return el ? parseInt(el.value) || 5 : 5;
+}
+
 async function maiaGetMoveProbs(fen) {
   try {
-    const url = `https://explorer.lichess.ovh/lichess?fen=${encodeURIComponent(fen)}&ratings=400,1000,1200,1400,1600,1800,2000&speeds=blitz,rapid&moves=10`;
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error('Lichess API error');
-    const data = await resp.json();
-    const moves = data.moves || [];
+    // Use the selected rating band only — filter to just those games for more authentic play
+    var rating = lcSelectedRating || '1200';
+    var url = 'https://explorer.lichess.ovh/lichess?fen=' + encodeURIComponent(fen) +
+              '&ratings=' + rating + '&speeds=blitz,rapid,classical&moves=15';
+    var resp = await fetch(url);
+    if (!resp.ok) throw new Error('Lichess API error ' + resp.status);
+    var data = await resp.json();
+    var moves = data.moves || [];
     if (!moves.length) return null;
-    const total = moves.reduce((s, m) => s + m.white + m.draws + m.black, 0) || 1;
-    const probs = {};
-    moves.forEach(m => { probs[m.uci] = (m.white + m.draws + m.black) / total; });
+    var total = moves.reduce(function(s, m) { return s + m.white + m.draws + m.black; }, 0) || 1;
+    var probs = {};
+    moves.forEach(function(m) { probs[m.uci] = (m.white + m.draws + m.black) / total; });
     return probs;
   } catch(e) {
-    console.warn('Maia/Lichess API fallback:', e);
+    console.warn('Lichess Explorer fallback:', e);
     return null;
   }
 }
@@ -5329,9 +5362,9 @@ async function botMakeMove() {
         await new Promise(r => setTimeout(r, delay));
         uciMove = sampleFromProbs(probs, effectiveTemp);
       } else {
-        // Fallback to Stockfish level 5
+        // Fallback to Stockfish at user-selected level
         await sfInit();
-        uciMove = await sfGetMove(fen, 5);
+        uciMove = await sfGetMove(fen, lcFallbackLevel());
       }
 
     } else if (botTab === 'hybrid') {
@@ -5621,7 +5654,7 @@ function botRenderHybridSlots() {
     sel.onchange = function() { botHybridSlots[i].type = this.value; botRenderHybridSlots(); };
     ['sf','maia'].forEach(function(v) {
       const opt = document.createElement('option');
-      opt.value = v; opt.textContent = v === 'sf' ? 'Stockfish' : 'Maia-2';
+      opt.value = v; opt.textContent = v === 'sf' ? 'Stockfish' : 'Lichess Explorer';
       if (slot.type === v) opt.selected = true;
       sel.appendChild(opt);
     });
@@ -5734,8 +5767,7 @@ function botGenerateName() {
     var lvl = parseInt(document.getElementById('sfLevel').value) || 8;
     tabLabel = 'Stockfish ' + lvl;
   } else if (botTab === 'maia') {
-    var elo = parseInt(document.getElementById('maiaElo').value) || 900;
-    tabLabel = 'Maia ' + elo;
+    tabLabel = 'Lichess ' + (lcSelectedRating || '1200');
   } else if (botTab === 'hybrid') {
     tabLabel = 'Hybrid Bot';
   }
@@ -5743,17 +5775,31 @@ function botGenerateName() {
 }
 
 // Sets the player name display for the bot and human
+function botEngineTag() {
+  // Small indicator showing which engine is active
+  if (botTab === 'maia') {
+    var rating = lcSelectedRating || '1200';
+    return ' ‹LC ' + rating + '›';  // ‹LC 1200›
+  } else if (botTab === 'sf') {
+    var lvl = document.getElementById('sfLevel') ? document.getElementById('sfLevel').value : '8';
+    return ' ‹SF ' + lvl + '›';     // ‹SF 8›
+  } else if (botTab === 'hybrid') {
+    return ' ‹Hybrid›';
+  }
+  return '';
+}
+
 function botUpdatePlayerNames(humanColor) {
-  var botName   = botGenerateName();
+  var botName   = botGenerateName() + botEngineTag();
   var humanName = 'You';
   var nameW = document.querySelector('#playerBoxW .player-name');
   var nameB = document.querySelector('#playerBoxB .player-name');
   if (humanColor === 'white') {
-    if (nameW) nameW.textContent = humanName + ' (White)';
-    if (nameB) nameB.textContent = botName + ' (Black)';
+    if (nameW) nameW.textContent = humanName;
+    if (nameB) nameB.textContent = botName;
   } else {
-    if (nameW) nameW.textContent = botName + ' (White)';
-    if (nameB) nameB.textContent = humanName + ' (Black)';
+    if (nameW) nameW.textContent = botName;
+    if (nameB) nameB.textContent = humanName;
   }
 }
 
