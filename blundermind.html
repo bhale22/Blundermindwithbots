@@ -3178,7 +3178,10 @@ function getEvtPos(e){const rect=cv.getBoundingClientRect();const cl=e.touches?e
 function getSq(pos){
   const scale=480/cv.getBoundingClientRect().width;
   let c=Math.floor(pos.x*scale/SQ),r=Math.floor(pos.y*scale/SQ);
-  if(typeof mpRole!=='undefined'&&mpRole==='black'&&typeof mpRoomId!=='undefined'&&mpRoomId){c=7-c;r=7-r;}
+  // Flip for both multiplayer-black and bot-game-black (boardFlipped)
+  const shouldFlip = (typeof boardFlipped!=='undefined'&&boardFlipped) ||
+                     (typeof mpRole!=='undefined'&&mpRole==='black'&&typeof mpRoomId!=='undefined'&&mpRoomId);
+  if(shouldFlip){c=7-c;r=7-r;}
   if(c>=0&&c<8&&r>=0&&r<8)return rcSq(r,c);return -1;
 }
 function canvasToBoard(pos){
@@ -3188,8 +3191,10 @@ function canvasToBoard(pos){
   const py=(pos.y)*scale;
   let col=Math.max(0,Math.min(7,Math.floor(px/SQ)));
   let row=Math.max(0,Math.min(7,Math.floor(py/SQ)));
-  if(typeof mpRole!=='undefined'&&mpRole==='black'&&
-     typeof mpRoomId!=='undefined'&&mpRoomId){col=7-col;row=7-row;}
+  // Flip for both multiplayer-black and bot-game-black (boardFlipped)
+  const shouldFlip = (typeof boardFlipped!=='undefined'&&boardFlipped) ||
+                     (typeof mpRole!=='undefined'&&mpRole==='black'&&typeof mpRoomId!=='undefined'&&mpRoomId);
+  if(shouldFlip){col=7-col;row=7-row;}
   return rcSq(row,col);
 }
 function getPromoChoice(pos){
@@ -3399,8 +3404,9 @@ function getCaptureColor(sq, color, bd, atk){
     }
   }
   if(def === 0 || hasCheapAttacker) return 'red';   // hanging or cheap capture
+  if(att > def)  return 'red';                       // outnumbered — more attackers than defenders
   if(def > att)  return 'green';                     // overprotected
-  return 'grey';                                      // equal — contested
+  return 'grey';                                      // equal count — contested
 }
 
 // Draw a threat circle around a piece square
@@ -5862,15 +5868,14 @@ async function botStart() {
   // Pre-init Stockfish in background
   if (botTab !== 'maia') sfInit().catch(e => console.warn('SF init:', e));
 
-  // Apply time control then reset board
-  clockInit(botSelectedTC || 'untimed');
-  resetGame();
-
-  // Apply player color
+  // Apply player color FIRST so boardFlipped is correct before resetGame renders
   let pc = botPlayerColor;
   if (pc === 'random') pc = Math.random() < 0.5 ? 'white' : 'black';
   boardFlipped = (pc === 'black');
-  render();
+
+  // Apply time control then reset board (render() inside resetGame will use correct flip)
+  clockInit(botSelectedTC || 'untimed');
+  resetGame();
 
   botActive = true;
 
