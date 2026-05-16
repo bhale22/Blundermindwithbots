@@ -1059,6 +1059,16 @@ canvas{
         </div>
         <div style="font-size:8px;color:var(--text-dim);margin-top:2px;">Engine degrades from starting level → this level when clock is low</div>
       </div>
+      <div style="margin-bottom:8px;">
+        <label style="font-size:9px;color:var(--text-dim);">Variety <span style="color:var(--text-dim);font-weight:normal;">(move variation around target level)</span></label>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
+          <span style="font-size:8px;color:var(--text-dim);">None</span>
+          <input type="range" id="sfTemperature" min="0" max="1" step="1" value="0" style="flex:1;"
+            oninput="document.getElementById('sfTempDesc').textContent=this.value==='0'?'Always plays at selected level':'Varies: 50% target · 20% ±1 · 5% ±2'">
+          <span style="font-size:8px;color:var(--text-dim);">High</span>
+        </div>
+        <div id="sfTempDesc" style="font-size:8px;color:var(--text-dim);margin-top:2px;">Always plays at selected level</div>
+      </div>
     </div>
 
     <!-- Lichess Explorer panel -->
@@ -1357,6 +1367,7 @@ let botThinking = false;
 let botLastHoverSq = -1;
 let botGhostResponses = {};
 let botPrecomputePending = false;
+let lastBotMoveSource = ''; // 'LC', 'SF', etc.
 
 
 
@@ -5230,11 +5241,24 @@ function uciToSq(uci) {
 // ── Lichess Explorer API (was "Maia") ────────────────────────────────────────
 let lcSelectedRating = '1200'; // default rating band
 
+// Default SF fallback levels for each LC rating band
+var LC_FALLBACK_MAP = {
+  '400':  1, '1000': 2, '1200': 2,
+  '1400': 3, '1600': 4, '1800': 4,
+  '2000': 5, '2200': 6
+};
+
 function lcSetRating(rating) {
   lcSelectedRating = rating;
   document.querySelectorAll('[id^="lcr-"]').forEach(function(b) {
     b.classList.toggle('tc-active', b.id === 'lcr-' + rating);
   });
+  // Auto-set fallback SF level to sensible default for this rating
+  var defaultLevel = LC_FALLBACK_MAP[rating] || 5;
+  var slider = document.getElementById('lcFallbackLevel');
+  var display = document.getElementById('lcFallbackVal');
+  if (slider) slider.value = defaultLevel;
+  if (display) display.textContent = defaultLevel;
 }
 
 function lcFallbackLevel() {
@@ -5283,6 +5307,24 @@ function positionEntropy(moveProbs) {
     if (p > 0) e -= p * Math.log2(p);
   }
   return e;
+}
+
+// ── SF level picker — applies temperature weighting around target level ────────
+// Weights: 50% target, 20% target+1, 20% target-1, 5% target+2, 5% target-2
+function sfPickLevel(targetLevel) {
+  var tempEl = document.getElementById('sfTemperature');
+  if (!tempEl || parseInt(tempEl.value) === 0) return targetLevel; // no variety
+
+  // Weighted random selection
+  var rand = Math.random();
+  var offset;
+  if      (rand < 0.50) offset =  0;   // 50% — target
+  else if (rand < 0.70) offset =  1;   // 20% — one above
+  else if (rand < 0.90) offset = -1;   // 20% — one below
+  else if (rand < 0.95) offset =  2;   //  5% — two above
+  else                  offset = -2;   //  5% — two below
+
+  return Math.max(1, Math.min(20, targetLevel + offset));
 }
 
 // ── Effective Stockfish level (degrades under time pressure) ─────────────────
@@ -5345,9 +5387,10 @@ async function botMakeMove() {
 
   try {
     if (botTab === 'sf') {
-      const level = sfEffectiveLevel(clockMs);
+      const level = sfPickLevel(sfEffectiveLevel(clockMs));
       await sfInit();
       uciMove = await sfGetMove(fen, level);
+      lastBotMoveSource = 'SF ' + level;
       // Simulate think time
       const moveProbs = { [uciMove || 'e2e4']: 1.0 };
       const delay = botThinkTime(moveProbs, clockMs);
@@ -5361,10 +5404,12 @@ async function botMakeMove() {
         const delay = botThinkTime(probs, clockMs);
         await new Promise(r => setTimeout(r, delay));
         uciMove = sampleFromProbs(probs, effectiveTemp);
+        lastBotMoveSource = 'LC ' + (lcSelectedRating || '1200'); // non-breaking space
       } else {
         // Fallback to Stockfish at user-selected level
         await sfInit();
         uciMove = await sfGetMove(fen, lcFallbackLevel());
+        lastBotMoveSource = 'SF ' + lcFallbackLevel();
       }
 
     } else if (botTab === 'hybrid') {
@@ -5597,6 +5642,8 @@ function botPostMoveHook() {
   botGhostResponses = {};
   botLastHoverSq = -1;
   _ghostFromSq = -1; // reset so ghost re-arms on next piece selection
+  // Refresh player name to show live engine indicator
+  if (botActive) botUpdatePlayerNames(botPlayerColor);
   if (botActive && !botThinking && !gameOver) {
     const botColor = botPlayerColor === 'white' ? 'b' : 'w';
     if (turn === botColor) {
@@ -5776,13 +5823,15 @@ function botGenerateName() {
 
 // Sets the player name display for the bot and human
 function botEngineTag() {
-  // Small indicator showing which engine is active
+  // Show live source after first move, otherwise show configured engine
+  if (lastBotMoveSource) {
+    return ' ‹' + lastBotMoveSource + '›'; // e.g. ‹SF 7› or ‹LC 1200›
+  }
   if (botTab === 'maia') {
-    var rating = lcSelectedRating || '1200';
-    return ' ‹LC ' + rating + '›';  // ‹LC 1200›
+    return ' ‹LC ' + (lcSelectedRating || '1200') + '›';
   } else if (botTab === 'sf') {
     var lvl = document.getElementById('sfLevel') ? document.getElementById('sfLevel').value : '8';
-    return ' ‹SF ' + lvl + '›';     // ‹SF 8›
+    return ' ‹SF ' + lvl + '›';
   } else if (botTab === 'hybrid') {
     return ' ‹Hybrid›';
   }
@@ -5855,6 +5904,7 @@ function botStop() {
   clearGhostPieces();
   botGhostResponses = {};
   // Reset player names
+  lastBotMoveSource = '';
   var nW = document.querySelector('#playerBoxW .player-name');
   var nB = document.querySelector('#playerBoxB .player-name');
   if (nW) nW.textContent = 'White';
@@ -5879,7 +5929,8 @@ function botSaveConfig() {
     tab: botTab,
     stockfish: {
       level: parseInt(document.getElementById('sfLevel').value),
-      pressureLevel: parseInt(document.getElementById('sfPressureLevel').value)
+      pressureLevel: parseInt(document.getElementById('sfPressureLevel').value),
+      temperature: parseInt(document.getElementById('sfTemperature').value)
     },
     maia: {
       elo: parseInt(document.getElementById('maiaElo').value),
@@ -5914,6 +5965,11 @@ function botLoadConfig(event) {
         document.getElementById('sfLevelVal').textContent = cfg.stockfish.level || 8;
         document.getElementById('sfPressureLevel').value = cfg.stockfish.pressureLevel || 4;
         document.getElementById('sfPressureVal').textContent = cfg.stockfish.pressureLevel || 4;
+        if (cfg.stockfish.temperature !== undefined) {
+          document.getElementById('sfTemperature').value = cfg.stockfish.temperature;
+          var td = document.getElementById('sfTempDesc');
+          if (td) td.textContent = cfg.stockfish.temperature === 0 ? 'Always plays at selected level' : 'Varies: 50% target · 20% ±1 · 5% ±2';
+        }
       }
       if (cfg.maia) {
         document.getElementById('maiaElo').value = cfg.maia.elo || 900;
