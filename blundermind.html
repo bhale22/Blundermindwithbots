@@ -1038,8 +1038,8 @@ canvas{
     <h3 style="margin-bottom:6px;">Opponent Type</h3>
     <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;">
       <button class="bot-tab active" id="btab-sf" onclick="botSetTab('sf')">⚙ Stockfish</button>
-      <button class="bot-tab" id="btab-maia" onclick="botSetTab('maia')">🔍 Lichess Explorer</button>
-      <button class="bot-tab" id="btab-hybrid" onclick="botSetTab('hybrid')">⚗ Hybrid Mix</button>
+      <button class="bot-tab" id="btab-maia" onclick="botSetTab('maia')">🧠 Maia / Explorer</button>
+      <button class="bot-tab" id="btab-hybrid" onclick="botSetTab('hybrid')">⚗ Hybrid Bot</button>
     </div>
 
     <!-- Stockfish panel -->
@@ -1119,7 +1119,9 @@ canvas{
         <div id="maiaStatusText" style="font-size:8px;color:var(--text-dim);margin-top:3px;">Not loaded</div>
       </div>
       <div style="background:rgba(74,159,212,0.08);border:0.5px solid rgba(74,159,212,0.2);border-radius:4px;padding:6px;margin-bottom:8px;font-size:8.5px;color:var(--text-secondary);">
-        ℹ️ Without Maia3: uses Lichess game database (works well in openings, falls back to Stockfish in novel positions).
+        ℹ️ Without Maia3 downloaded: falls back to Lichess game database (openings only), then Stockfish.<br><br>
+        🌐 Play Maia and access free learning tools at <a href="https://www.maiachess.com/" target="_blank" rel="noopener"
+          style="color:var(--accent);text-decoration:underline;">maiachess.com</a>
       </div>
     </div>
 
@@ -3134,6 +3136,8 @@ function executeMove(from,to,promo){
 function tryCommit(from,to,promo){
   if(from<0||to<0||!legalMoves.includes(to))return false;
   if(typeof mpIsMyTurn==='function'&&!mpIsMyTurn()) return false;
+  // Don't let player commit a move while bot is calculating its response
+  if(botActive && botThinking) return false;
   const p=board[from];if(!p)return false;
   if(p.piece==='P'&&(Math.floor(to/8)===0||Math.floor(to/8)===7)&&!promo){
     promotionPending={from,to,color:p.color};clearPreview();render();return true;
@@ -3223,8 +3227,6 @@ cv.addEventListener('mousedown',e=>{
   e.preventDefault();
   if(promotionPending){const ch=getPromoChoice(getEvtPos(e));if(ch){executeMove(promotionPending.from,promotionPending.to,ch);promotionPending=null;}return;}
   if(gameOver)return;
-  // Block input while bot is thinking — prevents moving opponent's pieces
-  if(botActive && botThinking) return;
   const pos=getEvtPos(e);const sq=getSq(pos);if(sq<0)return;
   // Ghost precompute hook
   if (typeof ghostOnMouseDown === 'function') setTimeout(()=>ghostOnMouseDown(sq), 15);
@@ -5704,7 +5706,7 @@ async function botMakeMove() {
       const level = sfPickLevel(sfEffectiveLevel(clockMs));
       await sfInit();
       uciMove = await sfGetMove(fen, level);
-      lastBotMoveSource = 'SF ' + level;
+      lastBotMoveSource = 'SF';
       // Simulate think time
       const moveProbs = { [uciMove || 'e2e4']: 1.0 };
       const delay = botThinkTime(moveProbs, clockMs);
@@ -5719,14 +5721,14 @@ async function botMakeMove() {
       if (_maiaReady) {
         probs = await maia3GetMoveProbs(fen);
         if (probs && Object.keys(probs).length) {
-          lastBotMoveSource = 'Maia3 ' + (lcSelectedRating || '1200');
+          lastBotMoveSource = 'Maia3';
         }
       }
       // Fall back to Lichess Explorer API
       if (!probs) {
         probs = await maiaGetMoveProbs(fen);
         if (probs && Object.keys(probs).length) {
-          lastBotMoveSource = 'LC ' + (lcSelectedRating || '1200');
+          lastBotMoveSource = 'LC Explorer';
         }
       }
 
@@ -5738,7 +5740,7 @@ async function botMakeMove() {
         // Fallback to Stockfish at user-selected level
         await sfInit();
         uciMove = await sfGetMove(fen, lcFallbackLevel());
-        lastBotMoveSource = 'SF ' + lcFallbackLevel();
+        lastBotMoveSource = 'SF';
       }
 
     } else if (botTab === 'hybrid') {
@@ -6157,18 +6159,14 @@ function botGenerateName() {
 
 // Sets the player name display for the bot and human
 function botEngineTag() {
-  // Show live source after first move, otherwise show configured engine
+  // Show live engine type after first move (no level — keeps player guessing on SF/hybrid)
   if (lastBotMoveSource) {
-    return ' ‹' + lastBotMoveSource + '›'; // e.g. ‹SF 7› or ‹LC 1200›
+    return ' ‹' + lastBotMoveSource + '›';
   }
-  if (botTab === 'maia') {
-    return ' ‹LC ' + (lcSelectedRating || '1200') + '›';
-  } else if (botTab === 'sf') {
-    var lvl = document.getElementById('sfLevel') ? document.getElementById('sfLevel').value : '8';
-    return ' ‹SF ' + lvl + '›';
-  } else if (botTab === 'hybrid') {
-    return ' ‹Hybrid›';
-  }
+  // Before first move: show configured tab type only
+  if (botTab === 'maia') return ' ‹LC Explorer›';
+  if (botTab === 'sf')   return ' ‹SF›';
+  if (botTab === 'hybrid') return ' ‹Hybrid›';
   return '';
 }
 
