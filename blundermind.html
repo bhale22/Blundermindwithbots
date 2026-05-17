@@ -1103,8 +1103,23 @@ canvas{
         </div>
         <div style="font-size:8px;color:var(--text-dim);">Used when position hasn't appeared in Lichess games at that rating</div>
       </div>
+      <!-- Maia3 model download -->
+      <div style="background:rgba(90,212,144,0.07);border:0.5px solid rgba(90,212,144,0.2);border-radius:4px;padding:6px;margin-bottom:8px;">
+        <div style="font-size:8.5px;color:var(--text-secondary);margin-bottom:5px;">
+          🧠 <strong>Real Maia3</strong> — human-like neural network (600–2600 Elo).<br>
+          Download once (~87MB), then runs entirely in your browser.
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button id="maiaDownloadBtn" onclick="maiaDownloadModel()"
+            style="flex:1;padding:5px;font-size:9px;font-weight:600;background:rgba(90,212,144,0.12);
+            border:0.5px solid #22a85a;border-radius:4px;color:#5ad490;cursor:pointer;">
+            Download Maia3 (~87MB)
+          </button>
+        </div>
+        <div id="maiaStatusText" style="font-size:8px;color:var(--text-dim);margin-top:3px;">Not loaded</div>
+      </div>
       <div style="background:rgba(74,159,212,0.08);border:0.5px solid rgba(74,159,212,0.2);border-radius:4px;padding:6px;margin-bottom:8px;font-size:8.5px;color:var(--text-secondary);">
-        ℹ️ Uses Lichess game database — not a neural network. Works well in openings; falls back to Stockfish in novel positions. Requires internet.
+        ℹ️ Without Maia3: uses Lichess game database (works well in openings, falls back to Stockfish in novel positions).
       </div>
     </div>
 
@@ -5244,6 +5259,292 @@ function uciToSq(uci) {
 
 // ── Maia-2 via Lichess API ───────────────────────────────────────────────────
 // Uses Lichess cloud eval as a proxy — returns top moves with probabilities
+// ── Maia3 ONNX Engine ────────────────────────────────────────────────────────
+// Runs real Maia3 inference in-browser via Web Worker + ONNX Runtime Web.
+// Falls back to Lichess Explorer API if model not loaded.
+
+var _maiaWorker = null;
+var _maiaReady = false;
+var _maiaStatus = 'idle'; // idle | loading | downloading | ready | error
+var _maiaPendingInferences = new Map();
+var _maiaNextId = 0;
+var _maiaProgress = 0;
+
+// Move mapping: loaded from /data/all_moves_maia3.json
+var _maia3MoveIndex = null;       // { "e2e4": 1234, ... }
+var _maia3MoveReversed = null;    // { "1234": "e2e4", ... }
+
+// Mirror helpers (from tensor.ts)
+function _maiaSquare(sq) {
+  return sq[0] + (9 - parseInt(sq[1]));
+}
+function _maiaMove(uci) {
+  var from = _maiaSquare(uci.slice(0,2));
+  var to   = _maiaSquare(uci.slice(2,4));
+  return from + to + (uci.length > 4 ? uci[4] : '');
+}
+function _maiaSwapRank(rank) {
+  var out = '';
+  for (var i = 0; i < rank.length; i++) {
+    var c = rank[i];
+    if (c >= 'A' && c <= 'Z') out += c.toLowerCase();
+    else if (c >= 'a' && c <= 'z') out += c.toUpperCase();
+    else out += c;
+  }
+  return out;
+}
+function _maiaSwapCastling(c) {
+  if (c === '-') return '-';
+  var r = new Set(c.split(''));
+  var s = new Set();
+  if (r.has('K')) s.add('k'); if (r.has('Q')) s.add('q');
+  if (r.has('k')) s.add('K'); if (r.has('q')) s.add('Q');
+  var out = '';
+  if (s.has('K')) out += 'K'; if (s.has('Q')) out += 'Q';
+  if (s.has('k')) out += 'k'; if (s.has('q')) out += 'q';
+  return out || '-';
+}
+function _maiaFlipFen(fen) {
+  var parts = fen.split(' ');
+  var ranks = parts[0].split('/');
+  var flipped = ranks.slice().reverse().map(_maiaSwapRank).join('/');
+  var activeColor = parts[1] === 'w' ? 'b' : 'w';
+  var castling = _maiaSwapCastling(parts[2]);
+  var ep = parts[3] !== '-' ? _maiaSquare(parts[3]) : '-';
+  return flipped + ' ' + activeColor + ' ' + castling + ' ' + ep + ' ' + parts[4] + ' ' + parts[5];
+}
+
+// Encode FEN into Maia3 (64×12) board token tensor
+function _maiaEncode(fen) {
+  // Mirror if black to move — Maia3 always sees board from white's perspective
+  var workFen = fen.split(' ')[1] === 'b' ? _maiaFlipFen(fen) : fen;
+  var tokens = new Float32Array(64 * 12);
+  var pieceTypes = ['P','N','B','R','Q','K','p','n','b','r','q','k'];
+  var rows = workFen.split(' ')[0].split('/');
+  for (var rank = 0; rank < 8; rank++) {
+    var row = 7 - rank;
+    var file = 0;
+    for (var ci = 0; ci < rows[rank].length; ci++) {
+      var ch = rows[rank][ci];
+      var n = parseInt(ch);
+      if (isNaN(n)) {
+        var pi = pieceTypes.indexOf(ch);
+        if (pi >= 0) tokens[(row * 8 + file) * 12 + pi] = 1.0;
+        file++;
+      } else {
+        file += n;
+      }
+    }
+  }
+  return { tokens: tokens, workFen: workFen };
+}
+
+// Build legal moves mask (4352 entries)
+function _maiaLegalMask(workFen) {
+  if (!_maia3MoveIndex) return null;
+  // Parse position from workFen (already from white's perspective)
+  var parts = workFen.split(' ');
+  // Use existing legalMovesFor — but we need the mirrored board
+  // Build a temporary board from workFen
+  var tmpBoard = new Array(64).fill(null);
+  var pieceMap = {
+    'P': {color:'w',piece:'P'}, 'N': {color:'w',piece:'N'}, 'B': {color:'w',piece:'B'},
+    'R': {color:'w',piece:'R'}, 'Q': {color:'w',piece:'Q'}, 'K': {color:'w',piece:'K'},
+    'p': {color:'b',piece:'P'}, 'n': {color:'b',piece:'N'}, 'b': {color:'b',piece:'B'},
+    'r': {color:'b',piece:'R'}, 'q': {color:'b',piece:'Q'}, 'k': {color:'b',piece:'K'},
+  };
+  var rows = parts[0].split('/');
+  for (var rank = 0; rank < 8; rank++) {
+    var row = 7 - rank;
+    var file = 0;
+    for (var ci = 0; ci < rows[rank].length; ci++) {
+      var ch = rows[rank][ci];
+      var n = parseInt(ch);
+      if (isNaN(n)) { tmpBoard[row * 8 + file] = pieceMap[ch] || null; file++; }
+      else file += n;
+    }
+  }
+  // Castling from FEN
+  var cst = { wK: parts[2].includes('K'), wQ: parts[2].includes('Q'),
+               bK: parts[2].includes('k'), bQ: parts[2].includes('q') };
+  var epSqTmp = -1;
+  if (parts[3] !== '-') {
+    var ef = parts[3].charCodeAt(0) - 'a'.charCodeAt(0);
+    var er = parseInt(parts[3][1]) - 1;
+    epSqTmp = er * 8 + ef;
+  }
+
+  var mask = new Float32Array(4352);
+  var files = 'abcdefgh';
+  for (var sq = 0; sq < 64; sq++) {
+    var p = tmpBoard[sq];
+    if (!p || p.color !== 'w') continue; // always white's perspective
+    var moves = legalMovesFor(sq, tmpBoard, epSqTmp, cst);
+    for (var mi = 0; mi < moves.length; mi++) {
+      var fromStr = files[sq % 8] + (Math.floor(sq / 8) + 1);
+      var toStr   = files[moves[mi] % 8] + (Math.floor(moves[mi] / 8) + 1);
+      // Handle pawn promotion
+      if (p.piece === 'P' && Math.floor(moves[mi] / 8) === 7) {
+        ['q','r','b','n'].forEach(function(pr) {
+          var idx = _maia3MoveIndex[fromStr + toStr + pr];
+          if (idx !== undefined) mask[idx] = 1.0;
+        });
+      } else {
+        var idx = _maia3MoveIndex[fromStr + toStr];
+        if (idx !== undefined) mask[idx] = 1.0;
+      }
+    }
+  }
+  return mask;
+}
+
+// Process Maia3 outputs into move probability dict
+function _maiaProcess(fen, logitsMove, logitsValue, legalMask) {
+  var isBlack = fen.split(' ')[1] === 'b';
+  // Get legal move indices
+  var legalIdx = [];
+  for (var i = 0; i < legalMask.length; i++) {
+    if (legalMask[i] > 0) legalIdx.push(i);
+  }
+  if (!legalIdx.length) return null;
+
+  // Softmax over legal logits only
+  var legalLogits = legalIdx.map(function(i) { return logitsMove[i]; });
+  var maxL = Math.max.apply(null, legalLogits);
+  var expL = legalLogits.map(function(l) { return Math.exp(l - maxL); });
+  var sumE = expL.reduce(function(a,b) { return a+b; }, 0);
+
+  var probs = {};
+  for (var j = 0; j < legalIdx.length; j++) {
+    var moveStr = _maia3MoveReversed[String(legalIdx[j])];
+    if (!moveStr) continue;
+    // Mirror move back if black
+    var actualMove = isBlack ? _maiaMove(moveStr) : moveStr;
+    probs[actualMove] = expL[j] / sumE;
+  }
+  return probs;
+}
+
+// Initialize the Maia worker
+function maiaInit() {
+  if (_maiaWorker) return;
+  try {
+    _maiaWorker = new Worker('/maia-worker.js');
+    _maiaWorker.onmessage = function(e) {
+      var msg = e.data;
+      if (msg.type === 'status') {
+        _maiaStatus = msg.status;
+        _maiaUpdateStatusUI();
+        if (msg.status === 'ready') _maiaReady = true;
+      } else if (msg.type === 'progress') {
+        _maiaProgress = msg.progress;
+        _maiaUpdateStatusUI();
+      } else if (msg.type === 'inference-result') {
+        var pending = _maiaPendingInferences.get(msg.id);
+        if (pending) {
+          pending.resolve({
+            logitsMove: new Float32Array(msg.logitsMove),
+            logitsValue: new Float32Array(msg.logitsValue)
+          });
+          _maiaPendingInferences.delete(msg.id);
+        }
+      } else if (msg.type === 'error') {
+        console.warn('Maia worker error:', msg.message);
+        if (msg.id !== undefined) {
+          var p = _maiaPendingInferences.get(msg.id);
+          if (p) { p.reject(new Error(msg.message)); _maiaPendingInferences.delete(msg.id); }
+        }
+      }
+    };
+    _maiaWorker.onerror = function(err) {
+      console.warn('Maia worker crashed:', err);
+      _maiaStatus = 'error'; _maiaReady = false;
+      _maiaUpdateStatusUI();
+    };
+    _maiaWorker.postMessage({ type: 'init', modelUrl: '/models/maia3_simplified.onnx', modelVersion: '3' });
+  } catch(err) {
+    console.warn('Could not start Maia worker:', err);
+    _maiaStatus = 'error';
+  }
+}
+
+// Load move mapping JSONs (fetched once, cached)
+async function _maiaLoadMappings() {
+  if (_maia3MoveIndex && _maia3MoveReversed) return true;
+  try {
+    var [r1, r2] = await Promise.all([
+      fetch('/data/all_moves_maia3.json'),
+      fetch('/data/all_moves_maia3_reversed.json')
+    ]);
+    _maia3MoveIndex    = await r1.json();
+    _maia3MoveReversed = await r2.json();
+    return true;
+  } catch(e) {
+    console.warn('Could not load Maia3 move mappings:', e);
+    return false;
+  }
+}
+
+// Download model on user request
+async function maiaDownloadModel() {
+  var btn = document.getElementById('maiaDownloadBtn');
+  if (btn) btn.disabled = true;
+  if (!_maiaWorker) maiaInit();
+  await _maiaLoadMappings();
+  if (_maiaWorker) _maiaWorker.postMessage({ type: 'download' });
+}
+
+// Update download button / status display
+function _maiaUpdateStatusUI() {
+  var statusEl = document.getElementById('maiaStatusText');
+  var btn = document.getElementById('maiaDownloadBtn');
+  if (!statusEl) return;
+  var labels = {
+    'idle': 'Not loaded', 'loading': 'Loading from cache…',
+    'no-cache': 'Not downloaded', 'downloading': 'Downloading… ' + _maiaProgress + '%',
+    'ready': '✓ Ready', 'error': '✗ Error loading model'
+  };
+  statusEl.textContent = labels[_maiaStatus] || _maiaStatus;
+  statusEl.style.color = _maiaStatus === 'ready' ? '#5ad490'
+                       : _maiaStatus === 'error'  ? '#e04040' : 'var(--text-dim)';
+  if (btn) {
+    btn.disabled = (_maiaStatus === 'downloading' || _maiaStatus === 'ready');
+    btn.textContent = _maiaStatus === 'ready' ? '✓ Model ready' : 'Download Maia3 (~87MB)';
+  }
+}
+
+// Main Maia3 inference — returns move probs dict or null
+async function maia3GetMoveProbs(fen) {
+  if (!_maiaReady || !_maiaWorker) return null;
+  if (!_maia3MoveIndex) {
+    var ok = await _maiaLoadMappings();
+    if (!ok) return null;
+  }
+  try {
+    var eloSelf = parseInt(lcSelectedRating) || 1200;
+    var eloOppo = eloSelf; // symmetric — model plays at target level vs similar opponent
+
+    var { tokens, workFen } = _maiaEncode(fen);
+    var legalMask = _maiaLegalMask(workFen);
+    if (!legalMask) return null;
+
+    var id = _maiaNextId++;
+    var result = await new Promise(function(resolve, reject) {
+      _maiaPendingInferences.set(id, { resolve, reject });
+      _maiaWorker.postMessage({
+        type: 'inference', id,
+        tokens: tokens.buffer, eloSelfs: Float32Array.from([eloSelf]).buffer,
+        eloOppos: Float32Array.from([eloOppo]).buffer, batchSize: 1
+      }, [tokens.buffer]);
+    });
+
+    return _maiaProcess(fen, result.logitsMove, result.logitsValue, legalMask);
+  } catch(e) {
+    console.warn('Maia3 inference error:', e);
+    return null;
+  }
+}
+
 // ── Lichess Explorer API (was "Maia") ────────────────────────────────────────
 let lcSelectedRating = '1200'; // default rating band
 
@@ -5405,12 +5706,27 @@ async function botMakeMove() {
     } else if (botTab === 'maia') {
       const baseTemp = parseFloat(document.getElementById('maiaTemp').value) || 1.0;
       const effectiveTemp = timePressureTemp(baseTemp, clockMs);
-      const probs = await maiaGetMoveProbs(fen);
+
+      let probs = null;
+      // Try real Maia3 first (if downloaded and ready)
+      if (_maiaReady) {
+        probs = await maia3GetMoveProbs(fen);
+        if (probs && Object.keys(probs).length) {
+          lastBotMoveSource = 'Maia3 ' + (lcSelectedRating || '1200');
+        }
+      }
+      // Fall back to Lichess Explorer API
+      if (!probs) {
+        probs = await maiaGetMoveProbs(fen);
+        if (probs && Object.keys(probs).length) {
+          lastBotMoveSource = 'LC ' + (lcSelectedRating || '1200');
+        }
+      }
+
       if (probs && Object.keys(probs).length) {
         const delay = botThinkTime(probs, clockMs);
         await new Promise(r => setTimeout(r, delay));
         uciMove = sampleFromProbs(probs, effectiveTemp);
-        lastBotMoveSource = 'LC ' + (lcSelectedRating || '1200'); // non-breaking space
       } else {
         // Fallback to Stockfish at user-selected level
         await sfInit();
@@ -5665,6 +5981,11 @@ function botSetTab(tab) {
     document.getElementById('btab-'+t).classList.toggle('active', t === tab);
     document.getElementById('bpanel-'+t).style.display = t === tab ? '' : 'none';
   });
+  // Auto-init Maia worker when LC/Maia tab shown (checks IndexedDB cache silently)
+  if (tab === 'maia' && !_maiaWorker) {
+    maiaInit();
+    _maiaLoadMappings();
+  }
 }
 
 function botSetTpBtn(val) {

@@ -50,6 +50,46 @@ function loadHtml() {
 }
 loadHtml();
 
+// Serve Maia3 model and support files
+app.get('/models/:file', (req, res) => {
+  const file = req.params.file;
+  if (!/^maia3[a-z0-9_\-.]*\.onnx$/.test(file)) { res.status(404).end(); return; }
+  const p = path.join(__dirname, 'models', file);
+  if (!require('fs').existsSync(p)) { res.status(404).end(); return; }
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Cache-Control', 'public, max-age=2592000'); // 30 days
+  res.sendFile(p);
+});
+
+app.get('/ort/:file', (req, res) => {
+  const file = req.params.file;
+  if (!/^[\w.\-]+$/.test(file)) { res.status(404).end(); return; }
+  const p = path.join(__dirname, 'ort', file);
+  if (!require('fs').existsSync(p)) { res.status(404).end(); return; }
+  const ct = file.endsWith('.wasm') ? 'application/wasm'
+           : file.endsWith('.mjs')  ? 'application/javascript'
+           : 'application/javascript';
+  res.setHeader('Content-Type', ct);
+  res.setHeader('Cache-Control', 'public, max-age=2592000');
+  res.sendFile(p);
+});
+
+app.get('/data/:file', (req, res) => {
+  const file = req.params.file;
+  if (!/^[\w.\-]+\.json$/.test(file)) { res.status(404).end(); return; }
+  const p = path.join(__dirname, 'data', file);
+  if (!require('fs').existsSync(p)) { res.status(404).end(); return; }
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'public, max-age=86400'); // 1 day
+  res.sendFile(p);
+});
+
+app.get('/maia-worker.js', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.sendFile(path.join(__dirname, 'maia-worker.js'));
+});
+
 // Serve Stockfish — long cache (content never changes for this version)
 app.get('/stockfish.js', (req, res) => {
   if (!sfScript) { res.status(503).send('// Stockfish not yet loaded'); return; }
