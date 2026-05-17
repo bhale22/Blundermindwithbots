@@ -3223,6 +3223,8 @@ cv.addEventListener('mousedown',e=>{
   e.preventDefault();
   if(promotionPending){const ch=getPromoChoice(getEvtPos(e));if(ch){executeMove(promotionPending.from,promotionPending.to,ch);promotionPending=null;}return;}
   if(gameOver)return;
+  // Block input while bot is thinking — prevents moving opponent's pieces
+  if(botActive && botThinking) return;
   const pos=getEvtPos(e);const sq=getSq(pos);if(sq<0)return;
   // Ghost precompute hook
   if (typeof ghostOnMouseDown === 'function') setTimeout(()=>ghostOnMouseDown(sq), 15);
@@ -5376,15 +5378,20 @@ function _maiaLegalMask(workFen) {
 
   var mask = new Float32Array(4352);
   var files = 'abcdefgh';
+  // In Blundermind: sq = row*8+col, row=0 = rank 8, row=7 = rank 1
+  // So UCI rank = 8 - Math.floor(sq/8)
+  function sqToUciStr(sq) {
+    return files[sq % 8] + (8 - Math.floor(sq / 8));
+  }
   for (var sq = 0; sq < 64; sq++) {
     var p = tmpBoard[sq];
     if (!p || p.color !== 'w') continue; // always white's perspective
     var moves = legalMovesFor(sq, tmpBoard, epSqTmp, cst);
     for (var mi = 0; mi < moves.length; mi++) {
-      var fromStr = files[sq % 8] + (Math.floor(sq / 8) + 1);
-      var toStr   = files[moves[mi] % 8] + (Math.floor(moves[mi] / 8) + 1);
-      // Handle pawn promotion
-      if (p.piece === 'P' && Math.floor(moves[mi] / 8) === 7) {
+      var fromStr = sqToUciStr(sq);
+      var toStr   = sqToUciStr(moves[mi]);
+      // Handle pawn promotion: pawn reaches row=0 (rank 8)
+      if (p.piece === 'P' && Math.floor(moves[mi] / 8) === 0) {
         ['q','r','b','n'].forEach(function(pr) {
           var idx = _maia3MoveIndex[fromStr + toStr + pr];
           if (idx !== undefined) mask[idx] = 1.0;
