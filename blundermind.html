@@ -5509,9 +5509,9 @@ function _maiaProcess(fen, logitsMove, logitsValue, legalMask) {
     if (!moveStr) continue;
     probs[moveStr] = expL[j] / sumE;
   }
-  // DEBUG: top 5 moves
-  var sorted = Object.entries(probs).sort(function(a,b){return b[1]-a[1];}).slice(0,5);
-  console.log('[Maia3 probs] legal:', legalIdx.length, '| top5:', sorted.map(function(e){return e[0]+'='+e[1].toFixed(3);}).join(' '));
+  // DEBUG: top 5 moves + check for captures (moves ending on opponent piece squares)
+  var sorted = Object.entries(probs).sort(function(a,b){return b[1]-a[1];});
+  console.log('[Maia3 probs] legal:', legalIdx.length, '| ALL:', sorted.map(function(e){return e[0]+'='+e[1].toFixed(3);}).join(' '));
   return probs;
 }
 
