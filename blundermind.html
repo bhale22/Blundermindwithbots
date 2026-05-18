@@ -614,23 +614,22 @@ canvas{
       <div class="landing-card-desc">Create a room and share the code with a friend. Play in real time.</div>
     </div>
 
-    <!-- Load PGN -->
-    <div class="landing-card gold-card" onclick="landingChoose('pgn')">
-      <div class="landing-card-icon">📂</div>
-      <div class="landing-card-title">Load a Saved Game</div>
-      <div class="landing-card-desc">Upload a PGN file and replay or explore any game move by move.</div>
+    <!-- Load PGN / Bot config — split card -->
+    <div class="landing-card gold-card" style="display:flex;flex-direction:column;padding:0;overflow:hidden;">
+      <div onclick="landingChoose('pgn')" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px 12px 10px;cursor:pointer;border-bottom:1px solid var(--border);">
+        <div class="landing-card-icon">📂</div>
+        <div class="landing-card-title">Load a Saved Game</div>
+        <div class="landing-card-desc">Upload a PGN file and replay or explore any game move by move.</div>
+      </div>
+      <div onclick="document.getElementById('landingBotConfigInput').click()" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 12px 16px;cursor:pointer;">
+        <div class="landing-card-icon" style="font-size:24px;">⚙️</div>
+        <div class="landing-card-title">Load a Saved Bot</div>
+        <div class="landing-card-desc">Upload a bot configuration file to restore a custom opponent.</div>
+      </div>
+      <input type="file" id="landingBotConfigInput" accept=".json" style="display:none"
+        onchange="landingLoadBotConfig(event)">
     </div>
 
-  </div>
-
-  <!-- Upload saved config -->
-  <div class="landing-upload-row">
-    <span style="font-size:9px;color:var(--text-dim);">Have a saved config?</span>
-    <button class="landing-upload-btn" onclick="document.getElementById('landingBotConfigInput').click()">
-      ⚙ Load bot configuration
-    </button>
-    <input type="file" id="landingBotConfigInput" accept=".json" style="display:none"
-      onchange="landingLoadBotConfig(event)">
   </div>
 
   <div class="landing-footer">
@@ -1002,14 +1001,14 @@ canvas{
     <button class="panel-close" onclick="closeAllPanels()">✕</button>
   </div>
   <div class="panel-body">
-    <p>As a newby, nearly all of the games I play are decided on blundered pieces. I created this site in the hopes that I could see what it was like to play a game that was decided by strategy instead of blunders. I still blunder, but at least the number of blunders is reduced a bit when there is a big red circle around the queen when I hover it over my intended square.</p>
-    <p>I also struggle with seeing or &#8220;getting a grip on the board&#8221; (to steal a useful phrase from the <a href="https://www.youtube.com/watch?v=3jiJn8bjtYk" target="_blank" rel="noopener" style="color:var(--accent);">Chess Dojo</a>), so while my intent was to blundercheck moves before committing, I&#8217;m finding that it also serves as a first order &#8220;get a grip&#8221; check to see if there are any check threats, discovered attacks, etc., that I overlooked.</p>
-    <p>While I added a feature to show the two most likely opponent responses to a move (to test my ability to predict the likely response), the site purposefully does not include any engine analysis or indicators to show if a move is &#8220;good or bad.&#8221; Each game can be downloaded and analyzed in <a href="https://lichess.org/paste" target="_blank" rel="noopener" style="color:var(--accent);">Lichess</a> or a website of your choice. Similarly, the PGN of any game can be uploaded and explored here.</p>
+    <p>Nearly all games of chess I play are decided on blundered pieces. I created this site in the hopes that I could see what it was like to play a game that was decided by strategy instead of blunders. I still blunder, but at least the number of blunders is reduced a bit when there is a big red circle around the queen when I hover it over my intended square. I still have no idea if this will translate to better board vision in &#8216;real&#8217; OTB games.</p>
+    <p>I also struggle with &#8220;getting a grip on the board&#8221; (to steal a useful phrase from the <a href="https://www.youtube.com/watch?v=3jiJn8bjtYk" target="_blank" rel="noopener" style="color:var(--accent);">Chess Dojo</a>), so while my intent was to blundercheck moves so that I would see if I were hanging my queen, I&#8217;m finding that it is showing discovered attacks and potential forks that I didn&#8217;t see at all (you can probably infer my rating at this point). I think it could be a very helpful tool as long as it is used as a blundercheck to double check and provide immediate feedback after assessment and calculation, not as a blunder avoider that just circles some hanging pieces while potential moves are explored by dragging the pieces around.</p>
+    <p>Also included in my numerous struggles is the ability to predict my opponent&#8217;s response, so I added a feature to show two potential responses by making two calls to Stockfish. I would like to do this with Maia, but running Maia3 on each potential move is too slow with my current set up &#8212; hopefully in the future. Currently the site does not include any engine analysis or indicators to show if a move is &#8220;good or bad&#8221; during game play or exploration. Each game can be downloaded and analyzed in <a href="https://lichess.org/paste" target="_blank" rel="noopener" style="color:var(--accent);">Lichess</a> or a website of your choice. Similarly, the PGN of any game can be uploaded and explored here.</p>
     <p>While I most enjoy playing people in person, I find playing strangers online less enjoyable, so I added in the feature to play against bots. The problem with the bots I&#8217;ve found is that they don&#8217;t feel time pressure, and their behavior is often sporadic in an unsatisfying way. I&#8217;ve tried to make the bots customizable in a way so that I have more control over how the bot will play.</p>
 
     <hr>
     <h3>Privacy</h3>
-    <p>Blundermind collects no user data, stores no game history, and tracks nothing. This may be annoying, so there is an option to download the current settings (board &amp; visualization settings and/or bot settings) and upload them when returning.</p>
+    <p>Blundermind collects no user data, uses no cookies, stores no game history, and tracks nothing. The board set up/configuration and customized bots can be downloaded and stored, then uploaded for future use.</p>
     <hr>
     <h3>Feedback</h3>
     <p>Any problems with functionality would be helpful, but I would particularly love feedback on whether any features on this site seem to translate into improvement in &#8216;real&#8217; over-the-board play.</p>
@@ -1036,12 +1035,14 @@ canvas{
 
     <!-- Opponent mode -->
     <h3 style="margin-bottom:6px;">Opponent Type</h3>
-    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;">
+    <div style="display:flex;gap:4px;margin-bottom:4px;">
       <button class="bot-tab active" id="btab-sf"      onclick="botSetTab('sf')">⚙ Stockfish</button>
-      <button class="bot-tab"        id="btab-maia3"   onclick="botSetTab('maia3')">🧠 Maia3</button>
-      <button class="bot-tab"        id="btab-maia"    onclick="botSetTab('maia')">🔍 LC+Maia</button>
-      <button class="bot-tab"        id="btab-lcsf"    onclick="botSetTab('lcsf')">📖 LC+SF</button>
       <button class="bot-tab"        id="btab-hybrid"  onclick="botSetTab('hybrid')">⚗ Hybrid</button>
+      <button class="bot-tab"        id="btab-lcsf"    onclick="botSetTab('lcsf')">📖 LC+SF</button>
+    </div>
+    <div style="display:flex;gap:4px;margin-bottom:10px;">
+      <button class="bot-tab" id="btab-maia3" onclick="botSetTab('maia3')" style="opacity:0.5;" title="Download Maia3 model to enable">🧠 Maia3</button>
+      <button class="bot-tab" id="btab-maia"  onclick="botSetTab('maia')"  style="opacity:0.5;" title="Download Maia3 model to enable">🔍 LC+Maia</button>
     </div>
 
     <!-- Stockfish panel -->
@@ -1104,7 +1105,7 @@ canvas{
       <div style="background:rgba(90,212,144,0.07);border:0.5px solid rgba(90,212,144,0.2);border-radius:4px;padding:6px;margin-bottom:8px;">
         <div style="font-size:8.5px;color:var(--text-secondary);margin-bottom:5px;">
           🧠 <strong>Real Maia3</strong> — human-like neural network (600–2600 Elo).<br>
-          Download once (~87MB), runs in your browser. Falls back to Stockfish if not downloaded.
+          Download once (~87MB), runs in your browser. Uses ~150–200MB RAM while active. Falls back to Stockfish if not downloaded.
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
           <button id="maia3DownloadBtn" onclick="maiaDownloadModel()"
@@ -5417,56 +5418,62 @@ function _maiaEncode(fen) {
 }
 
 // Build legal moves mask (4352 entries)
-function _maiaLegalMask(workFen) {
+function _maiaLegalMask(fen) {
   if (!_maia3MoveIndex) return null;
-  // Parse position from workFen (already from white's perspective)
-  var parts = workFen.split(' ');
-  // Use existing legalMovesFor — but we need the mirrored board
-  // Build a temporary board from workFen
+
+  var parts = fen.split(' ');
+  var sideToMove = parts[1];
+  var castlingStr = parts[2];
+  var epStr = parts[3];
+
+  // Build board directly from original FEN (no flipping)
   var tmpBoard = new Array(64).fill(null);
   var pieceMap = {
-    'P': {color:'w',piece:'P'}, 'N': {color:'w',piece:'N'}, 'B': {color:'w',piece:'B'},
-    'R': {color:'w',piece:'R'}, 'Q': {color:'w',piece:'Q'}, 'K': {color:'w',piece:'K'},
-    'p': {color:'b',piece:'P'}, 'n': {color:'b',piece:'N'}, 'b': {color:'b',piece:'B'},
-    'r': {color:'b',piece:'R'}, 'q': {color:'b',piece:'Q'}, 'k': {color:'b',piece:'K'},
+    'P':{color:'w',piece:'P'},'N':{color:'w',piece:'N'},'B':{color:'w',piece:'B'},
+    'R':{color:'w',piece:'R'},'Q':{color:'w',piece:'Q'},'K':{color:'w',piece:'K'},
+    'p':{color:'b',piece:'P'},'n':{color:'b',piece:'N'},'b':{color:'b',piece:'B'},
+    'r':{color:'b',piece:'R'},'q':{color:'b',piece:'Q'},'k':{color:'b',piece:'K'},
   };
   var rows = parts[0].split('/');
   for (var rank = 0; rank < 8; rank++) {
-    var row = 7 - rank;
+    // FEN rank0 = rank8 = Blundermind row=0
     var file = 0;
     for (var ci = 0; ci < rows[rank].length; ci++) {
       var ch = rows[rank][ci];
       var n = parseInt(ch);
-      if (isNaN(n)) { tmpBoard[row * 8 + file] = pieceMap[ch] || null; file++; }
+      if (isNaN(n)) { tmpBoard[rank * 8 + file] = pieceMap[ch] || null; file++; }
       else file += n;
     }
   }
-  // Castling from FEN
-  var cst = { wK: parts[2].includes('K'), wQ: parts[2].includes('Q'),
-               bK: parts[2].includes('k'), bQ: parts[2].includes('q') };
+
+  var cst = { wK: castlingStr.includes('K'), wQ: castlingStr.includes('Q'),
+               bK: castlingStr.includes('k'), bQ: castlingStr.includes('q') };
   var epSqTmp = -1;
-  if (parts[3] !== '-') {
-    var ef = parts[3].charCodeAt(0) - 'a'.charCodeAt(0);
-    var er = parseInt(parts[3][1]) - 1;
+  if (epStr !== '-') {
+    var ef = epStr.charCodeAt(0) - 'a'.charCodeAt(0);
+    var er = 8 - parseInt(epStr[1]); // rank -> Blundermind row
     epSqTmp = er * 8 + ef;
   }
 
   var mask = new Float32Array(4352);
   var files = 'abcdefgh';
-  // In Blundermind: sq = row*8+col, row=0 = rank 8, row=7 = rank 1
-  // So UCI rank = 8 - Math.floor(sq/8)
-  function sqToUciStr(sq) {
+
+  function sqToUci(sq) {
     return files[sq % 8] + (8 - Math.floor(sq / 8));
   }
+
   for (var sq = 0; sq < 64; sq++) {
     var p = tmpBoard[sq];
-    if (!p || p.color !== 'w') continue; // always white's perspective
+    if (!p || p.color !== sideToMove) continue;
     var moves = legalMovesFor(sq, tmpBoard, epSqTmp, cst);
     for (var mi = 0; mi < moves.length; mi++) {
-      var fromStr = sqToUciStr(sq);
-      var toStr   = sqToUciStr(moves[mi]);
-      // Handle pawn promotion: pawn reaches row=0 (rank 8)
-      if (p.piece === 'P' && Math.floor(moves[mi] / 8) === 0) {
+      var fromStr = sqToUci(sq);
+      var toStr   = sqToUci(moves[mi]);
+      var isPromo = p.piece === 'P' && (
+        (sideToMove === 'w' && Math.floor(moves[mi] / 8) === 0) ||
+        (sideToMove === 'b' && Math.floor(moves[mi] / 8) === 7)
+      );
+      if (isPromo) {
         ['q','r','b','n'].forEach(function(pr) {
           var idx = _maia3MoveIndex[fromStr + toStr + pr];
           if (idx !== undefined) mask[idx] = 1.0;
@@ -5596,6 +5603,15 @@ function _maiaUpdateStatusUI() {
   var btnTxt = _maiaStatus === 'ready' ? '✓ Model ready' : 'Download Maia3 (~87MB)';
   if (btn)  { btn.disabled  = disabled; btn.textContent  = btnTxt; }
   if (btn3) { btn3.disabled = disabled; btn3.textContent = btnTxt; }
+  // Enable/dim Maia row tabs based on model readiness
+  var maiaTabsReady = (_maiaStatus === 'ready');
+  ['btab-maia3','btab-maia'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) {
+      el.style.opacity = maiaTabsReady ? '1' : '0.5';
+      el.title = maiaTabsReady ? '' : 'Download Maia3 model to enable';
+    }
+  });
   return; // skip old code below
 }
 
@@ -5614,7 +5630,7 @@ async function maia3GetMoveProbs(fen) {
     var tokens = encoded.tokens;
     var workFen = encoded.workFen;
 
-    var legalMask = _maiaLegalMask(workFen);
+    var legalMask = _maiaLegalMask(fen);  // use original FEN — real board coords
     if (!legalMask) return null;
 
     var id = _maiaNextId++;
