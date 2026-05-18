@@ -5509,9 +5509,7 @@ function _maiaProcess(fen, logitsMove, logitsValue, legalMask) {
     if (!moveStr) continue;
     probs[moveStr] = expL[j] / sumE;
   }
-  // DEBUG: top 5 moves + check for captures (moves ending on opponent piece squares)
-  var sorted = Object.entries(probs).sort(function(a,b){return b[1]-a[1];});
-  console.log('[Maia3 probs] legal:', legalIdx.length, '| ALL:', sorted.map(function(e){return e[0]+'='+e[1].toFixed(3);}).join(' '));
+  // DEBUG: show top 5 + any moves landing on squares with opponent pieces
   return probs;
 }
 
@@ -5635,6 +5633,11 @@ async function maia3GetMoveProbs(fen) {
     if (!legalMask) return null;
 
     var id = _maiaNextId++;
+    console.log('[Maia3 SEND] id:', id, 'elo:', eloSelf, 'fen:', fen,
+      'tokens nonzero:', (function(t){var n=0;for(var i=0;i<t.length;i++)if(t[i])n++;return n;})(tokens),
+      'mask nonzero:', (function(m){var n=0;for(var i=0;i<m.length;i++)if(m[i])n++;return n;})(legalMask));
+
+    var t0 = Date.now();
     var result = await new Promise(function(resolve, reject) {
       _maiaPendingInferences.set(id, { resolve, reject });
       _maiaWorker.postMessage({
@@ -5643,8 +5646,14 @@ async function maia3GetMoveProbs(fen) {
         eloOppos: Float32Array.from([eloOppo]).buffer, batchSize: 1
       }, [tokens.buffer]);
     });
+    console.log('[Maia3 RECV] id:', id, 'took:', (Date.now()-t0)+'ms',
+      'logitsMove len:', result.logitsMove.length,
+      'logitsValue:', Array.from(result.logitsValue).map(function(v){return v.toFixed(3);}));
 
-    return _maiaProcess(fen, result.logitsMove, result.logitsValue, legalMask);
+    var probs = _maiaProcess(fen, result.logitsMove, result.logitsValue, legalMask);
+    var top3 = probs ? Object.entries(probs).sort(function(a,b){return b[1]-a[1];}).slice(0,3) : [];
+    console.log('[Maia3 PROBS] top3:', top3.map(function(e){return e[0]+'='+e[1].toFixed(3);}).join(' '));
+    return probs;
   } catch(e) {
     console.warn('Maia3 inference error:', e);
     return null;
