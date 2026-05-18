@@ -5632,6 +5632,8 @@ async function maia3GetMoveProbs(fen) {
 
     var legalMask = _maiaLegalMask(fen);  // use original FEN — real board coords
     if (!legalMask) return null;
+    var maskCount = 0; for (var mi=0; mi<legalMask.length; mi++) if (legalMask[mi]>0) maskCount++;
+    console.log('[Maia3] legal moves in mask:', maskCount, '| fen:', fen.slice(0,40));
 
     var id = _maiaNextId++;
     var result = await new Promise(function(resolve, reject) {
