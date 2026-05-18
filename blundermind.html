@@ -5507,10 +5507,11 @@ function _maiaProcess(fen, logitsMove, logitsValue, legalMask) {
   for (var j = 0; j < legalIdx.length; j++) {
     var moveStr = _maia3MoveReversed[String(legalIdx[j])];
     if (!moveStr) continue;
-    // NO mirroring needed — the legal mask was built using the actual board square
-    // notation (b8c6, g8f6 etc.) so the reversed dict already gives correct moves
     probs[moveStr] = expL[j] / sumE;
   }
+  // DEBUG: top 5 moves
+  var sorted = Object.entries(probs).sort(function(a,b){return b[1]-a[1];}).slice(0,5);
+  console.log('[Maia3 probs] legal:', legalIdx.length, '| top5:', sorted.map(function(e){return e[0]+'='+e[1].toFixed(3);}).join(' '));
   return probs;
 }
 
@@ -5632,8 +5633,6 @@ async function maia3GetMoveProbs(fen) {
 
     var legalMask = _maiaLegalMask(fen);  // use original FEN — real board coords
     if (!legalMask) return null;
-    var maskCount = 0; for (var mi=0; mi<legalMask.length; mi++) if (legalMask[mi]>0) maskCount++;
-    console.log('[Maia3] legal moves in mask:', maskCount, '| fen:', fen.slice(0,40));
 
     var id = _maiaNextId++;
     var result = await new Promise(function(resolve, reject) {
