@@ -5500,13 +5500,10 @@ function _maiaProcess(fen, logitsMove, logitsValue, legalMask) {
   for (var j = 0; j < legalIdx.length; j++) {
     var moveStr = _maia3MoveReversed[String(legalIdx[j])];
     if (!moveStr) continue;
-    // Mirror move back if black
-    var actualMove = isBlack ? _maiaMove(moveStr) : moveStr;
-    probs[actualMove] = expL[j] / sumE;
+    // NO mirroring needed — the legal mask was built using the actual board square
+    // notation (b8c6, g8f6 etc.) so the reversed dict already gives correct moves
+    probs[moveStr] = expL[j] / sumE;
   }
-  // DEBUG — log top 3 moves
-  var top3 = Object.entries(probs).sort((a,b)=>b[1]-a[1]).slice(0,3);
-  console.log('[Maia3] isBlack:', isBlack, '| top moves:', top3.map(([m,p])=>m+'='+p.toFixed(3)).join(' '));
   return probs;
 }
 
@@ -5616,11 +5613,6 @@ async function maia3GetMoveProbs(fen) {
     var encoded = _maiaEncode(fen);
     var tokens = encoded.tokens;
     var workFen = encoded.workFen;
-
-    // DEBUG — remove after color bug is confirmed fixed
-    console.log('[Maia3] fen turn:', fen.split(' ')[1],
-                '| workFen turn:', workFen.split(' ')[1],
-                '| isBlack in process:', fen.split(' ')[1] === 'b');
 
     var legalMask = _maiaLegalMask(workFen);
     if (!legalMask) return null;
@@ -5842,7 +5834,6 @@ async function botMakeMove() {
         const delay = botThinkTime(m3Probs, clockMs);
         await new Promise(r => setTimeout(r, delay));
         uciMove = sampleFromProbs(m3Probs, m3EffTemp);
-        console.log('[Maia3 sample] picked uciMove:', uciMove, '| top probs:', Object.entries(m3Probs).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([m,p])=>m+'='+p.toFixed(3)).join(' '));
       } else {
         // Maia3 not downloaded — fall back to SF
         await sfInit();
@@ -5929,7 +5920,6 @@ async function botMakeMove() {
 
   if (uciMove && botActive) {
     const mv = uciToSq(uciMove);
-    console.log('[Maia3 exec] uciMove:', uciMove, '| mv:', mv, '| piece at from:', board[mv?.from]?.color, board[mv?.from]?.piece, '| turn:', turn);
     if (mv) {
       const lm = legalMovesFor(mv.from, board, epSq, castling);
       if (lm.includes(mv.to)) {
