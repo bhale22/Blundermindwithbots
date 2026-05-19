@@ -1119,6 +1119,11 @@ canvas{
           🌐 Play &amp; learn at <a href="https://www.maiachess.com/" target="_blank" rel="noopener"
             style="color:var(--accent);text-decoration:underline;">maiachess.com</a>
         </div>
+        <button onclick="maiaEloTest()" style="margin-top:4px;width:100%;padding:4px;font-size:8px;
+          background:rgba(74,159,212,0.1);border:0.5px solid rgba(74,159,212,0.3);
+          border-radius:4px;color:var(--text-secondary);cursor:pointer;">
+          🧪 Test ELO conditioning (check console)
+        </button>
       </div>
     </div>
 
@@ -5513,6 +5518,51 @@ function _maiaProcess(fen, logitsMove, logitsValue, legalMask) {
   return probs;
 }
 
+// ELO conditioning test — runs same position at 600 and 2600, logs differences
+async function maiaEloTest() {
+  if (!_maiaReady) { console.log('[ELO TEST] Model not ready'); return; }
+  if (!_maia3MoveIndex) await _maiaLoadMappings();
+  
+  // Use starting position after 1.e4 (black to move)
+  var testFen = 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1';
+  console.log('[ELO TEST] Testing position:', testFen);
+  
+  var encoded = _maiaEncode(testFen);
+  var legalMask = _maiaLegalMask(testFen);
+  var maskCount = 0;
+  for (var i=0; i<legalMask.length; i++) if (legalMask[i]) maskCount++;
+  console.log('[ELO TEST] Legal moves in mask:', maskCount);
+  
+  var results = {};
+  for (var elo of [600, 1200, 1500, 2000, 2600]) {
+    var id = _maiaNextId++;
+    var tokens = _maiaEncode(testFen).tokens;  // re-encode since buffer transferred
+    var result = await new Promise(function(resolve, reject) {
+      _maiaPendingInferences.set(id, { resolve, reject });
+      _maiaWorker.postMessage({
+        type: 'inference', id,
+        tokens: tokens.buffer,
+        eloSelfs: Float32Array.from([elo]).buffer,
+        eloOppos: Float32Array.from([elo]).buffer,
+        batchSize: 1
+      }, [tokens.buffer]);
+    });
+    var probs = _maiaProcess(testFen, result.logitsMove, result.logitsValue, legalMask);
+    var top3 = Object.entries(probs).sort(function(a,b){return b[1]-a[1];}).slice(0,3);
+    results[elo] = top3;
+    console.log('[ELO TEST] ELO', elo, ':', top3.map(function(e){return e[0]+'='+e[1].toFixed(4);}).join(' '),
+      '| value:', Array.from(result.logitsValue).map(function(v){return v.toFixed(3);}));
+  }
+  
+  // Check if all ELOs return same top move
+  var topMoves = Object.values(results).map(function(r){return r[0][0];});
+  var allSame = topMoves.every(function(m){return m === topMoves[0];});
+  console.log('[ELO TEST] Top moves by ELO:', topMoves.join(', '));
+  console.log('[ELO TEST]', allSame ? 
+    '⚠️ ALL ELOs RETURN SAME TOP MOVE — ELO conditioning may be broken' :
+    '✓ Different ELOs return different moves — ELO conditioning working');
+}
+
 // Initialize the Maia worker
 function maiaInit() {
   if (_maiaWorker) return;
@@ -5633,10 +5683,6 @@ async function maia3GetMoveProbs(fen) {
     if (!legalMask) return null;
 
     var id = _maiaNextId++;
-    console.log('[Maia3 SEND] id:', id, 'elo:', eloSelf, 'fen:', fen,
-      'tokens nonzero:', (function(t){var n=0;for(var i=0;i<t.length;i++)if(t[i])n++;return n;})(tokens),
-      'mask nonzero:', (function(m){var n=0;for(var i=0;i<m.length;i++)if(m[i])n++;return n;})(legalMask));
-
     var t0 = Date.now();
     var result = await new Promise(function(resolve, reject) {
       _maiaPendingInferences.set(id, { resolve, reject });
@@ -5646,14 +5692,8 @@ async function maia3GetMoveProbs(fen) {
         eloOppos: Float32Array.from([eloOppo]).buffer, batchSize: 1
       }, [tokens.buffer]);
     });
-    console.log('[Maia3 RECV] id:', id, 'took:', (Date.now()-t0)+'ms',
-      'logitsMove len:', result.logitsMove.length,
-      'logitsValue:', Array.from(result.logitsValue).map(function(v){return v.toFixed(3);}));
 
-    var probs = _maiaProcess(fen, result.logitsMove, result.logitsValue, legalMask);
-    var top3 = probs ? Object.entries(probs).sort(function(a,b){return b[1]-a[1];}).slice(0,3) : [];
-    console.log('[Maia3 PROBS] top3:', top3.map(function(e){return e[0]+'='+e[1].toFixed(3);}).join(' '));
-    return probs;
+    return _maiaProcess(fen, result.logitsMove, result.logitsValue, legalMask);
   } catch(e) {
     console.warn('Maia3 inference error:', e);
     return null;
@@ -5807,7 +5847,7 @@ function botThinkTime(moveProbs, clockMs) {
     thinkMs = Math.min(thinkMs, clockMs * 0.08); // use at most 8% of remaining
   }
   thinkMs *= 0.8 + Math.random() * 0.4; // ±20% randomness
-  return Math.max(200, Math.min(8000, thinkMs));
+  return Math.max(200, Math.min(4000, thinkMs));
 }
 function timePressureTemp(baseTemp, clockMs) {
   if (!clockMs || clockMs > 30000) return baseTemp;
