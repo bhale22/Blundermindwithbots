@@ -5422,12 +5422,13 @@ function _maiaEncode(fen) {
   return { tokens: tokens, workFen: workFen };
 }
 
-// Build legal moves mask (4352 entries)
+// Build legal moves mask (4352 entries) — always in model's coordinate space
 function _maiaLegalMask(fen) {
   if (!_maia3MoveIndex) return null;
 
   var parts = fen.split(' ');
   var sideToMove = parts[1];
+  var isBlack = sideToMove === 'b';
   var castlingStr = parts[2];
   var epStr = parts[3];
 
@@ -5467,6 +5468,14 @@ function _maiaLegalMask(fen) {
     return files[sq % 8] + (8 - Math.floor(sq / 8));
   }
 
+  // Mirror a UCI move string into model coordinate space (flip ranks 1<->8, 2<->7, etc.)
+  function toModelSpace(uci) {
+    var fromFile = uci[0], fromRank = String(9 - parseInt(uci[1]));
+    var toFile   = uci[2], toRank   = String(9 - parseInt(uci[3]));
+    var promo = uci.length > 4 ? uci[4] : '';
+    return fromFile + fromRank + toFile + toRank + promo;
+  }
+
   for (var sq = 0; sq < 64; sq++) {
     var p = tmpBoard[sq];
     if (!p || p.color !== sideToMove) continue;
@@ -5480,11 +5489,15 @@ function _maiaLegalMask(fen) {
       );
       if (isPromo) {
         ['q','r','b','n'].forEach(function(pr) {
-          var idx = _maia3MoveIndex[fromStr + toStr + pr];
+          var uci = fromStr + toStr + pr;
+          var modelUci = isBlack ? toModelSpace(uci) : uci;
+          var idx = _maia3MoveIndex[modelUci];
           if (idx !== undefined) mask[idx] = 1.0;
         });
       } else {
-        var idx = _maia3MoveIndex[fromStr + toStr];
+        var uci = fromStr + toStr;
+        var modelUci = isBlack ? toModelSpace(uci) : uci;
+        var idx = _maia3MoveIndex[modelUci];
         if (idx !== undefined) mask[idx] = 1.0;
       }
     }
@@ -5495,7 +5508,8 @@ function _maiaLegalMask(fen) {
 // Process Maia3 outputs into move probability dict
 function _maiaProcess(fen, logitsMove, logitsValue, legalMask) {
   var isBlack = fen.split(' ')[1] === 'b';
-  // Get legal move indices
+
+  // Get legal move indices (these are already in model coordinate space)
   var legalIdx = [];
   for (var i = 0; i < legalMask.length; i++) {
     if (legalMask[i] > 0) legalIdx.push(i);
@@ -5512,9 +5526,17 @@ function _maiaProcess(fen, logitsMove, logitsValue, legalMask) {
   for (var j = 0; j < legalIdx.length; j++) {
     var moveStr = _maia3MoveReversed[String(legalIdx[j])];
     if (!moveStr) continue;
+
+    // If Black, mirror the model-space move back to real board coordinates
+    if (isBlack) {
+      var fromFile = moveStr[0], fromRank = String(9 - parseInt(moveStr[1]));
+      var toFile   = moveStr[2], toRank   = String(9 - parseInt(moveStr[3]));
+      var promo = moveStr.length > 4 ? moveStr[4] : '';
+      moveStr = fromFile + fromRank + toFile + toRank + promo;
+    }
+
     probs[moveStr] = expL[j] / sumE;
   }
-  // DEBUG: show top 5 + any moves landing on squares with opponent pieces
   return probs;
 }
 
