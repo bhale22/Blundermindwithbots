@@ -119,13 +119,26 @@ function generateRoomCode() {
   return Math.random().toString(36).substring(2, 7).toUpperCase();
 }
 
-// Clean up stale rooms every 10 minutes (rooms where both clients disconnected)
+// Return open lobby challenges (rooms waiting for a second player)
+function getLobbyList() {
+  return Object.entries(rooms)
+    .filter(([, r]) => r.lobby && r.black === null && r.white && r.white.readyState === 1)
+    .map(([code, r]) => ({
+      code,
+      tc:          r.tc      || 'untimed',
+      tcLabel:     r.tcLabel || 'Untimed',
+      name:        r.name    || 'Anonymous',
+      rating:      r.rating  || null,
+      ratingRange: r.ratingRange || 9999,
+    }));
+}
+
+// Clean up stale rooms every 10 minutes
 setInterval(() => {
-  const now = Date.now();
   for (const code in rooms) {
     const room = rooms[code];
-    const wDead = !room.white  || room.white.readyState  > 1;
-    const bDead = !room.black  || room.black.readyState  > 1;
+    const wDead = !room.white || room.white.readyState > 1;
+    const bDead = !room.black || room.black.readyState > 1;
     if (wDead && bDead) {
       delete rooms[code];
       console.log('Cleaned stale room', code);
@@ -141,26 +154,45 @@ wss.on('connection', (ws) => {
     let msg;
     try { msg = JSON.parse(data); } catch { return; }
 
+    // ── Create room (lobby or private) ───────────────────────────────────────
     if (msg.type === 'create') {
       const code = generateRoomCode();
-      rooms[code] = { white: ws, black: null, created: Date.now() };
+      rooms[code] = {
+        white:       ws,
+        black:       null,
+        created:     Date.now(),
+        // lobby metadata
+        lobby:       !!msg.lobby,
+        tc:          String(msg.tc      || 'untimed').slice(0, 20),
+        tcLabel:     String(msg.tcLabel || 'Untimed').slice(0, 30),
+        name:        String(msg.name    || 'Anonymous').slice(0, 20),
+        rating:      Number.isFinite(msg.rating) ? Math.max(100, Math.min(3000, msg.rating)) : null,
+        ratingRange: Number.isFinite(msg.ratingRange) ? msg.ratingRange : 9999,
+      };
       ws.roomCode = code;
       ws.role = 'white';
-      ws.send(JSON.stringify({ type: 'created', code, role: 'white' }));
+      ws.send(JSON.stringify({ type: 'created', code, role: 'white', lobby: !!msg.lobby }));
 
+    // ── Join room by code ─────────────────────────────────────────────────────
     } else if (msg.type === 'join') {
-      const code = msg.code?.toUpperCase();
+      const code = String(msg.code || '').toUpperCase().slice(0, 10);
       const room = rooms[code];
-      if (!room) { ws.send(JSON.stringify({ type: 'error', message: 'Room not found' })); return; }
-      if (room.black) { ws.send(JSON.stringify({ type: 'error', message: 'Room is full' })); return; }
-      room.black = ws;
-      ws.roomCode = code;
-      ws.role = 'black';
+      if (!room)       { ws.send(JSON.stringify({ type: 'error', message: 'Room not found' }));  return; }
+      if (room.black)  { ws.send(JSON.stringify({ type: 'error', message: 'Room is full' }));    return; }
+      room.black   = ws;
+      room.lobby   = false; // remove from lobby once filled
+      ws.roomCode  = code;
+      ws.role      = 'black';
       ws.send(JSON.stringify({ type: 'joined', code, role: 'black' }));
       if (room.white && room.white.readyState === 1) {
         room.white.send(JSON.stringify({ type: 'opponent_joined' }));
       }
 
+    // ── Lobby list request ────────────────────────────────────────────────────
+    } else if (msg.type === 'lobby_list') {
+      ws.send(JSON.stringify({ type: 'lobby_list', challenges: getLobbyList() }));
+
+    // ── Game moves ────────────────────────────────────────────────────────────
     } else if (msg.type === 'move') {
       const room = rooms[ws.roomCode];
       if (!room) return;
@@ -169,6 +201,7 @@ wss.on('connection', (ws) => {
         opponent.send(JSON.stringify({ type: 'move', move: msg.move }));
       }
 
+    // ── Game events forwarded to opponent ─────────────────────────────────────
     } else if (['resign','rematch','rematch_offer','rematch_declined','timeout','chat'].includes(msg.type)) {
       const room = rooms[ws.roomCode];
       if (!room) return;
@@ -191,7 +224,6 @@ wss.on('connection', (ws) => {
     if (opponent && opponent.readyState === 1) {
       opponent.send(JSON.stringify({ type: 'opponent_disconnected' }));
     }
-    // Mark slot as closed but keep room briefly for reconnect window
     if (ws.role === 'white') room.white = null;
     else room.black = null;
     if (!room.white && !room.black) delete rooms[ws.roomCode];

@@ -236,6 +236,24 @@ canvas{
 }
 .ib-help:hover{color:var(--accent);background:rgba(74,159,212,0.12);}
 
+/* ── Multiplayer action buttons (equal weight) ────────────────────────────── */
+.mp-action-btn{
+  width:100%;padding:9px 10px;margin-bottom:10px;
+  font-size:11px;font-weight:700;border-radius:6px;cursor:pointer;
+  border-width:1px;border-style:solid;
+  transition:opacity 0.1s,box-shadow 0.12s;
+  display:block;text-align:center;
+}
+.mp-action-btn:hover{opacity:0.85;box-shadow:0 0 0 2px rgba(255,255,255,0.06);}
+.mp-action-blue{
+  background:linear-gradient(135deg,rgba(74,159,212,0.18),rgba(74,159,212,0.08));
+  border-color:var(--accent);color:var(--accent);
+}
+.mp-action-green{
+  background:linear-gradient(135deg,rgba(34,168,90,0.18),rgba(34,168,90,0.08));
+  border-color:#22a85a;color:#5ad490;
+}
+
 /* ── Game actions (draw/resign — multiplayer) ─────────────────────────────── */
 #gameActions{display:none;flex-direction:column;gap:4px;flex-shrink:0;}
 .game-row{display:flex;gap:5px;}
@@ -611,7 +629,7 @@ canvas{
     <div class="landing-card" onclick="landingChoose('mp')">
       <div class="landing-card-icon">⚔️</div>
       <div class="landing-card-title">2-Player Online</div>
-      <div class="landing-card-desc">Create a room and share the code with a friend. Play in real time.</div>
+      <div class="landing-card-desc">Post an open challenge or send a private invite link — one click to join.</div>
     </div>
 
     <!-- Load PGN / Bot config — split card -->
@@ -1369,49 +1387,151 @@ canvas{
 <!-- ── Multiplayer panel ─────────────────────────────────────────────────── -->
 <div class="slide-panel" id="mpPanel">
   <div class="panel-header">
-    <span class="panel-title">♟ Multiplayer</span>
+    <span class="panel-title">⚔️ 2-Player</span>
     <button class="panel-close" onclick="closeAllPanels()">✕</button>
   </div>
-  <div class="panel-body">
-    <p style="font-size:9px;color:var(--text-dim);margin-bottom:8px;">Play against a friend. One player creates a room and shares the code — the other joins.</p>
-    <div id="mpServerNote" style="font-size:8.5px;padding:5px 8px;border-radius:4px;margin-bottom:10px;background:rgba(74,159,212,0.08);border:0.5px solid rgba(74,159,212,0.2);color:var(--text-dim);">
-      ℹ️ Multiplayer requires the server. Works on <strong style="color:var(--text-secondary);">blundermind.railway.app</strong> — if you're running locally, only Solo and Bot modes work.
+  <div class="panel-body" style="padding:10px 12px;">
+
+    <!-- Server status note -->
+    <div id="mpServerNote" style="font-size:8px;padding:4px 8px;border-radius:4px;margin-bottom:10px;background:rgba(74,159,212,0.08);border:0.5px solid rgba(74,159,212,0.2);color:var(--text-dim);">
+      ℹ️ Multiplayer requires the deployed server. Local-only = Solo &amp; Bot modes only.
     </div>
 
-    <div style="display:flex;gap:8px;margin-bottom:10px;">
-      <button onclick="mpCreateRoom()" style="flex:1;padding:7px;background:rgba(74,159,212,0.15);border:0.5px solid var(--accent);border-radius:5px;color:var(--accent);cursor:pointer;font-size:10px;font-weight:600;">Create room</button>
+    <!-- ── Mode tabs ── -->
+    <div style="display:flex;gap:3px;margin-bottom:10px;">
+      <button class="bot-tab active" id="mptab-lobby"   onclick="mpSwitchTab('lobby')">🌐 Open Lobby</button>
+      <button class="bot-tab"        id="mptab-private" onclick="mpSwitchTab('private')">🔒 Private</button>
+      <button class="bot-tab"        id="mptab-join"    onclick="mpSwitchTab('join')">🔑 Join</button>
     </div>
 
-    <div id="mpCodeRow" style="display:none;align-items:center;gap:8px;margin-bottom:10px;padding:8px;background:var(--bg-panel2);border-radius:5px;">
-      <span style="font-size:9px;color:var(--text-dim);">Room code:</span>
-      <span id="mpRoomCode" style="font-family:monospace;font-size:16px;font-weight:700;color:var(--text-primary);letter-spacing:0.15em;"></span>
-      <button onclick="navigator.clipboard.writeText(document.getElementById('mpRoomCode').textContent)" style="font-size:8px;padding:2px 6px;background:var(--bg-panel);border:0.5px solid var(--border);border-radius:3px;cursor:pointer;color:var(--text-dim);">Copy</button>
-    </div>
-
-    <div style="display:flex;gap:6px;margin-bottom:10px;">
-      <input id="mpJoinCode" placeholder="Enter room code" maxlength="6"
-        style="flex:1;padding:6px 8px;background:var(--bg-panel2);border:0.5px solid var(--border);border-radius:4px;color:var(--text-primary);font-family:monospace;font-size:12px;letter-spacing:0.1em;text-transform:uppercase;"
-        onkeydown="if(event.key==='Enter')mpJoinRoom()">
-      <button onclick="mpJoinRoom()" style="padding:6px 12px;background:rgba(90,212,144,0.15);border:0.5px solid #22a85a;border-radius:4px;color:#5ad490;cursor:pointer;font-size:10px;font-weight:600;">Join</button>
-    </div>
-
-    <div id="mpStatus" style="font-size:9px;color:var(--text-secondary);min-height:16px;margin-bottom:10px;"></div>
-
-    <div style="margin-bottom:10px;">
+    <!-- ══ SHARED TIME CONTROL BLOCK (one set, shown in all tabs) ══ -->
+    <div id="mpTCBlock" style="margin-bottom:10px;padding:8px;background:var(--bg-panel2);border:0.5px solid var(--border2);border-radius:6px;">
       <div style="font-size:8px;color:var(--text-dim);margin-bottom:5px;font-weight:600;letter-spacing:0.05em;">TIME CONTROL</div>
-      <div style="display:flex;flex-wrap:wrap;gap:3px;" id="mpTimeControls">
-        <button onclick="mpSetTC('untimed')"    class="tc-btn" id="mptc-untimed">Untimed</button>
-        <button onclick="mpSetTC('bullet')"     class="tc-btn" id="mptc-bullet">Bullet 1+0</button>
-        <button onclick="mpSetTC('blitz3')"     class="tc-btn" id="mptc-blitz3">Blitz 3+2</button>
-        <button onclick="mpSetTC('blitz5')"     class="tc-btn" id="mptc-blitz5">Blitz 5+0</button>
-        <button onclick="mpSetTC('rapid10')"    class="tc-btn" id="mptc-rapid10">Rapid 10+0</button>
-        <button onclick="mpSetTC('rapid15')"    class="tc-btn" id="mptc-rapid15">Rapid 15+10</button>
-        <button onclick="mpSetTC('tournament')" class="tc-btn" id="mptc-tournament">Tourney 30+0</button>
+      <!-- Row 1: base time -->
+      <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:3px;">Game time (minutes)</div>
+      <div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:6px;" id="mpBaseRow">
+        <button onclick="mpSetBase(0)"  class="tc-btn tc-active" id="mpbase-0">∞</button>
+        <button onclick="mpSetBase(1)"  class="tc-btn" id="mpbase-1">1</button>
+        <button onclick="mpSetBase(2)"  class="tc-btn" id="mpbase-2">2</button>
+        <button onclick="mpSetBase(3)"  class="tc-btn" id="mpbase-3">3</button>
+        <button onclick="mpSetBase(5)"  class="tc-btn" id="mpbase-5">5</button>
+        <button onclick="mpSetBase(10)" class="tc-btn" id="mpbase-10">10</button>
+        <button onclick="mpSetBase(15)" class="tc-btn" id="mpbase-15">15</button>
+        <button onclick="mpSetBase(20)" class="tc-btn" id="mpbase-20">20</button>
+        <button onclick="mpSetBase(30)" class="tc-btn" id="mpbase-30">30</button>
       </div>
-      <div id="mpTCDisplay" style="font-size:8px;color:var(--text-dim);margin-top:4px;">Selected: Untimed</div>
+      <!-- Row 2: increment -->
+      <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:3px;">Increment (seconds)</div>
+      <div style="display:flex;gap:3px;flex-wrap:wrap;" id="mpIncRow">
+        <button onclick="mpSetInc(0)"  class="tc-btn tc-active" id="mpinc-0">0</button>
+        <button onclick="mpSetInc(1)"  class="tc-btn" id="mpinc-1">1</button>
+        <button onclick="mpSetInc(2)"  class="tc-btn" id="mpinc-2">2</button>
+        <button onclick="mpSetInc(3)"  class="tc-btn" id="mpinc-3">3</button>
+        <button onclick="mpSetInc(5)"  class="tc-btn" id="mpinc-5">5</button>
+        <button onclick="mpSetInc(10)" class="tc-btn" id="mpinc-10">10</button>
+        <button onclick="mpSetInc(20)" class="tc-btn" id="mpinc-20">20</button>
+      </div>
+      <div id="mpTCDisplay" style="font-size:8px;color:var(--text-dim);margin-top:4px;">Untimed</div>
     </div>
 
-    <button onclick="mpLeave()" style="width:100%;padding:5px;background:transparent;border:0.5px solid var(--border);border-radius:4px;color:var(--text-dim);cursor:pointer;font-size:9px;">Leave room / Reset</button>
+    <!-- ══ LOBBY TAB ══ -->
+    <div id="mp-tab-lobby">
+
+      <!-- Player info for lobby -->
+      <div style="margin-bottom:8px;padding:8px;background:var(--bg-panel2);border:0.5px solid var(--border2);border-radius:6px;">
+        <div style="font-size:8px;color:var(--text-dim);margin-bottom:5px;font-weight:600;letter-spacing:0.05em;">YOUR INFO <span style="font-weight:400;font-style:italic;">(self-reported, optional)</span></div>
+        <div style="display:flex;gap:6px;margin-bottom:6px;">
+          <div style="flex:1;">
+            <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:2px;">Name / Handle</div>
+            <input id="mpLobbyName" placeholder="Anonymous" maxlength="20"
+              style="width:100%;padding:4px 6px;background:var(--bg-panel);border:0.5px solid var(--border);
+              border-radius:3px;color:var(--text-primary);font-size:9px;font-family:inherit;box-sizing:border-box;">
+          </div>
+          <div style="width:70px;">
+            <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:2px;">Rating</div>
+            <input id="mpLobbyRating" placeholder="—" maxlength="4" type="number" min="100" max="3000"
+              style="width:100%;padding:4px 6px;background:var(--bg-panel);border:0.5px solid var(--border);
+              border-radius:3px;color:var(--text-primary);font-size:9px;font-family:inherit;box-sizing:border-box;">
+          </div>
+        </div>
+        <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:3px;">Seeking opponent within</div>
+        <div style="display:flex;gap:3px;flex-wrap:wrap;">
+          <button onclick="mpSetRatingRange(100)"  class="tc-btn" id="mprange-100">±100</button>
+          <button onclick="mpSetRatingRange(200)"  class="tc-btn" id="mprange-200">±200</button>
+          <button onclick="mpSetRatingRange(500)"  class="tc-btn" id="mprange-500">±500</button>
+          <button onclick="mpSetRatingRange(9999)" class="tc-btn tc-active" id="mprange-9999">Any</button>
+        </div>
+      </div>
+
+      <button onclick="mpPostChallenge()" id="mpPostChallengeBtn" class="mp-action-btn mp-action-blue">
+        🌐 Post Open Challenge
+      </button>
+
+      <!-- Live lobby list -->
+      <div style="font-size:8px;color:var(--text-dim);margin-bottom:5px;font-weight:600;letter-spacing:0.05em;">OPEN CHALLENGES <span id="mpLobbyCount" style="font-weight:400;"></span></div>
+      <div id="mpLobbyList" style="display:flex;flex-direction:column;gap:4px;min-height:40px;margin-bottom:6px;">
+        <div style="font-size:8.5px;color:var(--text-dim);text-align:center;padding:12px 0;" id="mpLobbyEmpty">No open challenges yet — be the first!</div>
+      </div>
+      <button onclick="mpRefreshLobby()" style="width:100%;padding:4px;background:transparent;border:0.5px solid var(--border2);border-radius:4px;color:var(--text-dim);cursor:pointer;font-size:8px;">↻ Refresh</button>
+    </div>
+
+    <!-- ══ PRIVATE TAB ══ -->
+    <div id="mp-tab-private" style="display:none;">
+      <div style="font-size:8.5px;color:var(--text-dim);margin-bottom:10px;line-height:1.5;">Create a private game and share the link — your opponent clicks it to join instantly. No code entry needed.</div>
+
+      <button onclick="mpCreatePrivate()" id="mpCreatePrivateBtn" class="mp-action-btn mp-action-green">
+        🔒 Start Private Game
+      </button>
+
+      <!-- Invite link row (hidden until room created) -->
+      <div id="mpInviteRow" style="display:none;margin-bottom:10px;">
+        <div style="font-size:8px;color:var(--text-dim);margin-bottom:4px;font-weight:600;letter-spacing:0.05em;">INVITE LINK — share this anywhere</div>
+        <div style="display:flex;gap:5px;align-items:center;">
+          <input id="mpInviteLink" readonly
+            style="flex:1;padding:5px 7px;background:var(--bg-panel2);border:0.5px solid var(--border);
+            border-radius:4px;color:var(--accent);font-size:8px;font-family:monospace;cursor:pointer;"
+            onclick="this.select()">
+          <button onclick="mpCopyLink()" id="mpCopyLinkBtn"
+            style="padding:4px 8px;background:rgba(74,159,212,0.12);border:0.5px solid var(--accent);
+            border-radius:4px;color:var(--accent);cursor:pointer;font-size:9px;white-space:nowrap;">Copy</button>
+        </div>
+        <div style="display:flex;gap:4px;margin-top:5px;">
+          <button onclick="mpShareDiscord()" style="flex:1;padding:4px;font-size:8px;background:rgba(88,101,242,0.12);border:0.5px solid rgba(88,101,242,0.4);border-radius:4px;color:#8891f2;cursor:pointer;">🎮 Discord</button>
+          <button onclick="mpShareText()" style="flex:1;padding:4px;font-size:8px;background:rgba(74,159,212,0.08);border:0.5px solid rgba(74,159,212,0.3);border-radius:4px;color:var(--accent);cursor:pointer;">💬 Text/Share</button>
+        </div>
+        <div style="margin-top:6px;display:flex;align-items:center;gap:6px;">
+          <span style="font-size:8px;color:var(--text-dim);">or code:</span>
+          <span id="mpRoomCode" style="font-family:monospace;font-size:13px;font-weight:700;color:var(--text-primary);letter-spacing:0.15em;"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ JOIN TAB ══ -->
+    <div id="mp-tab-join" style="display:none;">
+      <div style="font-size:8.5px;color:var(--text-dim);margin-bottom:10px;line-height:1.5;">Have a code from a friend? Enter it below. Clicking an invite link also joins automatically.</div>
+      <div style="display:flex;gap:5px;margin-bottom:8px;">
+        <input id="mpJoinCode" placeholder="ABC123" maxlength="6"
+          style="flex:1;padding:8px 10px;background:var(--bg-panel2);border:0.5px solid var(--border);
+          border-radius:4px;color:var(--text-primary);font-family:monospace;font-size:15px;
+          letter-spacing:0.15em;text-transform:uppercase;"
+          onkeydown="if(event.key==='Enter')mpJoinRoom()">
+      </div>
+      <button onclick="mpJoinRoom()" class="mp-action-btn mp-action-green">
+        Join Private Game →
+      </button>
+    </div>
+
+    <!-- Status line (always visible) -->
+    <div id="mpStatus" style="font-size:9px;color:var(--text-secondary);min-height:16px;margin:8px 0 4px;line-height:1.5;"></div>
+
+    <!-- Leave / reset (shown after joining) -->
+    <div id="mpLeaveRow" style="display:none;">
+      <button onclick="mpLeave()" style="width:100%;padding:5px;background:transparent;border:0.5px solid var(--border);border-radius:4px;color:var(--text-dim);cursor:pointer;font-size:9px;">Leave room / Reset</button>
+    </div>
+
+    <!-- compat shim -->
+    <div id="mpCodeRow" style="display:none;"></div>
+
   </div>
 </div>
 
@@ -2068,11 +2188,26 @@ function clockSetControl(key) {
 
 
 // ══════════════════════════════════════════════════════════════════════════════
-// MULTIPLAYER — WebSocket room system
+// ══════════════════════════════════════════════════════════════════════════════
+// MULTIPLAYER — WebSocket room system (Lobby + Private + Code join)
 // ══════════════════════════════════════════════════════════════════════════════
 let mpRoomId = null, mpRole = null, mpWs = null;
 let mpConnected = false;
+let mpCurrentTab = 'lobby';
+let mpLobbyRefreshTimer = null;
 
+// ── Tab switching ────────────────────────────────────────────────────────────
+function mpSwitchTab(tab) {
+  mpCurrentTab = tab;
+  ['lobby','private','join'].forEach(t => {
+    document.getElementById('mp-tab-' + t).style.display = t === tab ? '' : 'none';
+    const btn = document.getElementById('mptab-' + t);
+    if (btn) btn.classList.toggle('active', t === tab);
+  });
+  if (tab === 'lobby') mpRefreshLobby();
+}
+
+// ── WebSocket connection ─────────────────────────────────────────────────────
 function getWsUrl() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   return proto + '//' + location.host;
@@ -2080,100 +2215,282 @@ function getWsUrl() {
 
 function mpConnect(onOpen) {
   if (mpWs && mpWs.readyState === WebSocket.OPEN) { onOpen(); return; }
-  // Close any stale connection
   if (mpWs) { try { mpWs.close(); } catch(e){} mpWs = null; }
-  mpShowStatus('Connecting to server…');
-  const url = getWsUrl();
-  try {
-    mpWs = new WebSocket(url);
-  } catch(e) {
-    mpShowStatus('⚠ Cannot connect — multiplayer requires the server (Railway deployment).', true);
+  mpShowStatus('Connecting…');
+  try { mpWs = new WebSocket(getWsUrl()); }
+  catch(e) {
+    mpShowStatus('⚠ Cannot connect — requires the deployed server.', true);
     return;
   }
-  mpWs.onopen = () => { mpConnected = true; onOpen(); };
+  mpWs.onopen  = () => { mpConnected = true; onOpen(); };
   mpWs.onclose = () => {
     mpConnected = false;
-    if(mpRoomId){
-      mpShowStatus('Connection lost. Reload the page to reconnect.', true);
-    } else {
-      mpShowStatus('⚠ Server not reachable. Multiplayer requires the Railway-deployed server.', true);
-    }
+    clearInterval(mpLobbyRefreshTimer);
+    if (mpRoomId) mpShowStatus('Connection lost. Reload to reconnect.', true);
+    else mpShowStatus('⚠ Server not reachable — multiplayer needs the deployed server.', true);
   };
-  mpWs.onerror = () => {
-    mpShowStatus('⚠ Connection error — multiplayer requires the deployed server.', true);
-  };
+  mpWs.onerror = () => mpShowStatus('⚠ Connection error.', true);
   mpWs.onmessage = (evt) => {
     let msg; try { msg = JSON.parse(evt.data); } catch { return; }
     mpHandleMessage(msg);
   };
 }
 
+// ── Message handler ──────────────────────────────────────────────────────────
 function mpHandleMessage(msg) {
-  if (msg.type === 'created') {
-    mpRoomId = msg.code; mpRole = msg.role;
-    mpShowStatus('Room created! Share code: ' + msg.code + '  Waiting for opponent…');
-    document.getElementById('mpRoomCode').textContent = msg.code;
-    document.getElementById('mpCodeRow').style.display = 'flex';
-  } else if (msg.type === 'joined') {
-    mpRoomId = msg.code; mpRole = msg.role;
-    mpShowStatus('Joined as Black. Game starting…');
-    mpStartGame();
-  } else if (msg.type === 'opponent_joined') {
-    mpShowStatus('Opponent joined! You are White.');
-    mpStartGame();
-  } else if (msg.type === 'move') {
-    mpReceiveMove(msg.move);
-  } else if (msg.type === 'chat') {
-    chatAppend('Opponent', msg.text || '');
-  } else if (msg.type === 'resign') {
-    gameOver = true;
-    gameOverMsg = 'Opponent resigned — You win! 🏆';
-    updatePlayerBoxes(); render(); showRematchBtn(true);
-  } else if (msg.type === 'timeout') {
-    // Opponent flagged on their end
-    gameOver = true;
-    const oppColor = mpRole === 'white' ? 'b' : 'w';
-    gameOverMsg = oppColor === 'w' ? 'White ran out of time — Black wins! ⏰' : 'Black ran out of time — White wins! ⏰';
-    updatePlayerBoxes(); render(); showRematchBtn(true);
-  } else if (msg.type === 'rematch_offer') {
-    // Opponent wants a rematch — show accept/decline prompt
-    mpShowStatus('Opponent wants a rematch!');
-    const status = document.getElementById('mpStatus');
-    if (status) {
-      status.innerHTML = 'Opponent wants a rematch! &nbsp;' +
-        '<button onclick="mpAcceptRematch()" style="padding:2px 8px;font-size:9px;background:rgba(34,168,90,0.15);border:0.5px solid #22a85a;border-radius:3px;color:#5ad490;cursor:pointer;margin-right:4px;">Accept</button>' +
-        '<button onclick="mpDeclineRematch()" style="padding:2px 8px;font-size:9px;background:rgba(200,40,40,0.08);border:0.5px solid rgba(200,40,40,0.3);border-radius:3px;color:#c84040;cursor:pointer;">Decline with sincerest apologies</button>';
-    }
-  } else if (msg.type === 'rematch') {
-    // Rematch accepted — start new game
-    resetGame();
-    clockInit(mpSelectedTC || 'untimed');
-    if (mpSelectedTC && mpSelectedTC !== 'untimed') clockStart();
-    mpShowStatus('Rematch! ' + (mpRole === 'white' ? 'You are White ♔' : 'You are Black ♚'));
-  } else if (msg.type === 'rematch_declined') {
-    mpShowStatus('Rematch declined. Thanks for playing!');
-  } else if (msg.type === 'opponent_disconnected') {
-    mpShowStatus('Opponent disconnected.', true);
-    gameOver = true; updatePlayerBoxes();
-  } else if (msg.type === 'error') {
-    mpShowStatus(msg.message, true);
+  switch (msg.type) {
+
+    case 'created':
+      mpRoomId = msg.code; mpRole = msg.role;
+      // Show invite link
+      const inviteUrl = location.origin + location.pathname + '?join=' + msg.code;
+      const linkEl = document.getElementById('mpInviteLink');
+      if (linkEl) linkEl.value = inviteUrl;
+      document.getElementById('mpRoomCode').textContent = msg.code;
+      document.getElementById('mpInviteRow').style.display = '';
+      document.getElementById('mpLeaveRow').style.display = '';
+      // If lobby challenge, show waiting message; if private, show different text
+      mpShowStatus(msg.lobby
+        ? '⏳ Challenge posted! Waiting for someone to accept…'
+        : '⏳ Private room ready — share the link and wait for your opponent…');
+      break;
+
+    case 'joined':
+      mpRoomId = msg.code; mpRole = msg.role;
+      document.getElementById('mpLeaveRow').style.display = '';
+      mpShowStatus('✓ Joined as Black. Starting…');
+      mpStartGame();
+      break;
+
+    case 'opponent_joined':
+      mpShowStatus('✓ Opponent joined! You are White ♔');
+      mpStartGame();
+      break;
+
+    case 'lobby_list':
+      mpRenderLobby(msg.challenges || []);
+      break;
+
+    case 'move':
+      mpReceiveMove(msg.move);
+      break;
+
+    case 'chat':
+      chatAppend('Opponent', msg.text || '');
+      break;
+
+    case 'resign':
+      gameOver = true;
+      gameOverMsg = 'Opponent resigned — You win! 🏆';
+      updatePlayerBoxes(); render(); showRematchBtn(true);
+      break;
+
+    case 'timeout':
+      gameOver = true;
+      const oppColor = mpRole === 'white' ? 'b' : 'w';
+      gameOverMsg = oppColor === 'w' ? 'White ran out of time — Black wins! ⏰' : 'Black ran out of time — White wins! ⏰';
+      updatePlayerBoxes(); render(); showRematchBtn(true);
+      break;
+
+    case 'rematch_offer':
+      const status = document.getElementById('mpStatus');
+      if (status) {
+        status.innerHTML = 'Opponent wants a rematch! &nbsp;' +
+          '<button onclick="mpAcceptRematch()" style="padding:2px 8px;font-size:9px;background:rgba(34,168,90,0.15);border:0.5px solid #22a85a;border-radius:3px;color:#5ad490;cursor:pointer;margin-right:4px;">Accept</button>' +
+          '<button onclick="mpDeclineRematch()" style="padding:2px 8px;font-size:9px;background:rgba(200,40,40,0.08);border:0.5px solid rgba(200,40,40,0.3);border-radius:3px;color:#c84040;cursor:pointer;">Decline</button>';
+      }
+      break;
+
+    case 'rematch':
+      resetGame();
+      clockInit(mpSelectedTC || 'untimed');
+      if (mpSelectedTC && mpSelectedTC !== 'untimed') clockStart();
+      mpShowStatus('Rematch! ' + (mpRole === 'white' ? 'You are White ♔' : 'You are Black ♚'));
+      break;
+
+    case 'rematch_declined':
+      mpShowStatus('Rematch declined. Thanks for playing!');
+      break;
+
+    case 'opponent_disconnected':
+      mpShowStatus('Opponent disconnected.', true);
+      gameOver = true; updatePlayerBoxes();
+      break;
+
+    case 'error':
+      mpShowStatus(msg.message, true);
+      break;
   }
 }
 
+// ── Lobby ────────────────────────────────────────────────────────────────────
+function mpPostChallenge() {
+  const nameEl   = document.getElementById('mpLobbyName');
+  const ratingEl = document.getElementById('mpLobbyRating');
+  const name     = (nameEl && nameEl.value.trim()) || 'Anonymous';
+  const rating   = (ratingEl && ratingEl.value.trim()) ? parseInt(ratingEl.value) : null;
+  const tcLabel  = mpBaseMin === 0 ? 'Untimed' : mpBaseMin + '+' + mpIncSec;
+  mpConnect(() => {
+    if (mpWs && mpWs.readyState === WebSocket.OPEN) {
+      mpWs.send(JSON.stringify({
+        type: 'create', lobby: true,
+        tc: mpSelectedTC, tcLabel,
+        name, rating,
+        ratingRange: mpRatingRange
+      }));
+      mpSwitchTab('private');
+    } else {
+      mpShowStatus('Connection failed — try again', true);
+    }
+  });
+}
+
+function mpRefreshLobby() {
+  mpConnect(() => {
+    if (mpWs && mpWs.readyState === WebSocket.OPEN)
+      mpWs.send(JSON.stringify({ type: 'lobby_list' }));
+  });
+}
+
+function mpRenderLobby(challenges) {
+  const list  = document.getElementById('mpLobbyList');
+  const empty = document.getElementById('mpLobbyEmpty');
+  const count = document.getElementById('mpLobbyCount');
+  if (!list) return;
+  Array.from(list.querySelectorAll('.mp-challenge-row')).forEach(el => el.remove());
+  if (challenges.length === 0) {
+    if (empty) empty.style.display = '';
+    if (count) count.textContent = '';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (count) count.textContent = '(' + challenges.length + ')';
+  challenges.forEach(ch => {
+    const tcLabel = ch.tcLabel || (ch.tc && TIME_CONTROLS[ch.tc] ? TIME_CONTROLS[ch.tc].label : 'Untimed');
+    const nameStr = ch.name || 'Anonymous';
+    const ratingStr = ch.rating ? (' · ' + ch.rating) : '';
+    const rangeStr = ch.ratingRange && ch.ratingRange < 9999 ? (' ±' + ch.ratingRange) : '';
+    const row = document.createElement('div');
+    row.className = 'mp-challenge-row';
+    row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--bg-panel2);border:0.5px solid var(--border2);border-radius:5px;';
+    row.innerHTML =
+      '<div style="flex:1;min-width:0;">' +
+        '<div style="font-size:9px;font-weight:600;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
+          nameStr + ratingStr + rangeStr +
+        '</div>' +
+        '<div style="font-size:8px;color:var(--text-dim);">⏱ ' + tcLabel + '</div>' +
+      '</div>' +
+      '<button onclick="mpAcceptLobbyChallenge(\'' + ch.code + '\')" ' +
+      'style="padding:4px 12px;font-size:9px;font-weight:700;background:rgba(34,168,90,0.15);' +
+      'border:0.5px solid #22a85a;border-radius:4px;color:#5ad490;cursor:pointer;flex-shrink:0;">Join</button>';
+    list.appendChild(row);
+  });
+}
+
+function mpAcceptLobbyChallenge(code) {
+  mpConnect(() => {
+    if (mpWs && mpWs.readyState === WebSocket.OPEN)
+      mpWs.send(JSON.stringify({ type: 'join', code }));
+    else mpShowStatus('Connection failed — try again', true);
+  });
+}
+
+// ── Private game ─────────────────────────────────────────────────────────────
+function mpCreatePrivate() {
+  const tcLabel = mpBaseMin === 0 ? 'Untimed' : mpBaseMin + '+' + mpIncSec;
+  mpConnect(() => {
+    if (mpWs && mpWs.readyState === WebSocket.OPEN)
+      mpWs.send(JSON.stringify({ type: 'create', lobby: false, tc: mpSelectedTC, tcLabel }));
+    else mpShowStatus('Connection failed — try again', true);
+  });
+}
+
+// ── Link sharing helpers ──────────────────────────────────────────────────────
+function mpCopyLink() {
+  const link = document.getElementById('mpInviteLink');
+  if (!link) return;
+  navigator.clipboard.writeText(link.value).then(() => {
+    const btn = document.getElementById('mpCopyLinkBtn');
+    if (btn) { btn.textContent = '✓ Copied!'; setTimeout(() => btn.textContent = 'Copy', 2000); }
+  }).catch(() => { link.select(); document.execCommand('copy'); });
+}
+
+function mpShareDiscord() {
+  const link = document.getElementById('mpInviteLink');
+  if (!link) return;
+  const text = '♟ Join my Blundermind game: ' + link.value;
+  navigator.clipboard.writeText(text).then(() => mpShowStatus('Discord message copied — paste it in a DM!'));
+}
+
+function mpShareText() {
+  const link = document.getElementById('mpInviteLink');
+  if (!link) return;
+  if (navigator.share) {
+    navigator.share({ title: 'Blundermind chess', text: '♟ Join my game:', url: link.value });
+  } else {
+    navigator.clipboard.writeText(link.value).then(() => mpShowStatus('Link copied — paste it in a message!'));
+  }
+}
+
+// ── Check URL for ?join= on load ──────────────────────────────────────────────
+function mpCheckInviteUrl() {
+  const params = new URLSearchParams(location.search);
+  const code = params.get('join');
+  if (!code) return;
+  // Clean the URL without reloading
+  history.replaceState({}, '', location.pathname);
+  // Open the mp panel and auto-join
+  setTimeout(() => {
+    openPanel('mpPanel');
+    mpSwitchTab('join');
+    document.getElementById('mpJoinCode').value = code.toUpperCase();
+    mpShowStatus('Joining room from invite link…');
+    mpJoinRoom();
+  }, 400);
+}
+
+// ── Core join / leave ────────────────────────────────────────────────────────
+function mpJoinRoom() {
+  const code = document.getElementById('mpJoinCode').value.trim().toUpperCase();
+  if (!code) { mpShowStatus('Enter a room code', true); return; }
+  mpConnect(() => {
+    if (mpWs && mpWs.readyState === WebSocket.OPEN)
+      mpWs.send(JSON.stringify({ type: 'join', code }));
+    else mpShowStatus('Connection failed — try again', true);
+  });
+}
+
+// Keep mpCreateRoom as alias for backward compat with landing page
+function mpCreateRoom() { mpCreatePrivate(); }
+
+function mpLeave() {
+  if (mpWs) { mpWs.close(); mpWs = null; }
+  mpRoomId = null; mpRole = null; mpConnected = false;
+  clearInterval(mpLobbyRefreshTimer);
+  chatShow(false);
+  const cm = document.getElementById('chatMessages'); if (cm) cm.innerHTML = '';
+  const boardCol = document.querySelector('.board-col') || document.getElementById('boardCol');
+  if (boardCol) boardCol.classList.remove('board-flipped');
+  document.getElementById('mpInviteRow').style.display = 'none';
+  document.getElementById('mpLeaveRow').style.display = 'none';
+  document.getElementById('mpRoomCode').textContent = '';
+  const jc = document.getElementById('mpJoinCode'); if (jc) jc.value = '';
+  mpShowStatus('');
+  resetGame();
+}
+
+// ── Game flow ────────────────────────────────────────────────────────────────
 function mpStartGame() {
   resetGame();
-  // Initialize clock AFTER reset so times are set correctly
   clockInit(mpSelectedTC || 'untimed');
-  // Show chat box
   chatShow(true);
-  // Flip board for black player using the real boardFlipped variable
   boardFlipped = (mpRole === 'black');
   render();
-  // Start clock immediately (both players start together)
   if (mpSelectedTC && mpSelectedTC !== 'untimed') clockStart();
-  // Update player names
   updatePlayerBoxes();
   mpUpdateTurnIndicator();
+  // Close the panel so the board is visible
+  closeAllPanels();
 }
 
 function mpUpdateTurnIndicator() {
@@ -2189,17 +2506,13 @@ function mpSendMove(from, to, promo) {
 }
 
 function mpReceiveMove(move) {
-  // If local player is choosing promotion, queue the move
-  if(promotionPending){
-    setTimeout(()=>mpReceiveMove(move), 300);
-    return;
-  }
+  if (promotionPending) { setTimeout(() => mpReceiveMove(move), 300); return; }
   executeMove(move.from, move.to, move.promo || null);
   mpUpdateTurnIndicator();
 }
 
 function mpIsMyTurn() {
-  if (!mpRoomId) return true; // solo mode — always your turn
+  if (!mpRoomId) return true;
   return (turn === 'w' && mpRole === 'white') || (turn === 'b' && mpRole === 'black');
 }
 
@@ -2211,49 +2524,59 @@ function mpShowStatus(msg, isError) {
   }
 }
 
-function mpCreateRoom() {
-  mpConnect(() => {
-    if(mpWs && mpWs.readyState === WebSocket.OPEN)
-      mpWs.send(JSON.stringify({ type: 'create' }));
-    else mpShowStatus('Connection failed — try again', true);
-  });
+// ── Time control — two-row base + increment selectors ───────────────────────
+let mpSelectedTC = 'custom';
+let mpBaseMin = 0;   // 0 = untimed
+let mpIncSec  = 0;
+
+function mpSetBase(min) {
+  mpBaseMin = min;
+  document.querySelectorAll('[id^="mpbase-"]').forEach(b => b.classList.remove('tc-active'));
+  const btn = document.getElementById('mpbase-' + min); if (btn) btn.classList.add('tc-active');
+  mpUpdateTCDisplay();
 }
 
-function mpJoinRoom() {
-  const code = document.getElementById('mpJoinCode').value.trim().toUpperCase();
-  if (!code) { mpShowStatus('Enter a room code', true); return; }
-  mpConnect(() => {
-    if(mpWs && mpWs.readyState === WebSocket.OPEN)
-      mpWs.send(JSON.stringify({ type: 'join', code }));
-    else mpShowStatus('Connection failed — try again', true);
-  });
+function mpSetInc(sec) {
+  mpIncSec = sec;
+  document.querySelectorAll('[id^="mpinc-"]').forEach(b => b.classList.remove('tc-active'));
+  const btn = document.getElementById('mpinc-' + sec); if (btn) btn.classList.add('tc-active');
+  mpUpdateTCDisplay();
 }
 
-let mpSelectedTC = 'untimed';
-function mpSetTC(key){
-  mpSelectedTC = key;
-  const tc = TIME_CONTROLS[key]||TIME_CONTROLS.untimed;
-  document.querySelectorAll('[id^="mptc-"]').forEach(b=>b.classList.remove('active'));
-  const btn=document.getElementById('mptc-'+key);
-  if(btn) btn.classList.add('active');
-  const disp=document.getElementById('mpTCDisplay');
-  if(disp) disp.textContent='Selected: '+tc.label;
+function mpUpdateTCDisplay() {
+  const disp = document.getElementById('mpTCDisplay');
+  if (!disp) return;
+  if (mpBaseMin === 0) {
+    disp.textContent = 'Untimed';
+  } else {
+    disp.textContent = mpBaseMin + ' min + ' + mpIncSec + ' sec';
+  }
+  // Build a custom TC object and register it
+  TIME_CONTROLS.custom = {
+    label: mpBaseMin === 0 ? 'Untimed' : mpBaseMin + '+' + mpIncSec,
+    time:  mpBaseMin * 60,
+    inc:   mpIncSec
+  };
+  mpSelectedTC = mpBaseMin === 0 ? 'untimed' : 'custom';
 }
 
-function mpLeave() {
-  if (mpWs) { mpWs.close(); mpWs = null; }
-  mpRoomId = null; mpRole = null; mpConnected = false;
-  // Hide chat box and clear messages
-  chatShow(false);
-  const cm=document.getElementById('chatMessages'); if(cm) cm.innerHTML='';
-  // Restore normal board layout
-  const boardCol = document.querySelector('.board-col') || document.getElementById('boardCol');
-  if(boardCol) boardCol.classList.remove('board-flipped');
-  document.getElementById('mpCodeRow').style.display = 'none';
-  document.getElementById('mpRoomCode').textContent = '';
-  document.getElementById('mpJoinCode').value = '';
-  mpShowStatus('');
-  resetGame();
+// Legacy alias kept for any old calls
+function mpSetTC(key) {
+  // Map old preset keys to base+inc
+  const map = { untimed:{min:0,inc:0}, bullet:{min:1,inc:0}, blitz3:{min:3,inc:2},
+                blitz5:{min:5,inc:0}, rapid10:{min:10,inc:0}, rapid15:{min:15,inc:10},
+                tournament:{min:30,inc:0} };
+  const m = map[key] || {min:0, inc:0};
+  mpSetBase(m.min);
+  mpSetInc(m.inc);
+}
+
+// ── Rating range ─────────────────────────────────────────────────────────────
+let mpRatingRange = 9999;
+function mpSetRatingRange(r) {
+  mpRatingRange = r;
+  document.querySelectorAll('[id^="mprange-"]').forEach(b => b.classList.remove('tc-active'));
+  const btn = document.getElementById('mprange-' + r); if (btn) btn.classList.add('tc-active');
 }
 
 // ── Hide/Show toggle ─────────────────────────────────────────────────────────
@@ -6614,6 +6937,8 @@ document.addEventListener('DOMContentLoaded', () => {
       mpNote.style.borderColor = 'rgba(34,168,90,0.25)';
       mpNote.innerHTML = '✅ Server connected — multiplayer is available.';
     }
+    // Check for ?join= invite link in URL
+    mpCheckInviteUrl();
   } else {
     // Running locally — dim the multiplayer landing card
     if (mpCard) {
