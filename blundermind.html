@@ -268,30 +268,17 @@ canvas{
 .gbtn.resign-btn{border-color:rgba(180,40,40,0.4);color:#a05050;}
 .gbtn.resign-btn:hover{border-color:#c04040;}
 
-/* ── Chat panel (multiplayer) ─────────────────────────────────────────────── */
-#chatPanel{display:none;flex-direction:column;gap:4px;flex-shrink:0;}
+/* ── Chat box (multiplayer, inline beside player bar) ─────────────────────── */
 #chatMessages{
-  height:100px;overflow-y:auto;
-  background:var(--bg-panel2);border:0.5px solid var(--border2);
-  border-radius:4px;padding:4px 6px;
-  display:flex;flex-direction:column;gap:3px;
+  overflow-y:auto;
+  padding:5px 7px;
+  display:flex;flex-direction:column;gap:2px;
 }
-.chat-msg{font-size:9px;line-height:1.4;}
-.chat-msg.mine{color:#5a9fd4;text-align:right;}
+.chat-msg{font-size:8.5px;line-height:1.5;word-break:break-word;}
+.chat-msg.mine{color:#5a9fd4;}
 .chat-msg.theirs{color:var(--text-secondary);}
-.chat-msg .chat-time{font-size:7px;color:var(--text-dim);margin-left:4px;}
-#chatInput{display:flex;gap:4px;}
-#chatInput input{
-  flex:1;font-size:9px;padding:3px 6px;
-  background:var(--bg-panel2);border:0.5px solid var(--border);
-  border-radius:3px;color:var(--text-primary);
-  font-family:inherit;
-}
-#chatInput button{
-  font-size:9px;padding:3px 7px;
-  background:var(--bg-panel);border:0.5px solid var(--border);
-  border-radius:3px;color:var(--text-secondary);cursor:pointer;
-}
+.chat-msg .chat-sender{font-weight:700;}
+@keyframes chatPulse{0%,100%{opacity:1;}50%{opacity:0.3;}}
 
 /* ── Bottom controls ──────────────────────────────────────────────────────── */
 #bottom-controls{
@@ -754,27 +741,30 @@ canvas{
 
   
       <!-- Chat box — visible only during 2-player games -->
-      <div id="chatBox" style="display:none;flex-direction:column;width:156px;
+      <div id="chatBox" style="display:none;flex-direction:column;width:160px;
         min-width:0;background:var(--bg-panel);border:0.5px solid var(--border);
-        border-radius:5px;overflow:hidden;flex-shrink:0;">
-        <div style="padding:3px 6px;font-size:7px;font-weight:600;
+        border-radius:5px;overflow:hidden;flex-shrink:0;max-height:100%;">
+        <div id="chatHeader" style="padding:3px 6px;font-size:7px;font-weight:600;
           color:var(--text-dim);letter-spacing:0.08em;
-          border-bottom:0.5px solid var(--border);background:var(--bg-panel2);">
-          💬 CHAT
+          border-bottom:0.5px solid var(--border);background:var(--bg-panel2);
+          display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+          <span>💬 CHAT</span>
+          <span id="chatUnread" style="display:none;font-size:6.5px;font-weight:700;
+            color:#5ad490;animation:chatPulse 1.2s ease-in-out infinite;">●</span>
         </div>
-        <div id="chatMessages" style="flex:1;overflow-y:auto;padding:4px 6px;
-          font-size:8px;line-height:1.4;color:var(--text-secondary);
-          min-height:16px;max-height:22px;">
+        <div id="chatMessages" style="flex:1;overflow-y:auto;padding:5px 7px;
+          font-size:8.5px;line-height:1.5;color:var(--text-secondary);
+          min-height:60px;max-height:90px;">
         </div>
-        <div style="display:flex;border-top:0.5px solid var(--border);">
+        <div style="display:flex;border-top:0.5px solid var(--border);flex-shrink:0;">
           <input id="chatInput" placeholder="Message…" maxlength="100"
-            style="flex:1;padding:3px 5px;font-size:8px;background:transparent;
-            border:none;outline:none;color:var(--text-primary);"
+            style="flex:1;padding:4px 6px;font-size:8.5px;background:transparent;
+            border:none;outline:none;color:var(--text-primary);font-family:inherit;"
             onkeydown="if(event.key==='Enter')chatSend()">
           <button onclick="chatSend()" title="Send"
-            style="padding:3px 7px;font-size:9px;background:transparent;
+            style="padding:3px 8px;font-size:10px;background:transparent;
             border:none;border-left:0.5px solid var(--border);
-            color:var(--accent);cursor:pointer;">↑</button>
+            color:var(--accent);cursor:pointer;flex-shrink:0;">↑</button>
         </div>
       </div>
     </div>
@@ -2043,6 +2033,7 @@ let gameMovesAlgebraic=[];
 function chatShow(visible){
   const box = document.getElementById('chatBox');
   if(box) box.style.display = visible ? 'flex' : 'none';
+  if(!visible) chatClearUnread();
 }
 
 function chatSend(){
@@ -2052,21 +2043,40 @@ function chatSend(){
   if(!text) return;
   if(!mpWs || mpWs.readyState !== WebSocket.OPEN) return;
   mpWs.send(JSON.stringify({type:'chat', text}));
-  chatAppend('You', text);
+  chatAppend('You', text, true);
   input.value = '';
 }
 
-function chatAppend(from, text){
+function chatAppend(from, text, isMe){
   const msgs = document.getElementById('chatMessages');
   if(!msgs) return;
+  const safe = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const line = document.createElement('div');
-  const isMe = from === 'You';
-  line.style.cssText = 'margin-bottom:2px;word-break:break-word;';
-  line.innerHTML = '<span style="font-weight:600;color:'+(isMe?'var(--accent)':'var(--text-primary)')+'">'+
-    from+':</span> <span>'+text.replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span>';
+  line.className = 'chat-msg ' + (isMe ? 'mine' : 'theirs');
+  line.innerHTML = '<span class="chat-sender">' + (isMe ? 'You' : from) + ':</span> ' + safe;
   msgs.appendChild(line);
   msgs.scrollTop = msgs.scrollHeight;
+  // Show unread dot if incoming and input isn't focused
+  if(!isMe){
+    const inp = document.getElementById('chatInput');
+    if(document.activeElement !== inp) chatShowUnread();
+  }
 }
+
+function chatShowUnread(){
+  const dot = document.getElementById('chatUnread');
+  if(dot) dot.style.display = '';
+}
+function chatClearUnread(){
+  const dot = document.getElementById('chatUnread');
+  if(dot) dot.style.display = 'none';
+}
+
+// Clear unread when user focuses the chat input
+document.addEventListener('DOMContentLoaded', () => {
+  const inp = document.getElementById('chatInput');
+  if(inp) inp.addEventListener('focus', chatClearUnread);
+});
 
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2276,7 +2286,7 @@ function mpHandleMessage(msg) {
       break;
 
     case 'chat':
-      chatAppend('Opponent', msg.text || '');
+      chatAppend('Opponent', msg.text || '', false);
       break;
 
     case 'resign':
@@ -2778,10 +2788,6 @@ function clearAllSelections(){
 // ── Multiplayer stubs ─────────────────────────────────────────────────
 function offerDraw(){}
 function resign(){}
-function sendChat(){
-  const inp=document.getElementById('chatInputText');
-  if(inp) inp.value='';
-}
 
 // ── Feedback ──────────────────────────────────────────────────────────
 function sendFeedback(){
