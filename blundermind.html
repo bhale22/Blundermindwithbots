@@ -1382,26 +1382,18 @@ canvas{
     <span class="panel-title">⚔️ 2-Player</span>
     <button class="panel-close" onclick="closeAllPanels()">✕</button>
   </div>
-  <div class="panel-body" style="padding:10px 12px;">
+  <div class="panel-body" style="padding:10px 12px;display:flex;flex-direction:column;gap:8px;">
 
     <!-- Server status note -->
-    <div id="mpServerNote" style="font-size:8px;padding:4px 8px;border-radius:4px;margin-bottom:10px;background:rgba(74,159,212,0.08);border:0.5px solid rgba(74,159,212,0.2);color:var(--text-dim);">
+    <div id="mpServerNote" style="font-size:8px;padding:4px 8px;border-radius:4px;background:rgba(74,159,212,0.08);border:0.5px solid rgba(74,159,212,0.2);color:var(--text-dim);">
       ℹ️ Multiplayer requires the deployed server. Local-only = Solo &amp; Bot modes only.
     </div>
 
-    <!-- ── Mode tabs ── -->
-    <div style="display:flex;gap:3px;margin-bottom:10px;">
-      <button class="bot-tab active" id="mptab-lobby"   onclick="mpSwitchTab('lobby')">🌐 Open Lobby</button>
-      <button class="bot-tab"        id="mptab-private" onclick="mpSwitchTab('private')">🔒 Private</button>
-      <button class="bot-tab"        id="mptab-join"    onclick="mpSwitchTab('join')">🔑 Join</button>
-    </div>
-
-    <!-- ══ SHARED TIME CONTROL BLOCK (one set, shown in all tabs) ══ -->
-    <div id="mpTCBlock" style="margin-bottom:10px;padding:8px;background:var(--bg-panel2);border:0.5px solid var(--border2);border-radius:6px;">
+    <!-- ══ TIME CONTROL ══ -->
+    <div style="padding:8px;background:var(--bg-panel2);border:0.5px solid var(--border2);border-radius:6px;">
       <div style="font-size:8px;color:var(--text-dim);margin-bottom:5px;font-weight:600;letter-spacing:0.05em;">TIME CONTROL</div>
-      <!-- Row 1: base time -->
       <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:3px;">Game time (minutes)</div>
-      <div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:6px;" id="mpBaseRow">
+      <div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:6px;">
         <button onclick="mpSetBase(0)"  class="tc-btn tc-active" id="mpbase-0">∞</button>
         <button onclick="mpSetBase(1)"  class="tc-btn" id="mpbase-1">1</button>
         <button onclick="mpSetBase(2)"  class="tc-btn" id="mpbase-2">2</button>
@@ -1412,9 +1404,8 @@ canvas{
         <button onclick="mpSetBase(20)" class="tc-btn" id="mpbase-20">20</button>
         <button onclick="mpSetBase(30)" class="tc-btn" id="mpbase-30">30</button>
       </div>
-      <!-- Row 2: increment -->
       <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:3px;">Increment (seconds)</div>
-      <div style="display:flex;gap:3px;flex-wrap:wrap;" id="mpIncRow">
+      <div style="display:flex;gap:3px;flex-wrap:wrap;">
         <button onclick="mpSetInc(0)"  class="tc-btn tc-active" id="mpinc-0">0</button>
         <button onclick="mpSetInc(1)"  class="tc-btn" id="mpinc-1">1</button>
         <button onclick="mpSetInc(2)"  class="tc-btn" id="mpinc-2">2</button>
@@ -1426,103 +1417,102 @@ canvas{
       <div id="mpTCDisplay" style="font-size:8px;color:var(--text-dim);margin-top:4px;">Untimed</div>
     </div>
 
-    <!-- ══ LOBBY TAB ══ -->
-    <div id="mp-tab-lobby">
-
-      <!-- Player info for lobby -->
-      <div style="margin-bottom:8px;padding:8px;background:var(--bg-panel2);border:0.5px solid var(--border2);border-radius:6px;">
-        <div style="font-size:8px;color:var(--text-dim);margin-bottom:5px;font-weight:600;letter-spacing:0.05em;">YOUR INFO <span style="font-weight:400;font-style:italic;">(self-reported, optional)</span></div>
-        <div style="display:flex;gap:6px;margin-bottom:6px;">
-          <div style="flex:1;">
-            <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:2px;">Name / Handle</div>
-            <input id="mpLobbyName" placeholder="Anonymous" maxlength="20"
-              style="width:100%;padding:4px 6px;background:var(--bg-panel);border:0.5px solid var(--border);
-              border-radius:3px;color:var(--text-primary);font-size:9px;font-family:inherit;box-sizing:border-box;">
-          </div>
-          <div style="width:70px;">
-            <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:2px;">Rating</div>
-            <input id="mpLobbyRating" placeholder="—" maxlength="4" type="number" min="100" max="3000"
-              style="width:100%;padding:4px 6px;background:var(--bg-panel);border:0.5px solid var(--border);
-              border-radius:3px;color:var(--text-primary);font-size:9px;font-family:inherit;box-sizing:border-box;">
-          </div>
-        </div>
-        <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:3px;">Seeking opponent within</div>
-        <div style="display:flex;gap:3px;flex-wrap:wrap;">
-          <button onclick="mpSetRatingRange(100)"  class="tc-btn" id="mprange-100">±100</button>
-          <button onclick="mpSetRatingRange(200)"  class="tc-btn" id="mprange-200">±200</button>
-          <button onclick="mpSetRatingRange(500)"  class="tc-btn" id="mprange-500">±500</button>
-          <button onclick="mpSetRatingRange(9999)" class="tc-btn tc-active" id="mprange-9999">Any</button>
-        </div>
+    <!-- ══ LOBBY LIST (always visible) ══ -->
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">
+        <div style="font-size:8px;color:var(--text-dim);font-weight:600;letter-spacing:0.05em;">OPEN CHALLENGES <span id="mpLobbyCount" style="font-weight:400;"></span></div>
+        <button onclick="mpRefreshLobby()" style="padding:2px 7px;background:transparent;border:0.5px solid var(--border2);border-radius:3px;color:var(--text-dim);cursor:pointer;font-size:8px;">↻</button>
       </div>
-
-      <button onclick="mpPostChallenge()" id="mpPostChallengeBtn" class="mp-action-btn mp-action-blue">
-        🌐 Post Open Challenge
-      </button>
-
-      <!-- Live lobby list -->
-      <div style="font-size:8px;color:var(--text-dim);margin-bottom:5px;font-weight:600;letter-spacing:0.05em;">OPEN CHALLENGES <span id="mpLobbyCount" style="font-weight:400;"></span></div>
-      <div id="mpLobbyList" style="display:flex;flex-direction:column;gap:4px;min-height:40px;margin-bottom:6px;">
-        <div style="font-size:8.5px;color:var(--text-dim);text-align:center;padding:12px 0;" id="mpLobbyEmpty">No open challenges yet — be the first!</div>
-      </div>
-      <button onclick="mpRefreshLobby()" style="width:100%;padding:4px;background:transparent;border:0.5px solid var(--border2);border-radius:4px;color:var(--text-dim);cursor:pointer;font-size:8px;">↻ Refresh</button>
-    </div>
-
-    <!-- ══ PRIVATE TAB ══ -->
-    <div id="mp-tab-private" style="display:none;">
-      <div style="font-size:8.5px;color:var(--text-dim);margin-bottom:10px;line-height:1.5;">Create a private game and share the link — your opponent clicks it to join instantly. No code entry needed.</div>
-
-      <button onclick="mpCreatePrivate()" id="mpCreatePrivateBtn" class="mp-action-btn mp-action-green">
-        🔒 Start Private Game
-      </button>
-
-      <!-- Invite link row (hidden until room created) -->
-      <div id="mpInviteRow" style="display:none;margin-bottom:10px;">
-        <div style="font-size:8px;color:var(--text-dim);margin-bottom:4px;font-weight:600;letter-spacing:0.05em;">INVITE LINK — share this anywhere</div>
-        <div style="display:flex;gap:5px;align-items:center;">
-          <input id="mpInviteLink" readonly
-            style="flex:1;padding:5px 7px;background:var(--bg-panel2);border:0.5px solid var(--border);
-            border-radius:4px;color:var(--accent);font-size:8px;font-family:monospace;cursor:pointer;"
-            onclick="this.select()">
-          <button onclick="mpCopyLink()" id="mpCopyLinkBtn"
-            style="padding:4px 8px;background:rgba(74,159,212,0.12);border:0.5px solid var(--accent);
-            border-radius:4px;color:var(--accent);cursor:pointer;font-size:9px;white-space:nowrap;">Copy</button>
-        </div>
-        <div style="display:flex;gap:4px;margin-top:5px;">
-          <button onclick="mpShareDiscord()" style="flex:1;padding:4px;font-size:8px;background:rgba(88,101,242,0.12);border:0.5px solid rgba(88,101,242,0.4);border-radius:4px;color:#8891f2;cursor:pointer;">🎮 Discord</button>
-          <button onclick="mpShareText()" style="flex:1;padding:4px;font-size:8px;background:rgba(74,159,212,0.08);border:0.5px solid rgba(74,159,212,0.3);border-radius:4px;color:var(--accent);cursor:pointer;">💬 Text/Share</button>
-        </div>
-        <div style="margin-top:6px;display:flex;align-items:center;gap:6px;">
-          <span style="font-size:8px;color:var(--text-dim);">or code:</span>
-          <span id="mpRoomCode" style="font-family:monospace;font-size:13px;font-weight:700;color:var(--text-primary);letter-spacing:0.15em;"></span>
-        </div>
+      <div id="mpLobbyList" style="display:flex;flex-direction:column;gap:4px;min-height:36px;">
+        <div style="font-size:8.5px;color:var(--text-dim);text-align:center;padding:10px 0;" id="mpLobbyEmpty">No open challenges yet — be the first!</div>
       </div>
     </div>
 
-    <!-- ══ JOIN TAB ══ -->
-    <div id="mp-tab-join" style="display:none;">
-      <div style="font-size:8.5px;color:var(--text-dim);margin-bottom:10px;line-height:1.5;">Have a code from a friend? Enter it below. Clicking an invite link also joins automatically.</div>
-      <div style="display:flex;gap:5px;margin-bottom:8px;">
-        <input id="mpJoinCode" placeholder="ABC123" maxlength="6"
-          style="flex:1;padding:8px 10px;background:var(--bg-panel2);border:0.5px solid var(--border);
-          border-radius:4px;color:var(--text-primary);font-family:monospace;font-size:15px;
-          letter-spacing:0.15em;text-transform:uppercase;"
-          onkeydown="if(event.key==='Enter')mpJoinRoom()">
+    <!-- ══ LOBBY PLAYER INFO (shown when posting) ══ -->
+    <div id="mpLobbyInfoBlock" style="padding:8px;background:var(--bg-panel2);border:0.5px solid var(--border2);border-radius:6px;display:none;">
+      <div style="font-size:8px;color:var(--text-dim);margin-bottom:5px;font-weight:600;letter-spacing:0.05em;">YOUR INFO <span style="font-weight:400;font-style:italic;">(self-reported, optional)</span></div>
+      <div style="display:flex;gap:6px;margin-bottom:6px;">
+        <div style="flex:1;">
+          <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:2px;">Name / Handle</div>
+          <input id="mpLobbyName" placeholder="Anonymous" maxlength="20"
+            style="width:100%;padding:4px 6px;background:var(--bg-panel);border:0.5px solid var(--border);
+            border-radius:3px;color:var(--text-primary);font-size:9px;font-family:inherit;box-sizing:border-box;">
+        </div>
+        <div style="width:70px;">
+          <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:2px;">Rating</div>
+          <input id="mpLobbyRating" placeholder="—" maxlength="4" type="number" min="100" max="3000"
+            style="width:100%;padding:4px 6px;background:var(--bg-panel);border:0.5px solid var(--border);
+            border-radius:3px;color:var(--text-primary);font-size:9px;font-family:inherit;box-sizing:border-box;">
+        </div>
       </div>
-      <button onclick="mpJoinRoom()" class="mp-action-btn mp-action-green">
-        Join Private Game →
-      </button>
+      <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:3px;">Seeking opponent within</div>
+      <div style="display:flex;gap:3px;flex-wrap:wrap;">
+        <button onclick="mpSetRatingRange(100)"  class="tc-btn" id="mprange-100">±100</button>
+        <button onclick="mpSetRatingRange(200)"  class="tc-btn" id="mprange-200">±200</button>
+        <button onclick="mpSetRatingRange(500)"  class="tc-btn" id="mprange-500">±500</button>
+        <button onclick="mpSetRatingRange(9999)" class="tc-btn tc-active" id="mprange-9999">Any</button>
+      </div>
     </div>
 
-    <!-- Status line (always visible) -->
-    <div id="mpStatus" style="font-size:9px;color:var(--text-secondary);min-height:16px;margin:8px 0 4px;line-height:1.5;"></div>
+    <!-- ══ JOIN CODE INPUT (shown when joining) ══ -->
+    <div id="mpJoinBlock" style="display:none;">
+      <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:4px;">Enter room code from your friend</div>
+      <input id="mpJoinCode" placeholder="ABC123" maxlength="6"
+        style="width:100%;padding:8px 10px;background:var(--bg-panel2);border:0.5px solid var(--border);
+        border-radius:4px;color:var(--text-primary);font-family:monospace;font-size:15px;
+        letter-spacing:0.15em;text-transform:uppercase;box-sizing:border-box;"
+        onkeydown="if(event.key==='Enter')mpJoinRoom()">
+    </div>
 
-    <!-- Leave / reset (shown after joining) -->
+    <!-- ══ INVITE LINK (shown after private room created) ══ -->
+    <div id="mpInviteRow" style="display:none;">
+      <div style="font-size:8px;color:var(--text-dim);margin-bottom:4px;font-weight:600;letter-spacing:0.05em;">INVITE LINK — share this anywhere</div>
+      <div style="display:flex;gap:5px;align-items:center;margin-bottom:5px;">
+        <input id="mpInviteLink" readonly
+          style="flex:1;padding:5px 7px;background:var(--bg-panel2);border:0.5px solid var(--border);
+          border-radius:4px;color:var(--accent);font-size:8px;font-family:monospace;cursor:pointer;"
+          onclick="this.select()">
+        <button onclick="mpCopyLink()" id="mpCopyLinkBtn"
+          style="padding:4px 8px;background:rgba(74,159,212,0.12);border:0.5px solid var(--accent);
+          border-radius:4px;color:var(--accent);cursor:pointer;font-size:9px;white-space:nowrap;">Copy</button>
+      </div>
+      <div style="display:flex;gap:4px;margin-bottom:5px;">
+        <button onclick="mpShareDiscord()" style="flex:1;padding:4px;font-size:8px;background:rgba(88,101,242,0.12);border:0.5px solid rgba(88,101,242,0.4);border-radius:4px;color:#8891f2;cursor:pointer;">🎮 Discord</button>
+        <button onclick="mpShareText()" style="flex:1;padding:4px;font-size:8px;background:rgba(74,159,212,0.08);border:0.5px solid rgba(74,159,212,0.3);border-radius:4px;color:var(--accent);cursor:pointer;">💬 Text/Share</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span style="font-size:8px;color:var(--text-dim);">or code:</span>
+        <span id="mpRoomCode" style="font-family:monospace;font-size:13px;font-weight:700;color:var(--text-primary);letter-spacing:0.15em;"></span>
+      </div>
+    </div>
+
+    <!-- Status line -->
+    <div id="mpStatus" style="font-size:9px;color:var(--text-secondary);min-height:14px;line-height:1.5;"></div>
+
+    <!-- Leave / reset (shown after joining a room) -->
     <div id="mpLeaveRow" style="display:none;">
       <button onclick="mpLeave()" style="width:100%;padding:5px;background:transparent;border:0.5px solid var(--border);border-radius:4px;color:var(--text-dim);cursor:pointer;font-size:9px;">Leave room / Reset</button>
     </div>
 
+    <!-- ══ THREE LARGE ACTION BUTTONS ══ -->
+    <div id="mpActionBtns" style="display:flex;flex-direction:column;gap:6px;margin-top:2px;">
+      <button onclick="mpStartPrivateFlow()" class="mp-action-btn mp-action-green">
+        🔒 Start Private Game
+      </button>
+      <button onclick="mpStartJoinFlow()" class="mp-action-btn mp-action-green">
+        🔑 Join Private Game
+      </button>
+      <button onclick="mpStartLobbyFlow()" class="mp-action-btn mp-action-blue">
+        🌐 Post Open Challenge to Lobby
+      </button>
+    </div>
+
     <!-- compat shim -->
     <div id="mpCodeRow" style="display:none;"></div>
+    <!-- legacy tab shims (no-ops, kept so old references don't throw) -->
+    <div id="mp-tab-lobby" style="display:none;"></div>
+    <div id="mp-tab-private" style="display:none;"></div>
+    <div id="mp-tab-join" style="display:none;"></div>
 
   </div>
 </div>
@@ -1826,6 +1816,8 @@ function openPanel(id) {
   closeAllPanels();
   document.getElementById(id).classList.add('open');
   document.getElementById('panelOverlay').classList.add('open');
+  // Refresh lobby list whenever the 2-player panel opens
+  if (id === 'mpPanel') mpRefreshLobby();
 }
 function closeAllPanels() {
   document.querySelectorAll('.slide-panel').forEach(p => p.classList.remove('open'));
@@ -2208,16 +2200,66 @@ let mpConnected = false;
 let mpCurrentTab = 'lobby';
 let mpLobbyRefreshTimer = null;
 
-// ── Tab switching ────────────────────────────────────────────────────────────
-function mpSwitchTab(tab) {
-  mpCurrentTab = tab;
-  ['lobby','private','join'].forEach(t => {
-    document.getElementById('mp-tab-' + t).style.display = t === tab ? '' : 'none';
-    const btn = document.getElementById('mptab-' + t);
-    if (btn) btn.classList.toggle('active', t === tab);
-  });
-  if (tab === 'lobby') mpRefreshLobby();
+// ── Panel flow helpers — replace old tab system ──────────────────────────────
+// "mode" is 'idle' | 'private-waiting' | 'join' | 'lobby-waiting' | 'ingame'
+let mpMode = 'idle';
+
+function mpSetMode(mode) {
+  mpMode = mode;
+  const lobbyInfo  = document.getElementById('mpLobbyInfoBlock');
+  const joinBlock  = document.getElementById('mpJoinBlock');
+  const inviteRow  = document.getElementById('mpInviteRow');
+  const actionBtns = document.getElementById('mpActionBtns');
+  const leaveRow   = document.getElementById('mpLeaveRow');
+  // Always hide everything first
+  if (lobbyInfo)  lobbyInfo.style.display  = 'none';
+  if (joinBlock)  joinBlock.style.display  = 'none';
+  if (inviteRow)  inviteRow.style.display  = 'none';
+  if (actionBtns) actionBtns.style.display = '';
+  if (leaveRow)   leaveRow.style.display   = 'none';
+
+  if (mode === 'lobby-form') {
+    if (lobbyInfo)  lobbyInfo.style.display  = '';
+  } else if (mode === 'join') {
+    if (joinBlock)  joinBlock.style.display  = '';
+  } else if (mode === 'private-waiting' || mode === 'lobby-waiting') {
+    if (inviteRow)  inviteRow.style.display  = '';
+    if (actionBtns) actionBtns.style.display = 'none';
+    if (leaveRow)   leaveRow.style.display   = '';
+  } else if (mode === 'ingame') {
+    if (actionBtns) actionBtns.style.display = 'none';
+    if (leaveRow)   leaveRow.style.display   = '';
+  }
 }
+
+// Called by the three large buttons
+function mpStartPrivateFlow() {
+  // Create room immediately, show invite link when server confirms
+  mpCreatePrivate();
+}
+
+function mpStartJoinFlow() {
+  mpSetMode('join');
+  mpShowStatus('Enter the code your friend shared with you.');
+  mpRefreshLobby();
+}
+
+function mpStartLobbyFlow() {
+  if (mpMode === 'lobby-form') {
+    // Second click = confirm & post
+    mpPostChallenge();
+  } else {
+    mpSetMode('lobby-form');
+    mpShowStatus('Fill in your info below (optional), then click Post again to go live.');
+    // Update the lobby button text
+    const btns = document.querySelectorAll('#mpActionBtns .mp-action-btn');
+    if (btns[2]) btns[2].textContent = '✓ Confirm & Post Challenge';
+    mpRefreshLobby();
+  }
+}
+
+// Legacy no-op kept so any stale references don't throw
+function mpSwitchTab() {}
 
 // ── WebSocket connection ─────────────────────────────────────────────────────
 function getWsUrl() {
@@ -2254,27 +2296,26 @@ function mpHandleMessage(msg) {
 
     case 'created':
       mpRoomId = msg.code; mpRole = msg.role;
-      // Show invite link
+      // Build and show invite link
       const inviteUrl = location.origin + location.pathname + '?join=' + msg.code;
       const linkEl = document.getElementById('mpInviteLink');
       if (linkEl) linkEl.value = inviteUrl;
       document.getElementById('mpRoomCode').textContent = msg.code;
-      document.getElementById('mpInviteRow').style.display = '';
-      document.getElementById('mpLeaveRow').style.display = '';
-      // If lobby challenge, show waiting message; if private, show different text
+      mpSetMode(msg.lobby ? 'lobby-waiting' : 'private-waiting');
       mpShowStatus(msg.lobby
         ? '⏳ Challenge posted! Waiting for someone to accept…'
-        : '⏳ Private room ready — share the link and wait for your opponent…');
+        : '⏳ Private room ready — share the link or code with your opponent…');
       break;
 
     case 'joined':
       mpRoomId = msg.code; mpRole = msg.role;
-      document.getElementById('mpLeaveRow').style.display = '';
+      mpSetMode('ingame');
       mpShowStatus('✓ Joined as Black. Starting…');
       mpStartGame();
       break;
 
     case 'opponent_joined':
+      mpSetMode('ingame');
       mpShowStatus('✓ Opponent joined! You are White ♔');
       mpStartGame();
       break;
@@ -2336,6 +2377,14 @@ function mpHandleMessage(msg) {
 }
 
 // ── Lobby ────────────────────────────────────────────────────────────────────
+function mpRefreshLobby() {
+  // Connect silently just to fetch the current open challenges
+  mpConnect(() => {
+    if (mpWs && mpWs.readyState === WebSocket.OPEN)
+      mpWs.send(JSON.stringify({ type: 'lobby_list' }));
+  });
+}
+
 function mpPostChallenge() {
   const nameEl   = document.getElementById('mpLobbyName');
   const ratingEl = document.getElementById('mpLobbyRating');
@@ -2350,17 +2399,9 @@ function mpPostChallenge() {
         name, rating,
         ratingRange: mpRatingRange
       }));
-      mpSwitchTab('private');
     } else {
       mpShowStatus('Connection failed — try again', true);
     }
-  });
-}
-
-function mpRefreshLobby() {
-  mpConnect(() => {
-    if (mpWs && mpWs.readyState === WebSocket.OPEN)
-      mpWs.send(JSON.stringify({ type: 'lobby_list' }));
   });
 }
 
@@ -2451,14 +2492,22 @@ function mpCheckInviteUrl() {
   if (!code) return;
   // Clean the URL without reloading
   history.replaceState({}, '', location.pathname);
-  // Open the mp panel and auto-join
+  // Dismiss landing overlay immediately
+  landingDismiss();
+  // Open the mp panel, show join block with pre-filled code, then connect and join
   setTimeout(() => {
     openPanel('mpPanel');
-    mpSwitchTab('join');
-    document.getElementById('mpJoinCode').value = code.toUpperCase();
-    mpShowStatus('Joining room from invite link…');
-    mpJoinRoom();
-  }, 400);
+    mpSetMode('join');
+    const joinEl = document.getElementById('mpJoinCode');
+    if (joinEl) joinEl.value = code.toUpperCase();
+    mpShowStatus('Joining from invite link…');
+    // Join directly via connect callback — don't rely on mpJoinRoom reading the input
+    mpConnect(() => {
+      if (mpWs && mpWs.readyState === WebSocket.OPEN)
+        mpWs.send(JSON.stringify({ type: 'join', code: code.toUpperCase() }));
+      else mpShowStatus('Connection failed — try again', true);
+    });
+  }, 350);
 }
 
 // ── Core join / leave ────────────────────────────────────────────────────────
@@ -2483,11 +2532,13 @@ function mpLeave() {
   const cm = document.getElementById('chatMessages'); if (cm) cm.innerHTML = '';
   const boardCol = document.querySelector('.board-col') || document.getElementById('boardCol');
   if (boardCol) boardCol.classList.remove('board-flipped');
-  document.getElementById('mpInviteRow').style.display = 'none';
-  document.getElementById('mpLeaveRow').style.display = 'none';
   document.getElementById('mpRoomCode').textContent = '';
   const jc = document.getElementById('mpJoinCode'); if (jc) jc.value = '';
   mpShowStatus('');
+  mpSetMode('idle');
+  // Restore lobby button text
+  const btns = document.querySelectorAll('#mpActionBtns .mp-action-btn');
+  if (btns[2]) btns[2].textContent = '🌐 Post Open Challenge to Lobby';
   resetGame();
 }
 
