@@ -788,21 +788,19 @@ canvas{
   <!-- RIGHT: sidebar -->
   <div id="sidebar">
 
-    <!-- Explore/commit mode -->
-    <div class="s-row">
-      <span class="s-lbl">Piece Explore/commit:</span>
-      <label><input type="radio" name="pmMode" id="pmHover" checked> Hover/drop</label>
-      <label><input type="radio" name="pmMode" id="pmClick"> Click/dbl-click</label>
-    </div>
-
     <!-- Settings -->
+    <div class="s-row">
+      <span class="s-lbl">🔊 Move sounds:</span>
+      <span class="s-spacer"></span>
+      <label><input type="checkbox" id="cbSound" onchange="saveSoundPref()"> On</label>
+    </div>
     <div class="s-row">
       <span class="s-lbl">Show legal moves:</span>
       <span class="s-spacer"></span>
       <label><input type="checkbox" id="cbLegalToggle" checked onchange="render()"> On</label>
     </div>
     <div class="s-row">
-      <span class="s-lbl">👻 Ghost responses (SF depth):</span>
+      <span class="s-lbl">👻 Ghost responses (SF depth):<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('ghostresponses',event)" style="margin-left:3px;">?</span></span>
       <span class="s-spacer"></span>
       <select id="soloGhostDepth" style="font-size:8px;padding:1px 3px;border:0.5px solid var(--border);border-radius:3px;background:var(--bg-panel2);color:var(--text-secondary);">
         <option value="0">Off</option>
@@ -812,7 +810,7 @@ canvas{
       </select>
     </div>
     <div class="s-row">
-      <span class="s-lbl">Batteries in threat counts:</span>
+      <span class="s-lbl">Batteries in threat counts:<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('batteriessetting',event)" style="margin-left:3px;">?</span></span>
       <span class="s-spacer"></span>
       <label><input type="checkbox" id="cbBattery" onchange="rebuildAtk()"> On</label>
     </div>
@@ -822,7 +820,7 @@ canvas{
       <label><input type="checkbox" id="cbInfluenceToggle" checked onchange="render()"> On</label>
     </div>
     <div class="s-row">
-      <span class="s-lbl">Include queen pins:</span>
+      <span class="s-lbl">Include queen pins:<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('queenpinssetting',event)" style="margin-left:3px;">?</span></span>
       <span class="s-spacer"></span>
       <label><input type="checkbox" id="cbQPins" onchange="rebuildAtk()"> On</label>
     </div>
@@ -1858,18 +1856,21 @@ const HELP = {
 <p>No circle means you cannot currently capture that piece.</p>`},
   unprotected:{title:'Unprotected Pieces',body:`<p>An <strong>unprotected piece</strong> has no friendly defender.</p><p>🎯 <strong>Bullseye</strong> — unprotected, not currently attacked (quietly vulnerable)<br>🔴 <strong>Red ring</strong> — unprotected AND under attack (immediate danger)</p><p>Good habit: keep all pieces protected.</p>`},
   pins:{title:'Pins',body:`<p>A piece is <strong>"pinned"</strong> if moving it would expose a more valuable friendly piece behind it to capture.</p><hr><h3>${PIN_SVG_PURPLE} Absolute pin — to the king</h3><p>The piece <strong>cannot legally move</strong>. Always excluded from threat and defense counts.</p><p><em>Exception: it can capture the pinner — that resolves the pin.</em></p><hr><h3>${PIN_SVG_BLUE} Relative pin — to the queen</h3><p>The piece <strong>can legally move</strong> but doing so loses the queen.</p><p>When Queen Pins is enabled, these pieces are also excluded from counts — a defender pinned to the queen doesn't actually defend.</p>`},
-  forksw:{title:"My Forks & Skewers (Hold Only)",body:`<h3>Forks &amp; skewers — what are they?</h3>
+  ghostresponses:{title:'Ghost Responses',body:`<p>After you hover or drag a piece to a candidate square, Stockfish calculates up to two likely opponent responses and shows them as semi-transparent <strong>ghost pieces</strong> on the board.</p><p>This lets you see the position one move deeper without committing — useful for spotting immediate threats or refutations you might otherwise miss.</p><hr><p><strong>Depth settings</strong></p><ul><li><strong>Off</strong> — no ghost responses shown.</li><li><strong>Fast (depth 4)</strong> — near-instant, good for quick checks.</li><li><strong>Medium (depth 8)</strong> — recommended balance of speed and quality.</li><li><strong>Deep (depth 12)</strong> — stronger analysis, slightly slower response.</li></ul><p><em>Stockfish runs locally in your browser. Higher depths use more CPU.</em></p>`},
+  batteriessetting:{title:'Batteries in Threat Counts',body:`<p>A <strong>battery</strong> is two or more sliding pieces (rooks, bishops, or the queen) lined up on the same rank, file, or diagonal so they reinforce each other's attacks.</p><p>When this setting is <strong>on</strong>, the threat and defense counts shown on pieces use Static Exchange Evaluation (SEE) — the full sequence of captures is simulated, so a rook behind another rook counts as a second attacker on the same square.</p><p>When <strong>off</strong>, only direct attackers are counted (faster, simpler, but undercounts battery strength).</p><p><em>Also controlled by the Battery Counts indicator button in the indicator grid.</em></p>`},
+  queenpinssetting:{title:'Include Queen Pins',body:`<p>A piece is <strong>relatively pinned to the queen</strong> if moving it would expose the queen to capture. The piece can legally move, but doing so loses the queen.</p><p>When this setting is <strong>on</strong>, pieces pinned to the queen are treated as non-defenders — they are excluded from threat and defense counts, because a piece that would cost you your queen to move isn't truly defending anything.</p><p>When <strong>off</strong>, only absolute pins to the king are excluded from counts; queen-pinned pieces are counted as normal defenders.</p><p><em>See the Pins indicator for a visual display of all pinned pieces.</em></p>`},
+    forksw:{title:"My Forks & Skewers",body:`<h3>Forks &amp; skewers — what are they?</h3>
 <p>A <strong>fork</strong> is a single move that simultaneously attacks two or more enemy pieces, forcing the opponent to abandon one. Knights are especially dangerous forkers because their L-shaped move is hard to see in advance.</p>
 <p>A <strong>skewer</strong> is the reverse of a pin — a high-value piece is attacked directly, and when it moves to safety it exposes a less valuable piece behind it to capture.</p>
-<hr><h3>Why this button is hold-only</h3><p>Showing fork opportunities feels like suggesting a move — crossing from "see the board" into "here's your strategy." This tool tries not to do that.</p><p><strong>Hold the button</strong> to see fork opportunities. Release and they disappear. You have to be actively thinking "I'm looking for forks" to see them. The discovery stays yours.</p><p><em>Black's Forks works normally — opponent fork threats are danger warnings, not move suggestions.</em></p><hr><table class="help-table"><tr><th>Color</th><th>Meaning</th></tr><tr><td style="color:#28c850">■ Green</td><td>Safe fork opportunity (landing square not losing)</td></tr><tr><td style="color:#3578e0">■ Blue</td><td>Contested fork (evaluate carefully)</td></tr><tr><td>⬛ Not shown</td><td>Fork where landing loses more than gained</td></tr></table><p><em>Not shown ≠ bad move. Positional factors may still make it excellent.</em></p>`},
+<hr><h3>How this button works</h3><p>Showing fork opportunities can feel like move suggestion — crossing from "see the board" into "here's your strategy." Use it as a double-check after you've done your own calculation, not as a first-look shortcut.</p><p><strong>Single click</strong> — momentary peek. <strong>Double-click</strong> — toggles the indicator permanently on or off.</p><p><em>Opponent forks (Black's Forks) work the same way — those are danger warnings for you.</em></p><hr><table class="help-table"><tr><th>Color</th><th>Meaning</th></tr><tr><td style="color:#28c850">■ Green</td><td>Safe fork opportunity (landing square not losing)</td></tr><tr><td style="color:#3578e0">■ Blue</td><td>Contested fork (evaluate carefully)</td></tr><tr><td>⬛ Not shown</td><td>Fork where landing loses more than gained</td></tr></table><p><em>Not shown ≠ bad move. Positional factors may still make it excellent.</em></p>`},
   forksb:{title:"Fork &amp; Skewer Threats",body:`<h3>What is a fork or skewer?</h3><p>A <strong>fork</strong> simultaneously attacks two or more enemy pieces — the opponent can only save one. A <strong>skewer</strong> forces a high-value piece to move, exposing a lesser piece behind it.</p><hr><p>Shows opponent fork and skewer threats — danger warnings for you.</p><table class="help-table"><tr><th>Color</th><th>Meaning</th></tr><tr><td style="color:#dc3232">■ Red</td><td>Black has a safe fork/skewer threat</td></tr><tr><td style="color:#dc50b4">■ Pink</td><td>Contested fork (opponent must evaluate)</td></tr></table><p>During move exploration, a target symbol appears on your destination square if moving there creates fork danger.</p>`},
   discoveredopp:{title:'Opponent Discovered Attack Threats',body:`<p>Shows potential discovered attacks the opponent can make — warning you of hidden threats.</p>
 <p><span style="color:#dc8200">●</span> <strong>Amber</strong> — moving the marked opponent piece would reveal a slider attack on your pieces.</p>
 <p>A dashed ring marks the piece that opens the discovery. A solid ring marks the revealed attacker. A target marks the threatened piece.</p>
 <p>Can be kept always-on for passive threat awareness — similar to Check threats.</p>`},
-discoveredself:{title:'My Discovered Attacks',body:`<p>Shows discovered attack opportunities available to you — hold-only to preserve the discovery.</p>
-<p><span style="color:#a050dc">●</span> <strong>Purple</strong> — moving the marked piece would reveal a slider attacking an opponent piece.</p>
-<p>Hold-only so that the discovery stays yours — you have to be actively looking for discovered attacks to see them.</p>`},
+discoveredself:{title:'My Discovered Attacks',body:`<p>Shows discovered attack opportunities available to you.</p>
+<p><span style="color:#a050dc">●</span> <strong>Purple</strong> — moving the marked piece would reveal a slider attacking an opponent piece behind it.</p>
+<p>Use this as a double-check after your own calculation rather than a first-look prompt, so that spotting the discovery stays your own work.</p><p><strong>Single click</strong> — momentary peek. <strong>Double-click</strong> — toggles permanently on or off.</p>`},
   xray:{title:'X-ray Pressure &amp; Threats',body:`<p>Shows all cases where a sliding piece's attack passes through a friendly blocker to a piece behind it — "hidden pressure" whether or not the blocker can legally move.</p>
 <p><span style="color:#000">■</span> <strong>Black</strong> — your own x-ray pressure on opponent pieces (opportunity).</p>
 <p><span style="color:#c87800">■</span> <strong>Amber</strong> — opponent x-ray pressure on your pieces (threat/warning).</p>
@@ -2648,6 +2649,8 @@ function mpReceiveMove(move) {
   if (promotionPending) { setTimeout(() => mpReceiveMove(move), 300); return; }
   executeMove(move.from, move.to, move.promo || null);
   mpUpdateTurnIndicator();
+  // Fire queued premove if any
+  if(activePremove) setTimeout(tryFirePremove, 50);
 }
 
 function mpIsMyTurn() {
@@ -3047,10 +3050,11 @@ function rebuildToReplayIdx(targetIdx){
   for(let i=0;i<targetIdx&&i<replayMoves.length;i++){
     const mv=algebraicToMove(replayMoves[i],board,turn,epSq,castling);
     if(!mv){break;}
+    const prevBoard=board;
     board=applyMove(mv.from,mv.to,board,epSq,mv.promo||'Q');
-    updateCastlingRights(mv.from,mv.to);
-    const fp=board[mv.to];
-    epSq=(fp&&fp.piece==='P'&&Math.abs(mv.to-mv.from)===16)?(mv.from+mv.to)>>1:-1;
+    const movedPiece=prevBoard[mv.from];
+    castling=updateCastling(mv.from,mv.to,movedPiece,castling);
+    epSq=computeEP(mv.from,mv.to,prevBoard);
     turn=turn==='w'?'b':'w';
   }
   replayIdx=targetIdx;
@@ -3174,6 +3178,8 @@ let promotionPending=null,gameOver=false;
 let previewBoard=null,previewAtk=null,previewEpSq=-1,previewCastling=null,premoveFrom=-1,premoveTo=-1;
 let hoverSq=-1;
 let lastClickSq=-1,lastClickTime=0;
+// ── Premove state ────────────────────────────────────────────
+let activePremove=null; // {from,to,promo} or null
 
 // ---- FEN ----
 function parseFen(fen){
@@ -3578,7 +3584,7 @@ function allLegalMoves(bd,col,ep,cst){const all=[];for(let s=0;s<64;s++)if(bd[s]
 function applyMove(from,to,bd,ep,promo){
   const bd2={...bd},p=bd2[from];bd2[to]=p;delete bd2[from];
   if(p.piece==='P'&&to===ep)delete bd2[rcSq(Math.floor(from/8),to%8)];
-  if(p.piece==='K'){const{r}=sqRC(from);if(to===rcSq(r,6)){bd2[rcSq(r,5)]=bd2[rcSq(r,7)];delete bd2[rcSq(r,7)];}if(to===rcSq(r,2)){bd2[rcSq(r,3)]=bd2[rcSq(r,0)];delete bd2[rcSq(r,0)];}}
+  if(p.piece==='K'){const{r,c:fc}=sqRC(from);const{c:tc}=sqRC(to);if(Math.abs(tc-fc)===2){if(tc===6){bd2[rcSq(r,5)]=bd2[rcSq(r,7)];delete bd2[rcSq(r,7)];}if(tc===2){bd2[rcSq(r,3)]=bd2[rcSq(r,0)];delete bd2[rcSq(r,0)];}}}
   if(p.piece==='P'&&(Math.floor(to/8)===0||Math.floor(to/8)===7))bd2[to]={piece:promo||'Q',color:p.color};
   return bd2;
 }
@@ -3632,15 +3638,49 @@ function moveToSAN(from, to, promo, bd, ep, cst) {
   // Check/checkmate
   const bd2 = applyMove(from,to,bd,ep,promo||'Q');
   const nextTurn = p.color==='w'?'b':'w';
-  const nextMoves = allLegalMoves(bd2,nextTurn,ep,cst);
+  const nextEp = computeEP(from,to,bd);
+  const nextMoves = allLegalMoves(bd2,nextTurn,nextEp,cst);
   if(inCheck(bd2,nextTurn)){
     san += nextMoves.length===0 ? '#' : '+';
   }
   return san;
 }
 
+// ── Move sounds ───────────────────────────────────────────────────────
+let _audioCtx=null;
+function _getAudioCtx(){if(!_audioCtx)_audioCtx=new(window.AudioContext||window.webkitAudioContext)();return _audioCtx;}
+function playMoveSound(isCapture){
+  const el=document.getElementById('cbSound');if(!el||!el.checked)return;
+  try{
+    const ctx=_getAudioCtx();const t=ctx.currentTime;
+    const osc=ctx.createOscillator();const gain=ctx.createGain();
+    osc.connect(gain);gain.connect(ctx.destination);
+    if(isCapture){
+      // Capture: two quick descending tones
+      osc.type='sine';
+      osc.frequency.setValueAtTime(520,t);
+      osc.frequency.exponentialRampToValueAtTime(260,t+0.12);
+      gain.gain.setValueAtTime(0.18,t);
+      gain.gain.exponentialRampToValueAtTime(0.001,t+0.18);
+      osc.start(t);osc.stop(t+0.18);
+    } else {
+      // Normal move: soft click
+      osc.type='sine';
+      osc.frequency.setValueAtTime(440,t);
+      osc.frequency.exponentialRampToValueAtTime(300,t+0.08);
+      gain.gain.setValueAtTime(0.12,t);
+      gain.gain.exponentialRampToValueAtTime(0.001,t+0.1);
+      osc.start(t);osc.stop(t+0.1);
+    }
+  }catch(e){}
+}
+function saveSoundPref(){const el=document.getElementById('cbSound');if(el)localStorage.setItem('bm_sound',el.checked?'1':'0');}
+function loadSoundPref(){const v=localStorage.getItem('bm_sound');const el=document.getElementById('cbSound');if(el&&v!==null)el.checked=(v==='1');}
+
 function executeMove(from,to,promo){
   const p=board[from];if(!p)return;
+  // Detect capture before board is modified (includes en passant)
+  const isCapture=!!(board[to]||(p.piece==='P'&&to===epSq));
   // Record move in algebraic notation before applying
   try{ gameMovesAlgebraic.push(moveToSAN(from,to,promo,board,epSq,castling)); }catch(e){}
   const newEP=computeEP(from,to,board);
@@ -3651,6 +3691,7 @@ function executeMove(from,to,promo){
   // Recompute pinned squares for rendering
   const _pins=computePins(board);pinnedWSquares=_pins.w;pinnedBSquares=_pins.b;
   lastMoveFrom=from; lastMoveTo=to; // record for last-move highlight
+  playMoveSound(isCapture);
   selSq=-1;legalMoves=[];clearPreview();hoverSq=-1;dragFrom=-1;dragMoved=false;
   const allMoves=allLegalMoves(board,turn,epSq,castling);
   if(allMoves.length===0){
@@ -3670,11 +3711,46 @@ function executeMove(from,to,promo){
   if(typeof botPostMoveHook==='function') botPostMoveHook();
 }
 
+// ── Premove helpers ─────────────────────────────────────────────────────
+function setPremove(from,to,promo){
+  activePremove={from,to,promo:promo||null};
+  selSq=-1;legalMoves=[];clearPreview();
+  atkMap=buildAtk(board);
+  render();
+}
+function cancelPremove(){
+  if(!activePremove)return;
+  activePremove=null;
+  selSq=-1;legalMoves=[];dragFrom=-1;dragMoved=false;
+  clearPreview();atkMap=buildAtk(board);render();
+}
+function tryFirePremove(){
+  if(!activePremove)return;
+  const{from,to,promo}=activePremove;
+  activePremove=null;
+  // Piece must still exist and be ours
+  const p=board[from];
+  if(!p)return;
+  const legal=legalMovesFor(from,board,epSq,castling);
+  if(!legal.includes(to)){render();return;}
+  // Pawn reaching back rank with no promo choice: auto-queen
+  const resolvedPromo=promo||(p.piece==='P'&&(Math.floor(to/8)===0||Math.floor(to/8)===7)?'Q':null);
+  executeMove(from,to,resolvedPromo);
+}
+
 function tryCommit(from,to,promo){
   if(from<0||to<0||!legalMoves.includes(to))return false;
-  if(typeof mpIsMyTurn==='function'&&!mpIsMyTurn()) return false;
-  // Don't let player commit a move while bot is calculating its response
-  if(botActive && botThinking) return false;
+  // If it is not our turn (multiplayer waiting, or bot thinking), queue a premove
+  const notMyTurn=(typeof mpIsMyTurn==='function'&&!mpIsMyTurn());
+  const botBusy=(botActive&&botThinking);
+  if(notMyTurn||botBusy){
+    const p2=board[from];if(!p2)return false;
+    // Only allow premove for the player's own pieces
+    const myColor=(typeof mpRole!=='undefined'&&mpRole)?( mpRole==='white'?'w':'b'):turn;
+    if(p2.color!==myColor)return false;
+    setPremove(from,to,promo);
+    return true;
+  }
   const p=board[from];if(!p)return false;
   if(p.piece==='P'&&(Math.floor(to/8)===0||Math.floor(to/8)===7)&&!promo){
     promotionPending={from,to,color:p.color};clearPreview();render();return true;
@@ -3728,7 +3804,7 @@ function showRemovalAtk(sq){
   previewBoard=null;previewAtk=buildAtk(bd2);
   const pp=computePins(bd2);previewPinsW=pp.w;previewPinsB=pp.b;
 }
-function isHoverMode(){return document.getElementById('pmHover').checked;}
+function isHoverMode(){const el=document.getElementById('pmHover');return el?el.checked:true;}
 
 function getEvtPos(e){const rect=cv.getBoundingClientRect();const cl=e.touches?e.touches[0]:e;return{x:cl.clientX-rect.left,y:cl.clientY-rect.top};}
 function getSq(pos){
@@ -3765,6 +3841,8 @@ cv.addEventListener('mousedown',e=>{
   if(promotionPending){const ch=getPromoChoice(getEvtPos(e));if(ch){executeMove(promotionPending.from,promotionPending.to,ch);promotionPending=null;}return;}
   if(gameOver)return;
   const pos=getEvtPos(e);const sq=getSq(pos);if(sq<0)return;
+  // Any click while a premove is queued cancels it; player chooses afresh
+  if(activePremove){cancelPremove();return;}
   // Ghost precompute hook
   if (typeof ghostOnMouseDown === 'function') setTimeout(()=>ghostOnMouseDown(sq), 15);
   if(isHoverMode()){
@@ -3885,7 +3963,7 @@ cv.addEventListener('mouseleave',()=>{
   else{dragMoved=false;dragFrom=-1;dragOver=-1;}
   render();
 });
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){clearPreview();selSq=-1;legalMoves=[];hoverSq=-1;dragFrom=-1;dragMoved=false;atkMap=buildAtk(board);render();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){cancelPremove();clearPreview();selSq=-1;legalMoves=[];hoverSq=-1;dragFrom=-1;dragMoved=false;atkMap=buildAtk(board);render();}});
 document.querySelectorAll('input[name="pmMode"]').forEach(r=>r.addEventListener('change',()=>{clearPreview();selSq=-1;legalMoves=[];hoverSq=-1;dragFrom=-1;dragMoved=false;atkMap=buildAtk(board);render();}));
 cv.addEventListener('touchstart',e=>{e.preventDefault();const t=e.touches[0];cv.dispatchEvent(new MouseEvent('mousedown',{clientX:t.clientX,clientY:t.clientY,bubbles:true}));},{passive:false});
 cv.addEventListener('touchmove',e=>{e.preventDefault();const t=e.touches[0];cv.dispatchEvent(new MouseEvent('mousemove',{clientX:t.clientX,clientY:t.clientY,bubbles:true}));},{passive:false});
@@ -4025,7 +4103,9 @@ function render(){
     if(!isPreviewing && (sq===lastMoveFrom||sq===lastMoveTo)){
       fill=light?'#cdd16e':'#aaa23a';
     }
-    if(isPreviewing){if(sq===premoveFrom)fill=light?'#d8d860':'#b0b020';else if(sq===premoveTo)fill=light?'#a0d8a0':'#5a9e5a';}
+    if(activePremove&&sq===activePremove.from)fill=light?'#a8c8f8':'#6090d0';
+    else if(activePremove&&sq===activePremove.to)fill=light?'#90b8f0':'#4878c0';
+    else if(isPreviewing){if(sq===premoveFrom)fill=light?'#d8d860':'#b0b020';else if(sq===premoveTo)fill=light?'#a0d8a0':'#5a9e5a';}
     else{if(sq===selSq)fill=light?'#f6f669':'#baca2b';else if(sq===dragFrom&&isDragging)fill=light?'#d0d0d0':'#aaa';}
     ctx.fillStyle=fill;ctx.fillRect(c*SQ,r*SQ,SQ,SQ);
     // Subtle texture — stable per-square grain
@@ -4489,6 +4569,25 @@ function render(){
     }
     ctx.restore();
   }
+  // Draw queued premove: ghost on origin (dimmed) + ghost on destination (blue tint)
+  if(activePremove&&board[activePremove.from]){
+    const _pm=activePremove;const _pp=board[_pm.from];
+    const _pi=currentPieceSet!=='unicode'?pieceImgCache[currentPieceSet+_pp.color+_pp.piece]:null;
+    // Origin: dimmed piece
+    const{r:_fr,c:_fc}=sqCanvas(_pm.from);
+    ctx.save();ctx.globalAlpha=0.28;
+    if(_pi&&_pi.complete&&_pi.naturalWidth>0){ctx.drawImage(_pi,_fc*SQ+3,_fr*SQ+3,SQ-6,SQ-6);}
+    else{ctx.font=`${SQ-8}px serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle=_pp.color==='w'?'rgba(240,240,240,0.9)':'rgba(30,30,30,0.9)';ctx.fillText(UNI[_pp.color+_pp.piece],_fc*SQ+SQ/2,_fr*SQ+SQ/2+1);}
+    ctx.restore();
+    // Destination: blue-tinted piece
+    const{r:_tr,c:_tc}=sqCanvas(_pm.to);
+    ctx.save();ctx.globalAlpha=0.72;
+    if(_pi&&_pi.complete&&_pi.naturalWidth>0){
+      ctx.drawImage(_pi,_tc*SQ+3,_tr*SQ+3,SQ-6,SQ-6);
+      ctx.fillStyle='rgba(60,120,220,0.30)';ctx.fillRect(_tc*SQ+3,_tr*SQ+3,SQ-6,SQ-6);
+    }else{ctx.font=`${SQ-8}px serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='rgba(60,120,220,0.85)';ctx.fillText(UNI[_pp.color+_pp.piece],_tc*SQ+SQ/2,_tr*SQ+SQ/2+1);}
+    ctx.restore();
+  }
     if(isDragging&&dragFrom>=0){
     const p=board[dragFrom];if(p){
       const rect=cv.getBoundingClientRect();const scale=480/rect.width;
@@ -4675,7 +4774,7 @@ function drawPromoModal(){
 }
 
 function loadPos(idx){
-  gameOver=false;promotionPending=null;selSq=-1;legalMoves=[];dragFrom=-1;dragMoved=false;hoverSq=-1;clearPreview();
+  gameOver=false;promotionPending=null;activePremove=null;selSq=-1;legalMoves=[];dragFrom=-1;dragMoved=false;hoverSq=-1;clearPreview();
   gameMovesAlgebraic=[];gameOverMsg="";
   board=parseFen(FENS[idx]);atkMap=buildAtk(board);
   const _lp=computePins(board);pinnedWSquares=_lp.w;pinnedBSquares=_lp.b;
@@ -5608,6 +5707,7 @@ if (!localStorage.getItem('bm_boardTheme')) applyBoardTheme('blue');
 if (!localStorage.getItem('bm_bgTheme')) applyBgTheme('slate');
 if (!localStorage.getItem('bm_pieceSet')) { currentPieceSet = 'staunton'; }
 loadPrefs();
+loadSoundPref();
 loadPos(0);
 resizeBoard();
 
@@ -6678,6 +6778,9 @@ function botPostMoveHook() {
     const botColor = botPlayerColor === 'white' ? 'b' : 'w';
     if (turn === botColor) {
       setTimeout(botMakeMove, 100);
+    } else {
+      // Player's turn — fire queued premove if any
+      if(activePremove) setTimeout(tryFirePremove, 50);
     }
   }
 }
