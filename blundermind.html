@@ -713,49 +713,6 @@ canvas{
     <div id="board-canvas-wrap">
       <canvas id="cv" width="480" height="480"></canvas>
       <canvas id="ghostCanvas" width="480" height="480"></canvas>
-
-      <!-- ── Floating chat widget — anchored to board bottom-right ── -->
-      <div id="chatBox" style="display:none;position:absolute;bottom:0;right:0;
-        width:190px;z-index:10;border-radius:6px 6px 4px 0;overflow:hidden;
-        box-shadow:0 4px 18px rgba(0,0,0,0.35);
-        border:0.5px solid var(--border);background:var(--bg-panel);
-        flex-direction:column;">
-
-        <!-- Tab / header — always visible when chat is open -->
-        <div id="chatHeader" onclick="chatToggleExpand()"
-          style="padding:4px 8px;font-size:8px;font-weight:600;
-          color:var(--text-dim);letter-spacing:0.07em;
-          border-bottom:0.5px solid var(--border);background:var(--bg-panel2);
-          display:flex;align-items:center;justify-content:space-between;
-          cursor:pointer;user-select:none;flex-shrink:0;">
-          <span>💬 CHAT</span>
-          <span style="display:flex;align-items:center;gap:5px;">
-            <span id="chatUnread" style="display:none;font-size:7px;font-weight:700;
-              color:#5ad490;animation:chatPulse 1.2s ease-in-out infinite;">●</span>
-            <span id="chatChevron" style="font-size:9px;color:var(--text-dim);
-              transition:transform 0.18s;">▲</span>
-          </span>
-        </div>
-
-        <!-- Collapsible body -->
-        <div id="chatBody" style="display:flex;flex-direction:column;">
-          <div id="chatMessages"
-            style="height:110px;overflow-y:auto;padding:6px 8px;
-            font-size:8.5px;line-height:1.55;color:var(--text-secondary);">
-          </div>
-          <div style="display:flex;border-top:0.5px solid var(--border);flex-shrink:0;">
-            <input id="chatInput" placeholder="Message…" maxlength="100"
-              style="flex:1;padding:4px 7px;font-size:8.5px;background:transparent;
-              border:none;outline:none;color:var(--text-primary);font-family:inherit;"
-              onkeydown="if(event.key==='Enter')chatSend()">
-            <button onclick="chatSend()" title="Send"
-              style="padding:3px 9px;font-size:11px;background:transparent;
-              border:none;border-left:0.5px solid var(--border);
-              color:var(--accent);cursor:pointer;flex-shrink:0;">↑</button>
-          </div>
-        </div>
-      </div><!-- end chatBox -->
-
     </div>
 
     <!-- PGN Replay controls (shown during replay) -->
@@ -784,6 +741,47 @@ canvas{
         <div class="turn-pill" id="turnPill">▶ your move</div>
       </div>
     </div>
+
+    <!-- Chat bar — below white player box, only visible during 2-player games -->
+    <div id="chatBox" style="display:none;flex-direction:column;
+      width:var(--board-size);box-sizing:border-box;
+      background:var(--bg-panel);border:0.5px solid var(--border);border-radius:5px;
+      overflow:hidden;">
+
+      <!-- Header / toggle row -->
+      <div id="chatHeader" onclick="chatToggleExpand()"
+        style="padding:4px 10px;font-size:8px;font-weight:600;letter-spacing:0.07em;
+        color:var(--text-dim);background:var(--bg-panel2);
+        border-bottom:0.5px solid var(--border);
+        display:flex;align-items:center;justify-content:space-between;
+        cursor:pointer;user-select:none;flex-shrink:0;">
+        <span>💬 CHAT</span>
+        <span style="display:flex;align-items:center;gap:6px;">
+          <span id="chatUnread" style="display:none;font-size:7px;font-weight:700;
+            color:#5ad490;animation:chatPulse 1.2s ease-in-out infinite;">● new message</span>
+          <span id="chatChevron" style="font-size:9px;color:var(--text-dim);
+            transition:transform 0.18s;">▲</span>
+        </span>
+      </div>
+
+      <!-- Collapsible body -->
+      <div id="chatBody" style="display:flex;flex-direction:column;">
+        <div id="chatMessages"
+          style="height:80px;overflow-y:auto;padding:5px 10px;
+          font-size:8.5px;line-height:1.55;color:var(--text-secondary);">
+        </div>
+        <div style="display:flex;border-top:0.5px solid var(--border);flex-shrink:0;">
+          <input id="chatInput" placeholder="Type a message…" maxlength="100"
+            style="flex:1;padding:5px 10px;font-size:8.5px;background:transparent;
+            border:none;outline:none;color:var(--text-primary);font-family:inherit;"
+            onkeydown="if(event.key==='Enter')chatSend()">
+          <button onclick="chatSend()" title="Send"
+            style="padding:4px 12px;font-size:11px;background:transparent;
+            border:none;border-left:0.5px solid var(--border);
+            color:var(--accent);cursor:pointer;flex-shrink:0;">↑</button>
+        </div>
+      </div>
+    </div><!-- end chatBox -->
 
 </div><!-- end board-col -->
 
@@ -2238,11 +2236,13 @@ function clockSetControl(key) {
 // ══════════════════════════════════════════════════════════════════════════════
 let mpRoomId = null, mpRole = null, mpWs = null;
 let mpConnected = false;
+let mpOriginalRole = null;  // role as assigned by server (never changes per session)
 let mpCurrentTab = 'lobby';
 let mpLobbyRefreshTimer = null;
 
 // ── Panel flow helpers — replace old tab system ──────────────────────────────
 // "mode" is 'idle' | 'private-waiting' | 'join' | 'lobby-waiting' | 'ingame'
+let mpGameCount = 0;        // counts games played; used for color alternation
 let mpMode = 'idle';
 
 function mpSetMode(mode) {
@@ -2350,15 +2350,31 @@ function mpHandleMessage(msg) {
 
     case 'joined':
       mpRoomId = msg.code; mpRole = msg.role;
+      mpGameCount = 0;
+      mpOriginalRole = msg.role;
+      // Apply host's time control so clocks match
+      if (msg.tcBaseMin !== undefined) {
+        mpBaseMin = msg.tcBaseMin;
+        mpIncSec  = msg.tcIncSec || 0;
+        mpUpdateTCDisplay();   // updates mpSelectedTC and TIME_CONTROLS.custom
+      }
       mpSetMode('ingame');
       mpShowStatus('✓ Joined as Black. Starting…');
-      mpStartGame();
+      mpStartGame(mpSelectedTC);
       break;
 
     case 'opponent_joined':
+      mpGameCount = 0;
+      mpOriginalRole = mpRole;
+      // Server echoes TC back to confirm — re-apply to ensure consistency
+      if (msg.tcBaseMin !== undefined) {
+        mpBaseMin = msg.tcBaseMin;
+        mpIncSec  = msg.tcIncSec || 0;
+        mpUpdateTCDisplay();
+      }
       mpSetMode('ingame');
       mpShowStatus('✓ Opponent joined! You are White ♔');
-      mpStartGame();
+      mpStartGame(mpSelectedTC);
       break;
 
     case 'lobby_list':
@@ -2396,9 +2412,9 @@ function mpHandleMessage(msg) {
       break;
 
     case 'rematch':
-      resetGame();
-      clockInit(mpSelectedTC || 'untimed');
-      if (mpSelectedTC && mpSelectedTC !== 'untimed') clockStart();
+      // Restore original server-assigned role; mpStartGame will apply the alternating swap
+      mpRole = mpOriginalRole || mpRole;
+      mpStartGame(mpSelectedTC);
       mpShowStatus('Rematch! ' + (mpRole === 'white' ? 'You are White ♔' : 'You are Black ♚'));
       break;
 
@@ -2437,6 +2453,7 @@ function mpPostChallenge() {
       mpWs.send(JSON.stringify({
         type: 'create', lobby: true,
         tc: mpSelectedTC, tcLabel,
+        tcBaseMin: mpBaseMin, tcIncSec: mpIncSec,
         name, rating,
         ratingRange: mpRatingRange
       }));
@@ -2494,7 +2511,11 @@ function mpCreatePrivate() {
   const tcLabel = mpBaseMin === 0 ? 'Untimed' : mpBaseMin + '+' + mpIncSec;
   mpConnect(() => {
     if (mpWs && mpWs.readyState === WebSocket.OPEN)
-      mpWs.send(JSON.stringify({ type: 'create', lobby: false, tc: mpSelectedTC, tcLabel }));
+      mpWs.send(JSON.stringify({
+        type: 'create', lobby: false,
+        tc: mpSelectedTC, tcLabel,
+        tcBaseMin: mpBaseMin, tcIncSec: mpIncSec
+      }));
     else mpShowStatus('Connection failed — try again', true);
   });
 }
@@ -2568,6 +2589,7 @@ function mpCreateRoom() { mpCreatePrivate(); }
 function mpLeave() {
   if (mpWs) { mpWs.close(); mpWs = null; }
   mpRoomId = null; mpRole = null; mpConnected = false;
+  mpOriginalRole = null; mpGameCount = 0;
   clearInterval(mpLobbyRefreshTimer);
   chatShow(false);
   const cm = document.getElementById('chatMessages'); if (cm) cm.innerHTML = '';
@@ -2584,16 +2606,27 @@ function mpLeave() {
 }
 
 // ── Game flow ────────────────────────────────────────────────────────────────
-function mpStartGame() {
+function mpStartGame(tcKey) {
+  mpGameCount++;
+  // On odd game counts (2nd, 4th…) swap roles from the original
+  const originalRole = mpRole;  // 'white' or 'black' as assigned by server
+  // Swap on every even-numbered game (game 2, 4, 6…)
+  const swap = (mpGameCount % 2 === 0);
+  const effectiveRole = swap
+    ? (originalRole === 'white' ? 'black' : 'white')
+    : originalRole;
+  mpRole = effectiveRole;
+
   resetGame();
-  clockInit(mpSelectedTC || 'untimed');
+  // Use tc key if provided (for Black who receives it from server)
+  const tc = tcKey || mpSelectedTC || 'untimed';
+  clockInit(tc);
   chatShow(true);
   boardFlipped = (mpRole === 'black');
   render();
-  if (mpSelectedTC && mpSelectedTC !== 'untimed') clockStart();
+  if (tc !== 'untimed') clockStart();
   updatePlayerBoxes();
   mpUpdateTurnIndicator();
-  // Close the panel so the board is visible
   closeAllPanels();
 }
 
@@ -4684,9 +4717,8 @@ function mpAcceptRematch() {
   if (mpWs && mpWs.readyState === WebSocket.OPEN) {
     mpWs.send(JSON.stringify({ type: 'rematch' }));
   }
-  resetGame();
-  clockInit(mpSelectedTC || 'untimed');
-  if (mpSelectedTC && mpSelectedTC !== 'untimed') clockStart();
+  mpRole = mpOriginalRole || mpRole;
+  mpStartGame(mpSelectedTC);
   mpShowStatus('Rematch! ' + (mpRole === 'white' ? 'You are White ♔' : 'You are Black ♚'));
 }
 
