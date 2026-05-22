@@ -6331,6 +6331,12 @@ function maia3SetRating(rating) {
   document.querySelectorAll('[id^="m3r-"]').forEach(function(b) {
     b.classList.toggle('tc-active', b.id === 'm3r-' + rating);
   });
+  // Refresh clock panel name if a bot game is active
+  if (typeof botActive !== 'undefined' && botActive &&
+      typeof botUpdatePlayerNames === 'function' &&
+      typeof botPlayerColor !== 'undefined') {
+    botUpdatePlayerNames(botPlayerColor);
+  }
 }
 
 function lcsfFallbackLevel() {
@@ -6458,6 +6464,7 @@ async function botMakeMove() {
   botThinking = true;
   document.getElementById('botStatus').textContent = '🤔 Thinking...';
 
+  const _botMoveStartMs = Date.now(); // for inference-time accounting
   const fen = boardToFen(board, turn, castling, epSq);
   const clockMs = botClockMs();
   let uciMove = null;
@@ -6490,10 +6497,12 @@ async function botMakeMove() {
         const allMoves = Object.entries(m3Probs).sort((a,b)=>b[1]-a[1]);
         console.log('[Maia3 FULL] elo:', maia3SelectedRating, 'fen:', fen);
         console.log('[Maia3 FULL] all probs:', allMoves.map(([m,p])=>m+'='+p.toFixed(4)).join(' '));
-        const delay = botThinkTime(m3Probs, clockMs);
-        await new Promise(r => setTimeout(r, delay));
+        const targetDelay = botThinkTime(m3Probs, clockMs);
+        const inferenceMs = Date.now() - _botMoveStartMs;
+        const delay = Math.max(0, targetDelay - inferenceMs);
+        if (delay > 0) await new Promise(r => setTimeout(r, delay));
         uciMove = sampleFromProbs(m3Probs, m3EffTemp);
-        console.log('[Maia3 FULL] chose:', uciMove, '| temp:', m3EffTemp.toFixed(2));
+        console.log('[Maia3 FULL] chose:', uciMove, '| temp:', m3EffTemp.toFixed(2), '| inf:', inferenceMs, 'ms | extra wait:', delay, 'ms');
       } else {
         // Maia3 not downloaded — fall back to SF
         await sfInit();
@@ -6514,8 +6523,10 @@ async function botMakeMove() {
         if (probs) lastBotMoveSource = 'Maia3';
       }
       if (probs && Object.keys(probs).length) {
-        const delay = botThinkTime(probs, clockMs);
-        await new Promise(r => setTimeout(r, delay));
+        const targetDelay = botThinkTime(probs, clockMs);
+        const inferenceMs = Date.now() - _botMoveStartMs;
+        const delay = Math.max(0, targetDelay - inferenceMs);
+        if (delay > 0) await new Promise(r => setTimeout(r, delay));
         uciMove = sampleFromProbs(probs, effectiveTemp);
       } else {
         await sfInit();
@@ -6533,8 +6544,10 @@ async function botMakeMove() {
       lcSelectedRating = savedRating;
       if (lcsfProbs && Object.keys(lcsfProbs).length) {
         lastBotMoveSource = 'LC Explorer';
-        const delay = botThinkTime(lcsfProbs, clockMs);
-        await new Promise(r => setTimeout(r, delay));
+        const targetDelay = botThinkTime(lcsfProbs, clockMs);
+        const inferenceMs = Date.now() - _botMoveStartMs;
+        const delay = Math.max(0, targetDelay - inferenceMs);
+        if (delay > 0) await new Promise(r => setTimeout(r, delay));
         uciMove = sampleFromProbs(lcsfProbs, lcsfEffTemp);
       } else {
         await sfInit();
@@ -6556,8 +6569,10 @@ async function botMakeMove() {
           let probs = null;
           try { probs = await maiaGetMoveProbs(fen); } catch(e) {}
           if (probs && Object.keys(probs).length) {
-            const delay = botThinkTime(probs, clockMs);
-            await new Promise(res => setTimeout(res, delay));
+            const targetDelay = botThinkTime(probs, clockMs);
+            const inferenceMs = Date.now() - _botMoveStartMs;
+            const delay = Math.max(0, targetDelay - inferenceMs);
+            if (delay > 0) await new Promise(res => setTimeout(res, delay));
             uciMove = sampleFromProbs(probs, effectiveTemp);
           } else {
             // Maia failed — fallback to SF
@@ -6953,6 +6968,8 @@ function botGenerateName() {
   if (botTab === 'sf') {
     var lvl = parseInt(document.getElementById('sfLevel').value) || 8;
     tabLabel = 'Stockfish ' + lvl;
+  } else if (botTab === 'maia3') {
+    tabLabel = 'Maya ' + (maia3SelectedRating || '1200');
   } else if (botTab === 'maia') {
     tabLabel = 'Lichess ' + (lcSelectedRating || '1200');
   } else if (botTab === 'hybrid') {
