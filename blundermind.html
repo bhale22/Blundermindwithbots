@@ -3746,7 +3746,7 @@ function tryCommit(from,to,promo){
   if(notMyTurn||botBusy){
     const p2=board[from];if(!p2)return false;
     // Only allow premove for the player's own pieces
-    const myColor=(typeof mpRole!=='undefined'&&mpRole)?( mpRole==='white'?'w':'b'):turn;
+    const myColor=playerColor();
     if(p2.color!==myColor)return false;
     setPremove(from,to,promo);
     return true;
@@ -3836,6 +3836,25 @@ function getPromoChoice(pos){
   const pieces=['Q','R','B','N'];for(let i=0;i<4;i++){if(Math.abs(px-(bx+28+i*52))<24)return pieces[i];}return null;
 }
 
+// ── Helper: returns the human player's color ('w' or 'b') regardless of whose turn it is.
+// In multiplayer, determined by mpRole. In bot games, determined by botPlayerColor.
+// In solo mode, returns the current turn (so any piece can be explored).
+function playerColor(){
+  if(typeof mpRoomId!=='undefined'&&mpRoomId&&typeof mpRole!=='undefined'&&mpRole)
+    return mpRole==='white'?'w':'b';
+  if(typeof botActive!=='undefined'&&botActive&&typeof botPlayerColor!=='undefined')
+    return botPlayerColor==='white'?'w':'b';
+  return turn; // solo: always matches current turn
+}
+
+// ── Helper: true when we should allow selecting the player's own pieces even if
+// it's not their turn (for exploration and premove queuing).
+function isWaitingTurn(){
+  if(typeof mpIsMyTurn==='function'&&typeof mpRoomId!=='undefined'&&mpRoomId) return !mpIsMyTurn();
+  if(typeof botActive!=='undefined'&&botActive&&typeof botThinking!=='undefined'&&botThinking) return true;
+  return false;
+}
+
 cv.addEventListener('mousedown',e=>{
   e.preventDefault();
   if(promotionPending){const ch=getPromoChoice(getEvtPos(e));if(ch){executeMove(promotionPending.from,promotionPending.to,ch);promotionPending=null;}return;}
@@ -3845,10 +3864,26 @@ cv.addEventListener('mousedown',e=>{
   if(activePremove){cancelPremove();return;}
   // Ghost precompute hook
   if (typeof ghostOnMouseDown === 'function') setTimeout(()=>ghostOnMouseDown(sq), 15);
+
+  const waiting=isWaitingTurn();
+  const myCol=playerColor();
+  // A square is selectable as "own" if it's our color (current-turn OR our color while waiting)
+  const isOwnPiece=board[sq]&&(board[sq].color===turn||(waiting&&board[sq].color===myCol));
+  // While waiting for opponent: clicking own pieces shows legal moves for preview/premove.
+  // Clicking opponent pieces still shows exploration (opponent-move preview) as before.
+  // Committing a move from own piece during opponent's turn will queue a premove.
+
   if(isHoverMode()){
-    if(board[sq]&&board[sq].color===turn){
+    if(isOwnPiece){
       if(selSq===sq){selSq=-1;legalMoves=[];clearPreview();atkMap=buildAtk(board);dragFrom=-1;dragMoved=false;render();}
-      else{dragFrom=sq;dragStartPos=pos;dragMoved=false;mousePos=pos;selSq=sq;legalMoves=legalMovesFor(sq,board,epSq,castling);premoveFrom=sq;premoveTo=-1;clearPreview();try{if(typeof indApply==='function')indApply();else render();}catch(e){render();}}
+      else{
+        dragFrom=sq;dragStartPos=pos;dragMoved=false;mousePos=pos;selSq=sq;
+        // Compute legal moves relative to the piece's turn (may not be current turn when premove)
+        const pieceTurn=board[sq].color;
+        legalMoves=legalMovesFor(sq,board,epSq,castling);
+        premoveFrom=sq;premoveTo=-1;clearPreview();
+        try{if(typeof indApply==='function')indApply();else render();}catch(err){render();}
+      }
     }else{
       if(previewBoard&&premoveFrom>=0&&premoveTo>=0){tryCommit(premoveFrom,premoveTo);}
       else{selSq=-1;legalMoves=[];clearPreview();atkMap=buildAtk(board);dragFrom=-1;dragMoved=false;render();}
@@ -3856,10 +3891,14 @@ cv.addEventListener('mousedown',e=>{
   }else{
     const now=Date.now();const isDouble=(sq===lastClickSq&&now-lastClickTime<450);lastClickSq=sq;lastClickTime=now;
     if(isDouble&&previewBoard&&premoveFrom>=0&&premoveTo>=0){tryCommit(premoveFrom,premoveTo);return;}
-    if(board[sq]&&board[sq].color===turn){
+    if(isOwnPiece){
       dragFrom=sq;dragStartPos=pos;dragMoved=false;mousePos=pos;
       if(selSq===sq){selSq=-1;legalMoves=[];clearPreview();atkMap=buildAtk(board);dragFrom=-1;render();}
-      else{selSq=sq;legalMoves=legalMovesFor(sq,board,epSq,castling);clearPreview();showRemovalAtk(sq);premoveFrom=sq;premoveTo=-1;render();}
+      else{
+        selSq=sq;
+        legalMoves=legalMovesFor(sq,board,epSq,castling);
+        clearPreview();showRemovalAtk(sq);premoveFrom=sq;premoveTo=-1;render();
+      }
     }else if(previewBoard&&premoveFrom>=0){clearPreview();atkMap=buildAtk(board);selSq=-1;legalMoves=[];render();}
     else if(selSq>=0){
       if(legalMoves.includes(sq)){startPreview(selSq,sq);selSq=-1;render();}
