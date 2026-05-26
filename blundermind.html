@@ -1237,6 +1237,96 @@ canvas{
 
     <div class="sep"></div>
 
+    <div class="sep"></div>
+
+    <!-- Opening Behavior -->
+    <h3 style="margin-bottom:6px;">Opening Behavior</h3>
+    <!-- Mode selector -->
+    <div style="display:flex;gap:3px;margin-bottom:8px;flex-wrap:wrap;">
+      <button class="tp-btn active" id="obm-none"      onclick="botSetOpeningMode('none')">Off</button>
+      <button class="tp-btn"        id="obm-mainline"  onclick="botSetOpeningMode('mainline')">📖 Main Line</button>
+      <button class="tp-btn"        id="obm-loyalty"   onclick="botSetOpeningMode('loyalty')">♥ Loyal</button>
+      <button class="tp-btn"        id="obm-repertoire" onclick="botSetOpeningMode('repertoire')">☰ Repertoire</button>
+    </div>
+
+    <!-- Mainline sub-panel -->
+    <div id="ob-mainline" style="display:none;margin-bottom:8px;">
+      <div style="display:flex;gap:4px;margin-bottom:6px;">
+        <button class="tc-btn tc-active" id="obsrc-masters" onclick="botSetOpeningSrc('masters')">Masters DB</button>
+        <button class="tc-btn"           id="obsrc-lichess" onclick="botSetOpeningSrc('lichess')">Lichess DB</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <label style="font-size:9px;color:var(--text-dim);flex:1;">Modern theory only (2020+)</label>
+        <input type="checkbox" id="obModern" onchange="botOpeningConfig.since=this.checked?'2020-01':null">
+      </div>
+      <div>
+        <label style="font-size:9px;color:var(--text-dim);">Max book depth (moves)</label>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
+          <input type="range" id="obDepth" min="4" max="40" value="20" style="flex:1;"
+            oninput="botOpeningConfig.maxBookDepth=parseInt(this.value);document.getElementById('obDepthVal').textContent=this.value">
+          <span id="obDepthVal" style="font-size:10px;font-weight:700;min-width:20px;">20</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loyalty sub-panel -->
+    <div id="ob-loyalty" style="display:none;margin-bottom:8px;">
+      <div style="margin-bottom:6px;">
+        <label style="font-size:9px;color:var(--text-dim);">Opening</label>
+        <select id="obLoyaltyPreset" style="width:100%;margin-top:3px;" onchange="botSetLoyaltyPreset(this.value)">
+          <option value="">— choose preset —</option>
+        </select>
+        <div style="display:flex;gap:4px;margin-top:4px;align-items:center;">
+          <span style="font-size:8px;color:var(--text-dim);">Custom ECO:</span>
+          <input type="text" id="obLoyaltyEco" placeholder="e.g. E62" maxlength="5"
+            style="flex:1;padding:3px 6px;font-size:10px;background:var(--bg-panel2);border:0.5px solid var(--border);border-radius:3px;color:var(--text-primary);"
+            oninput="botOpeningConfig.ecoPrefix=this.value.toUpperCase()">
+        </div>
+        <div id="obLoyaltyName" style="font-size:8px;color:var(--text-dim);margin-top:3px;"></div>
+      </div>
+      <div style="margin-bottom:6px;">
+        <label style="font-size:9px;color:var(--text-dim);">On opponent deviation</label>
+        <div style="display:flex;gap:3px;margin-top:4px;">
+          <button class="tc-btn tc-active" id="obdev-engine"   onclick="botSetDeviationResponse('engine')">Use engine</button>
+          <button class="tc-btn"           id="obdev-mainline" onclick="botSetDeviationResponse('mainline')">Play mainline</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:4px;">
+        <button class="tc-btn tc-active" id="oblsrc-masters" onclick="botSetOpeningSrc('masters')">Masters DB</button>
+        <button class="tc-btn"           id="oblsrc-lichess" onclick="botSetOpeningSrc('lichess')">Lichess DB</button>
+      </div>
+    </div>
+
+    <!-- Repertoire sub-panel -->
+    <div id="ob-repertoire" style="display:none;margin-bottom:8px;">
+      <div style="display:flex;gap:3px;margin-bottom:6px;">
+        <button class="tc-btn tc-active" id="obrep-white" onclick="botSetRepColor('white')">As White</button>
+        <button class="tc-btn"           id="obrep-black" onclick="botSetRepColor('black')">As Black</button>
+      </div>
+      <div id="obRepWhite">
+        <div id="obRepWhiteSlots" style="display:flex;flex-direction:column;gap:3px;margin-bottom:4px;"></div>
+        <button onclick="botAddRepSlot('white')" style="width:100%;padding:4px;font-size:8px;background:rgba(74,159,212,0.1);border:0.5px solid rgba(74,159,212,0.3);border-radius:3px;color:var(--accent);cursor:pointer;">+ Add opening</button>
+      </div>
+      <div id="obRepBlack" style="display:none;">
+        <div id="obRepBlackSlots" style="display:flex;flex-direction:column;gap:3px;margin-bottom:4px;"></div>
+        <button onclick="botAddRepSlot('black')" style="width:100%;padding:4px;font-size:8px;background:rgba(74,159,212,0.1);border:0.5px solid rgba(74,159,212,0.3);border-radius:3px;color:var(--accent);cursor:pointer;">+ Add opening</button>
+      </div>
+      <div style="margin-top:6px;">
+        <label style="font-size:9px;color:var(--text-dim);">Strictness <span style="font-weight:normal;">(preference vs frequency)</span></label>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
+          <span style="font-size:8px;color:var(--text-dim);">Freq</span>
+          <input type="range" id="obStrictness" min="0" max="100" value="80" style="flex:1;"
+            oninput="botOpeningConfig.strictness=parseInt(this.value)/100;document.getElementById('obStrictnessVal').textContent=this.value+'%'">
+          <span id="obStrictnessVal" style="font-size:10px;font-weight:700;min-width:28px;">80%</span>
+          <span style="font-size:8px;color:var(--text-dim);">Pref</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:4px;margin-top:6px;">
+        <button class="tc-btn tc-active" id="obrepsrc-masters" onclick="botSetOpeningSrc('masters')">Masters DB</button>
+        <button class="tc-btn"           id="obrepsrc-lichess" onclick="botSetOpeningSrc('lichess')">Lichess DB</button>
+      </div>
+    </div>
+
     <!-- Time behavior -->
     <h3 style="margin-bottom:6px;">Time Behavior</h3>
     <div style="margin-bottom:8px;">
@@ -1582,6 +1672,25 @@ let lastBotMoveSource = ''; // 'LC', 'SF', etc.
 // botMoveHistory: ordered list of every UCI move played this game (both sides).
 // Used by: opening book (play= param), degradation logic (move number), post-game logging.
 let botMoveHistory = [];
+
+// ── Phase 2: Opening book state ───────────────────────────────────────────────
+// 'none' | 'mainline' | 'loyalty' | 'repertoire'
+let botOpeningMode = 'none';
+let botOpeningConfig = {
+  source: 'masters',       // 'masters' | 'lichess'
+  maxBookDepth: 20,        // stop using book after this many half-moves
+  fallbackToEngine: true,
+  // loyalty-specific
+  ecoPrefix: '',
+  openingName: '',
+  deviationResponse: 'engine',
+  // repertoire-specific (arrays per color)
+  white: [],
+  black: [],
+  strictness: 0.8,
+};
+// In-memory cache: move-history key → explorer result. No TTL needed.
+const _openingCache = new Map();
 // Starting clock in ms — captured when botStart() initialises the clock.
 // Needed to compute fracRemaining = current / start.
 let botStartClockMs = null;
@@ -6419,6 +6528,137 @@ async function maiaGetMoveProbs(fen) {
   }
 }
 
+// ── Phase 2: Opening book ─────────────────────────────────────────────────────
+
+// ECO preset lookup — used by the loyalty mode UI dropdown.
+const ECO_PRESETS = {
+  "King's Indian":  { prefix: 'E6',  color: 'black' },
+  "Najdorf":        { prefix: 'B90', color: 'black' },
+  "Catalan":        { prefix: 'E00', color: 'white' },
+  "Ruy Lopez":      { prefix: 'C60', color: 'white' },
+  "Caro-Kann":      { prefix: 'B10', color: 'black' },
+  "French":         { prefix: 'C00', color: 'black' },
+  "Sicilian":       { prefix: 'B2',  color: 'black' },
+  "Queen's Gambit": { prefix: 'D3',  color: 'white' },
+  "English":        { prefix: 'A1',  color: 'white' },
+  "Dutch":          { prefix: 'A8',  color: 'black' },
+};
+
+// Fetch from Lichess opening explorer.
+// source: 'masters' tries the masters DB first, falls back to lichess DB if empty.
+// Returns { moves: [{uci, white, draws, black}], opening: {eco, name} } or null.
+async function openingExplorerFetch(moveHistory, source) {
+  source = source || botOpeningConfig.source || 'masters';
+  const cacheKey = source + ':' + moveHistory.join(',');
+  if (_openingCache.has(cacheKey)) return _openingCache.get(cacheKey);
+
+  async function fetchEndpoint(endpoint) {
+    const play = moveHistory.join(',');
+    const url = 'https://explorer.lichess.ovh/' + endpoint +
+                '?play=' + encodeURIComponent(play) + '&moves=10&topGames=0';
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('Explorer ' + endpoint + ' error ' + resp.status);
+    return await resp.json();
+  }
+
+  try {
+    let data = null;
+    if (source === 'masters') {
+      data = await fetchEndpoint('masters');
+      // fall back to lichess DB if masters returns no moves
+      if (!data.moves || !data.moves.length) {
+        data = await fetchEndpoint('lichess');
+      }
+    } else {
+      data = await fetchEndpoint('lichess');
+    }
+    if (!data || !data.moves || !data.moves.length) {
+      _openingCache.set(cacheKey, null);
+      return null;
+    }
+    // Sort by total game count descending (API usually does this, but ensure it)
+    data.moves.sort((a, b) =>
+      (b.white + b.draws + b.black) - (a.white + a.draws + a.black)
+    );
+    _openingCache.set(cacheKey, data);
+    return data;
+  } catch(e) {
+    console.warn('Opening explorer fetch failed:', e);
+    _openingCache.set(cacheKey, null);
+    return null;
+  }
+}
+
+// Main opening book entry point — called at the top of botMakeMove().
+// Returns a UCI string if the book has a move, or null to fall through to engine.
+async function botGetOpeningMove(moveHistory) {
+  const maxDepth = botOpeningConfig.maxBookDepth || 20;
+  if (botOpeningMode === 'none') return null;
+  if (moveHistory.length >= maxDepth) return null;
+
+  const data = await openingExplorerFetch(moveHistory, botOpeningConfig.source);
+  if (!data || !data.moves || !data.moves.length) return null;
+
+  // ── Mainline: always play moves[0] (highest game count) ──────────────────
+  if (botOpeningMode === 'mainline') {
+    return data.moves[0].uci;
+  }
+
+  // ── Loyalty: play moves[0] only if it keeps us in the chosen ECO prefix ──
+  if (botOpeningMode === 'loyalty') {
+    const prefix = botOpeningConfig.ecoPrefix;
+    if (!prefix) return data.moves[0].uci; // no prefix set, behave like mainline
+    const eco = (data.opening && data.opening.eco) || '';
+    if (!eco.startsWith(prefix)) {
+      // We've deviated out of the loyalty opening
+      if (botOpeningConfig.deviationResponse === 'mainline') {
+        return data.moves[0].uci; // play mainline of whatever position we reached
+      }
+      return null; // fall to engine
+    }
+    return data.moves[0].uci;
+  }
+
+  // ── Repertoire: score each move by frequency × preference weight ──────────
+  if (botOpeningMode === 'repertoire') {
+    const botColor = botPlayerColor; // 'white' | 'black'
+    const prefList = (botOpeningConfig[botColor] || []);
+    const strictness = botOpeningConfig.strictness !== undefined
+                       ? botOpeningConfig.strictness : 0.8;
+    const total = data.moves.reduce((s, m) => s + m.white + m.draws + m.black, 0) || 1;
+
+    function prefWeight(move) {
+      // Find which preference entry the resulting ECO matches
+      const moveEco = (data.opening && data.opening.eco) || '';
+      for (let i = 0; i < prefList.length; i++) {
+        if (moveEco.startsWith(prefList[i].eco)) {
+          const weights = [1.0, 0.7, 0.5];
+          return weights[i] !== undefined ? weights[i] : 0.3;
+        }
+      }
+      return 0.1; // unlisted
+    }
+
+    let best = null, bestScore = -1;
+    for (const m of data.moves) {
+      const freq = (m.white + m.draws + m.black) / total;
+      const pw = prefWeight(m);
+      // blend: strictness pulls toward preference, (1-strictness) uses raw frequency
+      const score = (1 - strictness) * freq + strictness * pw * freq;
+      if (score > bestScore) { bestScore = score; best = m.uci; }
+    }
+    return best;
+  }
+
+  return null;
+}
+
+// Update botStatus to show book state while in opening
+function botOpeningStatusText(data) {
+  if (!data || !data.opening) return '📖 Book';
+  return '📖 Book: ' + data.opening.name + ' (' + data.opening.eco + ') — move ' + (botMoveHistory.length + 1);
+}
+
 // ── Temperature sampling ─────────────────────────────────────────────────────
 function sampleFromProbs(moveProbs, temperature) {
   const entries = Object.entries(moveProbs);
@@ -6550,6 +6790,47 @@ async function botMakeMove() {
   let uciMove = null;
 
   try {
+    // ── Phase 2: Opening book layer ───────────────────────────────────────
+    // Runs before any engine call. Returns a move or null (fall through).
+    if (botOpeningMode !== 'none') {
+      const openingMove = await botGetOpeningMove(botMoveHistory);
+      if (openingMove) {
+        uciMove = openingMove;
+        lastBotMoveSource = 'Book';
+        // Fetch again (cached) just for the status label
+        const _od = await openingExplorerFetch(botMoveHistory, botOpeningConfig.source);
+        document.getElementById('botStatus').textContent = botOpeningStatusText(_od);
+        // Brief human-like pause (0.4–1.2s) — books are fast but not instant
+        const bookDelay = 400 + Math.random() * 800;
+        await new Promise(r => setTimeout(r, bookDelay));
+        // Skip all engine logic below
+        botThinking = false;
+        document.getElementById('botStatus').textContent = '';
+        if (uciMove && botActive) {
+          const mv = uciToSq(uciMove);
+          if (mv) {
+            const lm = legalMovesFor(mv.from, board, epSq, castling);
+            if (lm.includes(mv.to)) {
+              clearGhostPieces();
+              executeMove(mv.from, mv.to, mv.promo || 'Q');
+              botRecordMove(uciMove);
+              updatePlayerBoxes();
+              const nextMoves = allLegalMoves(board, turn, epSq, castling);
+              if (!nextMoves.length) {
+                gameOverMsg = inCheck(board, turn)
+                  ? (turn === 'w' ? 'Black' : 'White') + ' wins by checkmate'
+                  : 'Stalemate — draw';
+                gameOver = true;
+                updatePlayerBoxes(); render();
+              }
+            }
+          }
+        }
+        return;
+      }
+    }
+    // ── End opening book layer ────────────────────────────────────────────
+
     if (botTab === 'sf') {
       const level = sfPickLevel(sfEffectiveLevel(clockMs));
       await sfInit();
@@ -6925,6 +7206,116 @@ function botSetTab(tab) {
   }
 }
 
+// ── Phase 2: Opening behavior UI controllers ──────────────────────────────────
+
+function botSetOpeningMode(mode) {
+  botOpeningMode = mode;
+  ['none','mainline','loyalty','repertoire'].forEach(m => {
+    var btn = document.getElementById('obm-' + m);
+    if (btn) btn.classList.toggle('active', m === mode);
+    var panel = document.getElementById('ob-' + m);
+    if (panel) panel.style.display = (m === mode && m !== 'none') ? '' : 'none';
+  });
+  // Populate loyalty dropdown on first show
+  if (mode === 'loyalty') botPopulateLoyaltyDropdown();
+  if (mode === 'repertoire') { botRenderRepSlots('white'); botRenderRepSlots('black'); }
+}
+
+function botSetOpeningSrc(src) {
+  botOpeningConfig.source = src;
+  _openingCache.clear(); // stale with new source
+  // Sync all source button pairs
+  [['obsrc-masters','obsrc-lichess'],['oblsrc-masters','oblsrc-lichess'],['obrepsrc-masters','obrepsrc-lichess']].forEach(([m,l]) => {
+    var mb = document.getElementById(m), lb = document.getElementById(l);
+    if (mb) mb.classList.toggle('tc-active', src === 'masters');
+    if (lb) lb.classList.toggle('tc-active', src === 'lichess');
+  });
+}
+
+function botSetDeviationResponse(resp) {
+  botOpeningConfig.deviationResponse = resp;
+  var eb = document.getElementById('obdev-engine'), mb = document.getElementById('obdev-mainline');
+  if (eb) eb.classList.toggle('tc-active', resp === 'engine');
+  if (mb) mb.classList.toggle('tc-active', resp === 'mainline');
+}
+
+function botPopulateLoyaltyDropdown() {
+  var sel = document.getElementById('obLoyaltyPreset');
+  if (!sel || sel.options.length > 1) return; // already populated
+  Object.keys(ECO_PRESETS).forEach(name => {
+    var opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name + ' (' + ECO_PRESETS[name].prefix + ')';
+    sel.appendChild(opt);
+  });
+}
+
+function botSetLoyaltyPreset(name) {
+  if (!name || !ECO_PRESETS[name]) return;
+  const preset = ECO_PRESETS[name];
+  botOpeningConfig.ecoPrefix = preset.prefix;
+  botOpeningConfig.openingName = name;
+  var ecoInput = document.getElementById('obLoyaltyEco');
+  if (ecoInput) ecoInput.value = preset.prefix;
+  var nameDiv = document.getElementById('obLoyaltyName');
+  if (nameDiv) nameDiv.textContent = name + ' · ' + preset.prefix + ' · plays as ' + preset.color;
+  _openingCache.clear();
+}
+
+// ── Repertoire slot management ────────────────────────────────────────────────
+let _obRepColor = 'white'; // which color tab is visible
+
+function botSetRepColor(color) {
+  _obRepColor = color;
+  var wb = document.getElementById('obrep-white'), bb = document.getElementById('obrep-black');
+  if (wb) wb.classList.toggle('tc-active', color === 'white');
+  if (bb) bb.classList.toggle('tc-active', color === 'black');
+  var wPanel = document.getElementById('obRepWhite'), bPanel = document.getElementById('obRepBlack');
+  if (wPanel) wPanel.style.display = color === 'white' ? '' : 'none';
+  if (bPanel) bPanel.style.display = color === 'black' ? '' : 'none';
+}
+
+function botAddRepSlot(color) {
+  if (!botOpeningConfig[color]) botOpeningConfig[color] = [];
+  if (botOpeningConfig[color].length >= 10) return;
+  botOpeningConfig[color].push({ eco: '', name: '' });
+  botRenderRepSlots(color);
+}
+
+function botRemoveRepSlot(color, idx) {
+  botOpeningConfig[color].splice(idx, 1);
+  botRenderRepSlots(color);
+}
+
+function botRenderRepSlots(color) {
+  var container = document.getElementById('obRep' + (color === 'white' ? 'White' : 'Black') + 'Slots');
+  if (!container) return;
+  container.innerHTML = '';
+  var slots = botOpeningConfig[color] || [];
+  slots.forEach(function(slot, i) {
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:4px;';
+    row.innerHTML =
+      '<span style="font-size:8px;color:var(--text-dim);min-width:14px;">' + (i+1) + '.</span>' +
+      '<select style="flex:1;font-size:8px;padding:2px;" onchange="botRepSlotChange(\'' + color + '\',' + i + ',this.value)">' +
+        '<option value="">— pick opening —</option>' +
+        Object.keys(ECO_PRESETS).map(n =>
+          '<option value="' + n + '"' + (slot.name === n ? ' selected' : '') + '>' + n + '</option>'
+        ).join('') +
+      '</select>' +
+      '<button onclick="botRemoveRepSlot(\'' + color + '\',' + i + ')" style="font-size:9px;padding:1px 5px;background:rgba(200,40,40,0.1);border:0.5px solid rgba(200,40,40,0.3);border-radius:3px;color:#c84040;cursor:pointer;">×</button>';
+    container.appendChild(row);
+  });
+}
+
+function botRepSlotChange(color, idx, name) {
+  if (!ECO_PRESETS[name]) return;
+  botOpeningConfig[color][idx] = { eco: ECO_PRESETS[name].prefix, name: name };
+  _openingCache.clear();
+}
+
+// ── End phase 2 UI controllers ────────────────────────────────────────────────
+
 function botSetTpBtn(val) {
   botTimePressure = val;
   const descs = {
@@ -7219,7 +7610,11 @@ function botSaveConfig() {
     timePressure: botTimePressure,
     pace: parseInt(document.getElementById('botPace').value),
     playerColor: botPlayerColor,
-    ghostPieces: document.getElementById('cbGhostPieces').checked
+    ghostPieces: document.getElementById('cbGhostPieces').checked,
+    opening: {
+      mode: botOpeningMode,
+      config: botOpeningConfig
+    }
   };
   const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
@@ -7261,6 +7656,12 @@ function botLoadConfig(event) {
       if (cfg.pace) { document.getElementById('botPace').value = cfg.pace; document.getElementById('botPaceVal').textContent = cfg.pace; }
       if (cfg.playerColor) botSetPlayerColor(cfg.playerColor);
       if (cfg.ghostPieces !== undefined) document.getElementById('cbGhostPieces').checked = cfg.ghostPieces;
+      if (cfg.opening) {
+        botOpeningConfig = Object.assign(botOpeningConfig, cfg.opening.config || {});
+        botSetOpeningMode(cfg.opening.mode || 'none');
+        // Sync source buttons to loaded config
+        if (botOpeningConfig.source) botSetOpeningSrc(botOpeningConfig.source);
+      }
       document.getElementById('botStatus').textContent = '✓ Config loaded: ' + (cfg.name || 'unnamed');
       setTimeout(() => { document.getElementById('botStatus').textContent = ''; }, 3000);
     } catch(e) { alert('Could not parse config file.'); }
