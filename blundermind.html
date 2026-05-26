@@ -1251,10 +1251,7 @@ canvas{
 
     <!-- Mainline sub-panel -->
     <div id="ob-mainline" style="display:none;margin-bottom:8px;">
-      <div style="display:flex;gap:4px;margin-bottom:6px;">
-        <button class="tc-btn tc-active" id="obsrc-masters" onclick="botSetOpeningSrc('masters')">Masters DB</button>
-        <button class="tc-btn"           id="obsrc-lichess" onclick="botSetOpeningSrc('lichess')">Lichess DB</button>
-      </div>
+      <div style="font-size:8px;color:var(--text-dim);margin-bottom:6px;">Uses Lichess games database (blitz, rapid &amp; classical)</div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
         <label style="font-size:9px;color:var(--text-dim);flex:1;">Modern theory only (2020+)</label>
         <input type="checkbox" id="obModern" onchange="botOpeningConfig.since=this.checked?'2020-01':null">
@@ -1291,10 +1288,7 @@ canvas{
           <button class="tc-btn"           id="obdev-mainline" onclick="botSetDeviationResponse('mainline')">Play mainline</button>
         </div>
       </div>
-      <div style="display:flex;gap:4px;">
-        <button class="tc-btn tc-active" id="oblsrc-masters" onclick="botSetOpeningSrc('masters')">Masters DB</button>
-        <button class="tc-btn"           id="oblsrc-lichess" onclick="botSetOpeningSrc('lichess')">Lichess DB</button>
-      </div>
+      <div style="font-size:8px;color:var(--text-dim);">Uses Lichess games database</div>
     </div>
 
     <!-- Repertoire sub-panel -->
@@ -1321,10 +1315,7 @@ canvas{
           <span style="font-size:8px;color:var(--text-dim);">Pref</span>
         </div>
       </div>
-      <div style="display:flex;gap:4px;margin-top:6px;">
-        <button class="tc-btn tc-active" id="obrepsrc-masters" onclick="botSetOpeningSrc('masters')">Masters DB</button>
-        <button class="tc-btn"           id="obrepsrc-lichess" onclick="botSetOpeningSrc('lichess')">Lichess DB</button>
-      </div>
+      <div style="font-size:8px;color:var(--text-dim);margin-top:6px;">Uses Lichess games database</div>
     </div>
 
     <!-- Time behavior -->
@@ -6544,39 +6535,24 @@ const ECO_PRESETS = {
   "Dutch":          { prefix: 'A8',  color: 'black' },
 };
 
-// Fetch from Lichess opening explorer.
-// source: 'masters' tries the masters DB first, falls back to lichess DB if empty.
+// Fetch from Lichess opening explorer (lichess DB only — masters requires auth).
 // Returns { moves: [{uci, white, draws, black}], opening: {eco, name} } or null.
-async function openingExplorerFetch(moveHistory, source) {
-  source = source || botOpeningConfig.source || 'masters';
-  const cacheKey = source + ':' + moveHistory.join(',');
+async function openingExplorerFetch(moveHistory) {
+  const cacheKey = moveHistory.join(',');
   if (_openingCache.has(cacheKey)) return _openingCache.get(cacheKey);
 
-  async function fetchEndpoint(endpoint) {
-    const play = moveHistory.join(',');
-    const url = 'https://explorer.lichess.ovh/' + endpoint +
-                '?play=' + encodeURIComponent(play) + '&moves=10&topGames=0';
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error('Explorer ' + endpoint + ' error ' + resp.status);
-    return await resp.json();
-  }
-
   try {
-    let data = null;
-    if (source === 'masters') {
-      data = await fetchEndpoint('masters');
-      // fall back to lichess DB if masters returns no moves
-      if (!data.moves || !data.moves.length) {
-        data = await fetchEndpoint('lichess');
-      }
-    } else {
-      data = await fetchEndpoint('lichess');
-    }
+    const play = moveHistory.join(',');
+    const url = 'https://explorer.lichess.ovh/lichess' +
+                '?play=' + encodeURIComponent(play) +
+                '&speeds=blitz,rapid,classical&ratings=1200,1400,1600,1800&moves=10&topGames=0';
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('Explorer error ' + resp.status);
+    const data = await resp.json();
     if (!data || !data.moves || !data.moves.length) {
       _openingCache.set(cacheKey, null);
       return null;
     }
-    // Sort by total game count descending (API usually does this, but ensure it)
     data.moves.sort((a, b) =>
       (b.white + b.draws + b.black) - (a.white + a.draws + a.black)
     );
@@ -6596,7 +6572,7 @@ async function botGetOpeningMove(moveHistory) {
   if (botOpeningMode === 'none') return null;
   if (moveHistory.length >= maxDepth) return null;
 
-  const data = await openingExplorerFetch(moveHistory, botOpeningConfig.source);
+  const data = await openingExplorerFetch(moveHistory);
   if (!data || !data.moves || !data.moves.length) return null;
 
   // ── Mainline: always play moves[0] (highest game count) ──────────────────
@@ -6798,7 +6774,7 @@ async function botMakeMove() {
         uciMove = openingMove;
         lastBotMoveSource = 'Book';
         // Fetch again (cached) just for the status label
-        const _od = await openingExplorerFetch(botMoveHistory, botOpeningConfig.source);
+        const _od = await openingExplorerFetch(botMoveHistory);
         document.getElementById('botStatus').textContent = botOpeningStatusText(_od);
         // Brief human-like pause (0.4–1.2s) — books are fast but not instant
         const bookDelay = 400 + Math.random() * 800;
@@ -7223,13 +7199,7 @@ function botSetOpeningMode(mode) {
 
 function botSetOpeningSrc(src) {
   botOpeningConfig.source = src;
-  _openingCache.clear(); // stale with new source
-  // Sync all source button pairs
-  [['obsrc-masters','obsrc-lichess'],['oblsrc-masters','oblsrc-lichess'],['obrepsrc-masters','obrepsrc-lichess']].forEach(([m,l]) => {
-    var mb = document.getElementById(m), lb = document.getElementById(l);
-    if (mb) mb.classList.toggle('tc-active', src === 'masters');
-    if (lb) lb.classList.toggle('tc-active', src === 'lichess');
-  });
+  _openingCache.clear();
 }
 
 function botSetDeviationResponse(resp) {
