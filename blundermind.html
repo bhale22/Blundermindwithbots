@@ -1578,6 +1578,16 @@ let botGhostResponses = {};
 let botPrecomputePending = false;
 let lastBotMoveSource = ''; // 'LC', 'SF', etc.
 
+// ── Phase 1: Move history & clock fraction tracking ──────────────────────────
+// botMoveHistory: ordered list of every UCI move played this game (both sides).
+// Used by: opening book (play= param), degradation logic (move number), post-game logging.
+let botMoveHistory = [];
+// Starting clock in ms — captured when botStart() initialises the clock.
+// Needed to compute fracRemaining = current / start.
+let botStartClockMs = null;
+// Last known opponent clock in ms — updated after each move, used by diffModifier.
+let botOppClockMs = null;
+
 
 
 // ── Board sizing ──────────────────────────────────────────────────────
@@ -6469,6 +6479,37 @@ function botClockMs() {
   } catch(e) { return null; }
 }
 
+// ── Phase 1: Clock fraction & move recording helpers ─────────────────────────
+
+// Returns a 0–1 value: 1.0 = full time remaining, 0.0 = flagging.
+// Used by every degradation formula (sigmoid input).
+function botFracRemaining() {
+  if (!botStartClockMs || botStartClockMs <= 0) return 1;
+  const current = botClockMs();
+  if (current === null) return 1;
+  return Math.max(0, Math.min(1, current / botStartClockMs));
+}
+
+// Snapshot opponent clock. Called after each move so diffModifier has fresh data.
+// Opponent is whichever color the bot is NOT playing.
+function botSnapOppClock() {
+  try {
+    if (typeof clockTimeW === 'undefined' || clockControl === 'untimed') { botOppClockMs = null; return; }
+    const playerIsWhite = botPlayerColor === 'white';
+    // Player's clock (not bot's)
+    const secs = playerIsWhite ? clockTimeW : clockTimeB;
+    botOppClockMs = secs * 1000;
+  } catch(e) { botOppClockMs = null; }
+}
+
+// Record one UCI move into botMoveHistory.
+// Safe to call with null/undefined — silently ignored.
+function botRecordMove(uciMove) {
+  if (uciMove && typeof uciMove === 'string' && uciMove.length >= 4) {
+    botMoveHistory.push(uciMove);
+  }
+}
+
 // ── Think time: entropy-based, in ms ─────────────────────────────────────────
 function botThinkTime(moveProbs, clockMs) {
   const pace = parseInt(document.getElementById('botPace').value) || 40;
@@ -6639,6 +6680,7 @@ async function botMakeMove() {
       if (lm.includes(mv.to)) {
         clearGhostPieces();
         executeMove(mv.from, mv.to, mv.promo || 'Q');
+        botRecordMove(uciMove); // Phase 1: track bot's move
         updatePlayerBoxes();
         // Check for game over
         const nextMoves = allLegalMoves(board, turn, epSq, castling);
@@ -6828,6 +6870,34 @@ function botPostMoveHook() {
   _ghostFromSq = -1; // reset so ghost re-arms on next piece selection
   // Refresh player name to show live engine indicator
   if (botActive) botUpdatePlayerNames(botPlayerColor);
+
+  // Phase 1: record human move and snap opponent clock.
+  // lastMoveFrom/lastMoveTo are set by executeMove before this hook fires.
+  if (botActive && typeof lastMoveFrom !== 'undefined' && lastMoveFrom >= 0) {
+    // Determine if it was the human's move: turn has already flipped, so
+    // if it is now the bot's turn, the move that just happened was the human's.
+    const botColorLetter = botPlayerColor === 'white' ? 'b' : 'w';
+    if (turn === botColorLetter) {
+      // Derive UCI from the squares recorded by executeMove.
+      // lastMovePromo is not stored globally, so we check the board for a
+      // promotion piece: if the arriving square has a non-pawn piece of the
+      // mover's color AND the piece left from rank 1/8, it was a promotion.
+      let promo = null;
+      const arrivedPiece = board[lastMoveTo];
+      const fromRank = Math.floor(lastMoveFrom / 8);
+      if (arrivedPiece && arrivedPiece.piece !== 'P' &&
+          (fromRank === 1 || fromRank === 6) &&
+          ['Q','R','B','N'].includes(arrivedPiece.piece)) {
+        promo = arrivedPiece.piece.toLowerCase();
+      }
+      const humanUci = sqToUci(lastMoveFrom, lastMoveTo, promo);
+      // Only record if not already pushed (bot move path already called botRecordMove)
+      const last = botMoveHistory[botMoveHistory.length - 1];
+      if (last !== humanUci) botRecordMove(humanUci);
+    }
+    botSnapOppClock();
+  }
+
   if (botActive && !botThinking && !gameOver) {
     const botColor = botPlayerColor === 'white' ? 'b' : 'w';
     if (turn === botColor) {
@@ -7065,6 +7135,18 @@ async function botStart() {
   clockInit(botSelectedTC || 'untimed');
   resetGame();
 
+  // Phase 1: reset move history and capture starting clock for fracRemaining
+  botMoveHistory = [];
+  botOppClockMs = null;
+  // clockTimeW/B are set by clockInit — capture now as the baseline
+  try {
+    if (typeof clockTimeW !== 'undefined' && clockControl !== 'untimed') {
+      botStartClockMs = (botPlayerColor === 'black' ? clockTimeW : clockTimeB) * 1000;
+    } else {
+      botStartClockMs = null;
+    }
+  } catch(e) { botStartClockMs = null; }
+
   botActive = true;
 
   // Update player name displays
@@ -7096,6 +7178,10 @@ function botStop() {
   botThinking = false;
   clearGhostPieces();
   botGhostResponses = {};
+  // Phase 1: clear move history and clock baseline on stop
+  botMoveHistory = [];
+  botStartClockMs = null;
+  botOppClockMs = null;
   // Reset player names
   lastBotMoveSource = '';
   var nW = document.querySelector('#playerBoxW .player-name');
