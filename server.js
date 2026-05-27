@@ -84,6 +84,52 @@ app.get('/data/:file', (req, res) => {
   res.sendFile(p);
 });
 
+// ── Lichess Masters explorer proxy ───────────────────────────────────────────
+// The masters endpoint blocks browser-origin requests. We proxy it server-side
+// so there's no Origin header. Responses are cached in-process for 24h.
+const _mastersCache = new Map();
+const MASTERS_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+app.get('/api/masters', (req, res) => {
+  const play  = (req.query.play  || '').replace(/[^a-zA-Z0-9,]/g, '');
+  const moves = Math.min(parseInt(req.query.moves) || 10, 20);
+  const cacheKey = play + ':' + moves;
+
+  const cached = _mastersCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < MASTERS_CACHE_TTL) {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('X-Cache', 'HIT');
+    return res.send(cached.body);
+  }
+
+  const upstream = 'https://explorer.lichess.ovh/masters' +
+    '?play=' + encodeURIComponent(play) +
+    '&moves=' + moves +
+    '&topGames=0&recentGames=0';
+
+  https.get(upstream, { headers: { 'User-Agent': 'Blundermind/1.0' } }, (upstream_res) => {
+    const chunks = [];
+    upstream_res.on('data', c => chunks.push(c));
+    upstream_res.on('end', () => {
+      const body = Buffer.concat(chunks);
+      if (upstream_res.statusCode === 200) {
+        _mastersCache.set(cacheKey, { body, ts: Date.now() });
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.setHeader('X-Cache', 'MISS');
+        res.send(body);
+      } else {
+        console.warn('Masters proxy upstream error:', upstream_res.statusCode);
+        res.status(upstream_res.statusCode).send(body);
+      }
+    });
+  }).on('error', e => {
+    console.error('Masters proxy fetch error:', e.message);
+    res.status(502).json({ error: 'Masters proxy error', detail: e.message });
+  });
+});
+
 app.get('/maia-worker.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
   res.setHeader('Cache-Control', 'public, max-age=86400');
