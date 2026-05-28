@@ -6817,7 +6817,7 @@ async function botGetOpeningMove(moveHistory) {
     // moves (depth < 3) the position ECO may not yet reflect the opening, so we
     // also give credit to moves that match our preferred family by their UCI move
     // string heuristic (e.g. c7c5 is always the Sicilian regardless of ECO label).
-    const EARLY_MOVE_DEPTH = 4; // before this, relax ECO check
+    const EARLY_MOVE_DEPTH = maxDepth; // always use ECO-line scanning (position-ECO prefix only covers B20-B29 for Sicilian, missing B30-B99)
     const isEarly = moveHistory.length < EARLY_MOVE_DEPTH;
     const currentTier = matchTier(currentEco);
 
