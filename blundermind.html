@@ -1721,6 +1721,10 @@ let botSanHistory  = [];  // SAN move list, e.g. ["e4","c5",...] — for ECO PGN
 // ── Phase 2: Opening book state ───────────────────────────────────────────────
 // 'none' | 'mainline' | 'loyalty' | 'repertoire'
 let botOpeningMode = 'none';
+// preferredOpeningActive: true from game-start until the played moves no longer
+// match any preferred ECO line. Once false it stays false for that game —
+// the bot falls through to the normal engine path immediately with no network call.
+let preferredOpeningActive = false;
 let botOpeningConfig = {
   source: 'masters',       // 'masters' | 'lichess'
   maxBookDepth: 20,        // stop using book after this many half-moves
@@ -7037,19 +7041,90 @@ async function botMakeMove() {
 
   try {
     // ── Phase 2: Opening book layer ───────────────────────────────────────
-    // Runs before any engine call. Returns a move or null (fall through).
-    if (botOpeningMode !== 'none') {
+    // Preferred mode: pure in-memory ECO table lookup — no network call.
+    // preferredOpeningActive is true from game-start; flips to false permanently
+    // the first time botSanHistory doesn't match any preferred line.
+    if (preferredOpeningActive && botOpeningMode === 'preferred') {
+      const botCol = botPlayerColor === 'white' ? 'black' : 'white';
+      const slots  = (botOpeningConfig[botCol] || []).filter(s => s.name);
+      if (!slots.length) {
+        preferredOpeningActive = false; // no slots → deactivate immediately
+      } else if (_ecoData && _ecoData.length) {
+        const maxDepth = botOpeningConfig.maxBookDepth || 20;
+        if (botSanHistory.length >= maxDepth) {
+          preferredOpeningActive = false; // past max depth
+        } else {
+          const preferredUci = obPreferredNextMoves(
+            botSanHistory, slots, board, turn, epSq, castling
+          );
+          if (preferredUci.size) {
+            // Pick the highest-scored preferred move
+            let bestUci = null, bestScore = -1;
+            preferredUci.forEach(u => {
+              const sc = preferredUci[u] || 1.0;
+              if (sc > bestScore) { bestScore = sc; bestUci = u; }
+            });
+            if (bestUci) {
+              uciMove = bestUci;
+              lastBotMoveSource = 'ECO';
+              const matchedEntry = _ecoData.find(e =>
+                e.sanMoves.length > botSanHistory.length &&
+                botSanHistory.every((m, i) => e.sanMoves[i] === m) &&
+                slots.some(sl => {
+                  const ex = sl.exactEco || null;
+                  const fam = sl.familyPrefix || (sl.eco ? sl.eco.slice(0,2) : null);
+                  return (ex && e.eco.startsWith(ex)) || (fam && e.eco.startsWith(fam));
+                })
+              );
+              const label = matchedEntry
+                ? '♟ ' + matchedEntry.name + ' (' + matchedEntry.eco + ')'
+                : '♟ Preferred Opening';
+              document.getElementById('botStatus').textContent = label;
+              const bookDelay = 400 + Math.random() * 800;
+              await new Promise(r => setTimeout(r, bookDelay));
+              botThinking = false;
+              document.getElementById('botStatus').textContent = '';
+              if (uciMove && botActive) {
+                const mv = uciToSq(uciMove);
+                if (mv) {
+                  const lm = legalMovesFor(mv.from, board, epSq, castling);
+                  if (lm.includes(mv.to)) {
+                    clearGhostPieces();
+                    executeMove(mv.from, mv.to, mv.promo || 'Q');
+                    const _botSan = gameMovesAlgebraic[gameMovesAlgebraic.length - 1] || null;
+                    botRecordMove(uciMove, _botSan);
+                    updatePlayerBoxes();
+                    const nextMoves = allLegalMoves(board, turn, epSq, castling);
+                    if (!nextMoves.length) {
+                      gameOverMsg = inCheck(board, turn)
+                        ? (turn === 'w' ? 'Black' : 'White') + ' wins by checkmate'
+                        : 'Stalemate — draw';
+                      gameOver = true;
+                      updatePlayerBoxes(); render();
+                    }
+                  }
+                }
+              }
+              return;
+            }
+          } else {
+            // No preferred continuation found — deactivate for this game
+            preferredOpeningActive = false;
+            console.log('[Opening] No preferred ECO line matches after', botSanHistory.length, 'moves — switching to engine');
+          }
+        }
+      }
+      // If we reach here, preferred path deactivated — fall through to engine below
+    } else if (botOpeningMode !== 'none' && !preferredOpeningActive) {
+      // mainline mode: use Lichess explorer as before
       const openingMove = await botGetOpeningMove(botMoveHistory);
       if (openingMove) {
         uciMove = openingMove;
         lastBotMoveSource = 'Book';
-        // Fetch again (cached) just for the status label
         const _od = await openingExplorerFetch(botMoveHistory);
         document.getElementById('botStatus').textContent = botOpeningStatusText(_od);
-        // Brief human-like pause (0.4–1.2s) — books are fast but not instant
         const bookDelay = 400 + Math.random() * 800;
         await new Promise(r => setTimeout(r, bookDelay));
-        // Skip all engine logic below
         botThinking = false;
         document.getElementById('botStatus').textContent = '';
         if (uciMove && botActive) {
@@ -7059,7 +7134,6 @@ async function botMakeMove() {
             if (lm.includes(mv.to)) {
               clearGhostPieces();
               executeMove(mv.from, mv.to, mv.promo || 'Q');
-              // gameMovesAlgebraic is updated by executeMove before this line
               const _botSan = gameMovesAlgebraic[gameMovesAlgebraic.length - 1] || null;
               botRecordMove(uciMove, _botSan);
               updatePlayerBoxes();
@@ -8139,6 +8213,15 @@ async function botStart() {
   botMoveHistory = [];
   botSanHistory  = [];
   botOppClockMs = null;
+  // Activate preferred-opening fast path if mode is 'preferred' and slots exist
+  if (botOpeningMode === 'preferred') {
+    const _botCol = (botPlayerColor === 'white' ? 'black' : 'white');
+    const _hasSlots = (_botCol === 'white' ? botOpeningConfig.white : botOpeningConfig.black)
+                        .filter(s => s.name).length > 0;
+    preferredOpeningActive = _hasSlots;
+  } else {
+    preferredOpeningActive = false;
+  }
   // clockTimeW/B are set by clockInit — capture now as the baseline
   try {
     if (typeof clockTimeW !== 'undefined' && clockControl !== 'untimed') {
@@ -8184,6 +8267,7 @@ function botStop() {
   botSanHistory  = [];
   botStartClockMs = null;
   botOppClockMs = null;
+  preferredOpeningActive = false;
   // Reset player names
   lastBotMoveSource = '';
   var nW = document.querySelector('#playerBoxW .player-name');
