@@ -7209,7 +7209,8 @@ async function botMakeMove() {
       if (lm.includes(mv.to)) {
         clearGhostPieces();
         executeMove(mv.from, mv.to, mv.promo || 'Q');
-        botRecordMove(uciMove); // Phase 1: track bot's move
+        // botRecordMove(uciMove); // Phase 1: track bot's move
+        botRecordMove(uciMove, gameMovesAlgebraic[gameMovesAlgebraic.length - 1] || null); // Phase 1: track bot's move
         updatePlayerBoxes();
         // Check for game over
         const nextMoves = allLegalMoves(board, turn, epSq, castling);
