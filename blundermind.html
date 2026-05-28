@@ -1258,9 +1258,9 @@ canvas{
     <!-- Opening Behavior -->
     <h3 style="margin-bottom:6px;">Opening Behavior</h3>
     <div style="display:flex;gap:3px;margin-bottom:8px;flex-wrap:wrap;">
+      <button class="tp-btn"        id="obm-preferred" onclick="botSetOpeningMode('preferred')">♟ Preferred</button>
       <button class="tp-btn active" id="obm-none"      onclick="botSetOpeningMode('none')">Off</button>
       <button class="tp-btn"        id="obm-mainline"  onclick="botSetOpeningMode('mainline')">📖 Main Line</button>
-      <button class="tp-btn"        id="obm-preferred" onclick="botSetOpeningMode('preferred')">♟ Preferred Openings</button>
     </div>
 
     <!-- Mainline sub-panel -->
@@ -1311,7 +1311,7 @@ canvas{
             color:var(--text-dim);cursor:pointer;">Cancel</button>
         </div>
         <!-- Curated slider (shown below search, always visible when preferred mode active) -->
-        <div id="obSliderWhite" style="margin-bottom:6px;">
+        <div id="obSliderWhite" style="margin-bottom:6px;display:none;">
           <div style="font-size:8px;color:var(--text-dim);margin-bottom:3px;">&#8230;or browse curated openings:</div>
           <div id="obCuratedWhite"></div>
         </div>
@@ -1342,7 +1342,7 @@ canvas{
             background:none;border:0.5px solid var(--border);border-radius:3px;
             color:var(--text-dim);cursor:pointer;">Cancel</button>
         </div>
-        <div id="obSliderBlack" style="margin-bottom:6px;">
+        <div id="obSliderBlack" style="margin-bottom:6px;display:none;">
           <div style="font-size:8px;color:var(--text-dim);margin-bottom:3px;">&#8230;or browse curated openings:</div>
           <div id="obCuratedBlack"></div>
         </div>
@@ -1715,7 +1715,8 @@ let lastBotMoveSource = ''; // 'LC', 'SF', etc.
 // ── Phase 1: Move history & clock fraction tracking ──────────────────────────
 // botMoveHistory: ordered list of every UCI move played this game (both sides).
 // Used by: opening book (play= param), degradation logic (move number), post-game logging.
-let botMoveHistory = [];
+let botMoveHistory = [];  // UCI move list, e.g. ["e2e4","c7c5",...]
+let botSanHistory  = [];  // SAN move list, e.g. ["e4","c5",...] — for ECO PGN matching
 
 // ── Phase 2: Opening book state ───────────────────────────────────────────────
 // 'none' | 'mainline' | 'loyalty' | 'repertoire'
@@ -6780,66 +6781,109 @@ async function botGetOpeningMove(moveHistory) {
     return data.moves[0].uci;
   }
 
-  // ── Preferred: unified loyalty + repertoire mode ──────────────────
-  // One slot  → loyalty (exact ECO preferred, family fallback, deviation response).
-  // Many slots → repertoire (exact match 3× bonus over family match, weighted by %).
+  // ── Preferred: unified loyalty + repertoire mode ──────────────────────────
+  // botPlayerColor is the HUMAN's color, so the bot's color is the opposite.
+  // ECO matching: we check EACH candidate move's resulting ECO (via its UCI
+  // prefix) against the slot prefixes — not the current position ECO — because
+  // the opening name only appears in the resulting position after the move.
+  // This is what allows Black to correctly steer toward the Sicilian on move 1:
+  // e4 is the current position (B00), but the move c7c5 produces a B2x ECO.
   if (botOpeningMode === 'preferred') {
-    const botColor = botPlayerColor;
+    // Bot is the opposite color from the human player
+    const botColor = botPlayerColor === 'white' ? 'black' : 'white';
     const slots = (botOpeningConfig[botColor] || []).filter(s => s.familyPrefix || s.eco);
+
+    // No slots configured — fall through (engine will play)
+    if (!slots.length) return null;
+
+    // currentEco = the opening name of the CURRENT position (before bot's move)
     const currentEco = (data.opening && data.opening.eco) || '';
 
-    // No slots — behave like mainline
-    if (!slots.length) return data.moves[0].uci;
-
-    // Helper: classify how well currentEco matches a slot
+    // Helper: best match tier for a given ECO string against our slot list
     // Returns: 2 = exact match, 1 = family match, 0 = no match
-    function matchTier(slot) {
-      const exact  = slot.exactEco     || null;
-      const family = slot.familyPrefix || slot.eco || null;
-      if (exact  && currentEco.startsWith(exact))  return 2;
-      if (family && currentEco.startsWith(family)) return 1;
-      return 0;
-    }
-
-    // Single slot — loyalty mode
-    if (slots.length === 1) {
-      const tier = matchTier(slots[0]);
-      if (tier === 0) {
-        // Outside the family entirely — apply deviation response
-        return botOpeningConfig.deviationResponse === 'mainline'
-          ? data.moves[0].uci : null;
-      }
-      // In family (or exact) — play most popular book move
-      return data.moves[0].uci;
-    }
-
-    // Multiple slots — repertoire scoring
-    // score = freq × ( (1−strictness) + strictness × tierMultiplier × normalisedWeight )
-    const totalPct = slots.reduce((s, sl) => s + (sl.weight || 0), 0) || 1;
-    const total    = data.moves.reduce((s, m) => s + m.white + m.draws + m.black, 0) || 1;
-    const strictness = botOpeningConfig.strictness !== undefined
-                       ? botOpeningConfig.strictness : 0.8;
-    const EXACT_BONUS = 3.0;
-
-    function slotScore(slot) {
-      const tier = matchTier(slot);
-      if (tier === 0) return 0.05;                          // unlisted
-      const normW = (slot.weight || 0) / totalPct;
-      const multiplier = tier === 2 ? EXACT_BONUS : 1.0;   // 3× for exact match
-      return multiplier * normW;
-    }
-
-    // Best slot for the current ECO
-    function bestPrefWeight() {
-      let best = 0.05;
+    function matchTier(ecoStr) {
+      let best = 0;
       for (const slot of slots) {
-        const s = slotScore(slot);
-        if (s > best) best = s;
+        const exact  = slot.exactEco     || null;
+        const family = slot.familyPrefix || (slot.eco ? slot.eco.slice(0,2) : null);
+        if (exact  && ecoStr.startsWith(exact))  { best = Math.max(best, 2); }
+        if (family && ecoStr.startsWith(family)) { best = Math.max(best, 1); }
       }
       return best;
     }
 
-    const pw = bestPrefWeight();
+    // Score a candidate move. We use the CURRENT position ECO because we don't
+    // know the resulting ECO per-move from the explorer API. However: in early
+    // moves (depth < 3) the position ECO may not yet reflect the opening, so we
+    // also give credit to moves that match our preferred family by their UCI move
+    // string heuristic (e.g. c7c5 is always the Sicilian regardless of ECO label).
+    const EARLY_MOVE_DEPTH = 4; // before this, relax ECO check
+    const isEarly = moveHistory.length < EARLY_MOVE_DEPTH;
+    const currentTier = matchTier(currentEco);
+
+    // Preferred family prefixes for early-move heuristic
+    const prefFamilies = slots.map(s => s.familyPrefix || (s.eco ? s.eco.slice(0,2) : '')).filter(Boolean);
+
+    // ── Early moves: use ECO PGN sequences to find preferred next moves ─────
+    // botSanHistory tracks SAN moves played so far this game.
+    // We scan _ecoData for lines matching the moves played so far AND a preferred
+    // slot ECO, then extract what move comes next in those lines.
+    if (isEarly && _ecoData) {
+      const preferredUci = obPreferredNextMoves(
+        botSanHistory, slots, board, turn, epSq, castling
+      );
+
+      if (preferredUci.size) {
+        // Score candidates: preferred moves get a strong bonus, others get frequency only
+        const total = data.moves.reduce((s, m) => s + m.white + m.draws + m.black, 0) || 1;
+        let bestMove = null, bestScore = -1;
+        for (const m of data.moves) {
+          const freq = (m.white + m.draws + m.black) / total;
+          const prefScore = preferredUci.has(m.uci)
+            ? (preferredUci[m.uci] || 1.0)  // slot-weighted score piggy-backed on Set
+            : 0;
+          // Strong preference signal: preferred moves score 10× their frequency bonus
+          const score = prefScore > 0 ? freq * (1 + prefScore * 10) : freq * 0.1;
+          if (score > bestScore) { bestScore = score; bestMove = m.uci; }
+        }
+        if (bestMove) return bestMove;
+      }
+      // No preferred move found in ECO lines — fall through to frequency
+      return data.moves[0].uci;
+    }
+
+    // ── Established position: score by slot match against current ECO ─────────
+    function positionSlotScore() {
+      if (currentTier === 0) return 0.05;
+      const totalPct = slots.reduce((s2, sl) => s2 + (sl.weight || 0), 0) || 1;
+      const EXACT_BONUS = 3.0;
+      let best = 0.05;
+      for (const slot of slots) {
+        const exact  = slot.exactEco     || null;
+        const family = slot.familyPrefix || (slot.eco ? slot.eco.slice(0,2) : null);
+        let tier = 0;
+        if (exact  && currentEco.startsWith(exact))  tier = 2;
+        else if (family && currentEco.startsWith(family)) tier = 1;
+        if (tier > 0) {
+          const normW = (slot.weight || 0) / totalPct;
+          const sc = (tier === 2 ? EXACT_BONUS : 1.0) * normW;
+          if (sc > best) best = sc;
+        }
+      }
+      return best;
+    }
+
+    const pw = positionSlotScore();
+    const total = data.moves.reduce((s, m) => s + m.white + m.draws + m.black, 0) || 1;
+    const strictness = botOpeningConfig.strictness !== undefined
+                       ? botOpeningConfig.strictness : 0.8;
+
+    // Single slot — loyalty: if established and off-book, apply deviation response
+    if (slots.length === 1 && currentTier === 0) {
+      return botOpeningConfig.deviationResponse === 'mainline'
+        ? data.moves[0].uci : null;
+    }
+
     let bestMove = null, bestScore = -1;
     for (const m of data.moves) {
       const freq  = (m.white + m.draws + m.black) / total;
@@ -6941,11 +6985,14 @@ function botSnapOppClock() {
   } catch(e) { botOppClockMs = null; }
 }
 
-// Record one UCI move into botMoveHistory.
-// Safe to call with null/undefined — silently ignored.
-function botRecordMove(uciMove) {
+// Record one move into botMoveHistory (UCI) and botSanHistory (SAN).
+// sanMove is optional — pass null if unknown.
+function botRecordMove(uciMove, sanMove) {
   if (uciMove && typeof uciMove === 'string' && uciMove.length >= 4) {
     botMoveHistory.push(uciMove);
+    // Derive SAN from the board *before* move was applied — already done if sanMove passed.
+    // If not passed, try to reconstruct from the move and pre-move board state.
+    botSanHistory.push(sanMove || uciMove); // fallback to UCI if SAN unknown
   }
 }
 
@@ -7012,7 +7059,9 @@ async function botMakeMove() {
             if (lm.includes(mv.to)) {
               clearGhostPieces();
               executeMove(mv.from, mv.to, mv.promo || 'Q');
-              botRecordMove(uciMove);
+              // gameMovesAlgebraic is updated by executeMove before this line
+              const _botSan = gameMovesAlgebraic[gameMovesAlgebraic.length - 1] || null;
+              botRecordMove(uciMove, _botSan);
               updatePlayerBoxes();
               const nextMoves = allLegalMoves(board, turn, epSq, castling);
               if (!nextMoves.length) {
@@ -7373,7 +7422,11 @@ function botPostMoveHook() {
       const humanUci = sqToUci(lastMoveFrom, lastMoveTo, promo);
       // Only record if not already pushed (bot move path already called botRecordMove)
       const last = botMoveHistory[botMoveHistory.length - 1];
-      if (last !== humanUci) botRecordMove(humanUci);
+      if (last !== humanUci) {
+        // gameMovesAlgebraic has the SAN for every move including this one
+        const humanSan = gameMovesAlgebraic[gameMovesAlgebraic.length - 1] || null;
+        botRecordMove(humanUci, humanSan);
+      }
     }
     botSnapOppClock();
   }
@@ -7419,6 +7472,12 @@ function botSetOpeningMode(mode) {
     obPrefRenderSlots('white');
     obPrefRenderSlots('black');
     obBuildCuratedPickers();
+    // Auto-open search for the active color if no slots set yet
+    var activeColor = _obPrefColor || 'white';
+    var slots = (botOpeningConfig[activeColor] || []).filter(s => s.name);
+    if (!slots.length) {
+      setTimeout(() => obPrefOpenSearch(activeColor), 50);
+    }
   }
 }
 
@@ -7449,6 +7508,15 @@ function obPrefSetColor(color) {
 // Loaded once from /data/eco.tsv; used for full-text search.
 let _ecoData = null; // [{eco, name, familyPrefix, exactEco}]
 
+// Parse a PGN move sequence string into a plain SAN array.
+// "1. e4 c5 2. Nf3" → ["e4", "c5", "Nf3"]
+function parsePgnMoves(pgn) {
+  return pgn
+    .replace(/\d+\./g, '')      // strip move numbers
+    .trim().split(/\s+/)
+    .filter(s => s && !/^\d/.test(s));
+}
+
 async function obLoadEcoData() {
   if (_ecoData) return _ecoData;
   try {
@@ -7457,17 +7525,22 @@ async function obLoadEcoData() {
     const text = await resp.text();
     const lines = text.trim().split('\n').slice(1); // skip header
     _ecoData = lines.map(line => {
-      const [eco, name] = line.split('\t');
+      const parts = line.split('\t');
+      const eco = parts[0], name = parts[1], pgn = parts[2];
       if (!eco || !name) return null;
-      // familyPrefix = first two chars (letter + digit), e.g. "B9" from "B97"
       const familyPrefix = eco.length >= 2 ? eco.slice(0, 2) : eco;
-      return { eco, name: name.trim(), exactEco: eco, familyPrefix };
+      return {
+        eco,
+        name: name.trim(),
+        exactEco: eco,
+        familyPrefix,
+        sanMoves: pgn ? parsePgnMoves(pgn) : []  // ← pre-parsed SAN array
+      };
     }).filter(Boolean);
     console.log('ECO data loaded:', _ecoData.length, 'openings');
     return _ecoData;
   } catch(e) {
     console.warn('Failed to load eco.tsv, falling back to curated index:', e);
-    // Fall back to curated ECO_LIBRARY entries
     _ecoData = [];
     Object.values(ECO_LIBRARY).forEach(family => {
       Object.values(family).forEach(variations => {
@@ -7475,13 +7548,78 @@ async function obLoadEcoData() {
           _ecoData.push({
             eco: data.eco, name,
             exactEco: data.eco,
-            familyPrefix: data.eco.length >= 2 ? data.eco.slice(0,2) : data.eco
+            familyPrefix: data.eco.length >= 2 ? data.eco.slice(0,2) : data.eco,
+            sanMoves: []
           });
         });
       });
     });
     return _ecoData;
   }
+}
+
+// Given the current board state and the played move history (SAN list so far),
+// find which candidate UCI moves steer toward preferred slots.
+// Returns a Set of UCI strings that are "preferred next moves".
+function obPreferredNextMoves(sanHistory, slots, boardState, turnColor, epSq, castling) {
+  if (!_ecoData || !slots.length) return new Set();
+
+  const totalPct = slots.reduce((s, sl) => s + (sl.weight || 0), 0) || 1;
+
+  // Build a set of preferred ECO prefixes from slots, weighted
+  // We'll collect all candidate next SAN moves from matching ECO lines
+  // and map them to scores based on slot weight + exact/family tier
+  const moveScores = {}; // sanMove → best score
+
+  for (const entry of _ecoData) {
+    if (entry.sanMoves.length <= sanHistory.length) continue; // too short
+
+    // Check that the played moves so far match the start of this ECO line
+    let matches = true;
+    for (let i = 0; i < sanHistory.length; i++) {
+      if (entry.sanMoves[i] !== sanHistory[i]) { matches = false; break; }
+    }
+    if (!matches) continue;
+
+    // Does this ECO entry match any preferred slot?
+    let bestSlotScore = 0;
+    for (const slot of slots) {
+      const exact  = slot.exactEco     || null;
+      const family = slot.familyPrefix || (slot.eco ? slot.eco.slice(0,2) : null);
+      const EXACT_BONUS = 3.0;
+      let tier = 0;
+      if (exact  && entry.eco.startsWith(exact))  tier = 2;
+      else if (family && entry.eco.startsWith(family)) tier = 1;
+      if (tier > 0) {
+        const normW = (slot.weight || 0) / totalPct;
+        const sc = (tier === 2 ? EXACT_BONUS : 1.0) * normW;
+        if (sc > bestSlotScore) bestSlotScore = sc;
+      }
+    }
+    if (!bestSlotScore) continue;
+
+    // The next SAN move in this line is what we want to play
+    const nextSan = entry.sanMoves[sanHistory.length];
+    if (!nextSan) continue;
+    if (!moveScores[nextSan] || bestSlotScore > moveScores[nextSan]) {
+      moveScores[nextSan] = bestSlotScore;
+    }
+  }
+
+  if (!Object.keys(moveScores).length) return new Set();
+
+  // Convert SAN moves to UCI using the current board state
+  const preferredUci = new Set();
+  for (const [san, score] of Object.entries(moveScores)) {
+    const mv = algebraicToMove(san, boardState, turnColor, epSq, castling);
+    if (mv) {
+      const uci = sqToUci(mv.from, mv.to, mv.promo ? mv.promo.toLowerCase() : null);
+      preferredUci.set ? preferredUci.add(uci) : null; // Set.add
+      // Also store score so caller can weight by it
+      preferredUci[uci] = score; // piggyback score on the Set object
+    }
+  }
+  return preferredUci;
 }
 
 // Kick off load immediately on script parse so it's ready by the time user opens panel
@@ -7682,22 +7820,28 @@ function obCuratedSelect(color, name, data, isFamilyPick) {
 
 // ── Search ────────────────────────────────────────────────────────────────────
 function obPrefOpenSearch(color) {
-  var searchBox = document.getElementById('obPrefSearch' + (color==='white'?'White':'Black'));
-  var input     = document.getElementById('obPrefSearchInput' + (color==='white'?'White':'Black'));
-  var addBtn    = document.getElementById('obAddBtn' + (color==='white'?'White':'Black'));
+  var sfx       = color === 'white' ? 'White' : 'Black';
+  var searchBox = document.getElementById('obPrefSearch' + sfx);
+  var input     = document.getElementById('obPrefSearchInput' + sfx);
+  var addBtn    = document.getElementById('obAddBtn' + sfx);
+  var slider    = document.getElementById('obSlider' + sfx);
   if (!searchBox) return;
   searchBox.style.display = '';
-  if (addBtn) addBtn.style.display = 'none';
+  if (slider)  slider.style.display  = '';   // show curated alongside search
+  if (addBtn)  addBtn.style.display  = 'none';
   if (input) { input.value = ''; setTimeout(() => input.focus(), 40); }
-  var results = document.getElementById('obPrefResults' + (color==='white'?'White':'Black'));
+  var results = document.getElementById('obPrefResults' + sfx);
   if (results) { results.style.display = 'none'; results.innerHTML = ''; }
 }
 
 function obPrefCloseSearch(color) {
-  var searchBox = document.getElementById('obPrefSearch' + (color==='white'?'White':'Black'));
-  var addBtn    = document.getElementById('obAddBtn' + (color==='white'?'White':'Black'));
+  var sfx       = color === 'white' ? 'White' : 'Black';
+  var searchBox = document.getElementById('obPrefSearch' + sfx);
+  var addBtn    = document.getElementById('obAddBtn' + sfx);
+  var slider    = document.getElementById('obSlider' + sfx);
   if (searchBox) searchBox.style.display = 'none';
-  if (addBtn) addBtn.style.display = '';
+  if (slider)   slider.style.display    = 'none'; // hide curated when search closes
+  if (addBtn)   addBtn.style.display    = '';
 }
 
 async function obPrefFilterSearch(color, query) {
@@ -7992,6 +8136,7 @@ async function botStart() {
 
   // Phase 1: reset move history and capture starting clock for fracRemaining
   botMoveHistory = [];
+  botSanHistory  = [];
   botOppClockMs = null;
   // clockTimeW/B are set by clockInit — capture now as the baseline
   try {
@@ -8035,6 +8180,7 @@ function botStop() {
   botGhostResponses = {};
   // Phase 1: clear move history and clock baseline on stop
   botMoveHistory = [];
+  botSanHistory  = [];
   botStartClockMs = null;
   botOppClockMs = null;
   // Reset player names
