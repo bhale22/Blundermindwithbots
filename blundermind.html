@@ -1703,6 +1703,7 @@ let botHybridSlots = [];
 let sfWorker = null;
 let sfReady = false;
 let sfPendingResolve = null;
+let sfCurrentSkillLevel = -1; // tracks last set skill level — avoids redundant setoption calls
 let sfGhostWorker = null;
 let sfGhostReady = false;
 let sfGhostPending = null;
@@ -1725,6 +1726,10 @@ let botOpeningMode = 'none';
 // match any preferred ECO line. Once false it stays false for that game —
 // the bot falls through to the normal engine path immediately with no network call.
 let preferredOpeningActive = false;
+// lichessExplorerActive: true from game-start until the Lichess/Masters explorer
+// returns empty moves (position is off-book). Once false for this game, we skip
+// all explorer network calls and go straight to the engine fallback.
+let lichessExplorerActive = false;
 let botOpeningConfig = {
   source: 'masters',       // 'masters' | 'lichess'
   maxBookDepth: 20,        // stop using book after this many half-moves
@@ -6051,9 +6056,15 @@ function sfGetMove(fen, levelOrDepth, isDepth=false) {
     if (sfPendingResolve) { sfPendingResolve(null); sfPendingResolve = null; }
     sfPendingResolve = resolve;
     sfWorker.postMessage('stop'); // cancel any in-progress search
-    sfWorker.postMessage('ucinewgame');
+    // ucinewgame is sent once per game in botStart — not here, as clearing the TT
+    // every move would throw away the positional knowledge SF just built up.
+    // Only update Skill Level when it actually changes.
     if (!isDepth) {
-      sfWorker.postMessage('setoption name Skill Level value ' + Math.max(0, Math.min(20, levelOrDepth)));
+      const clampedLevel = Math.max(0, Math.min(20, levelOrDepth));
+      if (clampedLevel !== sfCurrentSkillLevel) {
+        sfWorker.postMessage('setoption name Skill Level value ' + clampedLevel);
+        sfCurrentSkillLevel = clampedLevel;
+      }
     }
     sfWorker.postMessage('position fen ' + fen);
     const depth = isDepth ? levelOrDepth : (levelOrDepth <= 4 ? 5 : levelOrDepth <= 10 ? 8 : 12);
@@ -7041,82 +7052,83 @@ async function botMakeMove() {
 
   try {
     // ── Phase 2: Opening book layer ───────────────────────────────────────
-    // Preferred mode: pure in-memory ECO table lookup — no network call.
-    // preferredOpeningActive is true from game-start; flips to false permanently
-    // the first time botSanHistory doesn't match any preferred line.
+    // Two independent fast-path flags — both reset each new game:
+    //   preferredOpeningActive  — ECO table lookup, no network, preferred mode only
+    //   lichessExplorerActive   — Lichess/Masters API, mainline + preferred fallback
+    // Each flag flips to false permanently the first time it can't find a move.
+
     if (preferredOpeningActive && botOpeningMode === 'preferred') {
+      // ── Preferred mode: pure in-memory ECO table lookup ─────────────────
       const botCol = botPlayerColor === 'white' ? 'black' : 'white';
       const slots  = (botOpeningConfig[botCol] || []).filter(s => s.name);
       if (!slots.length) {
-        preferredOpeningActive = false; // no slots → deactivate immediately
-      } else if (_ecoData && _ecoData.length) {
-        const maxDepth = botOpeningConfig.maxBookDepth || 20;
-        if (botSanHistory.length >= maxDepth) {
-          preferredOpeningActive = false; // past max depth
-        } else {
-          const preferredUci = obPreferredNextMoves(
-            botSanHistory, slots, board, turn, epSq, castling
-          );
-          if (preferredUci.size) {
-            // Pick the highest-scored preferred move
-            let bestUci = null, bestScore = -1;
-            preferredUci.forEach(u => {
-              const sc = preferredUci[u] || 1.0;
-              if (sc > bestScore) { bestScore = sc; bestUci = u; }
-            });
-            if (bestUci) {
-              uciMove = bestUci;
-              lastBotMoveSource = 'ECO';
-              const matchedEntry = _ecoData.find(e =>
-                e.sanMoves.length > botSanHistory.length &&
-                botSanHistory.every((m, i) => e.sanMoves[i] === m) &&
-                slots.some(sl => {
-                  const ex = sl.exactEco || null;
-                  const fam = sl.familyPrefix || (sl.eco ? sl.eco.slice(0,2) : null);
-                  return (ex && e.eco.startsWith(ex)) || (fam && e.eco.startsWith(fam));
-                })
-              );
-              const label = matchedEntry
-                ? '♟ ' + matchedEntry.name + ' (' + matchedEntry.eco + ')'
-                : '♟ Preferred Opening';
-              document.getElementById('botStatus').textContent = label;
-              const bookDelay = 400 + Math.random() * 800;
-              await new Promise(r => setTimeout(r, bookDelay));
-              botThinking = false;
-              document.getElementById('botStatus').textContent = '';
-              if (uciMove && botActive) {
-                const mv = uciToSq(uciMove);
-                if (mv) {
-                  const lm = legalMovesFor(mv.from, board, epSq, castling);
-                  if (lm.includes(mv.to)) {
-                    clearGhostPieces();
-                    executeMove(mv.from, mv.to, mv.promo || 'Q');
-                    const _botSan = gameMovesAlgebraic[gameMovesAlgebraic.length - 1] || null;
-                    botRecordMove(uciMove, _botSan);
-                    updatePlayerBoxes();
-                    const nextMoves = allLegalMoves(board, turn, epSq, castling);
-                    if (!nextMoves.length) {
-                      gameOverMsg = inCheck(board, turn)
-                        ? (turn === 'w' ? 'Black' : 'White') + ' wins by checkmate'
-                        : 'Stalemate — draw';
-                      gameOver = true;
-                      updatePlayerBoxes(); render();
-                    }
+        preferredOpeningActive = false;
+      } else if (!_ecoData || !_ecoData.length) {
+        preferredOpeningActive = false;
+      } else if (botSanHistory.length >= (botOpeningConfig.maxBookDepth || 20)) {
+        preferredOpeningActive = false;
+      } else {
+        const preferredUci = obPreferredNextMoves(
+          botSanHistory, slots, board, turn, epSq, castling
+        );
+        if (preferredUci.size) {
+          // Pick the highest-scored preferred move
+          let bestUci = null, bestScore = -1;
+          preferredUci.forEach(u => {
+            const sc = preferredUci[u] || 1.0;
+            if (sc > bestScore) { bestScore = sc; bestUci = u; }
+          });
+          if (bestUci) {
+            uciMove = bestUci;
+            lastBotMoveSource = 'ECO';
+            const matchedEntry = _ecoData.find(e =>
+              e.sanMoves.length > botSanHistory.length &&
+              botSanHistory.every((m, i) => e.sanMoves[i] === m) &&
+              slots.some(sl => {
+                const ex = sl.exactEco || null;
+                const fam = sl.familyPrefix || (sl.eco ? sl.eco.slice(0,2) : null);
+                return (ex && e.eco.startsWith(ex)) || (fam && e.eco.startsWith(fam));
+              })
+            );
+            const label = matchedEntry
+              ? '♟ ' + matchedEntry.name + ' (' + matchedEntry.eco + ')'
+              : '♟ Preferred Opening';
+            document.getElementById('botStatus').textContent = label;
+            const bookDelay = 400 + Math.random() * 800;
+            await new Promise(r => setTimeout(r, bookDelay));
+            botThinking = false;
+            document.getElementById('botStatus').textContent = '';
+            if (uciMove && botActive) {
+              const mv = uciToSq(uciMove);
+              if (mv) {
+                const lm = legalMovesFor(mv.from, board, epSq, castling);
+                if (lm.includes(mv.to)) {
+                  clearGhostPieces();
+                  executeMove(mv.from, mv.to, mv.promo || 'Q');
+                  const _botSan = gameMovesAlgebraic[gameMovesAlgebraic.length - 1] || null;
+                  botRecordMove(uciMove, _botSan);
+                  updatePlayerBoxes();
+                  const nextMoves = allLegalMoves(board, turn, epSq, castling);
+                  if (!nextMoves.length) {
+                    gameOverMsg = inCheck(board, turn)
+                      ? (turn === 'w' ? 'Black' : 'White') + ' wins by checkmate'
+                      : 'Stalemate — draw';
+                    gameOver = true;
+                    updatePlayerBoxes(); render();
                   }
                 }
               }
-              return;
             }
-          } else {
-            // No preferred continuation found — deactivate for this game
-            preferredOpeningActive = false;
-            console.log('[Opening] No preferred ECO line matches after', botSanHistory.length, 'moves — switching to engine');
+            return;
           }
         }
+        // No preferred continuation — deactivate for rest of this game
+        preferredOpeningActive = false;
       }
-      // If we reach here, preferred path deactivated — fall through to engine below
-    } else if (botOpeningMode !== 'none' && !preferredOpeningActive) {
-      // mainline mode: use Lichess explorer as before
+      // Preferred path ended (deactivated or no move) — fall through to engine
+
+    } else if (botOpeningMode === 'mainline' && lichessExplorerActive) {
+      // ── Mainline mode: Lichess/Masters explorer ──────────────────────────
       const openingMove = await botGetOpeningMove(botMoveHistory);
       if (openingMove) {
         uciMove = openingMove;
@@ -7149,6 +7161,9 @@ async function botMakeMove() {
           }
         }
         return;
+      } else {
+        // Explorer returned nothing — off-book, don't call it again this game
+        lichessExplorerActive = false;
       }
     }
     // ── End opening book layer ────────────────────────────────────────────
@@ -7195,13 +7210,21 @@ async function botMakeMove() {
       }
 
     } else if (botTab === 'maia') {
-      // LC Explorer with Maia3 fallback
+      // LC Explorer with Maia3 fallback.
+      // Skip LC call entirely if we already know we're off-book this game.
       const baseTemp = parseFloat(document.getElementById('maiaTemp').value) || 1.0;
       const effectiveTemp = timePressureTemp(baseTemp, clockMs);
-      let probs = await maiaGetMoveProbs(fen);
-      if (probs && Object.keys(probs).length) {
-        lastBotMoveSource = 'LC Explorer';
-      } else if (_maiaReady) {
+      let probs = null;
+      if (lichessExplorerActive) {
+        probs = await maiaGetMoveProbs(fen);
+        if (probs && Object.keys(probs).length) {
+          lastBotMoveSource = 'LC Explorer';
+        } else {
+          lichessExplorerActive = false; // off-book — don't call again this game
+          probs = null;
+        }
+      }
+      if (!probs && _maiaReady) {
         probs = await maia3GetMoveProbs(fen);
         if (probs) lastBotMoveSource = 'Maia3';
       }
@@ -7218,15 +7241,24 @@ async function botMakeMove() {
       }
 
     } else if (botTab === 'lcsf') {
-      // LC Explorer with Stockfish fallback
+      // LC Explorer with Stockfish fallback.
+      // Skip LC call entirely if we already know we're off-book this game.
       const lcsfTemp = parseFloat(document.getElementById('maiaTemp')?.value || '1.0');
       const lcsfEffTemp = timePressureTemp(lcsfTemp, clockMs);
-      const savedRating = lcSelectedRating;
-      lcSelectedRating = lcsfSelectedRating;
-      let lcsfProbs = await maiaGetMoveProbs(fen);
-      lcSelectedRating = savedRating;
+      let lcsfProbs = null;
+      if (lichessExplorerActive) {
+        const savedRating = lcSelectedRating;
+        lcSelectedRating = lcsfSelectedRating;
+        lcsfProbs = await maiaGetMoveProbs(fen);
+        lcSelectedRating = savedRating;
+        if (lcsfProbs && Object.keys(lcsfProbs).length) {
+          lastBotMoveSource = 'LC Explorer';
+        } else {
+          lichessExplorerActive = false; // off-book — don't call again this game
+          lcsfProbs = null;
+        }
+      }
       if (lcsfProbs && Object.keys(lcsfProbs).length) {
-        lastBotMoveSource = 'LC Explorer';
         const targetDelay = botThinkTime(lcsfProbs, clockMs);
         const inferenceMs = Date.now() - _botMoveStartMs;
         const delay = Math.max(0, targetDelay - inferenceMs);
@@ -7250,7 +7282,13 @@ async function botMakeMove() {
           const baseTemp = parseFloat(document.getElementById('maiaTemp').value) || 1.0;
           const effectiveTemp = timePressureTemp(baseTemp, clockMs);
           let probs = null;
-          try { probs = await maiaGetMoveProbs(fen); } catch(e) {}
+          if (lichessExplorerActive) {
+            try { probs = await maiaGetMoveProbs(fen); } catch(e) {}
+            if (!probs || !Object.keys(probs).length) {
+              lichessExplorerActive = false;
+              probs = null;
+            }
+          }
           if (probs && Object.keys(probs).length) {
             const targetDelay = botThinkTime(probs, clockMs);
             const inferenceMs = Date.now() - _botMoveStartMs;
@@ -7258,7 +7296,7 @@ async function botMakeMove() {
             if (delay > 0) await new Promise(res => setTimeout(res, delay));
             uciMove = sampleFromProbs(probs, effectiveTemp);
           } else {
-            // Maia failed — fallback to SF
+            // LC off-book or failed — fallback to SF
             uciMove = await sfGetMove(fen, sfEffectiveLevel(clockMs));
           }
         } else {
@@ -7592,6 +7630,23 @@ function parsePgnMoves(pgn) {
     .filter(s => s && !/^\d/.test(s));
 }
 
+// ── ECO prefix index ──────────────────────────────────────────────────────────
+// Built once after _ecoData loads. Maps first SAN move → entries that start with it,
+// so obPreferredNextMoves scans ~50-100 entries instead of all 3,704.
+// Key: first move SAN string (e.g. "e4"). Value: array of _ecoData entries.
+let _ecoIndex = null; // Map<string, entry[]>
+
+function _buildEcoIndex(data) {
+  const idx = new Map();
+  for (const entry of data) {
+    if (!entry.sanMoves.length) continue;
+    const key = entry.sanMoves[0];
+    if (!idx.has(key)) idx.set(key, []);
+    idx.get(key).push(entry);
+  }
+  return idx;
+}
+
 async function obLoadEcoData() {
   if (_ecoData) return _ecoData;
   try {
@@ -7612,6 +7667,7 @@ async function obLoadEcoData() {
         sanMoves: pgn ? parsePgnMoves(pgn) : []  // ← pre-parsed SAN array
       };
     }).filter(Boolean);
+    _ecoIndex = _buildEcoIndex(_ecoData);
     console.log('ECO data loaded:', _ecoData.length, 'openings');
     return _ecoData;
   } catch(e) {
@@ -7629,6 +7685,7 @@ async function obLoadEcoData() {
         });
       });
     });
+    _ecoIndex = _buildEcoIndex(_ecoData);
     return _ecoData;
   }
 }
@@ -7636,17 +7693,29 @@ async function obLoadEcoData() {
 // Given the current board state and the played move history (SAN list so far),
 // find which candidate UCI moves steer toward preferred slots.
 // Returns a Set of UCI strings that are "preferred next moves".
+// Uses _ecoIndex to avoid scanning all 3,704 entries — only candidates whose
+// first move matches the game's first move are checked.
 function obPreferredNextMoves(sanHistory, slots, boardState, turnColor, epSq, castling) {
   if (!_ecoData || !slots.length) return new Set();
 
   const totalPct = slots.reduce((s, sl) => s + (sl.weight || 0), 0) || 1;
 
-  // Build a set of preferred ECO prefixes from slots, weighted
-  // We'll collect all candidate next SAN moves from matching ECO lines
-  // and map them to scores based on slot weight + exact/family tier
+  // Narrow the candidate set using the index.
+  // If we have a game history, only entries starting with sanHistory[0] are relevant.
+  // If no moves played yet, all entries are candidates (first move of the game).
+  let candidates;
+  if (_ecoIndex && sanHistory.length > 0) {
+    candidates = _ecoIndex.get(sanHistory[0]) || [];
+  } else if (_ecoIndex) {
+    // No moves yet — flatten all indexed entries (bot hasn't moved; unusual but possible)
+    candidates = _ecoData;
+  } else {
+    candidates = _ecoData;
+  }
+
   const moveScores = {}; // sanMove → best score
 
-  for (const entry of _ecoData) {
+  for (const entry of candidates) {
     if (entry.sanMoves.length <= sanHistory.length) continue; // too short
 
     // Check that the played moves so far match the start of this ECO line
@@ -8199,6 +8268,12 @@ async function botStart() {
 
   // Pre-init Stockfish in background
   if (botTab !== 'maia') sfInit().catch(e => console.warn('SF init:', e));
+  // Signal a new game to SF so its transposition table is cleared once,
+  // not on every single move (which would actively hurt its play quality).
+  if (sfWorker && sfReady) {
+    sfWorker.postMessage('ucinewgame');
+  }
+  sfCurrentSkillLevel = -1; // force skill-level to be (re)sent on first move
 
   // Apply player color FIRST so boardFlipped is correct before resetGame renders
   let pc = botPlayerColor;
@@ -8213,15 +8288,18 @@ async function botStart() {
   botMoveHistory = [];
   botSanHistory  = [];
   botOppClockMs = null;
-  // Activate preferred-opening fast path if mode is 'preferred' and slots exist
+  // Activate preferred-opening fast path if mode is 'preferred' and slots exist.
+  // Use the resolved `pc` (not botPlayerColor which may still be 'random').
+  // Bot color is opposite of human player color.
+  const _resolvedBotCol = (pc === 'white' ? 'black' : 'white');
   if (botOpeningMode === 'preferred') {
-    const _botCol = (botPlayerColor === 'white' ? 'black' : 'white');
-    const _hasSlots = (_botCol === 'white' ? botOpeningConfig.white : botOpeningConfig.black)
+    const _hasSlots = (botOpeningConfig[_resolvedBotCol] || [])
                         .filter(s => s.name).length > 0;
     preferredOpeningActive = _hasSlots;
   } else {
     preferredOpeningActive = false;
   }
+  lichessExplorerActive = (botOpeningMode !== 'none');
   // clockTimeW/B are set by clockInit — capture now as the baseline
   try {
     if (typeof clockTimeW !== 'undefined' && clockControl !== 'untimed') {
@@ -8268,6 +8346,8 @@ function botStop() {
   botStartClockMs = null;
   botOppClockMs = null;
   preferredOpeningActive = false;
+  lichessExplorerActive = false;
+  sfCurrentSkillLevel = -1;
   // Reset player names
   lastBotMoveSource = '';
   var nW = document.querySelector('#playerBoxW .player-name');
