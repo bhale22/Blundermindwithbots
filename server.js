@@ -76,10 +76,11 @@ app.get('/ort/:file', (req, res) => {
 
 app.get('/data/:file', (req, res) => {
   const file = req.params.file;
-  if (!/^[\w.\-]+\.json$/.test(file)) { res.status(404).end(); return; }
+  if (!/^[\w.\-]+\.(json|tsv)$/.test(file)) { res.status(404).end(); return; }
+  const contentType = file.endsWith('.tsv') ? 'text/tab-separated-values' : 'application/json';
   const p = path.join(__dirname, 'data', file);
   if (!require('fs').existsSync(p)) { res.status(404).end(); return; }
-  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Type', contentType);
   res.setHeader('Cache-Control', 'public, max-age=86400'); // 1 day
   res.sendFile(p);
 });

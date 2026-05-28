@@ -1300,7 +1300,7 @@ canvas{
             background:var(--bg-panel2);border:0.5px solid var(--accent);
             border-radius:4px 4px 0 0;color:var(--text-primary);box-sizing:border-box;"
             oninput="obPrefFilterSearch('white',this.value)"
-            onblur="setTimeout(()=>obPrefCloseSearch('white'),150)">
+            onblur="setTimeout(()=>obPrefMaybeClose('white'),200)">
           <div id="obPrefResultsWhite"
             style="max-height:150px;overflow-y:auto;
             border:0.5px solid var(--border);border-top:none;
@@ -1332,7 +1332,7 @@ canvas{
             background:var(--bg-panel2);border:0.5px solid var(--accent);
             border-radius:4px 4px 0 0;color:var(--text-primary);box-sizing:border-box;"
             oninput="obPrefFilterSearch('black',this.value)"
-            onblur="setTimeout(()=>obPrefCloseSearch('black'),150)">
+            onblur="setTimeout(()=>obPrefMaybeClose('black'),200)">
           <div id="obPrefResultsBlack"
             style="max-height:150px;overflow-y:auto;
             border:0.5px solid var(--border);border-top:none;
@@ -3371,7 +3371,9 @@ function sqRC(sq){return{r:Math.floor(sq/8),c:sq%8};}
 // For rendering — pixel center of square, accounting for board flip
 function sqXY(sq){
   const {r,c}=sqRC(sq);
-  const _fl=(typeof mpRole!=='undefined'&&mpRole==='black');
+  // Flip for boardFlipped (bot game as black) OR multiplayer black role
+  const _fl=(typeof boardFlipped!=='undefined'&&boardFlipped)||
+            (typeof mpRole!=='undefined'&&mpRole==='black');
   const dc=_fl?7-c:c;
   const dr=_fl?7-r:r;
   return {x:dc*SQ+SQ/2, y:dr*SQ+SQ/2};
@@ -3379,8 +3381,9 @@ function sqXY(sq){
 // Row/col on canvas for a given square (for fillRect etc)
 function sqCanvas(sq){
   const {r,c}=sqRC(sq);
-  // Only flip if in an active multiplayer game as black — not in solo mode
-  const _fl=(typeof mpRole!=='undefined'&&mpRole==='black'&&
+  // Flip for boardFlipped (bot game as black) OR multiplayer black role
+  const _fl=(typeof boardFlipped!=='undefined'&&boardFlipped)||
+            (typeof mpRole!=='undefined'&&mpRole==='black'&&
              typeof mpRoomId!=='undefined'&&mpRoomId!==null);
   return {r:_fl?7-r:r, c:_fl?7-c:c};
 }
@@ -4347,7 +4350,7 @@ function render(){
       const infl=influenceSquares(iSq,iBoard);const pc=iBoard[iSq];
       for(const tsq of infl){
         if(iBoard[tsq])continue;
-        const{r,c}=sqRC(tsq);
+        const{r,c}=sqCanvas(tsq);
         ctx.fillStyle=pc.color==='w'?'rgba(100,180,255,0.22)':'rgba(255,140,60,0.22)';ctx.fillRect(c*SQ,r*SQ,SQ,SQ);
         ctx.beginPath();ctx.arc(c*SQ+SQ/2,r*SQ+SQ/2,4,0,Math.PI*2);
         ctx.fillStyle=pc.color==='w'?'rgba(60,130,220,0.55)':'rgba(220,100,20,0.55)';ctx.fill();
@@ -4357,7 +4360,7 @@ function render(){
 
   if(showLegal&&selSq>=0&&!isPreviewing){
     for(const t of legalMoves){
-      const{r,c}=sqRC(t);const x=c*SQ+SQ/2,y=r*SQ+SQ/2;
+      const{r,c}=sqCanvas(t);const x=c*SQ+SQ/2,y=r*SQ+SQ/2;
       if(board[t]){
         ctx.fillStyle='rgba(0,150,0,0.32)';
         [[0,0],[SQ,0],[0,SQ],[SQ,SQ]].forEach(([ox,oy])=>{ctx.beginPath();ctx.moveTo(c*SQ+ox,r*SQ+oy);ctx.lineTo(c*SQ+ox+(ox?-14:14),r*SQ+oy);ctx.lineTo(c*SQ+ox,r*SQ+oy+(oy?-14:14));ctx.closePath();ctx.fill();});
@@ -4421,7 +4424,7 @@ function render(){
     // Purple = weak for both players
     const bothWeak = new Set([...weakSquaresW].filter(sq=>weakSquaresB.has(sq)));
     weakSquaresW.forEach(sq=>{
-      const{r,c}=sqRC(sq);const x=c*SQ,y=r*SQ;
+      const{r,c}=sqCanvas(sq);const x=c*SQ,y=r*SQ;
       if(bothWeak.has(sq)){
         ctx.fillStyle='rgba(180,60,220,0.18)';ctx.fillRect(x,y,SQ,SQ);
         ctx.strokeStyle='rgba(180,60,220,0.60)';ctx.lineWidth=1.5;ctx.strokeRect(x+1,y+1,SQ-2,SQ-2);
@@ -4432,7 +4435,7 @@ function render(){
     });
     weakSquaresB.forEach(sq=>{
       if(bothWeak.has(sq)) return;
-      const{r,c}=sqRC(sq);const x=c*SQ,y=r*SQ;
+      const{r,c}=sqCanvas(sq);const x=c*SQ,y=r*SQ;
       ctx.fillStyle='rgba(40,120,220,0.15)';ctx.fillRect(x,y,SQ,SQ);
       ctx.strokeStyle='rgba(40,120,220,0.50)';ctx.lineWidth=1.5;ctx.strokeRect(x+1,y+1,SQ-2,SQ-2);
     });
@@ -4444,7 +4447,7 @@ function render(){
 
     // 1. Gold pulsing ring on overloaded pieces
     overloaded.forEach((deps, defSq) => {
-      const {r,c} = sqRC(defSq);
+      const {r,c} = sqCanvas(defSq);
       const x = c*SQ+SQ/2, y = r*SQ+SQ/2;
       // Outer glow
       ctx.beginPath(); ctx.arc(x,y,30,0,Math.PI*2);
@@ -4462,7 +4465,7 @@ function render(){
 
     // 2. Gold dashed outline on dependent pieces
     dependent.forEach((defSq, depSq) => {
-      const {r,c} = sqRC(depSq);
+      const {r,c} = sqCanvas(depSq);
       const x = c*SQ+SQ/2, y = r*SQ+SQ/2;
       ctx.save();
       ctx.setLineDash([4,3]);
@@ -4476,10 +4479,10 @@ function render(){
     ctx.setLineDash([5,4]);
     ctx.lineWidth=1.5;
     overloaded.forEach((deps, defSq) => {
-      const {r:dr,c:dc} = sqRC(defSq);
+      const {r:dr,c:dc} = sqCanvas(defSq);
       const x1 = dc*SQ+SQ/2, y1 = dr*SQ+SQ/2;
       deps.forEach(depSq => {
-        const {r:pr,c:pc} = sqRC(depSq);
+        const {r:pr,c:pc} = sqCanvas(depSq);
         const x2 = pc*SQ+SQ/2, y2 = pr*SQ+SQ/2;
         // Draw line with gradient from gold to gold-transparent
         const grad = ctx.createLinearGradient(x1,y1,x2,y2);
@@ -4508,7 +4511,7 @@ function render(){
   function renderForkBg(forkData, skewerData, safeColor, contColor) {
     if (!forkData) return;
     forkData.current.forEach(({sq}) => {
-      const {r,c}=sqRC(sq); const x=c*SQ+SQ/2, y=r*SQ+SQ/2;
+      const {r,c}=sqCanvas(sq); const x=c*SQ+SQ/2, y=r*SQ+SQ/2;
       ctx.beginPath(); ctx.arc(x,y,30,0,Math.PI*2);
       ctx.strokeStyle=safeColor.replace(/[0-9.]+\)$/,'0.18)');
       ctx.lineWidth=6; ctx.stroke();
@@ -4518,7 +4521,7 @@ function render(){
     forkData.safe.forEach(({from,to}) => {
       drawForkSymbol(ctx,to,SQ,safeColor,1.0);   // fork symbol on landing square
       drawForkArrow(ctx,from,to,SQ,safeColor);
-      const {r:fr,c:fc}=sqRC(from);
+      const {r:fr,c:fc}=sqCanvas(from);
       ctx.save(); ctx.setLineDash([5,3]);
       ctx.beginPath(); ctx.arc(fc*SQ+SQ/2,fr*SQ+SQ/2,26,0,Math.PI*2);
       ctx.strokeStyle=safeColor; ctx.lineWidth=2; ctx.stroke();
@@ -4527,15 +4530,15 @@ function render(){
     forkData.contested.forEach(({from,to}) => {
       drawForkSymbol(ctx,to,SQ,contColor,0.7); // dimmer fork symbol
       drawForkArrow(ctx,from,to,SQ,contColor,true);
-      const {r:fr,c:fc}=sqRC(from);
+      const {r:fr,c:fc}=sqCanvas(from);
       ctx.save(); ctx.setLineDash([4,3]);
       ctx.beginPath(); ctx.arc(fc*SQ+SQ/2,fr*SQ+SQ/2,26,0,Math.PI*2);
       ctx.strokeStyle=contColor; ctx.lineWidth=2; ctx.stroke();
       ctx.restore();
     });
     if (skewerData) skewerData.forEach(({attackerSq,frontSq}) => {
-      const {r:ar,c:ac}=sqRC(attackerSq);
-      const {r:fr,c:fc}=sqRC(frontSq);
+      const {r:ar,c:ac}=sqCanvas(attackerSq);
+      const {r:fr,c:fc}=sqCanvas(frontSq);
       ctx.beginPath(); ctx.arc(ac*SQ+SQ/2,ar*SQ+SQ/2,27,0,Math.PI*2);
       ctx.strokeStyle=safeColor; ctx.lineWidth=2.5; ctx.stroke();
       ctx.beginPath(); ctx.arc(fc*SQ+SQ/2,fr*SQ+SQ/2,27,0,Math.PI*2);
@@ -7615,6 +7618,11 @@ function obPrefSetColor(color) {
     var panel = document.getElementById('obPref' + (c === 'white' ? 'White' : 'Black'));
     if (panel) panel.style.display = c === color ? '' : 'none';
   });
+  // Auto-open search if the newly selected color has no slots yet
+  var slots = (botOpeningConfig[color] || []).filter(s => s.name);
+  if (!slots.length) {
+    setTimeout(() => obPrefOpenSearch(color), 30);
+  }
 }
 
 // ── ECO data loading ──────────────────────────────────────────────────────────
@@ -7962,6 +7970,19 @@ function obCuratedSelect(color, name, data, isFamilyPick) {
   obCuratedRenderFamilies(color);
 }
 
+// Only close the search/curated panel if focus has moved outside the whole
+// preferred-openings panel. This prevents the onblur on the search input from
+// killing the curated dropdown when the user clicks a family/variation button.
+function obPrefMaybeClose(color) {
+  var sfx = color === 'white' ? 'White' : 'Black';
+  var panel = document.getElementById('obPref' + sfx);
+  if (!panel) { obPrefCloseSearch(color); return; }
+  var focused = document.activeElement;
+  // If focus is still inside this color's panel, do not close
+  if (focused && panel.contains(focused)) return;
+  obPrefCloseSearch(color);
+}
+
 // ── Search ────────────────────────────────────────────────────────────────────
 function obPrefOpenSearch(color) {
   var sfx       = color === 'white' ? 'White' : 'Black';
@@ -7976,6 +7997,8 @@ function obPrefOpenSearch(color) {
   if (input) { input.value = ''; setTimeout(() => input.focus(), 40); }
   var results = document.getElementById('obPrefResults' + sfx);
   if (results) { results.style.display = 'none'; results.innerHTML = ''; }
+  // Always reset curated picker to top-level family list when (re-)opening
+  obCuratedRenderFamilies(color);
 }
 
 function obPrefCloseSearch(color) {
