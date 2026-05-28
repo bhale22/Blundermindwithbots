@@ -7766,7 +7766,7 @@ function obPreferredNextMoves(sanHistory, slots, boardState, turnColor, epSq, ca
     const mv = algebraicToMove(san, boardState, turnColor, epSq, castling);
     if (mv) {
       const uci = sqToUci(mv.from, mv.to, mv.promo ? mv.promo.toLowerCase() : null);
-      preferredUci.set ? preferredUci.add(uci) : null; // Set.add
+      preferredUci.add(uci);
       // Also store score so caller can weight by it
       preferredUci[uci] = score; // piggyback score on the Set object
     }
