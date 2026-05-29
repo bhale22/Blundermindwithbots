@@ -1912,12 +1912,7 @@ const BotConfigPanel = (() => {
     const panelTitle = document.querySelector('#botPanel .panel-title');
     if (panelTitle) panelTitle.innerHTML = '<span style="font-family:var(--bcp-font-d,\'Cormorant Garamond\',serif);font-style:italic;font-weight:300;font-size:15px;letter-spacing:0.02em;">Opponent Profile</span>';
 
-    // Widen the slide panel for this richer UI
-    const panel = document.getElementById('botPanel');
-    if (panel) {
-      panel.style.width = '340px';
-      panel.style.right = '-360px';
-    }
+    // Panel width/position handled by CSS (#botPanel { width:340px; right:-365px; })
 
     // Build dynamic chip rows
     _buildRatingChips('bcp-maia3-chips', MAIA3_RATINGS, 1200, (r, el, cid) => {
