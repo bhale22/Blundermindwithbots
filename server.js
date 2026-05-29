@@ -137,6 +137,12 @@ app.get('/maia-worker.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'maia-worker.js'));
 });
 
+app.get('/bot-config-panel.js', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript');
+  res.setHeader('Cache-Control', 'public, max-age=300'); // short cache during development
+  res.sendFile(path.join(__dirname, 'bot-config-panel.js'));
+});
+
 // Serve Stockfish — long cache (content never changes for this version)
 app.get('/stockfish.js', (req, res) => {
   if (!sfScript) { res.status(503).send('// Stockfish not yet loaded'); return; }

@@ -7016,26 +7016,30 @@ function botRecordMove(uciMove, sanMove) {
 
 // ── Think time: entropy-based, in ms ─────────────────────────────────────────
 function botThinkTime(moveProbs, clockMs) {
-  const pace = parseInt(document.getElementById('botPace').value) || 40;
-  const baseSec = (5 * 60) / pace; // avg seconds per move
+  // Delegate to BotConfigPanel when loaded (Option B full timing engine)
+  if (typeof BotConfigPanel !== 'undefined') {
+    return BotConfigPanel.thinkTimeMs(clockMs, moveProbs);
+  }
+  // Legacy fallback (used before BotConfigPanel loads)
+  const pace = parseInt(document.getElementById('botPace')?.value) || 40;
+  const baseSec = (5 * 60) / pace;
   const entropy = moveProbs ? positionEntropy(moveProbs) : 2;
   const complexity = Math.min(1 + entropy * 0.35, 2.5);
   let thinkMs = baseSec * complexity * 1000;
-  // Time pressure: clockMs is real ms now
-  if (clockMs !== null && clockMs < 30000) {
-    thinkMs = Math.min(thinkMs, clockMs * 0.08); // use at most 8% of remaining
-  }
-  thinkMs *= 0.8 + Math.random() * 0.4; // ±20% randomness
+  if (clockMs !== null && clockMs < 30000) thinkMs = Math.min(thinkMs, clockMs * 0.08);
+  thinkMs *= 0.8 + Math.random() * 0.4;
   return Math.max(200, Math.min(4000, thinkMs));
 }
 function timePressureTemp(baseTemp, clockMs) {
+  // Use BotConfigPanel confidence floor curve when loaded
+  if (typeof BotConfigPanel !== 'undefined' && typeof botFracRemaining === 'function') {
+    const frac = botFracRemaining();
+    return baseTemp + BotConfigPanel.effectiveTempBoost(frac);
+  }
+  // Legacy fallback
   if (!clockMs || clockMs > 30000) return baseTemp;
-  const fraction = Math.max(0, 1 - clockMs / 30000); // 0=no pressure, 1=flagging
-  const boost = {
-    steady: 0.0,
-    normal: 1.0,
-    panicky: 2.5
-  }[botTimePressure] || 0;
+  const fraction = Math.max(0, 1 - clockMs / 30000);
+  const boost = { steady: 0.0, normal: 1.0, panicky: 2.5 }[botTimePressure] || 0;
   return baseTemp + fraction * boost;
 }
 
@@ -7184,11 +7188,16 @@ async function botMakeMove() {
     } else if (botTab === 'maia3') {
       // Pure Maia3 — no LC fallback, SF only if model not downloaded
       const m3Temp = parseFloat(document.getElementById('maia3Temp')?.value || '1.0');
+      // Use BotConfigPanel Elo curve if available, else use selected rating
+      const _bcpFrac = typeof botFracRemaining === 'function' ? botFracRemaining() : 1;
+      const _bcpElo = typeof BotConfigPanel !== 'undefined'
+        ? BotConfigPanel.effectiveElo(_bcpFrac)
+        : maia3SelectedRating;
       const m3EffTemp = timePressureTemp(m3Temp, clockMs);
       let m3Probs = null;
       if (_maiaReady) {
         const savedRating = lcSelectedRating;
-        lcSelectedRating = String(maia3SelectedRating);
+        lcSelectedRating = String(_bcpElo);
         m3Probs = await maia3GetMoveProbs(fen);
         lcSelectedRating = savedRating;
         if (m3Probs) lastBotMoveSource = 'Maia3';
@@ -7207,7 +7216,7 @@ async function botMakeMove() {
       } else {
         // Maia3 not downloaded — fall back to SF
         await sfInit();
-        const fbLevel = Math.round(maia3SelectedRating / 200); // rough mapping
+        const fbLevel = Math.round(_bcpElo / 200); // rough mapping
         uciMove = await sfGetMove(fen, Math.max(1, Math.min(20, fbLevel)));
         lastBotMoveSource = 'SF';
       }
@@ -8412,7 +8421,9 @@ function botSaveConfig() {
     opening: {
       mode: botOpeningMode,
       config: botOpeningConfig
-    }
+    },
+    // BotConfigPanel v2 curve data
+    bcpConfig: typeof BotConfigPanel !== 'undefined' ? BotConfigPanel.getConfig() : null
   };
   const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
@@ -8433,21 +8444,31 @@ function botLoadConfig(event) {
       }
       if (cfg.tab) botSetTab(cfg.tab);
       if (cfg.stockfish) {
-        document.getElementById('sfLevel').value = cfg.stockfish.level || 8;
-        document.getElementById('sfLevelVal').textContent = cfg.stockfish.level || 8;
-        document.getElementById('sfPressureLevel').value = cfg.stockfish.pressureLevel || 4;
-        document.getElementById('sfPressureVal').textContent = cfg.stockfish.pressureLevel || 4;
-        if (cfg.stockfish.temperature !== undefined) {
-          document.getElementById('sfTemperature').value = cfg.stockfish.temperature;
-          var td = document.getElementById('sfTempDesc');
+        const sfLvl = document.getElementById('sfLevel');
+        const sfLvlVal = document.getElementById('sfLevelVal');
+        const sfPL = document.getElementById('sfPressureLevel');
+        const sfPV = document.getElementById('sfPressureVal');
+        const sfTmp = document.getElementById('sfTemperature');
+        if (sfLvl) sfLvl.value = cfg.stockfish.level || 8;
+        if (sfLvlVal) sfLvlVal.textContent = cfg.stockfish.level || 8;
+        if (sfPL) sfPL.value = cfg.stockfish.pressureLevel || 4;
+        if (sfPV) sfPV.textContent = cfg.stockfish.pressureLevel || 4;
+        if (sfTmp !== undefined && cfg.stockfish.temperature !== undefined) {
+          if (sfTmp) sfTmp.value = cfg.stockfish.temperature;
+          const td = document.getElementById('sfTempDesc');
           if (td) td.textContent = cfg.stockfish.temperature === 0 ? 'Always plays at selected level' : 'Varies: 50% target · 20% ±1 · 5% ±2';
         }
+        if (typeof bcpSfSync === 'function') bcpSfSync();
       }
       if (cfg.maia) {
-        document.getElementById('maiaElo').value = cfg.maia.elo || 900;
-        document.getElementById('maiaEloVal').textContent = cfg.maia.elo || 900;
-        document.getElementById('maiaTemp').value = cfg.maia.temperature || 1.0;
-        document.getElementById('maiaTempVal').textContent = (cfg.maia.temperature || 1.0).toFixed(1);
+        const maiaEloEl = document.getElementById('maiaElo');
+        const maiaEloValEl = document.getElementById('maiaEloVal');
+        const maiaTmpEl = document.getElementById('maiaTemp');
+        const maiaTmpValEl = document.getElementById('maiaTempVal');
+        if (maiaEloEl) maiaEloEl.value = cfg.maia.elo || 900;
+        if (maiaEloValEl) maiaEloValEl.textContent = cfg.maia.elo || 900;
+        if (maiaTmpEl) maiaTmpEl.value = cfg.maia.temperature || 1.0;
+        if (maiaTmpValEl) maiaTmpValEl.textContent = (cfg.maia.temperature || 1.0).toFixed(1);
       }
       if (cfg.hybrid) { botHybridSlots = cfg.hybrid; botRenderHybridSlots(); }
       if (cfg.timePressure) botSetTpBtn(cfg.timePressure);
@@ -8462,6 +8483,10 @@ function botLoadConfig(event) {
         botSetOpeningMode(mode);
         if (botOpeningConfig.source) botSetOpeningSrc(botOpeningConfig.source);
         if (mode === 'preferred') { setTimeout(obRestorePreferredUI, 0); }
+      }
+      // Restore BotConfigPanel v2 curve data if present
+      if (cfg.bcpConfig && typeof BotConfigPanel !== 'undefined') {
+        BotConfigPanel.applyConfig(cfg.bcpConfig);
       }
       document.getElementById('botStatus').textContent = '✓ Config loaded: ' + (cfg.name || 'unnamed');
       setTimeout(() => { document.getElementById('botStatus').textContent = ''; }, 3000);
@@ -8551,5 +8576,10 @@ function submitHaiku() {
 
 /* Ko-fi URL: update href in donate panel HTML to your actual ko-fi.com page */
 
-</script></body>
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300&family=Chakra+Petch:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="/bot-config-panel.js"></script>
+</body>
 </html>
