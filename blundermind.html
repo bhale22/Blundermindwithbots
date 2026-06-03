@@ -1373,7 +1373,16 @@ canvas{
 
     <!-- Time behavior -->
     <h3 style="margin-bottom:6px;">Time Behavior</h3>
-    <div style="margin-bottom:8px;">
+    <div style="margin-bottom:6px;">
+      <label style="font-size:9px;color:var(--text-dim);">Think Time Mode</label>
+      <div style="display:flex;gap:4px;margin-top:4px;">
+        <button class="tp-btn active" id="tb-pace"    onclick="botSetTimeBehavior('pace')">🎯 Pace</button>
+        <button class="tp-btn"        id="tb-instant" onclick="botSetTimeBehavior('instant')">⚡ Instant</button>
+        <button class="tp-btn"        id="tb-mirror"  onclick="botSetTimeBehavior('mirror')">🪞 Mirror</button>
+      </div>
+      <div style="font-size:8px;color:var(--text-dim);margin-top:3px;" id="tbDesc">Entropy-based delay from pace slider</div>
+    </div>
+    <div style="margin-bottom:8px;" id="botPaceRow">
       <label style="font-size:9px;color:var(--text-dim);">Pace (avg moves per 5 min)</label>
       <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
         <input type="range" id="botPace" min="10" max="100" value="40" style="flex:1;" oninput="document.getElementById('botPaceVal').textContent=this.value">
@@ -1750,6 +1759,19 @@ const _openingCache = new Map();
 let botStartClockMs = null;
 // Last known opponent clock in ms — updated after each move, used by diffModifier.
 let botOppClockMs = null;
+
+// ── Bot time behavior ─────────────────────────────────────────────────────────
+// 'pace'    — existing behavior: entropy-based delay derived from botPace slider
+// 'instant' — no artificial delay (engine still runs, result played immediately)
+// 'mirror'  — bot wait time ≈ rolling average of human's recent move times (±20% jitter)
+let botTimeBehavior = 'pace'; // 'pace' | 'instant' | 'mirror'
+
+// Rolling window of the human player's move durations (ms), capped at N=6.
+// x domain: 0–∞ ms (practically 200–30000 ms for most games)
+// Reset each botStart(); mutated by botPostMoveHook() on human turns only.
+const BOT_MIRROR_WINDOW = 6;   // how many recent human moves to average
+let botUserMoveTimestamps = []; // circular buffer of human move durations (ms)
+let botUserTurnStartMs   = null; // wall-clock ms when the human's current turn began
 
 
 
@@ -7014,10 +7036,35 @@ function botRecordMove(uciMove, sanMove) {
   }
 }
 
-// ── Think time: entropy-based, in ms ─────────────────────────────────────────
+// ── Think time: returns target delay in ms ────────────────────────────────────
+// behavior driven by botTimeBehavior:
+//   'instant' — 0 ms (no artificial wait; engine result plays immediately)
+//   'mirror'  — rolling average of human move times (±20% jitter, 200 ms floor)
+//   'pace'    — original entropy-based delay derived from botPace slider
+// clockMs: remaining ms on the bot's clock, or null if untimed.
 function botThinkTime(moveProbs, clockMs) {
+  // ── Instant: skip all artificial delay ───────────────────────────────────
+  if (botTimeBehavior === 'instant') return 0;
+
+  // ── Mirror: match the human's rolling average think time ─────────────────
+  if (botTimeBehavior === 'mirror') {
+    if (botUserMoveTimestamps.length > 0) {
+      const avg = botUserMoveTimestamps.reduce((a, b) => a + b, 0) / botUserMoveTimestamps.length;
+      // ±20% jitter so the bot doesn't feel mechanical
+      const jitter = 0.8 + Math.random() * 0.4;
+      let mirrorMs = avg * jitter;
+      // Respect clock pressure — don't burn more than 8% of remaining time
+      if (clockMs !== null && clockMs < 30000) {
+        mirrorMs = Math.min(mirrorMs, clockMs * 0.08);
+      }
+      return Math.max(200, Math.min(6000, mirrorMs));
+    }
+    // No human moves recorded yet — fall through to pace for first bot move
+  }
+
+  // ── Pace (default): entropy-based delay ──────────────────────────────────
   const pace = parseInt(document.getElementById('botPace').value) || 40;
-  const baseSec = (5 * 60) / pace; // avg seconds per move
+  const baseSec = (5 * 60) / pace; // avg seconds per move at this pace
   const entropy = moveProbs ? positionEntropy(moveProbs) : 2;
   const complexity = Math.min(1 + entropy * 0.35, 2.5);
   let thinkMs = baseSec * complexity * 1000;
@@ -7523,6 +7570,20 @@ function botPostMoveHook() {
     // if it is now the bot's turn, the move that just happened was the human's.
     const botColorLetter = botPlayerColor === 'white' ? 'b' : 'w';
     if (turn === botColorLetter) {
+      // ── Mirror mode: record how long the human took on this move ───────────
+      // botUserTurnStartMs was set when the previous bot move completed (or game start).
+      if (botTimeBehavior === 'mirror' && botUserTurnStartMs !== null) {
+        const humanMoveMs = Date.now() - botUserTurnStartMs;
+        // Only count plausible move times (200 ms – 5 min) to exclude tab-away gaps
+        if (humanMoveMs >= 200 && humanMoveMs <= 300000) {
+          botUserMoveTimestamps.push(humanMoveMs);
+          if (botUserMoveTimestamps.length > BOT_MIRROR_WINDOW) {
+            botUserMoveTimestamps.shift(); // keep rolling window
+          }
+        }
+        botUserTurnStartMs = null; // reset — will be re-armed when bot move finishes
+      }
+
       // Derive UCI from the squares recorded by executeMove.
       // lastMovePromo is not stored globally, so we check the board for a
       // promotion piece: if the arriving square has a non-pawn piece of the
@@ -7552,7 +7613,8 @@ function botPostMoveHook() {
     if (turn === botColor) {
       setTimeout(botMakeMove, 100);
     } else {
-      // Player's turn — fire queued premove if any
+      // Player's turn — fire queued premove if any; also arm mirror timer
+      botUserTurnStartMs = Date.now(); // start timing the human's current turn
       if(activePremove) setTimeout(tryFirePremove, 50);
     }
   }
@@ -8104,6 +8166,28 @@ function botSetTpBtn(val) {
   document.getElementById('tpDesc').textContent = descs[val] || '';
 }
 
+// ── Think Time Mode selector ─────────────────────────────────────────────────
+// botTimeBehavior: 'pace' | 'instant' | 'mirror'
+// 'pace'    — entropy-based delay from botPace slider (default)
+// 'instant' — zero artificial delay; engine result plays as soon as ready
+// 'mirror'  — bot averages human's recent move times (rolling window, ±20% jitter)
+function botSetTimeBehavior(val) {
+  botTimeBehavior = val;
+  const descs = {
+    pace:    'Entropy-based delay from pace slider',
+    instant: 'No delay — bot plays as soon as engine responds',
+    mirror:  'Bot averages your recent move times (±20% jitter)'
+  };
+  ['pace','instant','mirror'].forEach(v => {
+    document.getElementById('tb-'+v).classList.toggle('active', v === val);
+  });
+  const descEl = document.getElementById('tbDesc');
+  if (descEl) descEl.textContent = descs[val] || '';
+  // Grey out pace slider when it has no effect
+  const paceRow = document.getElementById('botPaceRow');
+  if (paceRow) paceRow.style.opacity = (val === 'pace') ? '1' : '0.4';
+}
+
 function botSetPlayerColor(col) {
   botPlayerColor = col === 'random' ? (Math.random() < 0.5 ? 'white' : 'black') : col;
   ['white','black','random'].forEach(v => {
@@ -8355,7 +8439,12 @@ async function botStart() {
 
   // If bot plays White (human is Black), bot moves first
   const botColor = pc === 'white' ? 'b' : 'w';
-  if (turn === botColor) setTimeout(botMakeMove, 800);
+  if (turn === botColor) {
+    setTimeout(botMakeMove, 800);
+  } else {
+    // Human moves first — start timing their first move for mirror mode
+    botUserTurnStartMs = Date.now();
+  }
 }
 
 function botStop() {
@@ -8368,6 +8457,9 @@ function botStop() {
   botSanHistory  = [];
   botStartClockMs = null;
   botOppClockMs = null;
+  // Reset mirror timing state
+  botUserMoveTimestamps = [];
+  botUserTurnStartMs = null;
   preferredOpeningActive = false;
   lichessExplorerActive = false;
   sfCurrentSkillLevel = -1;
@@ -8406,6 +8498,7 @@ function botSaveConfig() {
     },
     hybrid: botHybridSlots,
     timePressure: botTimePressure,
+    timeBehavior: botTimeBehavior,
     pace: parseInt(document.getElementById('botPace').value),
     playerColor: botPlayerColor,
     ghostPieces: document.getElementById('cbGhostPieces').checked,
@@ -8451,6 +8544,7 @@ function botLoadConfig(event) {
       }
       if (cfg.hybrid) { botHybridSlots = cfg.hybrid; botRenderHybridSlots(); }
       if (cfg.timePressure) botSetTpBtn(cfg.timePressure);
+      if (cfg.timeBehavior) botSetTimeBehavior(cfg.timeBehavior);
       if (cfg.pace) { document.getElementById('botPace').value = cfg.pace; document.getElementById('botPaceVal').textContent = cfg.pace; }
       if (cfg.playerColor) botSetPlayerColor(cfg.playerColor);
       if (cfg.ghostPieces !== undefined) document.getElementById('cbGhostPieces').checked = cfg.ghostPieces;
