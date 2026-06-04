@@ -11,7 +11,7 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 // ── Stockfish: fetch once at startup, cache in memory, serve locally ──────────
-const SF_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js';
+const SF_CDN_URL = 'https://cdn.jsdelivr.net/npm/stockfish@18/src/stockfish-18-lite-single.js';
 let sfScript = null;
 let sfEtag = null;
 
