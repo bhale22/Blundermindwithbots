@@ -61,7 +61,10 @@ async function getCachedModel(modelUrl, modelVersion) {
     return null
   }
 
-  return await data.data.arrayBuffer()
+  // Support both ArrayBuffer (current format) and Blob (legacy cache entries)
+  const raw = data.data
+  if (raw instanceof ArrayBuffer) return raw
+  try { return await raw.arrayBuffer() } catch (e) { return null }
 }
 
 async function storeModel(modelUrl, modelVersion, buffer) {
@@ -74,7 +77,7 @@ async function storeModel(modelUrl, modelVersion, buffer) {
       id: MODEL_KEY,
       url: modelUrl,
       version: modelVersion,
-      data: new Blob([buffer]),
+      data: buffer, // store ArrayBuffer directly — survives page reloads reliably
       timestamp: Date.now(),
       size: buffer.byteLength,
     })
