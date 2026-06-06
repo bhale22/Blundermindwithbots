@@ -18,72 +18,42 @@ importScripts('/ort/ort.wasm.min.js')
 const ORT = ort
 ORT.env.wasm.wasmPaths = '/ort/'
 
-// ── IndexedDB storage (mirrors MaiaModelStorage) ─────────────────────────────
+// ── Cache API storage ─────────────────────────────────────────────────────────
+// The Cache API is purpose-built for large binary resources and persists
+// reliably across page reloads.  IndexedDB blob/ArrayBuffer storage had
+// fragile durability guarantees for 87 MB payloads in many browsers.
 
-const DB_NAME = 'MaiaModels'
-const STORE_NAME = 'models'
-const MODEL_KEY = 'maia-rapid-model'
-
-function isCompatibleModelCache(data, expectedUrl, expectedVersion) {
-  return data.url === expectedUrl && data.version === expectedVersion
-}
-
-function openDB() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1)
-    request.onerror = () => reject(request.error)
-    request.onsuccess = () => resolve(request.result)
-    request.onupgradeneeded = (event) => {
-      const db = event.target.result
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'id' })
-      }
-    }
-  })
-}
+const CACHE_STORE = 'maia-model-cache'  // cache bucket name
+const CACHE_KEY   = 'maia3-model-data'  // entry key within the bucket
 
 async function getCachedModel(modelUrl, modelVersion) {
-  const db = await openDB()
-  const tx = db.transaction([STORE_NAME], 'readonly')
-  const store = tx.objectStore(STORE_NAME)
-
-  const data = await new Promise((resolve, reject) => {
-    const req = store.get(MODEL_KEY)
-    req.onsuccess = () => resolve(req.result || null)
-    req.onerror = () => reject(req.error)
-  })
-
-  if (!data) return null
-
-  if (!isCompatibleModelCache(data, modelUrl, modelVersion)) {
-    const rwTx = db.transaction([STORE_NAME], 'readwrite')
-    rwTx.objectStore(STORE_NAME).delete(MODEL_KEY)
+  try {
+    const cache  = await caches.open(CACHE_STORE)
+    const stored = await cache.match(CACHE_KEY)
+    if (!stored) return null
+    // Verify URL + version so stale entries are not used after model updates
+    if (stored.headers.get('X-Model-Url')     !== modelUrl ||
+        stored.headers.get('X-Model-Version') !== modelVersion) {
+      await cache.delete(CACHE_KEY)
+      return null
+    }
+    const buf = await stored.arrayBuffer()
+    return buf.byteLength > 0 ? buf : null
+  } catch (e) {
     return null
   }
-
-  // Support both ArrayBuffer (current format) and Blob (legacy cache entries)
-  const raw = data.data
-  if (raw instanceof ArrayBuffer) return raw
-  try { return await raw.arrayBuffer() } catch (e) { return null }
 }
 
 async function storeModel(modelUrl, modelVersion, buffer) {
-  const db = await openDB()
-  const tx = db.transaction([STORE_NAME], 'readwrite')
-  const store = tx.objectStore(STORE_NAME)
-
-  await new Promise((resolve, reject) => {
-    const req = store.put({
-      id: MODEL_KEY,
-      url: modelUrl,
-      version: modelVersion,
-      data: buffer, // store ArrayBuffer directly — survives page reloads reliably
-      timestamp: Date.now(),
-      size: buffer.byteLength,
-    })
-    req.onsuccess = () => resolve()
-    req.onerror = () => reject(req.error)
+  const cache    = await caches.open(CACHE_STORE)
+  const response = new Response(buffer, {
+    headers: {
+      'Content-Type':    'application/octet-stream',
+      'X-Model-Url':     modelUrl,
+      'X-Model-Version': modelVersion,
+    }
   })
+  await cache.put(CACHE_KEY, response)
 }
 
 // ── Worker state ─────────────────────────────────────────────────────────────
