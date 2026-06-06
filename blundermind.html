@@ -8941,7 +8941,15 @@ function submitHaiku() {
 function openBotModal() {
   const modal = document.getElementById('botModal');
   if (modal) modal.style.display = 'block';
-  // Push current Maia status to the panel; small delay so iframe scripts are ready
+  // Ensure Maia worker is running so it can detect the cached model in IndexedDB.
+  // Without this, _maiaStatus stays 'idle' forever when the new bot-control-panel
+  // modal is used (the old botSetTab path that called maiaInit is never reached).
+  if (!_maiaWorker) {
+    maiaInit();
+    _maiaLoadMappings();
+  }
+  // Push current Maia status to the panel; small delay so iframe scripts are ready.
+  // _maiaUpdateStatusUI() will send follow-up pushes as the worker reports back.
   setTimeout(function() {
     try {
       var frame = document.getElementById('botModalFrame');
