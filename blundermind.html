@@ -1778,8 +1778,8 @@ let botDayLower  = 0;              // move quality range: lower percentile (0 = 
 let botDayUpper  = 100;            // move quality range: upper percentile (100 = all)
 let botSfTempLevel = 2;            // temperature tier 0-4 (maps to TEMP_PRESETS order)
 let botTimePressureMaxDrop = null; // max ELO drop from r-drop; null = use DOM slider
-let botMinProbPct       = 5;      // min absolute probability % for Maia3 candidates
-let botBlunderLimitCp   = 150;    // max cp loss allowed per move (Maia3: log-prob floor; SF: level floor)
+let botMinProbPct       = 0;      // min absolute probability % — 0 = off (default); set by panel
+let botBlunderLimitCp   = 400;    // max cp loss — 400 = off (default); set by panel
 let botPressureCurveA   = null;   // ctrlA points [{x,y}] — ELO degradation vs think-time (s)
 let botPressureCurveB   = null;   // ctrlB points [{x,y}] — confidence floor % vs think-time (s)
 let botWeaponizerEnabled = false; // weaponizer: instant play when ahead on clock
@@ -7013,19 +7013,19 @@ function applyMoveAttractors(moveProbs) {
   const hasPawnS  = pawnStrat !== 0;
 
   // ── Min-probability + blunder-limit filter (Maia3 / LC modes) ────────────
-  // Min prob:     hard absolute cutoff — removes tail moves below threshold.
-  // Blunder limit: log-prob floor relative to best move.
-  //   At limit L cp: keep moves where prob ≥ bestProb × exp(−L/100).
-  //   e.g. 50 cp → keep top ~60% of probability mass; 300 cp → very permissive.
+  // Only active when explicitly configured (defaults: minProbPct=0, blunderLimitCp=400).
+  // Min prob:     absolute cutoff — removes tail moves below threshold.
+  // Blunder limit: log-prob floor — keep moves where prob ≥ bestProb × exp(−L/100).
   if (botMinProbPct > 0 || botBlunderLimitCp < 400) {
-    const entries = Object.entries(moveProbs);
-    const bestProb = entries.reduce((m, [, p]) => Math.max(m, p), 0);
+    const entries  = Object.entries(moveProbs).sort((a, b) => b[1] - a[1]); // desc by prob
+    const bestProb = entries.length ? entries[0][1] : 0;
     if (bestProb > 0) {
-      const absFloor     = botMinProbPct / 100;
-      const relFloor     = bestProb * Math.exp(-botBlunderLimitCp / 100);
-      const threshold    = Math.max(absFloor, relFloor);
-      const qualFiltered = Object.fromEntries(entries.filter(([, p]) => p >= threshold));
-      if (Object.keys(qualFiltered).length >= 1) moveProbs = qualFiltered;
+      const absFloor  = botMinProbPct / 100;
+      const relFloor  = bestProb * Math.exp(-botBlunderLimitCp / 100);
+      const threshold = Math.max(absFloor, relFloor);
+      const passed    = entries.filter(([, p]) => p >= threshold);
+      // Always keep at least the best move so sampleFromProbs never gets an empty set
+      moveProbs = Object.fromEntries(passed.length ? passed : [entries[0]]);
     }
   }
 
@@ -7096,7 +7096,10 @@ function applyMoveAttractors(moveProbs) {
 
     result[uciMove] = logBoost !== 0 ? prob * Math.exp(logBoost) : prob;
   }
-  return result;
+  // Safety net: never return empty — fall back through filtered → original moveProbs
+  return Object.keys(result).length ? result
+       : Object.keys(filtered).length ? filtered
+       : moveProbs;
 }
 
 function sampleFromProbs(moveProbs, temperature) {
@@ -9006,8 +9009,9 @@ window.addEventListener('message', function(e) {
   botWeaponizerLeadMs  = (cfg.weaponizerLeadSec || 30) * 1000;
 
   // Calm/panicky (-5..+5) → botTimePressure
+  // Center (0) = steady (no boost); positive = panicky boost under pressure
   var cp = cfg.calmPanickyValue || 0;
-  botTimePressure = cp <= -2 ? 'steady' : cp >= 2 ? 'panicky' : 'normal';
+  botTimePressure = cp >= 3 ? 'panicky' : cp >= 1 ? 'normal' : 'steady';
 
   // Opening mode
   if (!cfg.openingMode || cfg.openingMode === 'off') {
