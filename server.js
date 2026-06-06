@@ -133,7 +133,7 @@ app.get('/api/masters', (req, res) => {
 
 app.get('/maia-worker.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
-  res.setHeader('Cache-Control', 'no-cache');  // always fetch latest worker
+  res.setHeader('Cache-Control', 'public, max-age=86400');
   res.sendFile(path.join(__dirname, 'maia-worker.js'));
 });
 
