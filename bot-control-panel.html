@@ -6232,8 +6232,13 @@ document.addEventListener('DOMContentLoaded', ()=>{
   setupDrag('cvA', ()=>ctrlA, sigA, true,  'tipA', ()=>scaleA);
   setupDrag('cvB', ()=>ctrlB, sigB, false, 'tipB', ()=>scaleB);
   // Pull Maia model status from parent on load (same-origin iframe)
-  try{
+try{
     if(window.parent && window.parent !== window){
+      // If the worker hasn't started yet, kick it off now so it checks the cache
+      if(!window.parent._maiaWorker && typeof window.parent.maiaInit === 'function'){
+        window.parent.maiaInit();
+        window.parent._maiaLoadMappings();
+      }
       bcpMaiaSetStatus(window.parent._maiaStatus, window.parent._maiaReady, window.parent._maiaProgress);
     }
   } catch(e){ bcpMaiaSetStatus('idle', false, 0); }
