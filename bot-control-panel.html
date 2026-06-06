@@ -822,6 +822,21 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
               <span class="speedo-range-label">2600</span>
             </div>
             <div style="text-align:center;margin-top:4px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);">Click arc · drag needle · or type ELO · snaps to ±25</div>
+            <!-- Maia model status / download -->
+            <div style="margin-top:10px;padding:8px 10px;background:var(--carbon-surface);border:0.5px solid var(--border);border-radius:var(--r);">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                <div>
+                  <div style="font-family:var(--font-m);font-size:8.5px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-secondary);">Maia 3 model</div>
+                  <div class="bcp-maia-status-txt" style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:2px;">Checking…</div>
+                </div>
+                <button class="bcp-maia-dl-btn" onclick="bcpMaiaDownload()"
+                  style="flex-shrink:0;padding:4px 10px;font-family:var(--font-m);font-size:8px;letter-spacing:0.08em;
+                  text-transform:uppercase;background:rgba(90,212,144,0.1);border:0.5px solid rgba(90,212,144,0.3);
+                  border-radius:var(--r);color:#5ad490;cursor:pointer;white-space:nowrap;transition:opacity 0.15s;">
+                  Download (~87 MB)
+                </button>
+              </div>
+            </div>
           </div>
 
           <!-- Stockfish sub-panel -->
@@ -879,6 +894,21 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
               <span class="ctrl-lbl">Maia 3 ELO</span>
               <input type="number" min="600" max="2600" step="25" value="1500" id="lcmaia-maia-elo"
                 style="width:70px;padding:4px 6px;font-family:var(--font-m);font-size:11px;color:var(--amber-bright);background:var(--carbon-surface);border:0.5px solid var(--border-amber);border-radius:2px;text-align:center;outline:none;">
+            </div>
+            <!-- Maia model status / download -->
+            <div style="margin-top:10px;padding:8px 10px;background:var(--carbon-surface);border:0.5px solid var(--border);border-radius:var(--r);">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                <div>
+                  <div style="font-family:var(--font-m);font-size:8.5px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-secondary);">Maia 3 model</div>
+                  <div class="bcp-maia-status-txt" style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:2px;">Checking…</div>
+                </div>
+                <button class="bcp-maia-dl-btn" onclick="bcpMaiaDownload()"
+                  style="flex-shrink:0;padding:4px 10px;font-family:var(--font-m);font-size:8px;letter-spacing:0.08em;
+                  text-transform:uppercase;background:rgba(90,212,144,0.1);border:0.5px solid rgba(90,212,144,0.3);
+                  border-radius:var(--r);color:#5ad490;cursor:pointer;white-space:nowrap;transition:opacity 0.15s;">
+                  Download (~87 MB)
+                </button>
+              </div>
             </div>
           </div>
         </div><!-- /left col -->
@@ -5092,7 +5122,65 @@ function getBotConfig(){
   };
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   MAIA 3 MODEL STATUS
+   Reads from parent frame (_maiaStatus, _maiaReady, _maiaProgress)
+   and receives live push updates via postMessage.
+═══════════════════════════════════════════════════════════════ */
+let _bcpMaiaReady  = false;
+let _bcpMaiaStatus = 'idle';
+
+function bcpMaiaDownload(){
+  if(window.parent && window.parent !== window && typeof window.parent.maiaDownloadModel === 'function'){
+    window.parent.maiaDownloadModel();
+  }
+}
+
+function bcpMaiaSetStatus(status, ready, progress){
+  _bcpMaiaStatus = status || 'idle';
+  _bcpMaiaReady  = !!ready;
+  const labels = {
+    idle:        'Not loaded — download below to enable Maia',
+    loading:     'Loading from cache…',
+    'no-cache':  'Not downloaded — click the button to download',
+    ready:       '✓ Model ready',
+    error:       '✗ Error loading model — try reloading'
+  };
+  const pct = (status === 'downloading' && progress != null) ? ' ' + progress + '%' : '';
+  const txt = status === 'downloading' ? ('Downloading… ' + pct) : (labels[status] || status);
+  const clr = ready ? '#5ad490' : (status === 'error' ? '#e04040' : 'var(--text-dim)');
+  document.querySelectorAll('.bcp-maia-status-txt').forEach(function(el){
+    el.textContent = txt; el.style.color = clr;
+  });
+  document.querySelectorAll('.bcp-maia-dl-btn').forEach(function(btn){
+    const done = ready || status === 'downloading';
+    btn.textContent = ready ? '✓ Model ready' : 'Download (~87 MB)';
+    btn.disabled    = done;
+    btn.style.opacity = done ? '0.5' : '1';
+    btn.style.cursor  = done ? 'default' : 'pointer';
+  });
+}
+
+// Receive live status pushes from parent
+window.addEventListener('message', function(e){
+  if(e.data && e.data.type === 'maiaStatus'){
+    bcpMaiaSetStatus(e.data.status, e.data.ready, e.data.progress);
+  }
+});
+
 function startGame(){
+  // Block Maia games if the model isn't downloaded yet
+  const needsMaia = (currentEngine === 'maia3' || currentEngine === 'lcmaia');
+  if(needsMaia && !_bcpMaiaReady){
+    document.querySelectorAll('.bcp-maia-status-txt').forEach(function(el){
+      el.textContent = '⚠ Download the model first, then click Start';
+      el.style.color = '#e8aa40';
+    });
+    // Ensure engine section is open so the user can see the status card
+    const sec = document.getElementById('sec-engine');
+    if(sec && !sec.classList.contains('open')) toggleSec('engine');
+    return;
+  }
   const config = getBotConfig();
   if(window.parent !== window){
     window.parent.postMessage(config, '*');
@@ -6132,6 +6220,12 @@ document.addEventListener('DOMContentLoaded', ()=>{
   initPts();
   setupDrag('cvA', ()=>ctrlA, sigA, true,  'tipA', ()=>scaleA);
   setupDrag('cvB', ()=>ctrlB, sigB, false, 'tipB', ()=>scaleB);
+  // Pull Maia model status from parent on load (same-origin iframe)
+  try{
+    if(window.parent && window.parent !== window){
+      bcpMaiaSetStatus(window.parent._maiaStatus, window.parent._maiaReady, window.parent._maiaProgress);
+    }
+  } catch(e){ bcpMaiaSetStatus('idle', false, 0); }
   // Resize
   let rt;
   window.addEventListener('resize',()=>{

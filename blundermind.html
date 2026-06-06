@@ -6512,6 +6512,15 @@ function _maiaUpdateStatusUI() {
       el.title = maiaTabsReady ? '' : 'Download Maia3 model to enable';
     }
   });
+  // Push live status to new bot control panel iframe
+  try {
+    var _bcpIframe = document.getElementById('botModalFrame');
+    if (_bcpIframe && _bcpIframe.contentWindow) {
+      _bcpIframe.contentWindow.postMessage({
+        type: 'maiaStatus', status: _maiaStatus, ready: _maiaReady, progress: _maiaProgress
+      }, '*');
+    }
+  } catch(e) {}
   return; // skip old code below
 }
 
@@ -8932,6 +8941,18 @@ function submitHaiku() {
 function openBotModal() {
   const modal = document.getElementById('botModal');
   if (modal) modal.style.display = 'block';
+  // Push current Maia status to the panel; small delay so iframe scripts are ready
+  setTimeout(function() {
+    try {
+      var frame = document.getElementById('botModalFrame');
+      if (frame && frame.contentWindow) {
+        frame.contentWindow.postMessage({
+          type: 'maiaStatus', status: _maiaStatus || 'idle',
+          ready: _maiaReady, progress: _maiaProgress || 0
+        }, '*');
+      }
+    } catch(e) {}
+  }, 120);
 }
 function closeBotModal() {
   const modal = document.getElementById('botModal');
