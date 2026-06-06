@@ -1764,7 +1764,26 @@ let botOppClockMs = null;
 // 'pace'    — existing behavior: entropy-based delay derived from botPace slider
 // 'instant' — no artificial delay (engine still runs, result played immediately)
 // 'mirror'  — bot wait time ≈ rolling average of human's recent move times (±20% jitter)
-let botTimeBehavior = 'pace'; // 'pace' | 'instant' | 'mirror'
+let botTimeBehavior = 'pace'; // 'pace' | 'instant' | 'mirror' | 'fixed'
+let botFixedDelayMs = 5000;        // ms for 'fixed' timing mode (default 5 s)
+let botMirrorOffsetPct = 0;        // % speed offset for 'mirror' mode (-100..+100)
+let botCplxBase = 3;               // complexity mode: base think time (s)
+let botCplxMin  = 0.4;             // complexity mode: min multiplier (simple moves)
+let botCplxMax  = 2.5;             // complexity mode: max multiplier (complex moves)
+let botBehavReconsider  = true;    // human behaviour: reconsideration pauses
+let botBehavBlink       = true;    // human behaviour: instant play on forced moves
+let botBehavClockMirror = true;    // human behaviour: speed up when opponent is low
+let botCanFlag   = true;           // whether bot is allowed to flag (run clock to 0)
+let botDayLower  = 0;              // move quality range: lower percentile (0 = top/best)
+let botDayUpper  = 100;            // move quality range: upper percentile (100 = all)
+let botSfTempLevel = 2;            // temperature tier 0-4 (maps to TEMP_PRESETS order)
+let botTimePressureMaxDrop = null; // max ELO drop from r-drop; null = use DOM slider
+let botMinProbPct       = 5;      // min absolute probability % for Maia3 candidates
+let botBlunderLimitCp   = 150;    // max cp loss allowed per move (Maia3: log-prob floor; SF: level floor)
+let botPressureCurveA   = null;   // ctrlA points [{x,y}] — ELO degradation vs think-time (s)
+let botPressureCurveB   = null;   // ctrlB points [{x,y}] — confidence floor % vs think-time (s)
+let botWeaponizerEnabled = false; // weaponizer: instant play when ahead on clock
+let botWeaponizerLeadMs  = 30000; // clock lead (ms) required to activate weaponizer
 
 // Rolling window of the human player's move durations (ms), capped at N=6.
 // x domain: 0–∞ ms (practically 200–30000 ms for most games)
@@ -6943,6 +6962,143 @@ function botOpeningStatusText(data) {
 }
 
 // ── Temperature sampling ─────────────────────────────────────────────────────
+// ── Time pressure curve evaluator ────────────────────────────────────────────
+// ctrlPts: [{x,y}] where x = think-time per move (s), y = ELO or confidence %.
+// Interpolates linearly in log-x space (matching the panel's log-time axis).
+// Returns null if ctrlPts is empty or has fewer than 2 points.
+function evalPressureCurve(ctrlPts, xSec) {
+  if (!ctrlPts || ctrlPts.length < 2) return null;
+  const pts = [...ctrlPts].sort((a, b) => a.x - b.x);
+  if (xSec <= pts[0].x) return pts[0].y;
+  if (xSec >= pts[pts.length - 1].x) return pts[pts.length - 1].y;
+  for (let i = 0; i < pts.length - 1; i++) {
+    if (xSec >= pts[i].x && xSec <= pts[i + 1].x) {
+      // Interpolate in log-x space (matches the panel's log-time axis)
+      const t = (Math.log(xSec) - Math.log(pts[i].x)) /
+                (Math.log(pts[i + 1].x) - Math.log(pts[i].x));
+      return pts[i].y + t * (pts[i + 1].y - pts[i].y);
+    }
+  }
+  return pts[pts.length - 1].y;
+}
+
+// ── Estimated remaining moves (Fischer formula ≈ 40 per game) ────────────────
+function botRemainingMovesEstimate() {
+  return Math.max(5, 40 - Math.floor(botMoveHistory.length / 2));
+}
+
+// ── Move attractor filtering — applied before sampleFromProbs ─────────────────
+// Implements: move quality range (percentile band), luck attractor (band shift),
+// piece attractors (×6), pawn strategic + trade attractors.
+//
+// CP budget integration:
+//   The style-gauge CP budget (0–300) controls attractor MAGNITUDE, exactly
+//   mirroring the panel's own display formula:
+//     alloc_cp(v) = round(budget × |v| / Σ|all v|)
+//     logBoost    = v × (budget / (totalAbs × CP_PER_LOG_UNIT))
+//   where CP_PER_LOG_UNIT = 150 → 150 cp of budget on one attractor ≈ exp(1) ≈ 2.7× boost.
+//   At budget = 0, all attractor effects are zero regardless of slider positions.
+function applyMoveAttractors(moveProbs) {
+  if (!moveProbs || !Object.keys(moveProbs).length) return moveProbs;
+
+  const attrVals  = window._bcpAttractorValues || {};
+  const pieceVals = window._bcpPieceValues     || {};
+  const cpBudget  = window._bcpCpBudget != null ? window._bcpCpBudget : 100;
+
+  const luckVal   = attrVals['luck']  || 0;
+  const tradeVal  = attrVals['trade'] || 0;
+  const pawnStrat = attrVals['pawn']  || 0;
+  const hasPiece  = Object.values(pieceVals).some(v => v !== 0);
+  const hasTrade  = tradeVal !== 0;
+  const hasPawnS  = pawnStrat !== 0;
+
+  // ── Min-probability + blunder-limit filter (Maia3 / LC modes) ────────────
+  // Min prob:     hard absolute cutoff — removes tail moves below threshold.
+  // Blunder limit: log-prob floor relative to best move.
+  //   At limit L cp: keep moves where prob ≥ bestProb × exp(−L/100).
+  //   e.g. 50 cp → keep top ~60% of probability mass; 300 cp → very permissive.
+  if (botMinProbPct > 0 || botBlunderLimitCp < 400) {
+    const entries = Object.entries(moveProbs);
+    const bestProb = entries.reduce((m, [, p]) => Math.max(m, p), 0);
+    if (bestProb > 0) {
+      const absFloor     = botMinProbPct / 100;
+      const relFloor     = bestProb * Math.exp(-botBlunderLimitCp / 100);
+      const threshold    = Math.max(absFloor, relFloor);
+      const qualFiltered = Object.fromEntries(entries.filter(([, p]) => p >= threshold));
+      if (Object.keys(qualFiltered).length >= 1) moveProbs = qualFiltered;
+    }
+  }
+
+  // ── CP budget → per-unit scale ────────────────────────────────────────────
+  // totalAbs includes ALL attractor + piece values, matching the panel display.
+  // Attractors without logBoost implementations (luck, hustle, pressure) still
+  // count toward totalAbs so the panel's cp allocation numbers stay accurate.
+  const CP_PER_LOG_UNIT = 150;
+  const allVals  = [...Object.values(attrVals), ...Object.values(pieceVals)];
+  const totalAbs = allVals.reduce((s, v) => s + Math.abs(v || 0), 0);
+  // scale: how much each unit of slider value contributes to log-probability boost
+  const scale = (cpBudget > 0 && totalAbs > 0)
+    ? cpBudget / (totalAbs * CP_PER_LOG_UNIT)
+    : 0;
+
+  // ── Quality range + luck shift ────────────────────────────────────────────
+  // botDayLower/Upper: 0 = top of sorted-by-prob list, 100 = bottom
+  // luckVal > 0 → shift toward best moves; < 0 → toward worst
+  let lo = Math.max(0, Math.min(95, botDayLower - luckVal * 4));
+  let hi = Math.max(lo + 5, Math.min(100, botDayUpper - luckVal * 4));
+  let filtered = moveProbs;
+  if (lo > 0 || hi < 100) {
+    const sorted = Object.entries(moveProbs).sort((a, b) => b[1] - a[1]);
+    const total  = sorted.reduce((s, [, p]) => s + p, 0);
+    if (total > 0) {
+      const band = { lo: (lo / 100) * total, hi: (hi / 100) * total };
+      let cum = 0, band_probs = {};
+      for (const [m, p] of sorted) {
+        const end = cum + p;
+        if (end > band.lo && cum < band.hi) band_probs[m] = p;
+        cum = end;
+      }
+      if (Object.keys(band_probs).length) filtered = band_probs;
+    }
+  }
+
+  // ── Piece + trade + pawn-strategic attractor reweighting ──────────────────
+  if (scale === 0 || (!hasPiece && !hasTrade && !hasPawnS)) return filtered;
+
+  const PIECE_MAP  = { p:'pawn', n:'knight', b:'bishop', r:'rook', q:'queen', k:'king' };
+  const botIsBlack = (botPlayerColor === 'white'); // bot is black when human plays white
+
+  const result = {};
+  for (const [uciMove, prob] of Object.entries(filtered)) {
+    const mv = uciToSq(uciMove);
+    if (!mv) { result[uciMove] = prob; continue; }
+
+    const fromPiece = board[mv.from];
+    if (!fromPiece) { result[uciMove] = prob; continue; }
+
+    const pieceType = PIECE_MAP[fromPiece.toLowerCase()];
+    let logBoost = 0;
+
+    // Piece attractors (pieces tab) — CP-budget-scaled
+    if (hasPiece && pieceType) logBoost += (pieceVals[pieceType] || 0) * scale;
+
+    // Pawn strategic attractor (stacks on pawn piece attractor)
+    if (hasPawnS && pieceType === 'pawn') logBoost += pawnStrat * scale;
+
+    // Trade attractor: detect capture (including en passant)
+    if (hasTrade) {
+      const toPiece = board[mv.to];
+      const isCapture = toPiece
+        ? (botIsBlack ? /[A-Z]/.test(toPiece) : /[a-z]/.test(toPiece))
+        : (fromPiece.toLowerCase() === 'p' && uciMove[0] !== uciMove[2]);
+      if (isCapture) logBoost += tradeVal * scale;
+    }
+
+    result[uciMove] = logBoost !== 0 ? prob * Math.exp(logBoost) : prob;
+  }
+  return result;
+}
+
 function sampleFromProbs(moveProbs, temperature) {
   const entries = Object.entries(moveProbs);
   if (!entries.length) return null;
@@ -6965,29 +7121,86 @@ function positionEntropy(moveProbs) {
 }
 
 // ── SF level picker — applies temperature weighting around target level ────────
-// Weights: 50% target, 20% target+1, 20% target-1, 5% target+2, 5% target-2
+// botSfTempLevel maps to TEMP_PRESETS: 0=deterministic 1=focused 2=neutral 3=varied 4=wild
+// Each tier is a [p0, p±1, p-1, p+2, p-2] probability table.
 function sfPickLevel(targetLevel) {
-  var tempEl = document.getElementById('sfTemperature');
-  if (!tempEl || parseInt(tempEl.value) === 0) return targetLevel; // no variety
+  if (botSfTempLevel === 0) return targetLevel; // deterministic — always best
 
-  // Weighted random selection
-  var rand = Math.random();
-  var offset;
-  if      (rand < 0.50) offset =  0;   // 50% — target
-  else if (rand < 0.70) offset =  1;   // 20% — one above
-  else if (rand < 0.90) offset = -1;   // 20% — one below
-  else if (rand < 0.95) offset =  2;   //  5% — two above
-  else                  offset = -2;   //  5% — two below
-
-  return Math.max(1, Math.min(20, targetLevel + offset));
+  // Cumulative breakpoints for tiers 1-4
+  // Tier 1 Focused (T≈0.4):  80 / 10 / 10 / 0 / 0
+  // Tier 2 Neutral (T=1.0):  50 / 20 / 20 / 5 / 5  (original behavior)
+  // Tier 3 Varied  (T=1.8):  35 / 22 / 22 / 11 / 10
+  // Tier 4 Wild    (T=3.0):  20 / 20 / 25 / 18 / 17
+  const tables = [
+    null,
+    [0.80, 0.90, 1.00,  0,    0  ],
+    [0.50, 0.70, 0.90, 0.95,  1.0],
+    [0.35, 0.57, 0.79, 0.90,  1.0],
+    [0.20, 0.40, 0.65, 0.83,  1.0],
+  ];
+  const t   = tables[Math.min(4, Math.max(1, botSfTempLevel))];
+  const r   = Math.random();
+  const off = r < t[0] ?  0
+            : r < t[1] ?  1
+            : r < t[2] ? -1
+            : r < t[3] ?  2
+            :            -2;
+  return Math.max(1, Math.min(20, targetLevel + off));
 }
 
 // ── Effective Stockfish level (degrades under time pressure) ─────────────────
+// Priority order for floor calculation:
+//   1. blunderLimitCp  → quality guarantee (lower limit = higher floor)
+//   2. botTimePressureMaxDrop / sfPressureLevel → time-pressure floor
+//   The effective floor is max(blunderFloor, pressureFloor) — most conservative wins.
+// Time degradation sources (highest priority first):
+//   1. Weaponizer active (ahead on clock) → use floor immediately
+//   2. cvA pressure curve → spline interpolation in log-time space
+//   3. Linear fallback    → original 0–30 s linear ramp
 function sfEffectiveLevel(clockMs) {
   const startLevel = parseInt(document.getElementById('sfLevel').value) || 8;
-  const floorLevel = parseInt(document.getElementById('sfPressureLevel').value) || 4;
-  if (clockMs === null || clockMs > 30000) return startLevel;
-  // Linear interpolation: 30s → start level, 0s → floor level
+
+  // ── Blunder limit floor (quality guarantee) ───────────────────────────────
+  // botBlunderLimitCp 50 → floor ≈ startLevel-1; 400 → floor → 1
+  const blunderFloor = Math.max(1, Math.round(startLevel * (1 - botBlunderLimitCp / 400)));
+
+  // ── Time-pressure floor (from r-drop or DOM slider) ───────────────────────
+  let pressureFloor;
+  if (botTimePressureMaxDrop !== null) {
+    pressureFloor = Math.max(1, startLevel - Math.round(botTimePressureMaxDrop / 50));
+  } else {
+    pressureFloor = parseInt(document.getElementById('sfPressureLevel').value) || 4;
+  }
+
+  // Effective floor: more conservative (higher) of the two
+  const floorLevel = Math.max(blunderFloor, pressureFloor);
+
+  if (clockMs === null) return startLevel;
+
+  // ── Weaponizer: bot is ahead on clock → play at floor for flagging pressure ─
+  if (botWeaponizerEnabled && botOppClockMs !== null &&
+      (clockMs - botOppClockMs) > botWeaponizerLeadMs) {
+    return floorLevel;
+  }
+
+  // ── cvA curve: spline-based ELO degradation ───────────────────────────────
+  if (botPressureCurveA && botPressureCurveA.length >= 2) {
+    const thinkSec = (clockMs / 1000) / botRemainingMovesEstimate();
+    const curveElo = evalPressureCurve(botPressureCurveA, thinkSec);
+    if (curveElo !== null) {
+      const baseElo  = maia3SelectedRating || 1500;
+      const maxDrop  = botTimePressureMaxDrop != null ? botTimePressureMaxDrop : 300;
+      const floorElo = Math.max(0, baseElo - maxDrop);
+      const t = (baseElo - floorElo) > 0
+        ? Math.max(0, Math.min(1, (curveElo - floorElo) / (baseElo - floorElo)))
+        : 1;
+      return Math.max(floorLevel, Math.min(startLevel,
+        Math.round(floorLevel + (startLevel - floorLevel) * t)));
+    }
+  }
+
+  // ── Linear fallback: full strength above 30 s, ramps to floor at 0 s ──────
+  if (clockMs > 30000) return startLevel;
   const fraction = clockMs / 30000;
   return Math.round(floorLevel + (startLevel - floorLevel) * fraction);
 }
@@ -7037,52 +7250,117 @@ function botRecordMove(uciMove, sanMove) {
 }
 
 // ── Think time: returns target delay in ms ────────────────────────────────────
-// behavior driven by botTimeBehavior:
-//   'instant' — 0 ms (no artificial wait; engine result plays immediately)
-//   'mirror'  — rolling average of human move times (±20% jitter, 200 ms floor)
-//   'pace'    — original entropy-based delay derived from botPace slider
-// clockMs: remaining ms on the bot's clock, or null if untimed.
+// Modes (botTimeBehavior):
+//   'instant'    — 0 ms
+//   'fixed'      — botFixedDelayMs
+//   'mirror'     — rolling avg of human times × (1 + botMirrorOffsetPct/100)
+//   'complexity' — botCplxBase × lerp(botCplxMin, botCplxMax, entropy/4)
+//   'pace'       — original botPace slider entropy calculation
+// Human behaviour flags applied to complexity/pace/mirror paths:
+//   botBehavBlink       — near-instant for forced moves (entropy < 0.5, Maia3 only)
+//   botBehavReconsider  — 15% chance of 1.5-2.5× pause (hesitation)
+//   botBehavClockMirror — halve delay when opponent clock < 60% of bot's
+//   botCanFlag          — if false, always keep ≥3 s on clock
+// Hustle attractor (window._bcpAttractorValues.hustle, −5..+5) scales think time.
 function botThinkTime(moveProbs, clockMs) {
-  // ── Instant: skip all artificial delay ───────────────────────────────────
+  const entropy = moveProbs ? positionEntropy(moveProbs) : 2;
+
+  // ── Instant ──────────────────────────────────────────────────────────────
   if (botTimeBehavior === 'instant') return 0;
 
-  // ── Mirror: match the human's rolling average think time ─────────────────
+  // ── Weaponizer: ahead on clock → play instantly to maximise time pressure ─
+  if (botWeaponizerEnabled && botOppClockMs !== null && clockMs !== null &&
+      (clockMs - botOppClockMs) > botWeaponizerLeadMs) {
+    return 0;
+  }
+
+  // ── Move blink: near-instant for forced/obvious positions (Maia3 only) ───
+  if (botBehavBlink && moveProbs && entropy < 0.5) {
+    return 200 + Math.random() * 300;
+  }
+
+  // ── Fixed ────────────────────────────────────────────────────────────────
+  if (botTimeBehavior === 'fixed') {
+    let ms = botFixedDelayMs;
+    if (clockMs !== null && clockMs < 30000) ms = Math.min(ms, clockMs * 0.08);
+    if (!botCanFlag && clockMs !== null) ms = Math.min(ms, Math.max(200, clockMs - 3000));
+    return Math.max(200, ms);
+  }
+
+  // ── Mirror ───────────────────────────────────────────────────────────────
   if (botTimeBehavior === 'mirror') {
     if (botUserMoveTimestamps.length > 0) {
       const avg = botUserMoveTimestamps.reduce((a, b) => a + b, 0) / botUserMoveTimestamps.length;
-      // ±20% jitter so the bot doesn't feel mechanical
       const jitter = 0.8 + Math.random() * 0.4;
-      let mirrorMs = avg * jitter;
-      // Respect clock pressure — don't burn more than 8% of remaining time
-      if (clockMs !== null && clockMs < 30000) {
-        mirrorMs = Math.min(mirrorMs, clockMs * 0.08);
-      }
+      const offsetMul = 1 + (botMirrorOffsetPct / 100);
+      let mirrorMs = avg * jitter * offsetMul;
+      if (clockMs !== null && clockMs < 30000) mirrorMs = Math.min(mirrorMs, clockMs * 0.08);
+      if (!botCanFlag && clockMs !== null) mirrorMs = Math.min(mirrorMs, Math.max(200, clockMs - 3000));
       return Math.max(200, Math.min(6000, mirrorMs));
     }
-    // No human moves recorded yet — fall through to pace for first bot move
+    // No human moves yet — fall through to complexity/pace
   }
 
-  // ── Pace (default): entropy-based delay ──────────────────────────────────
-  const pace = parseInt(document.getElementById('botPace').value) || 40;
-  const baseSec = (5 * 60) / pace; // avg seconds per move at this pace
-  const entropy = moveProbs ? positionEntropy(moveProbs) : 2;
-  const complexity = Math.min(1 + entropy * 0.35, 2.5);
-  let thinkMs = baseSec * complexity * 1000;
-  // Time pressure: clockMs is real ms now
-  if (clockMs !== null && clockMs < 30000) {
-    thinkMs = Math.min(thinkMs, clockMs * 0.08); // use at most 8% of remaining
+  // ── Complexity: explicit base/min/max from new panel ─────────────────────
+  let thinkMs;
+  if (botTimeBehavior === 'complexity') {
+    const t = Math.min(1, entropy / 4.0); // 0 = simple, 1 = complex
+    const mult = botCplxMin + t * (botCplxMax - botCplxMin);
+    thinkMs = botCplxBase * mult * 1000;
+  } else {
+    // ── Pace (default): original entropy-based delay ──────────────────────
+    const pace = parseInt(document.getElementById('botPace').value) || 40;
+    const baseSec = (5 * 60) / pace;
+    const complexity = Math.min(1 + entropy * 0.35, 2.5);
+    thinkMs = baseSec * complexity * 1000;
   }
-  thinkMs *= 0.8 + Math.random() * 0.4; // ±20% randomness
-  return Math.max(200, Math.min(4000, thinkMs));
+
+  // ── Clock-pressure mirroring: speed up when opponent is low on time ──────
+  if (botBehavClockMirror && botOppClockMs !== null && clockMs !== null &&
+      botOppClockMs < clockMs * 0.6) {
+    thinkMs *= 0.5;
+  }
+
+  // ── Hustle attractor: −5 (faster) … +5 (slower grinder) ─────────────────
+  const hustle = (window._bcpAttractorValues && window._bcpAttractorValues['hustle']) || 0;
+  if (hustle !== 0) thinkMs *= (1 + hustle * 0.15);
+
+  // ── Reconsideration pause: occasional extended hesitation ────────────────
+  if (botBehavReconsider && Math.random() < 0.15) {
+    thinkMs *= 1.5 + Math.random();
+  }
+
+  // ── Base ±20% jitter ─────────────────────────────────────────────────────
+  thinkMs *= 0.8 + Math.random() * 0.4;
+
+  // ── Clock pressure caps ───────────────────────────────────────────────────
+  if (clockMs !== null && clockMs < 30000) thinkMs = Math.min(thinkMs, clockMs * 0.08);
+  if (!botCanFlag && clockMs !== null) thinkMs = Math.min(thinkMs, Math.max(200, clockMs - 3000));
+
+  return Math.max(200, Math.min(6000, thinkMs));
 }
 function timePressureTemp(baseTemp, clockMs) {
-  if (!clockMs || clockMs > 30000) return baseTemp;
-  const fraction = Math.max(0, 1 - clockMs / 30000); // 0=no pressure, 1=flagging
-  const boost = {
-    steady: 0.0,
-    normal: 1.0,
-    panicky: 2.5
-  }[botTimePressure] || 0;
+  if (!clockMs) return baseTemp;
+  const boost = { steady: 0.0, normal: 1.0, panicky: 2.5 }[botTimePressure] || 0;
+  if (boost === 0) return baseTemp;
+
+  // cvB curve: confidence floor % → pressure fraction
+  // High confidence (near 50%) = low pressure; near floor = full pressure.
+  if (botPressureCurveB && botPressureCurveB.length >= 2) {
+    const thinkSec = (clockMs / 1000) / botRemainingMovesEstimate();
+    const conf = evalPressureCurve(botPressureCurveB, thinkSec); // 5–50 %
+    if (conf !== null) {
+      const floorPct = botTimePressureMaxDrop != null
+        ? 5  // default floor % when max drop is set
+        : 5;
+      const fraction = Math.max(0, Math.min(1, 1 - (conf - floorPct) / (50 - floorPct)));
+      return baseTemp + fraction * boost;
+    }
+  }
+
+  // Linear fallback: ramps from 0 at 30 s to full boost at 0 s
+  if (clockMs > 30000) return baseTemp;
+  const fraction = Math.max(0, 1 - clockMs / 30000);
   return baseTemp + fraction * boost;
 }
 
@@ -7249,7 +7527,7 @@ async function botMakeMove() {
         const inferenceMs = Date.now() - _botMoveStartMs;
         const delay = Math.max(0, targetDelay - inferenceMs);
         if (delay > 0) await new Promise(r => setTimeout(r, delay));
-        uciMove = sampleFromProbs(m3Probs, m3EffTemp);
+        uciMove = sampleFromProbs(applyMoveAttractors(m3Probs), m3EffTemp);
         console.log('[Maia3 FULL] chose:', uciMove, '| temp:', m3EffTemp.toFixed(2), '| inf:', inferenceMs, 'ms | extra wait:', delay, 'ms');
       } else {
         // Maia3 not downloaded — fall back to SF
@@ -7283,7 +7561,7 @@ async function botMakeMove() {
         const inferenceMs = Date.now() - _botMoveStartMs;
         const delay = Math.max(0, targetDelay - inferenceMs);
         if (delay > 0) await new Promise(r => setTimeout(r, delay));
-        uciMove = sampleFromProbs(probs, effectiveTemp);
+        uciMove = sampleFromProbs(applyMoveAttractors(probs), effectiveTemp);
       } else {
         await sfInit();
         uciMove = await sfGetMove(fen, lcFallbackLevel());
@@ -7313,7 +7591,7 @@ async function botMakeMove() {
         const inferenceMs = Date.now() - _botMoveStartMs;
         const delay = Math.max(0, targetDelay - inferenceMs);
         if (delay > 0) await new Promise(r => setTimeout(r, delay));
-        uciMove = sampleFromProbs(lcsfProbs, lcsfEffTemp);
+        uciMove = sampleFromProbs(applyMoveAttractors(lcsfProbs), lcsfEffTemp);
       } else {
         await sfInit();
         uciMove = await sfGetMove(fen, lcsfFallbackLevel());
@@ -7344,7 +7622,7 @@ async function botMakeMove() {
             const inferenceMs = Date.now() - _botMoveStartMs;
             const delay = Math.max(0, targetDelay - inferenceMs);
             if (delay > 0) await new Promise(res => setTimeout(res, delay));
-            uciMove = sampleFromProbs(probs, effectiveTemp);
+            uciMove = sampleFromProbs(applyMoveAttractors(probs), effectiveTemp);
           } else {
             // LC off-book or failed — fallback to SF
             uciMove = await sfGetMove(fen, sfEffectiveLevel(clockMs));
@@ -8693,9 +8971,43 @@ window.addEventListener('message', function(e) {
   if (cfg.engine === 'lcsf')   { lcsfSetRating(_snapToLcBand(cfg.lcsfElo || 2000)); }
   if (cfg.engine === 'lcmaia') { lcSetRating(_snapToLcBand(cfg.lcMaiaLcElo || 2000)); maia3SetRating(cfg.lcMaiaMaiaElo || 1500); }
 
-  // Timing behavior
-  var timingMap = { complexity: 'pace', instant: 'instant', fixed: 'pace', mirror: 'mirror' };
+  // Temperature preset → sfPickLevel tier (deterministic=0 focused=1 neutral=2 varied=3 wild=4)
+  var tempTierMap = { deterministic: 0, low: 1, neutral: 2, high: 3, wild: 4 };
+  botSfTempLevel = tempTierMap.hasOwnProperty(cfg.tempPresetId) ? tempTierMap[cfg.tempPresetId] : 2;
+
+  // Timing behavior — 'complexity' is now a live mode
+  var timingMap = { complexity: 'complexity', instant: 'instant', fixed: 'fixed', mirror: 'mirror' };
   botSetTimeBehavior(timingMap[cfg.timingMode] || 'pace');
+  botFixedDelayMs    = cfg.fixedDelayMs    || 5000;
+  botMirrorOffsetPct = cfg.mirrorOffsetPct || 0;
+  botCplxBase = cfg.cplxBase || 3;
+  botCplxMin  = cfg.cplxMin  || 0.4;
+  botCplxMax  = cfg.cplxMax  || 2.5;
+
+  // Human behaviour modifiers
+  botBehavReconsider  = cfg.behavReconsider  !== false;
+  botBehavBlink       = cfg.behavBlink       !== false;
+  botBehavClockMirror = cfg.behavClockMirror !== false;
+  botCanFlag          = cfg.canFlag          !== false;
+
+  // Time pressure max drop → drives sfEffectiveLevel floor
+  botTimePressureMaxDrop = (cfg.timePressureMaxDrop != null) ? cfg.timePressureMaxDrop : null;
+
+  // Candidate filter + blunder limit
+  botMinProbPct     = (cfg.minProbPct     != null) ? cfg.minProbPct     : 5;
+  botBlunderLimitCp = (cfg.blunderLimitCp != null) ? cfg.blunderLimitCp : 150;
+
+  // Time pressure curves (cvA = ELO degradation, cvB = confidence floor)
+  botPressureCurveA = (cfg.ctrlA && cfg.ctrlA.length >= 2) ? cfg.ctrlA : null;
+  botPressureCurveB = (cfg.ctrlB && cfg.ctrlB.length >= 2) ? cfg.ctrlB : null;
+
+  // Weaponizer
+  botWeaponizerEnabled = !!cfg.weaponizerEnabled;
+  botWeaponizerLeadMs  = (cfg.weaponizerLeadSec || 30) * 1000;
+
+  // Calm/panicky (-5..+5) → botTimePressure
+  var cp = cfg.calmPanickyValue || 0;
+  botTimePressure = cp <= -2 ? 'steady' : cp >= 2 ? 'panicky' : 'normal';
 
   // Opening mode
   if (!cfg.openingMode || cfg.openingMode === 'off') {
@@ -8729,9 +9041,13 @@ window.addEventListener('message', function(e) {
     botRenderHybridSlots();
   }
 
-  // Preserve new-panel state for future attractor / pressure integration
-  window._bcpAttractorValues = cfg.attractorValues;
-  window._bcpPieceValues     = cfg.pieceValues;
+  // Move quality range (dual slider)
+  botDayLower = (cfg.dayLower != null) ? cfg.dayLower : 0;
+  botDayUpper = (cfg.dayUpper != null) ? cfg.dayUpper : 100;
+
+  // Attractor + piece values — used live by applyMoveAttractors()
+  window._bcpAttractorValues = cfg.attractorValues || {};
+  window._bcpPieceValues     = cfg.pieceValues     || {};
   window._bcpCpBudget        = cfg.cpBudget;
 
   closeBotModal();

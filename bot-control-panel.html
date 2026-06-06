@@ -892,7 +892,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
           <div class="dlbl"><span>Candidate filter</span></div>
           <div class="ctrl">
             <span class="ctrl-lbl">Min probability</span>
-            <input type="range" min="1" max="20" value="5" step="1" oninput="sv(this,'v-minprob',v=>v+'%')">
+            <input type="range" id="r-minprob" min="1" max="20" value="5" step="1" oninput="sv(this,'v-minprob',v=>v+'%')">
             <span class="ctrl-val" id="v-minprob">5%</span>
           </div>
           <div class="ctrl-hint">Moves below this threshold are excluded. Default 5% removes Maia's tail moves.</div>
@@ -1112,29 +1112,29 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
             <div class="dlbl"><span>Complexity — reference time</span></div>
             <div class="ctrl">
               <span class="ctrl-lbl">Base time</span>
-              <input type="range" min="0.5" max="15" value="3" step="0.5" oninput="sv(this,'v-cplx-base',v=>v+'s')">
+              <input type="range" id="r-cplx-base" min="0.5" max="15" value="3" step="0.5" oninput="sv(this,'v-cplx-base',v=>v+'s')">
               <span class="ctrl-val" id="v-cplx-base">3s</span>
             </div>
             <div class="ctrl-hint" style="margin-bottom:8px;">Average-complexity think time. Simple = faster; complex = slower.</div>
             <div class="ctrl">
               <span class="ctrl-lbl">Min multiplier</span>
-              <input type="range" min="0.1" max="1" value="0.4" step="0.1" oninput="sv(this,'v-cplx-min',v=>v+'×')">
+              <input type="range" id="r-cplx-min" min="0.1" max="1" value="0.4" step="0.1" oninput="sv(this,'v-cplx-min',v=>v+'×')">
               <span class="ctrl-val" id="v-cplx-min">0.4×</span>
             </div>
             <div class="ctrl">
               <span class="ctrl-lbl">Max multiplier</span>
-              <input type="range" min="1" max="6" value="2.5" step="0.5" oninput="sv(this,'v-cplx-max',v=>v+'×')">
+              <input type="range" id="r-cplx-max" min="1" max="6" value="2.5" step="0.5" oninput="sv(this,'v-cplx-max',v=>v+'×')">
               <span class="ctrl-val" id="v-cplx-max">2.5×</span>
             </div>
             <div class="ctrl-hint">Range: <strong>0.4×</strong> (obvious moves) → <strong>2.5×</strong> (highly complex).</div>
           </div>
           <div id="timing-fixed-ctrl" style="display:none;">
             <div class="dlbl"><span>Fixed interval</span></div>
-            <div class="ctrl"><span class="ctrl-lbl">Duration</span><input type="range" min="1" max="60" value="5" oninput="sv(this,'v-fixed',v=>v+'s')"><span class="ctrl-val" id="v-fixed">5s</span></div>
+            <div class="ctrl"><span class="ctrl-lbl">Duration</span><input type="range" id="r-fixed" min="1" max="60" value="5" oninput="sv(this,'v-fixed',v=>v+'s')"><span class="ctrl-val" id="v-fixed">5s</span></div>
           </div>
           <div id="timing-mirror-ctrl" style="display:none;">
             <div class="dlbl"><span>Mirror user</span></div>
-            <div class="ctrl"><span class="ctrl-lbl">Speed offset</span><input type="range" min="-100" max="100" value="0" oninput="sv(this,'v-mirror',v=>v>0?'+'+v+'%':v+'%')"><span class="ctrl-val" id="v-mirror">0%</span></div>
+            <div class="ctrl"><span class="ctrl-lbl">Speed offset</span><input type="range" id="r-mirror" min="-100" max="100" value="0" oninput="sv(this,'v-mirror',v=>v>0?'+'+v+'%':v+'%')"><span class="ctrl-val" id="v-mirror">0%</span></div>
             <div class="ctrl-hint">Negative = bot faster. Positive = bot slower.</div>
           </div>
         </div>
@@ -1142,9 +1142,9 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
         <!-- RIGHT: human behaviour modifiers -->
         <div>
           <div class="dlbl"><span>Human behaviour modifiers</span></div>
-          <div class="tog-row"><div><div class="tog-lbl">Reconsideration pauses</div><div class="tog-desc">Occasionally hesitates then takes longer — as if changing its mind</div></div><label class="tog"><input type="checkbox" checked><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
-          <div class="tog-row"><div><div class="tog-lbl">Move blink on forced moves</div><div class="tog-desc">Plays obvious recaptures and forced replies instantly</div></div><label class="tog"><input type="checkbox" checked><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
-          <div class="tog-row"><div><div class="tog-lbl">Clock-pressure mirroring</div><div class="tog-desc">Bot speeds up when your clock runs low</div></div><label class="tog"><input type="checkbox" checked><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
+          <div class="tog-row"><div><div class="tog-lbl">Reconsideration pauses</div><div class="tog-desc">Occasionally hesitates then takes longer — as if changing its mind</div></div><label class="tog"><input type="checkbox" id="cb-reconsidered" checked><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
+          <div class="tog-row"><div><div class="tog-lbl">Move blink on forced moves</div><div class="tog-desc">Plays obvious recaptures and forced replies instantly</div></div><label class="tog"><input type="checkbox" id="cb-blink" checked><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
+          <div class="tog-row"><div><div class="tog-lbl">Clock-pressure mirroring</div><div class="tog-desc">Bot speeds up when your clock runs low</div></div><label class="tog"><input type="checkbox" id="cb-clock-mirror" checked><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
         </div>
       </div><!-- /panel-2col -->
     </div>
@@ -1263,7 +1263,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
               <div id="weaponizer-sub" style="display:none;">
                 <div class="sub-panel blue-accent" style="margin-top:8px;">
                   <div class="sub-title blue">Weaponizer controls</div>
-                  <div class="ctrl"><span class="ctrl-lbl">Clock lead</span><input type="range" min="10" max="120" step="5" value="30" oninput="sv(this,'v-wlead',v=>v+'s')"><span class="ctrl-val" id="v-wlead">30s</span></div>
+                  <div class="ctrl"><span class="ctrl-lbl">Clock lead</span><input type="range" id="r-wlead" min="10" max="120" step="5" value="30" oninput="sv(this,'v-wlead',v=>v+'s')"><span class="ctrl-val" id="v-wlead">30s</span></div>
                   <div class="ctrl-hint">Seconds ahead to activate.</div>
                   <div class="ctrl" style="margin-top:6px;"><span class="ctrl-lbl">Position gate</span><input type="range" min="0" max="300" step="25" value="100" oninput="sv(this,'v-wgate',v=>v==0?'Off':v+' cp')"><span class="ctrl-val" id="v-wgate">100 cp</span></div>
                   <div class="ctrl-hint">Won't activate if bot losing by more than this.</div>
@@ -1396,6 +1396,7 @@ let attractorValues = {};      // id -> -5..5
 let pieceValues = {};          // pieceId -> -5..5
 let selectedPersonality = null;
 let openingMode = 'off';
+let selectedTempPresetId = 'neutral'; // tracks active temperature preset
 
 // Initialize attractor state
 ATTRACTORS.forEach(a => attractorValues[a.id] = a.default);
@@ -5060,15 +5061,34 @@ function getBotConfig(){
     openingDepth:    depthEl ? parseInt(depthEl.value) : 20,
     modernOnly:      document.getElementById('cb-modern-theory')?.checked || false,
     repSlots:        { white: repSlots.white.map(s=>({...s})), black: repSlots.black.map(s=>({...s})) },
+    dayLower:        dayLower,
+    dayUpper:        dayUpper,
     attractorValues: {...attractorValues},
     pieceValues:     {...pieceValues},
-    timingMode:      _getTimingMode(),
+    timingMode:        _getTimingMode(),
+    fixedDelayMs:      parseInt(document.getElementById('r-fixed')?.value     || '5') * 1000,
+    mirrorOffsetPct:   parseInt(document.getElementById('r-mirror')?.value    || '0'),
+    cplxBase:          parseFloat(document.getElementById('r-cplx-base')?.value || '3'),
+    cplxMin:           parseFloat(document.getElementById('r-cplx-min')?.value  || '0.4'),
+    cplxMax:           parseFloat(document.getElementById('r-cplx-max')?.value  || '2.5'),
+    behavReconsider:   document.getElementById('cb-reconsidered')?.checked !== false,
+    behavBlink:        document.getElementById('cb-blink')?.checked        !== false,
+    behavClockMirror:  document.getElementById('cb-clock-mirror')?.checked !== false,
+    canFlag:           document.getElementById('cb-flag')?.checked          !== false,
+    tempPresetId:      selectedTempPresetId,
+    calmPanickyValue:  attractorValues['pressure'] || 0,
     hybridSlots:     hybridSlots.map(s=>({...s})),
     lcsfElo:         parseInt(document.getElementById('lcsf-lc-elo')?.value || '2000'),
     lcMaiaLcElo:     parseInt(document.getElementById('lcmaia-lc-elo')?.value || '2000'),
     lcMaiaMaiaElo:   parseInt(document.getElementById('lcmaia-maia-elo')?.value || '1500'),
-    timePressureMaxDrop: parseInt(document.getElementById('r-drop')?.value || '300'),
-    timePressureFloor:   parseInt(document.getElementById('r-floor')?.value || '5'),
+    timePressureMaxDrop: parseInt(document.getElementById('r-drop')?.value    || '300'),
+    timePressureFloor:   parseInt(document.getElementById('r-floor')?.value   || '5'),
+    minProbPct:          parseInt(document.getElementById('r-minprob')?.value || '5'),
+    blunderLimitCp:      parseInt(document.getElementById('r-blunder')?.value || '150'),
+    ctrlA:               ctrlA.map(p => ({x: p.x, y: p.y})),
+    ctrlB:               ctrlB.map(p => ({x: p.x, y: p.y})),
+    weaponizerEnabled:   document.getElementById('weaponizer-toggle')?.checked || false,
+    weaponizerLeadSec:   parseInt(document.getElementById('r-wlead')?.value    || '30'),
   };
 }
 
@@ -5395,6 +5415,7 @@ function renderTempGrid(){
 function selTemp(card, id){
   document.querySelectorAll('.temp-card').forEach(c=>c.classList.remove('sel'));
   card.classList.add('sel');
+  selectedTempPresetId = id;
   const t = TEMP_PRESETS.find(x=>x.id===id);
   document.getElementById('temp-hint').textContent = t ? t.desc : '';
 }
