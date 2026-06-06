@@ -143,6 +143,12 @@ app.get('/bot-config-panel.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'bot-config-panel.js'));
 });
 
+app.get('/bot-control-panel.html', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.sendFile(path.join(__dirname, 'bot-control-panel.html'));
+});
+
 // Serve Stockfish — long cache (content never changes for this version)
 app.get('/stockfish.js', (req, res) => {
   if (!sfScript) { res.status(503).send('// Stockfish not yet loaded'); return; }

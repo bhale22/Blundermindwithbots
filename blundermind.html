@@ -991,7 +991,7 @@ canvas{
         <button class="ctrl-btn reset-btn" id="resignBtn" onclick="resignOrReset()">⚑ Resign</button>
         <button class="ctrl-btn util-btn" onclick="openPanel('themePanel')">🎨 Theme &amp; Pieces</button>
         <button class="ctrl-btn util-btn" onclick="openPanel('mpPanel')">⚔ 2-Player</button>
-        <button class="ctrl-btn util-btn" onclick="openPanel('botPanel')" style="border-color:rgba(90,212,144,0.4);color:#5ad490;" id="botSidebarBtn">🤖 vs Bot</button>
+        <button class="ctrl-btn util-btn" onclick="openBotModal()" style="border-color:rgba(90,212,144,0.4);color:#5ad490;" id="botSidebarBtn">🤖 vs Bot</button>
       </div>
       <div class="ctrl-row">
         <button class="ctrl-btn util-btn" id="btnLoadPgn" onclick="document.getElementById('pgnFileInput').click()">▶ Load game</button>
@@ -8584,7 +8584,7 @@ function landingChoose(mode) {
   landingDismiss();
   setTimeout(() => {
     if (mode === 'bot') {
-      openPanel('botPanel');
+      openBotModal();
     } else if (mode === 'mp') {
       openPanel('mpPanel');
     } else if (mode === 'pgn') {
@@ -8645,5 +8645,113 @@ function submitHaiku() {
 
 /* Ko-fi URL: update href in donate panel HTML to your actual ko-fi.com page */
 
-</script></body>
+/* ═══════════════════════════════════════════════════════════════
+   BOT CONTROL PANEL MODAL
+═══════════════════════════════════════════════════════════════ */
+function openBotModal() {
+  const modal = document.getElementById('botModal');
+  if (modal) modal.style.display = 'block';
+}
+function closeBotModal() {
+  const modal = document.getElementById('botModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function _snapToLcBand(elo) {
+  const bands = [400, 1000, 1200, 1400, 1600, 1800, 2000, 2200];
+  return String(bands.reduce((p, c) => Math.abs(c - elo) < Math.abs(p - elo) ? c : p));
+}
+
+window.addEventListener('message', function(e) {
+  if (!e.data || e.data.type !== 'botConfig') return;
+  const cfg = e.data;
+
+  // Engine tab
+  const engineMap = { maia3: 'maia3', stockfish: 'sf', hybrid: 'hybrid', lcsf: 'lcsf', lcmaia: 'maia' };
+  botSetTab(engineMap[cfg.engine] || 'sf');
+
+  // Player color (resolved in botStart if 'random')
+  botPlayerColor = cfg.color || 'random';
+
+  // Time control
+  botSelectedTC = (cfg.tcTime === 0) ? 'untimed' : (cfg.tcTime + '+' + cfg.tcInc);
+
+  // Stockfish level: new panel 1–10 → existing 1–20 (multiply ×2)
+  const sfLvl20 = Math.min(20, Math.max(1, (cfg.sfLevel || 5) * 2));
+  var sfLvlEl = document.getElementById('sfLevel');
+  if (sfLvlEl) { sfLvlEl.value = sfLvl20; document.getElementById('sfLevelVal').textContent = sfLvl20; }
+  var pressLvl = Math.max(1, sfLvl20 - 4);
+  var pressEl = document.getElementById('sfPressureLevel');
+  if (pressEl) { pressEl.value = pressLvl; document.getElementById('sfPressureVal').textContent = pressLvl; }
+
+  // Maia3 ELO and temperature (temp derived from style gauge in new panel)
+  maia3SetRating(cfg.elo || 1500);
+  var m3TempEl = document.getElementById('maia3Temp');
+  if (m3TempEl) { m3TempEl.value = cfg.maia3Temp || 1.0; document.getElementById('maia3TempVal').textContent = (cfg.maia3Temp || 1.0).toFixed(1); }
+
+  // LC mode ratings (snap continuous ELO to nearest Lichess rating band)
+  if (cfg.engine === 'lcsf')   { lcsfSetRating(_snapToLcBand(cfg.lcsfElo || 2000)); }
+  if (cfg.engine === 'lcmaia') { lcSetRating(_snapToLcBand(cfg.lcMaiaLcElo || 2000)); maia3SetRating(cfg.lcMaiaMaiaElo || 1500); }
+
+  // Timing behavior
+  var timingMap = { complexity: 'pace', instant: 'instant', fixed: 'pace', mirror: 'mirror' };
+  botSetTimeBehavior(timingMap[cfg.timingMode] || 'pace');
+
+  // Opening mode
+  if (!cfg.openingMode || cfg.openingMode === 'off') {
+    botSetOpeningMode('none');
+  } else if (cfg.openingMode === 'mainline') {
+    botOpeningConfig.source       = cfg.openingSource || 'masters';
+    botOpeningConfig.maxBookDepth = cfg.openingDepth  || 20;
+    if (cfg.modernOnly) botOpeningConfig.since = '2020-01'; else delete botOpeningConfig.since;
+    botSetOpeningMode('mainline');
+  } else if (cfg.openingMode === 'repertoire') {
+    var mapSlot = function(s) { return { eco: s.code, familyPrefix: (s.code || '').slice(0,2), name: s.name, pct: s.pct }; };
+    botOpeningConfig.white        = (cfg.repSlots && cfg.repSlots.white || []).map(mapSlot);
+    botOpeningConfig.black        = (cfg.repSlots && cfg.repSlots.black || []).map(mapSlot);
+    botOpeningConfig.source       = cfg.openingSource || 'masters';
+    botOpeningConfig.maxBookDepth = cfg.openingDepth  || 20;
+    botOpeningConfig.strictness   = 0.8;
+    if (cfg.modernOnly) botOpeningConfig.since = '2020-01'; else delete botOpeningConfig.since;
+    botSetOpeningMode('preferred');
+  }
+
+  // Hybrid slots: new panel type names → existing type names, SF level ×2
+  if (cfg.engine === 'hybrid' && cfg.hybridSlots && cfg.hybridSlots.length) {
+    botHybridSlots = cfg.hybridSlots.map(function(s) {
+      return {
+        type:   (s.type === 'stockfish') ? 'sf' : 'maia',
+        level:  (s.type === 'stockfish') ? Math.min(20, Math.max(1, (s.sfLevel || 5) * 2))
+                                         : Math.round((s.elo || 1500) / 200),
+        weight: s.pct || 0
+      };
+    });
+    botRenderHybridSlots();
+  }
+
+  // Preserve new-panel state for future attractor / pressure integration
+  window._bcpAttractorValues = cfg.attractorValues;
+  window._bcpPieceValues     = cfg.pieceValues;
+  window._bcpCpBudget        = cfg.cpBudget;
+
+  closeBotModal();
+  botStart();
+});
+
+</script>
+
+<!-- ── Bot Control Panel Modal overlay ──────────────────────────────────────── -->
+<div id="botModal" style="display:none;position:fixed;inset:0;z-index:6000;background:rgba(0,0,0,0.92);overflow:hidden;">
+  <button onclick="closeBotModal()" title="Close bot panel"
+    style="position:fixed;top:10px;right:14px;z-index:6001;width:34px;height:34px;border-radius:50%;
+    border:1px solid rgba(200,146,42,0.5);background:rgba(14,15,17,0.96);color:#c8922a;
+    font-size:16px;line-height:1;cursor:pointer;display:flex;align-items:center;
+    justify-content:center;font-family:sans-serif;transition:background 0.15s;"
+    onmouseover="this.style.background='rgba(200,146,42,0.15)'"
+    onmouseout="this.style.background='rgba(14,15,17,0.96)'">✕</button>
+  <iframe id="botModalFrame" src="bot-control-panel.html" allow="same-origin"
+    style="width:100%;height:100%;border:none;display:block;" title="Bot Configuration"></iframe>
+</div>
+
+</body>
 </html>
