@@ -6998,7 +6998,7 @@ function botRemainingMovesEstimate() {
 
 // ── Move attractor filtering — applied before sampleFromProbs ─────────────────
 // Implements: move quality range (percentile band), luck attractor (band shift),
-// piece attractors (×6), pawn strategic + trade attractors.
+// piece attractors (×6), pawn strategic, trade, spacecadet, fortkx, gambito.
 //
 // CP budget integration:
 //   The style-gauge CP budget (0–300) controls attractor MAGNITUDE, exactly
@@ -7007,6 +7007,8 @@ function botRemainingMovesEstimate() {
 //     logBoost    = v × (budget / (totalAbs × CP_PER_LOG_UNIT))
 //   where CP_PER_LOG_UNIT = 150 → 150 cp of budget on one attractor ≈ exp(1) ≈ 2.7× boost.
 //   At budget = 0, all attractor effects are zero regardless of slider positions.
+//
+// Board piece format: board[sq] = {piece:'P'|'N'|..., color:'w'|'b'} or undefined.
 function applyMoveAttractors(moveProbs) {
   if (!moveProbs || !Object.keys(moveProbs).length) return moveProbs;
 
@@ -7014,12 +7016,18 @@ function applyMoveAttractors(moveProbs) {
   const pieceVals = window._bcpPieceValues     || {};
   const cpBudget  = window._bcpCpBudget != null ? window._bcpCpBudget : 100;
 
-  const luckVal   = attrVals['luck']  || 0;
-  const tradeVal  = attrVals['trade'] || 0;
-  const pawnStrat = attrVals['pawn']  || 0;
-  const hasPiece  = Object.values(pieceVals).some(v => v !== 0);
-  const hasTrade  = tradeVal !== 0;
-  const hasPawnS  = pawnStrat !== 0;
+  const luckVal       = attrVals['luck']       || 0;
+  const tradeVal      = attrVals['trade']      || 0;
+  const pawnStrat     = attrVals['pawn']       || 0;
+  const spaceCadetVal = attrVals['spacecadet'] || 0;
+  const fortKxVal     = attrVals['fortkx']     || 0;
+  const gambitoVal    = attrVals['gambito']    || 0;
+  const hasPiece   = Object.values(pieceVals).some(v => v !== 0);
+  const hasTrade   = tradeVal      !== 0;
+  const hasPawnS   = pawnStrat     !== 0;
+  const hasSpace   = spaceCadetVal !== 0;
+  const hasFortkx  = fortKxVal     !== 0;
+  const hasGambito = gambitoVal    !== 0;
 
   // ── Min-probability + blunder-limit filter (Maia3 / LC modes) ────────────
   // Only active when explicitly configured (defaults: minProbPct=0, blunderLimitCp=400).
@@ -7071,36 +7079,87 @@ function applyMoveAttractors(moveProbs) {
     }
   }
 
-  // ── Piece + trade + pawn-strategic attractor reweighting ──────────────────
-  if (scale === 0 || (!hasPiece && !hasTrade && !hasPawnS)) return filtered;
+  // ── Per-move attractor reweighting ────────────────────────────────────────
+  const needsPerMove = scale > 0 &&
+    (hasPiece || hasTrade || hasPawnS || hasSpace || hasFortkx || hasGambito);
+  if (!needsPerMove) return filtered;
 
-  const PIECE_MAP  = { p:'pawn', n:'knight', b:'bishop', r:'rook', q:'queen', k:'king' };
-  const botIsBlack = (botPlayerColor === 'white'); // bot is black when human plays white
+  const PIECE_MAP   = { p:'pawn', n:'knight', b:'bishop', r:'rook', q:'queen', k:'king' };
+  // botIsBlack: true when the bot plays as black (human plays white)
+  const botIsBlack  = (botPlayerColor === 'white');
+  const botColorStr = botIsBlack ? 'b' : 'w';
+  const oppColorStr = botIsBlack ? 'w' : 'b';
+  // Opening phase: first 20 half-moves (10 full moves), when gambits occur
+  const isOpeningPhase = gameMovesAlgebraic.length < 20;
 
   const result = {};
   for (const [uciMove, prob] of Object.entries(filtered)) {
     const mv = uciToSq(uciMove);
     if (!mv) { result[uciMove] = prob; continue; }
 
-    const fromPiece = board[mv.from];
+    const fromPiece = board[mv.from]; // {piece:'P'|..., color:'w'|'b'}
     if (!fromPiece) { result[uciMove] = prob; continue; }
 
-    const pieceType = PIECE_MAP[fromPiece.toLowerCase()];
+    // fromPiece is an object — access .piece (uppercase letter) and .color
+    const pieceLetter = fromPiece.piece.toLowerCase(); // 'p','n','b','r','q','k'
+    const pieceType   = PIECE_MAP[pieceLetter];        // 'pawn','knight',... or undefined
     let logBoost = 0;
 
-    // Piece attractors (pieces tab) — CP-budget-scaled
+    // ── Piece attractors (pieces tab) ────────────────────────────────────────
     if (hasPiece && pieceType) logBoost += (pieceVals[pieceType] || 0) * scale;
 
-    // Pawn strategic attractor (stacks on pawn piece attractor)
-    if (hasPawnS && pieceType === 'pawn') logBoost += pawnStrat * scale;
+    // ── Pawn strategic attractor ──────────────────────────────────────────────
+    if (hasPawnS && pieceLetter === 'p') logBoost += pawnStrat * scale;
 
-    // Trade attractor: detect capture (including en passant)
+    // ── Trade attractor: detect capture (including en passant) ───────────────
     if (hasTrade) {
-      const toPiece = board[mv.to];
+      const toPiece  = board[mv.to]; // {piece, color} or undefined
       const isCapture = toPiece
-        ? (botIsBlack ? /[A-Z]/.test(toPiece) : /[a-z]/.test(toPiece))
-        : (fromPiece.toLowerCase() === 'p' && uciMove[0] !== uciMove[2]);
+        ? toPiece.color === oppColorStr               // lands on opponent piece
+        : (pieceLetter === 'p' && uciMove[0] !== uciMove[2]); // en passant (file changes)
       if (isCapture) logBoost += tradeVal * scale;
+    }
+
+    // ── Simulated board (shared by spacecadet, fortkx, gambito) ──────────────
+    // Lazily created: remove piece from origin, place at destination.
+    let simBd = null;
+    const getSimBd = () => {
+      if (!simBd) {
+        simBd = Object.assign({}, board);
+        delete simBd[mv.from];
+        simBd[mv.to] = fromPiece;
+      }
+      return simBd;
+    };
+
+    // ── Space Cadet: mobility delta of the moved piece ────────────────────────
+    // Positive (Space Cadet) boosts moves that increase piece attack coverage;
+    // negative (Space Waster) biases toward passive/retreating moves.
+    // tanh(delta/5) maps the raw attack-count delta to a smooth -1..+1 signal.
+    if (hasSpace) {
+      const atkBefore = rawAttacks(mv.from, board).length;
+      const atkAfter  = rawAttacks(mv.to, getSimBd()).length;
+      logBoost += spaceCadetVal * scale * Math.tanh((atkAfter - atkBefore) / 5);
+    }
+
+    // ── Fort Knox: is the moved piece defended at its destination? ────────────
+    // Positive boosts moves where the piece lands on a square defended by a
+    // friendly piece; negative biases toward aggressive/exposed placements.
+    if (hasFortkx) {
+      const isDefended = rawAttacks(mv.to, getSimBd())
+        .some(sq => { const p = getSimBd()[sq]; return p && p.color === botColorStr; });
+      logBoost += fortKxVal * scale * (isDefended ? 1 : -1);
+    }
+
+    // ── Gambito: pawn sacrifice detection (opening phase only) ───────────────
+    // A "gambit" move: pawn advances to a square attacked by the opponent and
+    // not defended by any friendly piece. Positive boosts these sacrifices;
+    // negative (Gambit Shy) suppresses them.
+    if (hasGambito && isOpeningPhase && pieceLetter === 'p') {
+      const s = getSimBd();
+      const attackedByOpp = rawAttacks(mv.to, s).some(sq => { const p = s[sq]; return p && p.color === oppColorStr; });
+      const defendedByBot = rawAttacks(mv.to, s).some(sq => { const p = s[sq]; return p && p.color === botColorStr; });
+      if (attackedByOpp && !defendedByBot) logBoost += gambitoVal * scale;
     }
 
     result[uciMove] = logBoost !== 0 ? prob * Math.exp(logBoost) : prob;

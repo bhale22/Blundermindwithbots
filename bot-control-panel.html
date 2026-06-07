@@ -526,7 +526,8 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 
 /* Radar chart */
 .radar-wrap{margin-top:12px;display:flex;flex-direction:column;align-items:center;}
-#radar-canvas{display:block;}
+#radar-canvas{display:block;cursor:default;touch-action:none;}
+.radar-hint{font-family:var(--font-m);font-size:8px;color:var(--text-dim);text-align:center;margin-top:5px;letter-spacing:0.06em;}
 
 /* Personality presets */
 .persona-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;}
@@ -1032,7 +1033,8 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
             <div>
               <div class="dlbl"><span>Personality fingerprint</span></div>
               <div class="radar-wrap">
-                <canvas id="radar-canvas" width="260" height="200"></canvas>
+                <canvas id="radar-canvas" width="320" height="260"></canvas>
+                <div class="radar-hint">drag nodes or click axis to set value</div>
               </div>
             </div>
           </div>
@@ -1280,7 +1282,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
               <div class="dlbl"><span>Calm ↔ Panicky</span></div>
               <div class="attractor-row">
                 <span class="attr-left">Calm</span>
-                <div class="attr-slider-wrap"><div class="attr-center-tick"></div><input class="attr-slider" type="range" min="-5" max="5" step="1" value="0" oninput="onCalmPanickyChange(this.value)"></div>
+                <div class="attr-slider-wrap"><div class="attr-center-tick"></div><input id="calm-panicky-slider" class="attr-slider" type="range" min="-5" max="5" step="1" value="0" oninput="onCalmPanickyChange(this.value)"></div>
                 <span class="attr-right">Panicky</span>
               </div>
               <div class="ctrl-hint">Governs how steeply ELO degrades under pressure. Calm = maintains quality; Panicky = drops rapidly.</div>
@@ -1358,7 +1360,9 @@ const TEMP_PRESETS = [
 const ATTRACTOR_DESCS = {
   chaos:    `Position complexity is scored via Stockfish MultiPV: <code>σ(eval₁…evalₙ)</code> — std. deviation of the top-N move evaluations. High σ = branching, tactical positions; low σ = forcing or drawish lines. Slider biases candidate sampling toward high-σ (chaos) or low-σ (simplifying) moves.`,
   compwin:  `Activates when engine eval ≥ +100 cp (configurable). Positive values upweight candidates that <em>increase</em> MultiPV variance — keeping complications alive; negative values prefer forcing continuations that reduce material and trade into a clear winning ending.`,
-  pawn:     `Reweights candidates by pawn participation: <code>score += w × P(move involves pawn advance)</code>. Positive shifts probability mass toward pawn-moving candidates; negative suppresses them in favour of piece activity. Does not override forced pawn captures.`,
+  spacecadet:`Scores the resulting position for board control: counts squares attacked by your pieces after each candidate move. Positive (Space Cadet) favours moves that maximise space — seizing squares and denying outposts. Negative (Space Waster) accepts ceding space in exchange for other priorities.`,
+  fortkx:   `Scores the resulting position for defensive solidity: sums the total defender count across all your pieces after each candidate move. Positive (Fort Knox) favours moves that maximise defensive support and keep pieces protected. Negative (Glass Cannon) accepts exposed, aggressive piece placement.`,
+  gambito:  `Opening phase only (first 20 moves). Positive (Gambito) boosts pawn sacrifices — moves that leave your pawn on an opponent-attacked, undefended square — and gambit acceptances (capturing an offered pawn). Negative (Gambit Shy) suppresses those moves, preferring solid material balance.`,
   trade:    `Reweights candidates by exchange value: <code>score += w × Σ(material exchanged in line)</code>. Positive biases toward captures and piece trades; negative avoids exchanges and retains piece complexity on the board. Absolute value used so Trade Seeker and Trade Avoider both draw from the same pool.`,
   structure:`Scores pawn structure delta via Stockfish's internal pawn evaluation: isolated pawns, doubled pawns, pawn islands. Formula: <code>Δ_structure = SF_pawn_eval(after) − SF_pawn_eval(before)</code>. Negative (loose) selects moves yielding open, mobile structures; positive (rigid) prefers structural consolidation.`,
   hustle:   `Scales think-time allocation per move: <code>t = base_time × (1 + v × 0.15)</code>. Negative (hustler): shorter pauses, higher sampling weight on first-pass candidates — speed over depth. Positive (grinder): longer deliberation, preference for candidates with superior positional or deeper-search scores.`,
@@ -1378,7 +1382,9 @@ const PIECE_DESCS = {
 const ATTRACTORS = [
   { id:'chaos',      labelLeft:'Simplifier',          labelRight:'Chaos Agent',           default:0 },
   { id:'compwin',    labelLeft:'Simplify when winning',labelRight:'Complicate when winning',default:0 },
-  { id:'pawn',       labelLeft:'Pawn avoider',         labelRight:'Pawn pusher',           default:0 },
+  { id:'spacecadet', labelLeft:'Space waster',  labelRight:'Space cadet', default:0 },
+  { id:'fortkx',     labelLeft:'Glass cannon',  labelRight:'Fort Knox',   default:0 },
+  { id:'gambito',    labelLeft:'Gambit shy',    labelRight:'Gambito',     default:0 },
   { id:'trade',      labelLeft:'Trade seeker',         labelRight:'Trade avoider',         default:0 },
   { id:'structure',  labelLeft:'Loose pawn structure', labelRight:'Rigid pawn structure',  default:0 },
   { id:'hustle',     labelLeft:'Coffeehouse hustler',  labelRight:'Positional grinder',    default:0 },
@@ -1401,27 +1407,27 @@ const PIECE_TYPES = [
 // Add a new personality: one entry here, nothing else changes
 const PERSONALITIES = [
   { id:'entropy',    name:'Captain Entropy',   icon:'⚡', tag:'Chaos',      desc:'Maximises position complexity and open lines.',
-    attractors:{chaos:4,compwin:4,pawn:-1,trade:-2,structure:-3,hustle:3,luck:1,pressure:0} },
+    attractors:{chaos:4,compwin:4,spacecadet:2,fortkx:-1,gambito:3,trade:-2,structure:-3,hustle:3,luck:1,pressure:0} },
   { id:'norm',       name:'Norm',              icon:'◼', tag:'Order',      desc:'Prefers closed, simplified positions.',
-    attractors:{chaos:-4,compwin:-4,pawn:0,trade:1,structure:4,hustle:-2,luck:-1,pressure:-1} },
+    attractors:{chaos:-4,compwin:-4,spacecadet:0,fortkx:3,gambito:-2,trade:1,structure:4,hustle:-2,luck:-1,pressure:-1} },
   { id:'attacky',    name:'Attacky McTackerson',icon:'⚔', tag:'Captures',  desc:'Favours captures within centipawn ceiling.',
-    attractors:{chaos:2,compwin:1,pawn:0,trade:-4,structure:-1,hustle:2,luck:0,pressure:1} },
+    attractors:{chaos:2,compwin:1,spacecadet:1,fortkx:-2,gambito:1,trade:-4,structure:-1,hustle:2,luck:0,pressure:1} },
   { id:'grinder',    name:'Positional Grinder', icon:'◈', tag:'Methodical', desc:'Deliberate. Thinks long in complex positions.',
-    attractors:{chaos:-3,compwin:-2,pawn:0,trade:0,structure:3,hustle:-4,luck:-1,pressure:-3} },
+    attractors:{chaos:-3,compwin:-2,spacecadet:3,fortkx:2,gambito:-1,trade:0,structure:3,hustle:-4,luck:-1,pressure:-3} },
   { id:'hustler',    name:'Coffeehouse Hustler',icon:'☕', tag:'Fast',       desc:'Fast imprecise early play, tightens in endgame.',
-    attractors:{chaos:1,compwin:-1,pawn:0,trade:-1,structure:-2,hustle:-5,luck:2,pressure:2} },
+    attractors:{chaos:1,compwin:-1,spacecadet:0,fortkx:-1,gambito:2,trade:-1,structure:-2,hustle:-5,luck:2,pressure:2} },
   { id:'blunderer',  name:'The Blunderer',      icon:'∿', tag:'Human',      desc:'Plays well then cracks unexpectedly under pressure.',
-    attractors:{chaos:0,compwin:0,pawn:0,trade:0,structure:0,hustle:0,luck:3,pressure:5} },
+    attractors:{chaos:0,compwin:0,spacecadet:0,fortkx:0,gambito:0,trade:0,structure:0,hustle:0,luck:3,pressure:5} },
   { id:'hoarder',    name:'The Hoarder',        icon:'◉', tag:'Material',   desc:'Never sacrifices material voluntarily.',
-    attractors:{chaos:-2,compwin:-1,pawn:1,trade:3,structure:1,hustle:-2,luck:-2,pressure:-1} },
+    attractors:{chaos:-2,compwin:-1,spacecadet:0,fortkx:2,gambito:-3,trade:3,structure:1,hustle:-2,luck:-2,pressure:-1} },
   { id:'pawnchain',  name:'Pawn Chain Gang',    icon:'♟', tag:'Pawns',      desc:'Maximises connected pawns and pawn structure.',
-    attractors:{chaos:-1,compwin:-2,pawn:5,trade:0,structure:5,hustle:-1,luck:0,pressure:0} },
+    attractors:{chaos:-1,compwin:-2,spacecadet:0,fortkx:1,gambito:-1,trade:0,structure:5,hustle:-1,luck:0,pressure:0} },
   { id:'spitecheck', name:'Spite Check',        icon:'†', tag:'Checks',     desc:'Always checks if a legal check exists.',
-    attractors:{chaos:3,compwin:2,pawn:-1,trade:-2,structure:-2,hustle:2,luck:1,pressure:1} },
+    attractors:{chaos:3,compwin:2,spacecadet:1,fortkx:-2,gambito:0,trade:-2,structure:-2,hustle:2,luck:1,pressure:1} },
   { id:'clock',      name:'Clock Watcher',      icon:'⧗', tag:'Clock',      desc:'Conservative when ahead on time, reckless when behind.',
-    attractors:{chaos:0,compwin:-2,pawn:0,trade:1,structure:0,hustle:0,luck:0,pressure:-3} },
+    attractors:{chaos:0,compwin:-2,spacecadet:0,fortkx:0,gambito:0,trade:1,structure:0,hustle:0,luck:0,pressure:-3} },
   { id:'badday',     name:'Grandmaster Bad Day', icon:'👑',tag:'Human',      desc:'Maia 2400 but picks first move above 4% threshold.',
-    attractors:{chaos:0,compwin:0,pawn:0,trade:0,structure:0,hustle:0,luck:5,pressure:2} },
+    attractors:{chaos:0,compwin:0,spacecadet:0,fortkx:0,gambito:0,trade:0,structure:0,hustle:0,luck:5,pressure:2} },
   { id:'custom',     name:'Custom',             icon:'∴', tag:'Advanced',   desc:'Build your own. Adjust sliders freely.',
     attractors:{} },
 ];
@@ -5127,9 +5133,6 @@ function getBotConfig(){
     ctrlB:               ctrlB.map(p => ({x: p.x, y: p.y})),
     weaponizerEnabled:   document.getElementById('weaponizer-toggle')?.checked || false,
     weaponizerLeadSec:   parseInt(document.getElementById('r-wlead')?.value    || '30'),
-    // inside getBotConfig(), add these two lines:
-    sfvar1:     parseInt(document.querySelector('#engine-sub-stockfish input[type=range]:nth-child(1)')?.value || '0'),
-    sfvar2:     parseInt(document.querySelector('#engine-sub-stockfish input[type=range]:nth-child(2)')?.value || '0'),
   };
 }
 
@@ -5603,13 +5606,14 @@ function onPieceChange(id, val){
 }
 
 /* ══════════════════════════════════════════════════════════════
-   RADAR CHART
+   RADAR CHART — interactive (drag nodes or click axis to set)
 ══════════════════════════════════════════════════════════════ */
-// Radar axes — add a new axis here to extend the chart
 const RADAR_AXES = [
   { label:'Chaos',     key:'chaos' },
   { label:'Captures',  key:'trade' },
-  { label:'Pawns',     key:'pawn' },
+  { label:'Space',     key:'spacecadet' },
+  { label:'Fort Knox', key:'fortkx' },
+  { label:'Gambito',   key:'gambito' },
   { label:'Structure', key:'structure' },
   { label:'Hustle',    key:'hustle' },
   { label:'Bad day',   key:'luck' },
@@ -5617,13 +5621,18 @@ const RADAR_AXES = [
   { label:'Grinder',   key:'compwin' },
 ];
 
+let _radarDragIdx  = -1;   // axis index currently being dragged (-1 = none)
+let _radarHoverIdx = -1;   // axis index currently hovered   (-1 = none)
+
 function drawRadar(){
   const canvas = document.getElementById('radar-canvas');
   if(!canvas) return;
   const ctx = canvas.getContext('2d');
-  const W=260, H=200, CX=W/2, CY=H/2, R=72;
+  const W=320, H=260, CX=W/2, CY=H/2, R=90;
   const N = RADAR_AXES.length;
   ctx.clearRect(0,0,W,H);
+
+  const activeIdx = _radarDragIdx >= 0 ? _radarDragIdx : _radarHoverIdx;
 
   // Grid rings
   for(let ring=1; ring<=5; ring++){
@@ -5635,34 +5644,36 @@ function drawRadar(){
       i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
     }
     ctx.closePath();
-    ctx.strokeStyle = ring===3 ? 'rgba(200,146,42,0.15)' : 'rgba(255,255,255,0.05)';
+    ctx.strokeStyle = ring===3 ? 'rgba(200,146,42,0.2)' : 'rgba(255,255,255,0.06)';
     ctx.lineWidth = ring===3 ? 1 : 0.5;
     ctx.stroke();
   }
 
-  // Axes
+  // Axes + labels
   RADAR_AXES.forEach((ax,i)=>{
     const ang=(i/N)*2*Math.PI - Math.PI/2;
+    const isActive = i === activeIdx;
+    // Axis line
     ctx.beginPath();
     ctx.moveTo(CX,CY);
     ctx.lineTo(CX+R*Math.cos(ang), CY+R*Math.sin(ang));
-    ctx.strokeStyle='rgba(255,255,255,0.06)';
-    ctx.lineWidth=0.5;
+    ctx.strokeStyle = isActive ? 'rgba(200,146,42,0.5)' : 'rgba(255,255,255,0.07)';
+    ctx.lineWidth = isActive ? 1.5 : 0.5;
     ctx.stroke();
-    // Labels
-    const lx=CX+(R+18)*Math.cos(ang), ly=CY+(R+18)*Math.sin(ang);
-    ctx.font='8px "DM Mono",monospace';
-    ctx.fillStyle='#4a5060';
+    // Label
+    const lx=CX+(R+20)*Math.cos(ang), ly=CY+(R+20)*Math.sin(ang);
+    ctx.font = isActive ? '9px "DM Mono",monospace' : '8px "DM Mono",monospace';
+    ctx.fillStyle = isActive ? '#c8922a' : '#4a5060';
     ctx.textAlign='center';
     ctx.textBaseline='middle';
     ctx.fillText(ax.label, lx, ly);
   });
 
-  // Data polygon
+  // Data polygon (fill + stroke)
   ctx.beginPath();
   RADAR_AXES.forEach((ax,i)=>{
     const val = attractorValues[ax.key] ?? 0;
-    const frac = (val + 5) / 10; // -5..5 -> 0..1
+    const frac = (val + 5) / 10;
     const ang=(i/N)*2*Math.PI - Math.PI/2;
     const r = R * Math.max(0.02, frac);
     const x=CX+r*Math.cos(ang), y=CY+r*Math.sin(ang);
@@ -5675,16 +5686,169 @@ function drawRadar(){
   ctx.lineWidth=1.5;
   ctx.stroke();
 
-  // Data points
+  // Data nodes + value badge on active node
+  ctx.shadowBlur = 0;
   RADAR_AXES.forEach((ax,i)=>{
     const val = attractorValues[ax.key] ?? 0;
     const frac = (val + 5) / 10;
     const ang=(i/N)*2*Math.PI - Math.PI/2;
     const r = R * Math.max(0.02, frac);
+    const nx=CX+r*Math.cos(ang), ny=CY+r*Math.sin(ang);
+    const isActive = i === activeIdx;
+    const nodeR = isActive ? 5.5 : 3;
+
+    if(isActive){
+      ctx.shadowColor='rgba(255,200,80,0.6)';
+      ctx.shadowBlur=10;
+    }
     ctx.beginPath();
-    ctx.arc(CX+r*Math.cos(ang), CY+r*Math.sin(ang), 2.5, 0, Math.PI*2);
-    ctx.fillStyle='#e8aa40';
+    ctx.arc(nx, ny, nodeR, 0, Math.PI*2);
+    ctx.fillStyle = isActive ? '#ffcc55' : '#e8aa40';
     ctx.fill();
+    ctx.shadowBlur=0;
+
+    // Value badge next to active node
+    if(isActive){
+      const vStr = val > 0 ? '+'+val : String(val);
+      // Offset badge slightly outward from center so it doesn't overlap node
+      const badgeR = r + 14;
+      const bx=CX+badgeR*Math.cos(ang), by=CY+badgeR*Math.sin(ang);
+      ctx.font='bold 9px "DM Mono",monospace';
+      ctx.fillStyle='#ffcc55';
+      ctx.textAlign='center';
+      ctx.textBaseline='middle';
+      ctx.fillText(vStr, bx, by);
+    }
+  });
+}
+
+// ── Radar interaction helpers ─────────────────────────────────────────────────
+
+function _radarCanvasPos(canvas, clientX, clientY){
+  const rect = canvas.getBoundingClientRect();
+  return {
+    mx: (clientX - rect.left) * (canvas.width  / rect.width),
+    my: (clientY - rect.top)  * (canvas.height / rect.height)
+  };
+}
+
+// Returns the index of the nearest axis to (mx,my), or -1 if ambiguous/center.
+function _radarNearestAxis(mx, my){
+  const CX=160, CY=130;
+  const dx=mx-CX, dy=my-CY;
+  if(Math.sqrt(dx*dx+dy*dy) < 7) return -1; // too close to center
+  const N=RADAR_AXES.length;
+  const clickAng=Math.atan2(dy,dx);
+  let best=-1, bestDiff=Infinity;
+  for(let i=0;i<N;i++){
+    const axAng=(i/N)*2*Math.PI - Math.PI/2;
+    let diff=Math.abs(clickAng-axAng);
+    if(diff>Math.PI) diff=2*Math.PI-diff;
+    if(diff<bestDiff){ bestDiff=diff; best=i; }
+  }
+  // Accept if within half a sector (360/N/2 degrees)
+  return bestDiff < Math.PI/N ? best : -1;
+}
+
+// Projects (mx,my) onto the given axis and returns a snapped integer -5..+5.
+function _radarAxisValue(mx, my, axIdx){
+  const CX=160, CY=130, R=90;
+  const ang=(axIdx/RADAR_AXES.length)*2*Math.PI - Math.PI/2;
+  const dot=(mx-CX)*Math.cos(ang)+(my-CY)*Math.sin(ang);
+  return Math.max(-5, Math.min(5, Math.round(dot/R*5)));
+}
+
+// Updates both state and slider for the given axis.
+function _radarSetAxis(axIdx, val){
+  const ax=RADAR_AXES[axIdx];
+  if(!ax) return;
+  attractorValues[ax.key] = val;
+  const slider=document.getElementById('attr-'+ax.key);
+  if(slider) slider.value = val;
+  // Keep the Calm/Panicky mirror slider in the Time Pressure tab in sync
+  if(ax.key === 'pressure'){
+    const mirror = document.getElementById('calm-panicky-slider');
+    if(mirror) mirror.value = val;
+  }
+  const valEl=document.getElementById('attrval-'+ax.key);
+  if(valEl) valEl.textContent = val===0?'—': val>0?'+'+val:val;
+  drawRadar();
+  updateAttractorStatus();
+  updateAttrCpDisplays();
+  // Deselect personality preset
+  document.querySelectorAll('.pcard').forEach(c=>c.classList.remove('sel'));
+  selectedPersonality=null;
+}
+
+function initRadarInteraction(){
+  const canvas=document.getElementById('radar-canvas');
+  if(!canvas) return;
+
+  // ── Mouse ────────────────────────────────────────────────────────────────
+  canvas.addEventListener('mousedown', e=>{
+    e.preventDefault();
+    const {mx,my}=_radarCanvasPos(canvas,e.clientX,e.clientY);
+    const idx=_radarNearestAxis(mx,my);
+    if(idx<0) return;
+    _radarDragIdx=idx;
+    _radarHoverIdx=-1;
+    canvas.style.cursor='grabbing';
+    _radarSetAxis(idx, _radarAxisValue(mx,my,idx));
+  });
+
+  canvas.addEventListener('mousemove', e=>{
+    const {mx,my}=_radarCanvasPos(canvas,e.clientX,e.clientY);
+    if(_radarDragIdx>=0){
+      _radarSetAxis(_radarDragIdx, _radarAxisValue(mx,my,_radarDragIdx));
+    } else {
+      const idx=_radarNearestAxis(mx,my);
+      if(idx!==_radarHoverIdx){
+        _radarHoverIdx=idx;
+        drawRadar();
+      }
+      canvas.style.cursor = idx>=0 ? 'grab' : 'default';
+    }
+  });
+
+  canvas.addEventListener('mouseleave', ()=>{
+    if(_radarDragIdx<0){
+      _radarHoverIdx=-1;
+      drawRadar();
+      canvas.style.cursor='default';
+    }
+  });
+
+  // Release drag even if mouse left the canvas
+  window.addEventListener('mouseup', ()=>{
+    if(_radarDragIdx>=0){
+      _radarDragIdx=-1;
+      canvas.style.cursor='default';
+      drawRadar();
+    }
+  });
+
+  // ── Touch ────────────────────────────────────────────────────────────────
+  canvas.addEventListener('touchstart', e=>{
+    e.preventDefault();
+    const t=e.touches[0];
+    const {mx,my}=_radarCanvasPos(canvas,t.clientX,t.clientY);
+    const idx=_radarNearestAxis(mx,my);
+    if(idx<0) return;
+    _radarDragIdx=idx;
+    _radarSetAxis(idx, _radarAxisValue(mx,my,idx));
+  },{passive:false});
+
+  canvas.addEventListener('touchmove', e=>{
+    e.preventDefault();
+    if(_radarDragIdx<0) return;
+    const t=e.touches[0];
+    const {mx,my}=_radarCanvasPos(canvas,t.clientX,t.clientY);
+    _radarSetAxis(_radarDragIdx, _radarAxisValue(mx,my,_radarDragIdx));
+  },{passive:false});
+
+  canvas.addEventListener('touchend', ()=>{
+    _radarDragIdx=-1;
+    drawRadar();
   });
 }
 
@@ -6228,20 +6392,16 @@ document.addEventListener('DOMContentLoaded', ()=>{
   renderPersonalities();
   renderHybridSlots();
   initSpeedo();
-  initStyleGauge();      // interactive cp-budget gauge
+  initStyleGauge();
+  initRadarInteraction();      // interactive cp-budget gauge
   updateAttrCpDisplays(); // populate attractor cp allocations
   onDaySlider(); // init dual-range fill
   initPts();
   setupDrag('cvA', ()=>ctrlA, sigA, true,  'tipA', ()=>scaleA);
   setupDrag('cvB', ()=>ctrlB, sigB, false, 'tipB', ()=>scaleB);
   // Pull Maia model status from parent on load (same-origin iframe)
-try{
+  try{
     if(window.parent && window.parent !== window){
-      // If the worker hasn't started yet, kick it off now so it checks the cache
-      if(!window.parent._maiaWorker && typeof window.parent.maiaInit === 'function'){
-        window.parent.maiaInit();
-        window.parent._maiaLoadMappings();
-      }
       bcpMaiaSetStatus(window.parent._maiaStatus, window.parent._maiaReady, window.parent._maiaProgress);
     }
   } catch(e){ bcpMaiaSetStatus('idle', false, 0); }
