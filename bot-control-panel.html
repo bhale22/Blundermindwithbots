@@ -4649,7 +4649,7 @@ function initStyleGauge(){
 
 function _applyGaugePointer(svg, e){
   const rect = svg.getBoundingClientRect();
-  const sx = 280 / rect.width, sy = 130 / rect.height;
+  const sx = 280 / rect.width, sy = 140 / rect.height; // viewBox height is 140
   const mx = (e.clientX - rect.left) * sx;
   const my = (e.clientY - rect.top) * sy;
   const { CX, CY, startDeg, sweepDeg, max, step } = GAUGE_CFG;

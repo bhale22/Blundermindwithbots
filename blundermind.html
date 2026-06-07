@@ -8672,9 +8672,17 @@ async function botStart() {
   }
   sfCurrentSkillLevel = -1; // force skill-level to be (re)sent on first move
 
-  // Apply player color FIRST so boardFlipped is correct before resetGame renders
+  // Clear any leftover multiplayer display state so it doesn't interfere with
+  // board-flip logic in render() and getSq() (which OR boardFlipped with mpRole).
+  mpRoomId = null;
+  mpRole = null;
+
+  // Apply player color FIRST so boardFlipped is correct before resetGame renders.
+  // Always resolve 'random' here and write it back so all downstream code that
+  // reads botPlayerColor (botClockMs, botPostMoveHook, playerColor, etc.) is consistent.
   let pc = botPlayerColor;
   if (pc === 'random') pc = Math.random() < 0.5 ? 'white' : 'black';
+  botPlayerColor = pc;
   boardFlipped = (pc === 'black');
 
   // Apply time control then reset board (render() inside resetGame will use correct flip)
@@ -8686,7 +8694,6 @@ async function botStart() {
   botSanHistory  = [];
   botOppClockMs = null;
   // Activate preferred-opening fast path if mode is 'preferred' and slots exist.
-  // Use the resolved `pc` (not botPlayerColor which may still be 'random').
   // Bot color is opposite of human player color.
   const _resolvedBotCol = (pc === 'white' ? 'black' : 'white');
   if (botOpeningMode === 'preferred') {
@@ -8983,8 +8990,13 @@ window.addEventListener('message', function(e) {
   // Player color (resolved in botStart if 'random')
   botPlayerColor = cfg.color || 'random';
 
-  // Time control
-  botSelectedTC = (cfg.tcTime === 0) ? 'untimed' : (cfg.tcTime + '+' + cfg.tcInc);
+  // Time control — build a 'custom' entry so clockInit() finds a valid key
+  if (cfg.tcTime > 0) {
+    TIME_CONTROLS.custom = { label: cfg.tcTime + '+' + (cfg.tcInc || 0), time: cfg.tcTime * 60, inc: cfg.tcInc || 0 };
+    botSelectedTC = 'custom';
+  } else {
+    botSelectedTC = 'untimed';
+  }
 
   // Stockfish level: new panel 1–10 → existing 1–20 (multiply ×2)
   const sfLvl20 = Math.min(20, Math.max(1, (cfg.sfLevel || 5) * 2));
