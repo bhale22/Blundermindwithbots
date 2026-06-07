@@ -7009,6 +7009,13 @@ function botRemainingMovesEstimate() {
 //   At budget = 0, all attractor effects are zero regardless of slider positions.
 //
 // Board piece format: board[sq] = {piece:'P'|'N'|..., color:'w'|'b'} or undefined.
+// atkMap[sq] = {w:[attacker-sqs], b:[attacker-sqs]} — global, pre-computed for current board.
+//
+// Sign convention (matches UI labels):
+//   Sliders go left (negative) → right (positive).
+//   Left label = negative value = that behaviour boosted when value < 0.
+//   Trade seeker is on the LEFT (negative) → captures boosted by -tradeVal * scale.
+//   All other attractors: positive value → boost the right-label behaviour.
 function applyMoveAttractors(moveProbs) {
   if (!moveProbs || !Object.keys(moveProbs).length) return moveProbs;
 
@@ -7030,37 +7037,29 @@ function applyMoveAttractors(moveProbs) {
   const hasGambito = gambitoVal    !== 0;
 
   // ── Min-probability + blunder-limit filter (Maia3 / LC modes) ────────────
-  // Only active when explicitly configured (defaults: minProbPct=0, blunderLimitCp=400).
-  // Min prob:     absolute cutoff — removes tail moves below threshold.
-  // Blunder limit: log-prob floor — keep moves where prob ≥ bestProb × exp(−L/100).
   if (botMinProbPct > 0 || botBlunderLimitCp < 400) {
-    const entries  = Object.entries(moveProbs).sort((a, b) => b[1] - a[1]); // desc by prob
+    const entries  = Object.entries(moveProbs).sort((a, b) => b[1] - a[1]);
     const bestProb = entries.length ? entries[0][1] : 0;
     if (bestProb > 0) {
       const absFloor  = botMinProbPct / 100;
       const relFloor  = bestProb * Math.exp(-botBlunderLimitCp / 100);
       const threshold = Math.max(absFloor, relFloor);
       const passed    = entries.filter(([, p]) => p >= threshold);
-      // Always keep at least the best move so sampleFromProbs never gets an empty set
       moveProbs = Object.fromEntries(passed.length ? passed : [entries[0]]);
     }
   }
 
   // ── CP budget → per-unit scale ────────────────────────────────────────────
-  // totalAbs includes ALL attractor + piece values, matching the panel display.
-  // Attractors without logBoost implementations (luck, hustle, pressure) still
-  // count toward totalAbs so the panel's cp allocation numbers stay accurate.
+  // Attractors without per-move logic (luck, hustle, pressure) still count
+  // toward totalAbs so the panel's cp allocation display stays accurate.
   const CP_PER_LOG_UNIT = 150;
   const allVals  = [...Object.values(attrVals), ...Object.values(pieceVals)];
   const totalAbs = allVals.reduce((s, v) => s + Math.abs(v || 0), 0);
-  // scale: how much each unit of slider value contributes to log-probability boost
   const scale = (cpBudget > 0 && totalAbs > 0)
     ? cpBudget / (totalAbs * CP_PER_LOG_UNIT)
     : 0;
 
   // ── Quality range + luck shift ────────────────────────────────────────────
-  // botDayLower/Upper: 0 = top of sorted-by-prob list, 100 = bottom
-  // luckVal > 0 → shift toward best moves; < 0 → toward worst
   let lo = Math.max(0, Math.min(95, botDayLower - luckVal * 4));
   let hi = Math.max(lo + 5, Math.min(100, botDayUpper - luckVal * 4));
   let filtered = moveProbs;
@@ -7079,18 +7078,66 @@ function applyMoveAttractors(moveProbs) {
     }
   }
 
-  // ── Per-move attractor reweighting ────────────────────────────────────────
+  // ── Per-move reweighting ──────────────────────────────────────────────────
   const needsPerMove = scale > 0 &&
     (hasPiece || hasTrade || hasPawnS || hasSpace || hasFortkx || hasGambito);
   if (!needsPerMove) return filtered;
 
   const PIECE_MAP   = { p:'pawn', n:'knight', b:'bishop', r:'rook', q:'queen', k:'king' };
-  // botIsBlack: true when the bot plays as black (human plays white)
-  const botIsBlack  = (botPlayerColor === 'white');
+  const botIsBlack  = (botPlayerColor === 'white'); // bot is black when human plays white
   const botColorStr = botIsBlack ? 'b' : 'w';
   const oppColorStr = botIsBlack ? 'w' : 'b';
-  // Opening phase: first 20 half-moves (10 full moves), when gambits occur
-  const isOpeningPhase = gameMovesAlgebraic.length < 20;
+  // Opening phase check: gambits and space control matter most early
+  const isOpeningPhase = gameMovesAlgebraic.length < 20; // first 10 full moves
+  // Shared empty Set for buildDirectAtk — pin-free is fine for a heuristic
+  const _EMPTY = new Set();
+
+  // ── Fort Knox: baseline defender count from current atkMap ───────────────
+  // atkMap[sq].w / .b = squares of pieces of that color attacking sq.
+  // Summing over all bot pieces gives total "protection coverage" before the move.
+  let currentTotalDefs = 0;
+  if (hasFortkx && atkMap) {
+    for (let sq = 0; sq < 64; sq++) {
+      if (board[sq] && board[sq].color === botColorStr && atkMap[sq]) {
+        currentTotalDefs += (atkMap[sq][botColorStr] || []).length;
+      }
+    }
+  }
+
+  // ── Gambito: ECO gambit continuation UCIs (computed once per bot turn) ────
+  // Scan ECO entries whose name contains 'gambit' and whose move prefix matches
+  // the current game history. Collect the "next move" in each matching line.
+  // Falls back to structural pawn-sacrifice detection when ECO data isn't loaded.
+  let gambitoPreferredUci = null; // Set<uciString> | null (null = ECO unavailable)
+  if (hasGambito && isOpeningPhase) {
+    if (_ecoData && _ecoData.length) {
+      gambitoPreferredUci = new Set();
+      const hist      = gameMovesAlgebraic;
+      const firstMove = hist.length > 0 ? hist[0] : null;
+      const candidates = (_ecoIndex && firstMove)
+        ? (_ecoIndex.get(firstMove) || [])
+        : _ecoData;
+      for (const entry of candidates) {
+        if (!entry.name.toLowerCase().includes('gambit')) continue;
+        if (entry.sanMoves.length <= hist.length) continue;
+        let ok = true;
+        for (let i = 0; i < hist.length; i++) {
+          if (entry.sanMoves[i] !== hist[i]) { ok = false; break; }
+        }
+        if (!ok) continue;
+        const nextSan = entry.sanMoves[hist.length];
+        try {
+          const nextMv = algebraicToMove(nextSan, board, turn, epSq, castling);
+          if (nextMv) {
+            gambitoPreferredUci.add(
+              sqToUci(nextMv.from, nextMv.to, nextMv.promo ? nextMv.promo.toLowerCase() : null)
+            );
+          }
+        } catch(e) { /* skip malformed ECO entries */ }
+      }
+    }
+    // If _ecoData is null/empty, gambitoPreferredUci stays null → structural fallback used below
+  }
 
   const result = {};
   for (const [uciMove, prob] of Object.entries(filtered)) {
@@ -7100,71 +7147,99 @@ function applyMoveAttractors(moveProbs) {
     const fromPiece = board[mv.from]; // {piece:'P'|..., color:'w'|'b'}
     if (!fromPiece) { result[uciMove] = prob; continue; }
 
-    // fromPiece is an object — access .piece (uppercase letter) and .color
     const pieceLetter = fromPiece.piece.toLowerCase(); // 'p','n','b','r','q','k'
-    const pieceType   = PIECE_MAP[pieceLetter];        // 'pawn','knight',... or undefined
-    let logBoost = 0;
+    const pieceType   = PIECE_MAP[pieceLetter];
 
-    // ── Piece attractors (pieces tab) ────────────────────────────────────────
-    if (hasPiece && pieceType) logBoost += (pieceVals[pieceType] || 0) * scale;
-
-    // ── Pawn strategic attractor ──────────────────────────────────────────────
-    if (hasPawnS && pieceLetter === 'p') logBoost += pawnStrat * scale;
-
-    // ── Trade attractor: detect capture (including en passant) ───────────────
-    if (hasTrade) {
-      const toPiece  = board[mv.to]; // {piece, color} or undefined
-      const isCapture = toPiece
-        ? toPiece.color === oppColorStr               // lands on opponent piece
-        : (pieceLetter === 'p' && uciMove[0] !== uciMove[2]); // en passant (file changes)
-      if (isCapture) logBoost += tradeVal * scale;
-    }
-
-    // ── Simulated board (shared by spacecadet, fortkx, gambito) ──────────────
-    // Lazily created: remove piece from origin, place at destination.
-    let simBd = null;
+    // ── Lazy simulated board + cached destination-attacks ─────────────────
+    // simBd: piece moved from origin to destination (shared by space/fortkx/gambito/trade).
+    // simToAtk: rawAttacks from destination square — used by space + trade threat check.
+    let _simBd = null, _simToAtk = null;
     const getSimBd = () => {
-      if (!simBd) {
-        simBd = Object.assign({}, board);
-        delete simBd[mv.from];
-        simBd[mv.to] = fromPiece;
+      if (!_simBd) {
+        _simBd = Object.assign({}, board);
+        delete _simBd[mv.from];
+        _simBd[mv.to] = fromPiece;
       }
-      return simBd;
+      return _simBd;
+    };
+    const getSimToAtk = () => {
+      if (!_simToAtk) _simToAtk = rawAttacks(mv.to, getSimBd());
+      return _simToAtk;
     };
 
-    // ── Space Cadet: mobility delta of the moved piece ────────────────────────
-    // Positive (Space Cadet) boosts moves that increase piece attack coverage;
-    // negative (Space Waster) biases toward passive/retreating moves.
-    // tanh(delta/5) maps the raw attack-count delta to a smooth -1..+1 signal.
+    let logBoost = 0;
+
+    // ── Piece attractors ──────────────────────────────────────────────────────
+    // Positive value (right) = boost moves by that piece type.
+    if (hasPiece && pieceType) logBoost += (pieceVals[pieceType] || 0) * scale;
+
+    // ── Pawn strategic ────────────────────────────────────────────────────────
+    // Positive (right, Pawn pusher) boosts pawn advances.
+    if (hasPawnS && pieceLetter === 'p') logBoost += pawnStrat * scale;
+
+    // ── Trade: captures + threat creation ────────────────────────────────────
+    // Label: left (negative) = Trade seeker → boost via -tradeVal.
+    // Threat creation: count opponent pieces directly attacked from destination;
+    // moves that create new threats are scored proportionally.
+    if (hasTrade) {
+      const toPiece   = board[mv.to];
+      const isCapture = toPiece
+        ? toPiece.color === oppColorStr
+        : (pieceLetter === 'p' && uciMove[0] !== uciMove[2]); // en passant
+      if (isCapture) {
+        logBoost -= tradeVal * scale;
+      } else {
+        // Non-capture: score by how many opponent pieces the piece now threatens
+        const newThreats = getSimToAtk()
+          .filter(sq => { const p = getSimBd()[sq]; return p && p.color === oppColorStr; }).length;
+        if (newThreats > 0) logBoost -= tradeVal * scale * Math.tanh(newThreats / 2);
+      }
+    }
+
+    // ── Space Cadet: attack count from destination square ────────────────────
+    // Positive (Space Cadet, right) boosts moves to high-mobility squares.
+    // tanh(n/8): knight on centre (8 attacks) → 0.76; rook on open file (14) → 0.94.
     if (hasSpace) {
-      const atkBefore = rawAttacks(mv.from, board).length;
-      const atkAfter  = rawAttacks(mv.to, getSimBd()).length;
-      logBoost += spaceCadetVal * scale * Math.tanh((atkAfter - atkBefore) / 5);
+      logBoost += spaceCadetVal * scale * Math.tanh(getSimToAtk().length / 8);
     }
 
-    // ── Fort Knox: is the moved piece defended at its destination? ────────────
-    // Positive boosts moves where the piece lands on a square defended by a
-    // friendly piece; negative biases toward aggressive/exposed placements.
+    // ── Fort Knox: total friendly defender count delta ────────────────────────
+    // buildDirectAtk without pins is fast and sufficient for a positional heuristic.
+    // tanh((postDefs - preDefs) / 3) maps the delta to a smooth −1..+1 signal.
     if (hasFortkx) {
-      const isDefended = rawAttacks(mv.to, getSimBd())
-        .some(sq => { const p = getSimBd()[sq]; return p && p.color === botColorStr; });
-      logBoost += fortKxVal * scale * (isDefended ? 1 : -1);
+      const simBd_  = getSimBd();
+      const simAtk  = buildDirectAtk(simBd_, _EMPTY, _EMPTY, _EMPTY, _EMPTY);
+      let totalDefs = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = simBd_[sq];
+        if (p && p.color === botColorStr && simAtk[sq]) {
+          totalDefs += (simAtk[sq][botColorStr] || []).length;
+        }
+      }
+      logBoost += fortKxVal * scale * Math.tanh((totalDefs - currentTotalDefs) / 3);
     }
 
-    // ── Gambito: pawn sacrifice detection (opening phase only) ───────────────
-    // A "gambit" move: pawn advances to a square attacked by the opponent and
-    // not defended by any friendly piece. Positive boosts these sacrifices;
-    // negative (Gambit Shy) suppresses them.
-    if (hasGambito && isOpeningPhase && pieceLetter === 'p') {
-      const s = getSimBd();
-      const attackedByOpp = rawAttacks(mv.to, s).some(sq => { const p = s[sq]; return p && p.color === oppColorStr; });
-      const defendedByBot = rawAttacks(mv.to, s).some(sq => { const p = s[sq]; return p && p.color === botColorStr; });
-      if (attackedByOpp && !defendedByBot) logBoost += gambitoVal * scale;
+    // ── Gambito: ECO gambit continuation / structural fallback ───────────────
+    // Primary: if an ECO gambit line matches, boost/suppress the specific next moves.
+    // Fallback (ECO not loaded): boost pawn advances to opponent-attacked, undefended squares.
+    if (hasGambito && isOpeningPhase) {
+      if (gambitoPreferredUci !== null) {
+        // ECO path: only act when the current move is (or isn't) an ECO gambit continuation
+        if (gambitoPreferredUci.size > 0 && gambitoPreferredUci.has(uciMove)) {
+          logBoost += gambitoVal * scale;
+        }
+        // If size === 0 the position has left all known gambit lines — no effect
+      } else if (pieceLetter === 'p') {
+        // Structural fallback when ECO data isn't loaded yet
+        const s = getSimBd();
+        const attackedByOpp = getSimToAtk().some(sq => { const p = s[sq]; return p && p.color === oppColorStr; });
+        const defendedByBot = getSimToAtk().some(sq => { const p = s[sq]; return p && p.color === botColorStr; });
+        if (attackedByOpp && !defendedByBot) logBoost += gambitoVal * scale;
+      }
     }
 
     result[uciMove] = logBoost !== 0 ? prob * Math.exp(logBoost) : prob;
   }
-  // Safety net: never return empty — fall back through filtered → original moveProbs
   return Object.keys(result).length ? result
        : Object.keys(filtered).length ? filtered
        : moveProbs;
