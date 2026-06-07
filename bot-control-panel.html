@@ -5127,6 +5127,9 @@ function getBotConfig(){
     ctrlB:               ctrlB.map(p => ({x: p.x, y: p.y})),
     weaponizerEnabled:   document.getElementById('weaponizer-toggle')?.checked || false,
     weaponizerLeadSec:   parseInt(document.getElementById('r-wlead')?.value    || '30'),
+    // inside getBotConfig(), add these two lines:
+    sfvar1:     parseInt(document.querySelector('#engine-sub-stockfish input[type=range]:nth-child(1)')?.value || '0'),
+    sfvar2:     parseInt(document.querySelector('#engine-sub-stockfish input[type=range]:nth-child(2)')?.value || '0'),
   };
 }
 

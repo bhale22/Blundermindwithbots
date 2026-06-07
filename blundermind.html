@@ -8994,6 +8994,16 @@ window.addEventListener('message', function(e) {
   var pressEl = document.getElementById('sfPressureLevel');
   if (pressEl) { pressEl.value = pressLvl; document.getElementById('sfPressureVal').textContent = pressLvl; }
 
+  // SF Variety: apply new panel's sfvar1/sfvar2 to the old sfTemperature toggle
+  var sfTempEl = document.getElementById('sfTemperature');
+  if (sfTempEl) {
+    var useVariety = (cfg.sfvar1 > 0 || cfg.sfvar2 > 0) ? '1' : '0';
+    sfTempEl.value = useVariety;
+    var sfTempDesc = document.getElementById('sfTempDesc');
+    if (sfTempDesc) sfTempDesc.textContent =
+    useVariety === '1' ? 'Varies: 50% target · 20% ±1 · 5% ±2' : 'Always plays at selected level';
+}
+
   // Maia3 ELO and temperature (temp derived from style gauge in new panel)
   maia3SetRating(cfg.elo || 1500);
   var m3TempEl = document.getElementById('maia3Temp');
