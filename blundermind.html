@@ -6424,7 +6424,15 @@ function maiaInit() {
       if (msg.type === 'status') {
         _maiaStatus = msg.status;
         _maiaUpdateStatusUI();
-        if (msg.status === 'ready') _maiaReady = true;
+        if (msg.status === 'ready') {
+          _maiaReady = true;
+          // After a successful download (not just a cache hit on reload) request
+          // persistent storage so the browser won't evict the 87 MB model.
+          // Only call persist() once — it's a no-op if already granted.
+          if (navigator.storage && navigator.storage.persist) {
+            navigator.storage.persist().catch(function(){});
+          }
+        }
       } else if (msg.type === 'progress') {
         _maiaProgress = msg.progress;
         _maiaUpdateStatusUI();

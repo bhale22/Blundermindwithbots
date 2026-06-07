@@ -18,7 +18,46 @@ importScripts('/ort/ort.wasm.min.js')
 const ORT = ort
 ORT.env.wasm.wasmPaths = '/ort/'
 
-// ── IndexedDB storage (mirrors MaiaModelStorage) ─────────────────────────────
+// ── Storage layer: Cache API (primary) + IndexedDB (secondary) ───────────────
+//
+// Cache API is the primary store because browsers treat it as persistent by
+// default for large assets and it survives storage-pressure eviction better
+// than IndexedDB for origins without explicit persistent-storage permission.
+// IndexedDB is kept as a fallback so existing cached copies still work.
+//
+// Cache name encodes the model version so stale caches are automatically
+// bypassed when the version string changes (no manual invalidation needed).
+
+const CACHE_NAME_PREFIX = 'maia-model-'   // + modelVersion, e.g. 'maia-model-3'
+
+// ── Cache API helpers ─────────────────────────────────────────────────────────
+
+async function getFromCacheApi(modelUrl, modelVersion) {
+  if (typeof self.caches === 'undefined') return null
+  try {
+    const cache  = await self.caches.open(CACHE_NAME_PREFIX + modelVersion)
+    const match  = await cache.match(modelUrl)
+    if (!match) return null
+    return await match.arrayBuffer()
+  } catch (e) {
+    return null
+  }
+}
+
+async function storeInCacheApi(modelUrl, modelVersion, buffer) {
+  if (typeof self.caches === 'undefined') return
+  try {
+    const cache    = await self.caches.open(CACHE_NAME_PREFIX + modelVersion)
+    const response = new Response(buffer.slice(0), {   // slice = copy, keeps original intact
+      headers: { 'Content-Type': 'application/octet-stream' }
+    })
+    await cache.put(modelUrl, response)
+  } catch (e) {
+    // Cache API unavailable or quota exceeded — IndexedDB copy is the fallback
+  }
+}
+
+// ── IndexedDB storage (fallback / legacy) ─────────────────────────────────────
 
 const DB_NAME = 'MaiaModels'
 const STORE_NAME = 'models'
@@ -42,48 +81,83 @@ function openDB() {
   })
 }
 
-async function getCachedModel(modelUrl, modelVersion) {
-  const db = await openDB()
-  const tx = db.transaction([STORE_NAME], 'readonly')
-  const store = tx.objectStore(STORE_NAME)
+async function getFromIndexedDB(modelUrl, modelVersion) {
+  try {
+    const db    = await openDB()
+    const tx    = db.transaction([STORE_NAME], 'readonly')
+    const store = tx.objectStore(STORE_NAME)
 
-  const data = await new Promise((resolve, reject) => {
-    const req = store.get(MODEL_KEY)
-    req.onsuccess = () => resolve(req.result || null)
-    req.onerror = () => reject(req.error)
-  })
+    const data = await new Promise((resolve, reject) => {
+      const req = store.get(MODEL_KEY)
+      req.onsuccess = () => resolve(req.result || null)
+      req.onerror  = () => reject(req.error)
+    })
 
-  if (!data) return null
+    if (!data) return null
 
-  if (!isCompatibleModelCache(data, modelUrl, modelVersion)) {
-    const rwTx = db.transaction([STORE_NAME], 'readwrite')
-    rwTx.objectStore(STORE_NAME).delete(MODEL_KEY)
+    if (!isCompatibleModelCache(data, modelUrl, modelVersion)) {
+      // Version mismatch — delete stale entry and report miss
+      try {
+        const rwTx = db.transaction([STORE_NAME], 'readwrite')
+        rwTx.objectStore(STORE_NAME).delete(MODEL_KEY)
+      } catch (_) {}
+      return null
+    }
+
+    // Support both ArrayBuffer (current format) and Blob (legacy cache entries)
+    const raw = data.data
+    if (raw instanceof ArrayBuffer) return raw
+    try { return await raw.arrayBuffer() } catch (e) { return null }
+  } catch (e) {
     return null
   }
+}
 
-  // Support both ArrayBuffer (current format) and Blob (legacy cache entries)
-  const raw = data.data
-  if (raw instanceof ArrayBuffer) return raw
-  try { return await raw.arrayBuffer() } catch (e) { return null }
+async function storeInIndexedDB(modelUrl, modelVersion, buffer) {
+  try {
+    const db    = await openDB()
+    const tx    = db.transaction([STORE_NAME], 'readwrite')
+    const store = tx.objectStore(STORE_NAME)
+
+    await new Promise((resolve, reject) => {
+      const req = store.put({
+        id: MODEL_KEY,
+        url: modelUrl,
+        version: modelVersion,
+        data: buffer,
+        timestamp: Date.now(),
+        size: buffer.byteLength,
+      })
+      req.onsuccess = () => resolve()
+      req.onerror   = () => reject(req.error)
+    })
+  } catch (e) {
+    // IndexedDB unavailable or quota exceeded
+  }
+}
+
+// ── Unified cache read/write ──────────────────────────────────────────────────
+
+async function getCachedModel(modelUrl, modelVersion) {
+  // 1. Try Cache API (primary — more persistent for large assets)
+  const cacheBuffer = await getFromCacheApi(modelUrl, modelVersion)
+  if (cacheBuffer) return cacheBuffer
+
+  // 2. Fall back to IndexedDB (existing installs, or if Cache API is unavailable)
+  const idbBuffer = await getFromIndexedDB(modelUrl, modelVersion)
+  if (idbBuffer) {
+    // Opportunistically promote to Cache API so future loads use the faster path
+    storeInCacheApi(modelUrl, modelVersion, idbBuffer).catch(() => {})
+  }
+  return idbBuffer
 }
 
 async function storeModel(modelUrl, modelVersion, buffer) {
-  const db = await openDB()
-  const tx = db.transaction([STORE_NAME], 'readwrite')
-  const store = tx.objectStore(STORE_NAME)
-
-  await new Promise((resolve, reject) => {
-    const req = store.put({
-      id: MODEL_KEY,
-      url: modelUrl,
-      version: modelVersion,
-      data: buffer, // store ArrayBuffer directly — survives page reloads reliably
-      timestamp: Date.now(),
-      size: buffer.byteLength,
-    })
-    req.onsuccess = () => resolve()
-    req.onerror = () => reject(req.error)
-  })
+  // Write to both stores in parallel; failures are silent (the other store is the safety net)
+  await Promise.allSettled([
+    storeInCacheApi(modelUrl, modelVersion, buffer),
+    storeInIndexedDB(modelUrl, modelVersion, buffer),
+  ])
 }
 
 // ── Worker state ─────────────────────────────────────────────────────────────
