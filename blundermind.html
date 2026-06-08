@@ -7030,6 +7030,31 @@ function evalPressureCurve(ctrlPts, xSec) {
   return pts[pts.length - 1].y;
 }
 
+// ── Pressure-adjusted Maia ELO ────────────────────────────────────────────────
+// Reads ctrlA curve and returns the effective Maia ELO for the current clock.
+// Falls back to maia3SelectedRating when no curve is set or clockMs is null.
+function pressureEffectiveMaiaElo(clockMs) {
+  if (!botPressureCurveA || botPressureCurveA.length < 2 || clockMs === null) return maia3SelectedRating;
+  const thinkSec = (clockMs / 1000) / botRemainingMovesEstimate();
+  const curveElo = evalPressureCurve(botPressureCurveA, thinkSec);
+  if (curveElo === null) return maia3SelectedRating;
+  return Math.max(600, Math.min(2600, Math.round(curveElo)));
+}
+
+// ── Pressure-adjusted distribution upper cutoff ───────────────────────────────
+// Reads ctrlB curve; returns effective day-upper % for the current clock.
+// Falls back to botDayUpper when no curve is set or clockMs is null.
+function pressureEffectiveDayUpper(clockMs) {
+  if (!botPressureCurveB || botPressureCurveB.length < 2 || clockMs === null) return botDayUpper;
+  const thinkSec = (clockMs / 1000) / botRemainingMovesEstimate();
+  const curvePct = evalPressureCurve(botPressureCurveB, thinkSec);
+  if (curvePct === null) return botDayUpper;
+  return Math.max(0, Math.min(botDayUpper, curvePct));
+}
+
+// clock ms at the time of the current move — set before applyMoveAttractors
+let _botMoveClockMs = null;
+
 // ── Estimated remaining moves (Fischer formula ≈ 40 per game) ────────────────
 function botRemainingMovesEstimate() {
   return Math.max(5, 40 - Math.floor(botMoveHistory.length / 2));
@@ -7101,8 +7126,10 @@ function applyMoveAttractors(moveProbs) {
     : 0;
 
   // ── Quality range + luck shift ────────────────────────────────────────────
+  // pressureEffectiveDayUpper applies ctrlB curve to restrict distribution under time pressure.
+  const _pressureUpper = pressureEffectiveDayUpper(_botMoveClockMs);
   let lo = Math.max(0, Math.min(95, botDayLower - luckVal * 4));
-  let hi = Math.max(lo + 5, Math.min(100, botDayUpper - luckVal * 4));
+  let hi = Math.max(lo + 5, Math.min(100, _pressureUpper - luckVal * 4));
   let filtered = moveProbs;
   if (lo > 0 || hi < 100) {
     const sorted = Object.entries(moveProbs).sort((a, b) => b[1] - a[1]);
@@ -7559,16 +7586,13 @@ function timePressureTemp(baseTemp, clockMs) {
   const boost = { steady: 0.0, normal: 1.0, panicky: 2.5 }[botTimePressure] || 0;
   if (boost === 0) return baseTemp;
 
-  // cvB curve: confidence floor % → pressure fraction
-  // High confidence (near 50%) = low pressure; near floor = full pressure.
+  // cvB curve: available distribution % (100% at game start → floor at 1s)
+  // fraction → 0 at 100% (no pressure), 1 at 0% (max pressure)
   if (botPressureCurveB && botPressureCurveB.length >= 2) {
     const thinkSec = (clockMs / 1000) / botRemainingMovesEstimate();
-    const conf = evalPressureCurve(botPressureCurveB, thinkSec); // 5–50 %
-    if (conf !== null) {
-      const floorPct = botTimePressureMaxDrop != null
-        ? 5  // default floor % when max drop is set
-        : 5;
-      const fraction = Math.max(0, Math.min(1, 1 - (conf - floorPct) / (50 - floorPct)));
+    const distPct = evalPressureCurve(botPressureCurveB, thinkSec); // 0–100 %
+    if (distPct !== null) {
+      const fraction = Math.max(0, Math.min(1, 1 - distPct / 100));
       return baseTemp + fraction * boost;
     }
   }
@@ -7733,20 +7757,21 @@ async function botMakeMove() {
       let m3Probs = null;
       if (_maiaReady) {
         const savedRating = lcSelectedRating;
-        lcSelectedRating = String(maia3SelectedRating);
+        lcSelectedRating = String(pressureEffectiveMaiaElo(clockMs)); // ELO degradation via ctrlA curve
         m3Probs = await maia3GetMoveProbs(fen);
         lcSelectedRating = savedRating;
         if (m3Probs) lastBotMoveSource = 'Maia3';
       }
       if (m3Probs && Object.keys(m3Probs).length) {
-        // DEBUG: log full probability distribution
+        const effElo = pressureEffectiveMaiaElo(clockMs);
         const allMoves = Object.entries(m3Probs).sort((a,b)=>b[1]-a[1]);
-        console.log('[Maia3 FULL] elo:', maia3SelectedRating, 'fen:', fen);
+        console.log('[Maia3 FULL] elo:', effElo, 'fen:', fen);
         console.log('[Maia3 FULL] all probs:', allMoves.map(([m,p])=>m+'='+p.toFixed(4)).join(' '));
         const targetDelay = botThinkTime(m3Probs, clockMs);
         const inferenceMs = Date.now() - _botMoveStartMs;
         const delay = Math.max(0, targetDelay - inferenceMs);
         if (delay > 0) await new Promise(r => setTimeout(r, delay));
+        _botMoveClockMs = clockMs; // for applyMoveAttractors distribution cutoff (ctrlB)
         uciMove = sampleFromProbs(applyMoveAttractors(m3Probs), m3EffTemp);
         console.log('[Maia3 FULL] chose:', uciMove, '| temp:', m3EffTemp.toFixed(2), '| inf:', inferenceMs, 'ms | extra wait:', delay, 'ms');
       } else {
@@ -7773,7 +7798,10 @@ async function botMakeMove() {
         }
       }
       if (!probs && _maiaReady) {
+        const savedRatingM = lcSelectedRating;
+        lcSelectedRating = String(pressureEffectiveMaiaElo(clockMs)); // ELO degradation via ctrlA
         probs = await maia3GetMoveProbs(fen);
+        lcSelectedRating = savedRatingM;
         if (probs) lastBotMoveSource = 'Maia3';
       }
       if (probs && Object.keys(probs).length) {
@@ -7781,6 +7809,7 @@ async function botMakeMove() {
         const inferenceMs = Date.now() - _botMoveStartMs;
         const delay = Math.max(0, targetDelay - inferenceMs);
         if (delay > 0) await new Promise(r => setTimeout(r, delay));
+        _botMoveClockMs = clockMs;
         uciMove = sampleFromProbs(applyMoveAttractors(probs), effectiveTemp);
       } else {
         await sfInit();
@@ -7811,6 +7840,7 @@ async function botMakeMove() {
         const inferenceMs = Date.now() - _botMoveStartMs;
         const delay = Math.max(0, targetDelay - inferenceMs);
         if (delay > 0) await new Promise(r => setTimeout(r, delay));
+        _botMoveClockMs = clockMs;
         uciMove = sampleFromProbs(applyMoveAttractors(lcsfProbs), lcsfEffTemp);
       } else {
         await sfInit();
@@ -7842,6 +7872,7 @@ async function botMakeMove() {
             const inferenceMs = Date.now() - _botMoveStartMs;
             const delay = Math.max(0, targetDelay - inferenceMs);
             if (delay > 0) await new Promise(res => setTimeout(res, delay));
+            _botMoveClockMs = clockMs;
             uciMove = sampleFromProbs(applyMoveAttractors(probs), effectiveTemp);
           } else {
             // LC off-book or failed — fallback to SF
@@ -9269,9 +9300,15 @@ window.addEventListener('message', function(e) {
   botMinProbPct     = (cfg.minProbPct     != null) ? cfg.minProbPct     : 5;
   botBlunderLimitCp = (cfg.blunderLimitCp != null) ? cfg.blunderLimitCp : 150;
 
-  // Time pressure curves (cvA = ELO degradation, cvB = confidence floor)
-  botPressureCurveA = (cfg.ctrlA && cfg.ctrlA.length >= 2) ? cfg.ctrlA : null;
-  botPressureCurveB = (cfg.ctrlB && cfg.ctrlB.length >= 2) ? cfg.ctrlB : null;
+  // Time pressure curves (cvA = ELO degradation, cvB = distribution cutoff)
+  // pressureOff disables both curves (flat ELO, 100% distribution at all times)
+  if (cfg.pressureOff) {
+    botPressureCurveA = null;
+    botPressureCurveB = null;
+  } else {
+    botPressureCurveA = (cfg.ctrlA && cfg.ctrlA.length >= 2) ? cfg.ctrlA : null;
+    botPressureCurveB = (cfg.ctrlB && cfg.ctrlB.length >= 2) ? cfg.ctrlB : null;
+  }
 
   // Weaponizer
   botWeaponizerEnabled = !!cfg.weaponizerEnabled;
