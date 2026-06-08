@@ -1776,7 +1776,9 @@ let botBehavClockMirror = true;    // human behaviour: speed up when opponent is
 let botCanFlag   = true;           // whether bot is allowed to flag (run clock to 0)
 let botDayLower  = 0;              // move quality range: lower percentile (0 = top/best)
 let botDayUpper  = 100;            // move quality range: upper percentile (100 = all)
-let botSfTempLevel = 2;            // temperature tier 0-4 (maps to TEMP_PRESETS order)
+let botSfTempLevel = 2;            // temperature tier 0-4 (legacy; superseded by botSfVar1/2)
+let botSfVar1 = 0;                 // % of SF calls at ±1 level (0–50)
+let botSfVar2 = 0;                 // % of SF calls at ±2 level (0–20)
 let botTimePressureMaxDrop = null; // max ELO drop from r-drop; null = use DOM slider
 let botMinProbPct       = 0;      // min absolute probability % — 0 = off (default); set by panel
 let botBlunderLimitCp   = 400;    // max cp loss — 400 = off (default); set by panel
@@ -5967,6 +5969,14 @@ loadSoundPref();
 loadPos(0);
 resizeBoard();
 
+// Start the Maia worker in the background shortly after page load so it can
+// detect any cached model before the user opens the bot panel.  The 3 s delay
+// keeps it out of the critical render path; maiaInit() is a no-op if the
+// worker is already running.
+setTimeout(function() {
+  if (!_maiaWorker) { maiaInit(); _maiaLoadMappings(); }
+}, 3000);
+
 // Pause clock when tab is hidden, resume when visible
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
@@ -7275,22 +7285,36 @@ function positionEntropy(moveProbs) {
 }
 
 // ── SF level picker — applies temperature weighting around target level ────────
-// botSfTempLevel maps to TEMP_PRESETS: 0=deterministic 1=focused 2=neutral 3=varied 4=wild
-// Each tier is a [p0, p±1, p-1, p+2, p-2] probability table.
+// Vary the Stockfish skill level around the target using the panel's ±1/±2 sliders.
+// botSfVar1 = % of calls at ±1 level (split evenly +1/-1), range 0–50.
+// botSfVar2 = % of calls at ±2 level (split evenly +2/-2), range 0–20.
+// The remaining (100 - var1 - var2)% use the exact target level.
+// Falls back to the legacy botSfTempLevel tiers when both sliders are 0.
 function sfPickLevel(targetLevel) {
-  if (botSfTempLevel === 0) return targetLevel; // deterministic — always best
+  const var1 = Math.max(0, Math.min(50, botSfVar1)) / 100;
+  const var2 = Math.max(0, Math.min(20, botSfVar2)) / 100;
 
-  // Cumulative breakpoints for tiers 1-4
-  // Tier 1 Focused (T≈0.4):  80 / 10 / 10 / 0 / 0
-  // Tier 2 Neutral (T=1.0):  50 / 20 / 20 / 5 / 5  (original behavior)
-  // Tier 3 Varied  (T=1.8):  35 / 22 / 22 / 11 / 10
-  // Tier 4 Wild    (T=3.0):  20 / 20 / 25 / 18 / 17
+  if (var1 > 0 || var2 > 0) {
+    // Slider-driven path: symmetric distribution around target level
+    // p(-2)=var2/2, p(-1)=var1/2, p(0)=1-var1-var2, p(+1)=var1/2, p(+2)=var2/2
+    const h1 = var1 / 2, h2 = var2 / 2;
+    const r  = Math.random();
+    const off = r < h2            ? -2
+              : r < h2 + h1       ? -1
+              : r < 1 - h1 - h2   ?  0
+              : r < 1 - h2        ?  1
+              :                      2;
+    return Math.max(1, Math.min(20, targetLevel + off));
+  }
+
+  // Legacy path: use botSfTempLevel tiers (set by old save/load configs)
+  if (botSfTempLevel === 0) return targetLevel;
   const tables = [
     null,
-    [0.80, 0.90, 1.00,  0,    0  ],
-    [0.50, 0.70, 0.90, 0.95,  1.0],
-    [0.35, 0.57, 0.79, 0.90,  1.0],
-    [0.20, 0.40, 0.65, 0.83,  1.0],
+    [0.80, 0.90, 1.00,  0,    0  ],  // Focused
+    [0.50, 0.70, 0.90, 0.95,  1.0],  // Neutral
+    [0.35, 0.57, 0.79, 0.90,  1.0],  // Varied
+    [0.20, 0.40, 0.65, 0.83,  1.0],  // Wild
   ];
   const t   = tables[Math.min(4, Math.max(1, botSfTempLevel))];
   const r   = Math.random();
@@ -9148,15 +9172,9 @@ window.addEventListener('message', function(e) {
   var pressEl = document.getElementById('sfPressureLevel');
   if (pressEl) { pressEl.value = pressLvl; document.getElementById('sfPressureVal').textContent = pressLvl; }
 
-  // SF Variety: apply new panel's sfvar1/sfvar2 to the old sfTemperature toggle
-  var sfTempEl = document.getElementById('sfTemperature');
-  if (sfTempEl) {
-    var useVariety = (cfg.sfvar1 > 0 || cfg.sfvar2 > 0) ? '1' : '0';
-    sfTempEl.value = useVariety;
-    var sfTempDesc = document.getElementById('sfTempDesc');
-    if (sfTempDesc) sfTempDesc.textContent =
-    useVariety === '1' ? 'Varies: 50% target · 20% ±1 · 5% ±2' : 'Always plays at selected level';
-}
+  // SF Variety: store slider percentages directly so sfPickLevel uses them
+  botSfVar1 = cfg.sfvar1 || 0;
+  botSfVar2 = cfg.sfvar2 || 0;
 
   // Maia3 ELO and temperature (temp derived from style gauge in new panel)
   maia3SetRating(cfg.elo || 1500);

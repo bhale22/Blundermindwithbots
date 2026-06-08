@@ -334,6 +334,9 @@ table.tg td.tg-inc-lbl{
 .ctrl-lbl{font-family:var(--font-m);font-size:9.5px;letter-spacing:0.06em;color:var(--text-secondary);min-width:100px;text-transform:uppercase;}
 .ctrl-val{font-family:var(--font-m);font-size:11px;color:var(--amber-bright);min-width:46px;text-align:right;}
 .ctrl-hint{font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);margin-top:2px;line-height:1.4;}
+.engine-note{font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);margin-top:10px;padding:6px 8px;background:var(--carbon-surface);border-left:2px solid rgba(200,146,42,0.35);border-radius:0 var(--r) var(--r) 0;line-height:1.5;}
+.engine-note a{color:var(--amber);text-decoration:none;border-bottom:0.5px solid rgba(200,146,42,0.4);}
+.engine-note a:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright);}
 
 input[type=range]{-webkit-appearance:none;appearance:none;flex:1;height:2px;background:var(--carbon-raise);border-radius:1px;outline:none;cursor:pointer;}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--carbon-mid);border:1.5px solid var(--amber);box-shadow:0 0 6px var(--amber-glow-s);cursor:grab;transition:border-color 0.15s,box-shadow 0.15s,transform 0.15s;}
@@ -793,11 +796,8 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
         <div class="ctrl-hint" style="margin-top:5px;">LC modes use Lichess Open Explorer as an opening book; the selected engine takes over when the book runs dry.</div>
       </div>
 
-      <!-- 2-column: left = engine sub-panel, right = shared quality controls -->
-      <div class="panel-2col">
-
-        <!-- LEFT: engine-specific sub-panels -->
-        <div>
+      <!-- Engine-specific sub-panels (full width; behavior controls moved to Bot Behavior section) -->
+      <div>
           <!-- Maia 3 sub-panel -->
           <div id="engine-sub-maia3">
             <div class="dlbl"><span>Maia 3 — ELO</span></div>
@@ -847,6 +847,10 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
             </div>
             <div style="text-align:center;margin-top:4px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);">Click arc · drag needle · or type ELO · snaps to ±25</div>
           </div>
+          <div class="engine-note">
+            Maia is a human-like neural network trained on millions of real games.
+            You can play Maia for free at <a href="https://www.maiachess.com" target="_blank" rel="noopener">maiachess.com</a>.
+          </div>
 
           <!-- Stockfish sub-panel -->
           <div id="engine-sub-stockfish" style="display:none;">
@@ -856,12 +860,12 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
             <div class="dlbl" style="margin-top:12px;"><span>Stockfish variety</span></div>
             <div class="ctrl">
               <span class="ctrl-lbl">±1 level calls</span>
-              <input type="range" min="0" max="50" step="1" value="0" oninput="sv(this,'v-sfvar1',v=>v+'%')">
+              <input id="r-sfvar1" type="range" min="0" max="50" step="1" value="0" oninput="sv(this,'v-sfvar1',v=>v+'%')">
               <span class="ctrl-val" id="v-sfvar1">0%</span>
             </div>
             <div class="ctrl">
               <span class="ctrl-lbl">±2 level calls</span>
-              <input type="range" min="0" max="20" step="1" value="0" oninput="sv(this,'v-sfvar2',v=>v+'%')">
+              <input id="r-sfvar2" type="range" min="0" max="20" step="1" value="0" oninput="sv(this,'v-sfvar2',v=>v+'%')">
               <span class="ctrl-val" id="v-sfvar2">0%</span>
             </div>
             <div class="preset-btns">
@@ -877,6 +881,11 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
             <button class="add-engine-btn" onclick="addHybridSlot()">+ Add engine</button>
             <div class="hybrid-total ok" id="hybrid-total">Total: 100%</div>
             <div class="ctrl-hint" style="margin-top:4px;">Percentages must sum to 100%.</div>
+            <div class="engine-note">
+              Temperature, min-probability, and blunder-limit controls (right column) apply
+              globally to all <strong style="color:var(--text-secondary);">Maia</strong> calls in the blend.
+              They have no effect on <strong style="color:var(--text-secondary);">Stockfish</strong> slots.
+            </div>
           </div>
 
           <!-- LC + SF sub-panel -->
@@ -889,6 +898,10 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
             </div>
             <div class="ctrl" style="margin-top:6px;"><span class="ctrl-lbl">Stockfish level</span></div>
             <div class="sf-pips" id="lcsf-sf-pips"></div>
+            <div class="engine-note">
+              Uses the <a href="https://lichess.org" target="_blank" rel="noopener">Lichess</a> Open Explorer as an opening book (free, open-source platform).
+              Stockfish takes over once the position leaves book.
+            </div>
           </div>
 
           <!-- LC + Maia sub-panel -->
@@ -919,34 +932,12 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
                 </button>
               </div>
             </div>
+            <div class="engine-note">
+              Maia is a human-like neural network — play it for free at <a href="https://www.maiachess.com" target="_blank" rel="noopener">maiachess.com</a>.<br>
+              <a href="https://lichess.org" target="_blank" rel="noopener">Lichess</a> is the open-source platform providing the opening book — also free to play.
+            </div>
           </div>
-        </div><!-- /left col -->
-
-        <!-- RIGHT: shared quality controls — always visible -->
-        <div>
-          <div class="dlbl"><span>Move sampling — temperature</span></div>
-          <div class="temp-grid" id="temp-grid"></div>
-          <div style="margin-top:6px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);" id="temp-hint"></div>
-
-          <div class="dlbl"><span>Candidate filter</span></div>
-          <div class="ctrl">
-            <span class="ctrl-lbl">Min probability</span>
-            <input type="range" id="r-minprob" min="1" max="20" value="5" step="1" oninput="sv(this,'v-minprob',v=>v+'%')">
-            <span class="ctrl-val" id="v-minprob">5%</span>
-          </div>
-          <div class="ctrl-hint">Moves below this threshold are excluded. Default 5% removes Maia's tail moves.</div>
-
-          <div class="dlbl"><span>Blunder limit</span></div>
-          <div class="ctrl">
-            <span class="ctrl-lbl">Hard floor</span>
-            <input type="range" id="r-blunder" min="10" max="400" step="10" value="150"
-              oninput="sv(this,'v-blunder',v=>v+' cp')">
-            <span class="ctrl-val" id="v-blunder">150 cp</span>
-          </div>
-          <div class="ctrl-hint">Bot will not play any single move costing more than this centipawn loss.</div>
-        </div><!-- /right col -->
-
-      </div><!-- /panel-2col -->
+        </div><!-- /engine sub-panels -->
 
     </div><!-- /panel -->
   </div><!-- /panel-shell -->
@@ -957,14 +948,52 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
   <div class="sec-trigger" onclick="toggleSec('attract')">
     <div class="sec-icon"><svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></div>
     <div class="sec-labels">
-      <div class="sec-label">Style Attractors</div>
-      <div class="sec-sub">Bidirectional sliders that shape how the bot thinks and plays</div>
+      <div class="sec-label">Bot Behavior, Temperature &amp; Style Attractors</div>
+      <div class="sec-sub">Move quality, sampling temperature, and bidirectional personality sliders</div>
     </div>
     <div class="sec-status" id="st-attract">Neutral</div>
     <svg class="chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
   </div>
   <div class="panel-shell">
     <div class="panel">
+
+      <!-- ── Bot Behavior controls (hidden for pure-SF engines) ─────────────── -->
+      <!-- temperature + candidate filter + hard floor, grouped here so the    -->
+      <!-- Engine panel stays clean and all behavior knobs are in one place.   -->
+      <div id="beh-maia-controls" style="margin-bottom:14px;">
+        <div class="panel-2col">
+          <!-- LEFT: Temperature -->
+          <div>
+            <div class="dlbl"><span>Move sampling — temperature</span></div>
+            <div class="temp-grid" id="temp-grid"></div>
+            <div style="margin-top:6px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);" id="temp-hint"></div>
+          </div>
+          <!-- RIGHT: Candidate filter + Blunder limit -->
+          <div>
+            <div class="dlbl"><span>Candidate filter</span></div>
+            <div class="ctrl">
+              <span class="ctrl-lbl">Min probability</span>
+              <input type="range" id="r-minprob" min="1" max="20" value="5" step="1" oninput="sv(this,'v-minprob',v=>v+'%')">
+              <span class="ctrl-val" id="v-minprob">5%</span>
+            </div>
+            <div class="ctrl-hint">Moves below this threshold are excluded. Removes Maia's lowest-probability tail moves.</div>
+
+            <div class="dlbl" style="margin-top:10px;"><span>Blunder limit</span></div>
+            <div class="ctrl">
+              <span class="ctrl-lbl">Hard floor</span>
+              <input type="range" id="r-blunder" min="25" max="425" step="25" value="150"
+                oninput="sv(this,'v-blunder',v=>v+' cp'); _updateBlunderHint(+this.value, false);">
+              <span class="ctrl-val" id="v-blunder">150 cp</span>
+              <button onclick="_applyAutoBlunderLimit(_deriveBlunderLimitCp(currentElo, false))"
+                style="flex-shrink:0;margin-left:6px;padding:2px 7px;font-family:var(--font-m);font-size:7px;
+                letter-spacing:0.07em;text-transform:uppercase;background:rgba(200,146,42,0.12);
+                border:0.5px solid rgba(200,146,42,0.35);border-radius:var(--r);
+                color:var(--amber);cursor:pointer;white-space:nowrap;">Auto</button>
+            </div>
+            <div class="ctrl-hint" id="blunder-floor-hint">Adjust to override. Click Auto to recalculate from ELO.</div>
+          </div>
+        </div>
+      </div>
 
       <!-- Inner tab strip -->
       <div class="pr" style="margin-top:0;">
@@ -5095,6 +5124,8 @@ function getBotConfig(){
     engine:          currentEngine,
     elo:             currentElo,
     sfLevel:         sfLevel,
+    sfvar1:          parseInt(document.getElementById('r-sfvar1')?.value || '0'),
+    sfvar2:          parseInt(document.getElementById('r-sfvar2')?.value || '0'),
     maia3Temp:       maia3Temp,
     cpBudget:        cpBudget,
     color:           color,
@@ -5153,11 +5184,15 @@ function bcpMaiaDownload(){
 function bcpMaiaSetStatus(status, ready, progress){
   _bcpMaiaStatus = status || 'idle';
   _bcpMaiaReady  = !!ready;
-  // Show overlay on speedometer when model not loaded; hide when ready
+  // Show overlay when not ready; hide when ready
   var overlay = document.getElementById('bcp-speedo-overlay');
   if(overlay) overlay.style.display = ready ? 'none' : 'flex';
+  // 'idle' and 'loading' are transient — the worker is checking the cache.
+  // Don't show the download button yet; show "Checking…" so the user waits
+  // instead of clicking download unnecessarily when a cached copy exists.
+  var isChecking = (status === 'idle' || status === 'loading');
   const labels = {
-    idle:        'Not loaded — download below to enable Maia',
+    idle:        'Checking for cached model…',
     loading:     'Loading from cache…',
     'no-cache':  'Not downloaded — click the button to download',
     ready:       '✓ Model ready',
@@ -5171,10 +5206,10 @@ function bcpMaiaSetStatus(status, ready, progress){
   });
   document.querySelectorAll('.bcp-maia-dl-btn').forEach(function(btn){
     const done = ready || status === 'downloading';
-    btn.textContent = ready ? '✓ Model ready' : 'Download (~87 MB)';
-    btn.disabled    = done;
-    btn.style.opacity = done ? '0.5' : '1';
-    btn.style.cursor  = done ? 'default' : 'pointer';
+    btn.textContent = ready ? '✓ Model ready' : isChecking ? 'Checking…' : 'Download (~87 MB)';
+    btn.disabled    = done || isChecking;
+    btn.style.opacity = (done || isChecking) ? '0.5' : '1';
+    btn.style.cursor  = (done || isChecking) ? 'default' : 'pointer';
   });
 }
 
@@ -5252,6 +5287,10 @@ function selEngineMode(card){
   });
   const sub = document.getElementById('engine-sub-' + currentEngine);
   if(sub) sub.style.display = 'block';
+  // Temperature, min-probability, and blunder-limit live in the Bot Behavior section.
+  // Hide for pure-SF engines where they have no effect on move selection.
+  const beh = document.getElementById('beh-maia-controls');
+  if(beh) beh.style.display = (currentEngine === 'stockfish' || currentEngine === 'lcsf') ? 'none' : '';
   const names = {
     maia3:    'Maia 3 · ' + currentElo,
     stockfish:'SF' + sfLevel,
@@ -5293,13 +5332,17 @@ function selectSFLevel(n, fromContainer){
   };
   document.getElementById('st-engine').textContent = names[currentEngine] || currentEngine;
   document.getElementById('qs-engine-pill').textContent = names[currentEngine] || currentEngine;
+  // Auto-derive hard floor whenever SF level changes
+  if (currentEngine === 'stockfish' || currentEngine === 'lcsf' || currentEngine === 'hybrid') {
+    _applyAutoBlunderLimit(_deriveBlunderLimitCp(n, true));
+  }
 }
 
 function setSFVariety(v1, v2){
-  // Set both variety sliders and update their displays
-  const sliders = document.querySelectorAll('#engine-sub-stockfish input[type=range]');
-  if(sliders[0]){ sliders[0].value = v1; document.getElementById('v-sfvar1').textContent = v1 + '%'; }
-  if(sliders[1]){ sliders[1].value = v2; document.getElementById('v-sfvar2').textContent = v2 + '%'; }
+  const s1 = document.getElementById('r-sfvar1');
+  const s2 = document.getElementById('r-sfvar2');
+  if(s1){ s1.value = v1; document.getElementById('v-sfvar1').textContent = v1 + '%'; }
+  if(s2){ s2.value = v2; document.getElementById('v-sfvar2').textContent = v2 + '%'; }
 }
 
 /* ── Dynamic Hybrid engine slots ─────────────────────────────────────────── */
@@ -5460,6 +5503,7 @@ function setElo(elo){
 function onEloInputChange(val){
   const elo = clampElo(+val);
   setElo(elo);
+  _applyAutoBlunderLimit(_deriveBlunderLimitCp(elo, false));
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -5502,6 +5546,55 @@ function drawDialSVG(svgId, value, min, max){
 
 function updateDialSVG(svgId, value, min, max){
   drawDialSVG(svgId, value, min, max);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   AUTO-DERIVED HARD FLOOR
+   Research formula (Regan / Lichess accuracy data):
+     floor = max(40, round((520 - 0.19 × ELO) / 25) × 25)
+   Calibrated so the bot blunders at ~2σ above its mean cp/move,
+   matching human blunder frequency (~once every 20–30 moves).
+   Key points: ELO 600→400 cp, 1200→290 cp, 1600→215 cp,
+               2000→135 cp, 2400→65 cp, 2600→40 cp.
+   SF level is converted to approximate ELO first
+   (each pip ≈ +175 ELO, anchored at SF1 ≈ 600 ELO).
+══════════════════════════════════════════════════════════════ */
+function _deriveBlunderLimitCp(eloOrSfLevel, isSfLevel) {
+  // Convert SF level to approximate ELO, then apply the ELO formula
+  const elo = isSfLevel ? (600 + (eloOrSfLevel - 1) * 175) : eloOrSfLevel;
+  return Math.max(40, Math.round((520 - 0.19 * elo) / 25) * 25);
+}
+
+function _applyAutoBlunderLimit(cp) {
+  const el   = document.getElementById('r-blunder');
+  const disp = document.getElementById('v-blunder');
+  if (el)   el.value = cp;
+  if (disp) disp.textContent = cp + ' cp';
+  _updateBlunderHint(cp, true);
+}
+
+// Return the effective ELO for hint display: Maia ELO for Maia engines,
+// or the SF-equivalent ELO for SF-based engines.
+function _blunderHintElo() {
+  if (currentEngine === 'stockfish' || currentEngine === 'lcsf' || currentEngine === 'hybrid') {
+    return 600 + (sfLevel - 1) * 175; // SF pip → approx ELO
+  }
+  return currentElo;
+}
+
+// Update the hint text to show the suggested value for the current engine strength.
+// isAuto=true  → "Auto for ELO X: Y cp — adjust slider to override."
+// isAuto=false → "Suggested for ELO X: Y cp. Click Auto to reset."
+function _updateBlunderHint(cp, isAuto) {
+  const hint = document.getElementById('blunder-floor-hint');
+  if (!hint) return;
+  const elo = _blunderHintElo();
+  if (isAuto) {
+    hint.textContent = 'Auto for ELO ' + elo + ': ' + cp + ' cp — adjust slider to override.';
+  } else {
+    const suggested = _deriveBlunderLimitCp(elo, false);
+    hint.textContent = 'Suggested for ELO ' + elo + ': ' + suggested + ' cp. Click Auto to reset.';
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -5608,6 +5701,9 @@ function onPieceChange(id, val){
 /* ══════════════════════════════════════════════════════════════
    RADAR CHART — interactive (drag nodes or click axis to set)
 ══════════════════════════════════════════════════════════════ */
+// 'luck' (Good/Bad day) is excluded from the radar — it is set precisely via the
+// Move Quality dual-range slider, not by dragging a radar node.
+// 'pressure' (Panicky) remains here as a 0–5 radar-draggable control.
 const RADAR_AXES = [
   { label:'Chaos',     key:'chaos' },
   { label:'Captures',  key:'trade' },
@@ -5616,7 +5712,6 @@ const RADAR_AXES = [
   { label:'Gambito',   key:'gambito' },
   { label:'Structure', key:'structure' },
   { label:'Hustle',    key:'hustle' },
-  { label:'Bad day',   key:'luck' },
   { label:'Panicky',   key:'pressure' },
   { label:'Grinder',   key:'compwin' },
 ];
