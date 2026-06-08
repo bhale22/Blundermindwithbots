@@ -815,15 +815,15 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
                   Human-like neural net · plays at any ELO (600–2600)<br>
                   One-time download to your browser's local storage
                 </div>
-                <button class="bcp-maia-dl-btn" onclick="bcpMaiaDownload()"
+                <button class="bcp-maia-dl-btn" onclick="bcpMaiaDownload()" disabled
                   style="padding:6px 14px;font-family:var(--font-m);font-size:9px;letter-spacing:0.1em;
                   text-transform:uppercase;background:rgba(90,212,144,0.12);
                   border:0.5px solid rgba(90,212,144,0.4);border-radius:3px;
-                  color:#5ad490;cursor:pointer;transition:opacity 0.15s;">
-                  Download (~87 MB)
+                  color:#5ad490;cursor:default;transition:opacity 0.15s;opacity:0.5;">
+                  Checking…
                 </button>
                 <div class="bcp-maia-status-txt" style="font-family:var(--font-m);font-size:8px;
-                  color:var(--text-dim);min-height:10px;"></div>
+                  color:var(--text-dim);min-height:10px;">Checking storage…</div>
               </div>
               <svg class="speedo-svg" id="speedo-svg" viewBox="0 40 360 150" style="cursor:pointer;max-width:300px;">
                 <defs>
@@ -911,11 +911,11 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
                   <div style="font-family:var(--font-m);font-size:8.5px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-secondary);">Maia 3 model</div>
                   <div class="bcp-maia-status-txt" style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:2px;">Checking…</div>
                 </div>
-                <button class="bcp-maia-dl-btn" onclick="bcpMaiaDownload()"
+                <button class="bcp-maia-dl-btn" onclick="bcpMaiaDownload()" disabled
                   style="flex-shrink:0;padding:4px 10px;font-family:var(--font-m);font-size:8px;letter-spacing:0.08em;
                   text-transform:uppercase;background:rgba(90,212,144,0.1);border:0.5px solid rgba(90,212,144,0.3);
-                  border-radius:var(--r);color:#5ad490;cursor:pointer;white-space:nowrap;transition:opacity 0.15s;">
-                  Download (~87 MB)
+                  border-radius:var(--r);color:#5ad490;cursor:default;white-space:nowrap;transition:opacity 0.15s;opacity:0.5;">
+                  Checking…
                 </button>
               </div>
             </div>
@@ -5204,8 +5204,8 @@ function bcpMaiaSetStatus(status, ready, progress){
   var overlay = document.getElementById('bcp-speedo-overlay');
   if(overlay) overlay.style.display = ready ? 'none' : 'flex';
   const labels = {
-    idle:        'Not loaded — download below to enable Maia',
-    loading:     'Loading from cache…',
+    idle:        'Checking storage…',
+    loading:     'Checking storage…',
     'no-cache':  'Not downloaded — click the button to download',
     ready:       '✓ Model ready',
     error:       '✗ Error loading model — try reloading'
@@ -5216,10 +5216,14 @@ function bcpMaiaSetStatus(status, ready, progress){
   document.querySelectorAll('.bcp-maia-status-txt').forEach(function(el){
     el.textContent = txt; el.style.color = clr;
   });
+  // Only enable the Download button once we *know* there is no cached model.
+  // idle/loading = still checking; keep button disabled so the user doesn't
+  // trigger a redundant download while the cache check is in flight.
+  const checking = (status === 'idle' || status === 'loading');
+  const done     = ready || status === 'downloading' || checking;
   document.querySelectorAll('.bcp-maia-dl-btn').forEach(function(btn){
-    const done = ready || status === 'downloading';
-    btn.textContent = ready ? '✓ Model ready' : 'Download (~87 MB)';
-    btn.disabled    = done;
+    btn.textContent   = ready ? '✓ Model ready' : (checking ? 'Checking…' : 'Download (~87 MB)');
+    btn.disabled      = done;
     btn.style.opacity = done ? '0.5' : '1';
     btn.style.cursor  = done ? 'default' : 'pointer';
   });
