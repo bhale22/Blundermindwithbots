@@ -7068,12 +7068,14 @@ function applyMoveAttractors(moveProbs) {
   const spaceCadetVal = attrVals['spacecadet'] || 0;
   const fortKxVal     = attrVals['fortkx']     || 0;
   const gambitoVal    = attrVals['gambito']    || 0;
+  const attackerVal   = attrVals['attacker']   || 0;
   const hasPiece   = Object.values(pieceVals).some(v => v !== 0);
   const hasTrade   = tradeVal      !== 0;
   const hasPawnS   = pawnStrat     !== 0;
   const hasSpace   = spaceCadetVal !== 0;
   const hasFortkx  = fortKxVal     !== 0;
   const hasGambito = gambitoVal    !== 0;
+  const hasAttacker = attackerVal  !== 0;
 
   // ── Min-probability + blunder-limit filter (Maia3 / LC modes) ────────────
   if (botMinProbPct > 0 || botBlunderLimitCp < 400) {
@@ -7119,7 +7121,7 @@ function applyMoveAttractors(moveProbs) {
 
   // ── Per-move reweighting ──────────────────────────────────────────────────
   const needsPerMove = scale > 0 &&
-    (hasPiece || hasTrade || hasPawnS || hasSpace || hasFortkx || hasGambito);
+    (hasPiece || hasTrade || hasPawnS || hasSpace || hasFortkx || hasGambito || hasAttacker);
   if (!needsPerMove) return filtered;
 
   const PIECE_MAP   = { p:'pawn', n:'knight', b:'bishop', r:'rook', q:'queen', k:'king' };
@@ -7217,21 +7219,19 @@ function applyMoveAttractors(moveProbs) {
     if (hasPawnS && pieceLetter === 'p') logBoost += pawnStrat * scale;
 
     // ── Trade: captures + threat creation ────────────────────────────────────
-    // Label: left (negative) = Trade seeker → boost via -tradeVal.
-    // Threat creation: count opponent pieces directly attacked from destination;
-    // moves that create new threats are scored proportionally.
+    // Right (positive) = Trade seeker → boosts captures and threats.
     if (hasTrade) {
       const toPiece   = board[mv.to];
       const isCapture = toPiece
         ? toPiece.color === oppColorStr
         : (pieceLetter === 'p' && uciMove[0] !== uciMove[2]); // en passant
       if (isCapture) {
-        logBoost -= tradeVal * scale;
+        logBoost += tradeVal * scale;
       } else {
         // Non-capture: score by how many opponent pieces the piece now threatens
         const newThreats = getSimToAtk()
           .filter(sq => { const p = getSimBd()[sq]; return p && p.color === oppColorStr; }).length;
-        if (newThreats > 0) logBoost -= tradeVal * scale * Math.tanh(newThreats / 2);
+        if (newThreats > 0) logBoost += tradeVal * scale * Math.tanh(newThreats / 2);
       }
     }
 
@@ -7275,6 +7275,22 @@ function applyMoveAttractors(moveProbs) {
         const defendedByBot = getSimToAtk().some(sq => { const p = s[sq]; return p && p.color === botColorStr; });
         if (attackedByOpp && !defendedByBot) logBoost += gambitoVal * scale;
       }
+    }
+
+    // ── Attacker / Peacemaker: total opponent pieces under threat after move ─────
+    // Sums bot-piece attack counts on every opponent piece on the sim board.
+    // buildDirectAtk is called lazily — only when this attractor is active.
+    if (hasAttacker) {
+      const simBd_ = getSimBd();
+      const simAtk = buildDirectAtk(simBd_, _EMPTY, _EMPTY, _EMPTY, _EMPTY);
+      let totalOppThreats = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = simBd_[sq];
+        if (p && p.color === oppColorStr && simAtk[sq]) {
+          totalOppThreats += (simAtk[sq][botColorStr] || []).length;
+        }
+      }
+      logBoost += attackerVal * scale * Math.tanh(totalOppThreats / 6);
     }
 
     result[uciMove] = logBoost !== 0 ? prob * Math.exp(logBoost) : prob;

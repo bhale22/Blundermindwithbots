@@ -844,6 +844,10 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
               <span class="speedo-range-label">2600</span>
             </div>
             <div style="text-align:center;margin-top:4px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);">Click arc · drag needle · or type ELO · snaps to ±25</div>
+            <div style="margin-top:10px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);line-height:1.6;">
+              Maia is a human-like neural net with its own free web app — analysis tools, puzzles, and play against Maia bots:
+              <a href="https://maiachess.com" target="_blank" rel="noopener" style="color:var(--amber);text-decoration:none;">maiachess.com</a>
+            </div>
           </div>
 
           <!-- Stockfish sub-panel -->
@@ -887,6 +891,10 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
             </div>
             <div class="ctrl" style="margin-top:6px;"><span class="ctrl-lbl">Stockfish level</span></div>
             <div class="sf-pips" id="lcsf-sf-pips"></div>
+            <div style="margin-top:10px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);line-height:1.6;">
+              Lichess is free, open-source, and ad-free — opening explorer, engine analysis, puzzles, and more:
+              <a href="https://lichess.org/analysis" target="_blank" rel="noopener" style="color:var(--amber);text-decoration:none;">lichess.org/analysis</a>
+            </div>
           </div>
 
           <!-- LC + Maia sub-panel -->
@@ -916,6 +924,12 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
                   Checking…
                 </button>
               </div>
+            </div>
+            <div style="margin-top:10px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);line-height:1.6;">
+              Maia has its own free web app with analysis tools and play:
+              <a href="https://maiachess.com" target="_blank" rel="noopener" style="color:var(--amber);text-decoration:none;">maiachess.com</a><br>
+              Lichess is free, open-source, and ad-free — opening explorer and engine analysis:
+              <a href="https://lichess.org/analysis" target="_blank" rel="noopener" style="color:var(--amber);text-decoration:none;">lichess.org/analysis</a>
             </div>
           </div>
         </div><!-- /left col -->
@@ -1358,12 +1372,13 @@ const ATTRACTOR_DESCS = {
   compwin:  `Activates when engine eval ≥ +100 cp (configurable). Positive values upweight candidates that <em>increase</em> MultiPV variance — keeping complications alive; negative values prefer forcing continuations that reduce material and trade into a clear winning ending.`,
   spacecadet:`Scores the resulting position for board control: counts squares attacked by your pieces after each candidate move. Positive (Space Cadet) favours moves that maximise space — seizing squares and denying outposts. Negative (Space Waster) accepts ceding space in exchange for other priorities.`,
   fortkx:   `Scores the resulting position for defensive solidity: sums the total defender count across all your pieces after each candidate move. Positive (Fort Knox) favours moves that maximise defensive support and keep pieces protected. Negative (Glass Cannon) accepts exposed, aggressive piece placement.`,
-  gambito:  `Opening phase only (first 20 moves). Positive (Gambito) boosts pawn sacrifices — moves that leave your pawn on an opponent-attacked, undefended square — and gambit acceptances (capturing an offered pawn). Negative (Gambit Shy) suppresses those moves, preferring solid material balance.`,
-  trade:    `Reweights candidates by exchange value: <code>score += w × Σ(material exchanged in line)</code>. Positive biases toward captures and piece trades; negative avoids exchanges and retains piece complexity on the board. Absolute value used so Trade Seeker and Trade Avoider both draw from the same pool.`,
+  gambito:  `Opening phase only (first 20 moves). Uses ECO opening names: if a matching gambit line (opening name contains "gambit") exists in the database, the bot boosts the specific next moves from that line. Falls back to structural pawn-sacrifice detection (pawn to opponent-attacked, undefended square) when outside known gambit lines. Positive (Gambito) boosts gambit play; negative (Gambit Shy) suppresses it, preferring solid material balance.`,
+  trade:    `Reweights candidates by capture and threat value. Positive (right, Trade seeker) boosts captures and moves that create new threats on opponent pieces; negative (left, Trade avoider) suppresses exchanges, preferring piece complexity on the board.`,
   structure:`Scores pawn structure delta via Stockfish's internal pawn evaluation: isolated pawns, doubled pawns, pawn islands. Formula: <code>Δ_structure = SF_pawn_eval(after) − SF_pawn_eval(before)</code>. Negative (loose) selects moves yielding open, mobile structures; positive (rigid) prefers structural consolidation.`,
   hustle:   `Scales think-time allocation per move: <code>t = base_time × (1 + v × 0.15)</code>. Negative (hustler): shorter pauses, higher sampling weight on first-pass candidates — speed over depth. Positive (grinder): longer deliberation, preference for candidates with superior positional or deeper-search scores.`,
   luck:     `Shifts which segment of Maia3's probability-ranked move list is sampled: <code>draw from [lower, upper]%</code> of ranked candidates. Positive = top of the distribution (engine-preferred); negative = tail of the distribution (off-form play). Works in conjunction with the Move Quality Range dual slider.`,
   pressure: `Scales steepness of the time-pressure ELO degradation curve: <code>elo(t) = E₀ − Δ · σ(k·(log t − 0.33))</code> where k is multiplied by this slider. Positive steepens the slope — sharper ELO drop in the final seconds; negative flattens it — consistent play regardless of clock.`,
+  attacker: `Scores each candidate move by the total number of opponent pieces under attack from all bot pieces after the move. <code>score += w × tanh(Σ_threats / 6)</code> where Σ_threats sums attack counts on each opponent piece. Positive (Attacker) maximises threat coverage; negative (Peacemaker) minimises it, preferring quiet positions.`,
 };
 
 const PIECE_DESCS = {
@@ -1381,11 +1396,12 @@ const ATTRACTORS = [
   { id:'spacecadet', labelLeft:'Space waster',  labelRight:'Space cadet', default:0 },
   { id:'fortkx',     labelLeft:'Glass cannon',  labelRight:'Fort Knox',   default:0 },
   { id:'gambito',    labelLeft:'Gambit shy',    labelRight:'Gambito',     default:0 },
-  { id:'trade',      labelLeft:'Trade seeker',         labelRight:'Trade avoider',         default:0 },
+  { id:'trade',      labelLeft:'Trade avoider',        labelRight:'Trade seeker',          default:0 },
   { id:'structure',  labelLeft:'Loose pawn structure', labelRight:'Rigid pawn structure',  default:0 },
   { id:'hustle',     labelLeft:'Coffeehouse hustler',  labelRight:'Positional grinder',    default:0 },
   { id:'luck',       labelLeft:'Good day',             labelRight:'Bad day',               default:0 },
   { id:'pressure',   labelLeft:'Calm under pressure',  labelRight:'Panicky',               default:0 },
+  { id:'attacker',   labelLeft:'Peacemaker',           labelRight:'Attacker',              default:0 },
 ];
 
 // ── Piece types ──────────────────────────────────────────────
@@ -1403,27 +1419,27 @@ const PIECE_TYPES = [
 // Add a new personality: one entry here, nothing else changes
 const PERSONALITIES = [
   { id:'entropy',    name:'Captain Entropy',   icon:'⚡', tag:'Chaos',      desc:'Maximises position complexity and open lines.',
-    attractors:{chaos:4,compwin:4,spacecadet:2,fortkx:-1,gambito:3,trade:-2,structure:-3,hustle:3,luck:1,pressure:0} },
+    attractors:{chaos:4,compwin:4,spacecadet:2,fortkx:-1,gambito:3,trade:2,structure:-3,hustle:3,luck:1,pressure:0,attacker:2} },
   { id:'norm',       name:'Norm',              icon:'◼', tag:'Order',      desc:'Prefers closed, simplified positions.',
-    attractors:{chaos:-4,compwin:-4,spacecadet:0,fortkx:3,gambito:-2,trade:1,structure:4,hustle:-2,luck:-1,pressure:-1} },
+    attractors:{chaos:-4,compwin:-4,spacecadet:0,fortkx:3,gambito:-2,trade:-1,structure:4,hustle:-2,luck:-1,pressure:-1,attacker:-2} },
   { id:'attacky',    name:'Attacky McTackerson',icon:'⚔', tag:'Captures',  desc:'Favours captures within centipawn ceiling.',
-    attractors:{chaos:2,compwin:1,spacecadet:1,fortkx:-2,gambito:1,trade:-4,structure:-1,hustle:2,luck:0,pressure:1} },
+    attractors:{chaos:2,compwin:1,spacecadet:1,fortkx:-2,gambito:1,trade:4,structure:-1,hustle:2,luck:0,pressure:1,attacker:3} },
   { id:'grinder',    name:'Positional Grinder', icon:'◈', tag:'Methodical', desc:'Deliberate. Thinks long in complex positions.',
-    attractors:{chaos:-3,compwin:-2,spacecadet:3,fortkx:2,gambito:-1,trade:0,structure:3,hustle:-4,luck:-1,pressure:-3} },
+    attractors:{chaos:-3,compwin:-2,spacecadet:3,fortkx:2,gambito:-1,trade:0,structure:3,hustle:-4,luck:-1,pressure:-3,attacker:0} },
   { id:'hustler',    name:'Coffeehouse Hustler',icon:'☕', tag:'Fast',       desc:'Fast imprecise early play, tightens in endgame.',
-    attractors:{chaos:1,compwin:-1,spacecadet:0,fortkx:-1,gambito:2,trade:-1,structure:-2,hustle:-5,luck:2,pressure:2} },
+    attractors:{chaos:1,compwin:-1,spacecadet:0,fortkx:-1,gambito:2,trade:1,structure:-2,hustle:-5,luck:2,pressure:2,attacker:1} },
   { id:'blunderer',  name:'The Blunderer',      icon:'∿', tag:'Human',      desc:'Plays well then cracks unexpectedly under pressure.',
-    attractors:{chaos:0,compwin:0,spacecadet:0,fortkx:0,gambito:0,trade:0,structure:0,hustle:0,luck:3,pressure:5} },
+    attractors:{chaos:0,compwin:0,spacecadet:0,fortkx:0,gambito:0,trade:0,structure:0,hustle:0,luck:3,pressure:5,attacker:0} },
   { id:'hoarder',    name:'The Hoarder',        icon:'◉', tag:'Material',   desc:'Never sacrifices material voluntarily.',
-    attractors:{chaos:-2,compwin:-1,spacecadet:0,fortkx:2,gambito:-3,trade:3,structure:1,hustle:-2,luck:-2,pressure:-1} },
+    attractors:{chaos:-2,compwin:-1,spacecadet:0,fortkx:2,gambito:-3,trade:-3,structure:1,hustle:-2,luck:-2,pressure:-1,attacker:-2} },
   { id:'pawnchain',  name:'Pawn Chain Gang',    icon:'♟', tag:'Pawns',      desc:'Maximises connected pawns and pawn structure.',
-    attractors:{chaos:-1,compwin:-2,spacecadet:0,fortkx:1,gambito:-1,trade:0,structure:5,hustle:-1,luck:0,pressure:0} },
+    attractors:{chaos:-1,compwin:-2,spacecadet:0,fortkx:1,gambito:-1,trade:0,structure:5,hustle:-1,luck:0,pressure:0,attacker:0} },
   { id:'spitecheck', name:'Spite Check',        icon:'†', tag:'Checks',     desc:'Always checks if a legal check exists.',
-    attractors:{chaos:3,compwin:2,spacecadet:1,fortkx:-2,gambito:0,trade:-2,structure:-2,hustle:2,luck:1,pressure:1} },
+    attractors:{chaos:3,compwin:2,spacecadet:1,fortkx:-2,gambito:0,trade:2,structure:-2,hustle:2,luck:1,pressure:1,attacker:3} },
   { id:'clock',      name:'Clock Watcher',      icon:'⧗', tag:'Clock',      desc:'Conservative when ahead on time, reckless when behind.',
-    attractors:{chaos:0,compwin:-2,spacecadet:0,fortkx:0,gambito:0,trade:1,structure:0,hustle:0,luck:0,pressure:-3} },
+    attractors:{chaos:0,compwin:-2,spacecadet:0,fortkx:0,gambito:0,trade:-1,structure:0,hustle:0,luck:0,pressure:-3,attacker:0} },
   { id:'badday',     name:'Grandmaster Bad Day', icon:'👑',tag:'Human',      desc:'Maia 2400 but picks first move above 4% threshold.',
-    attractors:{chaos:0,compwin:0,spacecadet:0,fortkx:0,gambito:0,trade:0,structure:0,hustle:0,luck:5,pressure:2} },
+    attractors:{chaos:0,compwin:0,spacecadet:0,fortkx:0,gambito:0,trade:0,structure:0,hustle:0,luck:5,pressure:2,attacker:0} },
 ];
 
 /* ══════════════════════════════════════════════════════════════
@@ -5681,6 +5697,7 @@ function onPieceChange(id, val){
 const RADAR_AXES = [
   { label:'Chaos',     key:'chaos' },
   { label:'Captures',  key:'trade' },
+  { label:'Attacker',  key:'attacker' },
   { label:'Space',     key:'spacecadet' },
   { label:'Fort Knox', key:'fortkx' },
   { label:'Gambito',   key:'gambito' },
