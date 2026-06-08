@@ -123,17 +123,9 @@ body::before{content:'';position:fixed;inset:0;background-image:repeating-linear
   letter-spacing:0.06em;margin-top:1px;
 }
 
-/* Engine pill zone */
+/* Engine pill zone — extends qs-pill-btn, pinned to far right */
 .qs-engine-zone{
-  padding:0 16px;
-  display:flex;flex-direction:column;justify-content:center;
-  margin-left:auto;border-left:0.5px solid var(--border);flex-shrink:0;
-}
-.qs-engine-pill{
-  font-family:var(--font-m);font-size:9px;letter-spacing:0.06em;
-  color:var(--amber);background:var(--amber-glow);
-  border:0.5px solid var(--border-amber);border-radius:2px;
-  padding:3px 8px;white-space:nowrap;
+  margin-left:auto;border-left:0.5px solid var(--border);
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -241,12 +233,18 @@ table.tg td.tg-inc-lbl{
    same column width, vertical stack
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .qs-inplace-drop{
-  max-height:0;overflow:hidden;
-  transition:max-height 0.3s cubic-bezier(0.4,0,0.2,1);
-  background:var(--carbon-surface);
-  border-top:0.5px solid var(--border);
+  position:absolute;
+  top:100%;
+  left:0;
+  z-index:300;
+  background:var(--carbon-raise);
+  border:0.5px solid var(--border-amber);
+  border-radius:var(--r);
+  box-shadow:0 10px 36px rgba(0,0,0,0.55);
+  min-width:140px;
+  display:none;
 }
-.qs-inplace-drop.open{max-height:180px;}
+.qs-inplace-drop.open{display:block;}
 
 .pa-btn{
   width:100%;padding:10px 20px;
@@ -730,11 +728,11 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
       </div>
     </div>
 
-    <!-- Engine pill — far right -->
-    <div class="qs-engine-zone">
+    <!-- Engine pill — far right; clicking opens ENGINE accordion -->
+    <button class="qs-pill-btn qs-engine-zone" onclick="openEngineSection()" aria-label="Open engine settings">
       <span class="qs-label">Engine</span>
-      <span class="qs-engine-pill" id="qs-engine-pill">Maia 3 · 1500</span>
-    </div>
+      <span class="qs-pill-value" id="qs-engine-pill">Maia 3 · 1500</span>
+    </button>
 
   </div><!-- /qs-bar -->
 
@@ -790,7 +788,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
             <div class="mdesc">Lichess explorer fallback + Maia 3.</div>
           </div>
         </div>
-        <div class="ctrl-hint" style="margin-top:5px;">LC modes use Lichess Open Explorer as an opening book; the selected engine takes over when the book runs dry.</div>
+        <div class="ctrl-hint" id="lc-explorer-hint" style="margin-top:5px;display:none;">LC modes use Lichess Open Explorer as an opening book; the selected engine takes over when the book runs dry.</div>
       </div>
 
       <!-- 2-column: left = engine sub-panel, right = shared quality controls -->
@@ -928,13 +926,6 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
           <div class="temp-grid" id="temp-grid"></div>
           <div style="margin-top:6px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);" id="temp-hint"></div>
 
-          <div class="dlbl"><span>Candidate filter</span></div>
-          <div class="ctrl">
-            <span class="ctrl-lbl">Min probability</span>
-            <input type="range" id="r-minprob" min="1" max="20" value="5" step="1" oninput="sv(this,'v-minprob',v=>v+'%')">
-            <span class="ctrl-val" id="v-minprob">5%</span>
-          </div>
-          <div class="ctrl-hint">Moves below this threshold are excluded. Default 5% removes Maia's tail moves.</div>
         </div><!-- /right col -->
 
       </div><!-- /panel-2col -->
@@ -956,6 +947,9 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
   </div>
   <div class="panel-shell">
     <div class="panel">
+
+      <!-- Current engine header -->
+      <div id="attract-engine-header" style="font-family:var(--font-u);font-size:10px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:var(--amber);margin-bottom:10px;"></div>
 
       <!-- Inner tab strip -->
       <div class="pr" style="margin-top:0;">
@@ -999,19 +993,21 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
                 <div class="ctrl-hint" id="blunder-floor-hint">Bot will not play any single move costing more than this centipawn loss. Raised automatically if below Max CP Budget.</div>
               </div>
 
-              <!-- Move quality range -->
+              <!-- Move quality range — only shown for Maia/LC+Maia/Hybrid -->
+              <div id="move-quality-range">
               <div class="dlbl" style="margin-top:14px;"><span>Move quality range</span></div>
               <div class="day-vals">
-                <span>Lower: <span id="day-lower-val">0</span>%</span>
-                <span>Upper: <span id="day-upper-val">100</span>%</span>
+                <span>Exclude lowest: <span id="day-lower-val">0</span>%</span>
+                <span>Exclude moves above: <span id="day-upper-val">100</span>%</span>
               </div>
               <div class="dual-range-wrap">
                 <div class="dual-range-track"><div class="dual-range-fill" id="day-fill"></div></div>
                 <input type="range" id="day-lower" min="0" max="100" value="0" step="1" oninput="onDaySlider()">
                 <input type="range" id="day-upper" min="0" max="100" value="100" step="1" oninput="onDaySlider()">
               </div>
-              <div class="dual-range-labels"><span>← Bad Day</span><span>Good Day →</span></div>
+              <div class="dual-range-labels"><span>← Bad Day, lowest probability moves</span><span>Good Day, Highest Probability moves →</span></div>
               <div class="ctrl-hint" style="margin-top:6px;">Sets the Maia3 probability band. Good Day = best moves; Bad Day = lower-probability alternatives. Forced moves (≥95%) are never skipped.</div>
+              </div><!-- /move-quality-range -->
             </div>
             <!-- RIGHT: Strategic attractors -->
             <div>
@@ -1130,7 +1126,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
       <div class="sec-label">Move Timing</div>
       <div class="sec-sub">How the bot allocates time between moves</div>
     </div>
-    <div class="sec-status" id="st-timing">Complexity-scaled</div>
+    <div class="sec-status" id="st-timing">Fixed interval</div>
     <svg class="chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
   </div>
   <div class="panel-shell">
@@ -1138,9 +1134,9 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
       <!-- Mode cards — full width -->
       <div class="pr" style="margin-top:0;">
         <div class="mode-grid mode-grid-4 mode-compact" id="timing-mode-grid">
-          <div class="mcard sel" data-g="timing" data-v="Complexity-scaled" onclick="selMode(this,'st-timing');showTimingCtrl('complexity')"><div class="mdot"></div><div class="mname">Complexity scaled</div><div class="mdesc">Think time scales with position complexity.</div></div>
+          <div class="mcard" data-g="timing" data-v="Complexity-scaled" onclick="selMode(this,'st-timing');showTimingCtrl('complexity')"><div class="mdot"></div><div class="mname">Complexity scaled</div><div class="mdesc">Think time scales with position complexity.</div></div>
           <div class="mcard" data-g="timing" data-v="Instantaneous" onclick="selMode(this,'st-timing');showTimingCtrl('instant')"><div class="mdot"></div><div class="mname">Instantaneous</div><div class="mdesc">Moves at engine speed. No delay.</div></div>
-          <div class="mcard" data-g="timing" data-v="Fixed interval" onclick="selMode(this,'st-timing');showTimingCtrl('fixed')"><div class="mdot"></div><div class="mname">Fixed interval</div><div class="mdesc">Constant pause between all moves.</div></div>
+          <div class="mcard sel" data-g="timing" data-v="Fixed interval" onclick="selMode(this,'st-timing');showTimingCtrl('fixed')"><div class="mdot"></div><div class="mname">Fixed interval</div><div class="mdesc">Constant pause between all moves.</div></div>
           <div class="mcard" data-g="timing" data-v="Mirror user" onclick="selMode(this,'st-timing');showTimingCtrl('mirror')"><div class="mdot"></div><div class="mname">Mirror user</div><div class="mdesc">Matches your move rhythm ± offset.</div></div>
         </div>
       </div>
@@ -1149,7 +1145,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
       <div class="panel-2col">
         <!-- LEFT: timing mode controls -->
         <div>
-          <div id="timing-complexity-ctrl" style="display:block;">
+          <div id="timing-complexity-ctrl" style="display:none;">
             <div class="dlbl"><span>Complexity — reference time</span></div>
             <div class="ctrl">
               <span class="ctrl-lbl">Base time</span>
@@ -1169,9 +1165,9 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
             </div>
             <div class="ctrl-hint">Range: <strong>0.4×</strong> (obvious moves) → <strong>2.5×</strong> (highly complex).</div>
           </div>
-          <div id="timing-fixed-ctrl" style="display:none;">
+          <div id="timing-fixed-ctrl" style="display:block;">
             <div class="dlbl"><span>Fixed interval</span></div>
-            <div class="ctrl"><span class="ctrl-lbl">Duration</span><input type="range" id="r-fixed" min="1" max="60" value="5" oninput="sv(this,'v-fixed',v=>v+'s')"><span class="ctrl-val" id="v-fixed">5s</span></div>
+            <div class="ctrl"><span class="ctrl-lbl">Duration</span><input type="range" id="r-fixed" min="1" max="60" value="2" oninput="sv(this,'v-fixed',v=>v+'s')"><span class="ctrl-val" id="v-fixed">2s</span></div>
           </div>
           <div id="timing-mirror-ctrl" style="display:none;">
             <div class="dlbl"><span>Mirror user</span></div>
@@ -1180,12 +1176,35 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
           </div>
         </div>
 
-        <!-- RIGHT: human behaviour modifiers -->
+        <!-- RIGHT: human behaviour modifiers + Time Weaponizer -->
         <div>
           <div class="dlbl"><span>Human behaviour modifiers</span></div>
           <div class="tog-row"><div><div class="tog-lbl">Reconsideration pauses</div><div class="tog-desc">Occasionally hesitates then takes longer — as if changing its mind</div></div><label class="tog"><input type="checkbox" id="cb-reconsidered" checked><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
           <div class="tog-row"><div><div class="tog-lbl">Move blink on forced moves</div><div class="tog-desc">Plays obvious recaptures and forced replies instantly</div></div><label class="tog"><input type="checkbox" id="cb-blink" checked><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
           <div class="tog-row"><div><div class="tog-lbl">Clock-pressure mirroring</div><div class="tog-desc">Bot speeds up when your clock runs low</div></div><label class="tog"><input type="checkbox" id="cb-clock-mirror" checked><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
+
+          <!-- Time Weaponizer — adjacent to clock-pressure mirroring -->
+          <div class="dlbl" style="margin-top:10px;"><span>Time Weaponizer</span></div>
+          <div class="tog-row">
+            <div>
+              <div class="tog-lbl">Enable Time Weaponizer</div>
+              <div class="tog-desc">When ahead on clock, plays instantly + drops ELO to pressure flagging. Opt-in.</div>
+            </div>
+            <label class="tog"><input type="checkbox" id="weaponizer-toggle" onchange="showWeaponizer(this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label>
+          </div>
+          <div id="weaponizer-sub" style="display:none;">
+            <div class="sub-panel blue-accent" style="margin-top:8px;">
+              <div class="sub-title blue">Weaponizer controls</div>
+              <div class="ctrl"><span class="ctrl-lbl">Clock lead</span><input type="range" id="r-wlead" min="10" max="120" step="5" value="30" oninput="sv(this,'v-wlead',v=>v+'s')"><span class="ctrl-val" id="v-wlead">30s</span></div>
+              <div class="ctrl-hint">Seconds ahead to activate.</div>
+              <div class="ctrl" style="margin-top:6px;"><span class="ctrl-lbl">Position gate</span><input type="range" min="0" max="300" step="25" value="100" oninput="sv(this,'v-wgate',v=>v==0?'Off':v+' cp')"><span class="ctrl-val" id="v-wgate">100 cp</span></div>
+              <div class="ctrl-hint">Won't activate if bot losing by more than this.</div>
+              <div class="tog-row" style="margin-top:6px;">
+                <div><div class="tog-lbl">Complexity injection</div><div class="tog-desc">Prefer moves that maximise opponent decision burden</div></div>
+                <label class="tog"><input type="checkbox"><div class="tog-track"><div class="tog-thumb"></div></div></label>
+              </div>
+            </div>
+          </div>
         </div>
       </div><!-- /panel-2col -->
     </div>
@@ -1197,7 +1216,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
   <div class="sec-trigger" onclick="toggleSec('pressure')">
     <div class="sec-icon"><svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
     <div class="sec-labels">
-      <div class="sec-label">Time Pressure Response</div>
+      <div class="sec-label">Time Pressure Play Degradation</div>
       <div class="sec-sub">How bot performance degrades as clock runs down</div>
     </div>
     <div class="sec-status" id="st-pressure">Dual curve</div>
@@ -1221,7 +1240,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
               <div class="ctrl"><span class="ctrl-lbl">Max ELO drop</span><input type="range" id="r-drop" min="50" max="500" step="25" value="300" oninput="sv(this,'v-drop',v=>v+' ELO');initPts();drawA()"><span class="ctrl-val" id="v-drop">300 ELO</span></div>
               <div class="chart-box">
                 <div class="chart-title-row">
-                  <div class="chart-title" style="flex:1;margin:0;">Effective ELO vs think time</div>
+                  <div class="chart-title" style="flex:1;margin:0;">Effective ELO vs think time — Chosen ELO is Effective ELO AT GAME START</div>
                   <button class="xsbtn" id="xsA-lin" onclick="setScaleA('lin')">Linear</button>
                   <button class="xsbtn active" id="xsA-log" onclick="setScaleA('log')">Log</button>
                 </div>
@@ -1240,7 +1259,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
               <div class="ctrl"><span class="ctrl-lbl">Min floor</span><input type="range" id="r-floor" min="1" max="20" step="1" value="5" oninput="sv(this,'v-floor',v=>v+'%');initPts();drawB()"><span class="ctrl-val" id="v-floor">5%</span></div>
               <div class="chart-box">
                 <div class="chart-title-row">
-                  <div class="chart-title" style="flex:1;margin:0;">Confidence floor % vs think time</div>
+                  <div class="chart-title" style="flex:1;margin:0;">Move Quality vs Think Time: Blind to moves at upper end of Maia distribution</div>
                   <button class="xsbtn" id="xsB-lin" onclick="setScaleB('lin')">Linear</button>
                   <button class="xsbtn active" id="xsB-log" onclick="setScaleB('log')">Log</button>
                 </div>
@@ -1273,13 +1292,11 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
         <!-- TAB 2: Settings & Options -->
         <div class="itab-pane" id="itab-pressure-settings">
           <div class="panel-2col">
-            <!-- LEFT: ELO info + game time + calm/panicky -->
+            <!-- LEFT: ELO info + calm/panicky -->
             <div>
               <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);padding:6px 10px;background:var(--carbon-surface);border:0.5px solid var(--border);border-radius:var(--r);margin-bottom:10px;">
                 Base ELO linked to engine selection: <span id="tp-elo-display" style="color:var(--amber);">1500</span>
               </div>
-              <div class="ctrl"><span class="ctrl-lbl">Game time</span><input type="range" id="r-time" min="1" max="60" step="1" value="5" oninput="sv(this,'v-time',v=>v+' min');reDraw()"><span class="ctrl-val" id="v-time">5 min</span></div>
-              <div class="ctrl"><span class="ctrl-lbl">Increment</span><input type="range" id="r-inc" min="0" max="10" step="1" value="0" oninput="sv(this,'v-inc',v=>v+'s');reDraw()"><span class="ctrl-val" id="v-inc">0s</span></div>
               <div class="dlbl"><span>Calm ↔ Panicky</span></div>
               <div class="attractor-row">
                 <span class="attr-left">Calm</span>
@@ -1292,28 +1309,6 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
             <div>
               <div class="dlbl"><span>Options</span></div>
               <div class="tog-row"><div><div class="tog-lbl">Can flag</div><div class="tog-desc">Allow bot to run out of time completely</div></div><label class="tog"><input type="checkbox" id="cb-flag" checked onchange="drawA()"><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
-              <div class="tog-row"><div><div class="tog-lbl">Maia-2 unified mode</div><div class="tog-desc">Smoother ELO transitions — single model covers full range</div></div><label class="tog"><input type="checkbox"><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
-              <div class="dlbl"><span>Time Weaponizer</span></div>
-              <div class="tog-row">
-                <div>
-                  <div class="tog-lbl">Enable Time Weaponizer</div>
-                  <div class="tog-desc">When ahead on clock, plays instantly + drops ELO to pressure flagging. Opt-in.</div>
-                </div>
-                <label class="tog"><input type="checkbox" id="weaponizer-toggle" onchange="showWeaponizer(this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label>
-              </div>
-              <div id="weaponizer-sub" style="display:none;">
-                <div class="sub-panel blue-accent" style="margin-top:8px;">
-                  <div class="sub-title blue">Weaponizer controls</div>
-                  <div class="ctrl"><span class="ctrl-lbl">Clock lead</span><input type="range" id="r-wlead" min="10" max="120" step="5" value="30" oninput="sv(this,'v-wlead',v=>v+'s')"><span class="ctrl-val" id="v-wlead">30s</span></div>
-                  <div class="ctrl-hint">Seconds ahead to activate.</div>
-                  <div class="ctrl" style="margin-top:6px;"><span class="ctrl-lbl">Position gate</span><input type="range" min="0" max="300" step="25" value="100" oninput="sv(this,'v-wgate',v=>v==0?'Off':v+' cp')"><span class="ctrl-val" id="v-wgate">100 cp</span></div>
-                  <div class="ctrl-hint">Won't activate if bot losing by more than this.</div>
-                  <div class="tog-row" style="margin-top:6px;">
-                    <div><div class="tog-lbl">Complexity injection</div><div class="tog-desc">Prefer moves that maximise opponent decision burden</div></div>
-                    <label class="tog"><input type="checkbox"><div class="tog-track"><div class="tog-thumb"></div></div></label>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -1429,8 +1424,6 @@ const PERSONALITIES = [
     attractors:{chaos:0,compwin:-2,spacecadet:0,fortkx:0,gambito:0,trade:1,structure:0,hustle:0,luck:0,pressure:-3} },
   { id:'badday',     name:'Grandmaster Bad Day', icon:'👑',tag:'Human',      desc:'Maia 2400 but picks first move above 4% threshold.',
     attractors:{chaos:0,compwin:0,spacecadet:0,fortkx:0,gambito:0,trade:0,structure:0,hustle:0,luck:5,pressure:2} },
-  { id:'custom',     name:'Custom',             icon:'∴', tag:'Advanced',   desc:'Build your own. Adjust sliders freely.',
-    attractors:{} },
 ];
 
 /* ══════════════════════════════════════════════════════════════
@@ -5112,6 +5105,21 @@ document.addEventListener('click', e => {
   if(!e.target.closest('.quickstart')) closeAllQsDropdowns();
 });
 
+function showWeaponizer(on){
+  const sub = document.getElementById('weaponizer-sub');
+  if(sub) sub.style.display = on ? 'block' : 'none';
+}
+
+function openEngineSection(){
+  const sec = document.getElementById('sec-engine');
+  if(!sec) return;
+  const shell = sec.querySelector('.panel-shell');
+  if(shell && !sec.classList.contains('open')){
+    toggleSec('engine');
+  }
+  sec.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
 function selColor(btn){
   document.querySelectorAll('.pa-btn').forEach(b => b.classList.remove('sel'));
   btn.classList.add('sel');
@@ -5174,7 +5182,7 @@ function getBotConfig(){
     lcMaiaMaiaElo:   parseInt(document.getElementById('lcmaia-maia-elo')?.value || '1500'),
     timePressureMaxDrop: parseInt(document.getElementById('r-drop')?.value    || '300'),
     timePressureFloor:   parseInt(document.getElementById('r-floor')?.value   || '5'),
-    minProbPct:          parseInt(document.getElementById('r-minprob')?.value || '5'),
+    minProbPct:          parseInt(document.getElementById('day-lower')?.value || '0'),
     blunderLimitCp:      parseInt(document.getElementById('r-blunder')?.value || '150'),
     ctrlA:               ctrlA.map(p => ({x: p.x, y: p.y})),
     ctrlB:               ctrlB.map(p => ({x: p.x, y: p.y})),
@@ -5312,6 +5320,16 @@ function selEngineMode(card){
   };
   document.getElementById('st-engine').textContent = names[currentEngine] || currentEngine;
   document.getElementById('qs-engine-pill').textContent = names[currentEngine] || currentEngine;
+  const lcHint = document.getElementById('lc-explorer-hint');
+  if(lcHint) lcHint.style.display = (currentEngine === 'lcsf' || currentEngine === 'lcmaia') ? '' : 'none';
+  const mqr = document.getElementById('move-quality-range');
+  if(mqr) mqr.style.display = (['maia3','lcmaia','hybrid'].includes(currentEngine)) ? '' : 'none';
+}
+
+function _updateEnginePanelHeader(){
+  const label = document.getElementById('qs-engine-pill')?.textContent || '';
+  const el = document.getElementById('attract-engine-header');
+  if(el) el.textContent = label;
 }
 
 function buildSFPips(containerId, onSelect){
@@ -5506,6 +5524,7 @@ function setElo(elo){
   document.getElementById('qs-engine-pill').textContent = `Maia 3 · ${elo}`;
   document.getElementById('tp-elo-display').textContent = elo;
   document.getElementById('pS0').textContent = elo;
+  _updateEnginePanelHeader();
 }
 
 function onEloInputChange(val){
@@ -6085,10 +6104,16 @@ let ctrlA = [], ctrlB = [];
 let scaleA = 'log', scaleB = 'log';
 
 // ── Game-time helpers (used for the "start" marker line) ─────────────────────
-// startX: estimated think time per move at game start, using Lichess formula
+// startX: estimated think time per move at game start using current QS time selection.
+// Falls back to 5 min + 0s if time pill is not parseable.
 // x domain: 1–1000s (requires parent element to have non-zero width before draw)
-function startX(){ return +((gv('r-time')*60 + 40*(gv('r-inc')||0))/40).toFixed(2); }
-function flrX(){   return Math.max(1, (gv('r-inc')||0)*0.9); }
+function _getQsTcSecs(){
+  const v = document.getElementById('qs-time-value')?.textContent || '5 min + 0s';
+  const m = v.match(/(\d+)\s*min/); const s = v.match(/\+\s*(\d+)s/);
+  return ((m ? +m[1] : 5) * 60) + (s ? +s[1] : 0);
+}
+function startX(){ const t = _getQsTcSecs(); return +(t > 0 ? (t + 40*0)/40 : 7.5).toFixed(2); }
+function flrX(){   const v = document.getElementById('qs-time-value')?.textContent || ''; const s = v.match(/\+\s*(\d+)s/); return Math.max(1, (s ? +s[1] : 0)*0.9); }
 
 // ── Dense log-spaced sample array (for drawing the smooth baseline) ───────────
 // Returns 121 points from X_MAX down to X_MIN (descending), log-spaced.
@@ -6442,6 +6467,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   initRadarInteraction();      // interactive cp-budget gauge
   updateAttrCpDisplays(); // populate attractor cp allocations
   onDaySlider(); // init dual-range fill
+  _updateEnginePanelHeader();
   initPts();
   setupDrag('cvA', ()=>ctrlA, sigA, true,  'tipA', ()=>scaleA);
   setupDrag('cvB', ()=>ctrlB, sigB, false, 'tipB', ()=>scaleB);

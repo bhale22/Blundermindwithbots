@@ -602,9 +602,10 @@ canvas{
   canvas{width:100% !important;height:auto !important;}
   .player-box{width:100% !important;}
 }
-.board-col.board-flipped{display:flex;flex-direction:column-reverse;}
-.board-col.board-flipped .player-box:first-child{order:2;}
-.board-col.board-flipped canvas{order:1;}
+/* When board is flipped (human plays black), move white box to top and black box to bottom
+   so the player's clock always appears adjacent to their pieces. */
+#board-col.board-flipped #playerBoxW { order: -1; }
+#board-col.board-flipped #playerBoxB { order:  3; }
 </style>
 </head>
 <body>
@@ -721,7 +722,9 @@ canvas{
         <button onclick="clockSetControl('blitz5')"     class="tc-btn" id="tc-blitz5">Blitz 5+0</button>
         <button onclick="clockSetControl('rapid10')"    class="tc-btn" id="tc-rapid10">Rapid 10+0</button>
         <button onclick="clockSetControl('rapid15')"    class="tc-btn" id="tc-rapid15">Rapid 15+10</button>
-        <button onclick="clockSetControl('tournament')" class="tc-btn" id="tc-tournament">Tournament 30+0</button>
+        <button onclick="clockSetControl('tournament')"    class="tc-btn" id="tc-tournament">Tournament 30+0</button>
+        <button onclick="clockSetControl('classical90')"   class="tc-btn" id="tc-classical90">Classical 90+0</button>
+        <button onclick="clockSetControl('classical90_30')" class="tc-btn" id="tc-classical90_30">Classical 90+30</button>
       </div>
     </div>
 
@@ -1368,7 +1371,18 @@ canvas{
           <span id="obDepthPVal" style="font-size:10px;font-weight:700;min-width:20px;">20</span>
         </div>
       </div>
-      <div style="font-size:8px;color:var(--text-dim);margin-top:6px;">Uses Masters DB (falls back to Lichess)</div>
+      <div style="font-size:8px;color:var(--text-dim);margin-top:6px;">Uses ECO move sequences from eco.tsv (falls back to Masters DB)</div>
+
+      <!-- Opening frequency control -->
+      <div style="margin-top:10px;">
+        <label style="font-size:9px;color:var(--text-dim);">Opening frequency — % of games bot follows repertoire</label>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
+          <input type="range" id="obFreqSlider" min="0" max="100" value="100" step="5" style="flex:1;"
+            oninput="botOpeningFrequencyPct=parseInt(this.value);document.getElementById('obFreqVal').textContent=this.value+'%'">
+          <span id="obFreqVal" style="font-size:10px;font-weight:700;min-width:32px;">100%</span>
+        </div>
+        <div style="font-size:8px;color:var(--text-dim);margin-top:2px;">At 100% bot always follows openings. At 50%, half of games use repertoire, half use engine only.</div>
+      </div>
     </div>
 
     <!-- Time behavior -->
@@ -1423,6 +1437,7 @@ canvas{
         <button class="tc-btn" id="tcm-15" onclick="botSetBaseMin(15)">15</button>
         <button class="tc-btn" id="tcm-20" onclick="botSetBaseMin(20)">20</button>
         <button class="tc-btn" id="tcm-30" onclick="botSetBaseMin(30)">30</button>
+        <button class="tc-btn" id="tcm-90" onclick="botSetBaseMin(90)">90</button>
       </div>
       <div style="font-size:8px;color:var(--text-dim);margin:3px 0 2px;">+ increment (sec)</div>
       <div style="display:flex;gap:2px;flex-wrap:wrap;">
@@ -1752,6 +1767,9 @@ let botOpeningConfig = {
   black: [],
   strictness: 0.8,
 };
+// 0–100: percentage of games where the bot follows its preferred opening.
+// Roll happens in botStart; if skipped, preferredOpeningActive stays false.
+let botOpeningFrequencyPct = 100;
 // In-memory cache: move-history key → explorer result. No TTL needed.
 const _openingCache = new Map();
 // Starting clock in ms — captured when botStart() initialises the clock.
@@ -2341,9 +2359,11 @@ const TIME_CONTROLS = {
   blitz5:     {label:'Blitz 5+0',      time:300,  inc:0},
   rapid10:    {label:'Rapid 10+0',     time:600,  inc:0},
   rapid15:    {label:'Rapid 15+10',    time:900,  inc:10},
-  tournament: {label:'Tournament 30+0',time:1800, inc:0},
+  tournament:    {label:'Tournament 30+0',  time:1800, inc:0},
+  classical90:   {label:'Classical 90+0',  time:5400, inc:0},
+  classical90_30:{label:'Classical 90+30', time:5400, inc:30},
   // Custom: built dynamically from base+increment selectors
-  custom:     {label:'Custom',         time:0,    inc:0},
+  custom:        {label:'Custom',          time:0,    inc:0},
 };
 
 let clockActive = false;
@@ -7571,7 +7591,12 @@ async function botMakeMove() {
       if (!slots.length) {
         preferredOpeningActive = false;
       } else if (!_ecoData || !_ecoData.length) {
-        preferredOpeningActive = false;
+        // ECO data may still be loading — await it rather than permanently deactivating
+        try { await obLoadEcoData(); } catch(e) {}
+        if (!_ecoData || !_ecoData.length) { preferredOpeningActive = false; }
+        // Re-enter logic next move (don't fall through this time)
+        if (preferredOpeningActive && botActive && !gameOver) setTimeout(botMakeMove, 50);
+        return;
       } else if (botSanHistory.length >= (botOpeningConfig.maxBookDepth || 20)) {
         preferredOpeningActive = false;
       } else {
@@ -8851,6 +8876,9 @@ async function botStart() {
   if (pc === 'random') pc = Math.random() < 0.5 ? 'white' : 'black';
   botPlayerColor = pc;
   boardFlipped = (pc === 'black');
+  // Sync the CSS class so player boxes rearrange to match board orientation
+  var _bc = document.getElementById('board-col');
+  if (_bc) _bc.classList.toggle('board-flipped', boardFlipped);
 
   // Apply time control then reset board (render() inside resetGame will use correct flip)
   clockInit(botSelectedTC || 'untimed');
@@ -8866,7 +8894,9 @@ async function botStart() {
   if (botOpeningMode === 'preferred') {
     const _hasSlots = (botOpeningConfig[_resolvedBotCol] || [])
                         .filter(s => s.name).length > 0;
-    preferredOpeningActive = _hasSlots;
+    // Frequency roll: if < 100%, sometimes skip openings for this game
+    const _freqRoll = (botOpeningFrequencyPct >= 100) || (Math.random() * 100 < botOpeningFrequencyPct);
+    preferredOpeningActive = _hasSlots && _freqRoll;
   } else {
     preferredOpeningActive = false;
   }
@@ -8916,6 +8946,9 @@ function botStop() {
   botThinking = false;
   clearGhostPieces();
   botGhostResponses = {};
+  boardFlipped = false;
+  var _bc = document.getElementById('board-col');
+  if (_bc) _bc.classList.remove('board-flipped');
   // Phase 1: clear move history and clock baseline on stop
   botMoveHistory = [];
   botSanHistory  = [];
@@ -8968,7 +9001,8 @@ function botSaveConfig() {
     ghostPieces: document.getElementById('cbGhostPieces').checked,
     opening: {
       mode: botOpeningMode,
-      config: botOpeningConfig
+      config: botOpeningConfig,
+      frequencyPct: botOpeningFrequencyPct
     }
   };
   const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
@@ -9020,6 +9054,13 @@ function botLoadConfig(event) {
         botSetOpeningMode(mode);
         if (botOpeningConfig.source) botSetOpeningSrc(botOpeningConfig.source);
         if (mode === 'preferred') { setTimeout(obRestorePreferredUI, 0); }
+        if (cfg.opening.frequencyPct != null) {
+          botOpeningFrequencyPct = cfg.opening.frequencyPct;
+          var freqSlider = document.getElementById('obFreqSlider');
+          var freqVal    = document.getElementById('obFreqVal');
+          if (freqSlider) freqSlider.value = botOpeningFrequencyPct;
+          if (freqVal)    freqVal.textContent = botOpeningFrequencyPct + '%';
+        }
       }
       document.getElementById('botStatus').textContent = '✓ Config loaded: ' + (cfg.name || 'unnamed');
       setTimeout(() => { document.getElementById('botStatus').textContent = ''; }, 3000);
