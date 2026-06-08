@@ -5969,13 +5969,14 @@ loadSoundPref();
 loadPos(0);
 resizeBoard();
 
-// Start the Maia worker in the background shortly after page load so it can
-// detect any cached model before the user opens the bot panel.  The 3 s delay
-// keeps it out of the critical render path; maiaInit() is a no-op if the
-// worker is already running.
+// Start the Maia worker shortly after page load so it can detect any cached
+// model in IndexedDB and update the status UI before the user opens the bot
+// panel.  200 ms keeps it out of the critical render path while still giving
+// a near-instant cache check result; maiaInit() is a no-op if the worker is
+// already running.
 setTimeout(function() {
   if (!_maiaWorker) { maiaInit(); _maiaLoadMappings(); }
-}, 3000);
+}, 200);
 
 // Pause clock when tab is hidden, resume when visible
 document.addEventListener('visibilitychange', () => {
