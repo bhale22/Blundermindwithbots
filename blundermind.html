@@ -8450,7 +8450,7 @@ function _buildEcoIndex(data) {
 }
 
 async function obLoadEcoData() {
-  if (_ecoData) return _ecoData;
+  if (_ecoData && _ecoData.length) return _ecoData; // only skip if successfully loaded
   try {
     const resp = await fetch('/data/eco.tsv');
     if (!resp.ok) throw new Error('eco.tsv ' + resp.status);
@@ -8504,17 +8504,46 @@ function obPreferredNextMoves(sanHistory, slots, boardState, turnColor, epSq, ca
 
   // Narrow the candidate set using the index.
   // If we have a game history, only entries starting with sanHistory[0] are relevant.
-  // If no moves played yet, all entries are candidates (first move of the game).
   let candidates;
   if (_ecoIndex && sanHistory.length > 0) {
     candidates = _ecoIndex.get(sanHistory[0]) || [];
   } else if (_ecoIndex) {
-    // No moves yet — flatten all indexed entries (bot hasn't moved; unusual but possible)
     candidates = _ecoData;
   } else {
     candidates = _ecoData;
   }
 
+  // ── "Inside preferred line" detection ────────────────────────────────────────
+  // Openings like the Sicilian span ECO codes B20-B99. After 1.e4 c5 2.Nf3, the
+  // continuation lives in B30-B49, not B20. If we only match by familyPrefix='B2'
+  // we'd find nothing and permanently deactivate. Instead: check if the game's
+  // move history so far is a PREFIX of any preferred ECO entry. If yes, we're
+  // already "inside" the preferred opening and should accept any continuation.
+  let insidePreferredLine = false;
+  if (sanHistory.length > 0) {
+    for (const prefEntry of candidates) {
+      if (prefEntry.sanMoves.length === 0) continue;
+      // Is this entry preferred by any slot?
+      let isPreferred = false;
+      for (const slot of slots) {
+        const exact  = slot.exactEco     || null;
+        const family = slot.familyPrefix || (slot.eco ? slot.eco.slice(0, 2) : null);
+        if ((exact && prefEntry.eco.startsWith(exact)) ||
+            (family && prefEntry.eco.startsWith(family))) { isPreferred = true; break; }
+      }
+      if (!isPreferred) continue;
+      // Does this preferred entry's moves match the FULL game history so far
+      // (or at least up to this entry's length)?
+      const checkLen = Math.min(prefEntry.sanMoves.length, sanHistory.length);
+      let prefMatch = true;
+      for (let i = 0; i < checkLen; i++) {
+        if (prefEntry.sanMoves[i] !== sanHistory[i]) { prefMatch = false; break; }
+      }
+      if (prefMatch) { insidePreferredLine = true; break; }
+    }
+  }
+
+  const EXACT_BONUS = 3.0;
   const moveScores = {}; // sanMove → best score
 
   for (const entry of candidates) {
@@ -8532,7 +8561,6 @@ function obPreferredNextMoves(sanHistory, slots, boardState, turnColor, epSq, ca
     for (const slot of slots) {
       const exact  = slot.exactEco     || null;
       const family = slot.familyPrefix || (slot.eco ? slot.eco.slice(0,2) : null);
-      const EXACT_BONUS = 3.0;
       let tier = 0;
       if (exact  && entry.eco.startsWith(exact))  tier = 2;
       else if (family && entry.eco.startsWith(family)) tier = 1;
@@ -8542,6 +8570,11 @@ function obPreferredNextMoves(sanHistory, slots, boardState, turnColor, epSq, ca
         if (sc > bestSlotScore) bestSlotScore = sc;
       }
     }
+
+    // If no direct slot match but we're already inside a preferred line (e.g. B20→B30
+    // transposition in the Sicilian), give a weak score so we continue in book.
+    if (!bestSlotScore && insidePreferredLine) bestSlotScore = 0.2;
+
     if (!bestSlotScore) continue;
 
     // The next SAN move in this line is what we want to play
@@ -8561,7 +8594,6 @@ function obPreferredNextMoves(sanHistory, slots, boardState, turnColor, epSq, ca
     if (mv) {
       const uci = sqToUci(mv.from, mv.to, mv.promo ? mv.promo.toLowerCase() : null);
       preferredUci.add(uci);
-      // Also store score so caller can weight by it
       preferredUci[uci] = score; // piggyback score on the Set object
     }
   }
