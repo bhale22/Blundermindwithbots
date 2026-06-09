@@ -1263,7 +1263,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
           <!-- LEFT: ELO degradation curve -->
           <div>
             <div class="dlbl"><span>ELO degradation — drag points</span></div>
-            <div class="ctrl"><span class="ctrl-lbl">Max ELO drop</span><input type="range" id="r-drop" min="50" max="500" step="25" value="300" oninput="sv(this,'v-drop',v=>v+' ELO');initPts();drawA()"><span class="ctrl-val" id="v-drop">300 ELO</span></div>
+            <div class="ctrl"><span class="ctrl-lbl">Max ELO drop</span><input type="range" id="r-drop" min="0" max="600" step="25" value="300" oninput="sv(this,'v-drop',v=>v+' ELO');initPts();drawA()"><span class="ctrl-val" id="v-drop">300 ELO</span></div>
             <div class="chart-box">
               <div class="chart-title-row">
                 <div class="chart-title" style="flex:1;margin:0;">Effective ELO vs think time — curve passes through Selected ELO at game start</div>
@@ -1282,7 +1282,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
           <!-- RIGHT: Distribution curve -->
           <div>
             <div class="dlbl"><span>Move quality (distribution) — drag points</span></div>
-            <div class="ctrl"><span class="ctrl-lbl">Min floor</span><input type="range" id="r-floor" min="1" max="80" step="1" value="50" oninput="sv(this,'v-floor',v=>v+'%');initPts();drawB()"><span class="ctrl-val" id="v-floor">50%</span></div>
+            <div class="ctrl"><span class="ctrl-lbl">Min floor</span><input type="range" id="r-floor" min="1" max="100" step="1" value="5" oninput="sv(this,'v-floor',v=>v+'%');initPts();drawB()"><span class="ctrl-val" id="v-floor">5%</span></div>
             <div class="chart-box">
               <div class="chart-title-row">
                 <div class="chart-title" style="flex:1;margin:0;">Available move distribution (%) vs think time — 100% at game start</div>
@@ -1305,7 +1305,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
           <div class="stat"><div class="stat-l">Start ELO</div><div class="stat-v" id="pS0">1500</div></div>
           <div class="stat"><div class="stat-l">ELO @ 3s</div><div class="stat-v" id="pS3">—</div></div>
           <div class="stat"><div class="stat-l">ELO @ min</div><div class="stat-v" id="pS1">—</div></div>
-          <div class="stat"><div class="stat-l">Dist @ min</div><div class="stat-v" id="pSF">50%</div></div>
+          <div class="stat"><div class="stat-l">Dist @ min</div><div class="stat-v" id="pSF">5%</div></div>
         </div>
 
         <!-- Bottom row: Can Flag (left) + Regan Power Rule (right) -->
@@ -5193,7 +5193,7 @@ function getBotConfig(){
     lcMaiaLcElo:     parseInt(document.getElementById('lcmaia-lc-elo')?.value || '2000'),
     lcMaiaMaiaElo:   parseInt(document.getElementById('lcmaia-maia-elo')?.value || '1500'),
     timePressureMaxDrop: parseInt(document.getElementById('r-drop')?.value    || '300'),
-    timePressureFloor:   parseInt(document.getElementById('r-floor')?.value   || '50'),
+    timePressureFloor:   parseInt(document.getElementById('r-floor')?.value   || '5'),
     minProbPct:          parseInt(document.getElementById('day-lower')?.value || '0'),
     blunderLimitCp:      parseInt(document.getElementById('r-blunder')?.value || '150'),
     ctrlA:               ctrlA.map(p => ({x: p.x, y: p.y})),

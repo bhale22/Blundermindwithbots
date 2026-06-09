@@ -1728,6 +1728,13 @@ let sfWorker = null;
 let sfReady = false;
 let sfPendingResolve = null;
 let sfCurrentSkillLevel = -1; // tracks last set skill level — avoids redundant setoption calls
+// ── MultiPV complexity probe state ───────────────────────────────────────────
+let sfCplxActive    = false;  // true while a MultiPV depth-12 probe is running
+let sfCplxPending   = null;   // resolve callback for sfGetComplexity()
+let sfCplxInfoLines = [];     // info lines collected during the probe
+let sfCplxScore     = null;   // last computed complexity 0..1 (null = unavailable)
+let sfCplxEval      = null;   // last computed eval cp from probe (+= current player)
+let sfCplxFen       = null;   // FEN of the cached position (one-move cache)
 let sfGhostWorker = null;
 let sfGhostReady = false;
 let sfGhostPending = null;
@@ -6030,12 +6037,29 @@ function sfInit() {
         var line = e.data;
         if (line === 'uciok')   sfWorker.postMessage('isready');
         if (line === 'readyok') { sfReady = true; resolve(); }
-        if (line.startsWith('bestmove') && sfPendingResolve) {
-          var parts = line.split(' ');
-          var move  = parts[1];
-          var res   = sfPendingResolve;
-          sfPendingResolve = null;
-          res(move && move !== '(none)' ? move : null);
+        // Collect MultiPV info lines for the complexity probe
+        if (sfCplxActive && line.startsWith('info') && line.includes('multipv')) {
+          sfCplxInfoLines.push(line);
+        }
+        if (line.startsWith('bestmove')) {
+          if (sfCplxActive) {
+            // This bestmove closes the complexity probe, not a normal move request
+            sfCplxActive = false;
+            sfWorker.postMessage('setoption name MultiPV value 1');
+            sfCurrentSkillLevel = -1;
+            var result = _computeCplxScore(sfCplxInfoLines);
+            sfCplxScore = result ? result.cplx : null;
+            sfCplxEval  = result ? result.eval  : null;
+            var cplxRes = sfCplxPending;
+            sfCplxPending = null;
+            if (cplxRes) cplxRes(result);
+          } else if (sfPendingResolve) {
+            var parts = line.split(' ');
+            var move  = parts[1];
+            var res   = sfPendingResolve;
+            sfPendingResolve = null;
+            res(move && move !== '(none)' ? move : null);
+          }
         }
       };
       sfWorker.onerror = function(e) { console.warn('Bot SF error:', e); reject(e); };
@@ -6152,6 +6176,100 @@ function sfGetMove(fen, levelOrDepth, isDepth=false) {
       }
     }, 5000);
   });
+}
+
+// ── MultiPV complexity probe ──────────────────────────────────────────────────
+// Runs a depth-12 MultiPV=2 search on sfWorker concurrently with Maia inference.
+// Returns Promise<{cplx:0..1, eval:cp}|null>. One-move cache on sfCplxFen.
+function sfGetComplexity(fen) {
+  return new Promise((resolve) => {
+    if (!sfWorker || !sfReady) { resolve(null); return; }
+    // Return cached result if position hasn't changed
+    if (sfCplxFen === fen && sfCplxScore !== null) {
+      resolve({ cplx: sfCplxScore, eval: sfCplxEval }); return;
+    }
+    // Cannot run while a move request is in flight — skip and return null
+    if (sfPendingResolve) { resolve(null); return; }
+    sfCplxActive   = true;
+    sfCplxPending  = resolve;
+    sfCplxInfoLines = [];
+    sfCplxFen      = fen;
+    sfWorker.postMessage('stop');
+    if (sfCurrentSkillLevel !== 20) {
+      sfWorker.postMessage('setoption name Skill Level value 20');
+      sfCurrentSkillLevel = 20;
+    }
+    sfWorker.postMessage('setoption name MultiPV value 2');
+    sfWorker.postMessage('position fen ' + fen);
+    sfWorker.postMessage('go depth 12');
+    // 3 s safety timeout — avoids indefinite wait if SF is stalled
+    setTimeout(() => {
+      if (sfCplxPending === resolve) {
+        sfCplxActive  = false;
+        sfCplxPending = null;
+        sfWorker.postMessage('setoption name MultiPV value 1');
+        sfCurrentSkillLevel = -1;
+        resolve(null);
+      }
+    }, 3000);
+  });
+}
+
+function _computeCplxScore(lines) {
+  const byDepth = {};
+  for (const line of lines) {
+    const dm = line.match(/\bdepth (\d+)/);
+    const pm = line.match(/\bmultipv (\d+)/);
+    const cm = line.match(/\bscore cp (-?\d+)/);
+    const mm = line.match(/\bscore mate (-?\d+)/);
+    if (!dm || !pm) continue;
+    const d = +dm[1], pv = +pm[1];
+    const score = cm ? +cm[1] : mm ? (+mm[1] > 0 ? 3000 : -3000) : null;
+    if (score === null) continue;
+    if (!byDepth[d]) byDepth[d] = {};
+    if (pv === 1) byDepth[d].pv1 = score;
+    if (pv === 2) byDepth[d].pv2 = score;
+  }
+  const depths = Object.keys(byDepth).map(Number).filter(d => byDepth[d].pv1 != null);
+  if (depths.length < 2) return { cplx: 0.5, eval: null };
+  const pv1s   = depths.map(d => byDepth[d].pv1);
+  const mean   = pv1s.reduce((a, b) => a + b, 0) / pv1s.length;
+  const stdDev = Math.sqrt(pv1s.reduce((a, v) => a + (v - mean) ** 2, 0) / pv1s.length);
+  const normStdDev = Math.min(1, stdDev / 100);
+  const maxD   = Math.max(...depths);
+  const gap    = byDepth[maxD].pv2 != null
+    ? Math.abs(byDepth[maxD].pv1 - byDepth[maxD].pv2)
+    : 200;
+  const normGap = Math.max(0, 1 - Math.min(gap, 300) / 300);
+  return { cplx: Math.min(1, normStdDev * 0.6 + normGap * 0.4), eval: byDepth[maxD].pv1 };
+}
+
+// Returns true if the complexity probe is worth running this move
+function _needsComplexity() {
+  const av = window._bcpAttractorValues || {};
+  return (av['chaos'] || 0) !== 0 ||
+         (av['compwin'] || 0) !== 0 ||
+         botTimeBehavior === 'complexity';
+}
+
+// Scales base Maia temperature up/down based on position complexity + attractor values
+function complexityAdjustedTemp(baseTemp) {
+  const av = window._bcpAttractorValues || {};
+  const chaosV   = av['chaos']   || 0;
+  const compwinV = av['compwin'] || 0;
+  if ((chaosV === 0 && compwinV === 0) || sfCplxScore === null) return baseTemp;
+  let temp = baseTemp;
+  if (chaosV !== 0) {
+    // Seek complexity when chaos>0, simplicity when chaos<0
+    const cplxSignal = Math.tanh((sfCplxScore - 0.5) * 4);
+    temp *= Math.exp(chaosV * 0.08 * cplxSignal);
+  }
+  if (compwinV !== 0 && sfCplxEval !== null && sfCplxEval > 50) {
+    // When winning (+50cp+), seek complexity to complicate; avoid when losing
+    const cplxSignal = Math.tanh((sfCplxScore - 0.5) * 4);
+    temp *= Math.exp(compwinV * 0.08 * cplxSignal);
+  }
+  return Math.max(0.1, Math.min(5.0, temp));
 }
 
 // ── Board state to FEN ───────────────────────────────────────────────────────
@@ -7546,8 +7664,9 @@ function botThinkTime(moveProbs, clockMs) {
   // ── Complexity: explicit base/min/max from new panel ─────────────────────
   let thinkMs;
   if (botTimeBehavior === 'complexity') {
-    const t = Math.min(1, entropy / 4.0); // 0 = simple, 1 = complex
-    const mult = botCplxMin + t * (botCplxMax - botCplxMin);
+    // Prefer sfCplxScore (MultiPV probe) over entropy fallback when available
+    const cplx = (sfCplxScore !== null) ? sfCplxScore : Math.min(1, entropy / 4.0);
+    const mult = botCplxMin + cplx * (botCplxMax - botCplxMin);
     thinkMs = botCplxBase * mult * 1000;
   } else {
     // ── Pace (default): original entropy-based delay ──────────────────────
@@ -7755,6 +7874,9 @@ async function botMakeMove() {
       const m3Temp = parseFloat(document.getElementById('maia3Temp')?.value || '1.0');
       const m3EffTemp = timePressureTemp(m3Temp, clockMs);
       let m3Probs = null;
+      // Kick off SF complexity probe in parallel with Maia inference (separate workers)
+      if (_needsComplexity() && !sfReady) sfInit().catch(() => {}); // warm up SF for next move
+      const cplxPromise = (_needsComplexity() && sfReady) ? sfGetComplexity(fen) : null;
       if (_maiaReady) {
         const savedRating = lcSelectedRating;
         lcSelectedRating = String(pressureEffectiveMaiaElo(clockMs)); // ELO degradation via ctrlA curve
@@ -7762,18 +7884,27 @@ async function botMakeMove() {
         lcSelectedRating = savedRating;
         if (m3Probs) lastBotMoveSource = 'Maia3';
       }
+      // Collect complexity result — likely already done while Maia was running
+      if (cplxPromise) {
+        const cr = await cplxPromise;
+        sfCplxScore = cr ? cr.cplx : null;
+        sfCplxEval  = cr ? cr.eval  : null;
+      } else if (!_needsComplexity()) {
+        sfCplxScore = sfCplxEval = null;
+      }
       if (m3Probs && Object.keys(m3Probs).length) {
         const effElo = pressureEffectiveMaiaElo(clockMs);
         const allMoves = Object.entries(m3Probs).sort((a,b)=>b[1]-a[1]);
-        console.log('[Maia3 FULL] elo:', effElo, 'fen:', fen);
+        console.log('[Maia3 FULL] elo:', effElo, 'fen:', fen, 'cplx:', sfCplxScore);
         console.log('[Maia3 FULL] all probs:', allMoves.map(([m,p])=>m+'='+p.toFixed(4)).join(' '));
         const targetDelay = botThinkTime(m3Probs, clockMs);
         const inferenceMs = Date.now() - _botMoveStartMs;
         const delay = Math.max(0, targetDelay - inferenceMs);
         if (delay > 0) await new Promise(r => setTimeout(r, delay));
         _botMoveClockMs = clockMs; // for applyMoveAttractors distribution cutoff (ctrlB)
-        uciMove = sampleFromProbs(applyMoveAttractors(m3Probs), m3EffTemp);
-        console.log('[Maia3 FULL] chose:', uciMove, '| temp:', m3EffTemp.toFixed(2), '| inf:', inferenceMs, 'ms | extra wait:', delay, 'ms');
+        const adjTemp = complexityAdjustedTemp(m3EffTemp);
+        uciMove = sampleFromProbs(applyMoveAttractors(m3Probs), adjTemp);
+        console.log('[Maia3 FULL] chose:', uciMove, '| temp:', adjTemp.toFixed(2), '(base:', m3EffTemp.toFixed(2), ')| inf:', inferenceMs, 'ms | extra wait:', delay, 'ms');
       } else {
         // Maia3 not downloaded — fall back to SF
         await sfInit();
@@ -7788,6 +7919,9 @@ async function botMakeMove() {
       const baseTemp = parseFloat(document.getElementById('maiaTemp').value) || 1.0;
       const effectiveTemp = timePressureTemp(baseTemp, clockMs);
       let probs = null;
+      // Start complexity probe before LC/Maia calls — runs in parallel on sfWorker
+      if (_needsComplexity() && !sfReady) sfInit().catch(() => {});
+      const cplxPromiseMaia = (_needsComplexity() && sfReady) ? sfGetComplexity(fen) : null;
       if (lichessExplorerActive) {
         probs = await maiaGetMoveProbs(fen);
         if (probs && Object.keys(probs).length) {
@@ -7804,13 +7938,21 @@ async function botMakeMove() {
         lcSelectedRating = savedRatingM;
         if (probs) lastBotMoveSource = 'Maia3';
       }
+      // Collect complexity result — should be done by now
+      if (cplxPromiseMaia) {
+        const cr = await cplxPromiseMaia;
+        sfCplxScore = cr ? cr.cplx : null;
+        sfCplxEval  = cr ? cr.eval  : null;
+      } else if (!_needsComplexity()) {
+        sfCplxScore = sfCplxEval = null;
+      }
       if (probs && Object.keys(probs).length) {
         const targetDelay = botThinkTime(probs, clockMs);
         const inferenceMs = Date.now() - _botMoveStartMs;
         const delay = Math.max(0, targetDelay - inferenceMs);
         if (delay > 0) await new Promise(r => setTimeout(r, delay));
         _botMoveClockMs = clockMs;
-        uciMove = sampleFromProbs(applyMoveAttractors(probs), effectiveTemp);
+        uciMove = sampleFromProbs(applyMoveAttractors(probs), complexityAdjustedTemp(effectiveTemp));
       } else {
         await sfInit();
         uciMove = await sfGetMove(fen, lcFallbackLevel());
