@@ -173,21 +173,31 @@ app.get('/blundermind.html', serveHtml);
 
 // ── Multiplayer room system ───────────────────────────────────────────────────
 const rooms = {};
+// Open lobby challenges: code → { code, name, rating, ratingRange, tc, tcLabel, tcBaseMin, tcIncSec }
+const lobbyChallenges = {};
 
 function generateRoomCode() {
   return Math.random().toString(36).substring(2, 7).toUpperCase();
 }
 
-// Clean up stale rooms every 10 minutes (rooms where both clients disconnected)
+function broadcastLobbyList() {
+  const challenges = Object.values(lobbyChallenges);
+  const payload = JSON.stringify({ type: 'lobby_list', challenges });
+  wss.clients.forEach(client => {
+    if (client.readyState === 1) client.send(payload);
+  });
+}
+
+// Clean up stale rooms every 10 minutes
 setInterval(() => {
-  const now = Date.now();
   for (const code in rooms) {
     const room = rooms[code];
-    const wDead = !room.white  || room.white.readyState  > 1;
-    const bDead = !room.black  || room.black.readyState  > 1;
+    const wDead = !room.white || room.white.readyState > 1;
+    const bDead = !room.black || room.black.readyState > 1;
     if (wDead && bDead) {
       delete rooms[code];
-      console.log('Cleaned stale room', code);
+      const wasLobby = delete lobbyChallenges[code];
+      console.log('Cleaned stale room', code, wasLobby ? '(lobby)' : '');
     }
   }
 }, 10 * 60 * 1000);
@@ -202,15 +212,30 @@ wss.on('connection', (ws) => {
 
     if (msg.type === 'create') {
       const code = generateRoomCode();
+      const isLobby = !!msg.lobby;
       rooms[code] = {
         white: ws, black: null, created: Date.now(),
+        lobby: isLobby,
         tc: msg.tc || 'untimed',
         tcBaseMin: msg.tcBaseMin || 0,
         tcIncSec:  msg.tcIncSec  || 0,
       };
       ws.roomCode = code;
       ws.role = 'white';
-      ws.send(JSON.stringify({ type: 'created', code, role: 'white' }));
+      ws.send(JSON.stringify({ type: 'created', code, role: 'white', lobby: isLobby }));
+      if (isLobby) {
+        lobbyChallenges[code] = {
+          code,
+          name:        String(msg.name || 'Anonymous').slice(0, 40),
+          rating:      msg.rating || null,
+          ratingRange: msg.ratingRange || 9999,
+          tc:          msg.tc || 'untimed',
+          tcLabel:     msg.tcLabel || 'Untimed',
+          tcBaseMin:   msg.tcBaseMin || 0,
+          tcIncSec:    msg.tcIncSec  || 0,
+        };
+        broadcastLobbyList();
+      }
 
     } else if (msg.type === 'join') {
       const code = msg.code?.toUpperCase();
@@ -220,13 +245,20 @@ wss.on('connection', (ws) => {
       room.black = ws;
       ws.roomCode = code;
       ws.role = 'black';
-      // Send Black the TC so clocks match White's settings
+      // Remove from lobby challenges — it's now a live game
+      if (lobbyChallenges[code]) {
+        delete lobbyChallenges[code];
+        broadcastLobbyList();
+      }
       ws.send(JSON.stringify({ type: 'joined', code, role: 'black',
         tc: room.tc, tcBaseMin: room.tcBaseMin, tcIncSec: room.tcIncSec }));
       if (room.white && room.white.readyState === 1) {
         room.white.send(JSON.stringify({ type: 'opponent_joined',
           tc: room.tc, tcBaseMin: room.tcBaseMin, tcIncSec: room.tcIncSec }));
       }
+
+    } else if (msg.type === 'lobby_list') {
+      ws.send(JSON.stringify({ type: 'lobby_list', challenges: Object.values(lobbyChallenges) }));
 
     } else if (msg.type === 'move') {
       const room = rooms[ws.roomCode];
@@ -236,7 +268,7 @@ wss.on('connection', (ws) => {
         opponent.send(JSON.stringify({ type: 'move', move: msg.move }));
       }
 
-    } else if (['resign','rematch','rematch_offer','rematch_declined','timeout','chat'].includes(msg.type)) {
+    } else if (['resign','rematch','rematch_offer','rematch_declined','timeout','chat','draw_offer','draw_accept','draw_decline'].includes(msg.type)) {
       const room = rooms[ws.roomCode];
       if (!room) return;
       const opponent = ws.role === 'white' ? room.black : room.white;
@@ -258,7 +290,11 @@ wss.on('connection', (ws) => {
     if (opponent && opponent.readyState === 1) {
       opponent.send(JSON.stringify({ type: 'opponent_disconnected' }));
     }
-    // Mark slot as closed but keep room briefly for reconnect window
+    // If lobby host disconnects, remove the open challenge
+    if (ws.role === 'white' && lobbyChallenges[ws.roomCode]) {
+      delete lobbyChallenges[ws.roomCode];
+      broadcastLobbyList();
+    }
     if (ws.role === 'white') room.white = null;
     else room.black = null;
     if (!room.white && !room.black) delete rooms[ws.roomCode];

@@ -2068,12 +2068,17 @@ function openPanel(id) {
   closeAllPanels();
   document.getElementById(id).classList.add('open');
   document.getElementById('panelOverlay').classList.add('open');
-  // Refresh lobby list whenever the 2-player panel opens
-  if (id === 'mpPanel') mpRefreshLobby();
+  // Refresh lobby list whenever the 2-player panel opens, then auto-refresh every 5s
+  if (id === 'mpPanel') {
+    mpRefreshLobby();
+    clearInterval(mpLobbyRefreshTimer);
+    mpLobbyRefreshTimer = setInterval(mpRefreshLobby, 5000);
+  }
 }
 function closeAllPanels() {
   document.querySelectorAll('.slide-panel').forEach(p => p.classList.remove('open'));
   document.getElementById('panelOverlay').classList.remove('open');
+  clearInterval(mpLobbyRefreshTimer); // stop polling when panel closes
 }
 
 // ── Help content ──────────────────────────────────────────────────────
@@ -2668,6 +2673,29 @@ function mpHandleMessage(msg) {
       mpShowStatus('Rematch declined. Thanks for playing!');
       break;
 
+    case 'draw_offer': {
+      const status = document.getElementById('mpStatus');
+      if (status) {
+        status.innerHTML = 'Opponent offers a draw! &nbsp;' +
+          '<button onclick="mpAcceptDraw()" style="padding:2px 8px;font-size:9px;background:rgba(34,168,90,0.15);border:0.5px solid #22a85a;border-radius:3px;color:#5ad490;cursor:pointer;margin-right:4px;">Accept</button>' +
+          '<button onclick="mpDeclineDraw()" style="padding:2px 8px;font-size:9px;background:rgba(200,40,40,0.08);border:0.5px solid rgba(200,40,40,0.3);border-radius:3px;color:#c84040;cursor:pointer;">Decline</button>';
+      }
+      break;
+    }
+
+    case 'draw_accept':
+      gameOver = true;
+      gameOverMsg = 'Draw by agreement ½-½';
+      updatePlayerBoxes(); render(); showRematchBtn(true);
+      break;
+
+    case 'draw_decline':
+      mpShowStatus('Draw offer declined.');
+      // Re-enable the draw button
+      const drawBtn = document.querySelector('#gameActions .draw-btn');
+      if (drawBtn) drawBtn.disabled = false;
+      break;
+
     case 'opponent_disconnected':
       mpShowStatus('Opponent disconnected.', true);
       gameOver = true; updatePlayerBoxes();
@@ -2848,6 +2876,8 @@ function mpLeave() {
   // Restore lobby button text
   const btns = document.querySelectorAll('#mpActionBtns .mp-action-btn');
   if (btns[2]) btns[2].textContent = '🌐 Post Open Challenge to Lobby';
+  const ga = document.getElementById('gameActions');
+  if (ga) ga.style.display = 'none';
   resetGame();
 }
 
@@ -2873,6 +2903,9 @@ function mpStartGame(tcKey) {
   if (tc !== 'untimed') clockStart();
   updatePlayerBoxes();
   mpUpdateTurnIndicator();
+  // Show draw/resign buttons while game is active
+  const ga = document.getElementById('gameActions');
+  if (ga) ga.style.display = 'flex';
   closeAllPanels();
 }
 
@@ -3160,9 +3193,34 @@ function clearAllSelections(){
   indApply();
 }
 
-// ── Multiplayer stubs ─────────────────────────────────────────────────
-function offerDraw(){}
-function resign(){}
+// ── Multiplayer actions ────────────────────────────────────────────────
+function resign() {
+  // Reuses the same confirmation overlay; confirmResign() sends WS resign if in a room
+  if (mpRoomId) showResignConfirm();
+}
+
+function offerDraw() {
+  if (!mpRoomId || !mpWs || mpWs.readyState !== WebSocket.OPEN) return;
+  mpWs.send(JSON.stringify({ type: 'draw_offer' }));
+  mpShowStatus('Draw offered — waiting for response…');
+  // Disable the button for 10 s to prevent spamming
+  const btn = document.querySelector('#gameActions .draw-btn');
+  if (btn) { btn.disabled = true; setTimeout(() => { if (btn) btn.disabled = false; }, 10000); }
+}
+
+function mpAcceptDraw() {
+  if (mpWs && mpWs.readyState === WebSocket.OPEN)
+    mpWs.send(JSON.stringify({ type: 'draw_accept' }));
+  gameOver = true;
+  gameOverMsg = 'Draw by agreement ½-½';
+  updatePlayerBoxes(); render(); showRematchBtn(true);
+}
+
+function mpDeclineDraw() {
+  if (mpWs && mpWs.readyState === WebSocket.OPEN)
+    mpWs.send(JSON.stringify({ type: 'draw_decline' }));
+  mpShowStatus('Draw offer declined.');
+}
 
 // ── Feedback ──────────────────────────────────────────────────────────
 function sendFeedback(){
@@ -5094,6 +5152,9 @@ function cancelResign(){
 }
 function confirmResign(){
   cancelResign();
+  // Notify opponent if playing online
+  if (mpRoomId && mpWs && mpWs.readyState === WebSocket.OPEN)
+    mpWs.send(JSON.stringify({ type: 'resign' }));
   gameOver=true;
   gameOverMsg=(turn==='w'?'White resigned — Black wins!':'Black resigned — White wins!');
   updatePlayerBoxes();
