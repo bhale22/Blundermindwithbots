@@ -1279,7 +1279,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
               <div class="ctip" id="tipA"></div>
             </div>
           </div>
-          <!-- RIGHT: Confidence floor curve -->
+          <!-- RIGHT: Distribution curve -->
           <div>
             <div class="dlbl"><span>Move quality (distribution) — drag points</span></div>
             <div class="ctrl"><span class="ctrl-lbl">Min floor</span><input type="range" id="r-floor" min="1" max="80" step="1" value="50" oninput="sv(this,'v-floor',v=>v+'%');initPts();drawB()"><span class="ctrl-val" id="v-floor">50%</span></div>
@@ -1297,13 +1297,6 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
               <canvas id="cvB" style="width:100%;cursor:ns-resize;"></canvas>
               <div class="ctip" id="tipB"></div>
             </div>
-            <div class="formula-box" style="margin-top:8px;">
-              <div class="formula-title">Regan power rule</div>
-              <div class="formula-body">
-                Doubling think time ≈ <span class="formula-hl">+50–70 ELO</span><br>
-                <span class="formula-hl">ELO(t) = E₀ − Δ · σ(log(t) anchored at game start)</span>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -1315,22 +1308,20 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
           <div class="stat"><div class="stat-l">Dist @ min</div><div class="stat-v" id="pSF">50%</div></div>
         </div>
 
-        <!-- Calm/Panicky + Options row -->
-        <div class="panel-2col" style="margin-top:14px;padding-top:12px;border-top:0.5px solid var(--border);">
-          <!-- LEFT: Calm/Panicky -->
-          <div>
-            <div class="dlbl"><span>Calm ↔ Panicky (temperature boost)</span></div>
-            <div class="attractor-row">
-              <span class="attr-left">Calm</span>
-              <div class="attr-slider-wrap"><div class="attr-center-tick"></div><input class="attr-slider" type="range" min="-5" max="5" step="1" value="0" oninput="onCalmPanickyChange(this.value)"></div>
-              <span class="attr-right">Panicky</span>
-            </div>
-            <div class="ctrl-hint">Adds sampling randomness when clock is low. Calm = no temperature boost; Panicky = wider, more erratic move choices under pressure.</div>
-          </div>
-          <!-- RIGHT: Can flag -->
+        <!-- Bottom row: Can Flag (left) + Regan Power Rule (right) -->
+        <div class="panel-2col" style="margin-top:12px;padding-top:12px;border-top:0.5px solid var(--border);align-items:start;">
           <div>
             <div class="dlbl"><span>Options</span></div>
             <div class="tog-row"><div><div class="tog-lbl">Can flag</div><div class="tog-desc">Allow bot to run out of time completely</div></div><label class="tog"><input type="checkbox" id="cb-flag" checked onchange="drawA()"><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
+          </div>
+          <div>
+            <div class="formula-box" style="margin-top:0;">
+              <div class="formula-title">Regan power rule</div>
+              <div class="formula-body">
+                Doubling think time ≈ <span class="formula-hl">+50–70 ELO</span><br>
+                <span class="formula-hl">ELO(t) = E₀ − Δ · σ(log(t) anchored at game start)</span>
+              </div>
+            </div>
           </div>
         </div>
 
