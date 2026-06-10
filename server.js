@@ -276,6 +276,11 @@ wss.on('connection', (ws) => {
         if (msg.type === 'chat') {
           const text = String(msg.text || '').slice(0, 200);
           opponent.send(JSON.stringify({ type: 'chat', text }));
+        } else if (msg.type === 'timeout') {
+          // Preserve which color flagged — the receiver must not assume it
+          // was the sender (both clients detect the same flag locally).
+          const color = msg.color === 'w' || msg.color === 'b' ? msg.color : null;
+          opponent.send(JSON.stringify({ type: 'timeout', color }));
         } else {
           opponent.send(JSON.stringify({ type: msg.type }));
         }

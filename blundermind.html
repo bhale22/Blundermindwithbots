@@ -2646,12 +2646,21 @@ function mpHandleMessage(msg) {
       updatePlayerBoxes(); render(); showRematchBtn(true);
       break;
 
-    case 'timeout':
+    case 'timeout': {
+      // Both clients tick both clocks, so both detect the same flag and both
+      // send 'timeout'. If our local clock already ended the game, keep that
+      // (correct) result — don't let the echo overwrite it with the wrong winner.
+      if (gameOver) break;
       gameOver = true;
-      const oppColor = mpRole === 'white' ? 'b' : 'w';
-      gameOverMsg = oppColor === 'w' ? 'White ran out of time — Black wins! ⏰' : 'Black ran out of time — White wins! ⏰';
+      // Trust the color in the message; fall back to "sender flagged" only
+      // for old servers that strip it.
+      const flagged = (msg.color === 'w' || msg.color === 'b')
+        ? msg.color
+        : (mpRole === 'white' ? 'b' : 'w');
+      gameOverMsg = flagged === 'w' ? 'White ran out of time — Black wins! ⏰' : 'Black ran out of time — White wins! ⏰';
       updatePlayerBoxes(); render(); showRematchBtn(true);
       break;
+    }
 
     case 'rematch_offer':
       const status = document.getElementById('mpStatus');
