@@ -6804,7 +6804,7 @@ function _maiaUpdateStatusUI() {
     if (_bcpIframe && _bcpIframe.contentWindow) {
       _bcpIframe.contentWindow.postMessage({
         type: 'maiaStatus', status: _maiaStatus, ready: _maiaReady, progress: _maiaProgress
-      }, '*');
+      }, location.origin);
     }
   } catch(e) {}
   return; // skip old code below
@@ -7263,7 +7263,11 @@ function botOpeningStatusText(data) {
 // Returns null if ctrlPts is empty or has fewer than 2 points.
 function evalPressureCurve(ctrlPts, xSec) {
   if (!ctrlPts || ctrlPts.length < 2) return null;
-  const pts = [...ctrlPts].sort((a, b) => a.x - b.x);
+  // Clamp x ≥ 0.01: log-space interpolation below needs x > 0, and a loaded
+  // config file could contain bad points even though the panel can't make them.
+  const pts = ctrlPts.map(p => ({ x: Math.max(0.01, +p.x || 0.01), y: +p.y }))
+    .sort((a, b) => a.x - b.x);
+  xSec = Math.max(0.01, xSec);
   if (xSec <= pts[0].x) return pts[0].y;
   if (xSec >= pts[pts.length - 1].x) return pts[pts.length - 1].y;
   for (let i = 0; i < pts.length - 1; i++) {
@@ -7751,6 +7755,14 @@ function botRecordMove(uciMove, sanMove) {
 //   botBehavClockMirror — halve delay when opponent clock < 60% of bot's
 //   botCanFlag          — if false, always keep ≥3 s on clock
 // Hustle attractor (window._bcpAttractorValues.hustle, −5..+5) scales think time.
+// Upper bound on simulated think time, scaled to the time control: 6 s for
+// blitz-and-faster, growing to 45 s for long classical. A 6 s ceiling in a
+// 90-minute game made every bot feel like a speed player.
+function botThinkCapMs() {
+  if (!botStartClockMs) return 6000; // untimed / unknown
+  return Math.max(6000, Math.min(45000, botStartClockMs * 0.02));
+}
+
 function botThinkTime(moveProbs, clockMs) {
   const entropy = moveProbs ? positionEntropy(moveProbs) : 2;
 
@@ -7785,7 +7797,7 @@ function botThinkTime(moveProbs, clockMs) {
       let mirrorMs = avg * jitter * offsetMul;
       if (clockMs !== null && clockMs < 30000) mirrorMs = Math.min(mirrorMs, clockMs * 0.08);
       if (!botCanFlag && clockMs !== null) mirrorMs = Math.min(mirrorMs, Math.max(200, clockMs - 3000));
-      return Math.max(200, Math.min(6000, mirrorMs));
+      return Math.max(200, Math.min(botThinkCapMs(), mirrorMs));
     }
     // No human moves yet — fall through to complexity/pace
   }
@@ -7827,10 +7839,11 @@ function botThinkTime(moveProbs, clockMs) {
   if (clockMs !== null && clockMs < 30000) thinkMs = Math.min(thinkMs, clockMs * 0.08);
   if (!botCanFlag && clockMs !== null) thinkMs = Math.min(thinkMs, Math.max(200, clockMs - 3000));
 
-  return Math.max(200, Math.min(6000, thinkMs));
+  return Math.max(200, Math.min(botThinkCapMs(), thinkMs));
 }
 function timePressureTemp(baseTemp, clockMs) {
-  if (!clockMs) return baseTemp;
+  // null/undefined = untimed; 0 is a real (maximally pressured) clock value
+  if (clockMs === null || clockMs === undefined) return baseTemp;
   const boost = { steady: 0.0, normal: 1.0, panicky: 2.5 }[botTimePressure] || 0;
   if (boost === 0) return baseTemp;
 
@@ -9528,7 +9541,7 @@ function openBotModal() {
         frame.contentWindow.postMessage({
           type: 'maiaStatus', status: _maiaStatus || 'idle',
           ready: _maiaReady, progress: _maiaProgress || 0
-        }, '*');
+        }, location.origin);
       }
     } catch(e) {}
   }, 120);
@@ -9544,6 +9557,9 @@ function _snapToLcBand(elo) {
 }
 
 window.addEventListener('message', function(e) {
+  // Only accept config from our own origin (the bot-control-panel iframe) —
+  // a page embedding this site must not be able to inject bot configs.
+  if (e.origin !== location.origin) return;
   if (!e.data || e.data.type !== 'botConfig') return;
   const cfg = e.data;
 

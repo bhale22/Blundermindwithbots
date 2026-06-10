@@ -177,7 +177,30 @@ const rooms = {};
 const lobbyChallenges = {};
 
 function generateRoomCode() {
-  return Math.random().toString(36).substring(2, 7).toUpperCase();
+  let code;
+  do {
+    code = Math.random().toString(36).substring(2, 7).toUpperCase();
+  } while (rooms[code]); // regenerate on (rare) collision with a live room
+  return code;
+}
+
+// Detach a socket from whatever room it's in (used when it creates a new one
+// without leaving — otherwise the old room leaks with a stale reference).
+function leaveCurrentRoom(ws) {
+  const room = ws.roomCode && rooms[ws.roomCode];
+  if (!room) return;
+  const opponent = ws.role === 'white' ? room.black : room.white;
+  if (opponent && opponent.readyState === 1) {
+    opponent.send(JSON.stringify({ type: 'opponent_disconnected' }));
+  }
+  if (ws.role === 'white' && lobbyChallenges[ws.roomCode]) {
+    delete lobbyChallenges[ws.roomCode];
+    broadcastLobbyList();
+  }
+  if (ws.role === 'white') room.white = null; else room.black = null;
+  if (!room.white && !room.black) delete rooms[ws.roomCode];
+  ws.roomCode = null;
+  ws.role = null;
 }
 
 function broadcastLobbyList() {
@@ -211,6 +234,7 @@ wss.on('connection', (ws) => {
     try { msg = JSON.parse(data); } catch { return; }
 
     if (msg.type === 'create') {
+      leaveCurrentRoom(ws); // creating again replaces any room this socket holds
       const code = generateRoomCode();
       const isLobby = !!msg.lobby;
       rooms[code] = {

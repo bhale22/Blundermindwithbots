@@ -5252,6 +5252,7 @@ function bcpMaiaSetStatus(status, ready, progress){
 
 // Receive live status pushes from parent
 window.addEventListener('message', function(e){
+  if(e.origin !== location.origin) return; // only the parent page may push status
   if(e.data && e.data.type === 'maiaStatus'){
     bcpMaiaSetStatus(e.data.status, e.data.ready, e.data.progress);
   }
@@ -5272,7 +5273,7 @@ function startGame(){
   }
   const config = getBotConfig();
   if(window.parent !== window){
-    window.parent.postMessage(config, '*');
+    window.parent.postMessage(config, location.origin);
   } else {
     // Standalone view — show summary
     const timeStr = tcTime === 0 ? 'Untimed' : tcTime + '+' + tcInc;
