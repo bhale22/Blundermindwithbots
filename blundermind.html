@@ -1727,6 +1727,8 @@ let botHybridSlots = [];
 let sfWorker = null;
 let sfReady = false;
 let sfPendingResolve = null;
+let sfBestmovesOwed = 0;  // bestmoves still owed by abandoned (stopped/timed-out) searches —
+                          // they must be discarded or they resolve the WRONG request
 let sfCurrentSkillLevel = -1; // tracks last set skill level — avoids redundant setoption calls
 // ── MultiPV complexity probe state ───────────────────────────────────────────
 let sfCplxActive    = false;  // true while a MultiPV depth-12 probe is running
@@ -1738,6 +1740,7 @@ let sfCplxFen       = null;   // FEN of the cached position (one-move cache)
 let sfGhostWorker = null;
 let sfGhostReady = false;
 let sfGhostPending = null;
+let sfGhostBestmovesOwed = 0; // same discard accounting as sfBestmovesOwed, for the ghost worker
 let botThinking = false;
 let botLastHoverSq = -1;
 let botGhostResponses = {};
@@ -6126,11 +6129,17 @@ function sfInit() {
         var line = e.data;
         if (line === 'uciok')   sfWorker.postMessage('isready');
         if (line === 'readyok') { sfReady = true; resolve(); }
-        // Collect MultiPV info lines for the complexity probe
-        if (sfCplxActive && line.startsWith('info') && line.includes('multipv')) {
+        // Collect MultiPV info lines for the complexity probe.
+        // Skip while bestmoves are owed — those info lines belong to a search
+        // we already abandoned, not to the current probe.
+        if (sfCplxActive && sfBestmovesOwed === 0 && line.startsWith('info') && line.includes('multipv')) {
           sfCplxInfoLines.push(line);
         }
         if (line.startsWith('bestmove')) {
+          // Bestmove from an abandoned search — discard it. Without this, a
+          // stopped/timed-out search's result resolves the NEXT request with a
+          // move computed for a different position.
+          if (sfBestmovesOwed > 0) { sfBestmovesOwed--; return; }
           if (sfCplxActive) {
             // This bestmove closes the complexity probe, not a normal move request
             sfCplxActive = false;
@@ -6168,12 +6177,16 @@ function sfGhostInit() {
         var line = e.data;
         if (line === 'uciok')   sfGhostWorker.postMessage('isready');
         if (line === 'readyok') { sfGhostReady = true; resolve(); }
-        if (line.startsWith('bestmove') && sfGhostPending) {
-          var parts = line.split(' ');
-          var move  = parts[1];
-          var res   = sfGhostPending;
-          sfGhostPending = null;
-          res(move && move !== '(none)' ? move : null);
+        if (line.startsWith('bestmove')) {
+          // Discard bestmoves from abandoned searches (see sfBestmovesOwed)
+          if (sfGhostBestmovesOwed > 0) { sfGhostBestmovesOwed--; return; }
+          if (sfGhostPending) {
+            var parts = line.split(' ');
+            var move  = parts[1];
+            var res   = sfGhostPending;
+            sfGhostPending = null;
+            res(move && move !== '(none)' ? move : null);
+          }
         }
       };
       sfGhostWorker.onerror = function(e) { console.warn('Ghost SF error:', e); reject(e); };
@@ -6194,8 +6207,8 @@ function sqToUci(from, to, promo) {
 function sfGhostGetMove(fen, depth, excludeUci, hypBoard, hypTurn, hypEp, hypCast) {
   return new Promise((resolve) => {
     if (!sfGhostWorker || !sfGhostReady) { resolve(null); return; }
-    // Cancel any pending ghost search
-    if (sfGhostPending) { sfGhostPending(null); sfGhostPending = null; }
+    // Cancel any pending ghost search — its bestmove is still coming; discard it
+    if (sfGhostPending) { sfGhostPending(null); sfGhostPending = null; sfGhostBestmovesOwed++; }
     sfGhostWorker.postMessage('stop');
     sfGhostPending = resolve;
     sfGhostWorker.postMessage('position fen ' + fen);
@@ -6232,7 +6245,11 @@ function sfGhostGetMove(fen, depth, excludeUci, hypBoard, hypTurn, hypEp, hypCas
     sfGhostWorker.postMessage(goCmd);
     // 5s timeout (slightly longer since searchmoves can be slower)
     setTimeout(() => {
-      if (sfGhostPending === resolve) { sfGhostPending = null; resolve(null); }
+      if (sfGhostPending === resolve) {
+        sfGhostPending = null;
+        sfGhostBestmovesOwed++; // engine still owes this search's bestmove
+        resolve(null);
+      }
     }, 5000);
   });
 }
@@ -6240,8 +6257,14 @@ function sfGhostGetMove(fen, depth, excludeUci, hypBoard, hypTurn, hypEp, hypCas
 function sfGetMove(fen, levelOrDepth, isDepth=false) {
   return new Promise((resolve) => {
     if (!sfWorker || !sfReady) { resolve(null); return; }
-    // Cancel any pending request
-    if (sfPendingResolve) { sfPendingResolve(null); sfPendingResolve = null; }
+    // Cancel any pending request — its search is still running, so the engine
+    // still owes us a bestmove for it; mark it for discard.
+    if (sfPendingResolve) {
+      const old = sfPendingResolve;
+      sfPendingResolve = null;
+      sfBestmovesOwed++;
+      old(null);
+    }
     sfPendingResolve = resolve;
     sfWorker.postMessage('stop'); // cancel any in-progress search
     // ucinewgame is sent once per game in botStart — not here, as clearing the TT
@@ -6261,6 +6284,7 @@ function sfGetMove(fen, levelOrDepth, isDepth=false) {
     setTimeout(() => {
       if (sfPendingResolve === resolve) {
         sfPendingResolve = null;
+        sfBestmovesOwed++; // the engine will still emit a bestmove — discard it
         resolve(null);
       }
     }, 5000);
@@ -6296,6 +6320,7 @@ function sfGetComplexity(fen) {
       if (sfCplxPending === resolve) {
         sfCplxActive  = false;
         sfCplxPending = null;
+        sfBestmovesOwed++; // probe's bestmove will still arrive — discard it
         sfWorker.postMessage('setoption name MultiPV value 1');
         sfCurrentSkillLevel = -1;
         resolve(null);
