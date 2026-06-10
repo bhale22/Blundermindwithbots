@@ -2932,7 +2932,26 @@ function mpSendMove(from, to, promo) {
 
 function mpReceiveMove(move) {
   if (promotionPending) { setTimeout(() => mpReceiveMove(move), 300); return; }
-  executeMove(move.from, move.to, move.promo || null);
+  // Never trust the wire: verify shape, turn, ownership, and legality before
+  // executing. A malformed or malicious message must not corrupt the board.
+  if (!move || !Number.isInteger(move.from) || !Number.isInteger(move.to) ||
+      move.from < 0 || move.from > 63 || move.to < 0 || move.to > 63) {
+    mpShowStatus('⚠ Ignored malformed move from opponent', true); return;
+  }
+  if (gameOver) return;
+  if (mpIsMyTurn()) {
+    mpShowStatus('⚠ Desync: opponent moved out of turn', true); return;
+  }
+  const oppColor = mpRole === 'white' ? 'b' : 'w';
+  const p = board[move.from];
+  if (!p || p.color !== oppColor) {
+    mpShowStatus('⚠ Desync: opponent move references wrong piece', true); return;
+  }
+  if (!legalMovesFor(move.from, board, epSq, castling).includes(move.to)) {
+    mpShowStatus('⚠ Desync: opponent sent an illegal move', true); return;
+  }
+  const promo = ['Q','R','B','N'].includes(move.promo) ? move.promo : null;
+  executeMove(move.from, move.to, promo);
   mpUpdateTurnIndicator();
   // Fire queued premove if any
   if(activePremove) setTimeout(tryFirePremove, 50);
