@@ -3830,23 +3830,25 @@ function buildBatteryAtk(bd, pinnedW, pinnedB, queenPinnedW, queenPinnedB){
   return a;
 }
 
-// Compute absolute pins (to king) and optionally queen pins for a board
+// Compute absolute pins (to king) and optionally queen pins for a board.
+// Absolute pins are ALWAYS computed: a piece pinned to its king cannot
+// legally recapture, so counting it as a defender would be a factual error
+// in the attacker/defender numbers — regardless of whether the pin overlay
+// is displayed. Queen pins are a softer fact (the piece CAN move, at a
+// price), so including them in the counts is the user's choice via the
+// checkbox. The Pins indicator button only controls drawing the markers.
 function computePins(bd){
-  const showPins = indActive('pins');
-  // Queen pins only shown when Pins button is active AND checkbox is on
-  const showQPins = showPins && document.getElementById('cbQPins').checked;
-  let pW=new Set(), pB=new Set();
+  const qpEl = document.getElementById('cbQPins');
+  const useQPins = qpEl ? qpEl.checked : false;
+  const pW=getPinnedSquares(bd,'w');
+  const pB=getPinnedSquares(bd,'b');
   let qpW=new Set(), qpB=new Set();
-  if(showPins){
-    pW=getPinnedSquares(bd,'w');
-    pB=getPinnedSquares(bd,'b');
-    if(showQPins){
-      qpW=getQueenPinnedSquares(bd,'w');
-      qpB=getQueenPinnedSquares(bd,'b');
-      // Merge queen pins into main pin sets for rendering
-      qpW.forEach(s=>pW.add(s));
-      qpB.forEach(s=>pB.add(s));
-    }
+  if(useQPins){
+    qpW=getQueenPinnedSquares(bd,'w');
+    qpB=getQueenPinnedSquares(bd,'b');
+    // Merge queen pins into main pin sets (counts + rendering)
+    qpW.forEach(s=>pW.add(s));
+    qpB.forEach(s=>pB.add(s));
   }
   return{w:pW, b:pB, qw:qpW, qb:qpB};
 }
