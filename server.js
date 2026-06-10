@@ -34,17 +34,30 @@ fetchStockfish()
   .then(() => console.log(`Stockfish cached (${(sfScript.length/1024).toFixed(0)} KB)`))
   .catch(e => console.warn('Stockfish fetch failed — ghost/bot will not work:', e.message));
 
-// ── Cache blundermind.html in memory with ETag so repeat visitors get 304 ────
+// ── Cache the assembled page in memory with ETag so repeat visitors get 304 ──
+// The page is assembled by concatenating the src/ parts (see build.js for the
+// list and order) — the result is identical to the old single-file
+// blundermind.html. Falls back to a prebuilt blundermind.html if src/ is
+// missing (e.g. a deployment that only ships the built artifact).
+const { assemble, SRC_PARTS, SRC_DIR } = require('./build.js');
+
 let htmlCache = null;
 let htmlEtag  = null;
-let htmlMtime = null;
+let htmlStamp = null;
 
 function loadHtml() {
-  const filePath = path.join(__dirname, 'blundermind.html');
-  const stat = fs.statSync(filePath);
-  if (htmlMtime && stat.mtimeMs === htmlMtime) return; // unchanged
-  htmlCache = fs.readFileSync(filePath);
-  htmlMtime = stat.mtimeMs;
+  let stamp, read;
+  if (fs.existsSync(SRC_DIR)) {
+    stamp = SRC_PARTS.map(f => fs.statSync(path.join(SRC_DIR, f)).mtimeMs).join(',');
+    read = assemble;
+  } else {
+    const filePath = path.join(__dirname, 'blundermind.html');
+    stamp = String(fs.statSync(filePath).mtimeMs);
+    read = () => fs.readFileSync(filePath);
+  }
+  if (htmlStamp === stamp) return; // unchanged
+  htmlCache = read();
+  htmlStamp = stamp;
   htmlEtag  = '"'  + crypto.createHash('md5').update(htmlCache).digest('hex') + '"';
   console.log('HTML cached', (htmlCache.length/1024).toFixed(0), 'KB, ETag:', htmlEtag);
 }
@@ -135,12 +148,6 @@ app.get('/maia-worker.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
   res.setHeader('Cache-Control', 'public, max-age=86400');
   res.sendFile(path.join(__dirname, 'maia-worker.js'));
-});
-
-app.get('/bot-config-panel.js', (req, res) => {
-  res.setHeader('Content-Type', 'application/javascript');
-  res.setHeader('Cache-Control', 'public, max-age=300'); // short cache during development
-  res.sendFile(path.join(__dirname, 'bot-config-panel.js'));
 });
 
 app.get('/bot-control-panel.html', (req, res) => {
