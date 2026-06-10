@@ -858,12 +858,12 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
             <div class="dlbl" style="margin-top:12px;"><span>Stockfish variety</span></div>
             <div class="ctrl">
               <span class="ctrl-lbl">±1 level calls</span>
-              <input type="range" min="0" max="50" step="1" value="0" oninput="sv(this,'v-sfvar1',v=>v+'%')">
+              <input type="range" id="r-sfvar1" min="0" max="50" step="1" value="0" oninput="sv(this,'v-sfvar1',v=>v+'%')">
               <span class="ctrl-val" id="v-sfvar1">0%</span>
             </div>
             <div class="ctrl">
               <span class="ctrl-lbl">±2 level calls</span>
-              <input type="range" min="0" max="20" step="1" value="0" oninput="sv(this,'v-sfvar2',v=>v+'%')">
+              <input type="range" id="r-sfvar2" min="0" max="20" step="1" value="0" oninput="sv(this,'v-sfvar2',v=>v+'%')">
               <span class="ctrl-val" id="v-sfvar2">0%</span>
             </div>
             <div class="preset-btns">
@@ -5162,6 +5162,8 @@ function getBotConfig(){
     engine:          currentEngine,
     elo:             currentElo,
     sfLevel:         sfLevel,
+    sfvar1:          parseInt(document.getElementById('r-sfvar1')?.value || '0'),
+    sfvar2:          parseInt(document.getElementById('r-sfvar2')?.value || '0'),
     maia3Temp:       maia3Temp,
     cpBudget:        cpBudget,
     color:           color,

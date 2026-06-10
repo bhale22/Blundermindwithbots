@@ -9722,13 +9722,16 @@ window.addEventListener('message', function(e) {
     botSetOpeningMode('preferred');
   }
 
-  // Hybrid slots: new panel type names → existing type names, SF level ×2
+  // Hybrid slots: panel sends type 'sf' (level 1–10 in s.level); the legacy
+  // panel sent 'stockfish' (s.sfLevel). Accept both — checking only
+  // 'stockfish' silently turned every SF slot into a Maia slot.
   if (cfg.engine === 'hybrid' && cfg.hybridSlots && cfg.hybridSlots.length) {
     botHybridSlots = cfg.hybridSlots.map(function(s) {
+      var isSf = (s.type === 'stockfish' || s.type === 'sf');
       return {
-        type:   (s.type === 'stockfish') ? 'sf' : 'maia',
-        level:  (s.type === 'stockfish') ? Math.min(20, Math.max(1, (s.sfLevel || 5) * 2))
-                                         : Math.round((s.elo || 1500) / 200),
+        type:   isSf ? 'sf' : 'maia',
+        level:  isSf ? Math.min(20, Math.max(1, (s.sfLevel || s.level || 5) * 2))
+                     : Math.round((s.elo || 1500) / 200),
         weight: s.pct || 0
       };
     });
