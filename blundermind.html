@@ -7814,8 +7814,13 @@ async function botMakeMove() {
         // ECO data may still be loading — await it rather than permanently deactivating
         try { await obLoadEcoData(); } catch(e) {}
         if (!_ecoData || !_ecoData.length) { preferredOpeningActive = false; }
-        // Re-enter logic next move (don't fall through this time)
-        if (preferredOpeningActive && botActive && !gameOver) setTimeout(botMakeMove, 50);
+        // Release the thinking lock BEFORE re-entering — botMakeMove bails on
+        // botThinking, so returning without this leaves the bot frozen forever.
+        // Re-enter unconditionally: if the ECO load failed, the next call falls
+        // through to the engine path instead of never moving.
+        botThinking = false;
+        document.getElementById('botStatus').textContent = '';
+        if (botActive && !gameOver) setTimeout(botMakeMove, 50);
         return;
       } else if (botSanHistory.length >= (botOpeningConfig.maxBookDepth || 20)) {
         preferredOpeningActive = false;
