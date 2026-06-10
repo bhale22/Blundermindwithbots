@@ -4438,6 +4438,11 @@ function drawThreatCircle(sq, color){
 const ghostCv = document.getElementById('ghostCanvas');
 const ghostCtx = ghostCv ? ghostCv.getContext('2d') : null;
 let boardFlipped = false; // real variable; bot sets this when human plays black
+// Cheap-attacker alert data — set once per render() frame so drawPieceUnder
+// doesn't rebuild a full attack map per piece, and always matches the
+// DISPLAYED board (real or preview), never stale real-board state.
+let _alertBoard = null;
+let _alertDirectAtk = null;
 
 function syncGhostCanvas() {
   const mainCv = document.getElementById('cv');
@@ -4808,6 +4813,13 @@ function render(){
   } catch(e){ console.warn('BG indicator error:',e); }
   // Guarantee clean canvas state before drawing pieces
   ctx.setLineDash([]); ctx.globalAlpha=1; ctx.shadowBlur=0; ctx.save(); ctx.restore();
+  // Cheap-attacker alert data for this frame. In direct mode dispAtk already
+  // holds real attacker squares; battery mode stores synthetic arrays, so we
+  // build one direct map for the displayed board (once, not per piece).
+  _alertBoard = dispBoard;
+  try {
+    _alertDirectAtk = indActive('battery') ? buildDirectAtk(dispBoard) : dispAtk;
+  } catch(e) { _alertDirectAtk = dispAtk; }
   // Draw pieces — per-square try/catch prevents one crash from blanking the board
   for(let sq=0;sq<64;sq++){
     try{
@@ -5017,14 +5029,15 @@ function drawPieceUnder(sq,p,atk,showLayers,showBull){
   const PVALS={P:1,N:3,B:3,R:5,Q:9,K:100};
   const myVal=PVALS[p.piece]||0;
   const opp2=p.color==='w'?'b':'w';
-  // Use direct atk map for this check (atkMap is direct or battery depending on mode)
-  // We need actual attacker squares for value comparison — use raw direct map
+  // We need actual attacker squares for value comparison — use the per-frame
+  // direct map render() prepared for the displayed board (_alertDirectAtk).
   let cheapAttacker=false;
   if(att>0){
-    const directAtk=buildDirectAtk(board);
-    const attackerSqs=directAtk[sq][opp2];
+    const directAtk=_alertDirectAtk||atk;
+    const alertBd=_alertBoard||board;
+    const attackerSqs=(directAtk[sq]&&directAtk[sq][opp2])||[];
     for(const aSq of attackerSqs){
-      const ap=board[aSq];
+      const ap=alertBd[aSq];
       if(ap&&(PVALS[ap.piece]||0)<myVal){cheapAttacker=true;break;}
     }
   }
