@@ -28,10 +28,15 @@ function playMoveSound(isCapture){
 function saveSoundPref(){const el=document.getElementById('cbSound');if(el)localStorage.setItem('bm_sound',el.checked?'1':'0');}
 function loadSoundPref(){const v=localStorage.getItem('bm_sound');const el=document.getElementById('cbSound');if(el&&v!==null)el.checked=(v==='1');}
 
+// ── Draw-rule tracking (threefold repetition + fifty-move rule) ──────────────
+let positionCounts = {};   // positionKey → times this position has occurred
+let halfmoveClock  = 0;    // plies since the last pawn move or capture
+
 function executeMove(from,to,promo){
   const p=board[from];if(!p)return;
   // Detect capture before board is modified (includes en passant)
   const isCapture=!!(board[to]||(p.piece==='P'&&to===epSq));
+  const isPawnMove=p.piece==='P';
   // Record move in algebraic notation before applying
   try{ gameMovesAlgebraic.push(moveToSAN(from,to,promo,board,epSq,castling)); }catch(e){}
   const newEP=computeEP(from,to,board);
@@ -44,6 +49,10 @@ function executeMove(from,to,promo){
   lastMoveFrom=from; lastMoveTo=to; // record for last-move highlight
   playMoveSound(isCapture);
   selSq=-1;legalMoves=[];clearPreview();hoverSq=-1;dragFrom=-1;dragMoved=false;
+  // Draw-rule bookkeeping
+  halfmoveClock=(isCapture||isPawnMove)?0:halfmoveClock+1;
+  const _pk=positionKey(board,turn,castling,epSq);
+  positionCounts[_pk]=(positionCounts[_pk]||0)+1;
   const allMoves=allLegalMoves(board,turn,epSq,castling);
   if(allMoves.length===0){
     const chk=inCheck(board,turn);
@@ -53,6 +62,12 @@ function executeMove(from,to,promo){
       'Stalemate — Draw! ½-½';
     // Show rematch button
     showRematchBtn(true);
+  } else if(positionCounts[_pk]>=3){
+    gameOver=true;gameOverMsg='Draw by threefold repetition ½-½';showRematchBtn(true);
+  } else if(halfmoveClock>=100){
+    gameOver=true;gameOverMsg='Draw by fifty-move rule ½-½';showRematchBtn(true);
+  } else if(isInsufficientMaterial(board)){
+    gameOver=true;gameOverMsg='Draw — insufficient material ½-½';showRematchBtn(true);
   }
   updatePlayerBoxes();
   if(typeof clockAfterMove==='function') clockAfterMove();
@@ -1228,6 +1243,9 @@ function loadPos(idx){
   gameOver=false;promotionPending=null;activePremove=null;selSq=-1;legalMoves=[];dragFrom=-1;dragMoved=false;hoverSq=-1;clearPreview();
   gameMovesAlgebraic=[];gameOverMsg="";
   board=parseFen(FENS[idx]);atkMap=buildAtk(board);
+  // Reset draw tracking; the starting position counts as its first occurrence
+  positionCounts={};halfmoveClock=0;
+  try{ positionCounts[positionKey(board,turn,castling,epSq)]=1; }catch(e){}
   const _lp=computePins(board);pinnedWSquares=_lp.w;pinnedBSquares=_lp.b;
   if(typeof indInitAll==='function'){indInitAll();indApply();}
   updatePlayerBoxes();render();

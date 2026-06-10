@@ -467,4 +467,41 @@ function moveToSAN(from, to, promo, bd, ep, cst) {
   return san;
 }
 
+// ── Draw-rule helpers (pure) ──────────────────────────────────────────────────
+
+// Position key for threefold repetition: placement + side to move + castling
+// rights + en-passant square. Including the raw epSq is slightly stricter than
+// FIDE (which only distinguishes positions where an en-passant CAPTURE is
+// actually possible): in the rare ep-set-but-uncapturable case we count two
+// equal positions as different, delaying a repetition claim by a cycle —
+// never declaring one falsely.
+function positionKey(bd, turnColor, cst, ep){
+  let s = turnColor +
+    (cst.wK?'K':'') + (cst.wQ?'Q':'') + (cst.bK?'k':'') + (cst.bQ?'q':'') +
+    '/' + ep + '/';
+  for(let sq=0; sq<64; sq++){
+    const p = bd[sq];
+    s += p ? (p.color==='w' ? p.piece : p.piece.toLowerCase()) : '.';
+  }
+  return s;
+}
+
+// True when neither side can checkmate by ANY series of legal moves:
+// K vs K, K+minor vs K, and K+B vs K+B with both bishops on the same color
+// complex. (K+N vs K+N is NOT included — a helpmate is constructible.)
+function isInsufficientMaterial(bd){
+  const minors = [];
+  for(let sq=0; sq<64; sq++){
+    const p = bd[sq];
+    if(!p || p.piece==='K') continue;
+    if(p.piece==='P' || p.piece==='R' || p.piece==='Q') return false;
+    minors.push({ piece: p.piece, light: (Math.floor(sq/8) + sq%8) % 2 === 0 });
+  }
+  if(minors.length === 0) return true;   // K vs K
+  if(minors.length === 1) return true;   // K+B or K+N vs bare K
+  return minors.length === 2 &&
+         minors[0].piece === 'B' && minors[1].piece === 'B' &&
+         minors[0].light === minors[1].light; // same-color bishops
+}
+
 // ── Move sounds ───────────────────────────────────────────────────────
