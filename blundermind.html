@@ -4436,6 +4436,44 @@ function drawThreatCircle(sq, color){
   ctx.restore();
 }
 
+// ── Sawtooth danger ring ─────────────────────────────────────────────────────
+// Drawn around the explored piece when it would be HANGING on its destination
+// (attacked, zero defenders). Deliberately louder than the passive overlays:
+// "the move you are about to make" earns more alarm than ambient board state.
+// Pure fact, no evaluation — it never says whether the move is good.
+let _jagPhase = 0, _jagRafId = null;
+function _jagPulseTick(){
+  _jagRafId = null;
+  if (previewBoard) {           // pulse only while actively exploring
+    _jagPhase += 0.10;
+    render();
+    _jagRafId = requestAnimationFrame(_jagPulseTick);
+  }
+}
+function drawJaggedRing(ctx2, sq, color){
+  const {r,c} = sqCanvas(sq);
+  const x = c*SQ+SQ/2, y = r*SQ+SQ/2;
+  const pulse = Math.sin(_jagPhase) * 1.5;
+  const rOut = SQ*0.47 + pulse, rIn = SQ*0.37 + pulse*0.5;
+  const teeth = 14;
+  ctx2.save();
+  ctx2.beginPath();
+  for(let i=0;i<teeth*2;i++){
+    const a = (i/(teeth*2))*Math.PI*2 - Math.PI/2;
+    const rad = i%2===0 ? rOut : rIn;
+    const px = x+rad*Math.cos(a), py = y+rad*Math.sin(a);
+    if(i===0) ctx2.moveTo(px,py); else ctx2.lineTo(px,py);
+  }
+  ctx2.closePath();
+  ctx2.strokeStyle = color || 'rgba(220,40,40,0.95)';
+  ctx2.lineWidth = 2.2; ctx2.lineJoin = 'miter';
+  ctx2.stroke();
+  ctx2.fillStyle = 'rgba(220,40,40,0.10)';
+  ctx2.fill();
+  ctx2.restore();
+  if (_jagRafId === null) _jagRafId = requestAnimationFrame(_jagPulseTick);
+}
+
 // ── Ghost canvas — declared before render() to avoid TDZ ────────────────────
 const ghostCv = document.getElementById('ghostCanvas');
 const ghostCtx = ghostCv ? ghostCv.getContext('2d') : null;
@@ -4909,6 +4947,16 @@ function render(){
         drawYBBullseye(ctx, premoveTo, SQ, 0.5, oppAccent);
       }
     }
+  }
+
+  // ── Sawtooth alert: the explored piece would HANG on its destination ──────
+  // (attacked, zero defenders on the previewed board — fact, not judgment)
+  if (isPreviewing && premoveTo >= 0 && dispBoard[premoveTo] && dispBoard[premoveTo].piece !== 'K') {
+    const _hp = dispBoard[premoveTo];
+    const _hA = dispAtk[premoveTo] || {w:[],b:[]};
+    const _hAtt = (_hA[_hp.color==='w'?'b':'w'] || []).length;
+    const _hDef = (_hA[_hp.color] || []).length;
+    if (_hAtt > 0 && _hDef === 0) drawJaggedRing(ctx, premoveTo);
   }
 
   // Discovered attack targets on top of pieces — purple only
@@ -8221,6 +8269,9 @@ function clearGhostPieces() {
 
 // Ghost is enabled when the soloGhostDepth dropdown is not "Off"
 function ghostEnabled() {
+  // Never in 2-player games: engine-suggested replies would undercut the
+  // "shared vision, own calculation" premise of human-vs-human play.
+  if (typeof mpRoomId !== 'undefined' && mpRoomId) return false;
   var sel = document.getElementById('soloGhostDepth');
   return sel ? parseInt(sel.value) > 0 : true; // default on if no selector
 }
