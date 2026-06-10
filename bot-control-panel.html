@@ -728,6 +728,23 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
       </div>
     </div>
 
+    <!-- 4. MY BOTS — named configurations saved in localStorage -->
+    <div class="qs-pill-wrap" id="qs-bots-wrap">
+      <button class="qs-pill-btn" id="qs-bots-btn" onclick="toggleQsDropdown('bots')" aria-label="Saved bots">
+        <span class="qs-label">My Bots</span>
+        <span class="qs-pill-value" id="qs-bots-value">Save / Load</span>
+      </button>
+      <div class="qs-inplace-drop" id="qs-drop-bots" style="min-width:230px;">
+        <div id="saved-bots-list"></div>
+        <div style="display:flex;gap:5px;align-items:center;padding:6px 4px 2px;border-top:0.5px solid var(--border);margin-top:4px;">
+          <input type="text" id="bot-save-name" placeholder="Bot name…" maxlength="32"
+            style="flex:1;min-width:0;padding:5px 7px;font-family:var(--font-m);font-size:10px;color:var(--text-primary);background:var(--carbon-surface);border:0.5px solid var(--border);border-radius:2px;outline:none;"
+            onkeydown="if(event.key==='Enter')saveCurrentBot()">
+          <button class="preset-btn" onclick="saveCurrentBot()">Save</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Engine pill — far right; clicking opens ENGINE accordion -->
     <button class="qs-pill-btn qs-engine-zone" onclick="openEngineSection()" aria-label="Open engine settings">
       <span class="qs-label">Engine</span>
@@ -5096,21 +5113,16 @@ function toggleQsDropdown(which){
   closeAllQsDropdowns();
   if(alreadyOpen) return;
   _openDrop = which;
-  if(which === 'time'){
-    document.getElementById('qs-drop-time').classList.add('open');
-    document.getElementById('qs-time-btn').classList.add('active');
-  } else {
-    document.getElementById('qs-drop-color').classList.add('open');
-    document.getElementById('qs-color-btn').classList.add('active');
-  }
+  document.getElementById('qs-drop-' + which)?.classList.add('open');
+  document.getElementById('qs-' + which + '-btn')?.classList.add('active');
 }
 
 function closeAllQsDropdowns(){
   _openDrop = null;
-  document.getElementById('qs-drop-time')?.classList.remove('open');
-  document.getElementById('qs-drop-color')?.classList.remove('open');
-  document.getElementById('qs-time-btn')?.classList.remove('active');
-  document.getElementById('qs-color-btn')?.classList.remove('active');
+  ['time','color','bots'].forEach(which => {
+    document.getElementById('qs-drop-' + which)?.classList.remove('open');
+    document.getElementById('qs-' + which + '-btn')?.classList.remove('active');
+  });
 }
 
 document.addEventListener('click', e => {
@@ -5204,6 +5216,233 @@ function getBotConfig(){
     weaponizerEnabled:   document.getElementById('weaponizer-toggle')?.checked || false,
     weaponizerLeadSec:   parseInt(document.getElementById('r-wlead')?.value    || '30'),
   };
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   APPLY CONFIG — inverse of getBotConfig()
+   Restores every panel control from a saved config object. Each
+   group is guarded so one missing field can't abort the whole load.
+═══════════════════════════════════════════════════════════════ */
+
+// Set a range input's value and fire its inline oninput (display sync)
+function _setRange(id, v){
+  const el = document.getElementById(id);
+  if(!el || v == null) return;
+  el.value = v;
+  if(el.oninput) el.oninput.call(el);
+}
+
+function applyBotConfig(cfg){
+  if(!cfg) return;
+  const grp = (fn) => { try { fn(); } catch(e){ console.warn('applyBotConfig:', e); } };
+
+  // Engine mode + ELO + SF level/variety + LC ELOs
+  grp(() => {
+    const card = document.querySelector('#engine-mode-grid .mcard[data-engine="' + (cfg.engine || 'maia3') + '"]');
+    if(card) selEngineMode(card);
+  });
+  grp(() => { if(cfg.elo) setElo(clampElo(cfg.elo)); });
+  grp(() => {
+    if(cfg.sfLevel){ selectSFLevel(cfg.sfLevel, 'sf-pips'); selectSFLevel(cfg.sfLevel, 'lcsf-sf-pips'); }
+  });
+  grp(() => setSFVariety(cfg.sfvar1 || 0, cfg.sfvar2 || 0));
+  grp(() => {
+    const set = (id, v) => { const el = document.getElementById(id); if(el && v != null) el.value = v; };
+    set('lcsf-lc-elo',    cfg.lcsfElo);
+    set('lcmaia-lc-elo',  cfg.lcMaiaLcElo);
+    set('lcmaia-maia-elo',cfg.lcMaiaMaiaElo);
+  });
+
+  // Color + time control (selectTC needs a cell; set state + labels directly)
+  grp(() => {
+    const btn = document.querySelector('.pa-btn[data-color="' + (cfg.color || 'random') + '"]');
+    if(btn) selColor(btn);
+  });
+  grp(() => {
+    tcTime = (cfg.tcTime != null) ? cfg.tcTime : 30;
+    tcInc  = (cfg.tcInc  != null) ? cfg.tcInc  : 0;
+    document.getElementById('qs-time-value').textContent = tcLabel(tcTime, tcInc);
+    document.getElementById('qs-time-cat').textContent   = tcCategory(tcTime, tcInc).n;
+    document.querySelectorAll('.tg-cell').forEach(c => c.classList.remove('selected'));
+  });
+
+  // Pressure controls BEFORE curve restore — their handlers reset the curves
+  grp(() => { if(!!cfg.pressureOff !== pressureOff) togglePressureOff(); });
+  grp(() => { _setRange('r-drop',  cfg.timePressureMaxDrop); _setRange('r-floor', cfg.timePressureFloor); });
+
+  // Quality controls
+  grp(() => _setGaugeValue(cfg.cpBudget != null ? cfg.cpBudget : 100));
+  grp(() => {
+    const rb = document.getElementById('r-blunder');
+    if(rb && cfg.blunderLimitCp != null){ rb.value = cfg.blunderLimitCp; _onBlunderSlider(cfg.blunderLimitCp); }
+  });
+  grp(() => {
+    const lo = document.getElementById('day-lower'), hi = document.getElementById('day-upper');
+    if(lo && cfg.dayLower != null) lo.value = cfg.dayLower;
+    if(hi && cfg.dayUpper != null) hi.value = cfg.dayUpper;
+    onDaySlider();
+  });
+
+  // Attractors + piece values (sliders are rendered with defaults — set each)
+  grp(() => {
+    attractorValues = Object.assign({}, attractorValues, cfg.attractorValues || {});
+    pieceValues     = Object.assign({}, pieceValues,     cfg.pieceValues     || {});
+    Object.keys(attractorValues).forEach(id => {
+      const el = document.getElementById('attr-' + id);
+      if(el) el.value = attractorValues[id];
+    });
+    Object.keys(pieceValues).forEach(id => {
+      const el = document.getElementById('piece-' + id);
+      if(el) el.value = pieceValues[id];
+    });
+    document.querySelectorAll('.pcard').forEach(c => c.classList.remove('sel'));
+    selectedPersonality = null;
+    drawRadar(); updateAttractorStatus(); updateAttrCpDisplays();
+  });
+  grp(() => onCalmPanickyChange(cfg.calmPanickyValue || 0));
+
+  // Temperature preset
+  grp(() => {
+    const idx = TEMP_PRESETS.findIndex(t => t.id === cfg.tempPresetId);
+    const grid = document.getElementById('temp-grid');
+    if(idx >= 0 && grid && grid.children[idx]) selTemp(grid.children[idx], cfg.tempPresetId);
+  });
+
+  // Timing mode + its sliders
+  grp(() => {
+    const order = { complexity: 0, instant: 1, fixed: 2, mirror: 3 };
+    const mode  = cfg.timingMode || 'fixed';
+    const cards = document.querySelectorAll('#timing-mode-grid .mcard');
+    if(order[mode] != null && cards[order[mode]]){
+      selMode(cards[order[mode]], 'st-timing');
+      showTimingCtrl(mode);
+    }
+    _setRange('r-fixed',     cfg.fixedDelayMs != null ? Math.round(cfg.fixedDelayMs / 1000) : null);
+    _setRange('r-mirror',    cfg.mirrorOffsetPct);
+    _setRange('r-cplx-base', cfg.cplxBase);
+    _setRange('r-cplx-min',  cfg.cplxMin);
+    _setRange('r-cplx-max',  cfg.cplxMax);
+  });
+
+  // Human behaviour toggles + weaponizer
+  grp(() => {
+    const setCb = (id, v) => { const el = document.getElementById(id); if(el) el.checked = v !== false; };
+    setCb('cb-reconsidered', cfg.behavReconsider);
+    setCb('cb-blink',        cfg.behavBlink);
+    setCb('cb-clock-mirror', cfg.behavClockMirror);
+    setCb('cb-flag',         cfg.canFlag);
+    const wz = document.getElementById('weaponizer-toggle');
+    if(wz){ wz.checked = !!cfg.weaponizerEnabled; showWeaponizer(wz.checked); }
+    _setRange('r-wlead', cfg.weaponizerLeadSec);
+  });
+
+  // Opening behaviour
+  grp(() => {
+    const modeBtn = document.querySelector('#opening-mode-seg .seg-btn[data-v="' + (cfg.openingMode || 'off') + '"]');
+    if(modeBtn) selOpeningMode(modeBtn);
+    const srcBtn = document.querySelector('#db-source-seg .seg-btn[data-v="' + (cfg.openingSource || 'masters') + '"]');
+    if(srcBtn) selSeg(srcBtn, 'db-source-seg');
+    _setRange('ob-bookdepth', cfg.openingDepth);
+    const mt = document.getElementById('cb-modern-theory');
+    if(mt) mt.checked = !!cfg.modernOnly;
+    repSlots.white.length = 0;
+    repSlots.black.length = 0;
+    ((cfg.repSlots && cfg.repSlots.white) || []).forEach(s => repSlots.white.push({...s}));
+    ((cfg.repSlots && cfg.repSlots.black) || []).forEach(s => repSlots.black.push({...s}));
+    renderRepSlots(); updateRepTotal();
+  });
+
+  // Hybrid slots
+  grp(() => {
+    if(cfg.hybridSlots && cfg.hybridSlots.length){
+      hybridSlots = cfg.hybridSlots.map(s => ({...s}));
+      renderHybridSlots();
+    }
+  });
+
+  // Pressure curves LAST — everything above may have re-anchored them
+  grp(() => {
+    initPts();
+    if(cfg.ctrlA && cfg.ctrlA.length >= 2) ctrlA = cfg.ctrlA.map(p => ({x: +p.x, y: +p.y}));
+    if(cfg.ctrlB && cfg.ctrlB.length >= 2) ctrlB = cfg.ctrlB.map(p => ({x: +p.x, y: +p.y}));
+    drawA(); drawB(); updatePressureStats();
+  });
+
+  grp(() => _updateEnginePanelHeader());
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MY BOTS — named configs persisted in localStorage
+   Store shape: { [name]: { savedAt: ms, config: getBotConfig() } }
+═══════════════════════════════════════════════════════════════ */
+const BOT_STORE_KEY = 'bm_saved_bots';
+const BOT_SCHEMA_VERSION = 1;
+
+function _loadBotStore(){
+  try { return JSON.parse(localStorage.getItem(BOT_STORE_KEY) || '{}') || {}; }
+  catch(e){ return {}; }
+}
+function _saveBotStore(store){
+  try { localStorage.setItem(BOT_STORE_KEY, JSON.stringify(store)); return true; }
+  catch(e){ console.warn('Bot store save failed:', e); return false; }
+}
+
+function saveCurrentBot(){
+  const nameEl = document.getElementById('bot-save-name');
+  const name = nameEl ? nameEl.value.trim() : '';
+  if(!name){
+    if(nameEl){ nameEl.placeholder = 'Name your bot first…'; nameEl.focus(); }
+    return;
+  }
+  const cfg = getBotConfig();
+  cfg.schemaVersion = BOT_SCHEMA_VERSION;
+  const store = _loadBotStore();
+  store[name] = { savedAt: Date.now(), config: cfg };
+  if(_saveBotStore(store)){
+    renderSavedBots();
+    const pill = document.getElementById('qs-bots-value');
+    if(pill) pill.textContent = name;
+  }
+}
+
+function loadSavedBot(name){
+  const entry = _loadBotStore()[name];
+  if(!entry || !entry.config) return;
+  applyBotConfig(entry.config);
+  // Reflect the loaded name so re-saving updates the same bot
+  const nameEl = document.getElementById('bot-save-name');
+  if(nameEl) nameEl.value = name;
+  const pill = document.getElementById('qs-bots-value');
+  if(pill) pill.textContent = name;
+  setTimeout(() => closeAllQsDropdowns(), 240);
+}
+
+function deleteSavedBot(name, ev){
+  if(ev) ev.stopPropagation();
+  const store = _loadBotStore();
+  delete store[name];
+  _saveBotStore(store);
+  renderSavedBots();
+}
+
+function renderSavedBots(){
+  const list = document.getElementById('saved-bots-list');
+  if(!list) return;
+  const store = _loadBotStore();
+  const names = Object.keys(store).sort((a,b) => (store[b].savedAt||0) - (store[a].savedAt||0));
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  list.innerHTML = names.length
+    ? names.map(n => {
+        const c = store[n].config || {};
+        const meta = (c.engine || '?') + (c.elo ? ' · ' + c.elo : '');
+        return '<div class="pa-btn" data-name="' + esc(n) + '" onclick="loadSavedBot(this.dataset.name)" style="display:flex;align-items:center;">' +
+          '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(n) + '</span>' +
+          '<span style="opacity:0.55;font-size:9px;margin-left:6px;white-space:nowrap;">' + esc(meta) + '</span>' +
+          '<span onclick="deleteSavedBot(this.parentElement.dataset.name, event)" title="Delete bot" ' +
+            'style="margin-left:8px;opacity:0.6;cursor:pointer;">✕</span>' +
+        '</div>';
+      }).join('')
+    : '<div style="padding:8px 10px;font-size:10px;color:var(--text-dim);">No saved bots yet — configure one and save it below.</div>';
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -6512,6 +6751,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   initPts();
   setupDrag('cvA', ()=>ctrlA, sigA, true,  'tipA', ()=>scaleA);
   setupDrag('cvB', ()=>ctrlB, sigB, false, 'tipB', ()=>scaleB);
+  renderSavedBots();           // populate the My Bots dropdown from localStorage
   // Pull Maia model status from parent on load (same-origin iframe)
   try{
     if(window.parent && window.parent !== window){
