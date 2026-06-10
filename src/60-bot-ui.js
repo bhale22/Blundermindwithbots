@@ -1229,6 +1229,7 @@ window.addEventListener('message', function(e) {
       var isSf = (s.type === 'stockfish' || s.type === 'sf');
       return {
         type:   isSf ? 'sf' : 'maia',
+        elo:    isSf ? null : (s.elo || 1500), // Maia3 slot ELO, used directly by botMakeMove
         level:  isSf ? Math.min(20, Math.max(1, (s.sfLevel || s.level || 5) * 2))
                      : Math.round((s.elo || 1500) / 200),
         weight: s.pct || 0

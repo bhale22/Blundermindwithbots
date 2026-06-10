@@ -50,7 +50,8 @@ function botRemainingMovesEstimate() {
 
 // ── Move attractor filtering — applied before sampleFromProbs ─────────────────
 // Implements: move quality range (percentile band), luck attractor (band shift),
-// piece attractors (×6), pawn strategic, trade, spacecadet, fortkx, gambito.
+// piece attractors (×6), pawn strategic, trade, spacecadet, fortkx, gambito,
+// structure (pawn islands/doubled/isolated delta).
 //
 // CP budget integration:
 //   The style-gauge CP budget (0–300) controls attractor MAGNITUDE, exactly
@@ -82,6 +83,7 @@ function applyMoveAttractors(moveProbs) {
   const fortKxVal     = attrVals['fortkx']     || 0;
   const gambitoVal    = attrVals['gambito']    || 0;
   const attackerVal   = attrVals['attacker']   || 0;
+  const structureVal  = attrVals['structure']  || 0;
   const hasPiece   = Object.values(pieceVals).some(v => v !== 0);
   const hasTrade   = tradeVal      !== 0;
   const hasPawnS   = pawnStrat     !== 0;
@@ -89,6 +91,7 @@ function applyMoveAttractors(moveProbs) {
   const hasFortkx  = fortKxVal     !== 0;
   const hasGambito = gambitoVal    !== 0;
   const hasAttacker = attackerVal  !== 0;
+  const hasStructure = structureVal !== 0;
 
   // ── Min-probability + blunder-limit filter (Maia3 / LC modes) ────────────
   if (botMinProbPct > 0 || botBlunderLimitCp < 400) {
@@ -136,7 +139,7 @@ function applyMoveAttractors(moveProbs) {
 
   // ── Per-move reweighting ──────────────────────────────────────────────────
   const needsPerMove = scale > 0 &&
-    (hasPiece || hasTrade || hasPawnS || hasSpace || hasFortkx || hasGambito || hasAttacker);
+    (hasPiece || hasTrade || hasPawnS || hasSpace || hasFortkx || hasGambito || hasAttacker || hasStructure);
   if (!needsPerMove) return filtered;
 
   const PIECE_MAP   = { p:'pawn', n:'knight', b:'bishop', r:'rook', q:'queen', k:'king' };
@@ -159,6 +162,14 @@ function applyMoveAttractors(moveProbs) {
       }
     }
   }
+
+  // ── Structure: baseline pawn-structure penalty for the bot's pawns ────────
+  // Penalty = islands + doubled + isolated (lower = tighter). Positive slider
+  // (Rigid) boosts moves that reduce the penalty; negative (Loose) boosts
+  // moves that open the structure. Only own pawn moves can change it, so the
+  // per-move check below is gated on pieceLetter === 'p'.
+  let currentStructPenalty = 0;
+  if (hasStructure) currentStructPenalty = _pawnStructurePenalty(board, botColorStr);
 
   // ── Gambito: ECO gambit continuation UCIs (computed once per bot turn) ────
   // Scan ECO entries whose name contains 'gambit' and whose move prefix matches
@@ -308,11 +319,43 @@ function applyMoveAttractors(moveProbs) {
       logBoost += attackerVal * scale * Math.tanh(totalOppThreats / 6);
     }
 
+    // ── Structure: pawn-structure penalty delta (own pawn moves only) ────────
+    // delta > 0 = move tightens the structure (fewer islands/doubled/isolated).
+    // Positive (Rigid) boosts tightening moves; negative (Loose) boosts
+    // structure-opening moves.
+    if (hasStructure && pieceLetter === 'p') {
+      const simPenalty = _pawnStructurePenalty(getSimBd(), botColorStr);
+      const delta = currentStructPenalty - simPenalty;
+      if (delta !== 0) logBoost += structureVal * scale * Math.tanh(delta);
+    }
+
     result[uciMove] = logBoost !== 0 ? prob * Math.exp(logBoost) : prob;
   }
   return Object.keys(result).length ? result
        : Object.keys(filtered).length ? filtered
        : moveProbs;
+}
+
+// ── Pawn-structure penalty: islands + doubled + isolated (lower = tighter) ──
+// Cheap stand-in for the brief's "SF pawn eval delta" — same direction, no
+// engine call needed per candidate move.
+function _pawnStructurePenalty(bd, colorStr) {
+  const files = [0,0,0,0,0,0,0,0];
+  for (let sq = 0; sq < 64; sq++) {
+    const p = bd[sq];
+    if (p && p.piece === 'P' && p.color === colorStr) files[sq % 8]++;
+  }
+  let islands = 0, doubled = 0, isolated = 0, inIsland = false;
+  for (let f = 0; f < 8; f++) {
+    if (files[f] > 0) {
+      if (!inIsland) { islands++; inIsland = true; }
+      doubled += files[f] - 1;
+      if ((f === 0 || files[f-1] === 0) && (f === 7 || files[f+1] === 0)) isolated += files[f];
+    } else {
+      inIsland = false;
+    }
+  }
+  return islands + doubled + isolated;
 }
 
 function sampleFromProbs(moveProbs, temperature) {
@@ -884,15 +927,19 @@ async function botMakeMove() {
         for (const sl of slots) { r2 -= sl.weight; if (r2 <= 0) { chosen = sl; break; } }
         await sfInit(); // always init SF in case maia fails
         if (chosen.type === 'maia') {
-          const baseTemp = parseFloat(document.getElementById('maiaTemp').value) || 1.0;
-          const effectiveTemp = timePressureTemp(baseTemp, clockMs);
+          // Maia slot = the Maia3 neural model at the slot's own ELO.
+          // (Previously this called the Lichess explorer and fell back to
+          // Stockfish, so "hybrid Maia" never actually used Maia3.)
+          const m3Temp = parseFloat(document.getElementById('maia3Temp')?.value || '1.0');
+          const effectiveTemp = timePressureTemp(m3Temp, clockMs);
+          const slotElo = chosen.elo || (chosen.level ? chosen.level * 200 : maia3SelectedRating);
           let probs = null;
-          if (lichessExplorerActive) {
-            try { probs = await maiaGetMoveProbs(fen); } catch(e) {}
-            if (!probs || !Object.keys(probs).length) {
-              lichessExplorerActive = false;
-              probs = null;
-            }
+          if (_maiaReady) {
+            const savedRating = lcSelectedRating;
+            lcSelectedRating = String(Math.max(600, Math.min(2600, slotElo)));
+            try { probs = await maia3GetMoveProbs(fen); } catch(e) {}
+            lcSelectedRating = savedRating;
+            if (probs && Object.keys(probs).length) lastBotMoveSource = 'Maia3';
           }
           if (probs && Object.keys(probs).length) {
             const targetDelay = botThinkTime(probs, clockMs);
@@ -902,8 +949,10 @@ async function botMakeMove() {
             _botMoveClockMs = clockMs;
             uciMove = sampleFromProbs(applyMoveAttractors(probs), effectiveTemp);
           } else {
-            // LC off-book or failed — fallback to SF
-            uciMove = await sfGetMove(fen, sfEffectiveLevel(clockMs));
+            // Maia3 not downloaded/failed — SF at a level matching the slot ELO
+            const fbLevel = Math.max(1, Math.min(20, Math.round(slotElo / 200)));
+            uciMove = await sfGetMove(fen, fbLevel);
+            lastBotMoveSource = 'SF';
           }
         } else {
           const effectiveLevel = (chosen.level !== undefined && chosen.level > 0) ? chosen.level : sfEffectiveLevel(clockMs);
