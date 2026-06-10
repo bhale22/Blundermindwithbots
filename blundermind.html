@@ -7983,9 +7983,10 @@ async function botMakeMove() {
       await sfInit();
       uciMove = await sfGetMove(fen, level);
       lastBotMoveSource = 'SF';
-      // Simulate think time
-      const moveProbs = { [uciMove || 'e2e4']: 1.0 };
-      const delay = botThinkTime(moveProbs, clockMs);
+      // Simulate think time. Pass null, NOT a fake single-move distribution:
+      // a one-entry distribution has entropy 0, which made the "blink" branch
+      // treat every SF move as forced and play it near-instantly.
+      const delay = botThinkTime(null, clockMs);
       await new Promise(r => setTimeout(r, delay));
 
     } else if (botTab === 'maia3') {
