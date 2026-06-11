@@ -136,14 +136,24 @@ function startPreview(from,to){
   if(from===premoveFrom&&to===premoveTo&&previewBoard) {
     render(); return;
   }
-  const bd2=applyMove(from,to,board,epSq,'Q');
+  let bd2;
+  if(to===from){
+    // Identity preview: piece held over its own square. Evaluate the board
+    // exactly as it stands so the exploration overlays stay on until the
+    // piece is committed back (click / drop on origin).
+    bd2={...board};
+    previewEpSq=epSq;
+    previewCastling=castling;
+  } else {
+    bd2=applyMove(from,to,board,epSq,'Q');
+    const movingPiece=board[from];
+    previewEpSq = (movingPiece&&movingPiece.piece==='P'&&Math.abs(to-from)===16)
+      ? (from+to)>>1 : -1;
+    previewCastling = updateCastling(from,to,movingPiece,castling);
+  }
   previewBoard=bd2;previewAtk=buildAtk(bd2);
   const pp=computePins(bd2);previewPinsW=pp.w;previewPinsB=pp.b;
   premoveFrom=from;premoveTo=to;selSq=-1;
-  const movingPiece=board[from];
-  previewEpSq = (movingPiece&&movingPiece.piece==='P'&&Math.abs(to-from)===16)
-    ? (from+to)>>1 : -1;
-  previewCastling = updateCastling(from,to,movingPiece,castling);
   if(typeof indRefreshPremoveUI==='function') indRefreshPremoveUI();
   // Cancel any pending computation and schedule fresh one
   if(window._indApplyFrame) cancelAnimationFrame(window._indApplyFrame);
@@ -285,8 +295,14 @@ cv.addEventListener('mousemove',e=>{
         if (typeof ghostOnMouseMove === 'function') ghostOnMouseMove(sq);
         if(sq>=0&&sq!==selSq&&legalMoves.includes(sq)){
           startPreview(selSq,sq);
+        } else if(sq===selSq){
+          // Piece hovered over its own square — identity preview: keep the
+          // exploration overlays on, evaluating the board as it stands.
+          const _orig=selSq;
+          startPreview(_orig,_orig);
+          selSq=_orig; // restore selection so hover exploration continues
         } else {
-          // On origin square or off board — clear preview but keep exploration indicators
+          // Off board or non-legal square — clear preview but keep exploration indicators
           clearPreview();
           premoveFrom=selSq; premoveTo=-1;
           // Mark as currently previewing so pre:true indicators activate
@@ -299,10 +315,12 @@ cv.addEventListener('mousemove',e=>{
       if(sq!==dragOver){ // only process when square changes
         dragOver=sq;
         if (typeof ghostOnMouseMove === 'function') ghostOnMouseMove(sq);
-        if(sq>=0&&sq!==dragFrom&&legalMoves.includes(sq)){
+        if(sq>=0&&(sq===dragFrom||legalMoves.includes(sq))){
+          // Legal square → preview the move; origin square → identity preview
+          // (overlays stay on, evaluating the unchanged board).
           startPreview(dragFrom,sq);
         } else {
-          // On origin square or off board — show indicators on live board
+          // Off board or non-legal square — show indicators on live board
           clearPreview();
           premoveFrom=dragFrom;premoveTo=-1;
           if(window._indApplyFrame) cancelAnimationFrame(window._indApplyFrame);
@@ -320,10 +338,11 @@ cv.addEventListener('mousemove',e=>{
       if(sq!==dragOver){ // only process when square changes
         dragOver=sq;
         if (typeof ghostOnMouseMove === 'function') ghostOnMouseMove(sq);
-        if(sq>=0&&sq!==dragFrom&&legalMoves.includes(sq)){
+        if(sq>=0&&(sq===dragFrom||legalMoves.includes(sq))){
+          // Legal square → preview the move; origin square → identity preview
           startPreview(dragFrom,sq);
         } else {
-          // On origin square or off board — show indicators on live board
+          // Off board or non-legal square — show indicators on live board
           clearPreview();
           premoveFrom=dragFrom;premoveTo=-1;
           if(window._indApplyFrame) cancelAnimationFrame(window._indApplyFrame);
@@ -470,20 +489,12 @@ function drawThreatCircle(sq, color){
 // (attacked, zero defenders). Deliberately louder than the passive overlays:
 // "the move you are about to make" earns more alarm than ambient board state.
 // Pure fact, no evaluation — it never says whether the move is good.
-let _jagPhase = 0, _jagRafId = null;
-function _jagPulseTick(){
-  _jagRafId = null;
-  if (previewBoard) {           // pulse only while actively exploring
-    _jagPhase += 0.10;
-    render();
-    _jagRafId = requestAnimationFrame(_jagPulseTick);
-  }
-}
+// Drawn statically (no animation loop): render() already runs on every
+// hover change, and an advancing pulse phase made the ring look glitchy.
 function drawJaggedRing(ctx2, sq, color){
   const {r,c} = sqCanvas(sq);
   const x = c*SQ+SQ/2, y = r*SQ+SQ/2;
-  const pulse = Math.sin(_jagPhase) * 1.5;
-  const rOut = SQ*0.47 + pulse, rIn = SQ*0.37 + pulse*0.5;
+  const rOut = SQ*0.47, rIn = SQ*0.37;
   const teeth = 14;
   ctx2.save();
   ctx2.beginPath();
@@ -500,7 +511,6 @@ function drawJaggedRing(ctx2, sq, color){
   ctx2.fillStyle = 'rgba(220,40,40,0.10)';
   ctx2.fill();
   ctx2.restore();
-  if (_jagRafId === null) _jagRafId = requestAnimationFrame(_jagPulseTick);
 }
 
 // ── Ghost canvas — declared before render() to avoid TDZ ────────────────────
@@ -778,11 +788,15 @@ function render(){
       ctx.strokeStyle=safeColor; ctx.lineWidth=2; ctx.stroke();
     });
   }
-  // Colors: active player = green(safe)/blue(contested), opponent = red(safe)/pink(contested)
-  const wSafe = turn==='w' ? 'rgba(40,200,80,0.92)'  : 'rgba(220,50,50,0.92)';
-  const wCont = turn==='w' ? 'rgba(53,120,224,0.85)' : 'rgba(220,80,180,0.85)';
-  const bSafe = turn==='b' ? 'rgba(40,200,80,0.92)'  : 'rgba(220,50,50,0.92)';
-  const bCont = turn==='b' ? 'rgba(53,120,224,0.85)' : 'rgba(220,80,180,0.85)';
+  // Colors: active player = green(safe)/blue(contested), opponent = amber(safe)/
+  // light-amber(contested). Amber = "warning about what they can do", matching
+  // the discovered-attack threat color. Red is reserved for pieces that are
+  // themselves in danger — a red ring on the opponent's FORKING piece made it
+  // look threatened rather than threatening.
+  const wSafe = turn==='w' ? 'rgba(40,200,80,0.92)'  : 'rgba(235,140,0,0.92)';
+  const wCont = turn==='w' ? 'rgba(53,120,224,0.85)' : 'rgba(235,170,60,0.78)';
+  const bSafe = turn==='b' ? 'rgba(40,200,80,0.92)'  : 'rgba(235,140,0,0.92)';
+  const bCont = turn==='b' ? 'rgba(53,120,224,0.85)' : 'rgba(235,170,60,0.78)';
   try { // BG indicators
   try { // BG indicator rendering
   // ── King in check during exploration — highlight orange ───────────────────
@@ -1017,7 +1031,9 @@ function render(){
     });
   }
 
-  if(isPreviewing&&premoveFrom>=0&&board[premoveFrom]){
+  // Skip the dim origin ghost during identity preview (piece is on its own
+  // square — the real piece is already drawn there)
+  if(isPreviewing&&premoveFrom>=0&&premoveFrom!==premoveTo&&board[premoveFrom]){
     const{r,c}=sqCanvas(premoveFrom);
     const _gp=board[premoveFrom];
     ctx.save(); ctx.globalAlpha=0.32;
