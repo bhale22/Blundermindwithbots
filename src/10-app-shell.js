@@ -427,7 +427,7 @@ discoveredself:{title:'My Discovered Attacks',body:`<p>Shows discovered attack o
   influence:{title:'Piece Influence',body:`<p>Every square each piece controls — not just squares with enemy pieces.</p><p>🔵 Blue — white controls · 🟠 Orange — black controls</p><p>Most useful during move exploration to understand positional consequences. Pawns show diagonal attack squares only.</p>`},
   battery:{title:'Battery Counts',body:`<p>A battery is two or more sliding pieces lined up so they support each other's attacks — two rooks on a file, or queen+bishop on a diagonal.</p><p>With batteries enabled, counts include all pieces in the line. Uses Static Exchange Evaluation (SEE).</p>`},
   legal:{title:'Show Legal Moves',body:`<p>Highlights all legal destination squares when a piece is selected.</p><p>Respects pins, check, castling, and en passant.</p><p><em>Tip: Turn this off to practice visualizing legal moves yourself — a key skill in real games.</em></p>`},
-  howto:{title:'How to Train: Decide First, Then Look',body:`
+  howto:{title:'Training Tips — Decide First, Then Look',body:`
 <p>The overlays never tell you what to play. They show you what is <em>true</em> on the board — who attacks what, what's defended, what's hanging — and leave the judgment to you. To turn that into lasting chess strength, use this loop:</p>
 <p><strong>1. Calculate first.</strong> Look at the position and choose your move entirely in your head. No hovering, no exploring.</p>
 <p><strong>2. Commit.</strong> Settle on it: <em>"I'm playing Nf5."</em></p>

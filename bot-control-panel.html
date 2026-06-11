@@ -614,12 +614,15 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 .panel-full{grid-column:1/-1;margin-top:10px;}
 
 /* ══ INNER TABS ══ */
-.itab-strip{display:flex;gap:0;margin-bottom:12px;border-bottom:0.5px solid var(--border-amber);}
-.itab{padding:6px 14px;font-family:var(--font-m);font-size:8px;letter-spacing:0.12em;text-transform:uppercase;
-  background:transparent;border:none;border-bottom:2px solid transparent;
-  color:var(--text-dim);cursor:pointer;transition:all 0.15s;margin-bottom:-0.5px;}
-.itab:hover{color:var(--text-secondary);}
-.itab.active{color:var(--amber);border-bottom-color:var(--amber);}
+/* File-folder style tabs — raised cards so inactive panels are clearly
+   visible as alternative pages of controls, not just dim labels. */
+.itab-strip{display:flex;gap:4px;margin-bottom:12px;border-bottom:0.5px solid var(--border-amber);}
+.itab{padding:7px 16px;font-family:var(--font-m);font-size:10px;letter-spacing:0.12em;text-transform:uppercase;
+  background:var(--carbon-surface);border:0.5px solid var(--border);border-bottom:none;
+  border-radius:var(--r) var(--r) 0 0;
+  color:var(--text-secondary);cursor:pointer;transition:all 0.15s;margin-bottom:-0.5px;}
+.itab:hover{color:var(--text-primary);background:var(--carbon-raise);}
+.itab.active{color:var(--amber-bright);background:var(--amber-glow);border-color:var(--border-amber);}
 .itab-pane{display:none;}
 .itab-pane.active{display:block;}
 
@@ -647,25 +650,27 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 
 
 /* ══ ATTRACTOR HOVER DESCRIPTIONS ══ */
-.attr-group { margin-bottom: 5px; }
+.attr-group { margin-bottom: 5px; position: relative; }
 .attr-group .attractor-row { margin-bottom: 0; }
+/* Info panel floats OVER the rows below instead of expanding in place —
+   inline expansion shifted every slider underneath while browsing. */
 .attr-desc {
-  max-height: 0;
-  overflow: hidden;
-  opacity: 0;
-  transition: max-height 0.28s cubic-bezier(0.4,0,0.2,1), opacity 0.22s ease, padding 0.22s ease;
+  display: none;
+  position: absolute;
+  left: 0; right: 0; top: 100%;
+  z-index: 40;
+  background: var(--carbon-light);
+  border: 0.5px solid var(--border-amber);
+  border-radius: var(--r);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.55);
   font-family: var(--font-m);
   font-size: 8px;
-  color: var(--text-dim);
+  color: var(--text-secondary);
   line-height: 1.6;
-  border-left: 1.5px solid var(--border-amber);
-  margin-left: 2px;
-  padding: 0 8px;
+  padding: 6px 9px;
 }
 .attr-group:hover .attr-desc {
-  max-height: 100px;
-  opacity: 1;
-  padding: 5px 8px;
+  display: block;
 }
 .attr-desc code {
   font-family: var(--font-m);
@@ -1028,9 +1033,12 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
                 <div class="ctrl-hint" id="blunder-floor-hint">Bot will not play any single move costing more than this centipawn loss. Raised automatically if below Max CP Budget.</div>
               </div>
 
+            </div>
+            <!-- RIGHT: Move quality range (top, for visibility) + strategic attractors -->
+            <div>
               <!-- Move quality range — only shown for Maia/LC+Maia/Hybrid -->
               <div id="move-quality-range">
-              <div class="dlbl" style="margin-top:14px;"><span>Move quality range</span></div>
+              <div class="dlbl"><span>Move quality range</span></div>
               <div class="day-vals">
                 <span>Exclude lowest: <span id="day-lower-val">0</span>%</span>
                 <span>Exclude moves above: <span id="day-upper-val">100</span>%</span>
@@ -1043,10 +1051,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
               <div class="dual-range-labels"><span>← Bad Day, lowest probability moves</span><span>Good Day, Highest Probability moves →</span></div>
               <div class="ctrl-hint" style="margin-top:6px;">Sets the Maia3 probability band. Good Day = best moves; Bad Day = lower-probability alternatives. Forced moves (≥95%) are never skipped.</div>
               </div><!-- /move-quality-range -->
-            </div>
-            <!-- RIGHT: Strategic attractors -->
-            <div>
-              <div class="dlbl"><span>Strategic preferences</span></div>
+              <div class="dlbl" style="margin-top:14px;"><span>Strategic preferences</span></div>
               <div id="attractor-rows"></div>
             </div>
           </div>
@@ -6221,6 +6226,23 @@ function renderPersonalities(){
 function selPersonality(id){
   const p = PERSONALITIES.find(x=>x.id===id);
   if(!p) return;
+  // Grandmaster Bad Day changes more than attractors — confirm first
+  if(id === 'badday'){
+    const ok = window.confirm(
+      'Grandmaster Bad Day will set:\n\n' +
+      '• Engine → Maia 3\n' +
+      '• ELO → 2400\n' +
+      '• Move quality range → 0–4% (top of the distribution)\n\n' +
+      'You can adjust any of these manually afterwards. Apply?');
+    if(!ok) return;
+    const card = document.querySelector('#engine-mode-grid .mcard[data-engine="maia3"]');
+    if(card) selEngineMode(card);
+    setElo(2400);
+    const lo = document.getElementById('day-lower'), hi = document.getElementById('day-upper');
+    if(lo) lo.value = 0;
+    if(hi) hi.value = 4;
+    onDaySlider();
+  }
   // Deselect all
   document.querySelectorAll('.pcard').forEach(c=>c.classList.remove('sel'));
   document.querySelector(`.pcard[data-pid="${id}"]`).classList.add('sel');

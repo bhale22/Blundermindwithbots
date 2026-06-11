@@ -290,6 +290,9 @@ canvas{
   flex-shrink:0;
 }
 .ctrl-row{display:flex;gap:4px;align-items:center;}
+/* Bottom-control button rows stretch to full width so their right edge
+   aligns with the controls above them */
+#bottom-controls .ctrl-row .ctrl-btn{flex:1;text-align:center;}
 .ctrl-btn{
   font-size:8.5px;padding:7px 10px;
   border:0.5px solid var(--border);border-radius:4px;
@@ -991,8 +994,8 @@ canvas{
     <!-- Bottom controls -->
     <div id="bottom-controls">
       <div class="ctrl-row">
-        <button class="ctrl-btn reset-btn" id="resignBtn" onclick="resignOrReset()">⚑ Resign</button>
-        <button class="ctrl-btn util-btn" onclick="openHelp('howto')">🎯 How to Train</button>
+        <!-- Dynamic action slot: Resign (game on) / Rematch? (game over) / Training Tips (idle) -->
+        <button class="ctrl-btn util-btn" id="resignBtn" onclick="openHelp('howto')">🎯 Training Tips</button>
         <button class="ctrl-btn util-btn" onclick="openPanel('themePanel')">🎨 Theme &amp; Pieces</button>
         <button class="ctrl-btn util-btn" onclick="openPanel('mpPanel')">⚔ 2-Player</button>
         <button class="ctrl-btn util-btn" onclick="openBotModal()" style="border-color:rgba(90,212,144,0.4);color:#5ad490;" id="botSidebarBtn">🤖 vs Bot</button>
@@ -1001,9 +1004,6 @@ canvas{
         <button class="ctrl-btn util-btn" id="btnLoadPgn" onclick="document.getElementById('pgnFileInput').click()">▶ Load game</button>
         <input type="file" id="pgnFileInput" accept=".pgn" style="display:none" onchange="loadPgnFile(event)">
         <button class="ctrl-btn util-btn" id="btnSavePgn" onclick="savePgn()">↓ Save game</button>
-        <button class="ctrl-btn util-btn" onclick="toggleClockPanel()">⏱ Time Control</button>
-        <span class="ctrl-spacer"></span>
-
       </div>
       <div class="util-row" style="display:none;"></div>
     </div>

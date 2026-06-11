@@ -1328,29 +1328,44 @@ function mpOfferRematch() {
   }
 }
 
-function showRematchBtn(show) {
-  let btn = document.getElementById('rematchBtn');
-  if (!btn && show) {
-    btn = document.createElement('button');
-    btn.id = 'rematchBtn';
-    btn.className = 'ctrl-btn';
-    btn.style.cssText = 'border-color:var(--accent);color:var(--accent);font-weight:600;';
-    btn.textContent = '↺ Rematch';
-    // In multiplayer, offer rematch; in solo/bot, just reset
-    btn.onclick = () => {
-      if (typeof mpRoomId !== 'undefined' && mpRoomId) {
-        mpOfferRematch();
-      } else if (botActive) {
-        showRematchBtn(false); botStart();
-      } else {
-        showRematchBtn(false); resetGame();
-      }
-    };
-    const row = document.querySelector('#bottom-controls .ctrl-row');
-    if (row) row.insertBefore(btn, row.firstChild);
-  }
-  if (btn) btn.style.display = show ? '' : 'none';
+// ── Dynamic action button (first slot of the bottom controls) ───────────────
+// Game in progress → Resign · game just ended → Rematch? · idle → Training Tips
+function _gameInProgress() {
+  if (gameOver) return false;
+  if (typeof botActive !== 'undefined' && botActive) return true;
+  if (typeof mpRoomId !== 'undefined' && mpRoomId &&
+      typeof mpMode !== 'undefined' && mpMode === 'ingame') return true;
+  return gameMovesAlgebraic.length > 0;
 }
+
+function updateActionBtn() {
+  const btn = document.getElementById('resignBtn');
+  if (!btn) return;
+  if (gameOver) {
+    btn.textContent = '↺ Rematch?';
+    btn.className = 'ctrl-btn';
+    btn.style.borderColor = 'var(--accent)'; btn.style.color = 'var(--accent)';
+    btn.onclick = () => {
+      if (typeof mpRoomId !== 'undefined' && mpRoomId) mpOfferRematch();
+      else if (typeof botActive !== 'undefined' && botActive) botStart();
+      else resetGame();
+    };
+  } else if (_gameInProgress()) {
+    btn.textContent = '⚑ Resign';
+    btn.className = 'ctrl-btn reset-btn';
+    btn.style.borderColor = ''; btn.style.color = '';
+    btn.onclick = resignOrReset;
+  } else {
+    btn.textContent = '🎯 Training Tips';
+    btn.className = 'ctrl-btn util-btn';
+    btn.style.borderColor = ''; btn.style.color = '';
+    btn.onclick = () => openHelp('howto');
+  }
+}
+
+// Legacy entry point — many callers still announce game end through this.
+// The button is fully state-driven now, so just refresh it.
+function showRematchBtn(show) { updateActionBtn(); }
 
 function resetGame(){cancelResign();showRematchBtn(false);clockStop();clockInit(clockControl);lastMoveFrom=-1;lastMoveTo=-1;const sg=document.getElementById("saveGameBtn");if(sg)sg.remove();loadPos(0);}
 function setPalette(name){currentPalette=PALETTES[name]||PALETTES.default;render();}
@@ -1548,6 +1563,8 @@ function updatePlayerBoxes(){
   }
   // Refresh clock display when timed
   if(_clockActive && typeof clockUpdateDisplay==='function') clockUpdateDisplay();
+  // Keep the dynamic action button (Resign / Rematch? / Training Tips) in sync
+  if(typeof updateActionBtn==='function') updateActionBtn();
 }
 
 function stopCheckThreats(){showingCheckThreats=false;checkThreatSquaresW=new Set();checkThreatSquaresB=new Set();render();}
