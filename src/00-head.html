@@ -822,14 +822,18 @@ canvas{
       <label><input type="checkbox" id="cbLegalToggle" checked onchange="render()"> On</label>
     </div>
     <div class="s-row">
-      <span class="s-lbl">👻 Ghost responses (SF depth):<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('ghostresponses',event)" style="margin-left:3px;">?</span></span>
+      <span class="s-lbl">👻 Ghost responses:<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('ghostresponses',event)" style="margin-left:3px;">?</span></span>
       <span class="s-spacer"></span>
-      <select id="soloGhostDepth" style="font-size:8px;padding:1px 3px;border:0.5px solid var(--border);border-radius:3px;background:var(--bg-panel2);color:var(--text-secondary);">
+      <select id="soloGhostDepth" onchange="ghostModeChanged()" style="font-size:8px;padding:1px 3px;border:0.5px solid var(--border);border-radius:3px;background:var(--bg-panel2);color:var(--text-secondary);">
         <option value="0">Off</option>
-        <option value="4">Fast (depth 4)</option>
-        <option value="8" selected>Medium (depth 8)</option>
-        <option value="12">Deep (depth 12)</option>
+        <option value="4">SF Fast (depth 4)</option>
+        <option value="8" selected>SF Medium (depth 8)</option>
+        <option value="12">SF Deep (depth 12)</option>
+        <option value="maia">Maia (2600 + 1500)</option>
       </select>
+    </div>
+    <div id="ghostMaiaHint" style="display:none;font-size:7.5px;color:#c0a060;padding:0 2px 4px;">
+      Maia3 model not downloaded — ghosts use Stockfish until you download it in the 🤖 vs Bot panel.
     </div>
     <div class="s-row">
       <span class="s-lbl">Batteries in threat counts:<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('batteriessetting',event)" style="margin-left:3px;">?</span></span>
@@ -993,14 +997,17 @@ canvas{
     <!-- Chat is in the board area inline for multiplayer -->
     <!-- Bottom controls -->
     <div id="bottom-controls">
+      <!-- Row 1: game flow — dynamic action slot (Resign / Rematch? / Training
+           Tips), Explore (shown only when a game just ended), game starters -->
       <div class="ctrl-row">
-        <!-- Dynamic action slot: Resign (game on) / Rematch? (game over) / Training Tips (idle) -->
         <button class="ctrl-btn util-btn" id="resignBtn" onclick="openHelp('howto')">🎯 Training Tips</button>
-        <button class="ctrl-btn util-btn" onclick="openPanel('themePanel')">🎨 Theme &amp; Pieces</button>
-        <button class="ctrl-btn util-btn" onclick="openPanel('mpPanel')">⚔ 2-Player</button>
+        <button class="ctrl-btn util-btn" id="exploreBtn" onclick="enterExploreMode()" style="display:none;border-color:rgba(74,159,212,0.45);color:#4a9fd4;">🔍 Explore</button>
         <button class="ctrl-btn util-btn" onclick="openBotModal()" style="border-color:rgba(90,212,144,0.4);color:#5ad490;" id="botSidebarBtn">🤖 vs Bot</button>
+        <button class="ctrl-btn util-btn" onclick="openPanel('mpPanel')">⚔ 2-Player</button>
       </div>
+      <!-- Row 2: utilities -->
       <div class="ctrl-row">
+        <button class="ctrl-btn util-btn" onclick="openPanel('themePanel')">🎨 Theme &amp; Pieces</button>
         <button class="ctrl-btn util-btn" id="btnLoadPgn" onclick="document.getElementById('pgnFileInput').click()">▶ Load game</button>
         <input type="file" id="pgnFileInput" accept=".pgn" style="display:none" onchange="loadPgnFile(event)">
         <button class="ctrl-btn util-btn" id="btnSavePgn" onclick="savePgn()">↓ Save game</button>

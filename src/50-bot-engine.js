@@ -1007,16 +1007,60 @@ function clearGhostPieces() {
 
 // Ghost is enabled when the soloGhostDepth dropdown is not "Off"
 function ghostEnabled() {
-  // Never in 2-player games: engine-suggested replies would undercut the
-  // "shared vision, own calculation" premise of human-vs-human play.
-  if (typeof mpRoomId !== 'undefined' && mpRoomId) return false;
+  // Not during a LIVE 2-player game: engine-suggested replies would undercut
+  // the "shared vision, own calculation" premise of human-vs-human play.
+  // Only the in-progress game is gated — merely holding a room code (waiting
+  // in the lobby, or exploring after the game ends) must not disable ghosts.
+  if (typeof mpRoomId !== 'undefined' && mpRoomId &&
+      typeof mpMode !== 'undefined' && mpMode === 'ingame' && !gameOver) return false;
   var sel = document.getElementById('soloGhostDepth');
-  return sel ? parseInt(sel.value) > 0 : true; // default on if no selector
+  if (!sel) return true; // default on if no selector
+  return sel.value === 'maia' || parseInt(sel.value) > 0;
+}
+
+// 'maia' (Maia3 2600 + 1500) or 'sf' (Stockfish at ghostDepth())
+function ghostMode() {
+  var sel = document.getElementById('soloGhostDepth');
+  return (sel && sel.value === 'maia') ? 'maia' : 'sf';
 }
 
 function ghostDepth() {
   var sel = document.getElementById('soloGhostDepth');
   return sel ? Math.max(4, Math.min(12, parseInt(sel.value) || 8)) : 8;
+}
+
+// Run Maia3 inference at a specific Elo. lcSelectedRating is the global the
+// inference reads its conditioning from — save/restore around the call.
+async function ghostMaiaProbs(fen, elo) {
+  var saved = lcSelectedRating;
+  lcSelectedRating = String(elo);
+  try { return await maia3GetMoveProbs(fen); }
+  catch(e) { return null; }
+  finally { lcSelectedRating = saved; }
+}
+
+// Top-N moves from a probs dict, sorted descending: [[uci, prob], ...]
+function ghostTopMoves(probs) {
+  return Object.entries(probs).sort(function(a, b) { return b[1] - a[1]; });
+}
+
+// Dropdown onchange — when Maia is picked, start the worker (cache check only;
+// the 87MB download stays an explicit user action in the bot panel) and show
+// a hint if the model isn't available yet.
+function ghostModeChanged() {
+  clearGhostPieces();
+  var hint = document.getElementById('ghostMaiaHint');
+  if (ghostMode() !== 'maia') {
+    if (hint) hint.style.display = 'none';
+    return;
+  }
+  if (typeof maiaInit === 'function') maiaInit();
+  // Give the cache check a moment before declaring the model missing
+  setTimeout(function() {
+    if (!hint || ghostMode() !== 'maia') return;
+    var ready = typeof _maiaReady !== 'undefined' && _maiaReady;
+    hint.style.display = ready ? 'none' : '';
+  }, 1500);
 }
 
 // The one active ghost request — cancel previous if hovering a new square
@@ -1048,6 +1092,45 @@ async function ghostShowForSquare(fromSq, toSq) {
   // Tag this request so stale responses don't draw
   var myId = ++_ghostRequestId;
 
+  // ── Maia mode: one inference at 2600 (blue), one at 1500 (purple) ─────────
+  // Falls back to Stockfish below if the model isn't downloaded/ready.
+  if (ghostMode() === 'maia' && typeof _maiaReady !== 'undefined' && _maiaReady) {
+    var probsHi = await ghostMaiaProbs(hypFen, 2600);
+    if (myId !== _ghostRequestId) return;
+    var probsLo = await ghostMaiaProbs(hypFen, 1500);
+    if (myId !== _ghostRequestId) return;
+    if (!probsHi || !probsLo) return;
+
+    var topHi = ghostTopMoves(probsHi);
+    var topLo = ghostTopMoves(probsLo);
+    if (!topHi.length) return;
+
+    var uciHi = topHi[0][0];
+    var mvHi = uciToSq(uciHi);
+    if (!mvHi || mvHi.from == null || mvHi.to == null) return;
+    _drawGhost(hypBoard, mvHi.from, mvHi.to, 0.50, 'rgba(74,159,212,0.90)');
+
+    // Second ghost: 1500's top move; when both Elos agree, fall back to
+    // 1500's runner-up — but only if it's plausible (>10%). When the top
+    // move is near-forced, one ghost is the honest display.
+    var uciLo = topLo.length ? topLo[0][0] : null;
+    if (uciLo === uciHi) {
+      uciLo = (topLo.length > 1 && topLo[1][1] > 0.10) ? topLo[1][0] : null;
+    }
+    if (uciLo) {
+      var mvLo = uciToSq(uciLo);
+      if (mvLo && mvLo.from != null && mvLo.to != null &&
+          !(mvLo.from === mvHi.from && mvLo.to === mvHi.to)) {
+        _drawGhost(hypBoard, mvLo.from, mvLo.to, 0.25, 'rgba(180,140,255,0.60)');
+      }
+    }
+    return;
+  }
+  // Maia selected but model not ready — start loading it (no-op if cached or
+  // already in flight) and use Stockfish for this hover.
+  if (ghostMode() === 'maia' && typeof maiaInit === 'function') maiaInit();
+
+  // ── Stockfish mode ─────────────────────────────────────────────────────────
   // Init ghost SF worker if needed (fetch once, reuse)
   try {
     await sfGhostInit();

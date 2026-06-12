@@ -46,9 +46,13 @@ function sfInit() {
 }
 
 // ── Ghost-only Stockfish worker (completely separate — never shared with bot) ─
+var _sfGhostInitPromise = null;
 function sfGhostInit() {
-  if (sfGhostWorker) return Promise.resolve();
-  return new Promise(function(resolve, reject) {
+  // Return the SAME pending promise while init is in flight — returning a
+  // resolved promise just because the worker object exists made every hover
+  // during the multi-second wasm load see sfGhostReady=false and draw nothing.
+  if (_sfGhostInitPromise) return _sfGhostInitPromise;
+  _sfGhostInitPromise = new Promise(function(resolve, reject) {
     try {
       sfGhostWorker = new Worker(SF_LOCAL);
       sfGhostWorker.onmessage = function(e) {
@@ -72,6 +76,13 @@ function sfGhostInit() {
       setTimeout(function() { if (!sfGhostReady) reject(new Error('Ghost SF timeout')); }, 15000);
     } catch(e) { reject(e); }
   });
+  // On failure, allow a future call to retry from scratch
+  _sfGhostInitPromise.catch(function() {
+    _sfGhostInitPromise = null;
+    if (sfGhostWorker) { try { sfGhostWorker.terminate(); } catch(e) {} }
+    sfGhostWorker = null; sfGhostReady = false;
+  });
+  return _sfGhostInitPromise;
 }
 
 // Convert from/to square indices to UCI move string (e.g. "e2e4")
@@ -634,6 +645,11 @@ async function maiaDownloadModel() {
 
 // Update download button / status display
 function _maiaUpdateStatusUI() {
+  // Ghost "model missing" hint clears itself the moment the model is ready
+  if (_maiaStatus === 'ready') {
+    var _gh = document.getElementById('ghostMaiaHint');
+    if (_gh) _gh.style.display = 'none';
+  }
   // Update both the maia tab and maia3 tab status elements
   var statusEl  = document.getElementById('maiaStatusText');
   var statusEl3 = document.getElementById('maia3StatusText');

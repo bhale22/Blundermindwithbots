@@ -1341,6 +1341,10 @@ function _gameInProgress() {
 function updateActionBtn() {
   const btn = document.getElementById('resignBtn');
   if (!btn) return;
+  // Explore is offered whenever a game just ended — drop into solo explore
+  // mode on the final position instead of resetting for a rematch.
+  const exploreBtn = document.getElementById('exploreBtn');
+  if (exploreBtn) exploreBtn.style.display = gameOver ? '' : 'none';
   if (gameOver) {
     btn.textContent = '↺ Rematch?';
     btn.className = 'ctrl-btn';
@@ -1366,6 +1370,39 @@ function updateActionBtn() {
 // Legacy entry point — many callers still announce game end through this.
 // The button is fully state-driven now, so just refresh it.
 function showRematchBtn(show) { updateActionBtn(); }
+
+// ── Post-game explore mode ───────────────────────────────────────────────────
+// Keeps the final position on the board but drops the bot/2-player context,
+// so the game becomes a solo exploration (either side movable, ghosts allowed).
+function enterExploreMode() {
+  const keepFlip = (typeof boardFlipped !== 'undefined') && boardFlipped;
+  if (typeof botActive !== 'undefined' && botActive && typeof botStop === 'function') {
+    botStop(); // clears bot state; does not touch the board
+  }
+  if (typeof mpRoomId !== 'undefined' && mpRoomId) {
+    // mpLeave() resets the board — dismantle the room state by hand instead
+    if (mpWs) { try { mpWs.close(); } catch(e) {} mpWs = null; }
+    mpRoomId = null; mpRole = null; mpConnected = false;
+    mpOriginalRole = null; mpGameCount = 0;
+    const rc = document.getElementById('mpRoomCode'); if (rc) rc.textContent = '';
+    if (typeof chatShow === 'function') chatShow(false);
+    const cm = document.getElementById('chatMessages'); if (cm) cm.innerHTML = '';
+    const ga = document.getElementById('gameActions'); if (ga) ga.style.display = 'none';
+    if (typeof mpSetMode === 'function') mpSetMode('idle');
+  }
+  // Keep the orientation the game was played at (botStop/teardown unflips)
+  boardFlipped = keepFlip;
+  const bc = document.getElementById('board-col');
+  if (bc) bc.classList.toggle('board-flipped', keepFlip);
+  if (typeof clockStop === 'function') clockStop();
+  gameOver = false;
+  gameOverMsg = '';
+  selSq = -1; legalMoves = []; clearPreview();
+  atkMap = buildAtk(board);
+  if (typeof updatePlayerBoxes === 'function') updatePlayerBoxes();
+  updateActionBtn();
+  render();
+}
 
 function resetGame(){cancelResign();showRematchBtn(false);clockStop();clockInit(clockControl);lastMoveFrom=-1;lastMoveTo=-1;const sg=document.getElementById("saveGameBtn");if(sg)sg.remove();loadPos(0);}
 function setPalette(name){currentPalette=PALETTES[name]||PALETTES.default;render();}
