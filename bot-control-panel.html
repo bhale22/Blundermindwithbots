@@ -123,9 +123,10 @@ body::before{content:'';position:fixed;inset:0;background-image:repeating-linear
   letter-spacing:0.06em;margin-top:1px;
 }
 
-/* Engine pill zone — extends qs-pill-btn, pinned to far right */
+/* Engine pill zone — second slot in the bar, fixed width so it never resizes */
 .qs-engine-zone{
-  margin-left:auto;border-left:0.5px solid var(--border);
+  border-right:0.5px solid var(--border);
+  min-width:140px;
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -704,7 +705,13 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
     <!-- 1. START -->
     <button class="start-btn" onclick="startGame()">&#9654; Start</button>
 
-    <!-- 2. TIME — floating grid overlay anchored here -->
+    <!-- 2. ENGINE — indicator + button to open Engine accordion -->
+    <button class="qs-pill-btn qs-engine-zone" onclick="openEngineSection()" aria-label="Open engine settings">
+      <span class="qs-label">Engine</span>
+      <span class="qs-pill-value" id="qs-engine-pill">Maia 3 · 1500</span>
+    </button>
+
+    <!-- 3. TIME — floating grid overlay anchored here -->
     <div class="qs-pill-wrap" id="qs-time-wrap">
       <button class="qs-pill-btn" id="qs-time-btn" onclick="toggleQsDropdown('time')" aria-label="Set game time">
         <span class="qs-label">Time</span>
@@ -739,7 +746,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
         <span class="qs-label">My Bots</span>
         <span class="qs-pill-value" id="qs-bots-value">Save / Load</span>
       </button>
-      <div class="qs-inplace-drop" id="qs-drop-bots" style="min-width:230px;">
+      <div class="qs-inplace-drop" id="qs-drop-bots" style="min-width:250px;">
         <div id="saved-bots-list"></div>
         <div style="display:flex;gap:5px;align-items:center;padding:6px 4px 2px;border-top:0.5px solid var(--border);margin-top:4px;">
           <input type="text" id="bot-save-name" placeholder="Bot name…" maxlength="32"
@@ -747,14 +754,24 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
             onkeydown="if(event.key==='Enter')saveCurrentBot()">
           <button class="preset-btn" onclick="saveCurrentBot()">Save</button>
         </div>
+        <!-- Save destination toggles + Import -->
+        <div style="display:flex;gap:10px;align-items:center;padding:3px 6px 6px;font-size:9px;color:var(--text-dim);">
+          <label style="display:flex;align-items:center;gap:3px;cursor:pointer;">
+            <input type="checkbox" id="save-opt-local" checked style="cursor:pointer;accent-color:var(--amber);width:11px;height:11px;">
+            <span>Browser</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:3px;cursor:pointer;">
+            <input type="checkbox" id="save-opt-download" checked style="cursor:pointer;accent-color:var(--amber);width:11px;height:11px;">
+            <span>Download</span>
+          </label>
+          <div style="margin-left:auto;">
+            <input type="file" id="bot-upload-input" accept=".json" style="display:none;" onchange="uploadBotFile(this)">
+            <button class="preset-btn" onclick="document.getElementById('bot-upload-input').click()" title="Import bot from JSON file">⬆ Import</button>
+          </div>
+        </div>
       </div>
     </div>
 
-    <!-- Engine pill — far right; clicking opens ENGINE accordion -->
-    <button class="qs-pill-btn qs-engine-zone" onclick="openEngineSection()" aria-label="Open engine settings">
-      <span class="qs-label">Engine</span>
-      <span class="qs-pill-value" id="qs-engine-pill">Maia 3 · 1500</span>
-    </button>
 
   </div><!-- /qs-bar -->
 
@@ -5396,6 +5413,17 @@ function _saveBotStore(store){
   catch(e){ console.warn('Bot store save failed:', e); return false; }
 }
 
+function _downloadBotJson(name, cfg){
+  var payload = JSON.stringify({ name: name, config: cfg, savedAt: Date.now() }, null, 2);
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([payload], { type: 'application/json' }));
+  a.download = name.replace(/[^a-z0-9_\-]/gi, '_') + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+}
+
 function saveCurrentBot(){
   const nameEl = document.getElementById('bot-save-name');
   const name = nameEl ? nameEl.value.trim() : '';
@@ -5405,13 +5433,49 @@ function saveCurrentBot(){
   }
   const cfg = getBotConfig();
   cfg.schemaVersion = BOT_SCHEMA_VERSION;
-  const store = _loadBotStore();
-  store[name] = { savedAt: Date.now(), config: cfg };
-  if(_saveBotStore(store)){
-    renderSavedBots();
-    const pill = document.getElementById('qs-bots-value');
-    if(pill) pill.textContent = name;
+  const doLocal    = document.getElementById('save-opt-local')?.checked !== false;
+  const doDownload = document.getElementById('save-opt-download')?.checked !== false;
+  if(doLocal){
+    const store = _loadBotStore();
+    store[name] = { savedAt: Date.now(), config: cfg };
+    if(_saveBotStore(store)){
+      renderSavedBots();
+      const pill = document.getElementById('qs-bots-value');
+      if(pill) pill.textContent = name;
+    }
   }
+  if(doDownload){
+    _downloadBotJson(name, cfg);
+  }
+}
+
+function uploadBotFile(input){
+  if(!input || !input.files || !input.files[0]) return;
+  var reader = new FileReader();
+  reader.onload = function(e){
+    try {
+      var data = JSON.parse(e.target.result);
+      // Support both { name, config } wrapper and a raw config object
+      var name = data.name || 'Imported Bot';
+      var config = data.config || data;
+      if(!config || !config.engine) throw new Error('Not a valid bot config file');
+      applyBotConfig(config);
+      config.schemaVersion = config.schemaVersion || BOT_SCHEMA_VERSION;
+      // Always save the import to localStorage
+      var store = _loadBotStore();
+      store[name] = { savedAt: Date.now(), config: config };
+      _saveBotStore(store);
+      renderSavedBots();
+      var nameEl = document.getElementById('bot-save-name');
+      if(nameEl) nameEl.value = name;
+      var pill = document.getElementById('qs-bots-value');
+      if(pill) pill.textContent = name;
+    } catch(err) {
+      alert('Could not import bot: ' + err.message);
+    }
+  };
+  reader.readAsText(input.files[0]);
+  input.value = ''; // allow re-uploading the same file
 }
 
 function loadSavedBot(name){
@@ -5599,9 +5663,9 @@ function selEngineMode(card){
   if(sub) sub.style.display = 'block';
   const names = {
     maia3:    'Maia 3 · ' + currentElo,
-    stockfish:'SF' + sfLevel,
+    stockfish:'Stockfish ' + sfLevel,
     hybrid:   'Hybrid',
-    lcsf:     'LC + SF' + sfLevel,
+    lcsf:     'LC + SF ' + sfLevel,
     lcmaia:   'LC + Maia 3',
   };
   document.getElementById('st-engine').textContent = names[currentEngine] || currentEngine;
@@ -5641,9 +5705,9 @@ function selectSFLevel(n, fromContainer){
   });
   // Update status
   const names = {
-    stockfish: 'SF' + n,
+    stockfish: 'Stockfish ' + n,
     hybrid: 'Hybrid',
-    lcsf: 'LC + SF' + n,
+    lcsf: 'LC + SF ' + n,
     maia3: 'Maia 3 · ' + currentElo,
     lcmaia: 'LC + Maia 3',
     lc: 'Lichess Explorer'

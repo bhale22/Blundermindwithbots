@@ -1398,6 +1398,9 @@ function enterExploreMode() {
   gameOver = false;
   gameOverMsg = '';
   selSq = -1; legalMoves = []; clearPreview();
+  // Reset to starting position so exploration begins from the opening,
+  // not from the final (often chaotic) position of the finished game.
+  loadPos(0);
   atkMap = buildAtk(board);
   if (typeof updatePlayerBoxes === 'function') updatePlayerBoxes();
   updateActionBtn();

@@ -775,12 +775,55 @@ function botUpdatePlayerNames(humanColor) {
   }
 }
 
+// Brief amber toast for engine problems — auto-dismisses after 6 s
+function showEngineWarning(msg) {
+  var existing = document.getElementById('bm-engine-warn');
+  if (existing) existing.remove();
+  var d = document.createElement('div');
+  d.id = 'bm-engine-warn';
+  d.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);' +
+    'background:#1e1200;border:1px solid rgba(235,140,0,0.65);border-radius:6px;' +
+    'color:#f0ede8;font-size:12px;padding:10px 20px;z-index:9999;max-width:360px;' +
+    'text-align:center;box-shadow:0 4px 22px rgba(0,0,0,0.75);pointer-events:none;';
+  d.textContent = msg;
+  document.body.appendChild(d);
+  setTimeout(function(){ if(d.parentNode) d.parentNode.removeChild(d); }, 6000);
+}
+
+function _checkEngineReady(tab) {
+  var sfTabs = ['sf','stockfish','lcsf','hybrid'];
+  var maiaTabs = ['maia3','maia','lcmaia','hybrid'];
+  if (sfTabs.includes(tab)) {
+    if (sfWorker && !sfReady) {
+      showEngineWarning('⚠ Stockfish is loading — the first move may be delayed.');
+    } else if (!sfWorker) {
+      // Will be started by sfInit() — no warning needed, just inform
+    }
+  }
+  if (maiaTabs.includes(tab)) {
+    var st = (typeof _maiaStatus !== 'undefined') ? _maiaStatus : 'idle';
+    var rdy = (typeof _maiaReady !== 'undefined') ? _maiaReady : false;
+    if (!rdy) {
+      if (st === 'no-cache') {
+        showEngineWarning('⚠ Maia 3 model not downloaded. Open the bot panel and download it first.');
+      } else if (st === 'error') {
+        showEngineWarning('⚠ Maia 3 failed to load. Try reloading the page.');
+      } else if (st === 'downloading' || st === 'loading') {
+        showEngineWarning('⚠ Maia 3 is loading — the first move may be delayed.');
+      }
+    }
+  }
+}
+
 async function botStart() {
   botActive = false;
   botThinking = false;
   clearGhostPieces();
   botGhostResponses = {};
   botLastHoverSq = -1;
+
+  // Check engine readiness and warn the user if something isn't loaded
+  _checkEngineReady(botTab);
 
   // Pre-init Stockfish in background
   if (botTab !== 'maia') sfInit().catch(e => console.warn('SF init:', e));

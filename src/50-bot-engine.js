@@ -1075,6 +1075,27 @@ async function ghostShowForSquare(fromSq, toSq) {
     if (turn === bc) return;
   }
 
+  // Warn if the selected ghost engine isn't loaded
+  var _gm = ghostMode();
+  if (_gm === 'maia') {
+    var _ms = (typeof _maiaStatus !== 'undefined') ? _maiaStatus : 'idle';
+    if (!(typeof _maiaReady !== 'undefined' && _maiaReady)) {
+      if (_ms === 'no-cache' || _ms === 'idle') {
+        if (typeof showEngineWarning === 'function')
+          showEngineWarning('⚠ Maia 3 model not downloaded. Open the bot panel to download it.');
+      }
+      return; // nothing to show
+    }
+  } else if (_gm === 'sf') {
+    if (!sfGhostReady) {
+      // sfGhostInit will be called below; just make sure we don't warn every frame
+      // Only warn if the worker hasn't been created yet
+      if (!sfGhostWorker && typeof showEngineWarning === 'function') {
+        showEngineWarning('⚠ Stockfish ghost engine is loading…');
+      }
+    }
+  }
+
   clearGhostPieces();
 
   // Validate it's a legal move — always use real board/epSq, never preview state

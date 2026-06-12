@@ -1,6 +1,13 @@
 function sfInit() {
-  if (sfWorker) return Promise.resolve();
-  return new Promise(function(resolve, reject) {
+  // Return same in-flight promise while init is running, so concurrent callers
+  // all wait for the same worker rather than each creating their own.
+  // On failure the promise is cleared so the next call retries from scratch
+  // (same pattern as sfGhostInit — fixes the "worker dead but sfWorker non-null" bug).
+  if (_sfInitPromise) return _sfInitPromise;
+  if (sfWorker && sfReady) return Promise.resolve();
+  // Terminate any stale/errored worker before creating a fresh one
+  if (sfWorker) { try { sfWorker.terminate(); } catch(e) {} sfWorker = null; sfReady = false; }
+  _sfInitPromise = new Promise(function(resolve, reject) {
     try {
       sfWorker = new Worker(SF_LOCAL);
       sfWorker.onmessage = function(e) {
@@ -43,6 +50,13 @@ function sfInit() {
       setTimeout(function() { if (!sfReady) reject(new Error('SF timeout')); }, 15000);
     } catch(e) { reject(e); }
   });
+  // On failure: clear promise and worker so the next call can retry
+  _sfInitPromise.catch(function() {
+    _sfInitPromise = null;
+    if (sfWorker) { try { sfWorker.terminate(); } catch(e) {} }
+    sfWorker = null; sfReady = false;
+  });
+  return _sfInitPromise;
 }
 
 // ── Ghost-only Stockfish worker (completely separate — never shared with bot) ─

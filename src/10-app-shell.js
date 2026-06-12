@@ -12,6 +12,7 @@ let botSelectedTC = 'untimed';
 let botHybridSlots = [];
 let sfWorker = null;
 let sfReady = false;
+let _sfInitPromise = null;
 let sfPendingResolve = null;
 let sfBestmovesOwed = 0;  // bestmoves still owed by abandoned (stopped/timed-out) searches —
                           // they must be discarded or they resolve the WRONG request
