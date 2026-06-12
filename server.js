@@ -10,29 +10,21 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-// ── Stockfish: fetch once at startup, cache in memory, serve locally ──────────
-const SF_CDN_URL = 'https://cdn.jsdelivr.net/npm/stockfish@18/src/stockfish-18-lite-single.js';
-let sfScript = null;
-let sfEtag = null;
-
-function fetchStockfish() {
-  return new Promise((resolve, reject) => {
-    https.get(SF_CDN_URL, (res) => {
-      const chunks = [];
-      res.on('data', c => chunks.push(c));
-      res.on('end', () => {
-        sfScript = Buffer.concat(chunks);
-        sfEtag = '"'  + crypto.createHash('md5').update(sfScript).digest('hex') + '"';
-        resolve();
-      });
-      res.on('error', reject);
-    }).on('error', reject);
-  });
+// ── Stockfish: vendored in repo (vendor/), cached in memory, served locally ──
+// Previously fetched from jsDelivr at startup, but jsDelivr refuses the
+// stockfish npm package ("Package size exceeded the configured limit of 150 MB")
+// and the error text was being served — and parsed — as the engine script.
+let sfScript = null, sfEtag = null;
+let sfWasm = null, sfWasmEtag = null;
+try {
+  sfScript = fs.readFileSync(path.join(__dirname, 'vendor', 'stockfish-18-lite-single.js'));
+  sfWasm   = fs.readFileSync(path.join(__dirname, 'vendor', 'stockfish-18-lite-single.wasm'));
+  sfEtag     = '"' + crypto.createHash('md5').update(sfScript).digest('hex') + '"';
+  sfWasmEtag = '"' + crypto.createHash('md5').update(sfWasm).digest('hex') + '"';
+  console.log(`Stockfish loaded (js ${(sfScript.length/1024).toFixed(0)} KB, wasm ${(sfWasm.length/1048576).toFixed(1)} MB)`);
+} catch (e) {
+  console.warn('Stockfish vendor files missing — ghost/bot will not work:', e.message);
 }
-
-fetchStockfish()
-  .then(() => console.log(`Stockfish cached (${(sfScript.length/1024).toFixed(0)} KB)`))
-  .catch(e => console.warn('Stockfish fetch failed — ghost/bot will not work:', e.message));
 
 // ── Cache the assembled page in memory with ETag so repeat visitors get 304 ──
 // The page is assembled by concatenating the src/ parts (see build.js for the
@@ -164,6 +156,16 @@ app.get('/stockfish.js', (req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=604800'); // 7 days
   res.setHeader('ETag', sfEtag);
   res.send(sfScript);
+});
+
+// The loader derives its wasm path from its own URL: /stockfish.js → /stockfish.wasm
+app.get('/stockfish.wasm', (req, res) => {
+  if (!sfWasm) { res.status(503).end(); return; }
+  if (req.headers['if-none-match'] === sfWasmEtag) { res.status(304).end(); return; }
+  res.setHeader('Content-Type', 'application/wasm');
+  res.setHeader('Cache-Control', 'public, max-age=604800'); // 7 days
+  res.setHeader('ETag', sfWasmEtag);
+  res.send(sfWasm);
 });
 
 // Serve HTML — short cache with ETag so deploys propagate quickly
