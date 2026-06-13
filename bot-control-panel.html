@@ -274,6 +274,7 @@ table.tg td.tg-inc-lbl{
 .section:nth-child(3){animation-delay:0.34s;}
 .section:nth-child(4){animation-delay:0.42s;}
 .section:nth-child(5){animation-delay:0.50s;}
+.section:nth-child(6){animation-delay:0.58s;}
 
 .sec-trigger{
   display:flex;align-items:center;gap:14px;
@@ -1399,6 +1400,106 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
                 <span class="formula-hl">ELO(t) = E₀ − Δ · σ(log(t) anchored at game start)</span>
               </div>
             </div>
+          </div>
+        </div>
+
+      </div><!-- /pr -->
+    </div>
+  </div>
+</div>
+
+<!-- ═══ SECTION 6: HOW MOVE SELECTION WORKS ═══ -->
+<div class="section" id="sec-howmoves">
+  <div class="sec-trigger" onclick="toggleSec('howmoves')">
+    <div class="sec-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></div>
+    <div class="sec-labels">
+      <div class="sec-label">How Move Selection Works</div>
+      <div class="sec-sub">The pipeline from engine query to chosen move</div>
+    </div>
+    <div class="sec-status">Reference</div>
+    <svg class="chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+  </div>
+  <div class="panel-shell">
+    <div class="panel">
+      <div class="pr" style="margin-top:0;">
+
+        <!-- Pipeline overview -->
+        <div class="formula-box" style="margin-bottom:14px;">
+          <div class="formula-title">Move selection pipeline — order of operations</div>
+          <div style="display:flex;flex-direction:column;gap:0;margin-top:6px;">
+
+            <div style="display:flex;align-items:stretch;gap:0;">
+              <div style="display:flex;flex-direction:column;align-items:center;width:28px;flex-shrink:0;">
+                <div style="width:20px;height:20px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-family:var(--font-u);font-size:8px;font-weight:600;color:var(--carbon);flex-shrink:0;">1</div>
+                <div style="width:1px;flex:1;background:rgba(235,140,0,0.25);margin:2px 0;"></div>
+              </div>
+              <div style="padding:0 0 12px 8px;">
+                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">ENGINE QUERY — base probability distribution</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Maia3 neural net returns a probability for every legal move — the likelihood a human at the selected ELO would play it. Higher ELO → tighter distributions with fewer surprises. Time-pressure curve A adjusts the queried ELO downward as the clock runs low.</div>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:stretch;gap:0;">
+              <div style="display:flex;flex-direction:column;align-items:center;width:28px;flex-shrink:0;">
+                <div style="width:20px;height:20px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-family:var(--font-u);font-size:8px;font-weight:600;color:var(--carbon);flex-shrink:0;">2</div>
+                <div style="width:1px;flex:1;background:rgba(235,140,0,0.25);margin:2px 0;"></div>
+              </div>
+              <div style="padding:0 0 12px 8px;">
+                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">QUALITY WINDOW — rank filter on the distribution</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Moves are sorted best→worst by Maia probability. The Day Lower / Upper sliders define a percentile band; only moves inside the band remain eligible. Lower&nbsp;&gt;&nbsp;0 excludes Maia's top choices; Upper&nbsp;&lt;&nbsp;100 excludes the tail. Time-pressure curve B narrows the upper bound as the clock empties, leaving only instinctive first-pass moves. <span style="color:var(--amber);">Luck</span> shifts the entire window toward better or worse moves without changing its width.</div>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:stretch;gap:0;">
+              <div style="display:flex;flex-direction:column;align-items:center;width:28px;flex-shrink:0;">
+                <div style="width:20px;height:20px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-family:var(--font-u);font-size:8px;font-weight:600;color:var(--carbon);flex-shrink:0;">3</div>
+                <div style="width:1px;flex:1;background:rgba(235,140,0,0.25);margin:2px 0;"></div>
+              </div>
+              <div style="padding:0 0 12px 8px;">
+                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">BLUNDER GATE — hard eligibility floor</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Any remaining move below an absolute minimum probability, or whose Maia probability is more than the Blunder Limit below the best move, is discarded entirely. Prevents attractor reweighting from ever pulling a catastrophic move into play.</div>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:stretch;gap:0;">
+              <div style="display:flex;flex-direction:column;align-items:center;width:28px;flex-shrink:0;">
+                <div style="width:20px;height:20px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-family:var(--font-u);font-size:8px;font-weight:600;color:var(--carbon);flex-shrink:0;">4</div>
+                <div style="width:1px;flex:1;background:rgba(235,140,0,0.25);margin:2px 0;"></div>
+              </div>
+              <div style="padding:0 0 12px 8px;">
+                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">ATTRACTOR REWEIGHTING — per-move probability boosts</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Each remaining move is simulated on a scratch board and scored against every active attractor slider. The result is a <span style="color:var(--amber);">log-boost</span> added to each move: <span style="color:var(--amber-bright);">p′ = p × exp(Σ logBoost)</span>. Multiple attractors stack multiplicatively. The CP Budget controls total magnitude — at 0 cp, all attractors are silent regardless of slider position. Attractors evaluated per move:</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;margin-top:6px;">
+                  <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Piece type</span> — boosts moves by selected piece</div>
+                  <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Trade seeker</span> — boosts captures + threats created</div>
+                  <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Space Cadet</span> — boosts moves to high-mobility squares</div>
+                  <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Fort Knox</span> — boosts moves that increase friendly coverage</div>
+                  <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Gambito</span> — boosts ECO gambit continuations in opening</div>
+                  <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Attacker</span> — boosts moves that increase opponent pieces threatened</div>
+                  <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Structure</span> — boosts pawn moves that tighten/loosen pawn islands</div>
+                  <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Pawn strategic</span> — flat boost to all pawn advances</div>
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:stretch;gap:0;">
+              <div style="display:flex;flex-direction:column;align-items:center;width:28px;flex-shrink:0;">
+                <div style="width:20px;height:20px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-family:var(--font-u);font-size:8px;font-weight:600;color:var(--carbon);flex-shrink:0;">5</div>
+              </div>
+              <div style="padding:0 0 0 8px;">
+                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">TEMPERATURE SAMPLING — weighted random draw</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Each reweighted probability is raised to <span style="color:var(--amber-bright);">p^(1/T)</span>, then one move is drawn at random proportionally. T&nbsp;&lt;&nbsp;0.15 always picks the top move; T&nbsp;=&nbsp;1.0 plays Maia's distribution unmodified; T&nbsp;&gt;&nbsp;1 flattens it toward uniform. The Coffeehouse Hustler personality overrides T with a phase curve: T&nbsp;=&nbsp;5.0 in the opening, fading to T&nbsp;=&nbsp;0.6 in the endgame as pieces come off.</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- What does NOT affect move choice -->
+        <div class="formula-box">
+          <div class="formula-title">Think time — cosmetic only</div>
+          <div class="formula-body" style="text-align:left;line-height:1.75;">
+            The Hustle slider, clock-mirror, weaponizer, and all timing settings control <em>when</em> the bot plays its move — not which move it plays. Move selection completes asynchronously; the bot waits out the calculated delay before revealing the result. The sole exception: if the position has very low entropy (Maia is near-certain), the blink shortcut skips the delay entirely.
           </div>
         </div>
 
