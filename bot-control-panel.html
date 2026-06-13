@@ -1436,7 +1436,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
               </div>
               <div style="padding:0 0 12px 8px;">
                 <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">THINK TIME — calculated first, drives everything downstream</div>
-                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Think time per move is computed before the engine is queried. It combines the timing mode (pace, complexity-scaled, fixed, mirror), the <span style="color:var(--amber);">Hustle</span> attractor (fast +5 → slow −5 multiplier on base time), clock-pressure shortcuts (weaponizer, clock-mirror), and a ±20% jitter. This produces an <em>actual think time in seconds</em> that is then fed into both degradation curves — not a clock average. A hustler thinking 0.3 s sees heavy degradation; a grinder thinking 12 s sees almost none.</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Think time per move is computed before the engine is queried. It combines the timing mode (pace, complexity-scaled, fixed, mirror), the <span style="color:var(--amber);">Hustle</span> attractor (fast +5 → slow −5 multiplier on base time), clock-pressure shortcuts (weaponizer, clock-mirror), and a ±20% jitter. This produces an <em>actual think time in seconds</em> that is then fed into both degradation curves — not a clock average. A hustler thinking 0.3 s sees heavy degradation; an overthinker thinking 12 s sees almost none.</div>
               </div>
             </div>
 
@@ -1568,7 +1568,7 @@ const ATTRACTOR_DESCS = {
   gambito:  `Opening phase only (first 20 moves). Uses ECO opening names: if a matching gambit line (opening name contains "gambit") exists in the database, the bot boosts the specific next moves from that line. Falls back to structural pawn-sacrifice detection (pawn to opponent-attacked, undefended square) when outside known gambit lines. Positive (Gambito) boosts gambit play; negative (Gambit Shy) suppresses it, preferring solid material balance.`,
   trade:    `Reweights candidates by capture and threat value. Positive (right, Trade seeker) boosts captures and moves that create new threats on opponent pieces; negative (left, Trade avoider) suppresses exchanges, preferring piece complexity on the board.`,
   structure:`Scores pawn structure delta via Stockfish's internal pawn evaluation: isolated pawns, doubled pawns, pawn islands. Formula: <code>Δ_structure = SF_pawn_eval(after) − SF_pawn_eval(before)</code>. Negative (loose) selects moves yielding open, mobile structures; positive (rigid) prefers structural consolidation.`,
-  hustle:   `Scales think-time allocation per move: <code>t = base_time × (1 − v × 0.15)</code>. Positive (hustler): shorter pauses, speed over depth. Negative (grinder): longer deliberation, preference for candidates with superior positional or deeper-search scores.`,
+  hustle:   `Scales think-time allocation per move: <code>t = base_time × (1 − v × 0.15)</code>. Positive (hustler): shorter pauses, speed over depth. Negative (Overthinker): longer deliberation, preference for candidates with superior positional or deeper-search scores.`,
   luck:     `Shifts which segment of Maia3's probability-ranked move list is sampled: <code>draw from [lower, upper]%</code> of ranked candidates. Positive = top of the distribution (engine-preferred); negative = tail of the distribution (off-form play). Works in conjunction with the Move Quality Range dual slider.`,
   pressure: `Scales steepness of the time-pressure ELO degradation curve: <code>elo(t) = E₀ − Δ · σ(k·(log t − 0.33))</code> where k is multiplied by this slider. Positive steepens the slope — sharper ELO drop in the final seconds; negative flattens it — consistent play regardless of clock.`,
   attacker: `Scores each candidate move by the total number of opponent pieces under attack from all bot pieces after the move. <code>score += w × tanh(Σ_threats / 6)</code> where Σ_threats sums attack counts on each opponent piece. Positive (Attacker) maximises threat coverage; negative (Peacemaker) minimises it, preferring quiet positions.`,
@@ -1591,7 +1591,7 @@ const ATTRACTORS = [
   { id:'gambito',    labelLeft:'Gambit shy',    labelRight:'Gambito',     default:0 },
   { id:'trade',      labelLeft:'Trade avoider',        labelRight:'Trade seeker',          default:0 },
   { id:'structure',  labelLeft:'Loose pawn structure', labelRight:'Rigid pawn structure',  default:0 },
-  { id:'hustle',     labelLeft:'Positional grinder',   labelRight:'Coffeehouse hustler',   default:0 },
+  { id:'hustle',     labelLeft:'Overthinker',           labelRight:'Coffeehouse hustler',   default:0 },
   { id:'luck',       labelLeft:'Good day',             labelRight:'Bad day',               default:0 },
   { id:'pressure',   labelLeft:'Calm under pressure',  labelRight:'Panicky',               default:0 },
   { id:'attacker',   labelLeft:'Peacemaker',           labelRight:'Attacker',              default:0 },
@@ -1617,7 +1617,7 @@ const PERSONALITIES = [
     attractors:{chaos:-4,compwin:-4,spacecadet:0,fortkx:3,gambito:-2,trade:-1,structure:4,hustle:2,luck:-1,pressure:-1,attacker:-2} },
   { id:'attacky',    name:'Attacky McTackerson',icon:'⚔', tag:'Captures',  desc:'Favours captures within centipawn ceiling.',
     attractors:{chaos:2,compwin:1,spacecadet:1,fortkx:-2,gambito:1,trade:4,structure:-1,hustle:-2,luck:0,pressure:1,attacker:3} },
-  { id:'grinder',    name:'Positional Grinder', icon:'◈', tag:'Methodical', desc:'Deliberate. Thinks long in complex positions.',
+  { id:'grinder',    name:'Overthinker',         icon:'◈', tag:'Methodical', desc:'Deliberate. Thinks long — likely gets into time trouble.',
     attractors:{chaos:-3,compwin:-2,spacecadet:3,fortkx:2,gambito:-1,trade:0,structure:3,hustle:4,luck:-1,pressure:-3,attacker:0} },
   { id:'hustler',    name:'Coffeehouse Hustler',icon:'☕', tag:'Fast',       desc:'Fast imprecise early play, tightens in endgame.',
     attractors:{chaos:1,compwin:-1,spacecadet:0,fortkx:-1,gambito:2,trade:1,structure:-2,hustle:5,luck:2,pressure:2,attacker:1} },
