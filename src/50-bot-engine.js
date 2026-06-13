@@ -201,6 +201,18 @@ function applyMoveAttractors(moveProbs) {
     }
   }
 
+  // ── Space Cadet: baseline weak-square count for the bot ─────────────────────
+  // Weak square = empty square with zero bot attackers (atkMap[sq][botColorStr].length === 0).
+  // Matches the overlay definition so the attractor and the visual are consistent.
+  let currentBotWeakCount = 0;
+  if (hasSpace && atkMap) {
+    for (let sq = 0; sq < 64; sq++) {
+      if (!board[sq] && atkMap[sq] && (atkMap[sq][botColorStr] || []).length === 0) {
+        currentBotWeakCount++;
+      }
+    }
+  }
+
   // ── Structure: baseline pawn-structure penalty for the bot's pawns ────────
   // Penalty = islands + doubled + isolated (lower = tighter). Positive slider
   // (Rigid) boosts moves that reduce the penalty; negative (Loose) boosts
@@ -299,11 +311,21 @@ function applyMoveAttractors(moveProbs) {
       }
     }
 
-    // ── Space Cadet: attack count from destination square ────────────────────
-    // Positive (Space Cadet, right) boosts moves to high-mobility squares.
-    // tanh(n/8): knight on centre (8 attacks) → 0.76; rook on open file (14) → 0.94.
+    // ── Space Cadet: minimize bot's weak squares ─────────────────────────────
+    // Builds a full attack map on the simulated board so discovered attacks and
+    // blocking moves are correctly counted. delta > 0 = fewer weak squares = good.
+    // tanh(delta/5): reducing weak squares by 5 → 0.76; by 10 → 0.96.
     if (hasSpace) {
-      logBoost += spaceCadetVal * scale * Math.tanh(getSimToAtk().length / 8);
+      const simBd_   = getSimBd();
+      const simAtk   = buildDirectAtk(simBd_, _EMPTY, _EMPTY, _EMPTY, _EMPTY);
+      let simBotWeakCount = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        if (!simBd_[sq] && simAtk[sq] && (simAtk[sq][botColorStr] || []).length === 0) {
+          simBotWeakCount++;
+        }
+      }
+      const delta = currentBotWeakCount - simBotWeakCount; // positive = fewer weak squares
+      if (delta !== 0) logBoost += spaceCadetVal * scale * Math.tanh(delta / 5);
     }
 
     // ── Fort Knox: total friendly defender count delta ────────────────────────

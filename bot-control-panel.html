@@ -1428,78 +1428,95 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
           <div class="formula-title">Move selection pipeline — order of operations</div>
           <div style="display:flex;flex-direction:column;gap:0;margin-top:6px;">
 
+            <!-- Step 1 -->
             <div style="display:flex;align-items:stretch;gap:0;">
               <div style="display:flex;flex-direction:column;align-items:center;width:28px;flex-shrink:0;">
                 <div style="width:20px;height:20px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-family:var(--font-u);font-size:8px;font-weight:600;color:var(--carbon);flex-shrink:0;">1</div>
                 <div style="width:1px;flex:1;background:rgba(235,140,0,0.25);margin:2px 0;"></div>
               </div>
               <div style="padding:0 0 12px 8px;">
-                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">ENGINE QUERY — base probability distribution</div>
-                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Maia3 neural net returns a probability for every legal move — the likelihood a human at the selected ELO would play it. Higher ELO → tighter distributions with fewer surprises. Time-pressure curve A adjusts the queried ELO downward as the clock runs low.</div>
+                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">THINK TIME — calculated first, drives everything downstream</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Think time per move is computed before the engine is queried. It combines the timing mode (pace, complexity-scaled, fixed, mirror), the <span style="color:var(--amber);">Hustle</span> attractor (fast +5 → slow −5 multiplier on base time), clock-pressure shortcuts (weaponizer, clock-mirror), and a ±20% jitter. This produces an <em>actual think time in seconds</em> that is then fed into both degradation curves — not a clock average. A hustler thinking 0.3 s sees heavy degradation; a grinder thinking 12 s sees almost none.</div>
               </div>
             </div>
 
+            <!-- Step 2 -->
             <div style="display:flex;align-items:stretch;gap:0;">
               <div style="display:flex;flex-direction:column;align-items:center;width:28px;flex-shrink:0;">
                 <div style="width:20px;height:20px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-family:var(--font-u);font-size:8px;font-weight:600;color:var(--carbon);flex-shrink:0;">2</div>
                 <div style="width:1px;flex:1;background:rgba(235,140,0,0.25);margin:2px 0;"></div>
               </div>
               <div style="padding:0 0 12px 8px;">
-                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">QUALITY WINDOW — rank filter on the distribution</div>
-                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Moves are sorted best→worst by Maia probability. The Day Lower / Upper sliders define a percentile band; only moves inside the band remain eligible. Lower&nbsp;&gt;&nbsp;0 excludes Maia's top choices; Upper&nbsp;&lt;&nbsp;100 excludes the tail. Time-pressure curve B narrows the upper bound as the clock empties, leaving only instinctive first-pass moves. <span style="color:var(--amber);">Luck</span> shifts the entire window toward better or worse moves without changing its width.</div>
+                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">ENGINE QUERY — Maia ELO degraded by think time (curve A)</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Maia3 is queried at an ELO that curve A maps from the computed think time. Long think → ELO stays near target. Short think → ELO drops, producing the move distribution of a lower-rated player. The result is a probability for every legal move reflecting what a human at that (possibly degraded) rating would actually play.</div>
               </div>
             </div>
 
+            <!-- Step 3 -->
             <div style="display:flex;align-items:stretch;gap:0;">
               <div style="display:flex;flex-direction:column;align-items:center;width:28px;flex-shrink:0;">
                 <div style="width:20px;height:20px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-family:var(--font-u);font-size:8px;font-weight:600;color:var(--carbon);flex-shrink:0;">3</div>
                 <div style="width:1px;flex:1;background:rgba(235,140,0,0.25);margin:2px 0;"></div>
               </div>
               <div style="padding:0 0 12px 8px;">
-                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">BLUNDER GATE — hard eligibility floor</div>
-                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Any remaining move below an absolute minimum probability, or whose Maia probability is more than the Blunder Limit below the best move, is discarded entirely. Prevents attractor reweighting from ever pulling a catastrophic move into play.</div>
+                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">QUALITY WINDOW — rank filter keyed on think time (curve B)</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Moves are sorted best→worst by Maia probability. The Day Lower / Upper sliders define a percentile band; only moves inside the band remain eligible. Curve B narrows the upper bound using the same think time from step 1 — short think → smaller window → only instinctive first-pass moves remain. <span style="color:var(--amber);">Luck</span> shifts the entire window toward better or worse moves without changing its width.</div>
               </div>
             </div>
 
+            <!-- Step 4 -->
             <div style="display:flex;align-items:stretch;gap:0;">
               <div style="display:flex;flex-direction:column;align-items:center;width:28px;flex-shrink:0;">
                 <div style="width:20px;height:20px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-family:var(--font-u);font-size:8px;font-weight:600;color:var(--carbon);flex-shrink:0;">4</div>
                 <div style="width:1px;flex:1;background:rgba(235,140,0,0.25);margin:2px 0;"></div>
               </div>
               <div style="padding:0 0 12px 8px;">
+                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">BLUNDER GATE — hard eligibility floor</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Any move below an absolute minimum probability, or more than the Blunder Limit below the best move in Maia probability, is discarded. Prevents attractor reweighting from ever surfacing a catastrophic blunder.</div>
+              </div>
+            </div>
+
+            <!-- Step 5 -->
+            <div style="display:flex;align-items:stretch;gap:0;">
+              <div style="display:flex;flex-direction:column;align-items:center;width:28px;flex-shrink:0;">
+                <div style="width:20px;height:20px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-family:var(--font-u);font-size:8px;font-weight:600;color:var(--carbon);flex-shrink:0;">5</div>
+                <div style="width:1px;flex:1;background:rgba(235,140,0,0.25);margin:2px 0;"></div>
+              </div>
+              <div style="padding:0 0 12px 8px;">
                 <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">ATTRACTOR REWEIGHTING — per-move probability boosts</div>
-                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Each remaining move is simulated on a scratch board and scored against every active attractor slider. The result is a <span style="color:var(--amber);">log-boost</span> added to each move: <span style="color:var(--amber-bright);">p′ = p × exp(Σ logBoost)</span>. Multiple attractors stack multiplicatively. The CP Budget controls total magnitude — at 0 cp, all attractors are silent regardless of slider position. Attractors evaluated per move:</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Each eligible move is simulated on a scratch board and scored against every active attractor slider. Result: <span style="color:var(--amber-bright);">p′ = p × exp(Σ logBoost)</span>. Attractors stack multiplicatively. CP Budget controls total magnitude — at 0 cp all attractors are silent.</div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;margin-top:6px;">
                   <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Piece type</span> — boosts moves by selected piece</div>
                   <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Trade seeker</span> — boosts captures + threats created</div>
-                  <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Space Cadet</span> — boosts moves to high-mobility squares</div>
+                  <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Space Cadet</span> — boosts moves that reduce bot's weak squares (full board; discoveries + blocks counted)</div>
                   <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Fort Knox</span> — boosts moves that increase friendly coverage</div>
                   <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Gambito</span> — boosts ECO gambit continuations in opening</div>
-                  <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Attacker</span> — boosts moves that increase opponent pieces threatened</div>
-                  <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Structure</span> — boosts pawn moves that tighten/loosen pawn islands</div>
+                  <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Attacker</span> — boosts moves that increase pieces threatened</div>
+                  <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Structure</span> — boosts pawn moves that tighten/loosen islands</div>
                   <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Pawn strategic</span> — flat boost to all pawn advances</div>
                 </div>
               </div>
             </div>
 
+            <!-- Step 6 -->
             <div style="display:flex;align-items:stretch;gap:0;">
               <div style="display:flex;flex-direction:column;align-items:center;width:28px;flex-shrink:0;">
-                <div style="width:20px;height:20px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-family:var(--font-u);font-size:8px;font-weight:600;color:var(--carbon);flex-shrink:0;">5</div>
+                <div style="width:20px;height:20px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-family:var(--font-u);font-size:8px;font-weight:600;color:var(--carbon);flex-shrink:0;">6</div>
               </div>
               <div style="padding:0 0 0 8px;">
                 <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">TEMPERATURE SAMPLING — weighted random draw</div>
-                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Each reweighted probability is raised to <span style="color:var(--amber-bright);">p^(1/T)</span>, then one move is drawn at random proportionally. T&nbsp;&lt;&nbsp;0.15 always picks the top move; T&nbsp;=&nbsp;1.0 plays Maia's distribution unmodified; T&nbsp;&gt;&nbsp;1 flattens it toward uniform. The Coffeehouse Hustler personality overrides T with a phase curve: T&nbsp;=&nbsp;5.0 in the opening, fading to T&nbsp;=&nbsp;0.6 in the endgame as pieces come off.</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Each reweighted probability is raised to <span style="color:var(--amber-bright);">p^(1/T)</span>, then one move is drawn proportionally. T&nbsp;&lt;&nbsp;0.15 → always picks the top move; T&nbsp;=&nbsp;1.0 → unmodified Maia distribution; T&nbsp;&gt;&nbsp;1 → flattened toward uniform. Temperature can also be boosted by the Panicky pressure setting, scaled by how much of the quality window has been lost to curve B — short think time tightens the window <em>and</em> raises T simultaneously. The Coffeehouse Hustler personality overrides T with a phase curve: T&nbsp;=&nbsp;5.0 in the opening (many pieces), fading to T&nbsp;=&nbsp;0.6 in the endgame.</div>
               </div>
             </div>
 
           </div>
         </div>
 
-        <!-- What does NOT affect move choice -->
+        <!-- Think time note -->
         <div class="formula-box">
-          <div class="formula-title">Think time — cosmetic only</div>
+          <div class="formula-title">Think time feeds move quality — not just pacing</div>
           <div class="formula-body" style="text-align:left;line-height:1.75;">
-            The Hustle slider, clock-mirror, weaponizer, and all timing settings control <em>when</em> the bot plays its move — not which move it plays. Move selection completes asynchronously; the bot waits out the calculated delay before revealing the result. The sole exception: if the position has very low entropy (Maia is near-certain), the blink shortcut skips the delay entirely.
+            Think time is the central input to both degradation curves. Controls that shorten think time — the <span style="color:var(--amber);">Hustle</span> slider, the Weaponizer, clock-mirroring, the Blink shortcut — all reduce move quality through curves A and B, not just move speed. A bot configured to think 0.3 s per move will have its ELO degraded and its move pool narrowed to first-pass instinctive choices on <em>every move</em>, exactly as a human would under severe time pressure.
           </div>
         </div>
 
@@ -1546,7 +1563,7 @@ const TEMP_PRESETS = [
 const ATTRACTOR_DESCS = {
   chaos:    `Position complexity is scored via Stockfish MultiPV: <code>σ(eval₁…evalₙ)</code> — std. deviation of the top-N move evaluations. High σ = branching, tactical positions; low σ = forcing or drawish lines. Slider biases candidate sampling toward high-σ (chaos) or low-σ (simplifying) moves.`,
   compwin:  `Activates when engine eval ≥ +100 cp (configurable). Positive values upweight candidates that <em>increase</em> MultiPV variance — keeping complications alive; negative values prefer forcing continuations that reduce material and trade into a clear winning ending.`,
-  spacecadet:`Scores the resulting position for board control: counts squares attacked by your pieces after each candidate move. Positive (Space Cadet) favours moves that maximise space — seizing squares and denying outposts. Negative (Space Waster) accepts ceding space in exchange for other priorities.`,
+  spacecadet:`Measures board control by counting your <em>weak squares</em> — empty squares none of your pieces attack — before and after each candidate move. Uses a full board attack map so discovered attacks (a pawn advances, revealing a bishop's diagonal) and blocking moves (a pawn steps in front of a bishop) are correctly counted. Positive (Space Cadet) favours moves that reduce your weak squares; negative (Space Waster) accepts ceding space for other priorities.`,
   fortkx:   `Scores the resulting position for defensive solidity: sums the total defender count across all your pieces after each candidate move. Positive (Fort Knox) favours moves that maximise defensive support and keep pieces protected. Negative (Glass Cannon) accepts exposed, aggressive piece placement.`,
   gambito:  `Opening phase only (first 20 moves). Uses ECO opening names: if a matching gambit line (opening name contains "gambit") exists in the database, the bot boosts the specific next moves from that line. Falls back to structural pawn-sacrifice detection (pawn to opponent-attacked, undefended square) when outside known gambit lines. Positive (Gambito) boosts gambit play; negative (Gambit Shy) suppresses it, preferring solid material balance.`,
   trade:    `Reweights candidates by capture and threat value. Positive (right, Trade seeker) boosts captures and moves that create new threats on opponent pieces; negative (left, Trade avoider) suppresses exchanges, preferring piece complexity on the board.`,
