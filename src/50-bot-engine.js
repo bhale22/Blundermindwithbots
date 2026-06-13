@@ -603,9 +603,9 @@ function botThinkTime(moveProbs, clockMs) {
     thinkMs *= 0.5;
   }
 
-  // ── Hustle attractor: −5 (faster) … +5 (slower grinder) ─────────────────
+  // ── Hustle attractor: +5 (faster hustler) … −5 (slower grinder) ────────────
   const hustle = (window._bcpAttractorValues && window._bcpAttractorValues['hustle']) || 0;
-  if (hustle !== 0) thinkMs *= (1 + hustle * 0.15);
+  if (hustle !== 0) thinkMs *= (1 - hustle * 0.15);
 
   // ── Reconsideration pause: occasional extended hesitation ────────────────
   if (botBehavReconsider && Math.random() < 0.15) {
