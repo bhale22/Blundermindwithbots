@@ -621,6 +621,19 @@ function botThinkTime(moveProbs, clockMs) {
 
   return Math.max(200, Math.min(botThinkCapMs(), thinkMs));
 }
+// Hustler personality: T=5 in the opening, fades to T=0.6 in the endgame.
+// Phase is tracked by counting non-pawn, non-king pieces still on the board:
+//   14 pieces (full material) → opening → T=5
+//   ≤4 pieces remaining      → endgame → T=0.6
+function hustlerPhaseTemp() {
+  const piecesLeft = (typeof board !== 'undefined')
+    ? board.filter(p => p !== 0 && Math.abs(p) !== 1 && Math.abs(p) !== 6).length
+    : 14;
+  // fraction 0=opening (14 pieces), 1=endgame (≤4 pieces)
+  const fraction = Math.max(0, Math.min(1, 1 - (piecesLeft - 4) / 10));
+  return 5.0 + fraction * (0.6 - 5.0); // 5.0 → 0.6
+}
+
 function timePressureTemp(baseTemp, clockMs) {
   // null/undefined = untimed; 0 is a real (maximally pressured) clock value
   if (clockMs === null || clockMs === undefined) return baseTemp;
@@ -844,9 +857,11 @@ async function botMakeMove() {
     } else if (botTab === 'maia') {
       // LC Explorer with Maia3 fallback.
       // Skip LC call entirely if we already know we're off-book this game.
-      const baseTemp = (typeof botMaiaTempValue !== 'undefined' && botMaiaTempValue > 0)
-        ? botMaiaTempValue
-        : (parseFloat(document.getElementById('maiaTemp')?.value) || 1.0);
+      const baseTemp = window._bcpHustlerTempMode
+        ? hustlerPhaseTemp()
+        : (typeof botMaiaTempValue !== 'undefined' && botMaiaTempValue > 0)
+          ? botMaiaTempValue
+          : (parseFloat(document.getElementById('maiaTemp')?.value) || 1.0);
       const effectiveTemp = timePressureTemp(baseTemp, clockMs);
       let probs = null;
       // Start complexity probe before LC/Maia calls — runs in parallel on sfWorker
@@ -892,9 +907,11 @@ async function botMakeMove() {
     } else if (botTab === 'lcsf') {
       // LC Explorer with Stockfish fallback.
       // Skip LC call entirely if we already know we're off-book this game.
-      const lcsfTemp = (typeof botMaiaTempValue !== 'undefined' && botMaiaTempValue > 0)
-        ? botMaiaTempValue
-        : (parseFloat(document.getElementById('maiaTemp')?.value) || 1.0);
+      const lcsfTemp = window._bcpHustlerTempMode
+        ? hustlerPhaseTemp()
+        : (typeof botMaiaTempValue !== 'undefined' && botMaiaTempValue > 0)
+          ? botMaiaTempValue
+          : (parseFloat(document.getElementById('maiaTemp')?.value) || 1.0);
       const lcsfEffTemp = timePressureTemp(lcsfTemp, clockMs);
       let lcsfProbs = null;
       if (lichessExplorerActive) {

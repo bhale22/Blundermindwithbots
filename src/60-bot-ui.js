@@ -1299,9 +1299,10 @@ window.addEventListener('message', function(e) {
   botDayUpper = (cfg.dayUpper != null) ? cfg.dayUpper : 100;
 
   // Attractor + piece values — used live by applyMoveAttractors()
-  window._bcpAttractorValues = cfg.attractorValues || {};
-  window._bcpPieceValues     = cfg.pieceValues     || {};
-  window._bcpCpBudget        = cfg.cpBudget;
+  window._bcpAttractorValues  = cfg.attractorValues || {};
+  window._bcpPieceValues      = cfg.pieceValues     || {};
+  window._bcpCpBudget         = cfg.cpBudget;
+  window._bcpHustlerTempMode  = (cfg.personalityId === 'hustler');
 
   closeBotModal();
   botStart();

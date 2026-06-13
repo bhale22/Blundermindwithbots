@@ -5293,6 +5293,7 @@ function getBotConfig(){
     canFlag:           document.getElementById('cb-flag')?.checked          !== false,
     tempValue:         _currentTempValue,
     tempPresetId:      selectedTempPresetId,
+    personalityId:     selectedPersonality,
     calmPanickyValue:  attractorValues['pressure'] || 0,
     hybridSlots:     hybridSlots.map(s=>({...s})),
     lcsfElo:         parseInt(document.getElementById('lcsf-lc-elo')?.value || '2000'),
