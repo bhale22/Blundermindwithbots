@@ -681,6 +681,7 @@ let clockInterval = null;
 let clockTimeW = 0;   // seconds remaining for white
 let clockTimeB = 0;   // seconds remaining for black
 let clockInc = 0;     // increment in seconds
+let clockBonusApplied = false; // true once the mid-game bonus time has been awarded
 let clockControl = 'untimed';
 
 function clockInit(controlKey) {
@@ -690,6 +691,7 @@ function clockInit(controlKey) {
   clockTimeW = tc.time;
   clockTimeB = tc.time;
   clockInc = tc.inc;
+  clockBonusApplied = false;
   clockActive = false;
   clockUpdateDisplay();
 }
@@ -722,12 +724,26 @@ function clockTick() {
 }
 
 function clockAfterMove() {
-  // Add increment to the player who just moved (turn has already switched)
-  const justMoved = turn === 'w' ? 'b' : 'w';
-  if(clockInc > 0) {
-    if(justMoved === 'w') clockTimeW = Math.min(clockTimeW + clockInc, 9999);
-    else clockTimeB = Math.min(clockTimeB + clockInc, 9999);
+  const tc = TIME_CONTROLS[clockControl] || {};
+  const movesSoFar = (typeof gameMovesAlgebraic !== 'undefined') ? gameMovesAlgebraic.length : 0;
+  // Full move number just completed (both sides count toward one full move)
+  const fullMoveNum = Math.ceil(movesSoFar / 2);
+
+  // Mid-game bonus time (e.g. +30 min after move 40 in 90+30 format)
+  if (tc.bonusSecs && tc.bonusAtMove && !clockBonusApplied && fullMoveNum >= tc.bonusAtMove) {
+    clockTimeW = Math.min(clockTimeW + tc.bonusSecs, 59940); // cap at 999 min
+    clockTimeB = Math.min(clockTimeB + tc.bonusSecs, 59940);
+    clockBonusApplied = true;
   }
+
+  // Increment — only applied starting from incFromMove (default: move 1)
+  const justMoved = turn === 'w' ? 'b' : 'w';
+  const incFromMove = tc.incFromMove || 1;
+  if (clockInc > 0 && fullMoveNum >= incFromMove) {
+    if (justMoved === 'w') clockTimeW = Math.min(clockTimeW + clockInc, 59940);
+    else clockTimeB = Math.min(clockTimeB + clockInc, 59940);
+  }
+
   if(!clockActive && clockControl !== 'untimed' && !gameOver) clockStart();
   clockUpdateDisplay();
 }

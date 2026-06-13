@@ -1355,10 +1355,20 @@ function updateActionBtn() {
       else resetGame();
     };
   } else if (_gameInProgress()) {
-    btn.textContent = '⚑ Resign';
-    btn.className = 'ctrl-btn reset-btn';
-    btn.style.borderColor = ''; btn.style.color = '';
-    btn.onclick = resignOrReset;
+    const _isSolo = !(typeof botActive !== 'undefined' && botActive) &&
+                    !(typeof mpRoomId !== 'undefined' && mpRoomId &&
+                      typeof mpMode !== 'undefined' && mpMode === 'ingame');
+    if (_isSolo) {
+      btn.textContent = '↺ Reset';
+      btn.className = 'ctrl-btn';
+      btn.style.borderColor = ''; btn.style.color = '';
+      btn.onclick = resetGame;
+    } else {
+      btn.textContent = '⚑ Resign';
+      btn.className = 'ctrl-btn reset-btn';
+      btn.style.borderColor = ''; btn.style.color = '';
+      btn.onclick = resignOrReset;
+    }
   } else {
     btn.textContent = '🎯 Training Tips';
     btn.className = 'ctrl-btn util-btn';

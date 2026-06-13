@@ -5081,15 +5081,18 @@ function selColor(btn){
    QS BAR — time grid, floating dropdown, in-place color
 ══════════════════════════════════════════════════════════════ */
 
-const TC_TIMES       = [1,2,3,5,10,15,20,30,60,0];
-const TC_TIME_LABELS = ['1m','2m','3m','5m','10m','15m','20m','30m','60m','∞'];
+const TC_TIMES       = [1,2,3,5,10,15,20,30,60,90,0];
+const TC_TIME_LABELS = ['1m','2m','3m','5m','10m','15m','20m','30m','60m','90m','∞'];
 const TC_INCS        = [0,1,2,3,5,10,20,30];
-const TC_PRESETS     = new Set(['1-0','2-1','3-0','3-2','5-0','5-3','10-0','10-5','15-0','15-10','30-0','30-20','60-0','0-0']);
+const TC_PRESETS     = new Set(['1-0','2-1','3-0','3-2','5-0','5-3','10-0','10-5','15-0','15-10','30-0','30-20','60-0','90-0','90-10','90-30','0-0']);
 
 let tcTime = 30, tcInc = 0;
+// 90+30 fields: bonus minutes awarded at bonusAtMove; increment only from incFromMove onwards
+let tcBonus = 0, tcBonusAtMove = 0, tcIncFromMove = 1;
 
-function tcCategory(t, i){
+function tcCategory(t, i, bonus){
   if(t === 0) return { n:'Untimed', c:'rapid' };
+  if(bonus)   return { n:'Classical', c:'classic' };
   const total = t + i * 0.5;
   if(total < 3)  return { n:'Bullet',    c:'bullet'  };
   if(total < 8)  return { n:'Blitz',     c:'blitz'   };
@@ -5097,8 +5100,9 @@ function tcCategory(t, i){
   return             { n:'Classical', c:'classic' };
 }
 
-function tcLabel(t, i){
+function tcLabel(t, i, bonus){
   if(t === 0) return 'Untimed';
+  if(bonus) return t + '+' + bonus + ' min' + (i > 0 ? ' + ' + i + 's*' : '');
   return t + ' min' + (i > 0 ? ' + ' + i + 's' : ' + 0s');
 }
 
@@ -5106,28 +5110,25 @@ function buildTimeGrid(){
   const panel = document.querySelector('.tg-panel');
   if(!panel) return;
 
-  // X-axis label above table
-  // Y-axis label + table side by side in a flex wrapper
-  // This avoids the <th rowspan> bug where the axis lands over a data column
-
-  // Build table HTML — no axis th inside the table at all
   let thead = '<thead><tr>';
-  // Empty corner cell for the inc-label column
   thead += '<th style="width:0;padding:0;border:none;"></th>';
   TC_TIME_LABELS.forEach(l => {
     thead += '<th class="tg-head">' + l + '</th>';
   });
+  // 90+30 header — visually separated
+  thead += '<th class="tg-head" style="border-left:1px solid rgba(235,140,0,0.35);min-width:44px;width:44px;color:var(--amber-dim);">90+30</th>';
   thead += '</tr></thead>';
 
   let tbody = '<tbody>';
   TC_INCS.forEach((inc) => {
     tbody += '<tr>';
-    // Row label
     tbody += '<td class="tg-inc-lbl">' + (inc === 0 ? '0s' : inc + 's') + '</td>';
+
+    // Standard columns
     TC_TIMES.forEach((t) => {
       const key = t + '-' + inc;
       const isPreset   = TC_PRESETS.has(key);
-      const isSelected = t === tcTime && inc === tcInc;
+      const isSelected = t === tcTime && inc === tcInc && tcBonus === 0;
       const cat = tcCategory(t, inc);
       const cls = 'tg-cell ' + (isPreset ? 'preset' : 'custom') + (isSelected ? ' selected' : '');
       const lbl = t === 0 ? '∞' : (t + (inc > 0 ? '+' + inc : ''));
@@ -5141,6 +5142,19 @@ function buildTimeGrid(){
       tbody += '<td><div class="' + cls + '" data-t="' + t + '" data-i="' + inc
              + '" onclick="selectTC(' + t + ',' + inc + ',this)">' + inner + '</div></td>';
     });
+
+    // 90+30 column — Candidates/FIDE classical: 90 min + 30 min after move 40, inc from move 41
+    const is9030Selected = tcBonus === 30 && tcInc === inc;
+    const cat9030 = tcCategory(90, inc, 30);
+    const lbl9030 = inc === 0 ? '90+30' : '90+30<br>+' + inc + 's*';
+    const cls9030 = 'tg-cell preset' + (is9030Selected ? ' selected' : '');
+    tbody += '<td style="border-left:1px solid rgba(235,140,0,0.2);">'
+           + '<div class="' + cls9030 + '" style="width:44px;font-size:7.5px;line-height:1.25;" '
+           + 'onclick="selectTC90plus30(' + inc + ',this)">'
+           + '<span class="tg-cname" style="white-space:nowrap;">' + lbl9030 + '</span>'
+           + '<span class="tg-cbadge badge-' + cat9030.c + '">' + cat9030.n + '</span>'
+           + '</div></td>';
+
     tbody += '</tr>';
   });
   tbody += '</tbody>';
@@ -5150,19 +5164,31 @@ function buildTimeGrid(){
     + '<div class="tg-grid-wrap">'
     +   '<div class="tg-y-axis">Increment</div>'
     +   '<table class="tg" id="tg-table">' + thead + tbody + '</table>'
-    + '</div>';
+    + '</div>'
+    + '<div style="font-size:8px;color:var(--text-dim);padding:4px 6px 0;opacity:0.75;">'
+    + '* 90+30: increment applies from move 41 only (FIDE/Candidates format)</div>';
 }
 
 
 function selectTC(t, inc, cell){
   tcTime = t; tcInc = inc;
+  tcBonus = 0; tcBonusAtMove = 0; tcIncFromMove = 1;
   document.querySelectorAll('.tg-cell').forEach(c => c.classList.remove('selected'));
   cell.classList.add('selected');
   document.getElementById('qs-time-value').textContent = tcLabel(t, inc);
   document.getElementById('qs-time-cat').textContent   = tcCategory(t, inc).n;
-  // Re-anchor pressure curves to new think-time-per-move at game start
   initPts(); drawA(); drawB();
-  // Close after short pause so user sees selection
+  setTimeout(() => closeAllQsDropdowns(), 260);
+}
+
+function selectTC90plus30(inc, cell){
+  tcTime = 90; tcInc = inc;
+  tcBonus = 30; tcBonusAtMove = 40; tcIncFromMove = 41;
+  document.querySelectorAll('.tg-cell').forEach(c => c.classList.remove('selected'));
+  cell.classList.add('selected');
+  document.getElementById('qs-time-value').textContent = tcLabel(90, inc, 30);
+  document.getElementById('qs-time-cat').textContent   = tcCategory(90, inc, 30).n;
+  initPts(); drawA(); drawB();
   setTimeout(() => closeAllQsDropdowns(), 260);
 }
 
@@ -5243,6 +5269,9 @@ function getBotConfig(){
     color:           color,
     tcTime:          tcTime,
     tcInc:           tcInc,
+    tcBonus:         tcBonus,
+    tcBonusAtMove:   tcBonusAtMove,
+    tcIncFromMove:   tcIncFromMove,
     openingMode:     openingMode,
     openingSource:   srcBtn ? srcBtn.dataset.v : 'masters',
     openingDepth:    depthEl ? parseInt(depthEl.value) : 20,
@@ -5322,10 +5351,13 @@ function applyBotConfig(cfg){
     if(btn) selColor(btn);
   });
   grp(() => {
-    tcTime = (cfg.tcTime != null) ? cfg.tcTime : 30;
-    tcInc  = (cfg.tcInc  != null) ? cfg.tcInc  : 0;
-    document.getElementById('qs-time-value').textContent = tcLabel(tcTime, tcInc);
-    document.getElementById('qs-time-cat').textContent   = tcCategory(tcTime, tcInc).n;
+    tcTime        = (cfg.tcTime        != null) ? cfg.tcTime        : 30;
+    tcInc         = (cfg.tcInc         != null) ? cfg.tcInc         : 0;
+    tcBonus       = (cfg.tcBonus       != null) ? cfg.tcBonus       : 0;
+    tcBonusAtMove = (cfg.tcBonusAtMove != null) ? cfg.tcBonusAtMove : 0;
+    tcIncFromMove = (cfg.tcIncFromMove != null)  ? cfg.tcIncFromMove : 1;
+    document.getElementById('qs-time-value').textContent = tcLabel(tcTime, tcInc, tcBonus);
+    document.getElementById('qs-time-cat').textContent   = tcCategory(tcTime, tcInc, tcBonus).n;
     document.querySelectorAll('.tg-cell').forEach(c => c.classList.remove('selected'));
   });
 

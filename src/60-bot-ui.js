@@ -1173,7 +1173,14 @@ window.addEventListener('message', function(e) {
 
   // Time control — build a 'custom' entry so clockInit() finds a valid key
   if (cfg.tcTime > 0) {
-    TIME_CONTROLS.custom = { label: cfg.tcTime + '+' + (cfg.tcInc || 0), time: cfg.tcTime * 60, inc: cfg.tcInc || 0 };
+    TIME_CONTROLS.custom = {
+      label:       cfg.tcTime + '+' + (cfg.tcInc || 0),
+      time:        cfg.tcTime * 60,
+      inc:         cfg.tcInc || 0,
+      bonusSecs:   (cfg.tcBonus || 0) * 60,
+      bonusAtMove: cfg.tcBonusAtMove || 0,
+      incFromMove: cfg.tcIncFromMove || 1
+    };
     botSelectedTC = 'custom';
   } else {
     botSelectedTC = 'untimed';
