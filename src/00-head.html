@@ -1,0 +1,1723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blundermind — Stop getting blundermined.</title>
+<meta name="description" content="Stop getting blundermined. Board vision training for we happy few that strive for mediocrity.">
+<meta property="og:title" content="Blundermind">
+<meta property="og:description" content="Stop getting blundermined. Board vision training for novice chess players.">
+<meta property="og:type" content="website">
+<style>
+/* ── Reset & base ─────────────────────────────────────────────────────────── */
+*{box-sizing:border-box;margin:0;padding:0;}
+body{
+  font-family:'Segoe UI',system-ui,sans-serif;
+  background:var(--bg-page);
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:flex-start;
+  padding:0;
+  gap:0;
+  transition:background 0.3s;
+}
+/* Page wrapper aligns header and app together */
+#page-wrap{
+  width:100%;
+  max-width:1400px;
+  padding:10px 40px 0;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  box-sizing:border-box;
+}
+
+/* ── CSS variables — default dark navy theme ─────────────────────────────── */
+:root{
+  --bg-page:#f0ede8;
+  --bg-wrap:#e8e4de;
+  --bg-panel:#e8e4de;
+  --bg-panel2:#dedad4;
+  --border:#c8c4bc;
+  --border2:#d8d4cc;
+  --text-primary:#1a1a1a;
+  --text-secondary:#504840;
+  --text-dim:#706860;
+  --accent:#4a9fd4;
+  --sq-light:#f0d9b5;
+  --sq-dark:#b58863;
+  --board-size:480px;
+}
+
+/* ── Site header ──────────────────────────────────────────────────────────── */
+#site-header{
+  display:flex;align-items:center;gap:10px;
+  width:100%;padding:2px 0 4px;
+  flex-shrink:0;
+  justify-content:center;
+}
+#site-name{
+  font-size:18px;font-weight:600;color:#c8d8e8;
+  letter-spacing:-0.02em;
+}
+#site-name span{color:#4a9fd4;}
+#site-tagline{
+  font-size:11px;color:#506070;font-style:italic;
+  letter-spacing:0.02em;
+}
+
+/* ── Main layout ──────────────────────────────────────────────────────────── */
+#app{
+  display:flex;
+  gap:12px;
+  align-items:flex-start;
+  width:100%;
+  flex-shrink:0;
+  justify-content:center;
+}
+
+/* ── Board column ─────────────────────────────────────────────────────────── */
+#board-col{
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  flex-shrink:0;
+}
+
+/* ── Player boxes ─────────────────────────────────────────────────────────── */
+.player-box{
+  background:var(--bg-panel);
+  border:1px solid var(--border);
+  border-radius:5px;
+  padding:2px 10px;
+  width:var(--board-size);
+  max-width:var(--board-size);
+  box-sizing:border-box;
+  height:32px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  overflow:hidden;
+  flex-shrink:0;
+  transition:border-color 0.2s;
+}
+.player-col{display:flex;flex-direction:column;gap:0;flex-shrink:0;}
+.player-name{font-size:10px;font-weight:700;color:var(--text-secondary);letter-spacing:0.02em;line-height:1.3;}
+.player-time{font-family:'Courier New',monospace;font-size:12px;font-weight:700;color:var(--text-secondary);line-height:1.2;}
+.player-time.active{color:#b08020;}
+.player-time.solo{font-size:9px;color:var(--text-dim);}
+.mid-col{flex:1;display:flex;flex-direction:column;justify-content:center;gap:2px;overflow:hidden;min-width:0;}
+.mat-bar{font-size:11px;color:var(--text-secondary);line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.hint-text{font-size:7px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2;}
+.hint-text.check{color:#c03030;}
+.right-col{display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:3px;flex-shrink:0;}
+.turn-pill{font-size:7px;font-weight:500;padding:1px 6px;border-radius:8px;background:rgba(74,159,212,0.15);color:#2878b8;white-space:nowrap;border:0.5px solid rgba(74,159,212,0.3);}
+.turn-pill.check-pill{background:rgba(200,40,40,0.12);color:#c03030;border-color:rgba(200,40,40,0.3);}
+.player-box.in-check{border-color:rgba(180,40,40,0.6);}
+
+/* ── Canvas ───────────────────────────────────────────────────────────────── */
+canvas{
+  display:block;
+  width:var(--board-size);
+  height:var(--board-size);
+  border:1px solid var(--border);
+  border-radius:4px;
+  cursor:pointer;
+  touch-action:none;
+  flex-shrink:0;
+  box-sizing:border-box;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────────────── */
+#sidebar{
+  flex:1;
+  min-width:200px;
+  max-width:270px;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  flex-shrink:0;
+}
+
+/* ── Settings rows (explore/commit + controls) ───────────────────────────────────── */
+.s-row{
+  display:flex;align-items:center;gap:5px;
+  padding:3px 0;
+  border-bottom:0.5px solid var(--border2);
+  flex-wrap:wrap;
+  flex-shrink:0;
+}
+.s-row:first-child{border-top:0.5px solid var(--border2);}
+.s-lbl{font-size:8.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.06em;white-space:nowrap;}
+.s-row label{font-size:9px;color:var(--text-secondary);display:flex;align-items:center;gap:3px;cursor:pointer;}
+.s-row label input{width:10px;height:10px;}
+.s-row select{
+  font-size:8px;padding:1px 3px;
+  border:0.5px solid var(--border);border-radius:3px;
+  background:var(--bg-panel2);color:var(--text-secondary);
+  cursor:pointer;margin-left:auto;
+}
+.s-spacer{flex:1;}
+
+/* ── Separator ────────────────────────────────────────────────────────────── */
+.sep{height:0.5px;background:var(--border);margin:2px 0;flex-shrink:0;}
+
+/* ── Indicator grid ───────────────────────────────────────────────────────── */
+.ind-grid{display:flex;flex-direction:row;gap:4px;width:100%;}
+.ind-col{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;}
+
+/* ── Indicator button ─────────────────────────────────────────────────────── */
+.ib{display:flex;flex-direction:column;gap:0px;user-select:none;width:100%;}
+.ib-main{
+  padding:5px 8px;display:flex;align-items:center;gap:4px;
+  font-size:8.5px;font-weight:500;color:var(--text-dim);
+  cursor:pointer;background:var(--bg-panel2);
+  border-radius:4px 4px 0 0;border:0.5px solid var(--border2);
+  width:100%;text-align:left;min-height:22px;
+  transition:background 0.1s,color 0.1s,border-color 0.12s,box-shadow 0.12s;
+  position:relative;white-space:nowrap;overflow:hidden;
+}
+.ib-main .ib-dot-status{margin-left:auto;}
+.ib-main:hover{border-color:var(--border);color:var(--text-secondary);}
+.ib.on .ib-main{
+  background:linear-gradient(135deg,#0a2015,#081a10);
+  color:#5ad490;border-color:#22a85a;
+  box-shadow:0 0 0 1.5px rgba(34,168,90,0.25);
+}
+/* Exploration-only (pre) mode: subtle dim highlight, clearly different from always-on */
+.ib.pre .ib-main{
+  background:var(--bg-panel2);
+  color:var(--text-secondary);
+  border-color:rgba(34,168,90,0.25);
+}
+.ib.pre .ib-dot-status{display:block;background:rgba(34,168,90,0.4);}
+.ib.pressing .ib-main{
+  background:linear-gradient(135deg,#0d2a3a,#0a1f30);
+  color:#6ad4f4;border-color:#4a9fd4;
+  box-shadow:0 0 0 1.5px rgba(74,159,212,0.3);
+}
+.ib-dot-status{width:5px;height:5px;border-radius:50%;margin-left:auto;flex-shrink:0;display:none;}
+.ib.on .ib-dot-status{display:block;background:#22a85a;}
+.ib.pressing .ib-dot-status{display:block;background:#4a9fd4;}
+/* Sub-button: Show During Exploration */
+.ib-pre{
+  display:flex;align-items:center;justify-content:center;
+  padding:0 4px;height:10px;
+  border-radius:0 0 4px 4px;
+  border:0.5px solid var(--border2);border-top:none;
+  background:var(--bg-panel2);cursor:pointer;width:100%;
+  transition:all 0.1s;
+}
+.ib-main{border-radius:4px 4px 0 0 !important;}
+.ib-hold-lbl{border-radius:0 0 4px 4px;border:0.5px solid var(--border2);border-top:none;background:var(--bg-panel2);}
+.ib-pre span{font-size:6px;color:var(--text-dim);letter-spacing:0.02em;white-space:nowrap;}
+.ib-pre.active{border-color:#2a3060;background:#131830;}
+.ib-pre.active span{color:#7080e0;font-weight:700;}
+/* Hold-only label for forksw */
+.ib-hold-lbl{
+  display:flex;align-items:center;justify-content:center;
+  padding:0 4px;height:10px;
+  font-size:6px;color:var(--text-dim);font-style:italic;
+  letter-spacing:0.03em;opacity:0.5;
+}
+/* Color dot in button */
+.ib-dot{width:6px;height:6px;border-radius:50%;display:inline-block;flex-shrink:0;}
+.ib-sq{width:6px;height:6px;border-radius:1px;background:#b0c8e0;opacity:0.4;display:inline-block;flex-shrink:0;}
+/* Question mark help trigger */
+.ib-help{
+  margin-left:auto;
+  font-size:8px;color:var(--text-dim);cursor:pointer;
+  width:13px;height:13px;border-radius:50%;
+  display:inline-flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+  transition:color 0.1s,background 0.1s;
+  line-height:1;vertical-align:middle;
+}
+.ib-help:hover{color:var(--accent);background:rgba(74,159,212,0.12);}
+
+/* ── Multiplayer action buttons (equal weight) ────────────────────────────── */
+.mp-action-btn{
+  width:100%;padding:9px 10px;margin-bottom:10px;
+  font-size:11px;font-weight:700;border-radius:6px;cursor:pointer;
+  border-width:1px;border-style:solid;
+  transition:opacity 0.1s,box-shadow 0.12s;
+  display:block;text-align:center;
+}
+.mp-action-btn:hover{opacity:0.85;box-shadow:0 0 0 2px rgba(255,255,255,0.06);}
+.mp-action-blue{
+  background:linear-gradient(135deg,rgba(74,159,212,0.18),rgba(74,159,212,0.08));
+  border-color:var(--accent);color:var(--accent);
+}
+.mp-action-green{
+  background:linear-gradient(135deg,rgba(34,168,90,0.18),rgba(34,168,90,0.08));
+  border-color:#22a85a;color:#5ad490;
+}
+
+/* ── Game actions (draw/resign — multiplayer) ─────────────────────────────── */
+#gameActions{display:none;flex-direction:column;gap:4px;flex-shrink:0;}
+.game-row{display:flex;gap:5px;}
+.gbtn{
+  flex:1;padding:4px;font-size:9px;
+  border:0.5px solid var(--border);border-radius:4px;
+  background:var(--bg-panel2);color:var(--text-secondary);cursor:pointer;
+  transition:border-color 0.1s,color 0.1s;
+}
+.gbtn.draw-btn{border-color:rgba(40,80,180,0.4);color:#5a7ab0;}
+.gbtn.draw-btn:hover{border-color:#4060c0;}
+.gbtn.resign-btn{border-color:rgba(180,40,40,0.4);color:#a05050;}
+.gbtn.resign-btn:hover{border-color:#c04040;}
+
+/* ── Chat widget — floating overlay on board bottom-right ─────────────────── */
+#chatBox{
+  /* layout handled inline; this just governs content */
+}
+#chatMessages{
+  overflow-y:auto;
+  display:flex;flex-direction:column;gap:2px;
+  scroll-behavior:smooth;
+}
+.chat-msg{font-size:8.5px;line-height:1.5;word-break:break-word;padding:1px 0;}
+.chat-msg.mine  .chat-sender{color:#5a9fd4;font-weight:700;}
+.chat-msg.theirs .chat-sender{color:var(--text-secondary);font-weight:700;}
+@keyframes chatPulse{0%,100%{opacity:1;}50%{opacity:0.25;}}
+
+/* ── Bottom controls ──────────────────────────────────────────────────────── */
+#bottom-controls{
+  display:flex;flex-direction:column;gap:4px;
+  padding-top:4px;
+  flex-shrink:0;
+}
+.ctrl-row{display:flex;gap:4px;align-items:center;}
+/* Bottom-control button rows stretch to full width so their right edge
+   aligns with the controls above them */
+#bottom-controls .ctrl-row .ctrl-btn{flex:1;text-align:center;}
+.ctrl-btn{
+  font-size:8.5px;padding:7px 10px;
+  border:0.5px solid var(--border);border-radius:4px;
+  cursor:pointer;background:var(--bg-panel2);color:var(--text-secondary);
+  transition:border-color 0.1s,color 0.1s;white-space:nowrap;
+}
+.ctrl-btn:hover{border-color:var(--accent);color:var(--text-primary);}
+.ctrl-btn.reset-btn{border-color:rgba(110,44,0,0.6);color:#c07840;}
+.ctrl-btn.reset-btn:hover{border-color:#e07820;}
+.ctrl-btn.danger-btn{border-color:rgba(110,26,26,0.6);color:#c06060;}
+.ctrl-btn.danger-btn:hover{border-color:#e04040;}
+.ctrl-btn.util-btn{border-color:var(--border2);}
+.ctrl-spacer{flex:1;}
+.ctrl-select{
+  font-size:8px;padding:2px 4px;
+  border:0.5px solid var(--border);border-radius:3px;
+  background:var(--bg-panel2);color:var(--text-secondary);cursor:pointer;
+}
+
+/* ── Utility / about / feedback buttons ──────────────────────────────────── */
+.util-row{
+  display:flex;gap:4px;justify-content:flex-end;
+  padding-top:2px;
+}
+.small-btn{
+  font-size:7.5px;padding:2px 6px;
+  border:0.5px solid var(--border2);border-radius:3px;
+  cursor:pointer;background:transparent;color:var(--text-dim);
+  transition:color 0.1s,border-color 0.1s;
+}
+.small-btn:hover{color:var(--text-secondary);border-color:var(--border);}
+.donate-btn{
+  font-size:7.5px;padding:2px 6px;
+  border:0.5px solid rgba(255,180,0,0.3);border-radius:3px;
+  cursor:pointer;background:transparent;color:rgba(255,180,0,0.6);
+  transition:color 0.1s,border-color 0.1s;
+  display:none; /* hidden until donation system is set up */
+}
+.donate-btn:hover{color:#f0b800;border-color:rgba(255,180,0,0.7);}
+
+/* ── Footer ───────────────────────────────────────────────────────────────── */
+#footer{
+  width:100%;max-width:1400px;
+  display:flex;align-items:center;justify-content:center;
+  gap:8px;flex-wrap:wrap;
+  padding:6px 0 4px;
+  margin-top:4px;
+  border-top:0.5px solid var(--border2);
+  font-size:9px;color:var(--text-dim);
+  font-family:inherit;
+  flex-shrink:0;
+}
+.footer-sep{color:var(--border);}
+
+/* ── Sliding panels (help, about, feedback, theme) ────────────────────────── */
+.slide-panel{
+  position:fixed;top:0;right:-320px;
+  width:300px;height:100vh;
+  background:var(--bg-panel);
+  border-left:1px solid var(--border);
+  z-index:1000;
+  transition:right 0.25s cubic-bezier(0.4,0,0.2,1);
+  display:flex;flex-direction:column;
+  overflow:hidden;
+}
+.slide-panel.open{right:0;}
+.panel-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 14px 10px;
+  border-bottom:0.5px solid var(--border);
+  flex-shrink:0;
+}
+.panel-title{font-size:12px;font-weight:600;color:var(--text-primary);}
+.panel-close{
+  font-size:14px;color:var(--text-dim);cursor:pointer;
+  background:none;border:none;padding:2px 6px;border-radius:3px;
+  transition:color 0.1s,background 0.1s;
+}
+.panel-close:hover{color:var(--text-primary);background:rgba(255,255,255,0.05);}
+.panel-body{
+  flex:1;overflow-y:auto;
+  padding:12px 14px;
+  font-size:10px;color:var(--text-secondary);
+  line-height:1.7;
+}
+.panel-body h3{font-size:11px;font-weight:600;color:var(--text-primary);margin:10px 0 4px;}
+.panel-body h3:first-child{margin-top:0;}
+.panel-body p{margin-bottom:8px;}
+.panel-body hr{border:none;border-top:0.5px solid var(--border2);margin:10px 0;}
+.panel-body strong{color:var(--text-primary);font-weight:500;}
+.panel-body em{color:var(--text-dim);}
+.panel-overlay{
+  position:fixed;top:0;left:0;width:100vw;height:100vh;
+  background:rgba(0,0,0,0.4);z-index:999;
+  display:none;
+}
+.panel-overlay.open{display:block;}
+
+/* Pin icons in help text */
+.pin-icon{display:inline-flex;align-items:center;vertical-align:middle;margin-right:3px;}
+
+/* Help color dots */
+.h-dot{width:8px;height:8px;border-radius:50%;display:inline-block;vertical-align:middle;margin-right:3px;}
+.h-sq{width:8px;height:8px;border-radius:1px;display:inline-block;vertical-align:middle;margin-right:3px;background:#b0c8e0;opacity:0.5;}
+
+/* Tier table in fork help */
+.help-table{width:100%;border-collapse:collapse;font-size:9px;margin:6px 0;}
+.help-table th{text-align:left;color:var(--text-primary);padding:2px 4px;border-bottom:0.5px solid var(--border);}
+.help-table td{padding:2px 4px;color:var(--text-secondary);border-bottom:0.5px solid var(--border2);}
+
+/* Feedback textarea */
+#feedbackText{
+  width:100%;height:100px;
+  background:var(--bg-panel2);border:0.5px solid var(--border);
+  border-radius:4px;color:var(--text-primary);
+  font-family:inherit;font-size:10px;line-height:1.5;
+  padding:8px;resize:vertical;
+}
+#feedbackText:focus{outline:none;border-color:var(--accent);}
+.panel-send-btn{
+  margin-top:8px;width:100%;padding:7px;
+  background:#0f3060;border:0.5px solid #2a5080;
+  border-radius:4px;color:#5a9fd4;font-size:10px;
+  cursor:pointer;transition:background 0.1s;
+}
+.panel-send-btn:hover{background:#1a4070;}
+#feedbackThanks{display:none;color:#5ad490;font-size:10px;text-align:center;padding:8px;}
+
+/* Theme panel swatches */
+.swatch-grid{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px;}
+.swatch{
+  width:28px;height:28px;border-radius:4px;cursor:pointer;
+  border:2px solid transparent;transition:border-color 0.1s;
+  position:relative;
+}
+.swatch.active{border-color:var(--accent);}
+.swatch-label{font-size:7px;color:var(--text-dim);text-align:center;margin-top:2px;width:28px;}
+.swatch-wrap{display:flex;flex-direction:column;align-items:center;}
+.piece-btn{
+  font-size:8px;padding:4px 8px;
+  border:0.5px solid var(--border);border-radius:4px;
+  background:var(--bg-panel2);color:var(--text-secondary);
+  cursor:pointer;margin:2px;
+  transition:border-color 0.1s,color 0.1s;
+}
+.piece-btn.active{border-color:var(--accent);color:var(--text-primary);}
+.piece-btns{display:flex;flex-wrap:wrap;margin:4px 0 10px;}
+
+/* ── Promotion modal ──────────────────────────────────────────────────────── */
+#promoModal{
+  display:none;position:fixed;
+  top:50%;left:50%;transform:translate(-50%,-50%);
+  background:#0d1b2a;border:1px solid var(--border);
+  border-radius:8px;padding:16px;z-index:2000;
+  text-align:center;
+}
+#promoModal p{font-size:11px;color:var(--text-secondary);margin-bottom:10px;}
+.promo-btns{display:flex;gap:8px;justify-content:center;}
+.promo-btn{
+  font-size:28px;cursor:pointer;padding:4px 8px;
+  border:1px solid var(--border);border-radius:4px;
+  background:var(--bg-panel);
+  transition:border-color 0.1s,background 0.1s;
+}
+.promo-btn:hover{border-color:var(--accent);background:var(--bg-wrap);}
+
+/* ── PGN replay controls ──────────────────────────────────────────────────── */
+#replayControls{
+  display:none;
+  background:var(--bg-panel);border:0.5px solid var(--border);
+  border-radius:5px;padding:6px 8px;flex-shrink:0;
+}
+.replay-row{display:flex;align-items:center;gap:4px;}
+.replay-btn{
+  font-size:11px;padding:2px 6px;
+  border:0.5px solid var(--border);border-radius:3px;
+  background:var(--bg-panel2);color:var(--text-secondary);
+  cursor:pointer;transition:color 0.1s,border-color 0.1s;
+}
+.replay-btn:hover{border-color:var(--accent);color:var(--text-primary);}
+#replayInfo{font-size:9px;color:var(--text-dim);flex:1;text-align:center;}
+.replay-exit{font-size:8px;color:#c06060;border-color:rgba(180,40,40,0.4);}
+
+/* ── Landing page overlay ─────────────────────────────────────────────────── */
+#landingOverlay {
+  position:fixed;top:0;left:0;width:100vw;height:100vh;
+  background:var(--bg-page);
+  z-index:5000;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:20px;
+  transition:opacity 0.4s ease;
+}
+#landingOverlay.fade-out { opacity:0;pointer-events:none; }
+.landing-title {
+  font-size:32px;font-weight:700;color:var(--text-primary);
+  letter-spacing:-0.03em;margin-bottom:4px;
+}
+.landing-title span { color:#4a9fd4; }
+.landing-tagline {
+  font-size:13px;color:var(--text-dim);font-style:italic;
+  margin-bottom:36px;letter-spacing:0.02em;
+}
+.landing-cards {
+  display:flex;flex-wrap:wrap;gap:14px;justify-content:center;
+  max-width:720px;margin-bottom:28px;
+}
+.landing-card {
+  width:160px;padding:20px 14px 18px;
+  background:var(--bg-panel);border:1px solid var(--border);
+  border-radius:10px;cursor:pointer;text-align:center;
+  transition:border-color 0.15s,box-shadow 0.15s,transform 0.12s;
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+}
+.landing-card:hover {
+  border-color:var(--accent);
+  box-shadow:0 0 0 2px rgba(74,159,212,0.18);
+  transform:translateY(-2px);
+}
+.landing-card.green-card:hover {
+  border-color:#22a85a;
+  box-shadow:0 0 0 2px rgba(34,168,90,0.18);
+}
+.landing-card.gold-card:hover {
+  border-color:#c8a000;
+  box-shadow:0 0 0 2px rgba(200,160,0,0.18);
+}
+.landing-card-icon { font-size:36px;line-height:1; }
+.landing-card-title {
+  font-size:12px;font-weight:700;color:var(--text-primary);
+  line-height:1.3;
+}
+.landing-card-desc {
+  font-size:9.5px;color:var(--text-dim);line-height:1.5;
+}
+.landing-upload-row {
+  display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center;
+  margin-bottom:16px;
+}
+.landing-upload-btn {
+  font-size:9.5px;padding:6px 14px;
+  border:0.5px solid var(--border);border-radius:20px;
+  background:transparent;color:var(--text-dim);cursor:pointer;
+  transition:all 0.12s;
+}
+.landing-upload-btn:hover { border-color:var(--accent);color:var(--accent); }
+.landing-footer {
+  font-size:8.5px;color:var(--text-dim);text-align:center;
+  margin-top:8px;
+}
+
+/* ── Bot panel needs wider width ──────────────────────────────────────────── */
+#botPanel { width:340px;right:-365px; }
+#botPanel.open { right:0; }
+
+.bot-tab {
+  padding:4px 10px;font-size:9px;border-radius:4px;cursor:pointer;
+  background:var(--bg-panel2);border:0.5px solid var(--border);color:var(--text-dim);
+  transition:all 0.1s;
+}
+.bot-tab.active {
+  background:rgba(74,159,212,0.15);border-color:var(--accent);color:var(--accent);font-weight:600;
+}
+/* Opening picker sliding panels */
+.ob-slide {
+  transition: transform 0.22s cubic-bezier(0.4,0,0.2,1);
+  background: var(--bg-panel2);
+  min-height: 60px;
+}
+.ob-pick-btn {
+  display:flex;align-items:center;justify-content:space-between;
+  width:100%;padding:6px 10px;font-size:9px;
+  background:none;border:none;border-bottom:0.5px solid var(--border);
+  color:var(--text-primary);cursor:pointer;text-align:left;
+  transition:background 0.1s;
+}
+.ob-pick-btn:hover { background:rgba(74,159,212,0.08); }
+.ob-pick-btn.selected { color:var(--accent); }
+.ob-pick-chevron { color:var(--text-dim);font-size:10px; }
+.tp-btn {
+  flex:1;padding:5px 4px;font-size:8.5px;border-radius:4px;cursor:pointer;
+  background:var(--bg-panel2);border:0.5px solid var(--border);color:var(--text-dim);
+  transition:all 0.1s;
+}
+.tp-btn.active {
+  background:rgba(90,212,144,0.12);border-color:#22a85a;color:#5ad490;font-weight:600;
+}
+.tc-btn {
+  padding:4px 6px;font-size:9px;font-weight:600;border-radius:4px;cursor:pointer;
+  background:var(--bg-panel2);border:0.5px solid var(--border);color:var(--text-dim);
+  transition:all 0.1s;min-width:28px;text-align:center;
+}
+.tc-btn.tc-active {
+  background:rgba(74,159,212,0.18);border-color:var(--accent);color:var(--accent);
+}
+.hybrid-slot {
+  display:flex;align-items:center;gap:5px;padding:5px;margin-bottom:4px;
+  background:var(--bg-panel2);border:0.5px solid var(--border);border-radius:4px;
+}
+.hybrid-slot select { font-size:8px;padding:2px 3px;background:var(--bg-panel);border:0.5px solid var(--border);border-radius:3px;color:var(--text-secondary); }
+.hybrid-slot input[type=number] { width:42px;font-size:9px;padding:2px 4px;background:var(--bg-panel);border:0.5px solid var(--border);border-radius:3px;color:var(--text-primary);text-align:center; }
+.hybrid-slot .rm-btn { font-size:10px;cursor:pointer;background:none;border:none;color:var(--text-dim);padding:0 2px;line-height:1; }
+/* Ghost piece canvas overlay */
+#ghostCanvas { position:absolute;top:0;left:0;pointer-events:none;border-radius:4px; }
+#board-canvas-wrap { position:relative;display:inline-block;flex-shrink:0; }
+
+@media(max-width:700px){
+  #page-wrap{padding:8px 12px 0;}
+  #app{flex-direction:column;justify-content:flex-start;}
+  #sidebar{min-width:0;width:100%;max-width:100%;}
+  canvas{width:100% !important;height:auto !important;}
+  .player-box{width:100% !important;}
+}
+/* When board is flipped (human plays black), move white box to top and black box to bottom
+   so the player's clock always appears adjacent to their pieces. */
+#board-col.board-flipped #playerBoxW { order: -1; }
+#board-col.board-flipped #playerBoxB { order:  3; }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     LANDING PAGE OVERLAY
+     ══════════════════════════════════════════════════════════════════════════ -->
+<div id="landingOverlay">
+  <div class="landing-title">♟ Blunder<span>mind</span></div>
+  <div class="landing-tagline">Stop getting blundermined.</div>
+
+  <div class="landing-cards">
+
+    <!-- Solo / Explore -->
+    <div class="landing-card" onclick="landingChoose('solo')">
+      <div class="landing-card-icon">🔍</div>
+      <div class="landing-card-title">Solo Play &amp; Explore</div>
+      <div class="landing-card-desc">Play alone, explore positions, and train board vision with all the indicators.</div>
+    </div>
+
+    <!-- vs Bot -->
+    <div class="landing-card green-card" onclick="landingChoose('bot')">
+      <div class="landing-card-icon">🤖</div>
+      <div class="landing-card-title">Play vs Bots</div>
+      <div class="landing-card-desc">Challenge Stockfish or the Lichess Explorer bot. Mix engines, set time pressure, see ghost responses.</div>
+    </div>
+
+    <!-- 2 Player -->
+    <div class="landing-card" onclick="landingChoose('mp')">
+      <div class="landing-card-icon">⚔️</div>
+      <div class="landing-card-title">2-Player Online</div>
+      <div class="landing-card-desc">Post an open challenge or send a private invite link — one click to join.</div>
+    </div>
+
+    <!-- Load PGN / Bot config — split card -->
+    <div class="landing-card gold-card" style="display:flex;flex-direction:column;padding:0;overflow:hidden;">
+      <div onclick="landingChoose('pgn')" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px 12px 10px;cursor:pointer;border-bottom:1px solid var(--border);">
+        <div class="landing-card-icon">📂</div>
+        <div class="landing-card-title">Load a Saved Game</div>
+        <div class="landing-card-desc">Upload a PGN file and replay or explore any game move by move.</div>
+      </div>
+      <div onclick="document.getElementById('landingBotConfigInput').click()" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 12px 16px;cursor:pointer;">
+        <div class="landing-card-icon" style="font-size:24px;">⚙️</div>
+        <div class="landing-card-title">Load a Saved Bot</div>
+        <div class="landing-card-desc">Upload a bot configuration file to restore a custom opponent.</div>
+      </div>
+      <input type="file" id="landingBotConfigInput" accept=".json" style="display:none"
+        onchange="landingLoadBotConfig(event)">
+    </div>
+
+  </div>
+
+  <div class="landing-footer">
+    No account · No tracking · Your games are yours · <em>Free forever</em>
+  </div>
+</div>
+
+<!-- ── Page wrapper: aligns header and board column ──────────────────────── -->
+<div id="page-wrap">
+
+<!-- ── Site header ──────────────────────────────────────────────────────── -->
+<div id="site-header">
+  <span id="site-name">♟ Blunder<span>mind</span></span>
+  <span id="site-tagline">Stop getting blundermined.</span>
+  <div id="headerBtnGroup" style="display:flex;gap:8px;align-items:center;flex-shrink:0;margin-left:20px;">
+    <button id="aboutFeedbackBtn" onclick="openPanel('aboutFeedbackPanel')"
+      style="font-size:10px;padding:4px 12px;background:transparent;
+      border:1px solid var(--border);border-radius:12px;
+      color:var(--text-secondary);cursor:pointer;transition:all 0.15s;white-space:nowrap;"
+      onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
+      onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-secondary)'">
+      About &amp; Feedback
+    </button>
+    <button id="donateBtn" onclick="openPanel('donatePanel')"
+      style="font-size:10px;padding:4px 14px;
+      background:transparent;
+      border:1px solid rgba(255,94,91,0.4);border-radius:12px;
+      color:#ff6b5b;cursor:pointer;transition:all 0.15s;white-space:nowrap;
+      display:flex;align-items:center;gap:6px;"
+      onmouseover="this.style.background='rgba(255,94,91,0.12)';this.style.borderColor='rgba(255,94,91,0.7)'"
+      onmouseout="this.style.background='rgba(255,94,91,0.1)';this.style.borderColor='rgba(255,94,91,0.4)'">
+<img src="data:image/webp;base64,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" width="20" height="20" style="flex-shrink:0;filter:none;" alt="Ko-fi">
+      Support
+      <img src="data:image/webp;base64,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" width="20" height="20" style="flex-shrink:0;filter:none;" alt="Ko-fi">
+    </button>
+  </div>
+</div>
+
+<!-- ── Main app ─────────────────────────────────────────────────────────── -->
+<div id="app">
+
+  <!-- LEFT: board column -->
+  <div id="board-col">
+
+    <!-- Black player box -->
+    <div class="player-box" id="playerBoxB">
+      <div class="player-col">
+        <div class="player-name">Black</div>
+        <div class="player-time solo" id="timeB">—</div>
+      </div>
+      <div class="mid-col">
+        <div class="mat-bar" id="matB"></div>
+      </div>
+      <div class="right-col" id="rightColB"></div>
+    </div>
+
+    <!-- Clock time control panel (inline) -->
+    <div id="clockPanel" style="display:none;background:var(--bg-panel);border:0.5px solid var(--border);border-radius:5px;padding:8px 12px;margin-bottom:4px;width:var(--board-size);box-sizing:border-box;">
+      <div style="font-size:9px;color:var(--text-dim);margin-bottom:6px;font-weight:600;letter-spacing:0.05em;">TIME CONTROL</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;">
+        <button onclick="clockSetControl('untimed')"    class="tc-btn" id="tc-untimed">Untimed</button>
+        <button onclick="clockSetControl('bullet')"     class="tc-btn" id="tc-bullet">Bullet 1+0</button>
+        <button onclick="clockSetControl('blitz3')"     class="tc-btn" id="tc-blitz3">Blitz 3+2</button>
+        <button onclick="clockSetControl('blitz5')"     class="tc-btn" id="tc-blitz5">Blitz 5+0</button>
+        <button onclick="clockSetControl('rapid10')"    class="tc-btn" id="tc-rapid10">Rapid 10+0</button>
+        <button onclick="clockSetControl('rapid15')"    class="tc-btn" id="tc-rapid15">Rapid 15+10</button>
+        <button onclick="clockSetControl('tournament')"    class="tc-btn" id="tc-tournament">Tournament 30+0</button>
+        <button onclick="clockSetControl('classical90')"   class="tc-btn" id="tc-classical90">Classical 90+0</button>
+        <button onclick="clockSetControl('classical90_30')" class="tc-btn" id="tc-classical90_30">Classical 90+30</button>
+      </div>
+    </div>
+
+    <!-- Chess board canvas -->
+    <div id="board-canvas-wrap">
+      <canvas id="cv" width="480" height="480"></canvas>
+      <canvas id="ghostCanvas" width="480" height="480"></canvas>
+    </div>
+
+    <!-- PGN Replay controls (shown during replay) -->
+    <div id="replayControls">
+      <div class="replay-row">
+        <button class="replay-btn" onclick="replayGo(0)">⏮</button>
+        <button class="replay-btn" onclick="replayStep(-1)">◀</button>
+        <span id="replayInfo">Move 0 / 0</span>
+        <button class="replay-btn" onclick="replayStep(1)">▶</button>
+        <button class="replay-btn" onclick="replayGo(-1)">⏭</button>
+        <button class="replay-btn replay-exit" onclick="exitReplay()">✕ Exit replay</button>
+      </div>
+    </div>
+
+    <!-- White player box -->
+    <div class="player-box" id="playerBoxW" style="width:var(--board-size);box-sizing:border-box;">
+      <div class="player-col">
+        <div class="player-name">White</div>
+        <div class="player-time solo active" id="timeW">—</div>
+      </div>
+      <div class="mid-col">
+        <div class="mat-bar" id="matW"></div>
+        <div class="hint-text" id="hintText"></div>
+      </div>
+      <div class="right-col" id="rightColW">
+        <div class="turn-pill" id="turnPill">▶ your move</div>
+      </div>
+    </div>
+
+    <!-- Chat bar — below white player box, only visible during 2-player games -->
+    <div id="chatBox" style="display:none;flex-direction:column;
+      width:var(--board-size);box-sizing:border-box;
+      background:var(--bg-panel);border:0.5px solid var(--border);border-radius:5px;
+      overflow:hidden;">
+
+      <!-- Header / toggle row -->
+      <div id="chatHeader" onclick="chatToggleExpand()"
+        style="padding:4px 10px;font-size:8px;font-weight:600;letter-spacing:0.07em;
+        color:var(--text-dim);background:var(--bg-panel2);
+        border-bottom:0.5px solid var(--border);
+        display:flex;align-items:center;justify-content:space-between;
+        cursor:pointer;user-select:none;flex-shrink:0;">
+        <span>💬 CHAT</span>
+        <span style="display:flex;align-items:center;gap:6px;">
+          <span id="chatUnread" style="display:none;font-size:7px;font-weight:700;
+            color:#5ad490;animation:chatPulse 1.2s ease-in-out infinite;">● new message</span>
+          <span id="chatChevron" style="font-size:9px;color:var(--text-dim);
+            transition:transform 0.18s;">▼</span>
+        </span>
+      </div>
+
+      <!-- Collapsible body — input first, messages scroll below -->
+      <div id="chatBody" style="display:none;flex-direction:column;">
+        <div style="display:flex;border-bottom:0.5px solid var(--border);flex-shrink:0;">
+          <input id="chatInput" placeholder="Type a message…" maxlength="100"
+            style="flex:1;padding:5px 10px;font-size:8.5px;background:transparent;
+            border:none;outline:none;color:var(--text-primary);font-family:inherit;"
+            onkeydown="if(event.key==='Enter')chatSend()">
+          <button onclick="chatSend()" title="Send"
+            style="padding:4px 12px;font-size:11px;background:transparent;
+            border:none;border-left:0.5px solid var(--border);
+            color:var(--accent);cursor:pointer;flex-shrink:0;">↑</button>
+        </div>
+        <div id="chatMessages"
+          style="height:80px;overflow-y:auto;padding:5px 10px;
+          font-size:8.5px;line-height:1.55;color:var(--text-secondary);">
+        </div>
+      </div>
+    </div><!-- end chatBox -->
+
+</div><!-- end board-col -->
+
+  <!-- RIGHT: sidebar -->
+  <div id="sidebar">
+
+    <!-- Settings -->
+    <div class="s-row">
+      <span class="s-lbl">🔊 Move sounds:</span>
+      <span class="s-spacer"></span>
+      <label><input type="checkbox" id="cbSound" onchange="saveSoundPref()"> On</label>
+    </div>
+    <div class="s-row">
+      <span class="s-lbl">Show legal moves:</span>
+      <span class="s-spacer"></span>
+      <label><input type="checkbox" id="cbLegalToggle" checked onchange="render()"> On</label>
+    </div>
+    <div class="s-row">
+      <span class="s-lbl">👻 Ghost responses:<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('ghostresponses',event)" style="margin-left:3px;">?</span></span>
+      <span class="s-spacer"></span>
+      <select id="soloGhostDepth" onchange="ghostModeChanged()" style="font-size:8px;padding:1px 3px;border:0.5px solid var(--border);border-radius:3px;background:var(--bg-panel2);color:var(--text-secondary);">
+        <option value="0">Off</option>
+        <option value="4">SF Fast (depth 4)</option>
+        <option value="8" selected>SF Medium (depth 8)</option>
+        <option value="12">SF Deep (depth 12)</option>
+        <option value="maia">Maia (2600 + 1500)</option>
+      </select>
+    </div>
+    <div id="ghostMaiaHint" style="display:none;font-size:7.5px;color:#c0a060;padding:0 2px 4px;">
+      Maia3 model not downloaded — ghosts use Stockfish until you download it in the 🤖 vs Bot panel.
+    </div>
+    <div class="s-row">
+      <span class="s-lbl">Batteries in threat counts:<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('batteriessetting',event)" style="margin-left:3px;">?</span></span>
+      <span class="s-spacer"></span>
+      <label><input type="checkbox" id="cbBattery" onchange="rebuildAtk()"> On</label>
+    </div>
+    <div class="s-row">
+      <span class="s-lbl">Influence on move exploration:</span>
+      <span class="s-spacer"></span>
+      <label><input type="checkbox" id="cbInfluenceToggle" checked onchange="render()"> On</label>
+    </div>
+    <div class="s-row">
+      <span class="s-lbl">Include queen pins:<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('queenpinssetting',event)" style="margin-left:3px;">?</span></span>
+      <span class="s-spacer"></span>
+      <label><input type="checkbox" id="cbQPins" onchange="rebuildAtk()"> On</label>
+    </div>
+
+
+    <div class="sep"></div>
+
+    <!-- Indicator grid -->
+    <div class="ind-grid">
+      <div class="ind-col">
+        <div class="ib" id="ib-checkthreats">
+          <button class="ib-main" onmousedown="ibMainDown('checkthreats',event)" onmouseup="ibMainUp('checkthreats')" onmouseleave="ibMainUp('checkthreats')" ontouchstart="ibMainDown('checkthreats',event)" ontouchend="ibMainUp('checkthreats')">
+            <span class="ib-dot" style="background:#e03535;"></span>Check threats
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('checkthreats',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-checkthreats" onclick="ibTogglePre('checkthreats')"><span>Show During Exploration</span></div>
+        </div>
+        <div class="ib" id="ib-threats">
+          <button class="ib-main" onmousedown="ibMainDown('threats',event)" onmouseup="ibMainUp('threats')" onmouseleave="ibMainUp('threats')" ontouchstart="ibMainDown('threats',event)" ontouchend="ibMainUp('threats')">
+            <span class="ib-dot" style="background:#e03535;margin-right:1px;"></span><span class="ib-dot" style="background:#1eb446;margin-right:3px;"></span>Threats &amp; Captures
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('threats',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-threats" onclick="ibTogglePre('threats')"><span>Show During Exploration</span></div>
+        </div>
+        <div class="ib" id="ib-counts">
+          <button class="ib-main" onmousedown="ibMainDown('counts',event)" onmouseup="ibMainUp('counts')" onmouseleave="ibMainUp('counts')" ontouchstart="ibMainDown('counts',event)" ontouchend="ibMainUp('counts')">
+            <span class="ib-dot" style="background:#22a85a;margin-right:1px;"></span><span class="ib-dot" style="background:#e03535;margin-right:3px;"></span>Threat/Def. counts
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('counts',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-counts" onclick="ibTogglePre('counts')"><span>Show During Exploration</span></div>
+        </div>
+        <div class="ib" id="ib-unprotected">
+          <button class="ib-main" onmousedown="ibMainDown('unprotected',event)" onmouseup="ibMainUp('unprotected')" onmouseleave="ibMainUp('unprotected')" ontouchstart="ibMainDown('unprotected',event)" ontouchend="ibMainUp('unprotected')">
+            <span class="ib-dot" style="background:#e03535;"></span>Unprotected
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('unprotected',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-unprotected" onclick="ibTogglePre('unprotected')"><span>Show During Exploration</span></div>
+        </div>
+        <div class="ib" id="ib-pins">
+          <button class="ib-main" onmousedown="ibMainDown('pins',event)" onmouseup="ibMainUp('pins')" onmouseleave="ibMainUp('pins')" ontouchstart="ibMainDown('pins',event)" ontouchend="ibMainUp('pins')">
+            <span class="ib-dot" style="background:#9b59b6;"></span>Pins
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('pins',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-pins" onclick="ibTogglePre('pins')"><span>Show During Exploration</span></div>
+        </div>
+        <div class="ib" id="ib-forksw">
+          <button class="ib-main" onmousedown="ibMainDown('forksw',event)" onmouseup="ibMainUp('forksw')" onmouseleave="ibMainUp('forksw')" ontouchstart="ibMainDown('forksw',event)" ontouchend="ibMainUp('forksw')">
+            <span class="ib-dot" style="background:#f0c040;"></span>My forks &amp; skewers
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksw',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-forksw" onclick="ibTogglePre('forksw')"><span>Show During Exploration</span></div>
+        </div>
+        <div class="ib" id="ib-forksb">
+          <button class="ib-main" onmousedown="ibMainDown('forksb',event)" onmouseup="ibMainUp('forksb')" onmouseleave="ibMainUp('forksb')" ontouchstart="ibMainDown('forksb',event)" ontouchend="ibMainUp('forksb')">
+            <span class="ib-dot" style="background:#e040c0;"></span>Fork &amp; skewer threats
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksb',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-forksb" onclick="ibTogglePre('forksb')"><span>Show During Exploration</span></div>
+        </div>
+      </div>
+      <div class="ind-col">
+        <div class="ib" id="ib-overloaded">
+          <button class="ib-main" onmousedown="ibMainDown('overloaded',event)" onmouseup="ibMainUp('overloaded')" onmouseleave="ibMainUp('overloaded')" ontouchstart="ibMainDown('overloaded',event)" ontouchend="ibMainUp('overloaded')">
+            <span class="ib-dot" style="background:#c8a000;"></span>Overloaded
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('overloaded',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-overloaded" onclick="ibTogglePre('overloaded')"><span>Show During Exploration</span></div>
+        </div>
+        <div class="ib" id="ib-discoveredopp">
+          <button class="ib-main" onmousedown="ibMainDown('discoveredopp',event)" onmouseup="ibMainUp('discoveredopp')" onmouseleave="ibMainUp('discoveredopp')" ontouchstart="ibMainDown('discoveredopp',event)" ontouchend="ibMainUp('discoveredopp')">
+            <span class="ib-dot" style="background:#dc8200;"></span>Opp. disc. threats
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredopp',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-discoveredopp" onclick="ibTogglePre('discoveredopp')"><span>Show During Exploration</span></div>
+        </div>
+        <div class="ib" id="ib-discoveredself">
+          <button class="ib-main" onmousedown="ibMainDown('discoveredself',event)" onmouseup="ibMainUp('discoveredself')" onmouseleave="ibMainUp('discoveredself')" ontouchstart="ibMainDown('discoveredself',event)" ontouchend="ibMainUp('discoveredself')">
+            <span class="ib-dot" style="background:#a050dc;"></span>My disc. attacks
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredself',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-discoveredself" onclick="ibTogglePre('discoveredself')"><span>Show During Exploration</span></div>
+        </div>
+        <div class="ib" id="ib-weakw">
+          <button class="ib-main" onmousedown="ibMainDown('weakw',event)" onmouseup="ibMainUp('weakw')" onmouseleave="ibMainUp('weakw')" ontouchstart="ibMainDown('weakw',event)" ontouchend="ibMainUp('weakw')">
+            <span class="ib-sq"></span>My weak squares
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakw',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-weakw" onclick="ibTogglePre('weakw')"><span>Show During Exploration</span></div>
+        </div>
+        <div class="ib" id="ib-weakb">
+          <button class="ib-main" onmousedown="ibMainDown('weakb',event)" onmouseup="ibMainUp('weakb')" onmouseleave="ibMainUp('weakb')" ontouchstart="ibMainDown('weakb',event)" ontouchend="ibMainUp('weakb')">
+            <span class="ib-sq"></span>Opp. weak squares
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakb',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-weakb" onclick="ibTogglePre('weakb')"><span>Show During Exploration</span></div>
+        </div>
+        <div class="ib" id="ib-xray">
+          <button class="ib-main" onmousedown="ibMainDown('xray',event)" onmouseup="ibMainUp('xray')" onmouseleave="ibMainUp('xray')" ontouchstart="ibMainDown('xray',event)" ontouchend="ibMainUp('xray')">
+            <span class="ib-dot" style="background:#8080ff;"></span>X-ray pressure/threats
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('xray',event)">?</span>
+            <span class="ib-dot-status"></span>
+          </button>
+          <div class="ib-pre" id="pre-xray" onclick="ibTogglePre('xray')"><span>Show During Exploration</span></div>
+        </div>
+        <div style="margin-top:4px;">
+          <button class="ctrl-btn danger-btn" id="btnClearAll" onclick="clearAllSelections()" style="width:100%;font-size:8.5px;">✕ Clear all</button>
+        </div>
+      </div>
+    </div><!-- end ind-grid -->
+    <!-- Peek / Hide / Show All — larger, below the indicator columns -->
+    <div style="display:flex;gap:5px;margin-top:5px;">
+      <button id="btnHideShow" class="ctrl-btn util-btn"
+        style="flex:1;padding:7px 4px;font-size:9px;font-weight:600;"
+        onmousedown="hideShowDown(event)" onmouseup="hideShowUp()" onmouseleave="hideShowUp()"
+        title="Hold to peek · Double-click to toggle">👁 Hide</button>
+      <button id="btnPeek" class="ctrl-btn util-btn"
+        style="flex:1;padding:7px 4px;font-size:9px;font-weight:600;"
+        onmousedown="peekDown(event)" onmouseup="peekUp()" onmouseleave="peekUp()"
+        title="Hold to see selected exploration indicators">👁 Peek</button>
+      <button id="btnShowAll" class="ctrl-btn util-btn"
+        style="flex:1;padding:7px 4px;font-size:9px;font-weight:600;"
+        onmousedown="showAllDown(event)" onmouseup="showAllUp()" onmouseleave="showAllUp()"
+        title="Hold to see every indicator active">⊞ Show all</button>
+    </div>
+
+    <div class="sep"></div>
+
+    <!-- Draw/Resign (multiplayer only) -->
+    <div id="gameActions">
+      <div class="game-row">
+        <button class="gbtn draw-btn" onclick="offerDraw()">½ Offer draw</button>
+        <button class="gbtn resign-btn" onclick="resign()">⚑ Resign</button>
+      </div>
+    </div>
+
+    <!-- Chat is in the board area inline for multiplayer -->
+    <!-- Bottom controls -->
+    <div id="bottom-controls">
+      <!-- Row 1: game flow — dynamic action slot (Resign / Rematch? / Training
+           Tips), Explore (shown only when a game just ended), game starters -->
+      <div class="ctrl-row">
+        <button class="ctrl-btn util-btn" id="resignBtn" onclick="openHelp('howto')">🎯 Training Tips</button>
+        <button class="ctrl-btn util-btn" id="exploreBtn" onclick="enterExploreMode()" style="display:none;border-color:rgba(74,159,212,0.45);color:#4a9fd4;">🔍 Explore</button>
+        <button class="ctrl-btn util-btn" onclick="openBotModal()" style="border-color:rgba(90,212,144,0.4);color:#5ad490;" id="botSidebarBtn">🤖 vs Bot</button>
+        <button class="ctrl-btn util-btn" onclick="openPanel('mpPanel')">⚔ 2-Player</button>
+      </div>
+      <!-- Row 2: utilities -->
+      <div class="ctrl-row">
+        <button class="ctrl-btn util-btn" onclick="openPanel('themePanel')">🎨 Theme &amp; Pieces</button>
+        <button class="ctrl-btn util-btn" id="btnLoadPgn" onclick="document.getElementById('pgnFileInput').click()">▶ Load game</button>
+        <input type="file" id="pgnFileInput" accept=".pgn" style="display:none" onchange="loadPgnFile(event)">
+        <button class="ctrl-btn util-btn" id="btnSavePgn" onclick="savePgn()">↓ Save game</button>
+      </div>
+      <div class="util-row" style="display:none;"></div>
+    </div>
+
+  </div><!-- end sidebar -->
+</div><!-- end app -->
+</div><!-- end page-wrap -->
+
+<!-- ── Footer ───────────────────────────────────────────────────────────── -->
+<div id="footer">
+  <span>© 2026 Blundermind. All rights reserved.</span>
+  <span class="footer-sep">·</span>
+  <span><em>Stop getting blundermined.</em></span>
+  <span class="footer-sep">·</span>
+  <span style="font-size:8px;color:#304050;">Staunton: react-chess-pieces (ISC) · RhosGFX pieces: CC0</span>
+</div>
+
+<!-- ── Promotion modal ───────────────────────────────────────────────────── -->
+<div id="promoModal">
+  <p>Promote pawn to:</p>
+  <div class="promo-btns">
+    <button class="promo-btn" onclick="doPromote('Q')">♛</button>
+    <button class="promo-btn" onclick="doPromote('R')">♜</button>
+    <button class="promo-btn" onclick="doPromote('B')">♝</button>
+    <button class="promo-btn" onclick="doPromote('N')">♞</button>
+  </div>
+</div>
+
+<!-- ── Panel overlay ─────────────────────────────────────────────────────── -->
+<div class="panel-overlay" id="panelOverlay" onclick="closeAllPanels()"></div>
+
+<!-- ── About & Feedback panel ──────────────────────────────────── -->
+<div class="slide-panel" id="aboutFeedbackPanel">
+  <div class="panel-header">
+    <span class="panel-title">About &amp; Feedback</span>
+    <button class="panel-close" onclick="closeAllPanels()">✕</button>
+  </div>
+  <div class="panel-body">
+    <p>Nearly all games of chess I play are decided on blundered pieces. I created this site in the hopes that I could see what it was like to play a game that was decided by strategy instead of blunders. I still blunder, but at least the number of blunders is reduced a bit when there is a big red circle around the queen when I hover it over my intended square. I still have no idea if this will translate to better board vision in &#8216;real&#8217; OTB games.</p>
+    <p>I also struggle with &#8220;getting a grip on the board&#8221; (to steal a useful phrase from the <a href="https://www.youtube.com/watch?v=3jiJn8bjtYk" target="_blank" rel="noopener" style="color:var(--accent);">Chess Dojo</a>), so while my intent was to blundercheck moves so that I would see if I were hanging my queen, I&#8217;m finding that it is showing discovered attacks and potential forks that I didn&#8217;t see at all (you can probably infer my rating at this point). I think it could be a very helpful tool as long as it is used as a blundercheck to double check and provide immediate feedback after assessment and calculation, not as a blunder avoider that just circles some hanging pieces while potential moves are explored by dragging the pieces around.</p>
+    <p>Also included in my numerous struggles is the ability to predict my opponent&#8217;s response, so I added a feature to show two potential responses by making two calls to Stockfish. I would like to do this with Maia, but running Maia3 on each potential move is too slow with my current set up &#8212; hopefully in the future. Currently the site does not include any engine analysis or indicators to show if a move is &#8220;good or bad&#8221; during game play or exploration. Each game can be downloaded and analyzed in <a href="https://lichess.org/paste" target="_blank" rel="noopener" style="color:var(--accent);">Lichess</a> or a website of your choice. Similarly, the PGN of any game can be uploaded and explored here.</p>
+    <p>While I most enjoy playing people in person, I find playing strangers online less enjoyable, so I added in the feature to play against bots. The problem with the bots I&#8217;ve found is that they don&#8217;t feel time pressure, and their behavior is often sporadic in an unsatisfying way. I&#8217;ve tried to make the bots customizable in a way so that I have more control over how the bot will play.</p>
+
+    <hr>
+    <h3>Privacy</h3>
+    <p>Blundermind collects no user data, uses no cookies, stores no game history, and tracks nothing. The board set up/configuration and customized bots can be downloaded and stored, then uploaded for future use.</p>
+    <hr>
+    <h3>Feedback</h3>
+    <p>Any problems with functionality would be helpful, but I would particularly love feedback on whether any features on this site seem to translate into improvement in &#8216;real&#8217; over-the-board play.</p>
+    <textarea id="feedbackText" placeholder="Your thoughts..." style="width:100%;height:90px;background:var(--bg-panel2);border:0.5px solid var(--border);border-radius:4px;color:var(--text-primary);font-family:inherit;font-size:10px;line-height:1.5;padding:8px;resize:vertical;margin-top:6px;"></textarea>
+    <button class="panel-send-btn" onclick="sendFeedback()">Send feedback</button>
+    <div id="feedbackThanks" style="display:none;color:#5ad490;font-size:10px;text-align:center;padding:8px;">Thank you &#8212; feedback received! &#9887;</div>
+    <hr>
+    <p style="font-size:8px;color:var(--text-dim);">&#169; 2026 Blundermind. All rights reserved.<br>Board vision training for we happy few that strive for mediocrity.<br>Staunton pieces: react-chess-pieces (ISC) &middot; RhosGFX pieces: CC0 &middot; @RhosGFX</p>
+  </div>
+</div>
+
+<!-- ── Bot opponent panel ────────────────────────────────────────────────── -->
+<div class="slide-panel" id="botPanel">
+  <div class="panel-header">
+    <span class="panel-title">🤖 Play vs Bots</span>
+    <button class="panel-close" onclick="closeAllPanels();botStop()">✕</button>
+  </div>
+  <div class="panel-body" style="font-size:10px;">
+
+    <!-- Start button — at top so always visible -->
+    <button id="botStartBtn" onclick="botStart()" style="width:100%;padding:10px;font-size:12px;font-weight:700;background:linear-gradient(135deg,#0f4020,#0a2a15);border:1px solid #22a85a;border-radius:6px;color:#5ad490;cursor:pointer;transition:all 0.15s;margin-bottom:10px;">
+      ▶ Start Bot Game
+    </button>
+
+    <!-- Opponent mode -->
+    <h3 style="margin-bottom:6px;">Opponent Type</h3>
+    <div style="display:flex;gap:4px;margin-bottom:4px;">
+      <button class="bot-tab active" id="btab-sf"      onclick="botSetTab('sf')">⚙ Stockfish</button>
+      <button class="bot-tab"        id="btab-hybrid"  onclick="botSetTab('hybrid')">⚗ Hybrid</button>
+      <button class="bot-tab"        id="btab-lcsf"    onclick="botSetTab('lcsf')">📖 LC+SF</button>
+    </div>
+    <div style="display:flex;gap:4px;margin-bottom:10px;">
+      <button class="bot-tab" id="btab-maia3" onclick="botSetTab('maia3')" style="opacity:0.5;" title="Download Maia3 model to enable">🧠 Maia3</button>
+      <button class="bot-tab" id="btab-maia"  onclick="botSetTab('maia')"  style="opacity:0.5;" title="Download Maia3 model to enable">🔍 LC+Maia</button>
+    </div>
+
+    <!-- Stockfish panel -->
+    <div id="bpanel-sf">
+      <div style="margin-bottom:8px;">
+        <label style="font-size:9px;color:var(--text-dim);">Skill Level (1–20)</label>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
+          <input type="range" id="sfLevel" min="1" max="20" value="8" style="flex:1;" oninput="document.getElementById('sfLevelVal').textContent=this.value">
+          <span id="sfLevelVal" style="font-size:11px;font-weight:700;min-width:20px;">8</span>
+        </div>
+      </div>
+      <div style="margin-bottom:8px;">
+        <label style="font-size:9px;color:var(--text-dim);">Under Time Pressure — slide to level:</label>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
+          <input type="range" id="sfPressureLevel" min="1" max="20" value="4" style="flex:1;" oninput="document.getElementById('sfPressureVal').textContent=this.value">
+          <span id="sfPressureVal" style="font-size:11px;font-weight:700;min-width:20px;">4</span>
+        </div>
+        <div style="font-size:8px;color:var(--text-dim);margin-top:2px;">Engine degrades from starting level → this level when clock is low</div>
+      </div>
+      <div style="margin-bottom:8px;">
+        <label style="font-size:9px;color:var(--text-dim);">Variety <span style="color:var(--text-dim);font-weight:normal;">(move variation around target level)</span></label>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
+          <span style="font-size:8px;color:var(--text-dim);">None</span>
+          <input type="range" id="sfTemperature" min="0" max="1" step="1" value="0" style="flex:1;"
+            oninput="document.getElementById('sfTempDesc').textContent=this.value==='0'?'Always plays at selected level':'Varies: 50% target · 20% ±1 · 5% ±2'">
+          <span style="font-size:8px;color:var(--text-dim);">High</span>
+        </div>
+        <div id="sfTempDesc" style="font-size:8px;color:var(--text-dim);margin-top:2px;">Always plays at selected level</div>
+      </div>
+    </div>
+
+    <!-- Lichess Explorer panel -->
+    <!-- Pure Maia3 panel -->
+    <div id="bpanel-maia3" style="display:none;">
+      <div style="margin-bottom:8px;">
+        <label style="font-size:9px;color:var(--text-dim);">Rating to emulate (600–2600)</label>
+        <div style="display:flex;gap:3px;margin-top:4px;flex-wrap:wrap;" id="maia3RatingBtns">
+          <button class="tc-btn" id="m3r-600"  onclick="maia3SetRating(600)">600</button>
+          <button class="tc-btn" id="m3r-800"  onclick="maia3SetRating(800)">800</button>
+          <button class="tc-btn" id="m3r-1000" onclick="maia3SetRating(1000)">1000</button>
+          <button class="tc-btn tc-active" id="m3r-1200" onclick="maia3SetRating(1200)">1200</button>
+          <button class="tc-btn" id="m3r-1400" onclick="maia3SetRating(1400)">1400</button>
+          <button class="tc-btn" id="m3r-1600" onclick="maia3SetRating(1600)">1600</button>
+          <button class="tc-btn" id="m3r-1800" onclick="maia3SetRating(1800)">1800</button>
+          <button class="tc-btn" id="m3r-2000" onclick="maia3SetRating(2000)">2000</button>
+          <button class="tc-btn" id="m3r-2200" onclick="maia3SetRating(2200)">2200</button>
+          <button class="tc-btn" id="m3r-2400" onclick="maia3SetRating(2400)">2400</button>
+          <button class="tc-btn" id="m3r-2600" onclick="maia3SetRating(2600)">2600</button>
+        </div>
+      </div>
+      <div style="margin-bottom:8px;">
+        <label style="font-size:9px;color:var(--text-dim);">Temperature (move variation)</label>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
+          <input type="range" id="maia3Temp" min="0.3" max="3.0" step="0.1" value="1.0" style="flex:1;"
+            oninput="document.getElementById('maia3TempVal').textContent=parseFloat(this.value).toFixed(1)">
+          <span id="maia3TempVal" style="font-size:11px;font-weight:700;min-width:28px;">1.0</span>
+        </div>
+      </div>
+      <!-- Maia3 model download -->
+      <div style="background:rgba(90,212,144,0.07);border:0.5px solid rgba(90,212,144,0.2);border-radius:4px;padding:6px;margin-bottom:8px;">
+        <div style="font-size:8.5px;color:var(--text-secondary);margin-bottom:5px;">
+          🧠 <strong>Real Maia3</strong> — human-like neural network (600–2600 Elo).<br>
+          Download once (~87MB), runs in your browser. Uses ~150–200MB RAM while active. Falls back to Stockfish if not downloaded.
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button id="maia3DownloadBtn" onclick="maiaDownloadModel()"
+            style="flex:1;padding:5px;font-size:9px;font-weight:600;background:rgba(90,212,144,0.12);
+            border:0.5px solid #22a85a;border-radius:4px;color:#5ad490;cursor:pointer;">
+            Download Maia3 (~87MB)
+          </button>
+        </div>
+        <div id="maia3StatusText" style="font-size:8px;color:var(--text-dim);margin-top:3px;">Not loaded</div>
+        <div style="font-size:8px;color:var(--text-dim);margin-top:4px;">
+          🌐 Play &amp; learn at <a href="https://www.maiachess.com/" target="_blank" rel="noopener"
+            style="color:var(--accent);text-decoration:underline;">maiachess.com</a>
+        </div>
+        <button onclick="maiaEloTest()" style="margin-top:4px;width:100%;padding:4px;font-size:8px;
+          background:rgba(74,159,212,0.1);border:0.5px solid rgba(74,159,212,0.3);
+          border-radius:4px;color:var(--text-secondary);cursor:pointer;">
+          🧪 Test ELO conditioning (check console)
+        </button>
+      </div>
+    </div>
+
+    <!-- LC Explorer + SF fallback panel -->
+    <div id="bpanel-lcsf" style="display:none;">
+      <div style="margin-bottom:8px;">
+        <label style="font-size:9px;color:var(--text-dim);">Lichess rating range</label>
+        <div style="display:flex;gap:3px;margin-top:4px;flex-wrap:wrap;">
+          <button class="tc-btn" id="lcsf-400"  onclick="lcsfSetRating('400')">400</button>
+          <button class="tc-btn" id="lcsf-1000" onclick="lcsfSetRating('1000')">1000</button>
+          <button class="tc-btn tc-active" id="lcsf-1200" onclick="lcsfSetRating('1200')">1200</button>
+          <button class="tc-btn" id="lcsf-1400" onclick="lcsfSetRating('1400')">1400</button>
+          <button class="tc-btn" id="lcsf-1600" onclick="lcsfSetRating('1600')">1600</button>
+          <button class="tc-btn" id="lcsf-1800" onclick="lcsfSetRating('1800')">1800</button>
+          <button class="tc-btn" id="lcsf-2000" onclick="lcsfSetRating('2000')">2000</button>
+          <button class="tc-btn" id="lcsf-2200" onclick="lcsfSetRating('2200')">2200+</button>
+        </div>
+      </div>
+      <div style="margin-bottom:8px;">
+        <label style="font-size:9px;color:var(--text-dim);">Stockfish fallback level</label>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
+          <input type="range" id="lcsfFallbackLevel" min="1" max="20" value="5" style="flex:1;"
+            oninput="document.getElementById('lcsfFallbackVal').textContent=this.value">
+          <span id="lcsfFallbackVal" style="font-size:11px;font-weight:700;min-width:20px;">5</span>
+        </div>
+        <div style="font-size:8px;color:var(--text-dim);">Used when position not in Lichess database</div>
+      </div>
+      <div style="background:rgba(74,159,212,0.08);border:0.5px solid rgba(74,159,212,0.2);border-radius:4px;padding:6px;font-size:8.5px;color:var(--text-secondary);">
+        ℹ️ Plays statistically common moves for that rating. Works well in openings; falls back to Stockfish in novel positions.
+      </div>
+    </div>
+
+    <div id="bpanel-maia" style="display:none;">
+      <div style="margin-bottom:8px;">
+        <label style="font-size:9px;color:var(--text-dim);">Rating range to emulate</label>
+        <div style="display:flex;gap:3px;margin-top:4px;flex-wrap:wrap;" id="lcRatingBtns">
+          <button class="tc-btn" id="lcr-400"  onclick="lcSetRating('400')">400</button>
+          <button class="tc-btn" id="lcr-1000" onclick="lcSetRating('1000')">1000</button>
+          <button class="tc-btn tc-active" id="lcr-1200" onclick="lcSetRating('1200')">1200</button>
+          <button class="tc-btn" id="lcr-1400" onclick="lcSetRating('1400')">1400</button>
+          <button class="tc-btn" id="lcr-1600" onclick="lcSetRating('1600')">1600</button>
+          <button class="tc-btn" id="lcr-1800" onclick="lcSetRating('1800')">1800</button>
+          <button class="tc-btn" id="lcr-2000" onclick="lcSetRating('2000')">2000</button>
+          <button class="tc-btn" id="lcr-2200" onclick="lcSetRating('2200')">2200+</button>
+        </div>
+        <div style="font-size:8px;color:var(--text-dim);margin-top:3px;">Plays moves most common for that rating in Lichess games</div>
+      </div>
+      <div style="margin-bottom:8px;">
+        <label style="font-size:9px;color:var(--text-dim);">Temperature (move randomness)</label>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
+          <input type="range" id="maiaTemp" min="0.3" max="3.0" step="0.1" value="1.0" style="flex:1;" oninput="document.getElementById('maiaTempVal').textContent=parseFloat(this.value).toFixed(1)">
+          <span id="maiaTempVal" style="font-size:11px;font-weight:700;min-width:28px;">1.0</span>
+        </div>
+        <div style="font-size:8px;color:var(--text-dim);">Low = always plays top move · High = picks among plausible moves</div>
+      </div>
+      <div style="background:rgba(90,212,144,0.07);border:0.5px solid rgba(90,212,144,0.2);border-radius:4px;padding:6px;margin-bottom:8px;font-size:8.5px;color:var(--text-secondary);">
+        🧠 Falls back to <strong>Maia3</strong> (if downloaded) when position not in database, then Stockfish.
+      </div>
+      <!-- Maia3 model download -->
+      <div style="background:rgba(90,212,144,0.07);border:0.5px solid rgba(90,212,144,0.2);border-radius:4px;padding:6px;margin-bottom:8px;">
+        <div style="font-size:8.5px;color:var(--text-secondary);margin-bottom:5px;">
+          🧠 <strong>Real Maia3</strong> — human-like neural network (600–2600 Elo).<br>
+          Download once (~87MB), then runs entirely in your browser.
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button id="maiaDownloadBtn" onclick="maiaDownloadModel()"
+            style="flex:1;padding:5px;font-size:9px;font-weight:600;background:rgba(90,212,144,0.12);
+            border:0.5px solid #22a85a;border-radius:4px;color:#5ad490;cursor:pointer;">
+            Download Maia3 (~87MB)
+          </button>
+        </div>
+        <div id="maiaStatusText" style="font-size:8px;color:var(--text-dim);margin-top:3px;">Not loaded</div>
+      </div>
+      <div style="background:rgba(74,159,212,0.08);border:0.5px solid rgba(74,159,212,0.2);border-radius:4px;padding:6px;margin-bottom:8px;font-size:8.5px;color:var(--text-secondary);">
+        ℹ️ Without Maia3 downloaded: falls back to Lichess game database (openings only), then Stockfish.<br><br>
+        🌐 Play Maia and access free learning tools at <a href="https://www.maiachess.com/" target="_blank" rel="noopener"
+          style="color:var(--accent);text-decoration:underline;">maiachess.com</a>
+      </div>
+    </div>
+
+    <!-- Hybrid panel -->
+    <div id="bpanel-hybrid" style="display:none;">
+      <div style="font-size:8.5px;color:var(--text-secondary);margin-bottom:8px;">Mix engines by percentage. Each move, one engine is randomly selected weighted by its share.</div>
+      <div id="hybridSlots">
+        <!-- Slots added dynamically -->
+      </div>
+      <button onclick="botAddHybridSlot()" style="width:100%;padding:5px;margin-top:4px;font-size:9px;background:rgba(74,159,212,0.1);border:0.5px solid rgba(74,159,212,0.3);border-radius:4px;color:var(--accent);cursor:pointer;">+ Add engine</button>
+      <div id="hybridTotal" style="font-size:9px;color:var(--text-dim);margin-top:5px;text-align:right;">Total: <span id="hybridTotalVal">0</span>%</div>
+    </div>
+
+    <div class="sep"></div>
+
+    <div class="sep"></div>
+
+    <!-- Opening Behavior -->
+    <h3 style="margin-bottom:6px;">Opening Behavior</h3>
+    <div style="display:flex;gap:3px;margin-bottom:8px;flex-wrap:wrap;">
+      <button class="tp-btn"        id="obm-preferred" onclick="botSetOpeningMode('preferred')">♟ Preferred</button>
+      <button class="tp-btn active" id="obm-none"      onclick="botSetOpeningMode('none')">Off</button>
+      <button class="tp-btn"        id="obm-mainline"  onclick="botSetOpeningMode('mainline')">📖 Main Line</button>
+    </div>
+
+    <!-- Mainline sub-panel -->
+    <div id="ob-mainline" style="display:none;margin-bottom:8px;">
+      <div style="font-size:8px;color:var(--text-dim);margin-bottom:6px;">Plays the most popular move at each position (Masters DB, falls back to Lichess)</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <label style="font-size:9px;color:var(--text-dim);flex:1;">Modern theory only (2020+)</label>
+        <input type="checkbox" id="obModern" onchange="botOpeningConfig.since=this.checked?'2020-01':null">
+      </div>
+      <div>
+        <label style="font-size:9px;color:var(--text-dim);">Max book depth (moves)</label>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
+          <input type="range" id="obDepth" min="4" max="40" value="20" style="flex:1;"
+            oninput="botOpeningConfig.maxBookDepth=parseInt(this.value);document.getElementById('obDepthVal').textContent=this.value">
+          <span id="obDepthVal" style="font-size:10px;font-weight:700;min-width:20px;">20</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Preferred Openings sub-panel -->
+    <div id="ob-preferred" style="display:none;margin-bottom:8px;">
+      <!-- White / Black tabs -->
+      <div style="display:flex;gap:3px;margin-bottom:8px;">
+        <button class="tc-btn tc-active" id="obpref-white" onclick="obPrefSetColor('white')">&#9812; White</button>
+        <button class="tc-btn"           id="obpref-black" onclick="obPrefSetColor('black')">&#9818; Black</button>
+      </div>
+
+      <!-- White panel -->
+      <div id="obPrefWhite">
+        <div id="obPrefWhiteSlots"></div>
+        <!-- Search (inline, appears on + Add click) -->
+        <div id="obPrefSearchWhite" style="display:none;margin-bottom:4px;">
+          <input type="text" id="obPrefSearchInputWhite"
+            placeholder="Name or ECO code, e.g. Dragon, B70&#8230;"
+            autocomplete="off"
+            style="width:100%;padding:5px 8px;font-size:10px;
+            background:var(--bg-panel2);border:0.5px solid var(--accent);
+            border-radius:4px 4px 0 0;color:var(--text-primary);box-sizing:border-box;"
+            oninput="obPrefFilterSearch('white',this.value)"
+            onblur="setTimeout(()=>obPrefMaybeClose('white'),200)">
+          <div id="obPrefResultsWhite"
+            style="max-height:150px;overflow-y:auto;
+            border:0.5px solid var(--border);border-top:none;
+            border-radius:0 0 4px 4px;background:var(--bg-panel2);display:none;"></div>
+          <button onclick="obPrefCloseSearch('white')"
+            style="margin-top:3px;font-size:8px;padding:2px 8px;
+            background:none;border:0.5px solid var(--border);border-radius:3px;
+            color:var(--text-dim);cursor:pointer;">Cancel</button>
+        </div>
+        <!-- Curated slider (shown below search, always visible when preferred mode active) -->
+        <div id="obSliderWhite" style="margin-bottom:6px;display:none;">
+          <div style="font-size:8px;color:var(--text-dim);margin-bottom:3px;">&#8230;or browse curated openings:</div>
+          <div id="obCuratedWhite"></div>
+        </div>
+        <button id="obAddBtnWhite" onclick="obPrefOpenSearch('white')"
+          style="width:100%;padding:5px;margin-top:2px;font-size:8px;
+          background:rgba(74,159,212,0.08);border:0.5px dashed rgba(74,159,212,0.4);
+          border-radius:4px;color:var(--accent);cursor:pointer;">+ Add opening</button>
+      </div>
+
+      <!-- Black panel -->
+      <div id="obPrefBlack" style="display:none;">
+        <div id="obPrefBlackSlots"></div>
+        <div id="obPrefSearchBlack" style="display:none;margin-bottom:4px;">
+          <input type="text" id="obPrefSearchInputBlack"
+            placeholder="Name or ECO code, e.g. Dragon, B70&#8230;"
+            autocomplete="off"
+            style="width:100%;padding:5px 8px;font-size:10px;
+            background:var(--bg-panel2);border:0.5px solid var(--accent);
+            border-radius:4px 4px 0 0;color:var(--text-primary);box-sizing:border-box;"
+            oninput="obPrefFilterSearch('black',this.value)"
+            onblur="setTimeout(()=>obPrefMaybeClose('black'),200)">
+          <div id="obPrefResultsBlack"
+            style="max-height:150px;overflow-y:auto;
+            border:0.5px solid var(--border);border-top:none;
+            border-radius:0 0 4px 4px;background:var(--bg-panel2);display:none;"></div>
+          <button onclick="obPrefCloseSearch('black')"
+            style="margin-top:3px;font-size:8px;padding:2px 8px;
+            background:none;border:0.5px solid var(--border);border-radius:3px;
+            color:var(--text-dim);cursor:pointer;">Cancel</button>
+        </div>
+        <div id="obSliderBlack" style="margin-bottom:6px;display:none;">
+          <div style="font-size:8px;color:var(--text-dim);margin-bottom:3px;">&#8230;or browse curated openings:</div>
+          <div id="obCuratedBlack"></div>
+        </div>
+        <button id="obAddBtnBlack" onclick="obPrefOpenSearch('black')"
+          style="width:100%;padding:5px;margin-top:2px;font-size:8px;
+          background:rgba(74,159,212,0.08);border:0.5px dashed rgba(74,159,212,0.4);
+          border-radius:4px;color:var(--accent);cursor:pointer;">+ Add opening</button>
+      </div>
+
+      <!-- Deviation + depth (shown when any slot set) -->
+      <div id="obPrefDeviation" style="margin-top:8px;display:none;">
+        <label style="font-size:9px;color:var(--text-dim);">On opponent deviation</label>
+        <div style="display:flex;gap:3px;margin-top:4px;">
+          <button class="tc-btn tc-active" id="obdev-engine"   onclick="botSetDeviationResponse('engine')">Use engine</button>
+          <button class="tc-btn"           id="obdev-mainline" onclick="botSetDeviationResponse('mainline')">Play mainline</button>
+        </div>
+      </div>
+      <div style="margin-top:8px;">
+        <label style="font-size:9px;color:var(--text-dim);">Max book depth (moves)</label>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
+          <input type="range" id="obDepthP" min="4" max="40" value="20" style="flex:1;"
+            oninput="botOpeningConfig.maxBookDepth=parseInt(this.value);document.getElementById('obDepthPVal').textContent=this.value">
+          <span id="obDepthPVal" style="font-size:10px;font-weight:700;min-width:20px;">20</span>
+        </div>
+      </div>
+      <div style="font-size:8px;color:var(--text-dim);margin-top:6px;">Uses ECO move sequences from eco.tsv (falls back to Masters DB)</div>
+
+      <!-- Opening frequency control -->
+      <div style="margin-top:10px;">
+        <label style="font-size:9px;color:var(--text-dim);">Opening frequency — % of games bot follows repertoire</label>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
+          <input type="range" id="obFreqSlider" min="0" max="100" value="100" step="5" style="flex:1;"
+            oninput="botOpeningFrequencyPct=parseInt(this.value);document.getElementById('obFreqVal').textContent=this.value+'%'">
+          <span id="obFreqVal" style="font-size:10px;font-weight:700;min-width:32px;">100%</span>
+        </div>
+        <div style="font-size:8px;color:var(--text-dim);margin-top:2px;">At 100% bot always follows openings. At 50%, half of games use repertoire, half use engine only.</div>
+      </div>
+    </div>
+
+    <!-- Time behavior -->
+    <h3 style="margin-bottom:6px;">Time Behavior</h3>
+    <div style="margin-bottom:6px;">
+      <label style="font-size:9px;color:var(--text-dim);">Think Time Mode</label>
+      <div style="display:flex;gap:4px;margin-top:4px;">
+        <button class="tp-btn active" id="tb-pace"    onclick="botSetTimeBehavior('pace')">🎯 Pace</button>
+        <button class="tp-btn"        id="tb-instant" onclick="botSetTimeBehavior('instant')">⚡ Instant</button>
+        <button class="tp-btn"        id="tb-mirror"  onclick="botSetTimeBehavior('mirror')">🪞 Mirror</button>
+      </div>
+      <div style="font-size:8px;color:var(--text-dim);margin-top:3px;" id="tbDesc">Entropy-based delay from pace slider</div>
+    </div>
+    <div style="margin-bottom:8px;" id="botPaceRow">
+      <label style="font-size:9px;color:var(--text-dim);">Pace (avg moves per 5 min)</label>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
+        <input type="range" id="botPace" min="10" max="100" value="40" style="flex:1;" oninput="document.getElementById('botPaceVal').textContent=this.value">
+        <span id="botPaceVal" style="font-size:11px;font-weight:700;min-width:28px;">40</span>
+      </div>
+      <div style="font-size:8px;color:var(--text-dim);">Think time varies with position complexity (entropy)</div>
+    </div>
+    <div style="margin-bottom:8px;">
+      <label style="font-size:9px;color:var(--text-dim);">Time Pressure Resistance</label>
+      <div style="display:flex;gap:4px;margin-top:4px;">
+        <button class="tp-btn active" id="tp-steady" onclick="botSetTpBtn('steady')">😤 Steady</button>
+        <button class="tp-btn" id="tp-normal" onclick="botSetTpBtn('normal')">😐 Normal</button>
+        <button class="tp-btn" id="tp-panicky" onclick="botSetTpBtn('panicky')">😰 Panicky</button>
+      </div>
+      <div style="font-size:8px;color:var(--text-dim);margin-top:3px;" id="tpDesc">Stays near top move even when flagging</div>
+    </div>
+
+    <!-- Player color -->
+    <div style="margin-bottom:8px;">
+      <label style="font-size:9px;color:var(--text-dim);">You play as</label>
+      <div style="display:flex;gap:4px;margin-top:4px;">
+        <button class="tp-btn active" id="pcolor-white" onclick="botSetPlayerColor('white')">♔ White</button>
+        <button class="tp-btn" id="pcolor-black" onclick="botSetPlayerColor('black')">♚ Black</button>
+        <button class="tp-btn" id="pcolor-random" onclick="botSetPlayerColor('random')">🎲 Random</button>
+      </div>
+    </div>
+
+    <!-- Time control — base time row + increment row -->
+    <div style="margin-bottom:8px;">
+      <label style="font-size:9px;color:var(--text-dim);">Time Control</label>
+      <div style="display:flex;gap:2px;margin-top:4px;flex-wrap:wrap;">
+        <button class="tc-btn tc-active" id="tcm-0"  onclick="botSetBaseMin(0)">∞</button>
+        <button class="tc-btn" id="tcm-1"  onclick="botSetBaseMin(1)">1</button>
+        <button class="tc-btn" id="tcm-2"  onclick="botSetBaseMin(2)">2</button>
+        <button class="tc-btn" id="tcm-3"  onclick="botSetBaseMin(3)">3</button>
+        <button class="tc-btn" id="tcm-5"  onclick="botSetBaseMin(5)">5</button>
+        <button class="tc-btn" id="tcm-10" onclick="botSetBaseMin(10)">10</button>
+        <button class="tc-btn" id="tcm-15" onclick="botSetBaseMin(15)">15</button>
+        <button class="tc-btn" id="tcm-20" onclick="botSetBaseMin(20)">20</button>
+        <button class="tc-btn" id="tcm-30" onclick="botSetBaseMin(30)">30</button>
+        <button class="tc-btn" id="tcm-90" onclick="botSetBaseMin(90)">90</button>
+      </div>
+      <div style="font-size:8px;color:var(--text-dim);margin:3px 0 2px;">+ increment (sec)</div>
+      <div style="display:flex;gap:2px;flex-wrap:wrap;">
+        <button class="tc-btn tc-active" id="tci-0"  onclick="botSetIncSec(0)">0</button>
+        <button class="tc-btn" id="tci-1"  onclick="botSetIncSec(1)">1</button>
+        <button class="tc-btn" id="tci-2"  onclick="botSetIncSec(2)">2</button>
+        <button class="tc-btn" id="tci-3"  onclick="botSetIncSec(3)">3</button>
+        <button class="tc-btn" id="tci-5"  onclick="botSetIncSec(5)">5</button>
+        <button class="tc-btn" id="tci-10" onclick="botSetIncSec(10)">10</button>
+        <button class="tc-btn" id="tci-20" onclick="botSetIncSec(20)">20</button>
+      </div>
+      <div id="tcDisplay" style="font-size:9px;color:var(--text-dim);margin-top:4px;text-align:center;">Untimed</div>
+    </div>
+
+    <!-- Ghost pieces toggle -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+      <label style="font-size:9px;color:var(--text-dim);flex:1;">👻 Ghost response preview</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:9px;cursor:pointer;">
+        <input type="checkbox" id="cbGhostPieces" checked> On
+      </label>
+    </div>
+
+    <div class="sep"></div>
+
+    <!-- Save/Load config -->
+    <h3 style="margin-bottom:6px;">Bot Configuration</h3>
+    <div style="display:flex;gap:4px;margin-bottom:10px;">
+      <button onclick="botSaveConfig()" style="flex:1;padding:5px;font-size:9px;background:rgba(90,212,144,0.1);border:0.5px solid rgba(90,212,144,0.3);border-radius:4px;color:#5ad490;cursor:pointer;">↓ Save config</button>
+      <button onclick="document.getElementById('botConfigInput').click()" style="flex:1;padding:5px;font-size:9px;background:rgba(74,159,212,0.1);border:0.5px solid rgba(74,159,212,0.3);border-radius:4px;color:var(--accent);cursor:pointer;">↑ Load config</button>
+      <input type="file" id="botConfigInput" accept=".json" style="display:none" onchange="botLoadConfig(event)">
+    </div>
+
+    <!-- Bot name -->
+    <div style="margin-bottom:8px;">
+      <label style="font-size:9px;color:var(--text-dim);">Bot name (optional)</label>
+      <input type="text" id="botNameInput" placeholder="e.g. My Panicky Bot"
+        style="width:100%;margin-top:3px;padding:4px 7px;font-size:10px;
+        background:var(--bg-panel2);border:0.5px solid var(--border);border-radius:4px;
+        color:var(--text-primary);box-sizing:border-box;">
+    </div>
+
+    <div style="display:flex;gap:6px;margin-bottom:4px;">
+      <button onclick="botSaveConfig()" style="flex:1;padding:6px;font-size:9px;background:rgba(200,160,0,0.1);border:0.5px solid rgba(200,160,0,0.3);border-radius:4px;color:#c8a000;cursor:pointer;">↓ Save this config</button>
+      <button id="botStopBtn" onclick="botStop()" style="flex:1;padding:6px;font-size:10px;background:rgba(200,40,40,0.1);border:0.5px solid rgba(200,40,40,0.3);border-radius:4px;color:#c84040;cursor:pointer;display:none;">✕ Stop Bot Game</button>
+    </div>
+    <div id="botStatus" style="font-size:9px;color:var(--text-dim);text-align:center;min-height:14px;margin-top:4px;"></div>
+  </div>
+</div>
+
+<!-- ── Ko-fi donate panel ──────────────────────────────────────────────────── -->
+<div class="slide-panel" id="donatePanel">
+  <div class="panel-header">
+    <span class="panel-title">☕ Support Blundermind</span>
+    <button class="panel-close" onclick="closeAllPanels()">✕</button>
+  </div>
+  <div class="panel-body" style="text-align:center;">
+    <div style="margin:12px 0 8px;"><img src="data:image/webp;base64,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" width="64" height="64" alt="Ko-fi" style="display:inline-block;"></div>
+    <p style="font-size:12px;color:var(--text-primary);line-height:1.7;margin-bottom:16px;">
+      Blundermind is free to everyone. No data collected. No ads.<br>
+      Contributions never needed but extremely appreciated.<br>
+      Thanks for checking out the site!
+    </p>
+
+    <!-- Single Ko-fi button -->
+    <div style="margin-bottom:12px;">
+      <a href="https://ko-fi.com/kelpdog" target="_blank" rel="noopener"
+        style="display:block;padding:11px 14px;background:rgba(255,94,91,0.1);
+        border:1px solid rgba(255,94,91,0.45);border-radius:8px;
+        color:#ff6b5b;font-size:13px;font-weight:600;text-decoration:none;
+        transition:all 0.15s;text-align:center;"
+        onmouseover="this.style.background='rgba(255,94,91,0.2)'"
+        onmouseout="this.style.background='rgba(255,94,91,0.1)'">☕ Support through Ko-fi</a>
+    </div>
+
+    <!-- Haiku / deep thought option -->
+    <div style="margin:0 0 14px;">
+      <a href="#" onclick="toggleHaikuBox();return false;"
+        style="display:block;padding:11px 14px;background:rgba(74,159,212,0.08);
+        border:1px solid rgba(74,159,212,0.35);border-radius:8px;
+        color:var(--accent);font-size:13px;font-weight:600;text-decoration:none;
+        transition:all 0.15s;text-align:center;"
+        onmouseover="this.style.background='rgba(74,159,212,0.18)'"
+        onmouseout="this.style.background='rgba(74,159,212,0.08)'">✍ Contribute Haiku or Deep Thought</a>
+      <div id="haikuBox" style="display:none;margin-top:8px;padding:10px;background:rgba(74,159,212,0.05);border:0.5px solid rgba(74,159,212,0.2);border-radius:8px;">
+        <p style="font-size:9px;color:var(--text-secondary);margin-bottom:6px;">Share a haiku or thought about chess, blunders, or board vision:</p>
+        <textarea id="donateHaiku"
+          style="width:100%;height:64px;background:var(--bg-panel2);border:0.5px solid var(--border);
+          border-radius:4px;color:var(--text-primary);font-family:inherit;font-size:10px;
+          line-height:1.6;padding:6px;resize:none;margin-bottom:6px;"></textarea>
+        <button onclick="submitHaiku()" style="padding:5px 16px;font-size:10px;
+          background:rgba(74,159,212,0.1);border:0.5px solid rgba(74,159,212,0.3);
+          border-radius:6px;color:var(--accent);cursor:pointer;">Send ♟</button>
+        <div id="haikuThanks" style="display:none;font-size:9px;color:#5ad490;margin-top:4px;">Received — thank you! ♟</div>
+      </div>
+    </div>
+
+    <button onclick="closeAllPanels()" style="width:100%;padding:8px;background:transparent;
+      border:0.5px solid var(--border);border-radius:6px;color:var(--text-dim);
+      cursor:pointer;font-size:10px;">
+      Close
+    </button>
+    <p style="font-size:8px;color:var(--text-dim);margin-top:10px;">
+      No account needed · No tracking · Just chess and gratitude
+    </p>
+  </div>
+</div>
+
+<!-- ── Multiplayer panel ─────────────────────────────────────────────────── -->
+<div class="slide-panel" id="mpPanel">
+  <div class="panel-header">
+    <span class="panel-title">⚔️ 2-Player</span>
+    <button class="panel-close" onclick="closeAllPanels()">✕</button>
+  </div>
+  <div class="panel-body" style="padding:10px 12px;display:flex;flex-direction:column;gap:8px;">
+
+    <!-- Server status note -->
+    <div id="mpServerNote" style="font-size:8px;padding:4px 8px;border-radius:4px;background:rgba(74,159,212,0.08);border:0.5px solid rgba(74,159,212,0.2);color:var(--text-dim);">
+      ℹ️ Multiplayer requires the deployed server. Local-only = Solo &amp; Bot modes only.
+    </div>
+
+    <!-- ══ TIME CONTROL ══ -->
+    <div style="padding:8px;background:var(--bg-panel2);border:0.5px solid var(--border2);border-radius:6px;">
+      <div style="font-size:8px;color:var(--text-dim);margin-bottom:5px;font-weight:600;letter-spacing:0.05em;">TIME CONTROL</div>
+      <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:3px;">Game time (minutes)</div>
+      <div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:6px;">
+        <button onclick="mpSetBase(0)"  class="tc-btn tc-active" id="mpbase-0">∞</button>
+        <button onclick="mpSetBase(1)"  class="tc-btn" id="mpbase-1">1</button>
+        <button onclick="mpSetBase(2)"  class="tc-btn" id="mpbase-2">2</button>
+        <button onclick="mpSetBase(3)"  class="tc-btn" id="mpbase-3">3</button>
+        <button onclick="mpSetBase(5)"  class="tc-btn" id="mpbase-5">5</button>
+        <button onclick="mpSetBase(10)" class="tc-btn" id="mpbase-10">10</button>
+        <button onclick="mpSetBase(15)" class="tc-btn" id="mpbase-15">15</button>
+        <button onclick="mpSetBase(20)" class="tc-btn" id="mpbase-20">20</button>
+        <button onclick="mpSetBase(30)" class="tc-btn" id="mpbase-30">30</button>
+      </div>
+      <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:3px;">Increment (seconds)</div>
+      <div style="display:flex;gap:3px;flex-wrap:wrap;">
+        <button onclick="mpSetInc(0)"  class="tc-btn tc-active" id="mpinc-0">0</button>
+        <button onclick="mpSetInc(1)"  class="tc-btn" id="mpinc-1">1</button>
+        <button onclick="mpSetInc(2)"  class="tc-btn" id="mpinc-2">2</button>
+        <button onclick="mpSetInc(3)"  class="tc-btn" id="mpinc-3">3</button>
+        <button onclick="mpSetInc(5)"  class="tc-btn" id="mpinc-5">5</button>
+        <button onclick="mpSetInc(10)" class="tc-btn" id="mpinc-10">10</button>
+        <button onclick="mpSetInc(20)" class="tc-btn" id="mpinc-20">20</button>
+      </div>
+      <div id="mpTCDisplay" style="font-size:8px;color:var(--text-dim);margin-top:4px;">Untimed</div>
+    </div>
+
+    <!-- ══ LOBBY LIST (always visible) ══ -->
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">
+        <div style="font-size:8px;color:var(--text-dim);font-weight:600;letter-spacing:0.05em;">OPEN CHALLENGES <span id="mpLobbyCount" style="font-weight:400;"></span></div>
+        <button onclick="mpRefreshLobby()" style="padding:2px 7px;background:transparent;border:0.5px solid var(--border2);border-radius:3px;color:var(--text-dim);cursor:pointer;font-size:8px;">↻</button>
+      </div>
+      <div id="mpLobbyList" style="display:flex;flex-direction:column;gap:4px;min-height:36px;">
+        <div style="font-size:8.5px;color:var(--text-dim);text-align:center;padding:10px 0;" id="mpLobbyEmpty">No open challenges yet — be the first!</div>
+      </div>
+    </div>
+
+    <!-- ══ LOBBY PLAYER INFO (shown when posting) ══ -->
+    <div id="mpLobbyInfoBlock" style="padding:8px;background:var(--bg-panel2);border:0.5px solid var(--border2);border-radius:6px;display:none;">
+      <div style="font-size:8px;color:var(--text-dim);margin-bottom:5px;font-weight:600;letter-spacing:0.05em;">YOUR INFO <span style="font-weight:400;font-style:italic;">(self-reported, optional)</span></div>
+      <div style="display:flex;gap:6px;margin-bottom:6px;">
+        <div style="flex:1;">
+          <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:2px;">Name / Handle</div>
+          <input id="mpLobbyName" placeholder="Anonymous" maxlength="20"
+            style="width:100%;padding:4px 6px;background:var(--bg-panel);border:0.5px solid var(--border);
+            border-radius:3px;color:var(--text-primary);font-size:9px;font-family:inherit;box-sizing:border-box;">
+        </div>
+        <div style="width:70px;">
+          <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:2px;">Rating</div>
+          <input id="mpLobbyRating" placeholder="—" maxlength="4" type="number" min="100" max="3000"
+            style="width:100%;padding:4px 6px;background:var(--bg-panel);border:0.5px solid var(--border);
+            border-radius:3px;color:var(--text-primary);font-size:9px;font-family:inherit;box-sizing:border-box;">
+        </div>
+      </div>
+      <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:3px;">Seeking opponent within</div>
+      <div style="display:flex;gap:3px;flex-wrap:wrap;">
+        <button onclick="mpSetRatingRange(100)"  class="tc-btn" id="mprange-100">±100</button>
+        <button onclick="mpSetRatingRange(200)"  class="tc-btn" id="mprange-200">±200</button>
+        <button onclick="mpSetRatingRange(500)"  class="tc-btn" id="mprange-500">±500</button>
+        <button onclick="mpSetRatingRange(9999)" class="tc-btn tc-active" id="mprange-9999">Any</button>
+      </div>
+    </div>
+
+    <!-- ══ JOIN CODE INPUT (shown when joining) ══ -->
+    <div id="mpJoinBlock" style="display:none;">
+      <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:4px;">Enter room code from your friend</div>
+      <input id="mpJoinCode" placeholder="ABC123" maxlength="6"
+        style="width:100%;padding:8px 10px;background:var(--bg-panel2);border:0.5px solid var(--border);
+        border-radius:4px;color:var(--text-primary);font-family:monospace;font-size:15px;
+        letter-spacing:0.15em;text-transform:uppercase;box-sizing:border-box;"
+        onkeydown="if(event.key==='Enter')mpJoinRoom()">
+    </div>
+
+    <!-- ══ INVITE LINK (shown after private room created) ══ -->
+    <div id="mpInviteRow" style="display:none;">
+      <div style="font-size:8px;color:var(--text-dim);margin-bottom:4px;font-weight:600;letter-spacing:0.05em;">INVITE LINK — share this anywhere</div>
+      <div style="display:flex;gap:5px;align-items:center;margin-bottom:5px;">
+        <input id="mpInviteLink" readonly
+          style="flex:1;padding:5px 7px;background:var(--bg-panel2);border:0.5px solid var(--border);
+          border-radius:4px;color:var(--accent);font-size:8px;font-family:monospace;cursor:pointer;"
+          onclick="this.select()">
+        <button onclick="mpCopyLink()" id="mpCopyLinkBtn"
+          style="padding:4px 8px;background:rgba(74,159,212,0.12);border:0.5px solid var(--accent);
+          border-radius:4px;color:var(--accent);cursor:pointer;font-size:9px;white-space:nowrap;">Copy</button>
+      </div>
+      <div style="display:flex;gap:4px;margin-bottom:5px;">
+        <button onclick="mpShareDiscord()" style="flex:1;padding:4px;font-size:8px;background:rgba(88,101,242,0.12);border:0.5px solid rgba(88,101,242,0.4);border-radius:4px;color:#8891f2;cursor:pointer;">🎮 Discord</button>
+        <button onclick="mpShareText()" style="flex:1;padding:4px;font-size:8px;background:rgba(74,159,212,0.08);border:0.5px solid rgba(74,159,212,0.3);border-radius:4px;color:var(--accent);cursor:pointer;">💬 Text/Share</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span style="font-size:8px;color:var(--text-dim);">or code:</span>
+        <span id="mpRoomCode" style="font-family:monospace;font-size:13px;font-weight:700;color:var(--text-primary);letter-spacing:0.15em;"></span>
+      </div>
+    </div>
+
+    <!-- Status line -->
+    <div id="mpStatus" style="font-size:9px;color:var(--text-secondary);min-height:14px;line-height:1.5;"></div>
+
+    <!-- Leave / reset (shown after joining a room) -->
+    <div id="mpLeaveRow" style="display:none;">
+      <button onclick="mpLeave()" style="width:100%;padding:5px;background:transparent;border:0.5px solid var(--border);border-radius:4px;color:var(--text-dim);cursor:pointer;font-size:9px;">Leave room / Reset</button>
+    </div>
+
+    <!-- ══ THREE LARGE ACTION BUTTONS ══ -->
+    <div id="mpActionBtns" style="display:flex;flex-direction:column;gap:6px;margin-top:2px;">
+      <button onclick="mpStartPrivateFlow()" class="mp-action-btn mp-action-green">
+        🔒 Start Private Game
+      </button>
+      <button onclick="mpStartJoinFlow()" class="mp-action-btn mp-action-green">
+        🔑 Join Private Game
+      </button>
+      <button onclick="mpStartLobbyFlow()" class="mp-action-btn mp-action-blue">
+        🌐 Post Open Challenge to Lobby
+      </button>
+    </div>
+
+    <!-- compat shim -->
+    <div id="mpCodeRow" style="display:none;"></div>
+    <!-- legacy tab shims (no-ops, kept so old references don't throw) -->
+    <div id="mp-tab-lobby" style="display:none;"></div>
+    <div id="mp-tab-private" style="display:none;"></div>
+    <div id="mp-tab-join" style="display:none;"></div>
+
+  </div>
+</div>
+
+<!-- ── Theme panel ────────────────────────────────────────────────────────── -->
+<div class="slide-panel" id="themePanel">
+  <div class="panel-header">
+    <span class="panel-title">Theme &amp; Pieces</span>
+    <button class="panel-close" onclick="closeAllPanels()">✕</button>
+  </div>
+  <div class="panel-body">
+    <h3>Board colors</h3>
+    <div class="swatch-grid" id="boardSwatches"></div>
+    <h3>Background</h3>
+    <div class="swatch-grid" id="bgSwatches"></div>
+    <h3>Piece style</h3>
+    <div class="piece-btns" id="pieceBtns"></div>
+  </div>
+</div>
+
+<!-- ── Help panel (populated dynamically) ────────────────────────────────── -->
+<div class="slide-panel" id="helpPanel">
+  <div class="panel-header">
+    <span class="panel-title" id="helpPanelTitle">Help</span>
+    <button class="panel-close" onclick="closeAllPanels()">✕</button>
+  </div>
+  <div class="panel-body" id="helpPanelBody"></div>
+</div>
+
+
+<script>

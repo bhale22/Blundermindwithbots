@@ -1,0 +1,1302 @@
+function botSetTab(tab) {
+  botTab = tab;
+  ['sf','maia3','maia','lcsf','hybrid'].forEach(t => {
+    var btn   = document.getElementById('btab-'+t);
+    var panel = document.getElementById('bpanel-'+t);
+    if (btn)   btn.classList.toggle('active', t === tab);
+    if (panel) panel.style.display = t === tab ? '' : 'none';
+  });
+  // Auto-init Maia worker when any Maia tab is shown
+  if ((tab === 'maia' || tab === 'maia3') && !_maiaWorker) {
+    maiaInit();
+    _maiaLoadMappings();
+  }
+}
+
+// ── Phase 5: Opening behavior UI controllers ──────────────────────────────────
+
+function botSetOpeningMode(mode) {
+  botOpeningMode = mode;
+  ['none','mainline','preferred'].forEach(m => {
+    var btn = document.getElementById('obm-' + m);
+    if (btn) btn.classList.toggle('active', m === mode);
+    var panel = document.getElementById('ob-' + m);
+    if (panel) panel.style.display = (m === mode && m !== 'none') ? '' : 'none';
+  });
+  if (mode === 'preferred') {
+    obPrefRenderSlots('white');
+    obPrefRenderSlots('black');
+    obBuildCuratedPickers();
+    // Auto-open search for the active color if no slots set yet
+    var activeColor = _obPrefColor || 'white';
+    var slots = (botOpeningConfig[activeColor] || []).filter(s => s.name);
+    if (!slots.length) {
+      setTimeout(() => obPrefOpenSearch(activeColor), 50);
+    }
+  }
+}
+
+function botSetOpeningSrc(src) { botOpeningConfig.source = src; _openingCache.clear(); }
+
+function botSetDeviationResponse(resp) {
+  botOpeningConfig.deviationResponse = resp;
+  ['engine','mainline'].forEach(r => {
+    var b = document.getElementById('obdev-' + r);
+    if (b) b.classList.toggle('tc-active', r === resp);
+  });
+}
+
+// ── Color tabs ────────────────────────────────────────────────────────────────
+let _obPrefColor = 'white';
+
+function obPrefSetColor(color) {
+  _obPrefColor = color;
+  ['white','black'].forEach(c => {
+    var btn = document.getElementById('obpref-' + c);
+    if (btn) btn.classList.toggle('tc-active', c === color);
+    var panel = document.getElementById('obPref' + (c === 'white' ? 'White' : 'Black'));
+    if (panel) panel.style.display = c === color ? '' : 'none';
+  });
+  // Auto-open search if the newly selected color has no slots yet
+  var slots = (botOpeningConfig[color] || []).filter(s => s.name);
+  if (!slots.length) {
+    setTimeout(() => obPrefOpenSearch(color), 30);
+  }
+}
+
+// ── ECO data loading ──────────────────────────────────────────────────────────
+// Loaded once from /data/eco.tsv; used for full-text search.
+let _ecoData = null; // [{eco, name, familyPrefix, exactEco}]
+
+// Parse a PGN move sequence string into a plain SAN array.
+// "1. e4 c5 2. Nf3" → ["e4", "c5", "Nf3"]
+function parsePgnMoves(pgn) {
+  return pgn
+    .replace(/\d+\./g, '')      // strip move numbers
+    .trim().split(/\s+/)
+    .filter(s => s && !/^\d/.test(s));
+}
+
+// ── ECO prefix index ──────────────────────────────────────────────────────────
+// Built once after _ecoData loads. Maps first SAN move → entries that start with it,
+// so obPreferredNextMoves scans ~50-100 entries instead of all 3,704.
+// Key: first move SAN string (e.g. "e4"). Value: array of _ecoData entries.
+let _ecoIndex = null; // Map<string, entry[]>
+
+function _buildEcoIndex(data) {
+  const idx = new Map();
+  for (const entry of data) {
+    if (!entry.sanMoves.length) continue;
+    const key = entry.sanMoves[0];
+    if (!idx.has(key)) idx.set(key, []);
+    idx.get(key).push(entry);
+  }
+  return idx;
+}
+
+async function obLoadEcoData() {
+  if (_ecoData && _ecoData.length) return _ecoData; // only skip if successfully loaded
+  try {
+    const resp = await fetch('/data/eco.tsv');
+    if (!resp.ok) throw new Error('eco.tsv ' + resp.status);
+    const text = await resp.text();
+    const lines = text.trim().split('\n').slice(1); // skip header
+    _ecoData = lines.map(line => {
+      const parts = line.split('\t');
+      const eco = parts[0], name = parts[1], pgn = parts[2];
+      if (!eco || !name) return null;
+      const familyPrefix = eco.length >= 2 ? eco.slice(0, 2) : eco;
+      return {
+        eco,
+        name: name.trim(),
+        exactEco: eco,
+        familyPrefix,
+        sanMoves: pgn ? parsePgnMoves(pgn) : []  // ← pre-parsed SAN array
+      };
+    }).filter(Boolean);
+    _ecoIndex = _buildEcoIndex(_ecoData);
+    console.log('ECO data loaded:', _ecoData.length, 'openings');
+    return _ecoData;
+  } catch(e) {
+    console.warn('Failed to load eco.tsv, falling back to curated index:', e);
+    _ecoData = [];
+    Object.values(ECO_LIBRARY).forEach(family => {
+      Object.values(family).forEach(variations => {
+        Object.entries(variations).forEach(([name, data]) => {
+          _ecoData.push({
+            eco: data.eco, name,
+            exactEco: data.eco,
+            familyPrefix: data.eco.length >= 2 ? data.eco.slice(0,2) : data.eco,
+            sanMoves: []
+          });
+        });
+      });
+    });
+    _ecoIndex = _buildEcoIndex(_ecoData);
+    return _ecoData;
+  }
+}
+
+// Given the current board state and the played move history (SAN list so far),
+// find which candidate UCI moves steer toward preferred slots.
+// Returns a Set of UCI strings that are "preferred next moves".
+// Uses _ecoIndex to avoid scanning all 3,704 entries — only candidates whose
+// first move matches the game's first move are checked.
+function obPreferredNextMoves(sanHistory, slots, boardState, turnColor, epSq, castling) {
+  if (!_ecoData || !slots.length) return new Set();
+
+  const totalPct = slots.reduce((s, sl) => s + (sl.weight || 0), 0) || 1;
+
+  // Narrow the candidate set using the index.
+  // If we have a game history, only entries starting with sanHistory[0] are relevant.
+  let candidates;
+  if (_ecoIndex && sanHistory.length > 0) {
+    candidates = _ecoIndex.get(sanHistory[0]) || [];
+  } else if (_ecoIndex) {
+    candidates = _ecoData;
+  } else {
+    candidates = _ecoData;
+  }
+
+  // ── "Inside preferred line" detection ────────────────────────────────────────
+  // Openings like the Sicilian span ECO codes B20-B99. After 1.e4 c5 2.Nf3, the
+  // continuation lives in B30-B49, not B20. If we only match by familyPrefix='B2'
+  // we'd find nothing and permanently deactivate. Instead: check if the game's
+  // move history so far is a PREFIX of any preferred ECO entry. If yes, we're
+  // already "inside" the preferred opening and should accept any continuation.
+  let insidePreferredLine = false;
+  if (sanHistory.length > 0) {
+    for (const prefEntry of candidates) {
+      if (prefEntry.sanMoves.length === 0) continue;
+      // Is this entry preferred by any slot?
+      let isPreferred = false;
+      for (const slot of slots) {
+        const exact  = slot.exactEco     || null;
+        const family = slot.familyPrefix || (slot.eco ? slot.eco.slice(0, 2) : null);
+        if ((exact && prefEntry.eco.startsWith(exact)) ||
+            (family && prefEntry.eco.startsWith(family))) { isPreferred = true; break; }
+      }
+      if (!isPreferred) continue;
+      // Does this preferred entry's moves match the FULL game history so far
+      // (or at least up to this entry's length)?
+      const checkLen = Math.min(prefEntry.sanMoves.length, sanHistory.length);
+      let prefMatch = true;
+      for (let i = 0; i < checkLen; i++) {
+        if (prefEntry.sanMoves[i] !== sanHistory[i]) { prefMatch = false; break; }
+      }
+      if (prefMatch) { insidePreferredLine = true; break; }
+    }
+  }
+
+  const EXACT_BONUS = 3.0;
+  const moveScores = {}; // sanMove → best score
+
+  for (const entry of candidates) {
+    if (entry.sanMoves.length <= sanHistory.length) continue; // too short
+
+    // Check that the played moves so far match the start of this ECO line
+    let matches = true;
+    for (let i = 0; i < sanHistory.length; i++) {
+      if (entry.sanMoves[i] !== sanHistory[i]) { matches = false; break; }
+    }
+    if (!matches) continue;
+
+    // Does this ECO entry match any preferred slot?
+    let bestSlotScore = 0;
+    for (const slot of slots) {
+      const exact  = slot.exactEco     || null;
+      const family = slot.familyPrefix || (slot.eco ? slot.eco.slice(0,2) : null);
+      let tier = 0;
+      if (exact  && entry.eco.startsWith(exact))  tier = 2;
+      else if (family && entry.eco.startsWith(family)) tier = 1;
+      if (tier > 0) {
+        const normW = (slot.weight || 0) / totalPct;
+        const sc = (tier === 2 ? EXACT_BONUS : 1.0) * normW;
+        if (sc > bestSlotScore) bestSlotScore = sc;
+      }
+    }
+
+    // If no direct slot match but we're already inside a preferred line (e.g. B20→B30
+    // transposition in the Sicilian), give a weak score so we continue in book.
+    if (!bestSlotScore && insidePreferredLine) bestSlotScore = 0.2;
+
+    if (!bestSlotScore) continue;
+
+    // The next SAN move in this line is what we want to play
+    const nextSan = entry.sanMoves[sanHistory.length];
+    if (!nextSan) continue;
+    if (!moveScores[nextSan] || bestSlotScore > moveScores[nextSan]) {
+      moveScores[nextSan] = bestSlotScore;
+    }
+  }
+
+  if (!Object.keys(moveScores).length) return new Set();
+
+  // Convert SAN moves to UCI using the current board state
+  const preferredUci = new Set();
+  for (const [san, score] of Object.entries(moveScores)) {
+    const mv = algebraicToMove(san, boardState, turnColor, epSq, castling);
+    if (mv) {
+      const uci = sqToUci(mv.from, mv.to, mv.promo ? mv.promo.toLowerCase() : null);
+      preferredUci.add(uci);
+      preferredUci[uci] = score; // piggyback score on the Set object
+    }
+  }
+  return preferredUci;
+}
+
+// Kick off load immediately on script parse so it's ready by the time user opens panel
+obLoadEcoData();
+
+// ── Slot rendering ────────────────────────────────────────────────────────────
+function obPrefRenderSlots(color) {
+  var container = document.getElementById('obPref' + (color === 'white' ? 'White' : 'Black') + 'Slots');
+  if (!container) return;
+  container.innerHTML = '';
+  var slots = (botOpeningConfig[color] || []).filter(s => s.name);
+  var totalPct = slots.reduce((s, sl) => s + (sl.weight || 0), 0) || 1;
+
+  slots.forEach(function(slot, i) {
+    var pct = Math.round((slot.weight || 0) / totalPct * 100);
+    var family = slot.familyPrefix || (slot.eco ? slot.eco.slice(0,2) : '');
+    var rangeLabel = family ? (family + '0\u2013' + family + '9') : '';
+    var matchLabel = slot.exactEco
+      ? 'prefers ' + slot.exactEco + (rangeLabel ? ' \xb7 stays in ' + rangeLabel : '')
+      : (rangeLabel ? 'stays in ' + rangeLabel : '');
+
+    var chip = document.createElement('div');
+    chip.style.cssText = 'padding:5px 7px;background:var(--bg-panel2);' +
+      'border:0.5px solid var(--border);border-radius:4px;margin-bottom:4px;';
+
+    chip.innerHTML =
+      '<div style="display:flex;align-items:center;gap:4px;">' +
+        '<span style="flex:1;font-size:9px;color:var(--text-primary);">' +
+          slot.name + ' <span style="color:var(--text-dim);font-size:8px;">(' + (slot.eco || '') + ')</span>' +
+        '</span>' +
+        (slots.length > 1
+          ? '<input type="number" id="obw-' + color + '-' + i + '" min="1" max="100" value="' + pct + '"' +
+            ' style="width:34px;font-size:9px;padding:1px 3px;text-align:right;' +
+            'background:var(--bg-panel2);border:0.5px solid var(--border);border-radius:3px;color:var(--text-primary);"' +
+            ' oninput="obPrefSetPct(\'' + color + '\',' + i + ',this.value)">' +
+            '<span style="font-size:8px;color:var(--text-dim);">%</span>'
+          : '<span style="font-size:8px;color:var(--text-dim);">100%</span>') +
+        '<button onclick="obPrefRemoveSlot(\'' + color + '\',' + i + ')"' +
+          ' style="font-size:9px;padding:1px 5px;background:rgba(200,40,40,0.1);' +
+          'border:0.5px solid rgba(200,40,40,0.3);border-radius:3px;color:#c84040;cursor:pointer;">&#215;</button>' +
+      '</div>' +
+      (matchLabel ? '<div style="font-size:7px;color:var(--text-dim);margin-top:2px;">' + matchLabel + '</div>' : '');
+
+    container.appendChild(chip);
+  });
+
+  // Show/hide deviation panel
+  var anySlots = (botOpeningConfig.white||[]).filter(s=>s.name).length +
+                 (botOpeningConfig.black||[]).filter(s=>s.name).length;
+  var devPanel = document.getElementById('obPrefDeviation');
+  if (devPanel) devPanel.style.display = anySlots ? '' : 'none';
+}
+
+// Percentage edit with proportional redistribution
+function obPrefSetPct(color, editIdx, rawVal) {
+  var slots = botOpeningConfig[color];
+  if (!slots || slots.length < 2) return;
+  var newPct = Math.max(1, Math.min(99, parseInt(rawVal) || 1));
+  var others = slots.filter((_, i) => i !== editIdx);
+  var otherTotal = others.reduce((s, sl) => s + (sl.weight || 0), 0) || 1;
+  var remaining = 100 - newPct;
+
+  // Redistribute remaining % proportionally among the other slots
+  slots.forEach((sl, i) => {
+    if (i === editIdx) {
+      sl.weight = newPct;
+    } else {
+      sl.weight = Math.max(1, Math.round((sl.weight || 0) / otherTotal * remaining));
+    }
+  });
+
+  // Fix any rounding drift so total stays at 100
+  var drift = 100 - slots.reduce((s, sl) => s + sl.weight, 0);
+  for (var i = 0; i < slots.length && drift !== 0; i++) {
+    if (i !== editIdx) { slots[i].weight += drift; drift = 0; }
+  }
+
+  // Update other inputs in-place without full re-render (avoids losing cursor)
+  slots.forEach((sl, i) => {
+    if (i !== editIdx) {
+      var inp = document.getElementById('obw-' + color + '-' + i);
+      if (inp) inp.value = sl.weight;
+    }
+  });
+
+  _openingCache.clear();
+}
+
+function obPrefRemoveSlot(color, idx) {
+  if (botOpeningConfig[color]) {
+    botOpeningConfig[color].splice(idx, 1);
+    // Re-equalise weights
+    var slots = botOpeningConfig[color];
+    if (slots.length) {
+      var eq = Math.floor(100 / slots.length);
+      slots.forEach((sl, i) => { sl.weight = i === 0 ? 100 - eq*(slots.length-1) : eq; });
+    }
+  }
+  obPrefRenderSlots(color);
+  _openingCache.clear();
+}
+
+// ── Curated picker (sliding nested, per color) ────────────────────────────────
+let _curatedState = { white: { level: 0, family: null }, black: { level: 0, family: null } };
+
+function obBuildCuratedPickers() {
+  ['white','black'].forEach(color => {
+    var container = document.getElementById('obCurated' + (color==='white'?'White':'Black'));
+    if (!container || container.dataset.built) return;
+    container.dataset.built = '1';
+    obCuratedRenderFamilies(color);
+  });
+}
+
+function obCuratedRenderFamilies(color) {
+  var container = document.getElementById('obCurated' + (color==='white'?'White':'Black'));
+  if (!container) return;
+  container.innerHTML = '';
+  _curatedState[color] = { level: 0, family: null };
+
+  Object.keys(ECO_LIBRARY).forEach(family => {
+    var btn = document.createElement('button');
+    btn.className = 'ob-pick-btn';
+    btn.innerHTML = '<span>' + family + '</span><span class="ob-pick-chevron">\u203a</span>';
+    btn.onclick = () => obCuratedRenderVariations(color, family);
+    container.appendChild(btn);
+  });
+}
+
+function obCuratedRenderVariations(color, family) {
+  var container = document.getElementById('obCurated' + (color==='white'?'White':'Black'));
+  if (!container) return;
+  container.innerHTML = '';
+  _curatedState[color] = { level: 1, family };
+
+  // Back button
+  var back = document.createElement('button');
+  back.className = 'ob-pick-btn';
+  back.style.color = 'var(--text-dim)';
+  back.innerHTML = '\u2039 ' + family;
+  back.onclick = () => obCuratedRenderFamilies(color);
+  container.appendChild(back);
+
+  var variations = ECO_LIBRARY[family];
+  Object.keys(variations).forEach(varName => {
+    var entries = variations[varName];
+    var entryKeys = Object.keys(entries);
+    var btn = document.createElement('button');
+    btn.className = 'ob-pick-btn';
+    if (entryKeys.length === 1 && entryKeys[0] === varName) {
+      // Leaf — select directly
+      var d = entries[varName];
+      btn.innerHTML = '<span>' + varName + ' <span style="font-size:7px;color:var(--text-dim);">(' + d.eco + ')</span></span>';
+      btn.onclick = () => obCuratedSelect(color, varName, d, true);
+    } else {
+      btn.innerHTML = '<span>' + varName + '</span><span class="ob-pick-chevron">\u203a</span>';
+      btn.onclick = () => obCuratedRenderSpecific(color, family, varName, entries);
+    }
+    container.appendChild(btn);
+  });
+}
+
+function obCuratedRenderSpecific(color, family, varName, entries) {
+  var container = document.getElementById('obCurated' + (color==='white'?'White':'Black'));
+  if (!container) return;
+  container.innerHTML = '';
+
+  var back = document.createElement('button');
+  back.className = 'ob-pick-btn';
+  back.style.color = 'var(--text-dim)';
+  back.innerHTML = '\u2039 ' + varName;
+  back.onclick = () => obCuratedRenderVariations(color, family);
+  container.appendChild(back);
+
+  Object.entries(entries).forEach(([name, data]) => {
+    var btn = document.createElement('button');
+    btn.className = 'ob-pick-btn';
+    btn.innerHTML = '<span>' + name + ' <span style="font-size:7px;color:var(--text-dim);">(' + data.eco + ')</span></span>';
+    btn.onclick = () => obCuratedSelect(color, name, data, false);
+    container.appendChild(btn);
+  });
+}
+
+// isFamilyPick = true when selected from curated (prefix match); false = variation-level exact
+function obCuratedSelect(color, name, data, isFamilyPick) {
+  var entry = {
+    name,
+    eco: data.eco,
+    exactEco:     isFamilyPick ? null     : data.eco,
+    familyPrefix: isFamilyPick ? data.prefix : (data.eco.length >= 2 ? data.eco.slice(0,2) : data.eco),
+    ecoDisplay:   data.eco,
+    weight: 0  // will be equalised below
+  };
+  obPrefAddSlot(color, entry);
+  // Return to family list after selection
+  obCuratedRenderFamilies(color);
+}
+
+// Only close the search/curated panel if focus has moved outside the whole
+// preferred-openings panel. This prevents the onblur on the search input from
+// killing the curated dropdown when the user clicks a family/variation button.
+function obPrefMaybeClose(color) {
+  var sfx = color === 'white' ? 'White' : 'Black';
+  var panel = document.getElementById('obPref' + sfx);
+  if (!panel) { obPrefCloseSearch(color); return; }
+  var focused = document.activeElement;
+  // If focus is still inside this color's panel, do not close
+  if (focused && panel.contains(focused)) return;
+  obPrefCloseSearch(color);
+}
+
+// ── Search ────────────────────────────────────────────────────────────────────
+function obPrefOpenSearch(color) {
+  var sfx       = color === 'white' ? 'White' : 'Black';
+  var searchBox = document.getElementById('obPrefSearch' + sfx);
+  var input     = document.getElementById('obPrefSearchInput' + sfx);
+  var addBtn    = document.getElementById('obAddBtn' + sfx);
+  var slider    = document.getElementById('obSlider' + sfx);
+  if (!searchBox) return;
+  searchBox.style.display = '';
+  if (slider)  slider.style.display  = '';   // show curated alongside search
+  if (addBtn)  addBtn.style.display  = 'none';
+  if (input) { input.value = ''; setTimeout(() => input.focus(), 40); }
+  var results = document.getElementById('obPrefResults' + sfx);
+  if (results) { results.style.display = 'none'; results.innerHTML = ''; }
+  // Always reset curated picker to top-level family list when (re-)opening
+  obCuratedRenderFamilies(color);
+}
+
+function obPrefCloseSearch(color) {
+  var sfx       = color === 'white' ? 'White' : 'Black';
+  var searchBox = document.getElementById('obPrefSearch' + sfx);
+  var addBtn    = document.getElementById('obAddBtn' + sfx);
+  var slider    = document.getElementById('obSlider' + sfx);
+  if (searchBox) searchBox.style.display = 'none';
+  if (slider)   slider.style.display    = 'none'; // hide curated when search closes
+  if (addBtn)   addBtn.style.display    = '';
+}
+
+async function obPrefFilterSearch(color, query) {
+  var results = document.getElementById('obPrefResults' + (color==='white'?'White':'Black'));
+  if (!results) return;
+  var q = query.trim().toLowerCase();
+  if (!q) { results.style.display = 'none'; results.innerHTML = ''; return; }
+
+  // Ensure ECO data is loaded (usually already done at startup)
+  var data = await obLoadEcoData();
+
+  var matches = data.filter(e =>
+    e.name.toLowerCase().includes(q) ||
+    e.eco.toLowerCase().startsWith(q)
+  ).slice(0, 15);
+
+  if (!matches.length) {
+    results.innerHTML = '<div style="padding:5px 10px;font-size:8px;color:var(--text-dim);">No matches</div>';
+    results.style.display = '';
+    return;
+  }
+
+  results.innerHTML = '';
+  matches.forEach(entry => {
+    var row = document.createElement('button');
+    row.style.cssText = 'display:block;width:100%;text-align:left;padding:5px 10px;' +
+      'font-size:9px;background:none;border:none;border-bottom:0.5px solid var(--border);' +
+      'color:var(--text-primary);cursor:pointer;line-height:1.4;';
+    // Highlight matching substring in name
+    var q2 = query.trim();
+    var highlighted = entry.name.replace(
+      new RegExp('(' + q2.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + ')', 'gi'),
+      '<span style="color:var(--accent);font-weight:600;">$1</span>'
+    );
+    row.innerHTML = highlighted +
+      ' <span style="color:var(--text-dim);font-size:8px;">(' + entry.eco + ')</span>';
+    row.onmousedown = (e) => {
+      e.preventDefault();
+      obPrefAddSlot(color, {
+        name: entry.name,
+        eco: entry.eco,
+        exactEco: entry.eco,
+        familyPrefix: entry.familyPrefix,
+        ecoDisplay: entry.eco,
+        weight: 0
+      });
+      obPrefCloseSearch(color);
+    };
+    results.appendChild(row);
+  });
+  results.style.display = '';
+}
+
+function obPrefAddSlot(color, entry) {
+  if (!botOpeningConfig[color]) botOpeningConfig[color] = [];
+  if (botOpeningConfig[color].length >= 10) return;
+  // Prevent duplicate by exact ECO
+  if (entry.exactEco && botOpeningConfig[color].some(s => s.exactEco === entry.exactEco)) return;
+
+  botOpeningConfig[color].push(entry);
+
+  // Re-equalise all weights as whole percentages summing to 100
+  var slots = botOpeningConfig[color];
+  var eq = Math.floor(100 / slots.length);
+  var rem = 100 - eq * slots.length;
+  slots.forEach((sl, i) => { sl.weight = eq + (i === 0 ? rem : 0); });
+
+  obPrefRenderSlots(color);
+  _openingCache.clear();
+}
+
+// Restore UI after config load
+function obRestorePreferredUI() {
+  obPrefRenderSlots('white');
+  obPrefRenderSlots('black');
+  obBuildCuratedPickers();
+  var resp = botOpeningConfig.deviationResponse || 'engine';
+  botSetDeviationResponse(resp);
+}
+
+// ── End phase 5 UI controllers ──────────────────────────────────────────────────────
+
+function botSetTpBtn(val) {
+  botTimePressure = val;
+  const descs = {
+    steady: 'Stays near top move even when flagging',
+    normal: 'Gradually widens move choice as clock drops',
+    panicky: 'Picks among top 10 moves randomly under pressure'
+  };
+  ['steady','normal','panicky'].forEach(v => {
+    document.getElementById('tp-'+v).classList.toggle('active', v === val);
+  });
+  document.getElementById('tpDesc').textContent = descs[val] || '';
+}
+
+// ── Think Time Mode selector ─────────────────────────────────────────────────
+// botTimeBehavior: 'pace' | 'instant' | 'mirror'
+// 'pace'    — entropy-based delay from botPace slider (default)
+// 'instant' — zero artificial delay; engine result plays as soon as ready
+// 'mirror'  — bot averages human's recent move times (rolling window, ±20% jitter)
+function botSetTimeBehavior(val) {
+  botTimeBehavior = val;
+  const descs = {
+    pace:    'Entropy-based delay from pace slider',
+    instant: 'No delay — bot plays as soon as engine responds',
+    mirror:  'Bot averages your recent move times (±20% jitter)'
+  };
+  ['pace','instant','mirror'].forEach(v => {
+    document.getElementById('tb-'+v).classList.toggle('active', v === val);
+  });
+  const descEl = document.getElementById('tbDesc');
+  if (descEl) descEl.textContent = descs[val] || '';
+  // Grey out pace slider when it has no effect
+  const paceRow = document.getElementById('botPaceRow');
+  if (paceRow) paceRow.style.opacity = (val === 'pace') ? '1' : '0.4';
+}
+
+function botSetPlayerColor(col) {
+  botPlayerColor = col === 'random' ? (Math.random() < 0.5 ? 'white' : 'black') : col;
+  ['white','black','random'].forEach(v => {
+    document.getElementById('pcolor-'+v).classList.toggle('active', v === col);
+  });
+}
+
+// Hybrid slot management
+function botAddHybridSlot() {
+  const slot = { type: 'sf', level: 8, weight: 33 };
+  botHybridSlots.push(slot);
+  botRenderHybridSlots();
+}
+
+function botRenderHybridSlots() {
+  const container = document.getElementById('hybridSlots');
+  if (!container) return;
+  container.innerHTML = '';
+  botHybridSlots.forEach(function(slot, i) {
+    const div = document.createElement('div');
+    div.className = 'hybrid-slot';
+
+    // Type selector
+    const sel = document.createElement('select');
+    sel.onchange = function() { botHybridSlots[i].type = this.value; botRenderHybridSlots(); };
+    ['sf','maia'].forEach(function(v) {
+      const opt = document.createElement('option');
+      opt.value = v; opt.textContent = v === 'sf' ? 'Stockfish' : 'Lichess Explorer';
+      if (slot.type === v) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    div.appendChild(sel);
+
+    // Level input (Stockfish only)
+    if (slot.type === 'sf') {
+      const lbl = document.createElement('label');
+      lbl.style.cssText = 'font-size:8px;color:var(--text-dim);';
+      lbl.textContent = 'Lvl ';
+      const lvlIn = document.createElement('input');
+      lvlIn.type = 'number'; lvlIn.min = '1'; lvlIn.max = '20';
+      lvlIn.value = String(slot.level || 8);
+      lvlIn.style.cssText = 'width:38px;';
+      lvlIn.onchange = function() { botHybridSlots[i].level = parseInt(this.value) || 8; };
+      lbl.appendChild(lvlIn);
+      div.appendChild(lbl);
+    }
+
+    // Weight input
+    const wlbl = document.createElement('label');
+    wlbl.style.cssText = 'font-size:8px;color:var(--text-dim);margin-left:auto;';
+    wlbl.textContent = '% ';
+    const wIn = document.createElement('input');
+    wIn.type = 'number'; wIn.min = '1'; wIn.max = '100';
+    wIn.value = String(slot.weight || 0);
+    wIn.style.cssText = 'width:38px;';
+    wIn.onchange = function() { botHybridSlots[i].weight = parseInt(this.value) || 0; botUpdateHybridTotal(); };
+    wlbl.appendChild(wIn);
+    div.appendChild(wlbl);
+
+    // Remove button
+    const rm = document.createElement('button');
+    rm.className = 'rm-btn'; rm.textContent = '✕';
+    rm.onclick = function() { botHybridSlots.splice(i, 1); botRenderHybridSlots(); };
+    div.appendChild(rm);
+
+    container.appendChild(div);
+  });
+  botUpdateHybridTotal();
+}
+
+function botUpdateHybridTotal() {
+  const total = botHybridSlots.reduce((s, sl) => s + (sl.weight || 0), 0);
+  const el = document.getElementById('hybridTotalVal');
+  if (el) { el.textContent = total; el.style.color = Math.abs(total - 100) < 2 ? '#5ad490' : '#c84040'; }
+}
+
+// ── Start / Stop bot ─────────────────────────────────────────────────────────
+// ── Bot time control selector (new two-row UI) ───────────────────────────────
+let _botBaseMin = 0;  // 0 = untimed
+let _botIncSec  = 0;
+
+function botSetBaseMin(min) {
+  _botBaseMin = min;
+  document.querySelectorAll('[id^="tcm-"]').forEach(function(b) {
+    b.classList.toggle('tc-active', b.id === 'tcm-' + min);
+  });
+  _botUpdateTCDisplay();
+}
+
+function botSetIncSec(sec) {
+  _botIncSec = sec;
+  document.querySelectorAll('[id^="tci-"]').forEach(function(b) {
+    b.classList.toggle('tc-active', b.id === 'tci-' + sec);
+  });
+  _botUpdateTCDisplay();
+}
+
+function _botUpdateTCDisplay() {
+  var el = document.getElementById('tcDisplay');
+  if (!el) return;
+  if (_botBaseMin === 0) {
+    el.textContent = 'Untimed';
+    botSelectedTC = 'untimed';
+    return;
+  }
+  var incStr = _botIncSec > 0 ? ' + ' + _botIncSec + 's' : '';
+  el.textContent = _botBaseMin + ' min' + incStr;
+  // Store as custom TC
+  var key = 'custom';
+  TIME_CONTROLS.custom = { label: _botBaseMin + '+' + _botIncSec, time: _botBaseMin * 60, inc: _botIncSec };
+  botSelectedTC = key;
+}
+
+// Legacy botSetTC kept for save/load compatibility
+function botSetTC(key) {
+  botSelectedTC = key;
+  // Map legacy keys back to new UI
+  var legacyMap = {
+    'untimed': [0,0], 'bullet': [1,0], 'blitz3': [3,2],
+    'blitz5': [5,0], 'rapid10': [10,0], 'rapid15': [15,10], 'tournament': [30,0]
+  };
+  if (legacyMap[key]) {
+    botSetBaseMin(legacyMap[key][0]);
+    botSetIncSec(legacyMap[key][1]);
+  }
+}
+
+// ── Bot name generation ──────────────────────────────────────────────────────
+function botGenerateName() {
+  // Check if user has set a custom name
+  var nameEl = document.getElementById('botNameInput');
+  if (nameEl && nameEl.value.trim()) return nameEl.value.trim();
+
+  // Auto-generate from settings
+  var tpLabel = { steady: 'Steady', normal: 'Normal', panicky: 'Panicky' }[botTimePressure] || '';
+  var tabLabel = '';
+  if (botTab === 'sf') {
+    var lvl = parseInt(document.getElementById('sfLevel').value) || 8;
+    tabLabel = 'Stockfish ' + lvl;
+  } else if (botTab === 'maia3') {
+    tabLabel = 'Maya ' + (maia3SelectedRating || '1200');
+  } else if (botTab === 'maia') {
+    tabLabel = 'Lichess ' + (lcSelectedRating || '1200');
+  } else if (botTab === 'hybrid') {
+    tabLabel = 'Hybrid Bot';
+  }
+  return (tpLabel ? tpLabel + ' ' : '') + tabLabel;
+}
+
+// Sets the player name display for the bot and human
+function botEngineTag() {
+  // Show live engine type after first move (no level — keeps player guessing on SF/hybrid)
+  if (lastBotMoveSource) {
+    return ' ‹' + lastBotMoveSource + '›';
+  }
+  // Before first move: show configured tab type only
+  if (botTab === 'maia3')  return ' ‹Maia3›';
+  if (botTab === 'maia')   return ' ‹LC+Maia›';
+  if (botTab === 'lcsf')   return ' ‹LC+SF›';
+  if (botTab === 'sf')     return ' ‹SF›';
+  if (botTab === 'hybrid') return ' ‹Hybrid›';
+  return '';
+}
+
+function botUpdatePlayerNames(humanColor) {
+  var botName   = botGenerateName() + botEngineTag();
+  var humanName = 'You';
+  var nameW = document.querySelector('#playerBoxW .player-name');
+  var nameB = document.querySelector('#playerBoxB .player-name');
+  if (humanColor === 'white') {
+    if (nameW) nameW.textContent = humanName;
+    if (nameB) nameB.textContent = botName;
+  } else {
+    if (nameW) nameW.textContent = botName;
+    if (nameB) nameB.textContent = humanName;
+  }
+}
+
+// Brief amber toast for engine problems — auto-dismisses after 6 s
+function showEngineWarning(msg) {
+  var existing = document.getElementById('bm-engine-warn');
+  if (existing) existing.remove();
+  var d = document.createElement('div');
+  d.id = 'bm-engine-warn';
+  d.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);' +
+    'background:#1e1200;border:1px solid rgba(235,140,0,0.65);border-radius:6px;' +
+    'color:#f0ede8;font-size:12px;padding:10px 20px;z-index:9999;max-width:360px;' +
+    'text-align:center;box-shadow:0 4px 22px rgba(0,0,0,0.75);pointer-events:none;';
+  d.textContent = msg;
+  document.body.appendChild(d);
+  setTimeout(function(){ if(d.parentNode) d.parentNode.removeChild(d); }, 6000);
+}
+
+function _checkEngineReady(tab) {
+  var sfTabs = ['sf','stockfish','lcsf','hybrid'];
+  var maiaTabs = ['maia3','maia','lcmaia','hybrid'];
+  if (sfTabs.includes(tab)) {
+    if (sfWorker && !sfReady) {
+      showEngineWarning('⚠ Stockfish is loading — the first move may be delayed.');
+    } else if (!sfWorker) {
+      // Will be started by sfInit() — no warning needed, just inform
+    }
+  }
+  if (maiaTabs.includes(tab)) {
+    var st = (typeof _maiaStatus !== 'undefined') ? _maiaStatus : 'idle';
+    var rdy = (typeof _maiaReady !== 'undefined') ? _maiaReady : false;
+    if (!rdy) {
+      if (st === 'no-cache') {
+        showEngineWarning('⚠ Maia 3 model not downloaded. Open the bot panel and download it first.');
+      } else if (st === 'error') {
+        showEngineWarning('⚠ Maia 3 failed to load. Try reloading the page.');
+      } else if (st === 'downloading' || st === 'loading') {
+        showEngineWarning('⚠ Maia 3 is loading — the first move may be delayed.');
+      }
+    }
+  }
+}
+
+async function botStart() {
+  botActive = false;
+  botThinking = false;
+  clearGhostPieces();
+  botGhostResponses = {};
+  botLastHoverSq = -1;
+
+  // Check engine readiness and warn the user if something isn't loaded
+  _checkEngineReady(botTab);
+
+  // Pre-init Stockfish in background
+  if (botTab !== 'maia') sfInit().catch(e => console.warn('SF init:', e));
+  // Signal a new game to SF so its transposition table is cleared once,
+  // not on every single move (which would actively hurt its play quality).
+  if (sfWorker && sfReady) {
+    sfWorker.postMessage('ucinewgame');
+  }
+  sfCurrentSkillLevel = -1; // force skill-level to be (re)sent on first move
+
+  // Clear any leftover multiplayer display state so it doesn't interfere with
+  // board-flip logic in render() and getSq() (which OR boardFlipped with mpRole).
+  mpRoomId = null;
+  mpRole = null;
+
+  // Apply player color FIRST so boardFlipped is correct before resetGame renders.
+  // Always resolve 'random' here and write it back so all downstream code that
+  // reads botPlayerColor (botClockMs, botPostMoveHook, playerColor, etc.) is consistent.
+  let pc = botPlayerColor;
+  if (pc === 'random') pc = Math.random() < 0.5 ? 'white' : 'black';
+  botPlayerColor = pc;
+  boardFlipped = (pc === 'black');
+  // Sync the CSS class so player boxes rearrange to match board orientation
+  var _bc = document.getElementById('board-col');
+  if (_bc) _bc.classList.toggle('board-flipped', boardFlipped);
+
+  // Apply time control then reset board (render() inside resetGame will use correct flip)
+  clockInit(botSelectedTC || 'untimed');
+  resetGame();
+
+  // Phase 1: reset move history and capture starting clock for fracRemaining
+  botMoveHistory = [];
+  botSanHistory  = [];
+  botOppClockMs = null;
+  // Activate preferred-opening fast path if mode is 'preferred' and slots exist.
+  // Bot color is opposite of human player color.
+  const _resolvedBotCol = (pc === 'white' ? 'black' : 'white');
+  if (botOpeningMode === 'preferred') {
+    const _hasSlots = (botOpeningConfig[_resolvedBotCol] || [])
+                        .filter(s => s.name).length > 0;
+    // Frequency roll: if < 100%, sometimes skip openings for this game
+    const _freqRoll = (botOpeningFrequencyPct >= 100) || (Math.random() * 100 < botOpeningFrequencyPct);
+    preferredOpeningActive = _hasSlots && _freqRoll;
+  } else {
+    preferredOpeningActive = false;
+  }
+  lichessExplorerActive = (botOpeningMode !== 'none');
+  // clockTimeW/B are set by clockInit — capture now as the baseline
+  try {
+    if (typeof clockTimeW !== 'undefined' && clockControl !== 'untimed') {
+      botStartClockMs = (botPlayerColor === 'black' ? clockTimeW : clockTimeB) * 1000;
+    } else {
+      botStartClockMs = null;
+    }
+  } catch(e) { botStartClockMs = null; }
+
+  botActive = true;
+
+  // Update player name displays
+  botUpdatePlayerNames(pc);
+
+  // Update UI
+  const startBtn = document.getElementById('botStartBtn');
+  const stopBtn  = document.getElementById('botStopBtn');
+  const sideBtn  = document.getElementById('botSidebarBtn');
+  if (startBtn) startBtn.textContent = '↺ Restart Bot Game';
+  if (stopBtn)  stopBtn.style.display = '';
+  if (sideBtn)  { sideBtn.textContent = '🤖 Bot Active'; sideBtn.style.borderColor = '#22a85a'; }
+  var bsEl = document.getElementById('botStatus');
+  if (bsEl) bsEl.textContent = 'You play ' + (pc === 'white' ? 'White ♔' : 'Black ♚') +
+    (botSelectedTC !== 'untimed' ? ' · ' + botSelectedTC : '');
+
+  closeAllPanels();
+
+  // Start clock if timed
+  if (botSelectedTC && botSelectedTC !== 'untimed') clockStart();
+
+  // If bot plays White (human is Black), bot moves first
+  const botColor = pc === 'white' ? 'b' : 'w';
+  if (turn === botColor) {
+    setTimeout(botMakeMove, 800);
+  } else {
+    // Human moves first — start timing their first move for mirror mode
+    botUserTurnStartMs = Date.now();
+  }
+}
+
+function botStop() {
+  botActive = false;
+  botThinking = false;
+  clearGhostPieces();
+  botGhostResponses = {};
+  boardFlipped = false;
+  var _bc = document.getElementById('board-col');
+  if (_bc) _bc.classList.remove('board-flipped');
+  // Phase 1: clear move history and clock baseline on stop
+  botMoveHistory = [];
+  botSanHistory  = [];
+  botStartClockMs = null;
+  botOppClockMs = null;
+  // Reset mirror timing state
+  botUserMoveTimestamps = [];
+  botUserTurnStartMs = null;
+  preferredOpeningActive = false;
+  lichessExplorerActive = false;
+  sfCurrentSkillLevel = -1;
+  // Reset player names
+  lastBotMoveSource = '';
+  var nW = document.querySelector('#playerBoxW .player-name');
+  var nB = document.querySelector('#playerBoxB .player-name');
+  if (nW) nW.textContent = 'White';
+  if (nB) nB.textContent = 'Black';
+
+  const startBtn = document.getElementById('botStartBtn');
+  const stopBtn  = document.getElementById('botStopBtn');
+  const sideBtn  = document.getElementById('botSidebarBtn');
+  if (startBtn) startBtn.textContent = '▶ Start Game vs Bot';
+  if (stopBtn)  stopBtn.style.display = 'none';
+  if (sideBtn)  { sideBtn.textContent = '🤖 vs Bot'; sideBtn.style.borderColor = 'rgba(90,212,144,0.4)'; }
+  document.getElementById('botStatus').textContent = '';
+}
+
+// ── Save / Load bot config ───────────────────────────────────────────────────
+function botSaveConfig() {
+  var botCustomName = document.getElementById('botNameInput');
+  var configName = (botCustomName && botCustomName.value.trim()) || (botGenerateName() + ' — ' + new Date().toLocaleDateString());
+  const config = {
+    name: configName,
+    botName: botCustomName ? botCustomName.value.trim() : '',
+    tab: botTab,
+    stockfish: {
+      level: parseInt(document.getElementById('sfLevel').value),
+      pressureLevel: parseInt(document.getElementById('sfPressureLevel').value),
+      temperature: parseInt(document.getElementById('sfTemperature').value)
+    },
+    maia: {
+      elo: parseInt(document.getElementById('maiaElo').value),
+      temperature: parseFloat(document.getElementById('maiaTemp').value)
+    },
+    hybrid: botHybridSlots,
+    timePressure: botTimePressure,
+    timeBehavior: botTimeBehavior,
+    pace: parseInt(document.getElementById('botPace').value),
+    playerColor: botPlayerColor,
+    ghostPieces: document.getElementById('cbGhostPieces').checked,
+    opening: {
+      mode: botOpeningMode,
+      config: botOpeningConfig,
+      frequencyPct: botOpeningFrequencyPct
+    }
+  };
+  const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'blundermind_bot_' + Date.now() + '.json';
+  a.click();
+}
+
+function botLoadConfig(event) {
+  const file = event.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const cfg = JSON.parse(e.target.result);
+      if (cfg.botName !== undefined) {
+        var ni = document.getElementById('botNameInput');
+        if (ni) ni.value = cfg.botName || '';
+      }
+      if (cfg.tab) botSetTab(cfg.tab);
+      if (cfg.stockfish) {
+        document.getElementById('sfLevel').value = cfg.stockfish.level || 8;
+        document.getElementById('sfLevelVal').textContent = cfg.stockfish.level || 8;
+        document.getElementById('sfPressureLevel').value = cfg.stockfish.pressureLevel || 4;
+        document.getElementById('sfPressureVal').textContent = cfg.stockfish.pressureLevel || 4;
+        if (cfg.stockfish.temperature !== undefined) {
+          document.getElementById('sfTemperature').value = cfg.stockfish.temperature;
+          var td = document.getElementById('sfTempDesc');
+          if (td) td.textContent = cfg.stockfish.temperature === 0 ? 'Always plays at selected level' : 'Varies: 50% target · 20% ±1 · 5% ±2';
+        }
+      }
+      if (cfg.maia) {
+        document.getElementById('maiaElo').value = cfg.maia.elo || 900;
+        document.getElementById('maiaEloVal').textContent = cfg.maia.elo || 900;
+        document.getElementById('maiaTemp').value = cfg.maia.temperature || 1.0;
+        document.getElementById('maiaTempVal').textContent = (cfg.maia.temperature || 1.0).toFixed(1);
+      }
+      if (cfg.hybrid) { botHybridSlots = cfg.hybrid; botRenderHybridSlots(); }
+      if (cfg.timePressure) botSetTpBtn(cfg.timePressure);
+      if (cfg.timeBehavior) botSetTimeBehavior(cfg.timeBehavior);
+      if (cfg.pace) { document.getElementById('botPace').value = cfg.pace; document.getElementById('botPaceVal').textContent = cfg.pace; }
+      if (cfg.playerColor) botSetPlayerColor(cfg.playerColor);
+      if (cfg.ghostPieces !== undefined) document.getElementById('cbGhostPieces').checked = cfg.ghostPieces;
+      if (cfg.opening) {
+        botOpeningConfig = Object.assign(botOpeningConfig, cfg.opening.config || {});
+        // Migrate old loyalty/repertoire modes to unified 'preferred'
+        const mode = cfg.opening.mode === 'loyalty' || cfg.opening.mode === 'repertoire'
+          ? 'preferred' : (cfg.opening.mode || 'none');
+        botSetOpeningMode(mode);
+        if (botOpeningConfig.source) botSetOpeningSrc(botOpeningConfig.source);
+        if (mode === 'preferred') { setTimeout(obRestorePreferredUI, 0); }
+        if (cfg.opening.frequencyPct != null) {
+          botOpeningFrequencyPct = cfg.opening.frequencyPct;
+          var freqSlider = document.getElementById('obFreqSlider');
+          var freqVal    = document.getElementById('obFreqVal');
+          if (freqSlider) freqSlider.value = botOpeningFrequencyPct;
+          if (freqVal)    freqVal.textContent = botOpeningFrequencyPct + '%';
+        }
+      }
+      document.getElementById('botStatus').textContent = '✓ Config loaded: ' + (cfg.name || 'unnamed');
+      setTimeout(() => { document.getElementById('botStatus').textContent = ''; }, 3000);
+    } catch(e) { alert('Could not parse config file.'); }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+// ── Init hybrid slots with one default ──────────────────────────────────────
+botHybridSlots = [
+  { type: 'sf', level: 8, weight: 75 },
+  { type: 'maia', level: null, weight: 25 }
+];
+botRenderHybridSlots();
+
+// ── Landing page logic ───────────────────────────────────────────────────────
+function landingDismiss() {
+  const overlay = document.getElementById('landingOverlay');
+  if (!overlay) return;
+  overlay.classList.add('fade-out');
+  setTimeout(() => { overlay.style.display = 'none'; }, 420);
+}
+
+function landingChoose(mode) {
+  landingDismiss();
+  setTimeout(() => {
+    if (mode === 'bot') {
+      openBotModal();
+    } else if (mode === 'mp') {
+      openPanel('mpPanel');
+    } else if (mode === 'pgn') {
+      document.getElementById('pgnFileInput').click();
+    }
+    // 'solo' just dismisses — board is already set up and ready
+  }, 300);
+}
+
+function landingLoadBotConfig(event) {
+  botLoadConfig(event);
+  landingDismiss();
+  setTimeout(() => openPanel('botPanel'), 350);
+}
+
+// Clicking anywhere on the app area behind the overlay also dismisses it
+document.addEventListener('DOMContentLoaded', () => {
+  // Detect if running on server (vs local file) and update multiplayer UI
+  const isServer = location.protocol !== 'file:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1';
+  const mpNote = document.getElementById('mpServerNote');
+  const mpCard = document.querySelector('.landing-card[onclick*="mp"]');
+  if (isServer) {
+    if (mpNote) {
+      mpNote.style.background = 'rgba(34,168,90,0.08)';
+      mpNote.style.borderColor = 'rgba(34,168,90,0.25)';
+      mpNote.innerHTML = '✅ Server connected — multiplayer is available.';
+    }
+    // Check for ?join= invite link in URL
+    mpCheckInviteUrl();
+  } else {
+    // Running locally — dim the multiplayer landing card
+    if (mpCard) {
+      mpCard.style.opacity = '0.55';
+      mpCard.title = 'Multiplayer requires the deployed server';
+    }
+  }
+  const cv3 = document.getElementById('cv');
+  if (cv3) cv3.addEventListener('click', () => {
+    const overlay = document.getElementById('landingOverlay');
+    if (overlay && overlay.style.display !== 'none' && !overlay.classList.contains('fade-out')) {
+      landingChoose('solo');
+    }
+  }, { once: true });
+});
+
+
+// Donate JS stubs (functionality temporarily disabled)
+function toggleHaikuBox() {
+  var box = document.getElementById('haikuBox');
+  if (box) box.style.display = box.style.display === 'none' ? '' : 'none';
+}
+function submitHaiku() {
+  var txt = document.getElementById('donateHaiku');
+  if (!txt || !txt.value.trim()) return;
+  window.open('mailto:?subject=Blundermind%20Haiku&body=' + encodeURIComponent(txt.value));
+  txt.value = '';
+}
+
+/* Ko-fi URL: update href in donate panel HTML to your actual ko-fi.com page */
+
+/* ═══════════════════════════════════════════════════════════════
+   BOT CONTROL PANEL MODAL
+═══════════════════════════════════════════════════════════════ */
+function openBotModal() {
+  const modal = document.getElementById('botModal');
+  if (modal) modal.style.display = 'block';
+  // Ensure Maia worker is running so it can detect the cached model in IndexedDB.
+  // Without this, _maiaStatus stays 'idle' forever when the new bot-control-panel
+  // modal is used (the old botSetTab path that called maiaInit is never reached).
+  if (!_maiaWorker) {
+    maiaInit();
+    _maiaLoadMappings();
+  }
+  // Push current Maia status to the panel; small delay so iframe scripts are ready.
+  // _maiaUpdateStatusUI() will send follow-up pushes as the worker reports back.
+  setTimeout(function() {
+    try {
+      var frame = document.getElementById('botModalFrame');
+      if (frame && frame.contentWindow) {
+        frame.contentWindow.postMessage({
+          type: 'maiaStatus', status: _maiaStatus || 'idle',
+          ready: _maiaReady, progress: _maiaProgress || 0
+        }, location.origin);
+      }
+    } catch(e) {}
+  }, 120);
+}
+function closeBotModal() {
+  const modal = document.getElementById('botModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function _snapToLcBand(elo) {
+  const bands = [400, 1000, 1200, 1400, 1600, 1800, 2000, 2200];
+  return String(bands.reduce((p, c) => Math.abs(c - elo) < Math.abs(p - elo) ? c : p));
+}
+
+window.addEventListener('message', function(e) {
+  // Only accept config from our own origin (the bot-control-panel iframe) —
+  // a page embedding this site must not be able to inject bot configs.
+  if (e.origin !== location.origin) return;
+  if (!e.data || e.data.type !== 'botConfig') return;
+  const cfg = e.data;
+
+  // Engine tab
+  const engineMap = { maia3: 'maia3', stockfish: 'sf', hybrid: 'hybrid', lcsf: 'lcsf', lcmaia: 'maia' };
+  botSetTab(engineMap[cfg.engine] || 'sf');
+
+  // Player color (resolved in botStart if 'random')
+  botPlayerColor = cfg.color || 'random';
+
+  // Time control — build a 'custom' entry so clockInit() finds a valid key
+  if (cfg.tcTime > 0) {
+    TIME_CONTROLS.custom = { label: cfg.tcTime + '+' + (cfg.tcInc || 0), time: cfg.tcTime * 60, inc: cfg.tcInc || 0 };
+    botSelectedTC = 'custom';
+  } else {
+    botSelectedTC = 'untimed';
+  }
+
+  // Stockfish level: new panel 1–10 → existing 1–20 (multiply ×2)
+  const sfLvl20 = Math.min(20, Math.max(1, (cfg.sfLevel || 5) * 2));
+  var sfLvlEl = document.getElementById('sfLevel');
+  if (sfLvlEl) { sfLvlEl.value = sfLvl20; document.getElementById('sfLevelVal').textContent = sfLvl20; }
+  var pressLvl = Math.max(1, sfLvl20 - 4);
+  var pressEl = document.getElementById('sfPressureLevel');
+  if (pressEl) { pressEl.value = pressLvl; document.getElementById('sfPressureVal').textContent = pressLvl; }
+
+  // SF Variety: store slider percentages directly so sfPickLevel uses them
+  botSfVar1 = cfg.sfvar1 || 0;
+  botSfVar2 = cfg.sfvar2 || 0;
+
+  // Maia3 ELO and temperature (temp derived from style gauge in new panel)
+  maia3SetRating(cfg.elo || 1500);
+  var m3TempEl = document.getElementById('maia3Temp');
+  if (m3TempEl) { m3TempEl.value = cfg.maia3Temp || 1.0; document.getElementById('maia3TempVal').textContent = (cfg.maia3Temp || 1.0).toFixed(1); }
+
+  // LC mode ratings (snap continuous ELO to nearest Lichess rating band)
+  if (cfg.engine === 'lcsf')   { lcsfSetRating(_snapToLcBand(cfg.lcsfElo || 2000)); }
+  if (cfg.engine === 'lcmaia') { lcSetRating(_snapToLcBand(cfg.lcMaiaLcElo || 2000)); maia3SetRating(cfg.lcMaiaMaiaElo || 1500); }
+
+  // Temperature — store raw float; also update legacy maiaTemp DOM element for fallback reads
+  if (cfg.tempValue != null) {
+    botMaiaTempValue = Math.max(0.1, Math.min(4.0, parseFloat(cfg.tempValue) || 1.0));
+    var _mTempEl = document.getElementById('maiaTemp');
+    if (_mTempEl) _mTempEl.value = Math.min(3.0, Math.max(0.3, botMaiaTempValue));
+  }
+  // Temperature preset → sfPickLevel tier (deterministic=0 focused=1 neutral=2 varied=3 wild=4)
+  var tempTierMap = { deterministic: 0, low: 1, neutral: 2, high: 3, wild: 4 };
+  botSfTempLevel = tempTierMap.hasOwnProperty(cfg.tempPresetId) ? tempTierMap[cfg.tempPresetId] : 2;
+
+  // Timing behavior — 'complexity' is now a live mode
+  var timingMap = { complexity: 'complexity', instant: 'instant', fixed: 'fixed', mirror: 'mirror' };
+  botSetTimeBehavior(timingMap[cfg.timingMode] || 'pace');
+  botFixedDelayMs    = cfg.fixedDelayMs    || 5000;
+  botMirrorOffsetPct = cfg.mirrorOffsetPct || 0;
+  botCplxBase = cfg.cplxBase || 3;
+  botCplxMin  = cfg.cplxMin  || 0.4;
+  botCplxMax  = cfg.cplxMax  || 2.5;
+
+  // Human behaviour modifiers
+  botBehavReconsider  = cfg.behavReconsider  !== false;
+  botBehavBlink       = cfg.behavBlink       !== false;
+  botBehavClockMirror = cfg.behavClockMirror !== false;
+  botCanFlag          = cfg.canFlag          !== false;
+
+  // Time pressure max drop → drives sfEffectiveLevel floor
+  botTimePressureMaxDrop = (cfg.timePressureMaxDrop != null) ? cfg.timePressureMaxDrop : null;
+
+  // Candidate filter + blunder limit
+  botMinProbPct     = (cfg.minProbPct     != null) ? cfg.minProbPct     : 5;
+  botBlunderLimitCp = (cfg.blunderLimitCp != null) ? cfg.blunderLimitCp : 150;
+
+  // Time pressure curves (cvA = ELO degradation, cvB = distribution cutoff)
+  // pressureOff disables both curves (flat ELO, 100% distribution at all times)
+  if (cfg.pressureOff) {
+    botPressureCurveA = null;
+    botPressureCurveB = null;
+  } else {
+    botPressureCurveA = (cfg.ctrlA && cfg.ctrlA.length >= 2) ? cfg.ctrlA : null;
+    botPressureCurveB = (cfg.ctrlB && cfg.ctrlB.length >= 2) ? cfg.ctrlB : null;
+  }
+
+  // Weaponizer
+  botWeaponizerEnabled = !!cfg.weaponizerEnabled;
+  botWeaponizerLeadMs  = (cfg.weaponizerLeadSec || 30) * 1000;
+
+  // Calm/panicky (-5..+5) → botTimePressure
+  // Center (0) = steady (no boost); positive = panicky boost under pressure
+  var cp = cfg.calmPanickyValue || 0;
+  botTimePressure = cp >= 3 ? 'panicky' : cp >= 1 ? 'normal' : 'steady';
+
+  // Opening mode
+  if (!cfg.openingMode || cfg.openingMode === 'off') {
+    botSetOpeningMode('none');
+  } else if (cfg.openingMode === 'mainline') {
+    botOpeningConfig.source       = cfg.openingSource || 'masters';
+    botOpeningConfig.maxBookDepth = cfg.openingDepth  || 20;
+    if (cfg.modernOnly) botOpeningConfig.since = '2020-01'; else delete botOpeningConfig.since;
+    botSetOpeningMode('mainline');
+  } else if (cfg.openingMode === 'repertoire') {
+    var mapSlot = function(s) { return { eco: s.code, familyPrefix: (s.code || '').slice(0,2), name: s.name, pct: s.pct }; };
+    botOpeningConfig.white        = (cfg.repSlots && cfg.repSlots.white || []).map(mapSlot);
+    botOpeningConfig.black        = (cfg.repSlots && cfg.repSlots.black || []).map(mapSlot);
+    botOpeningConfig.source       = cfg.openingSource || 'masters';
+    botOpeningConfig.maxBookDepth = cfg.openingDepth  || 20;
+    botOpeningConfig.strictness   = 0.8;
+    if (cfg.modernOnly) botOpeningConfig.since = '2020-01'; else delete botOpeningConfig.since;
+    botSetOpeningMode('preferred');
+  }
+
+  // Hybrid slots: panel sends type 'sf' (level 1–10 in s.level); the legacy
+  // panel sent 'stockfish' (s.sfLevel). Accept both — checking only
+  // 'stockfish' silently turned every SF slot into a Maia slot.
+  if (cfg.engine === 'hybrid' && cfg.hybridSlots && cfg.hybridSlots.length) {
+    botHybridSlots = cfg.hybridSlots.map(function(s) {
+      var isSf = (s.type === 'stockfish' || s.type === 'sf');
+      return {
+        type:   isSf ? 'sf' : 'maia',
+        elo:    isSf ? null : (s.elo || 1500), // Maia3 slot ELO, used directly by botMakeMove
+        level:  isSf ? Math.min(20, Math.max(1, (s.sfLevel || s.level || 5) * 2))
+                     : Math.round((s.elo || 1500) / 200),
+        weight: s.pct || 0
+      };
+    });
+    botRenderHybridSlots();
+  }
+
+  // Move quality range (dual slider)
+  botDayLower = (cfg.dayLower != null) ? cfg.dayLower : 0;
+  botDayUpper = (cfg.dayUpper != null) ? cfg.dayUpper : 100;
+
+  // Attractor + piece values — used live by applyMoveAttractors()
+  window._bcpAttractorValues = cfg.attractorValues || {};
+  window._bcpPieceValues     = cfg.pieceValues     || {};
+  window._bcpCpBudget        = cfg.cpBudget;
+
+  closeBotModal();
+  botStart();
+});
+
