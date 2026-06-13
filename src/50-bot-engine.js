@@ -40,8 +40,44 @@ function pressureEffectiveDayUpper(clockMs) {
   return Math.max(0, Math.min(botDayUpper, curvePct));
 }
 
+// ── Pressure functions keyed on actual think time (seconds) ──────────────────
+// These replace the clock-based variants in the move generation path so that
+// the degradation curves respond to how long the bot *actually* thinks, not to
+// a clock/remaining-moves average.  A hustler taking 0.3 s sees heavy curve
+// degradation; a grinder taking 15 s sees little.
+function pressureEffectiveMaiaEloByThink(thinkSec) {
+  if (!botPressureCurveA || botPressureCurveA.length < 2) return maia3SelectedRating;
+  const curveElo = evalPressureCurve(botPressureCurveA, thinkSec);
+  if (curveElo === null) return maia3SelectedRating;
+  return Math.max(600, Math.min(2600, Math.round(curveElo)));
+}
+
+function pressureEffectiveDayUpperByThink(thinkSec) {
+  if (!botPressureCurveB || botPressureCurveB.length < 2) return botDayUpper;
+  const curvePct = evalPressureCurve(botPressureCurveB, thinkSec);
+  if (curvePct === null) return botDayUpper;
+  return Math.max(0, Math.min(botDayUpper, curvePct));
+}
+
+function timePressureTempByThink(baseTemp, thinkSec) {
+  const boost = { steady: 0.0, normal: 1.0, panicky: 2.5 }[botTimePressure] || 0;
+  if (boost === 0) return baseTemp;
+  if (botPressureCurveB && botPressureCurveB.length >= 2) {
+    const distPct = evalPressureCurve(botPressureCurveB, thinkSec);
+    if (distPct !== null) {
+      const fraction = Math.max(0, Math.min(1, 1 - distPct / 100));
+      return baseTemp + fraction * boost;
+    }
+  }
+  // Linear fallback: full boost at 0 s, zero boost at 30 s
+  const fraction = Math.max(0, 1 - thinkSec / 30);
+  return baseTemp + fraction * boost;
+}
+
 // clock ms at the time of the current move — set before applyMoveAttractors
 let _botMoveClockMs = null;
+// actual think time in seconds for this move — drives pressure curve lookup
+let _botMoveThinkSec = null;
 
 // ── Estimated remaining moves (Fischer formula ≈ 40 per game) ────────────────
 function botRemainingMovesEstimate() {
@@ -117,8 +153,10 @@ function applyMoveAttractors(moveProbs) {
     : 0;
 
   // ── Quality range + luck shift ────────────────────────────────────────────
-  // pressureEffectiveDayUpper applies ctrlB curve to restrict distribution under time pressure.
-  const _pressureUpper = pressureEffectiveDayUpper(_botMoveClockMs);
+  // Use actual think time for pressure if available; fall back to clock-based estimate.
+  const _pressureUpper = _botMoveThinkSec !== null
+    ? pressureEffectiveDayUpperByThink(_botMoveThinkSec)
+    : pressureEffectiveDayUpper(_botMoveClockMs);
   let lo = Math.max(0, Math.min(95, botDayLower - luckVal * 4));
   let hi = Math.max(lo + 5, Math.min(100, _pressureUpper - luckVal * 4));
   let filtered = moveProbs;
@@ -862,7 +900,11 @@ async function botMakeMove() {
         : (typeof botMaiaTempValue !== 'undefined' && botMaiaTempValue > 0)
           ? botMaiaTempValue
           : (parseFloat(document.getElementById('maiaTemp')?.value) || 1.0);
-      const effectiveTemp = timePressureTemp(baseTemp, clockMs);
+
+      // Step 1: rough think estimate (no probs yet, entropy defaults to 2) so
+      // the ELO degradation curve uses actual move pace, not clock/40 average.
+      const roughThinkSec = botThinkTime(null, clockMs) / 1000;
+
       let probs = null;
       // Start complexity probe before LC/Maia calls — runs in parallel on sfWorker
       if (_needsComplexity() && !sfReady) sfInit().catch(() => {});
@@ -877,8 +919,9 @@ async function botMakeMove() {
         }
       }
       if (!probs && _maiaReady) {
+        // Step 2: query Maia at ELO degraded by the rough think time
         const savedRatingM = lcSelectedRating;
-        lcSelectedRating = String(pressureEffectiveMaiaElo(clockMs)); // ELO degradation via ctrlA
+        lcSelectedRating = String(pressureEffectiveMaiaEloByThink(roughThinkSec));
         probs = await maia3GetMoveProbs(fen);
         lcSelectedRating = savedRatingM;
         if (probs) lastBotMoveSource = 'Maia3';
@@ -892,12 +935,18 @@ async function botMakeMove() {
         sfCplxScore = sfCplxEval = null;
       }
       if (probs && Object.keys(probs).length) {
+        // Step 3: precise think time now that we have entropy from real probs
         const targetDelay = botThinkTime(probs, clockMs);
+        const preciseThinkSec = targetDelay / 1000;
+        // Step 4: pressure curves keyed on actual think time, not clock average
+        const effectiveTemp = timePressureTempByThink(baseTemp, preciseThinkSec);
         const inferenceMs = Date.now() - _botMoveStartMs;
         const delay = Math.max(0, targetDelay - inferenceMs);
         if (delay > 0) await new Promise(r => setTimeout(r, delay));
         _botMoveClockMs = clockMs;
+        _botMoveThinkSec = preciseThinkSec;
         uciMove = sampleFromProbs(applyMoveAttractors(probs), complexityAdjustedTemp(effectiveTemp));
+        _botMoveThinkSec = null;
       } else {
         await sfInit();
         uciMove = await sfGetMove(fen, lcFallbackLevel());
@@ -912,7 +961,7 @@ async function botMakeMove() {
         : (typeof botMaiaTempValue !== 'undefined' && botMaiaTempValue > 0)
           ? botMaiaTempValue
           : (parseFloat(document.getElementById('maiaTemp')?.value) || 1.0);
-      const lcsfEffTemp = timePressureTemp(lcsfTemp, clockMs);
+      const roughThinkSecLcsf = botThinkTime(null, clockMs) / 1000;
       let lcsfProbs = null;
       if (lichessExplorerActive) {
         const savedRating = lcSelectedRating;
@@ -928,11 +977,15 @@ async function botMakeMove() {
       }
       if (lcsfProbs && Object.keys(lcsfProbs).length) {
         const targetDelay = botThinkTime(lcsfProbs, clockMs);
+        const preciseThinkSecLcsf = targetDelay / 1000;
+        const lcsfEffTemp = timePressureTempByThink(lcsfTemp, preciseThinkSecLcsf);
         const inferenceMs = Date.now() - _botMoveStartMs;
         const delay = Math.max(0, targetDelay - inferenceMs);
         if (delay > 0) await new Promise(r => setTimeout(r, delay));
         _botMoveClockMs = clockMs;
+        _botMoveThinkSec = preciseThinkSecLcsf;
         uciMove = sampleFromProbs(applyMoveAttractors(lcsfProbs), lcsfEffTemp);
+        _botMoveThinkSec = null;
       } else {
         await sfInit();
         uciMove = await sfGetMove(fen, lcsfFallbackLevel());
