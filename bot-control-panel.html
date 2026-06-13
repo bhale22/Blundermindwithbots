@@ -495,6 +495,18 @@ canvas{display:block;background:transparent;}
 
 /* Temperature cards */
 .temp-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:6px;}
+/* Temperature slider control */
+.temp-slider-zone{ position:relative; margin-top:4px; }
+.temp-ticks{ position:relative; height:14px; margin-bottom:1px; }
+.tt{ position:absolute; transform:translateX(-50%); font-family:var(--font-m);
+     font-size:7px; color:var(--text-dim); white-space:nowrap; pointer-events:none; }
+.tt::before{ content:''; position:absolute; bottom:100%; left:50%; width:1px; height:4px;
+             background:var(--border); transform:translateX(-50%); }
+.temp-t-slider{ width:100%; cursor:pointer; accent-color:var(--amber); height:4px;
+                margin:0; padding:0; }
+#temp-formula-line{ margin:5px 0 3px; font-size:8.5px; color:var(--text-dim);
+                    font-family:var(--font-m); line-height:1.5; min-height:22px; }
+#temp-dist-chart{ width:100%; height:118px; display:block; border-radius:2px; }
 .temp-card{padding:8px 6px;background:var(--carbon-surface);border:0.5px solid var(--border);border-radius:var(--r);cursor:pointer;transition:all 0.2s;text-align:center;}
 .temp-card:hover{border-color:var(--border-amber);}
 .temp-card.sel{border-color:var(--amber);background:var(--carbon-raise);}
@@ -980,8 +992,30 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
         <!-- RIGHT: shared quality controls — hidden for pure-SF engines -->
         <div id="engine-temp-col">
           <div class="dlbl"><span>Move sampling — temperature</span></div>
-          <div class="temp-grid" id="temp-grid"></div>
-          <div style="margin-top:6px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);" id="temp-hint"></div>
+
+          <!-- Continuous T slider with named tick marks -->
+          <div class="temp-slider-zone">
+            <!-- Tick marks at the 5 named presets -->
+            <div class="temp-ticks">
+              <span class="tt" style="left:7.7%">Focused</span>
+              <span class="tt" style="left:23.1%">Neutral</span>
+              <span class="tt" style="left:43.6%">Varied</span>
+              <span class="tt" style="left:74.4%">Wild</span>
+            </div>
+            <input type="range" id="temp-t-slider" class="temp-t-slider"
+              min="0.1" max="4.0" step="0.05" value="1.0"
+              oninput="onTempSlider(+this.value)">
+            <div style="display:flex;justify-content:space-between;font-size:7px;
+                        color:var(--text-dim);font-family:var(--font-m);margin-top:1px;">
+              <span>▲ Top move</span><span>4.0 ▲</span>
+            </div>
+          </div>
+
+          <!-- Formula + description line (updates live) -->
+          <div id="temp-formula-line"></div>
+
+          <!-- Live distribution chart — Maia reference vs adjusted -->
+          <canvas id="temp-dist-chart"></canvas>
 
         </div><!-- /right col -->
 
@@ -5168,6 +5202,8 @@ function openEngineSection(){
     toggleSec('engine');
   }
   sec.scrollIntoView({behavior:'smooth',block:'start'});
+  // Redraw chart now that the canvas has layout dimensions
+  requestAnimationFrame(() => drawTempChart(_currentTempValue));
 }
 
 function selColor(btn){
@@ -5226,6 +5262,7 @@ function getBotConfig(){
     behavBlink:        document.getElementById('cb-blink')?.checked        !== false,
     behavClockMirror:  document.getElementById('cb-clock-mirror')?.checked !== false,
     canFlag:           document.getElementById('cb-flag')?.checked          !== false,
+    tempValue:         _currentTempValue,
     tempPresetId:      selectedTempPresetId,
     calmPanickyValue:  attractorValues['pressure'] || 0,
     hybridSlots:     hybridSlots.map(s=>({...s})),
@@ -5327,11 +5364,14 @@ function applyBotConfig(cfg){
   });
   grp(() => onCalmPanickyChange(cfg.calmPanickyValue || 0));
 
-  // Temperature preset
+  // Temperature — prefer raw float (tempValue); fall back to preset ID for old saves
   grp(() => {
-    const idx = TEMP_PRESETS.findIndex(t => t.id === cfg.tempPresetId);
-    const grid = document.getElementById('temp-grid');
-    if(idx >= 0 && grid && grid.children[idx]) selTemp(grid.children[idx], cfg.tempPresetId);
+    const T = cfg.tempValue != null
+      ? parseFloat(cfg.tempValue)
+      : _tempValueFromPresetId(cfg.tempPresetId || 'neutral');
+    const slider = document.getElementById('temp-t-slider');
+    if(slider){ slider.value = T; }
+    onTempSlider(T);
   });
 
   // Timing mode + its sliders
@@ -5929,24 +5969,184 @@ function updateDialSVG(svgId, value, min, max){
 }
 
 /* ══════════════════════════════════════════════════════════════
-   TEMPERATURE PRESETS
+   TEMPERATURE SLIDER + LIVE DISTRIBUTION CHART
 ══════════════════════════════════════════════════════════════ */
-function renderTempGrid(){
-  const grid = document.getElementById('temp-grid');
-  grid.innerHTML = TEMP_PRESETS.map((t,i)=>`
-    <div class="temp-card${i===2?' sel':''}" onclick="selTemp(this,'${t.id}')">
-      <div class="temp-name">${t.name}</div>
-      <div class="temp-formula">${t.formula}</div>
-    </div>
-  `).join('');
-  document.getElementById('temp-hint').textContent = TEMP_PRESETS[2].desc;
+
+// Illustrative Maia3 move distribution (fixed reference for the chart)
+const TEMP_CHART_MOVES = [
+  { label:'e4', p:0.60 },
+  { label:'d4', p:0.25 },
+  { label:'c4', p:0.10 },
+  { label:'e3', p:0.04 },
+  { label:'h3', p:0.01 },
+];
+
+let _currentTempValue = 1.0; // float T, 0.1–4.0
+
+// Map preset ID → T value (for backward-compatible load from old saved bots)
+function _tempValueFromPresetId(id){
+  return { deterministic:0.1, low:0.4, neutral:1.0, high:1.8, wild:3.0 }[id] || 1.0;
 }
+// Map current T → nearest preset ID (kept in getBotConfig for back-compat)
+function _tempPresetIdFromValue(T){
+  if(T < 0.15) return 'deterministic';
+  if(T < 0.7)  return 'low';
+  if(T < 1.3)  return 'neutral';
+  if(T < 2.3)  return 'high';
+  return 'wild';
+}
+// Human-readable name + formula string for current T
+function _tempLabel(T){
+  if(T < 0.15) return { name:'Top move',  exponent:'argmax', desc:'Always the highest-probability move' };
+  const exp = (1/T).toFixed(2);
+  if(T < 0.7)  return { name:'Focused', exponent:'p^'+exp, desc:'Sharpens the distribution — mostly top 1-2 moves' };
+  if(T < 1.3)  return { name:'Neutral', exponent:'p^'+exp, desc:'Samples Maia\'s original distribution unchanged' };
+  if(T < 2.3)  return { name:'Varied',  exponent:'p^'+exp, desc:'Wider sampling — more surprise choices' };
+  return             { name:'Wild',    exponent:'p^'+exp, desc:'Nearly flattens the distribution — even unlikely moves get real weight' };
+}
+
+// Apply temperature scaling to the reference distribution
+function _tempAdjusted(moves, T){
+  if(T < 0.15){ // argmax
+    const max = Math.max(...moves.map(m=>m.p));
+    return moves.map(m=> m.p >= max - 1e-9 ? 1 : 0);
+  }
+  const scaled = moves.map(m=> Math.pow(m.p, 1/T));
+  const sum = scaled.reduce((a,b)=>a+b, 0);
+  return scaled.map(v=> v/sum);
+}
+
+function drawTempChart(T){
+  const canvas = document.getElementById('temp-dist-chart');
+  if(!canvas || !canvas.getContext) return;
+  const rect = canvas.getBoundingClientRect();
+  if(rect.width < 10) return; // not yet laid out
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width  = Math.round(rect.width  * dpr);
+  canvas.height = Math.round(rect.height * dpr);
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+
+  const padT=6, padB=38, padL=4, padR=4;
+  const chartH = H - padT - padB;
+  const chartW = W - padL - padR;
+
+  ctx.clearRect(0, 0, W, H);
+
+  const moves = TEMP_CHART_MOVES;
+  const adj   = _tempAdjusted(moves, T);
+  const nM    = moves.length;
+  const colW  = chartW / nM;
+  const barW  = colW * 0.30;
+  const sep   = colW * 0.05;
+
+  // Palette
+  const C_MAIA   = 'rgba(235,140,0,0.25)'; // dim amber — Maia reference bar
+  const C_ADJ    = 'rgba(235,160,0,0.88)'; // bright amber — adjusted at or below Maia
+  const C_GAIN   = 'rgba(74,185,124,0.88)'; // teal — probability gained above Maia
+  const C_LOST   = 'rgba(210,80,55,0.18)';  // subtle red fill for probability lost
+
+  moves.forEach((mv, i)=>{
+    const maiaP = mv.p;
+    const adjP  = adj[i];
+    const cx = padL + i*colW + colW/2;
+
+    // Pixel heights (scale: 1.0 = chartH)
+    const mH = maiaP * chartH;
+    const aH = adjP  * chartH;
+
+    // Left sub-bar: Maia (fixed reference)
+    const mX = cx - sep/2 - barW;
+    ctx.fillStyle = C_MAIA;
+    ctx.fillRect(mX, padT + chartH - mH, barW, mH);
+
+    // Right sub-bar: Adjusted
+    const aX = cx + sep/2;
+    if(adjP >= maiaP - 5e-4){
+      // Same or higher: amber base up to Maia height, teal gain above
+      ctx.fillStyle = C_ADJ;
+      ctx.fillRect(aX, padT + chartH - mH, barW, mH);
+      if(aH > mH + 0.5){
+        ctx.fillStyle = C_GAIN;
+        ctx.fillRect(aX, padT + chartH - aH, barW, aH - mH);
+      }
+    } else {
+      // Lower: dim-red for lost region, bright amber for kept region
+      ctx.fillStyle = C_LOST;
+      ctx.fillRect(aX, padT + chartH - mH, barW, mH - aH);
+      ctx.fillStyle = C_ADJ;
+      ctx.fillRect(aX, padT + chartH - aH, barW, aH);
+    }
+
+    // Row 1: move label
+    ctx.fillStyle = 'rgba(240,237,232,0.78)';
+    ctx.font = '9px "DM Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(mv.label, cx, H - padB + 11);
+
+    // Row 2: Maia % (left column, dim)
+    ctx.fillStyle = 'rgba(235,140,0,0.60)';
+    ctx.font = '7.5px "DM Mono", monospace';
+    ctx.fillText(Math.round(maiaP*100)+'%', mX + barW/2, H - padB + 21);
+
+    // Row 2: Adjusted % (right column)
+    const adjPct = Math.round(adjP*100);
+    const adjColor = adjP > maiaP + 0.005 ? 'rgba(74,185,124,0.9)'
+                   : adjP < maiaP - 0.005 ? 'rgba(235,160,0,0.88)'
+                   : 'rgba(235,140,0,0.60)';
+    ctx.fillStyle = adjColor;
+    ctx.fillText(adjP < 0.005 ? '~0' : adjPct+'%', aX + barW/2, H - padB + 21);
+
+    // Row 3: column label (M / A)
+    ctx.fillStyle = 'rgba(200,185,165,0.38)';
+    ctx.font = '6.5px "DM Mono", monospace';
+    ctx.fillText('M', mX + barW/2, H - padB + 29);
+    ctx.fillText('A', aX + barW/2, H - padB + 29);
+  });
+
+  // Legend (bottom-right)
+  const legY = H - 5;
+  ctx.font = '7px "DM Mono", monospace';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = 'rgba(235,140,0,0.3)';
+  ctx.fillRect(W - padR - 68, legY - 8, 7, 7);
+  ctx.fillStyle = 'rgba(200,185,165,0.4)';
+  ctx.fillText('Maia', W - padR - 57, legY);
+  ctx.fillStyle = 'rgba(235,160,0,0.88)';
+  ctx.fillRect(W - padR - 30, legY - 8, 7, 7);
+  ctx.fillStyle = 'rgba(200,185,165,0.4)';
+  ctx.fillText('Adj.', W - padR, legY);
+}
+
+function onTempSlider(T){
+  T = Math.max(0.1, Math.min(4.0, parseFloat(T) || 1.0));
+  _currentTempValue = T;
+  selectedTempPresetId = _tempPresetIdFromValue(T); // keep in sync for back-compat
+
+  const info = _tempLabel(T);
+  const fEl  = document.getElementById('temp-formula-line');
+  if(fEl){
+    fEl.innerHTML =
+      '<span style="color:var(--amber);">T = ' + T.toFixed(2) + '</span>' +
+      ' · <span style="color:var(--amber-bright);">' + info.name + '</span>' +
+      ' · <span style="opacity:0.55;">' + info.exponent + '</span>' +
+      ' · <span style="opacity:0.5;">' + info.desc + '</span>';
+  }
+  drawTempChart(T);
+}
+
+function renderTempGrid(){
+  // Initialize slider to current T and draw chart (deferred so canvas has size)
+  setTimeout(()=> onTempSlider(_currentTempValue), 0);
+}
+
+// Backward-compat stub (old code still calls selTemp in applyBotConfig path below)
 function selTemp(card, id){
-  document.querySelectorAll('.temp-card').forEach(c=>c.classList.remove('sel'));
-  card.classList.add('sel');
   selectedTempPresetId = id;
-  const t = TEMP_PRESETS.find(x=>x.id===id);
-  document.getElementById('temp-hint').textContent = t ? t.desc : '';
+  const T = _tempValueFromPresetId(id);
+  const slider = document.getElementById('temp-t-slider');
+  if(slider){ slider.value = T; onTempSlider(T); }
 }
 
 /* ══════════════════════════════════════════════════════════════

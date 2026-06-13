@@ -844,7 +844,9 @@ async function botMakeMove() {
     } else if (botTab === 'maia') {
       // LC Explorer with Maia3 fallback.
       // Skip LC call entirely if we already know we're off-book this game.
-      const baseTemp = parseFloat(document.getElementById('maiaTemp').value) || 1.0;
+      const baseTemp = (typeof botMaiaTempValue !== 'undefined' && botMaiaTempValue > 0)
+        ? botMaiaTempValue
+        : (parseFloat(document.getElementById('maiaTemp')?.value) || 1.0);
       const effectiveTemp = timePressureTemp(baseTemp, clockMs);
       let probs = null;
       // Start complexity probe before LC/Maia calls — runs in parallel on sfWorker
@@ -890,7 +892,9 @@ async function botMakeMove() {
     } else if (botTab === 'lcsf') {
       // LC Explorer with Stockfish fallback.
       // Skip LC call entirely if we already know we're off-book this game.
-      const lcsfTemp = parseFloat(document.getElementById('maiaTemp')?.value || '1.0');
+      const lcsfTemp = (typeof botMaiaTempValue !== 'undefined' && botMaiaTempValue > 0)
+        ? botMaiaTempValue
+        : (parseFloat(document.getElementById('maiaTemp')?.value) || 1.0);
       const lcsfEffTemp = timePressureTemp(lcsfTemp, clockMs);
       let lcsfProbs = null;
       if (lichessExplorerActive) {

@@ -1200,6 +1200,12 @@ window.addEventListener('message', function(e) {
   if (cfg.engine === 'lcsf')   { lcsfSetRating(_snapToLcBand(cfg.lcsfElo || 2000)); }
   if (cfg.engine === 'lcmaia') { lcSetRating(_snapToLcBand(cfg.lcMaiaLcElo || 2000)); maia3SetRating(cfg.lcMaiaMaiaElo || 1500); }
 
+  // Temperature — store raw float; also update legacy maiaTemp DOM element for fallback reads
+  if (cfg.tempValue != null) {
+    botMaiaTempValue = Math.max(0.1, Math.min(4.0, parseFloat(cfg.tempValue) || 1.0));
+    var _mTempEl = document.getElementById('maiaTemp');
+    if (_mTempEl) _mTempEl.value = Math.min(3.0, Math.max(0.3, botMaiaTempValue));
+  }
   // Temperature preset → sfPickLevel tier (deterministic=0 focused=1 neutral=2 varied=3 wild=4)
   var tempTierMap = { deterministic: 0, low: 1, neutral: 2, high: 3, wild: 4 };
   botSfTempLevel = tempTierMap.hasOwnProperty(cfg.tempPresetId) ? tempTierMap[cfg.tempPresetId] : 2;

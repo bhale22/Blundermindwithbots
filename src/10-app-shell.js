@@ -13,6 +13,7 @@ let botHybridSlots = [];
 let sfWorker = null;
 let sfReady = false;
 let _sfInitPromise = null;
+let botMaiaTempValue = 1.0; // raw T from bot panel slider; used by Maia sampling
 let sfPendingResolve = null;
 let sfBestmovesOwed = 0;  // bestmoves still owed by abandoned (stopped/timed-out) searches —
                           // they must be discarded or they resolve the WRONG request
