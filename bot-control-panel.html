@@ -1408,13 +1408,13 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
   </div>
 </div>
 
-<!-- ═══ SECTION 6: HOW MOVE SELECTION WORKS ═══ -->
+<!-- ═══ SECTION 6: HOW BOT BEHAVIOR WORKS ═══ -->
 <div class="section" id="sec-howmoves">
   <div class="sec-trigger" onclick="toggleSec('howmoves')">
     <div class="sec-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></div>
     <div class="sec-labels">
-      <div class="sec-label">How Move Selection Works</div>
-      <div class="sec-sub">The pipeline from engine query to chosen move</div>
+      <div class="sec-label">How Bot Behavior Works</div>
+      <div class="sec-sub">Move timing, quality degradation, and move selection pipeline</div>
     </div>
     <div class="sec-status">Reference</div>
     <svg class="chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
@@ -1518,6 +1518,23 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
           <div class="formula-body" style="text-align:left;line-height:1.75;">
             Think time is the central input to both degradation curves. Controls that shorten think time — the <span style="color:var(--amber);">Hustle</span> slider, the Weaponizer, clock-mirroring, the Blink shortcut — all reduce move quality through curves A and B, not just move speed. A bot configured to think 0.3 s per move will have its ELO degraded and its move pool narrowed to first-pass instinctive choices on <em>every move</em>, exactly as a human would under severe time pressure.
           </div>
+        </div>
+
+        <!-- Download brief -->
+        <div style="margin-top:14px;padding-top:10px;border-top:1px solid rgba(235,140,0,0.18);text-align:center;">
+          <a href="/Bot_Controls_Technical_Brief.pdf" download="Bot_Controls_Technical_Brief.pdf"
+             style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;
+                    background:rgba(235,140,0,0.10);border:1px solid rgba(235,140,0,0.35);
+                    border-radius:4px;text-decoration:none;
+                    font-family:var(--font-u);font-size:8px;font-weight:500;
+                    color:var(--amber);letter-spacing:0.06em;
+                    transition:background 0.15s,border-color 0.15s;"
+             onmouseover="this.style.background='rgba(235,140,0,0.20)';this.style.borderColor='rgba(235,140,0,0.6)'"
+             onmouseout="this.style.background='rgba(235,140,0,0.10)';this.style.borderColor='rgba(235,140,0,0.35)'">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            DOWNLOAD FULL TECHNICAL BRIEF
+          </a>
+          <div style="font-family:var(--font-m);font-size:7px;color:var(--text-dim);margin-top:5px;">PDF — all controls, formulas &amp; architecture</div>
         </div>
 
       </div><!-- /pr -->

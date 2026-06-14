@@ -148,6 +148,13 @@ app.get('/bot-control-panel.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'bot-control-panel.html'));
 });
 
+app.get('/Bot_Controls_Technical_Brief.pdf', (req, res) => {
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'attachment; filename="Bot_Controls_Technical_Brief.pdf"');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.sendFile(path.join(__dirname, 'Bot_Controls_Technical_Brief.pdf'));
+});
+
 // Serve Stockfish — long cache (content never changes for this version)
 app.get('/stockfish.js', (req, res) => {
   if (!sfScript) { res.status(503).send('// Stockfish not yet loaded'); return; }
