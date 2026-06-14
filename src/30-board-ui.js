@@ -2130,7 +2130,45 @@ let showingXray = false, xrayData = null;
 // Captures state
 let showingCaptures = false;
 
+// Memoization guard for the position-analysis layer below.
+// indApply() recomputes check-threats, weak squares, forks, discovered
+// attacks and x-ray — all pure functions of the DISPLAYED position
+// (previewBoard||board) plus which indicators are active and the queen-pins
+// math toggle. It is called from ~25 sites, many of which leave the position
+// unchanged (indicator toggles, square selection, replay landing on a repeated
+// position). When the signature is identical to the last successful run we skip
+// the recompute and only render() — the interaction layer (selection, hover,
+// premove arrows, last-move highlight) is drawn by render(), not here, so it
+// stays fully live. Exploration is unaffected: a preview is a different board,
+// hence a different signature, hence a recompute.
+let _indLastSig = null;
+function indSignature() {
+  const pb  = previewBoard;
+  const bd  = pb || board;
+  const ep  = pb ? previewEpSq : epSq;
+  const cst = pb ? (previewCastling || castling) : castling;
+  // positionKey encodes placement + side-to-move + castling + ep.
+  let sig = positionKey(bd, turn, cst, ep) + (pb ? '|P' : '|L') +
+            (currentlyPreviewing ? '1' : '0');
+  // Active-indicator set — which overlays indApply branches on. indActive()
+  // already folds in pressing/on/pre state and the preview flag.
+  if (typeof IND !== 'undefined') for (const k in IND) sig += indActive(k) ? '1' : '0';
+  // Queen-pins isn't an IND key but changes computePins() (forks) and the
+  // attack map used by the overloaded overlay.
+  const qp = document.getElementById('cbQPins');
+  sig += (qp && qp.checked) ? 'Q' : 'q';
+  return sig;
+}
+
 function indApply() {
+  let _sig;
+  try { _sig = indSignature(); } catch(e) { _sig = null; }
+  // Skip the recompute only when the signature is valid and unchanged; still
+  // render() so selection/hover/arrow changes (not part of the signature) paint.
+  if (_sig !== null && _sig === _indLastSig) {
+    if (typeof render === 'function') render();
+    return;
+  }
   const _indStart = Date.now();
   try {
   const isPre = !!previewBoard || currentlyPreviewing;
@@ -2241,7 +2279,8 @@ function indApply() {
 
   indRefreshPremoveUI();
   render();
-  } catch(e){ console.warn('indApply error:',e); if(typeof render==='function') setTimeout(render,0); }
+  _indLastSig = _sig; // mark this signature done — subsequent identical calls skip
+  } catch(e){ _indLastSig = null; console.warn('indApply error:',e); if(typeof render==='function') setTimeout(render,0); }
 }
 // (checkbox shim removed — direct indActive() calls used instead)
 
