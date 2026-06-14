@@ -253,12 +253,12 @@ cv.addEventListener('mousedown',e=>{
     if(isOwnPiece){
       if(selSq===sq){selSq=-1;legalMoves=[];clearPreview();atkMap=buildAtk(board);dragFrom=-1;dragMoved=false;render();}
       else{
-        dragFrom=sq;dragStartPos=pos;dragMoved=false;mousePos=pos;selSq=sq;
-        // Compute legal moves relative to the piece's turn (may not be current turn when premove)
+        dragFrom=sq;dragStartPos=pos;dragMoved=false;mousePos=pos;
         const pieceTurn=board[sq].color;
         legalMoves=legalMovesFor(sq,board,epSq,castling);
-        premoveFrom=sq;premoveTo=-1;clearPreview();
-        try{if(typeof indApply==='function')indApply();else render();}catch(err){render();}
+        // Identity preview at selection time: overlays appear immediately and stay on.
+        startPreview(sq,sq);
+        selSq=sq; // startPreview clears selSq; restore it so hover exploration works
       }
     }else{
       if(previewBoard&&premoveFrom>=0&&premoveTo>=0){tryCommit(premoveFrom,premoveTo);}
@@ -294,20 +294,15 @@ cv.addEventListener('mousemove',e=>{
         hoverSq=sq;
         if (typeof ghostOnMouseMove === 'function') ghostOnMouseMove(sq);
         if(sq>=0&&sq!==selSq&&legalMoves.includes(sq)){
+          // Legal destination — preview the move.
           startPreview(selSq,sq);
-        } else if(sq===selSq){
-          // Piece hovered over its own square — identity preview: keep the
-          // exploration overlays on, evaluating the board as it stands.
+        } else {
+          // Origin square, non-legal square, or off-board — hold identity preview
+          // (piece on its original square) so overlays stay steady. They only
+          // change when the cursor enters a legal destination square.
           const _orig=selSq;
           startPreview(_orig,_orig);
-          selSq=_orig; // restore selection so hover exploration continues
-        } else {
-          // Off board or non-legal square — clear preview but keep exploration indicators
-          clearPreview();
-          premoveFrom=selSq; premoveTo=-1;
-          // Mark as currently previewing so pre:true indicators activate
-          currentlyPreviewing = true;
-          try{ if(typeof indApply==='function') indApply(); else render(); }catch(e){ render(); }
+          selSq=_orig; // startPreview clears selSq; restore so hover continues
         }
       }
       render();
@@ -320,14 +315,8 @@ cv.addEventListener('mousemove',e=>{
           // (overlays stay on, evaluating the unchanged board).
           startPreview(dragFrom,sq);
         } else {
-          // Off board or non-legal square — show indicators on live board
-          clearPreview();
-          premoveFrom=dragFrom;premoveTo=-1;
-          if(window._indApplyFrame) cancelAnimationFrame(window._indApplyFrame);
-          window._indApplyFrame = requestAnimationFrame(()=>{
-            window._indApplyFrame=null;
-            try{ if(typeof indApply==='function') indApply(); }catch(e){ render(); }
-          });
+          // Non-legal square while dragging — hold identity preview so overlays stay on.
+          startPreview(dragFrom,dragFrom);
         }
       }
       render();
@@ -342,14 +331,8 @@ cv.addEventListener('mousemove',e=>{
           // Legal square → preview the move; origin square → identity preview
           startPreview(dragFrom,sq);
         } else {
-          // Off board or non-legal square — show indicators on live board
-          clearPreview();
-          premoveFrom=dragFrom;premoveTo=-1;
-          if(window._indApplyFrame) cancelAnimationFrame(window._indApplyFrame);
-          window._indApplyFrame = requestAnimationFrame(()=>{
-            window._indApplyFrame=null;
-            try{ if(typeof indApply==='function') indApply(); }catch(e){ render(); }
-          });
+          // Non-legal square while dragging — hold identity preview so overlays stay on.
+          startPreview(dragFrom,dragFrom);
         }
       }
       render();
@@ -383,7 +366,7 @@ cv.addEventListener('mouseup',e=>{
 cv.addEventListener('dblclick',e=>{e.preventDefault();if(!isHoverMode()&&previewBoard&&premoveFrom>=0&&premoveTo>=0)tryCommit(premoveFrom,premoveTo);});
 cv.addEventListener('mouseleave',()=>{
   hoverSq=-1;
-  if(isHoverMode()){if(selSq>=0){clearPreview();showRemovalAtk(selSq);premoveFrom=selSq;premoveTo=-1;}dragMoved=false;}
+  if(isHoverMode()){if(selSq>=0){const _orig=selSq;startPreview(_orig,_orig);selSq=_orig;}else if(dragFrom>=0&&dragMoved){startPreview(dragFrom,dragFrom);}dragMoved=false;}
   else{dragMoved=false;dragFrom=-1;dragOver=-1;}
   render();
 });
