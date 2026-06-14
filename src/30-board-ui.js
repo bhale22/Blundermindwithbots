@@ -253,12 +253,12 @@ cv.addEventListener('mousedown',e=>{
     if(isOwnPiece){
       if(selSq===sq){selSq=-1;legalMoves=[];clearPreview();atkMap=buildAtk(board);dragFrom=-1;dragMoved=false;render();}
       else{
-        dragFrom=sq;dragStartPos=pos;dragMoved=false;mousePos=pos;selSq=sq;
-        // Compute legal moves relative to the piece's turn (may not be current turn when premove)
+        dragFrom=sq;dragStartPos=pos;dragMoved=false;mousePos=pos;
         const pieceTurn=board[sq].color;
         legalMoves=legalMovesFor(sq,board,epSq,castling);
-        premoveFrom=sq;premoveTo=-1;clearPreview();
-        try{if(typeof indApply==='function')indApply();else render();}catch(err){render();}
+        // Identity preview at selection time: overlays appear immediately and stay on.
+        startPreview(sq,sq);
+        selSq=sq; // startPreview clears selSq; restore it so hover exploration works
       }
     }else{
       if(previewBoard&&premoveFrom>=0&&premoveTo>=0){tryCommit(premoveFrom,premoveTo);}
@@ -294,20 +294,15 @@ cv.addEventListener('mousemove',e=>{
         hoverSq=sq;
         if (typeof ghostOnMouseMove === 'function') ghostOnMouseMove(sq);
         if(sq>=0&&sq!==selSq&&legalMoves.includes(sq)){
+          // Legal destination — preview the move.
           startPreview(selSq,sq);
-        } else if(sq===selSq){
-          // Piece hovered over its own square — identity preview: keep the
-          // exploration overlays on, evaluating the board as it stands.
+        } else {
+          // Origin square, non-legal square, or off-board — hold identity preview
+          // (piece on its original square) so overlays stay steady. They only
+          // change when the cursor enters a legal destination square.
           const _orig=selSq;
           startPreview(_orig,_orig);
-          selSq=_orig; // restore selection so hover exploration continues
-        } else {
-          // Off board or non-legal square — clear preview but keep exploration indicators
-          clearPreview();
-          premoveFrom=selSq; premoveTo=-1;
-          // Mark as currently previewing so pre:true indicators activate
-          currentlyPreviewing = true;
-          try{ if(typeof indApply==='function') indApply(); else render(); }catch(e){ render(); }
+          selSq=_orig; // startPreview clears selSq; restore so hover continues
         }
       }
       render();
@@ -320,14 +315,8 @@ cv.addEventListener('mousemove',e=>{
           // (overlays stay on, evaluating the unchanged board).
           startPreview(dragFrom,sq);
         } else {
-          // Off board or non-legal square — show indicators on live board
-          clearPreview();
-          premoveFrom=dragFrom;premoveTo=-1;
-          if(window._indApplyFrame) cancelAnimationFrame(window._indApplyFrame);
-          window._indApplyFrame = requestAnimationFrame(()=>{
-            window._indApplyFrame=null;
-            try{ if(typeof indApply==='function') indApply(); }catch(e){ render(); }
-          });
+          // Non-legal square while dragging — hold identity preview so overlays stay on.
+          startPreview(dragFrom,dragFrom);
         }
       }
       render();
@@ -342,14 +331,8 @@ cv.addEventListener('mousemove',e=>{
           // Legal square → preview the move; origin square → identity preview
           startPreview(dragFrom,sq);
         } else {
-          // Off board or non-legal square — show indicators on live board
-          clearPreview();
-          premoveFrom=dragFrom;premoveTo=-1;
-          if(window._indApplyFrame) cancelAnimationFrame(window._indApplyFrame);
-          window._indApplyFrame = requestAnimationFrame(()=>{
-            window._indApplyFrame=null;
-            try{ if(typeof indApply==='function') indApply(); }catch(e){ render(); }
-          });
+          // Non-legal square while dragging — hold identity preview so overlays stay on.
+          startPreview(dragFrom,dragFrom);
         }
       }
       render();
@@ -383,7 +366,7 @@ cv.addEventListener('mouseup',e=>{
 cv.addEventListener('dblclick',e=>{e.preventDefault();if(!isHoverMode()&&previewBoard&&premoveFrom>=0&&premoveTo>=0)tryCommit(premoveFrom,premoveTo);});
 cv.addEventListener('mouseleave',()=>{
   hoverSq=-1;
-  if(isHoverMode()){if(selSq>=0){clearPreview();showRemovalAtk(selSq);premoveFrom=selSq;premoveTo=-1;}dragMoved=false;}
+  if(isHoverMode()){if(selSq>=0){const _orig=selSq;startPreview(_orig,_orig);selSq=_orig;}else if(dragFrom>=0&&dragMoved){startPreview(dragFrom,dragFrom);}dragMoved=false;}
   else{dragMoved=false;dragFrom=-1;dragOver=-1;}
   render();
 });
@@ -1355,10 +1338,20 @@ function updateActionBtn() {
       else resetGame();
     };
   } else if (_gameInProgress()) {
-    btn.textContent = '⚑ Resign';
-    btn.className = 'ctrl-btn reset-btn';
-    btn.style.borderColor = ''; btn.style.color = '';
-    btn.onclick = resignOrReset;
+    const _isSolo = !(typeof botActive !== 'undefined' && botActive) &&
+                    !(typeof mpRoomId !== 'undefined' && mpRoomId &&
+                      typeof mpMode !== 'undefined' && mpMode === 'ingame');
+    if (_isSolo) {
+      btn.textContent = '↺ Reset';
+      btn.className = 'ctrl-btn';
+      btn.style.borderColor = ''; btn.style.color = '';
+      btn.onclick = resetGame;
+    } else {
+      btn.textContent = '⚑ Resign';
+      btn.className = 'ctrl-btn reset-btn';
+      btn.style.borderColor = ''; btn.style.color = '';
+      btn.onclick = resignOrReset;
+    }
   } else {
     btn.textContent = '🎯 Training Tips';
     btn.className = 'ctrl-btn util-btn';
@@ -2120,7 +2113,45 @@ let showingXray = false, xrayData = null;
 // Captures state
 let showingCaptures = false;
 
+// Memoization guard for the position-analysis layer below.
+// indApply() recomputes check-threats, weak squares, forks, discovered
+// attacks and x-ray — all pure functions of the DISPLAYED position
+// (previewBoard||board) plus which indicators are active and the queen-pins
+// math toggle. It is called from ~25 sites, many of which leave the position
+// unchanged (indicator toggles, square selection, replay landing on a repeated
+// position). When the signature is identical to the last successful run we skip
+// the recompute and only render() — the interaction layer (selection, hover,
+// premove arrows, last-move highlight) is drawn by render(), not here, so it
+// stays fully live. Exploration is unaffected: a preview is a different board,
+// hence a different signature, hence a recompute.
+let _indLastSig = null;
+function indSignature() {
+  const pb  = previewBoard;
+  const bd  = pb || board;
+  const ep  = pb ? previewEpSq : epSq;
+  const cst = pb ? (previewCastling || castling) : castling;
+  // positionKey encodes placement + side-to-move + castling + ep.
+  let sig = positionKey(bd, turn, cst, ep) + (pb ? '|P' : '|L') +
+            (currentlyPreviewing ? '1' : '0');
+  // Active-indicator set — which overlays indApply branches on. indActive()
+  // already folds in pressing/on/pre state and the preview flag.
+  if (typeof IND !== 'undefined') for (const k in IND) sig += indActive(k) ? '1' : '0';
+  // Queen-pins isn't an IND key but changes computePins() (forks) and the
+  // attack map used by the overloaded overlay.
+  const qp = document.getElementById('cbQPins');
+  sig += (qp && qp.checked) ? 'Q' : 'q';
+  return sig;
+}
+
 function indApply() {
+  let _sig;
+  try { _sig = indSignature(); } catch(e) { _sig = null; }
+  // Skip the recompute only when the signature is valid and unchanged; still
+  // render() so selection/hover/arrow changes (not part of the signature) paint.
+  if (_sig !== null && _sig === _indLastSig) {
+    if (typeof render === 'function') render();
+    return;
+  }
   const _indStart = Date.now();
   try {
   const isPre = !!previewBoard || currentlyPreviewing;
@@ -2231,7 +2262,8 @@ function indApply() {
 
   indRefreshPremoveUI();
   render();
-  } catch(e){ console.warn('indApply error:',e); if(typeof render==='function') setTimeout(render,0); }
+  _indLastSig = _sig; // mark this signature done — subsequent identical calls skip
+  } catch(e){ _indLastSig = null; console.warn('indApply error:',e); if(typeof render==='function') setTimeout(render,0); }
 }
 // (checkbox shim removed — direct indActive() calls used instead)
 

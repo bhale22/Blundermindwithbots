@@ -274,6 +274,7 @@ table.tg td.tg-inc-lbl{
 .section:nth-child(3){animation-delay:0.34s;}
 .section:nth-child(4){animation-delay:0.42s;}
 .section:nth-child(5){animation-delay:0.50s;}
+.section:nth-child(6){animation-delay:0.58s;}
 
 .sec-trigger{
   display:flex;align-items:center;gap:14px;
@@ -1407,6 +1408,140 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
   </div>
 </div>
 
+<!-- ═══ SECTION 6: HOW BOT BEHAVIOR WORKS ═══ -->
+<div class="section" id="sec-howmoves">
+  <div class="sec-trigger" onclick="toggleSec('howmoves')">
+    <div class="sec-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></div>
+    <div class="sec-labels">
+      <div class="sec-label">How Bot Behavior Works</div>
+      <div class="sec-sub">Move timing, quality degradation, and move selection pipeline</div>
+    </div>
+    <div class="sec-status">Reference</div>
+    <svg class="chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+  </div>
+  <div class="panel-shell">
+    <div class="panel">
+      <div class="pr" style="margin-top:0;">
+
+        <!-- Pipeline overview -->
+        <div class="formula-box" style="margin-bottom:14px;">
+          <div class="formula-title">Move selection pipeline — order of operations</div>
+          <div style="display:flex;flex-direction:column;gap:0;margin-top:6px;">
+
+            <!-- Step 1 -->
+            <div style="display:flex;align-items:stretch;gap:0;">
+              <div style="display:flex;flex-direction:column;align-items:center;width:28px;flex-shrink:0;">
+                <div style="width:20px;height:20px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-family:var(--font-u);font-size:8px;font-weight:600;color:var(--carbon);flex-shrink:0;">1</div>
+                <div style="width:1px;flex:1;background:rgba(235,140,0,0.25);margin:2px 0;"></div>
+              </div>
+              <div style="padding:0 0 12px 8px;">
+                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">THINK TIME — calculated first, drives everything downstream</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Think time per move is computed before the engine is queried. It combines the timing mode (pace, complexity-scaled, fixed, mirror), the <span style="color:var(--amber);">Hustle</span> attractor (fast +5 → slow −5 multiplier on base time), clock-pressure shortcuts (weaponizer, clock-mirror), and a ±20% jitter. This produces an <em>actual think time in seconds</em> that is then fed into both degradation curves — not a clock average. A hustler thinking 0.3 s sees heavy degradation; an overthinker thinking 12 s sees almost none.</div>
+              </div>
+            </div>
+
+            <!-- Step 2 -->
+            <div style="display:flex;align-items:stretch;gap:0;">
+              <div style="display:flex;flex-direction:column;align-items:center;width:28px;flex-shrink:0;">
+                <div style="width:20px;height:20px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-family:var(--font-u);font-size:8px;font-weight:600;color:var(--carbon);flex-shrink:0;">2</div>
+                <div style="width:1px;flex:1;background:rgba(235,140,0,0.25);margin:2px 0;"></div>
+              </div>
+              <div style="padding:0 0 12px 8px;">
+                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">ENGINE QUERY — Maia ELO degraded by think time (curve A)</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Maia3 is queried at an ELO that curve A maps from the computed think time. Long think → ELO stays near target. Short think → ELO drops, producing the move distribution of a lower-rated player. The result is a probability for every legal move reflecting what a human at that (possibly degraded) rating would actually play.</div>
+              </div>
+            </div>
+
+            <!-- Step 3 -->
+            <div style="display:flex;align-items:stretch;gap:0;">
+              <div style="display:flex;flex-direction:column;align-items:center;width:28px;flex-shrink:0;">
+                <div style="width:20px;height:20px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-family:var(--font-u);font-size:8px;font-weight:600;color:var(--carbon);flex-shrink:0;">3</div>
+                <div style="width:1px;flex:1;background:rgba(235,140,0,0.25);margin:2px 0;"></div>
+              </div>
+              <div style="padding:0 0 12px 8px;">
+                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">QUALITY WINDOW — rank filter keyed on think time (curve B)</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Moves are sorted best→worst by Maia probability. The Day Lower / Upper sliders define a percentile band; only moves inside the band remain eligible. Curve B narrows the upper bound using the same think time from step 1 — short think → smaller window → only instinctive first-pass moves remain. <span style="color:var(--amber);">Luck</span> shifts the entire window toward better or worse moves without changing its width.</div>
+              </div>
+            </div>
+
+            <!-- Step 4 -->
+            <div style="display:flex;align-items:stretch;gap:0;">
+              <div style="display:flex;flex-direction:column;align-items:center;width:28px;flex-shrink:0;">
+                <div style="width:20px;height:20px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-family:var(--font-u);font-size:8px;font-weight:600;color:var(--carbon);flex-shrink:0;">4</div>
+                <div style="width:1px;flex:1;background:rgba(235,140,0,0.25);margin:2px 0;"></div>
+              </div>
+              <div style="padding:0 0 12px 8px;">
+                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">BLUNDER GATE — hard eligibility floor</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Any move below an absolute minimum probability, or more than the Blunder Limit below the best move in Maia probability, is discarded. Prevents attractor reweighting from ever surfacing a catastrophic blunder.</div>
+              </div>
+            </div>
+
+            <!-- Step 5 -->
+            <div style="display:flex;align-items:stretch;gap:0;">
+              <div style="display:flex;flex-direction:column;align-items:center;width:28px;flex-shrink:0;">
+                <div style="width:20px;height:20px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-family:var(--font-u);font-size:8px;font-weight:600;color:var(--carbon);flex-shrink:0;">5</div>
+                <div style="width:1px;flex:1;background:rgba(235,140,0,0.25);margin:2px 0;"></div>
+              </div>
+              <div style="padding:0 0 12px 8px;">
+                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">ATTRACTOR REWEIGHTING — per-move probability boosts</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Each eligible move is simulated on a scratch board and scored against every active attractor slider. Result: <span style="color:var(--amber-bright);">p′ = p × exp(Σ logBoost)</span>. Attractors stack multiplicatively. CP Budget controls total magnitude — at 0 cp all attractors are silent.</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;margin-top:6px;">
+                  <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Piece type</span> — boosts moves by selected piece</div>
+                  <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Trade seeker</span> — boosts captures + threats created</div>
+                  <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Space Cadet</span> — boosts moves that reduce bot's weak squares (full board; discoveries + blocks counted)</div>
+                  <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Fort Knox</span> — boosts moves that increase friendly coverage</div>
+                  <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Gambito</span> — boosts ECO gambit continuations in opening</div>
+                  <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Attacker</span> — boosts moves that increase pieces threatened</div>
+                  <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Structure</span> — boosts pawn moves that tighten/loosen islands</div>
+                  <div style="font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);line-height:1.5;"><span style="color:var(--text-primary);">Pawn strategic</span> — flat boost to all pawn advances</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Step 6 -->
+            <div style="display:flex;align-items:stretch;gap:0;">
+              <div style="display:flex;flex-direction:column;align-items:center;width:28px;flex-shrink:0;">
+                <div style="width:20px;height:20px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-family:var(--font-u);font-size:8px;font-weight:600;color:var(--carbon);flex-shrink:0;">6</div>
+              </div>
+              <div style="padding:0 0 0 8px;">
+                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">TEMPERATURE SAMPLING — weighted random draw</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Each reweighted probability is raised to <span style="color:var(--amber-bright);">p^(1/T)</span>, then one move is drawn proportionally. T&nbsp;&lt;&nbsp;0.15 → always picks the top move; T&nbsp;=&nbsp;1.0 → unmodified Maia distribution; T&nbsp;&gt;&nbsp;1 → flattened toward uniform. Temperature can also be boosted by the Panicky pressure setting, scaled by how much of the quality window has been lost to curve B — short think time tightens the window <em>and</em> raises T simultaneously. The Coffeehouse Hustler personality overrides T with a phase curve: T&nbsp;=&nbsp;5.0 in the opening (many pieces), fading to T&nbsp;=&nbsp;0.6 in the endgame.</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Think time note -->
+        <div class="formula-box">
+          <div class="formula-title">Think time feeds move quality — not just pacing</div>
+          <div class="formula-body" style="text-align:left;line-height:1.75;">
+            Think time is the central input to both degradation curves. Controls that shorten think time — the <span style="color:var(--amber);">Hustle</span> slider, the Weaponizer, clock-mirroring, the Blink shortcut — all reduce move quality through curves A and B, not just move speed. A bot configured to think 0.3 s per move will have its ELO degraded and its move pool narrowed to first-pass instinctive choices on <em>every move</em>, exactly as a human would under severe time pressure.
+          </div>
+        </div>
+
+        <!-- Download brief -->
+        <div style="margin-top:14px;padding-top:10px;border-top:1px solid rgba(235,140,0,0.18);text-align:center;">
+          <a href="/Bot_Controls_Technical_Brief.pdf" download="Bot_Controls_Technical_Brief.pdf"
+             style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;
+                    background:rgba(235,140,0,0.10);border:1px solid rgba(235,140,0,0.35);
+                    border-radius:4px;text-decoration:none;
+                    font-family:var(--font-u);font-size:8px;font-weight:500;
+                    color:var(--amber);letter-spacing:0.06em;
+                    transition:background 0.15s,border-color 0.15s;"
+             onmouseover="this.style.background='rgba(235,140,0,0.20)';this.style.borderColor='rgba(235,140,0,0.6)'"
+             onmouseout="this.style.background='rgba(235,140,0,0.10)';this.style.borderColor='rgba(235,140,0,0.35)'">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            DOWNLOAD FULL TECHNICAL BRIEF
+          </a>
+          <div style="font-family:var(--font-m);font-size:7px;color:var(--text-dim);margin-top:5px;">PDF — all controls, formulas &amp; architecture</div>
+        </div>
+
+      </div><!-- /pr -->
+    </div>
+  </div>
+</div>
+
 </div><!-- /sections -->
 </div><!-- /page -->
 
@@ -1445,12 +1580,12 @@ const TEMP_PRESETS = [
 const ATTRACTOR_DESCS = {
   chaos:    `Position complexity is scored via Stockfish MultiPV: <code>σ(eval₁…evalₙ)</code> — std. deviation of the top-N move evaluations. High σ = branching, tactical positions; low σ = forcing or drawish lines. Slider biases candidate sampling toward high-σ (chaos) or low-σ (simplifying) moves.`,
   compwin:  `Activates when engine eval ≥ +100 cp (configurable). Positive values upweight candidates that <em>increase</em> MultiPV variance — keeping complications alive; negative values prefer forcing continuations that reduce material and trade into a clear winning ending.`,
-  spacecadet:`Scores the resulting position for board control: counts squares attacked by your pieces after each candidate move. Positive (Space Cadet) favours moves that maximise space — seizing squares and denying outposts. Negative (Space Waster) accepts ceding space in exchange for other priorities.`,
+  spacecadet:`Measures board control by counting your <em>weak squares</em> — empty squares none of your pieces attack — before and after each candidate move. Uses a full board attack map so discovered attacks (a pawn advances, revealing a bishop's diagonal) and blocking moves (a pawn steps in front of a bishop) are correctly counted. Positive (Space Cadet) favours moves that reduce your weak squares; negative (Space Waster) accepts ceding space for other priorities.`,
   fortkx:   `Scores the resulting position for defensive solidity: sums the total defender count across all your pieces after each candidate move. Positive (Fort Knox) favours moves that maximise defensive support and keep pieces protected. Negative (Glass Cannon) accepts exposed, aggressive piece placement.`,
   gambito:  `Opening phase only (first 20 moves). Uses ECO opening names: if a matching gambit line (opening name contains "gambit") exists in the database, the bot boosts the specific next moves from that line. Falls back to structural pawn-sacrifice detection (pawn to opponent-attacked, undefended square) when outside known gambit lines. Positive (Gambito) boosts gambit play; negative (Gambit Shy) suppresses it, preferring solid material balance.`,
   trade:    `Reweights candidates by capture and threat value. Positive (right, Trade seeker) boosts captures and moves that create new threats on opponent pieces; negative (left, Trade avoider) suppresses exchanges, preferring piece complexity on the board.`,
   structure:`Scores pawn structure delta via Stockfish's internal pawn evaluation: isolated pawns, doubled pawns, pawn islands. Formula: <code>Δ_structure = SF_pawn_eval(after) − SF_pawn_eval(before)</code>. Negative (loose) selects moves yielding open, mobile structures; positive (rigid) prefers structural consolidation.`,
-  hustle:   `Scales think-time allocation per move: <code>t = base_time × (1 + v × 0.15)</code>. Negative (hustler): shorter pauses, higher sampling weight on first-pass candidates — speed over depth. Positive (grinder): longer deliberation, preference for candidates with superior positional or deeper-search scores.`,
+  hustle:   `Scales think-time allocation per move: <code>t = base_time × (1 − v × 0.15)</code>. Positive (hustler): shorter pauses, speed over depth. Negative (Overthinker): longer deliberation, preference for candidates with superior positional or deeper-search scores.`,
   luck:     `Shifts which segment of Maia3's probability-ranked move list is sampled: <code>draw from [lower, upper]%</code> of ranked candidates. Positive = top of the distribution (engine-preferred); negative = tail of the distribution (off-form play). Works in conjunction with the Move Quality Range dual slider.`,
   pressure: `Scales steepness of the time-pressure ELO degradation curve: <code>elo(t) = E₀ − Δ · σ(k·(log t − 0.33))</code> where k is multiplied by this slider. Positive steepens the slope — sharper ELO drop in the final seconds; negative flattens it — consistent play regardless of clock.`,
   attacker: `Scores each candidate move by the total number of opponent pieces under attack from all bot pieces after the move. <code>score += w × tanh(Σ_threats / 6)</code> where Σ_threats sums attack counts on each opponent piece. Positive (Attacker) maximises threat coverage; negative (Peacemaker) minimises it, preferring quiet positions.`,
@@ -1473,7 +1608,7 @@ const ATTRACTORS = [
   { id:'gambito',    labelLeft:'Gambit shy',    labelRight:'Gambito',     default:0 },
   { id:'trade',      labelLeft:'Trade avoider',        labelRight:'Trade seeker',          default:0 },
   { id:'structure',  labelLeft:'Loose pawn structure', labelRight:'Rigid pawn structure',  default:0 },
-  { id:'hustle',     labelLeft:'Coffeehouse hustler',  labelRight:'Positional grinder',    default:0 },
+  { id:'hustle',     labelLeft:'Overthinker',           labelRight:'Coffeehouse hustler',   default:0 },
   { id:'luck',       labelLeft:'Good day',             labelRight:'Bad day',               default:0 },
   { id:'pressure',   labelLeft:'Calm under pressure',  labelRight:'Panicky',               default:0 },
   { id:'attacker',   labelLeft:'Peacemaker',           labelRight:'Attacker',              default:0 },
@@ -1494,23 +1629,23 @@ const PIECE_TYPES = [
 // Add a new personality: one entry here, nothing else changes
 const PERSONALITIES = [
   { id:'entropy',    name:'Captain Entropy',   icon:'⚡', tag:'Chaos',      desc:'Maximises position complexity and open lines.',
-    attractors:{chaos:4,compwin:4,spacecadet:2,fortkx:-1,gambito:3,trade:2,structure:-3,hustle:3,luck:1,pressure:0,attacker:2} },
+    attractors:{chaos:4,compwin:4,spacecadet:2,fortkx:-1,gambito:3,trade:2,structure:-3,hustle:-3,luck:1,pressure:0,attacker:2} },
   { id:'norm',       name:'Norm',              icon:'◼', tag:'Order',      desc:'Prefers closed, simplified positions.',
-    attractors:{chaos:-4,compwin:-4,spacecadet:0,fortkx:3,gambito:-2,trade:-1,structure:4,hustle:-2,luck:-1,pressure:-1,attacker:-2} },
+    attractors:{chaos:-4,compwin:-4,spacecadet:0,fortkx:3,gambito:-2,trade:-1,structure:4,hustle:2,luck:-1,pressure:-1,attacker:-2} },
   { id:'attacky',    name:'Attacky McTackerson',icon:'⚔', tag:'Captures',  desc:'Favours captures within centipawn ceiling.',
-    attractors:{chaos:2,compwin:1,spacecadet:1,fortkx:-2,gambito:1,trade:4,structure:-1,hustle:2,luck:0,pressure:1,attacker:3} },
-  { id:'grinder',    name:'Positional Grinder', icon:'◈', tag:'Methodical', desc:'Deliberate. Thinks long in complex positions.',
+    attractors:{chaos:2,compwin:1,spacecadet:1,fortkx:-2,gambito:1,trade:4,structure:-1,hustle:-2,luck:0,pressure:1,attacker:3} },
+  { id:'grinder',    name:'Overthinker',         icon:'◈', tag:'Methodical', desc:'Deliberate. Thinks long — likely gets into time trouble.',
     attractors:{chaos:-3,compwin:-2,spacecadet:3,fortkx:2,gambito:-1,trade:0,structure:3,hustle:-4,luck:-1,pressure:-3,attacker:0} },
   { id:'hustler',    name:'Coffeehouse Hustler',icon:'☕', tag:'Fast',       desc:'Fast imprecise early play, tightens in endgame.',
-    attractors:{chaos:1,compwin:-1,spacecadet:0,fortkx:-1,gambito:2,trade:1,structure:-2,hustle:-5,luck:2,pressure:2,attacker:1} },
+    attractors:{chaos:1,compwin:-1,spacecadet:0,fortkx:-1,gambito:2,trade:1,structure:-2,hustle:5,luck:2,pressure:2,attacker:1} },
   { id:'blunderer',  name:'The Blunderer',      icon:'∿', tag:'Human',      desc:'Plays well then cracks unexpectedly under pressure.',
     attractors:{chaos:0,compwin:0,spacecadet:0,fortkx:0,gambito:0,trade:0,structure:0,hustle:0,luck:3,pressure:5,attacker:0} },
   { id:'hoarder',    name:'The Hoarder',        icon:'◉', tag:'Material',   desc:'Never sacrifices material voluntarily.',
-    attractors:{chaos:-2,compwin:-1,spacecadet:0,fortkx:2,gambito:-3,trade:-3,structure:1,hustle:-2,luck:-2,pressure:-1,attacker:-2} },
+    attractors:{chaos:-2,compwin:-1,spacecadet:0,fortkx:2,gambito:-3,trade:-3,structure:1,hustle:2,luck:-2,pressure:-1,attacker:-2} },
   { id:'pawnchain',  name:'Pawn Chain Gang',    icon:'♟', tag:'Pawns',      desc:'Maximises connected pawns and pawn structure.',
-    attractors:{chaos:-1,compwin:-2,spacecadet:0,fortkx:1,gambito:-1,trade:0,structure:5,hustle:-1,luck:0,pressure:0,attacker:0} },
+    attractors:{chaos:-1,compwin:-2,spacecadet:0,fortkx:1,gambito:-1,trade:0,structure:5,hustle:1,luck:0,pressure:0,attacker:0} },
   { id:'spitecheck', name:'Spite Check',        icon:'†', tag:'Checks',     desc:'Always checks if a legal check exists.',
-    attractors:{chaos:3,compwin:2,spacecadet:1,fortkx:-2,gambito:0,trade:2,structure:-2,hustle:2,luck:1,pressure:1,attacker:3} },
+    attractors:{chaos:3,compwin:2,spacecadet:1,fortkx:-2,gambito:0,trade:2,structure:-2,hustle:-2,luck:1,pressure:1,attacker:3} },
   { id:'clock',      name:'Clock Watcher',      icon:'⧗', tag:'Clock',      desc:'Conservative when ahead on time, reckless when behind.',
     attractors:{chaos:0,compwin:-2,spacecadet:0,fortkx:0,gambito:0,trade:-1,structure:0,hustle:0,luck:0,pressure:-3,attacker:0} },
   { id:'badday',     name:'Grandmaster Bad Day', icon:'👑',tag:'Human',      desc:'Maia 2400 but picks first move above 4% threshold.',
@@ -5081,15 +5216,18 @@ function selColor(btn){
    QS BAR — time grid, floating dropdown, in-place color
 ══════════════════════════════════════════════════════════════ */
 
-const TC_TIMES       = [1,2,3,5,10,15,20,30,60,0];
-const TC_TIME_LABELS = ['1m','2m','3m','5m','10m','15m','20m','30m','60m','∞'];
+const TC_TIMES       = [1,2,3,5,10,15,20,30,60,90,0];
+const TC_TIME_LABELS = ['1m','2m','3m','5m','10m','15m','20m','30m','60m','90m','∞'];
 const TC_INCS        = [0,1,2,3,5,10,20,30];
-const TC_PRESETS     = new Set(['1-0','2-1','3-0','3-2','5-0','5-3','10-0','10-5','15-0','15-10','30-0','30-20','60-0','0-0']);
+const TC_PRESETS     = new Set(['1-0','2-1','3-0','3-2','5-0','5-3','10-0','10-5','15-0','15-10','30-0','30-20','60-0','90-0','90-10','90-30','0-0']);
 
 let tcTime = 30, tcInc = 0;
+// 90+30 fields: bonus minutes awarded at bonusAtMove; increment only from incFromMove onwards
+let tcBonus = 0, tcBonusAtMove = 0, tcIncFromMove = 1;
 
-function tcCategory(t, i){
+function tcCategory(t, i, bonus){
   if(t === 0) return { n:'Untimed', c:'rapid' };
+  if(bonus)   return { n:'Classical', c:'classic' };
   const total = t + i * 0.5;
   if(total < 3)  return { n:'Bullet',    c:'bullet'  };
   if(total < 8)  return { n:'Blitz',     c:'blitz'   };
@@ -5097,8 +5235,9 @@ function tcCategory(t, i){
   return             { n:'Classical', c:'classic' };
 }
 
-function tcLabel(t, i){
+function tcLabel(t, i, bonus){
   if(t === 0) return 'Untimed';
+  if(bonus) return t + '+' + bonus + ' min' + (i > 0 ? ' + ' + i + 's*' : '');
   return t + ' min' + (i > 0 ? ' + ' + i + 's' : ' + 0s');
 }
 
@@ -5106,28 +5245,25 @@ function buildTimeGrid(){
   const panel = document.querySelector('.tg-panel');
   if(!panel) return;
 
-  // X-axis label above table
-  // Y-axis label + table side by side in a flex wrapper
-  // This avoids the <th rowspan> bug where the axis lands over a data column
-
-  // Build table HTML — no axis th inside the table at all
   let thead = '<thead><tr>';
-  // Empty corner cell for the inc-label column
   thead += '<th style="width:0;padding:0;border:none;"></th>';
   TC_TIME_LABELS.forEach(l => {
     thead += '<th class="tg-head">' + l + '</th>';
   });
+  // 90+30 header — visually separated
+  thead += '<th class="tg-head" style="border-left:1px solid rgba(235,140,0,0.35);min-width:44px;width:44px;color:var(--amber-dim);">90+30</th>';
   thead += '</tr></thead>';
 
   let tbody = '<tbody>';
   TC_INCS.forEach((inc) => {
     tbody += '<tr>';
-    // Row label
     tbody += '<td class="tg-inc-lbl">' + (inc === 0 ? '0s' : inc + 's') + '</td>';
+
+    // Standard columns
     TC_TIMES.forEach((t) => {
       const key = t + '-' + inc;
       const isPreset   = TC_PRESETS.has(key);
-      const isSelected = t === tcTime && inc === tcInc;
+      const isSelected = t === tcTime && inc === tcInc && tcBonus === 0;
       const cat = tcCategory(t, inc);
       const cls = 'tg-cell ' + (isPreset ? 'preset' : 'custom') + (isSelected ? ' selected' : '');
       const lbl = t === 0 ? '∞' : (t + (inc > 0 ? '+' + inc : ''));
@@ -5141,6 +5277,19 @@ function buildTimeGrid(){
       tbody += '<td><div class="' + cls + '" data-t="' + t + '" data-i="' + inc
              + '" onclick="selectTC(' + t + ',' + inc + ',this)">' + inner + '</div></td>';
     });
+
+    // 90+30 column — Candidates/FIDE classical: 90 min + 30 min after move 40, inc from move 41
+    const is9030Selected = tcBonus === 30 && tcInc === inc;
+    const cat9030 = tcCategory(90, inc, 30);
+    const lbl9030 = inc === 0 ? '90+30' : '90+30<br>+' + inc + 's*';
+    const cls9030 = 'tg-cell preset' + (is9030Selected ? ' selected' : '');
+    tbody += '<td style="border-left:1px solid rgba(235,140,0,0.2);">'
+           + '<div class="' + cls9030 + '" style="width:44px;font-size:7.5px;line-height:1.25;" '
+           + 'onclick="selectTC90plus30(' + inc + ',this)">'
+           + '<span class="tg-cname" style="white-space:nowrap;">' + lbl9030 + '</span>'
+           + '<span class="tg-cbadge badge-' + cat9030.c + '">' + cat9030.n + '</span>'
+           + '</div></td>';
+
     tbody += '</tr>';
   });
   tbody += '</tbody>';
@@ -5150,19 +5299,31 @@ function buildTimeGrid(){
     + '<div class="tg-grid-wrap">'
     +   '<div class="tg-y-axis">Increment</div>'
     +   '<table class="tg" id="tg-table">' + thead + tbody + '</table>'
-    + '</div>';
+    + '</div>'
+    + '<div style="font-size:8px;color:var(--text-dim);padding:4px 6px 0;opacity:0.75;">'
+    + '* 90+30: increment applies from move 41 only (FIDE/Candidates format)</div>';
 }
 
 
 function selectTC(t, inc, cell){
   tcTime = t; tcInc = inc;
+  tcBonus = 0; tcBonusAtMove = 0; tcIncFromMove = 1;
   document.querySelectorAll('.tg-cell').forEach(c => c.classList.remove('selected'));
   cell.classList.add('selected');
   document.getElementById('qs-time-value').textContent = tcLabel(t, inc);
   document.getElementById('qs-time-cat').textContent   = tcCategory(t, inc).n;
-  // Re-anchor pressure curves to new think-time-per-move at game start
   initPts(); drawA(); drawB();
-  // Close after short pause so user sees selection
+  setTimeout(() => closeAllQsDropdowns(), 260);
+}
+
+function selectTC90plus30(inc, cell){
+  tcTime = 90; tcInc = inc;
+  tcBonus = 30; tcBonusAtMove = 40; tcIncFromMove = 41;
+  document.querySelectorAll('.tg-cell').forEach(c => c.classList.remove('selected'));
+  cell.classList.add('selected');
+  document.getElementById('qs-time-value').textContent = tcLabel(90, inc, 30);
+  document.getElementById('qs-time-cat').textContent   = tcCategory(90, inc, 30).n;
+  initPts(); drawA(); drawB();
   setTimeout(() => closeAllQsDropdowns(), 260);
 }
 
@@ -5243,6 +5404,9 @@ function getBotConfig(){
     color:           color,
     tcTime:          tcTime,
     tcInc:           tcInc,
+    tcBonus:         tcBonus,
+    tcBonusAtMove:   tcBonusAtMove,
+    tcIncFromMove:   tcIncFromMove,
     openingMode:     openingMode,
     openingSource:   srcBtn ? srcBtn.dataset.v : 'masters',
     openingDepth:    depthEl ? parseInt(depthEl.value) : 20,
@@ -5264,6 +5428,7 @@ function getBotConfig(){
     canFlag:           document.getElementById('cb-flag')?.checked          !== false,
     tempValue:         _currentTempValue,
     tempPresetId:      selectedTempPresetId,
+    personalityId:     selectedPersonality,
     calmPanickyValue:  attractorValues['pressure'] || 0,
     hybridSlots:     hybridSlots.map(s=>({...s})),
     lcsfElo:         parseInt(document.getElementById('lcsf-lc-elo')?.value || '2000'),
@@ -5322,10 +5487,13 @@ function applyBotConfig(cfg){
     if(btn) selColor(btn);
   });
   grp(() => {
-    tcTime = (cfg.tcTime != null) ? cfg.tcTime : 30;
-    tcInc  = (cfg.tcInc  != null) ? cfg.tcInc  : 0;
-    document.getElementById('qs-time-value').textContent = tcLabel(tcTime, tcInc);
-    document.getElementById('qs-time-cat').textContent   = tcCategory(tcTime, tcInc).n;
+    tcTime        = (cfg.tcTime        != null) ? cfg.tcTime        : 30;
+    tcInc         = (cfg.tcInc         != null) ? cfg.tcInc         : 0;
+    tcBonus       = (cfg.tcBonus       != null) ? cfg.tcBonus       : 0;
+    tcBonusAtMove = (cfg.tcBonusAtMove != null) ? cfg.tcBonusAtMove : 0;
+    tcIncFromMove = (cfg.tcIncFromMove != null)  ? cfg.tcIncFromMove : 1;
+    document.getElementById('qs-time-value').textContent = tcLabel(tcTime, tcInc, tcBonus);
+    document.getElementById('qs-time-cat').textContent   = tcCategory(tcTime, tcInc, tcBonus).n;
     document.querySelectorAll('.tg-cell').forEach(c => c.classList.remove('selected'));
   });
 

@@ -40,8 +40,44 @@ function pressureEffectiveDayUpper(clockMs) {
   return Math.max(0, Math.min(botDayUpper, curvePct));
 }
 
+// ── Pressure functions keyed on actual think time (seconds) ──────────────────
+// These replace the clock-based variants in the move generation path so that
+// the degradation curves respond to how long the bot *actually* thinks, not to
+// a clock/remaining-moves average.  A hustler taking 0.3 s sees heavy curve
+// degradation; a grinder taking 15 s sees little.
+function pressureEffectiveMaiaEloByThink(thinkSec) {
+  if (!botPressureCurveA || botPressureCurveA.length < 2) return maia3SelectedRating;
+  const curveElo = evalPressureCurve(botPressureCurveA, thinkSec);
+  if (curveElo === null) return maia3SelectedRating;
+  return Math.max(600, Math.min(2600, Math.round(curveElo)));
+}
+
+function pressureEffectiveDayUpperByThink(thinkSec) {
+  if (!botPressureCurveB || botPressureCurveB.length < 2) return botDayUpper;
+  const curvePct = evalPressureCurve(botPressureCurveB, thinkSec);
+  if (curvePct === null) return botDayUpper;
+  return Math.max(0, Math.min(botDayUpper, curvePct));
+}
+
+function timePressureTempByThink(baseTemp, thinkSec) {
+  const boost = { steady: 0.0, normal: 1.0, panicky: 2.5 }[botTimePressure] || 0;
+  if (boost === 0) return baseTemp;
+  if (botPressureCurveB && botPressureCurveB.length >= 2) {
+    const distPct = evalPressureCurve(botPressureCurveB, thinkSec);
+    if (distPct !== null) {
+      const fraction = Math.max(0, Math.min(1, 1 - distPct / 100));
+      return baseTemp + fraction * boost;
+    }
+  }
+  // Linear fallback: full boost at 0 s, zero boost at 30 s
+  const fraction = Math.max(0, 1 - thinkSec / 30);
+  return baseTemp + fraction * boost;
+}
+
 // clock ms at the time of the current move — set before applyMoveAttractors
 let _botMoveClockMs = null;
+// actual think time in seconds for this move — drives pressure curve lookup
+let _botMoveThinkSec = null;
 
 // ── Estimated remaining moves (Fischer formula ≈ 40 per game) ────────────────
 function botRemainingMovesEstimate() {
@@ -117,8 +153,10 @@ function applyMoveAttractors(moveProbs) {
     : 0;
 
   // ── Quality range + luck shift ────────────────────────────────────────────
-  // pressureEffectiveDayUpper applies ctrlB curve to restrict distribution under time pressure.
-  const _pressureUpper = pressureEffectiveDayUpper(_botMoveClockMs);
+  // Use actual think time for pressure if available; fall back to clock-based estimate.
+  const _pressureUpper = _botMoveThinkSec !== null
+    ? pressureEffectiveDayUpperByThink(_botMoveThinkSec)
+    : pressureEffectiveDayUpper(_botMoveClockMs);
   let lo = Math.max(0, Math.min(95, botDayLower - luckVal * 4));
   let hi = Math.max(lo + 5, Math.min(100, _pressureUpper - luckVal * 4));
   let filtered = moveProbs;
@@ -159,6 +197,18 @@ function applyMoveAttractors(moveProbs) {
     for (let sq = 0; sq < 64; sq++) {
       if (board[sq] && board[sq].color === botColorStr && atkMap[sq]) {
         currentTotalDefs += (atkMap[sq][botColorStr] || []).length;
+      }
+    }
+  }
+
+  // ── Space Cadet: baseline weak-square count for the bot ─────────────────────
+  // Weak square = empty square with zero bot attackers (atkMap[sq][botColorStr].length === 0).
+  // Matches the overlay definition so the attractor and the visual are consistent.
+  let currentBotWeakCount = 0;
+  if (hasSpace && atkMap) {
+    for (let sq = 0; sq < 64; sq++) {
+      if (!board[sq] && atkMap[sq] && (atkMap[sq][botColorStr] || []).length === 0) {
+        currentBotWeakCount++;
       }
     }
   }
@@ -261,11 +311,21 @@ function applyMoveAttractors(moveProbs) {
       }
     }
 
-    // ── Space Cadet: attack count from destination square ────────────────────
-    // Positive (Space Cadet, right) boosts moves to high-mobility squares.
-    // tanh(n/8): knight on centre (8 attacks) → 0.76; rook on open file (14) → 0.94.
+    // ── Space Cadet: minimize bot's weak squares ─────────────────────────────
+    // Builds a full attack map on the simulated board so discovered attacks and
+    // blocking moves are correctly counted. delta > 0 = fewer weak squares = good.
+    // tanh(delta/5): reducing weak squares by 5 → 0.76; by 10 → 0.96.
     if (hasSpace) {
-      logBoost += spaceCadetVal * scale * Math.tanh(getSimToAtk().length / 8);
+      const simBd_   = getSimBd();
+      const simAtk   = buildDirectAtk(simBd_, _EMPTY, _EMPTY, _EMPTY, _EMPTY);
+      let simBotWeakCount = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        if (!simBd_[sq] && simAtk[sq] && (simAtk[sq][botColorStr] || []).length === 0) {
+          simBotWeakCount++;
+        }
+      }
+      const delta = currentBotWeakCount - simBotWeakCount; // positive = fewer weak squares
+      if (delta !== 0) logBoost += spaceCadetVal * scale * Math.tanh(delta / 5);
     }
 
     // ── Fort Knox: total friendly defender count delta ────────────────────────
@@ -603,9 +663,9 @@ function botThinkTime(moveProbs, clockMs) {
     thinkMs *= 0.5;
   }
 
-  // ── Hustle attractor: −5 (faster) … +5 (slower grinder) ─────────────────
+  // ── Hustle attractor: +5 (faster hustler) … −5 (slower grinder) ────────────
   const hustle = (window._bcpAttractorValues && window._bcpAttractorValues['hustle']) || 0;
-  if (hustle !== 0) thinkMs *= (1 + hustle * 0.15);
+  if (hustle !== 0) thinkMs *= (1 - hustle * 0.15);
 
   // ── Reconsideration pause: occasional extended hesitation ────────────────
   if (botBehavReconsider && Math.random() < 0.15) {
@@ -621,6 +681,19 @@ function botThinkTime(moveProbs, clockMs) {
 
   return Math.max(200, Math.min(botThinkCapMs(), thinkMs));
 }
+// Hustler personality: T=5 in the opening, fades to T=0.6 in the endgame.
+// Phase is tracked by counting non-pawn, non-king pieces still on the board:
+//   14 pieces (full material) → opening → T=5
+//   ≤4 pieces remaining      → endgame → T=0.6
+function hustlerPhaseTemp() {
+  const piecesLeft = (typeof board !== 'undefined')
+    ? board.filter(p => p !== 0 && Math.abs(p) !== 1 && Math.abs(p) !== 6).length
+    : 14;
+  // fraction 0=opening (14 pieces), 1=endgame (≤4 pieces)
+  const fraction = Math.max(0, Math.min(1, 1 - (piecesLeft - 4) / 10));
+  return 5.0 + fraction * (0.6 - 5.0); // 5.0 → 0.6
+}
+
 function timePressureTemp(baseTemp, clockMs) {
   // null/undefined = untimed; 0 is a real (maximally pressured) clock value
   if (clockMs === null || clockMs === undefined) return baseTemp;
@@ -844,10 +917,16 @@ async function botMakeMove() {
     } else if (botTab === 'maia') {
       // LC Explorer with Maia3 fallback.
       // Skip LC call entirely if we already know we're off-book this game.
-      const baseTemp = (typeof botMaiaTempValue !== 'undefined' && botMaiaTempValue > 0)
-        ? botMaiaTempValue
-        : (parseFloat(document.getElementById('maiaTemp')?.value) || 1.0);
-      const effectiveTemp = timePressureTemp(baseTemp, clockMs);
+      const baseTemp = window._bcpHustlerTempMode
+        ? hustlerPhaseTemp()
+        : (typeof botMaiaTempValue !== 'undefined' && botMaiaTempValue > 0)
+          ? botMaiaTempValue
+          : (parseFloat(document.getElementById('maiaTemp')?.value) || 1.0);
+
+      // Step 1: rough think estimate (no probs yet, entropy defaults to 2) so
+      // the ELO degradation curve uses actual move pace, not clock/40 average.
+      const roughThinkSec = botThinkTime(null, clockMs) / 1000;
+
       let probs = null;
       // Start complexity probe before LC/Maia calls — runs in parallel on sfWorker
       if (_needsComplexity() && !sfReady) sfInit().catch(() => {});
@@ -862,8 +941,9 @@ async function botMakeMove() {
         }
       }
       if (!probs && _maiaReady) {
+        // Step 2: query Maia at ELO degraded by the rough think time
         const savedRatingM = lcSelectedRating;
-        lcSelectedRating = String(pressureEffectiveMaiaElo(clockMs)); // ELO degradation via ctrlA
+        lcSelectedRating = String(pressureEffectiveMaiaEloByThink(roughThinkSec));
         probs = await maia3GetMoveProbs(fen);
         lcSelectedRating = savedRatingM;
         if (probs) lastBotMoveSource = 'Maia3';
@@ -877,12 +957,18 @@ async function botMakeMove() {
         sfCplxScore = sfCplxEval = null;
       }
       if (probs && Object.keys(probs).length) {
+        // Step 3: precise think time now that we have entropy from real probs
         const targetDelay = botThinkTime(probs, clockMs);
+        const preciseThinkSec = targetDelay / 1000;
+        // Step 4: pressure curves keyed on actual think time, not clock average
+        const effectiveTemp = timePressureTempByThink(baseTemp, preciseThinkSec);
         const inferenceMs = Date.now() - _botMoveStartMs;
         const delay = Math.max(0, targetDelay - inferenceMs);
         if (delay > 0) await new Promise(r => setTimeout(r, delay));
         _botMoveClockMs = clockMs;
+        _botMoveThinkSec = preciseThinkSec;
         uciMove = sampleFromProbs(applyMoveAttractors(probs), complexityAdjustedTemp(effectiveTemp));
+        _botMoveThinkSec = null;
       } else {
         await sfInit();
         uciMove = await sfGetMove(fen, lcFallbackLevel());
@@ -892,10 +978,12 @@ async function botMakeMove() {
     } else if (botTab === 'lcsf') {
       // LC Explorer with Stockfish fallback.
       // Skip LC call entirely if we already know we're off-book this game.
-      const lcsfTemp = (typeof botMaiaTempValue !== 'undefined' && botMaiaTempValue > 0)
-        ? botMaiaTempValue
-        : (parseFloat(document.getElementById('maiaTemp')?.value) || 1.0);
-      const lcsfEffTemp = timePressureTemp(lcsfTemp, clockMs);
+      const lcsfTemp = window._bcpHustlerTempMode
+        ? hustlerPhaseTemp()
+        : (typeof botMaiaTempValue !== 'undefined' && botMaiaTempValue > 0)
+          ? botMaiaTempValue
+          : (parseFloat(document.getElementById('maiaTemp')?.value) || 1.0);
+      const roughThinkSecLcsf = botThinkTime(null, clockMs) / 1000;
       let lcsfProbs = null;
       if (lichessExplorerActive) {
         const savedRating = lcSelectedRating;
@@ -911,11 +999,15 @@ async function botMakeMove() {
       }
       if (lcsfProbs && Object.keys(lcsfProbs).length) {
         const targetDelay = botThinkTime(lcsfProbs, clockMs);
+        const preciseThinkSecLcsf = targetDelay / 1000;
+        const lcsfEffTemp = timePressureTempByThink(lcsfTemp, preciseThinkSecLcsf);
         const inferenceMs = Date.now() - _botMoveStartMs;
         const delay = Math.max(0, targetDelay - inferenceMs);
         if (delay > 0) await new Promise(r => setTimeout(r, delay));
         _botMoveClockMs = clockMs;
+        _botMoveThinkSec = preciseThinkSecLcsf;
         uciMove = sampleFromProbs(applyMoveAttractors(lcsfProbs), lcsfEffTemp);
+        _botMoveThinkSec = null;
       } else {
         await sfInit();
         uciMove = await sfGetMove(fen, lcsfFallbackLevel());
