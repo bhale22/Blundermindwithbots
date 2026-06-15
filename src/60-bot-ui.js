@@ -858,6 +858,15 @@ async function botStart() {
   botMoveHistory = [];
   botSanHistory  = [];
   botOppClockMs = null;
+  // Sample per-game opening familiarity jitter. Lower ELO bots have uneven
+  // book knowledge (high variance); higher ELO bots are more consistent.
+  // Variance shrinks from ±3 plies at 600 to ±1 ply at 2600.
+  {
+    const _elo = (typeof botEffectiveElo === 'function') ? botEffectiveElo() : 1500;
+    const _t   = Math.max(0, Math.min(1, (_elo - 600) / 2000));
+    const _range = 3 - _t * 2; // 3 at 600 ELO, 1 at 2600
+    _bookFamiliarityJitter = (Math.random() * 2 - 1) * _range;
+  }
   // Activate preferred-opening fast path if mode is 'preferred' and slots exist.
   // Bot color is opposite of human player color.
   const _resolvedBotCol = (pc === 'white' ? 'black' : 'white');

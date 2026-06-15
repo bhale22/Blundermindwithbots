@@ -595,6 +595,49 @@ function botRecordMove(uciMove, sanMove) {
 //   botBehavClockMirror — halve delay when opponent clock < 60% of bot's
 //   botCanFlag          — if false, always keep ≥3 s on clock
 // Hustle attractor (window._bcpAttractorValues.hustle, −5..+5) scales think time.
+// ── Opening familiarity decay ─────────────────────────────────────────────────
+// Models the real pattern where players spend less time in familiar opening
+// territory and slow down as positions become unfamiliar or recall gets harder.
+//
+// Returns a familiarity score 0–1 (1 = "know this by heart", 0 = fully on own).
+// Applied in botThinkTime() as a think-time multiplier: at peak familiarity the
+// bot plays at ~15% of its normal pace; at zero familiarity it's unchanged.
+//
+// Two sigmoid parameters scale with ELO:
+//   threshold — ply depth at which familiarity starts dropping
+//               (600→8 plies / ~4 moves, 2600→44 plies / ~22 moves)
+//   slope k   — steepness of drop (600→sharp cliff, 2600→gentle slope)
+//
+// A per-game threshold jitter (sampled once at game start, stored in
+// _bookFamiliarityJitter) reflects that lower-rated players have uneven
+// book knowledge — they may know one line deeply but nothing else.
+let _bookFamiliarityJitter = 0; // reset at each new bot game
+
+function botEffectiveElo() {
+  // Unified ELO across engine tabs. Maia3/LC modes use maia3SelectedRating
+  // directly. SF uses a 1-20 level slider mapped to ~650-2600 ELO.
+  if (typeof botTab !== 'undefined' && botTab === 'sf') {
+    const lvl = parseInt(document.getElementById('sfLevel')?.value) || 8;
+    return Math.round(650 + (lvl - 1) / 19 * 1950); // 1→650, 20→2600
+  }
+  return (typeof maia3SelectedRating !== 'undefined' && maia3SelectedRating)
+    ? maia3SelectedRating : 1500;
+}
+
+function openingFamiliarity(plies) {
+  const elo = Math.max(600, Math.min(2600, botEffectiveElo()));
+  const t   = (elo - 600) / 2000; // 0 at 600, 1 at 2600
+
+  // Threshold: 600→8 plies, 2600→44 plies (linear)
+  const baseThreshold = 8 + t * 36;
+  const threshold     = baseThreshold + _bookFamiliarityJitter;
+
+  // Slope: 600→0.85 (sharp), 2600→0.22 (gentle) (linear)
+  const k = 0.85 - t * 0.63;
+
+  return 1 / (1 + Math.exp(k * (plies - threshold)));
+}
+
 // Upper bound on simulated think time, scaled to the time control: 6 s for
 // blitz-and-faster, growing to 45 s for long classical. A 6 s ceiling in a
 // 90-minute game made every bot feel like a speed player.
@@ -666,6 +709,15 @@ function botThinkTime(moveProbs, clockMs) {
   // ── Hustle attractor: +5 (faster hustler) … −5 (slower grinder) ────────────
   const hustle = (window._bcpAttractorValues && window._bcpAttractorValues['hustle']) || 0;
   if (hustle !== 0) thinkMs *= (1 - hustle * 0.15);
+
+  // ── Opening familiarity decay ─────────────────────────────────────────────
+  // botMoveHistory tracks all plies (both sides). Familiarity is highest early
+  // in a game when the bot is in known territory, and decays sigmoidally as
+  // the position leaves familiar lines. The decay rate and depth both scale
+  // with ELO: a 600-rated bot knows ~4 moves; a 2600 bot knows ~22.
+  // Multiplier: familiarity=1 → 15% of normal pace; familiarity=0 → unchanged.
+  const _fam = openingFamiliarity(botMoveHistory.length);
+  if (_fam > 0.02) thinkMs *= (0.15 + 0.85 * (1 - _fam));
 
   // ── Reconsideration pause: occasional extended hesitation ────────────────
   if (botBehavReconsider && Math.random() < 0.15) {
