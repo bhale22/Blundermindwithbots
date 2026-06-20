@@ -867,6 +867,9 @@ async function botStart() {
     const _range = 3 - _t * 2; // 3 at 600 ELO, 1 at 2600
     _bookFamiliarityJitter = (Math.random() * 2 - 1) * _range;
   }
+  // Reset explorer-confidence state so familiarity and surprise start fresh.
+  _explorerConfidence    = null;
+  _explorerSurpriseBoost = 0;
   // Activate preferred-opening fast path if mode is 'preferred' and slots exist.
   // Bot color is opposite of human player color.
   const _resolvedBotCol = (pc === 'white' ? 'black' : 'white');
