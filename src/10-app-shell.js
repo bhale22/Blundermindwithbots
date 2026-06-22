@@ -362,6 +362,8 @@ function openPanel(id) {
   document.getElementById('panelOverlay').classList.add('open');
   // Refresh lobby list whenever the 2-player panel opens, then auto-refresh every 5s
   if (id === 'mpPanel') {
+    mpBuildTimeGrid();      // render the time-control matrix (reflects current selection)
+    mpUpdateTCDisplay();    // sync the readout line
     mpRefreshLobby();
     clearInterval(mpLobbyRefreshTimer);
     mpLobbyRefreshTimer = setInterval(mpRefreshLobby, 5000);
@@ -1081,17 +1083,17 @@ function mpRenderLobby(challenges) {
     const rangeStr = ch.ratingRange && ch.ratingRange < 9999 ? (' ±' + ch.ratingRange) : '';
     const row = document.createElement('div');
     row.className = 'mp-challenge-row';
-    row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--bg-panel2);border:0.5px solid var(--border2);border-radius:5px;';
+    row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:7px 9px;background:var(--mp-carbon-surface);border:0.5px solid var(--mp-border);border-radius:4px;';
     row.innerHTML =
       '<div style="flex:1;min-width:0;">' +
-        '<div style="font-size:9px;font-weight:600;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
+        '<div style="font-family:var(--mp-font-u);font-size:9.5px;font-weight:500;color:var(--mp-text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
           nameStr + ratingStr + rangeStr +
         '</div>' +
-        '<div style="font-size:8px;color:var(--text-dim);">⏱ ' + tcLabel + '</div>' +
+        '<div style="font-family:var(--mp-font-m);font-size:8px;color:var(--mp-text-dim);margin-top:1px;">⏱ ' + tcLabel + '</div>' +
       '</div>' +
       '<button onclick="mpAcceptLobbyChallenge(\'' + ch.code + '\')" ' +
-      'style="padding:4px 12px;font-size:9px;font-weight:700;background:rgba(34,168,90,0.15);' +
-      'border:0.5px solid #22a85a;border-radius:4px;color:#5ad490;cursor:pointer;flex-shrink:0;">Join</button>';
+      'style="padding:5px 14px;font-family:var(--mp-font-u);font-size:9px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;background:rgba(50,160,100,0.14);' +
+      'border:0.5px solid rgba(50,160,100,0.5);border-radius:3px;color:#60c880;cursor:pointer;flex-shrink:0;">Join</button>';
     list.appendChild(row);
   });
 }
@@ -1306,19 +1308,84 @@ function mpSetInc(sec) {
 
 function mpUpdateTCDisplay() {
   const disp = document.getElementById('mpTCDisplay');
-  if (!disp) return;
-  if (mpBaseMin === 0) {
-    disp.textContent = 'Untimed';
-  } else {
-    disp.textContent = mpBaseMin + ' min + ' + mpIncSec + ' sec';
-  }
-  // Build a custom TC object and register it
+  // Build a custom TC object and register it (independent of the DOM)
   TIME_CONTROLS.custom = {
     label: mpBaseMin === 0 ? 'Untimed' : mpBaseMin + '+' + mpIncSec,
     time:  mpBaseMin * 60,
     inc:   mpIncSec
   };
   mpSelectedTC = mpBaseMin === 0 ? 'untimed' : 'custom';
+  if (!disp) return;
+  disp.textContent = mpBaseMin === 0
+    ? 'Untimed · ' + mpTcCategory(0, 0).n
+    : mpBaseMin + ' min + ' + mpIncSec + ' sec · ' + mpTcCategory(mpBaseMin, mpIncSec).n;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   TIME-CONTROL GRID — 2D matrix (increment × base time), ported from the
+   bot-control-panel design. A single click sets both base + increment.
+   ══════════════════════════════════════════════════════════════════════════ */
+const MP_TC_TIMES   = [1, 2, 3, 5, 10, 15, 20, 30, 0];
+const MP_TC_LABELS  = ['1', '2', '3', '5', '10', '15', '20', '30', '∞'];
+const MP_TC_INCS    = [0, 1, 2, 3, 5, 10];
+// "Famous" presets get a rounded card + category badge; everything else is a plain cell
+const MP_TC_PRESETS = new Set([
+  '1-0', '2-1', '3-0', '3-2', '5-0', '5-3',
+  '10-0', '10-5', '15-0', '15-10', '20-0', '30-0', '30-20', '0-0'
+]);
+
+function mpTcCategory(t, i) {
+  if (t === 0) return { n: 'Untimed', c: 'rapid' };
+  const total = t + i * 0.5;
+  if (total < 3)  return { n: 'Bullet',    c: 'bullet'  };
+  if (total < 8)  return { n: 'Blitz',     c: 'blitz'   };
+  if (total < 25) return { n: 'Rapid',     c: 'rapid'   };
+  return             { n: 'Classical', c: 'classic' };
+}
+
+function mpBuildTimeGrid() {
+  const panel = document.getElementById('mpTgPanel');
+  if (!panel) return;
+
+  let thead = '<thead><tr><th style="width:0;padding:0;border:none;"></th>';
+  MP_TC_LABELS.forEach(l => { thead += '<th>' + l + '</th>'; });
+  thead += '</tr></thead>';
+
+  let tbody = '<tbody>';
+  MP_TC_INCS.forEach(inc => {
+    tbody += '<tr><td class="mp-tg-inclbl">' + (inc === 0 ? '0s' : inc + 's') + '</td>';
+    MP_TC_TIMES.forEach(t => {
+      const key        = t + '-' + inc;
+      const isPreset   = MP_TC_PRESETS.has(key);
+      const isSelected = t === mpBaseMin && inc === mpIncSec;
+      const cat        = mpTcCategory(t, inc);
+      const cls        = 'mp-tg-cell ' + (isPreset ? 'preset' : 'custom') + (isSelected ? ' selected' : '');
+      const lbl        = t === 0 ? '∞' : (t + (inc > 0 ? '+' + inc : ''));
+      const inner      = isPreset
+        ? '<span class="mp-tg-cname">' + lbl + '</span>' +
+          '<span class="mp-tg-cbadge badge-' + cat.c + '">' + cat.n + '</span>'
+        : '<span class="mp-tg-cval">' + lbl + '</span>';
+      tbody += '<td><div class="' + cls + '" data-t="' + t + '" data-i="' + inc +
+               '" onclick="mpSelectTC(' + t + ',' + inc + ',this)">' + inner + '</div></td>';
+    });
+    tbody += '</tr>';
+  });
+  tbody += '</tbody>';
+
+  panel.innerHTML =
+    '<div class="mp-tg-xaxis">Game time</div>' +
+    '<div class="mp-tg-wrap">' +
+      '<div class="mp-tg-yaxis">Increment</div>' +
+      '<table class="mp-tg">' + thead + tbody + '</table>' +
+    '</div>';
+}
+
+function mpSelectTC(t, inc, cell) {
+  mpBaseMin = t;
+  mpIncSec  = inc;
+  document.querySelectorAll('#mpPanel .mp-tg-cell').forEach(c => c.classList.remove('selected'));
+  if (cell) cell.classList.add('selected');
+  mpUpdateTCDisplay();
 }
 
 // Legacy alias kept for any old calls
