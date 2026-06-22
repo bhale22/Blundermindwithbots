@@ -8,6 +8,9 @@
 <meta property="og:title" content="Blundermind">
 <meta property="og:description" content="Stop getting blundermined. Board vision training for novice chess players.">
 <meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
 <style>
 /* ── Reset & base ─────────────────────────────────────────────────────────── */
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -609,6 +612,111 @@ canvas{
    so the player's clock always appears adjacent to their pieces. */
 #board-col.board-flipped #playerBoxW { order: -1; }
 #board-col.board-flipped #playerBoxB { order:  3; }
+
+/* ── Multiplayer panel redesign ──────────────────────────────────────────── */
+#mpPanel .panel-header { border-bottom-color:rgba(200,146,42,0.25); }
+#mpPanel .panel-title  { font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#c8922a;font-weight:400; }
+.mp-card {
+  padding:9px 10px;
+  background:var(--bg-panel2);
+  border:0.5px solid rgba(200,146,42,0.18);
+  border-radius:4px;
+}
+.mp-sec-lbl {
+  font-family:'DM Mono',monospace;
+  font-size:7.5px;
+  letter-spacing:0.14em;
+  text-transform:uppercase;
+  color:#c8922a;
+  margin-bottom:7px;
+  padding-bottom:5px;
+  border-bottom:0.5px solid rgba(200,146,42,0.15);
+}
+.mp-ctrl-row { display:flex;align-items:flex-start;gap:8px;margin-bottom:5px; }
+.mp-ctrl-lbl {
+  font-family:'DM Mono',monospace;
+  font-size:7px;
+  color:var(--text-dim);
+  letter-spacing:0.08em;
+  text-transform:uppercase;
+  min-width:52px;
+  flex-shrink:0;
+  padding-top:5px;
+}
+.mp-pill-group { display:flex;gap:3px;flex-wrap:wrap;flex:1; }
+/* Override tc-btn appearance inside mpPanel to use amber palette */
+#mpPanel .tc-btn {
+  padding:4px 8px;
+  font-size:8px;
+  font-family:'DM Mono',monospace;
+  letter-spacing:0.04em;
+  background:var(--bg-panel);
+  border:0.5px solid var(--border);
+  border-radius:2px;
+  color:var(--text-dim);
+  cursor:pointer;
+  transition:all 0.12s;
+  min-width:26px;
+  text-align:center;
+}
+#mpPanel .tc-btn:hover { border-color:rgba(200,146,42,0.45);color:#c8922a; }
+#mpPanel .tc-btn.tc-active { background:rgba(200,146,42,0.12);border-color:#c8922a;color:#c8922a; }
+.mp-action-primary {
+  width:100%;
+  padding:9px 12px;
+  font-family:'DM Mono',monospace;
+  font-size:8.5px;
+  font-weight:400;
+  letter-spacing:0.12em;
+  text-transform:uppercase;
+  background:rgba(200,146,42,0.1);
+  border:0.5px solid rgba(200,146,42,0.4);
+  border-radius:3px;
+  color:#c8922a;
+  cursor:pointer;
+  transition:all 0.15s;
+  text-align:center;
+}
+.mp-action-primary:hover { background:rgba(200,146,42,0.18);border-color:#c8922a;color:#e8aa40; }
+.mp-action-secondary {
+  width:100%;
+  padding:9px 12px;
+  font-family:'DM Mono',monospace;
+  font-size:8.5px;
+  font-weight:400;
+  letter-spacing:0.12em;
+  text-transform:uppercase;
+  background:rgba(93,173,226,0.08);
+  border:0.5px solid rgba(93,173,226,0.3);
+  border-radius:3px;
+  color:var(--accent);
+  cursor:pointer;
+  transition:all 0.15s;
+  text-align:center;
+}
+.mp-action-secondary:hover { background:rgba(93,173,226,0.15);border-color:var(--accent); }
+.mp-input {
+  width:100%;
+  padding:4px 7px;
+  background:var(--bg-panel);
+  border:0.5px solid var(--border);
+  border-radius:3px;
+  color:var(--text-primary);
+  font-size:9px;
+  font-family:'DM Mono',monospace;
+  box-sizing:border-box;
+  outline:none;
+  transition:border-color 0.12s;
+}
+.mp-input:focus { border-color:rgba(200,146,42,0.5); }
+.mp-micro-lbl {
+  font-family:'DM Mono',monospace;
+  font-size:7px;
+  color:var(--text-dim);
+  letter-spacing:0.08em;
+  text-transform:uppercase;
+  margin-bottom:3px;
+}
 </style>
 </head>
 <body>
@@ -1556,73 +1664,83 @@ canvas{
 <!-- ── Multiplayer panel ─────────────────────────────────────────────────── -->
 <div class="slide-panel" id="mpPanel">
   <div class="panel-header">
-    <span class="panel-title">⚔️ 2-Player</span>
+    <span class="panel-title">⚔ 2-Player</span>
     <button class="panel-close" onclick="closeAllPanels()">✕</button>
   </div>
   <div class="panel-body" style="padding:10px 12px;display:flex;flex-direction:column;gap:8px;">
 
     <!-- Server status note -->
-    <div id="mpServerNote" style="font-size:8px;padding:4px 8px;border-radius:4px;background:rgba(74,159,212,0.08);border:0.5px solid rgba(74,159,212,0.2);color:var(--text-dim);">
-      ℹ️ Multiplayer requires the deployed server. Local-only = Solo &amp; Bot modes only.
+    <div id="mpServerNote" style="font-size:7.5px;padding:5px 8px;border-radius:3px;
+      background:rgba(93,173,226,0.07);border:0.5px solid rgba(93,173,226,0.2);
+      color:var(--text-dim);font-family:'DM Mono',monospace;letter-spacing:0.04em;line-height:1.5;">
+      ℹ Multiplayer requires the deployed server. Local-only = Solo &amp; Bot modes only.
     </div>
 
     <!-- ══ TIME CONTROL ══ -->
-    <div style="padding:8px;background:var(--bg-panel2);border:0.5px solid var(--border2);border-radius:6px;">
-      <div style="font-size:8px;color:var(--text-dim);margin-bottom:5px;font-weight:600;letter-spacing:0.05em;">TIME CONTROL</div>
-      <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:3px;">Game time (minutes)</div>
-      <div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:6px;">
-        <button onclick="mpSetBase(0)"  class="tc-btn tc-active" id="mpbase-0">∞</button>
-        <button onclick="mpSetBase(1)"  class="tc-btn" id="mpbase-1">1</button>
-        <button onclick="mpSetBase(2)"  class="tc-btn" id="mpbase-2">2</button>
-        <button onclick="mpSetBase(3)"  class="tc-btn" id="mpbase-3">3</button>
-        <button onclick="mpSetBase(5)"  class="tc-btn" id="mpbase-5">5</button>
-        <button onclick="mpSetBase(10)" class="tc-btn" id="mpbase-10">10</button>
-        <button onclick="mpSetBase(15)" class="tc-btn" id="mpbase-15">15</button>
-        <button onclick="mpSetBase(20)" class="tc-btn" id="mpbase-20">20</button>
-        <button onclick="mpSetBase(30)" class="tc-btn" id="mpbase-30">30</button>
+    <div class="mp-card">
+      <div class="mp-sec-lbl">Time Control</div>
+      <div class="mp-ctrl-row">
+        <span class="mp-ctrl-lbl">Minutes</span>
+        <div class="mp-pill-group">
+          <button onclick="mpSetBase(0)"  class="tc-btn tc-active" id="mpbase-0">∞</button>
+          <button onclick="mpSetBase(1)"  class="tc-btn" id="mpbase-1">1</button>
+          <button onclick="mpSetBase(2)"  class="tc-btn" id="mpbase-2">2</button>
+          <button onclick="mpSetBase(3)"  class="tc-btn" id="mpbase-3">3</button>
+          <button onclick="mpSetBase(5)"  class="tc-btn" id="mpbase-5">5</button>
+          <button onclick="mpSetBase(10)" class="tc-btn" id="mpbase-10">10</button>
+          <button onclick="mpSetBase(15)" class="tc-btn" id="mpbase-15">15</button>
+          <button onclick="mpSetBase(20)" class="tc-btn" id="mpbase-20">20</button>
+          <button onclick="mpSetBase(30)" class="tc-btn" id="mpbase-30">30</button>
+        </div>
       </div>
-      <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:3px;">Increment (seconds)</div>
-      <div style="display:flex;gap:3px;flex-wrap:wrap;">
-        <button onclick="mpSetInc(0)"  class="tc-btn tc-active" id="mpinc-0">0</button>
-        <button onclick="mpSetInc(1)"  class="tc-btn" id="mpinc-1">1</button>
-        <button onclick="mpSetInc(2)"  class="tc-btn" id="mpinc-2">2</button>
-        <button onclick="mpSetInc(3)"  class="tc-btn" id="mpinc-3">3</button>
-        <button onclick="mpSetInc(5)"  class="tc-btn" id="mpinc-5">5</button>
-        <button onclick="mpSetInc(10)" class="tc-btn" id="mpinc-10">10</button>
-        <button onclick="mpSetInc(20)" class="tc-btn" id="mpinc-20">20</button>
+      <div class="mp-ctrl-row">
+        <span class="mp-ctrl-lbl">Increment</span>
+        <div class="mp-pill-group">
+          <button onclick="mpSetInc(0)"  class="tc-btn tc-active" id="mpinc-0">0s</button>
+          <button onclick="mpSetInc(1)"  class="tc-btn" id="mpinc-1">1s</button>
+          <button onclick="mpSetInc(2)"  class="tc-btn" id="mpinc-2">2s</button>
+          <button onclick="mpSetInc(3)"  class="tc-btn" id="mpinc-3">3s</button>
+          <button onclick="mpSetInc(5)"  class="tc-btn" id="mpinc-5">5s</button>
+          <button onclick="mpSetInc(10)" class="tc-btn" id="mpinc-10">10s</button>
+          <button onclick="mpSetInc(20)" class="tc-btn" id="mpinc-20">20s</button>
+        </div>
       </div>
-      <div id="mpTCDisplay" style="font-size:8px;color:var(--text-dim);margin-top:4px;">Untimed</div>
+      <div id="mpTCDisplay" style="font-size:9px;color:#c8922a;margin-top:4px;
+        font-family:'DM Mono',monospace;letter-spacing:0.1em;">Untimed</div>
     </div>
 
-    <!-- ══ LOBBY LIST (always visible) ══ -->
-    <div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">
-        <div style="font-size:8px;color:var(--text-dim);font-weight:600;letter-spacing:0.05em;">OPEN CHALLENGES <span id="mpLobbyCount" style="font-weight:400;"></span></div>
-        <button onclick="mpRefreshLobby()" style="padding:2px 7px;background:transparent;border:0.5px solid var(--border2);border-radius:3px;color:var(--text-dim);cursor:pointer;font-size:8px;">↻</button>
+    <!-- ══ LOBBY LIST ══ -->
+    <div class="mp-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">
+        <div class="mp-sec-lbl" style="margin-bottom:0;border-bottom:none;padding-bottom:0;">
+          Open Challenges <span id="mpLobbyCount" style="color:var(--text-dim);font-weight:400;"></span>
+        </div>
+        <button onclick="mpRefreshLobby()"
+          style="padding:2px 8px;background:transparent;border:0.5px solid rgba(200,146,42,0.3);
+          border-radius:2px;color:#c8922a;cursor:pointer;font-size:7.5px;
+          font-family:'DM Mono',monospace;letter-spacing:0.08em;transition:border-color 0.12s;">↻ Refresh</button>
       </div>
       <div id="mpLobbyList" style="display:flex;flex-direction:column;gap:4px;min-height:36px;">
-        <div style="font-size:8.5px;color:var(--text-dim);text-align:center;padding:10px 0;" id="mpLobbyEmpty">No open challenges yet — be the first!</div>
+        <div id="mpLobbyEmpty"
+          style="font-size:8px;color:var(--text-dim);text-align:center;padding:10px 0;
+          font-family:'DM Mono',monospace;">No open challenges yet — be the first!</div>
       </div>
     </div>
 
     <!-- ══ LOBBY PLAYER INFO (shown when posting) ══ -->
-    <div id="mpLobbyInfoBlock" style="padding:8px;background:var(--bg-panel2);border:0.5px solid var(--border2);border-radius:6px;display:none;">
-      <div style="font-size:8px;color:var(--text-dim);margin-bottom:5px;font-weight:600;letter-spacing:0.05em;">YOUR INFO <span style="font-weight:400;font-style:italic;">(self-reported, optional)</span></div>
-      <div style="display:flex;gap:6px;margin-bottom:6px;">
+    <div id="mpLobbyInfoBlock" class="mp-card" style="display:none;">
+      <div class="mp-sec-lbl">Your Info <span style="font-weight:400;font-style:italic;color:var(--text-dim);">(optional)</span></div>
+      <div style="display:flex;gap:6px;margin-bottom:8px;">
         <div style="flex:1;">
-          <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:2px;">Name / Handle</div>
-          <input id="mpLobbyName" placeholder="Anonymous" maxlength="20"
-            style="width:100%;padding:4px 6px;background:var(--bg-panel);border:0.5px solid var(--border);
-            border-radius:3px;color:var(--text-primary);font-size:9px;font-family:inherit;box-sizing:border-box;">
+          <div class="mp-micro-lbl">Handle</div>
+          <input id="mpLobbyName" placeholder="Anonymous" maxlength="20" class="mp-input">
         </div>
-        <div style="width:70px;">
-          <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:2px;">Rating</div>
-          <input id="mpLobbyRating" placeholder="—" maxlength="4" type="number" min="100" max="3000"
-            style="width:100%;padding:4px 6px;background:var(--bg-panel);border:0.5px solid var(--border);
-            border-radius:3px;color:var(--text-primary);font-size:9px;font-family:inherit;box-sizing:border-box;">
+        <div style="width:72px;">
+          <div class="mp-micro-lbl">Rating</div>
+          <input id="mpLobbyRating" placeholder="—" maxlength="4" type="number" min="100" max="3000" class="mp-input">
         </div>
       </div>
-      <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:3px;">Seeking opponent within</div>
+      <div class="mp-micro-lbl" style="margin-bottom:5px;">Rating range</div>
       <div style="display:flex;gap:3px;flex-wrap:wrap;">
         <button onclick="mpSetRatingRange(100)"  class="tc-btn" id="mprange-100">±100</button>
         <button onclick="mpSetRatingRange(200)"  class="tc-btn" id="mprange-200">±200</button>
@@ -1632,61 +1750,87 @@ canvas{
     </div>
 
     <!-- ══ JOIN CODE INPUT (shown when joining) ══ -->
-    <div id="mpJoinBlock" style="display:none;">
-      <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:4px;">Enter room code from your friend</div>
+    <div id="mpJoinBlock" class="mp-card" style="display:none;">
+      <div class="mp-sec-lbl">Room Code</div>
       <input id="mpJoinCode" placeholder="ABC123" maxlength="6"
-        style="width:100%;padding:8px 10px;background:var(--bg-panel2);border:0.5px solid var(--border);
-        border-radius:4px;color:var(--text-primary);font-family:monospace;font-size:15px;
-        letter-spacing:0.15em;text-transform:uppercase;box-sizing:border-box;"
+        style="width:100%;padding:8px 10px;background:var(--bg-panel);
+        border:0.5px solid rgba(200,146,42,0.4);border-radius:3px;
+        color:#e8aa40;font-family:'DM Mono',monospace;font-size:16px;
+        letter-spacing:0.2em;text-transform:uppercase;box-sizing:border-box;
+        outline:none;text-align:center;"
         onkeydown="if(event.key==='Enter')mpJoinRoom()">
     </div>
 
     <!-- ══ INVITE LINK (shown after private room created) ══ -->
-    <div id="mpInviteRow" style="display:none;">
-      <div style="font-size:8px;color:var(--text-dim);margin-bottom:4px;font-weight:600;letter-spacing:0.05em;">INVITE LINK — share this anywhere</div>
-      <div style="display:flex;gap:5px;align-items:center;margin-bottom:5px;">
+    <div id="mpInviteRow" class="mp-card" style="display:none;">
+      <div class="mp-sec-lbl">Invite Link</div>
+      <div style="display:flex;gap:5px;align-items:center;margin-bottom:6px;">
         <input id="mpInviteLink" readonly
-          style="flex:1;padding:5px 7px;background:var(--bg-panel2);border:0.5px solid var(--border);
-          border-radius:4px;color:var(--accent);font-size:8px;font-family:monospace;cursor:pointer;"
+          style="flex:1;padding:5px 7px;background:var(--bg-panel);
+          border:0.5px solid rgba(93,173,226,0.3);border-radius:3px;
+          color:var(--accent);font-size:8px;font-family:'DM Mono',monospace;
+          cursor:pointer;outline:none;"
           onclick="this.select()">
         <button onclick="mpCopyLink()" id="mpCopyLinkBtn"
-          style="padding:4px 8px;background:rgba(74,159,212,0.12);border:0.5px solid var(--accent);
-          border-radius:4px;color:var(--accent);cursor:pointer;font-size:9px;white-space:nowrap;">Copy</button>
+          style="padding:4px 9px;background:rgba(93,173,226,0.1);
+          border:0.5px solid rgba(93,173,226,0.35);border-radius:3px;
+          color:var(--accent);cursor:pointer;font-size:8px;
+          font-family:'DM Mono',monospace;letter-spacing:0.06em;white-space:nowrap;">Copy</button>
       </div>
-      <div style="display:flex;gap:4px;margin-bottom:5px;">
-        <button onclick="mpShareDiscord()" style="flex:1;padding:4px;font-size:8px;background:rgba(88,101,242,0.12);border:0.5px solid rgba(88,101,242,0.4);border-radius:4px;color:#8891f2;cursor:pointer;">🎮 Discord</button>
-        <button onclick="mpShareText()" style="flex:1;padding:4px;font-size:8px;background:rgba(74,159,212,0.08);border:0.5px solid rgba(74,159,212,0.3);border-radius:4px;color:var(--accent);cursor:pointer;">💬 Text/Share</button>
+      <div style="display:flex;gap:4px;margin-bottom:7px;">
+        <button onclick="mpShareDiscord()"
+          style="flex:1;padding:5px;font-size:8px;font-family:'DM Mono',monospace;
+          letter-spacing:0.05em;background:rgba(88,101,242,0.1);
+          border:0.5px solid rgba(88,101,242,0.3);border-radius:3px;
+          color:#8891f2;cursor:pointer;">🎮 Discord</button>
+        <button onclick="mpShareText()"
+          style="flex:1;padding:5px;font-size:8px;font-family:'DM Mono',monospace;
+          letter-spacing:0.05em;background:rgba(93,173,226,0.08);
+          border:0.5px solid rgba(93,173,226,0.25);border-radius:3px;
+          color:var(--accent);cursor:pointer;">💬 Share</button>
       </div>
-      <div style="display:flex;align-items:center;gap:6px;">
-        <span style="font-size:8px;color:var(--text-dim);">or code:</span>
-        <span id="mpRoomCode" style="font-family:monospace;font-size:13px;font-weight:700;color:var(--text-primary);letter-spacing:0.15em;"></span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="mp-micro-lbl" style="margin-bottom:0;">Code</span>
+        <span id="mpRoomCode"
+          style="font-family:'DM Mono',monospace;font-size:15px;font-weight:700;
+          color:#c8922a;letter-spacing:0.2em;"></span>
       </div>
     </div>
 
     <!-- Status line -->
-    <div id="mpStatus" style="font-size:9px;color:var(--text-secondary);min-height:14px;line-height:1.5;"></div>
+    <div id="mpStatus"
+      style="font-size:8px;color:var(--text-dim);min-height:14px;line-height:1.5;
+      font-family:'DM Mono',monospace;letter-spacing:0.04em;"></div>
 
     <!-- Leave / reset (shown after joining a room) -->
     <div id="mpLeaveRow" style="display:none;">
-      <button onclick="mpLeave()" style="width:100%;padding:5px;background:transparent;border:0.5px solid var(--border);border-radius:4px;color:var(--text-dim);cursor:pointer;font-size:9px;">Leave room / Reset</button>
+      <button onclick="mpLeave()"
+        style="width:100%;padding:6px;background:transparent;
+        border:0.5px solid rgba(190,70,70,0.3);border-radius:3px;
+        color:rgba(190,100,100,0.8);cursor:pointer;font-size:8px;
+        font-family:'DM Mono',monospace;letter-spacing:0.1em;text-transform:uppercase;
+        transition:border-color 0.15s,color 0.15s;"
+        onmouseover="this.style.borderColor='rgba(190,70,70,0.65)';this.style.color='rgba(210,110,110,1)'"
+        onmouseout="this.style.borderColor='rgba(190,70,70,0.3)';this.style.color='rgba(190,100,100,0.8)'">
+        Leave Room / Reset
+      </button>
     </div>
 
-    <!-- ══ THREE LARGE ACTION BUTTONS ══ -->
+    <!-- ══ ACTION BUTTONS ══ -->
     <div id="mpActionBtns" style="display:flex;flex-direction:column;gap:6px;margin-top:2px;">
-      <button onclick="mpStartPrivateFlow()" class="mp-action-btn mp-action-green">
+      <button onclick="mpStartPrivateFlow()" class="mp-action-primary">
         🔒 Start Private Game
       </button>
-      <button onclick="mpStartJoinFlow()" class="mp-action-btn mp-action-green">
+      <button onclick="mpStartJoinFlow()" class="mp-action-primary">
         🔑 Join Private Game
       </button>
-      <button onclick="mpStartLobbyFlow()" class="mp-action-btn mp-action-blue">
-        🌐 Post Open Challenge to Lobby
+      <button onclick="mpStartLobbyFlow()" class="mp-action-secondary">
+        🌐 Post Open Challenge
       </button>
     </div>
 
-    <!-- compat shim -->
+    <!-- compat shim + legacy tab shims -->
     <div id="mpCodeRow" style="display:none;"></div>
-    <!-- legacy tab shims (no-ops, kept so old references don't throw) -->
     <div id="mp-tab-lobby" style="display:none;"></div>
     <div id="mp-tab-private" style="display:none;"></div>
     <div id="mp-tab-join" style="display:none;"></div>
