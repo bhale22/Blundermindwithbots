@@ -1598,6 +1598,12 @@ function updatePlayerBoxes(){
   if(_clockActive && typeof clockUpdateDisplay==='function') clockUpdateDisplay();
   // Keep the dynamic action button (Resign / Rematch? / Training Tips) in sync
   if(typeof updateActionBtn==='function') updateActionBtn();
+  // Reflect ghost-availability (off during live 2-player games)
+  if(typeof mpUpdateGhostAvailability==='function') mpUpdateGhostAvailability();
+  // Auto-save the game once it ends (and offer a save-as download)
+  if(typeof maybeAutoSaveGame==='function') maybeAutoSaveGame();
+  // Keep the pro side column (clocks, names, notation, turn) in sync
+  if(typeof proMode!=='undefined' && proMode && typeof proSync==='function') proSync();
 }
 
 function stopCheckThreats(){showingCheckThreats=false;checkThreatSquaresW=new Set();checkThreatSquaresB=new Set();render();}
