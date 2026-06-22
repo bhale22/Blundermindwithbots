@@ -175,6 +175,16 @@ function applyMoveAttractors(moveProbs) {
     }
   }
 
+  // ── Bad Day mode: pick worst plausible move ───────────────────────────────
+  // Grandmaster Bad Day: sort by probability ascending, return the first move
+  // that meets the minProbPct threshold (lowest prob still considered plausible).
+  if (botBadDayMode) {
+    const _floor = botMinProbPct > 0 ? botMinProbPct / 100 : 0.04;
+    const _asc = Object.entries(filtered).sort((a, b) => a[1] - b[1]);
+    const _worst = _asc.find(([, p]) => p >= _floor);
+    if (_worst) filtered = { [_worst[0]]: _worst[1] };
+  }
+
   // ── Per-move reweighting ──────────────────────────────────────────────────
   const needsPerMove = scale > 0 &&
     (hasPiece || hasTrade || hasPawnS || hasSpace || hasFortkx || hasGambito || hasAttacker || hasStructure);

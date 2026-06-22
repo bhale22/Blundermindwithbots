@@ -554,6 +554,31 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 .ptag{display:inline-block;margin-top:5px;font-family:var(--font-m);font-size:7px;letter-spacing:0.1em;text-transform:uppercase;padding:2px 5px;border-radius:2px;border:0.5px solid var(--border);color:var(--text-dim);}
 .pcard.sel .ptag{border-color:var(--border-amber);color:var(--amber);background:var(--amber-glow);}
 
+/* ── Custom confirm modal (used for Grandmaster Bad Day) ── */
+#bdconfirm-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:9000;
+  display:none;align-items:center;justify-content:center;
+}
+#bdconfirm-overlay.show{ display:flex; }
+#bdconfirm-box{
+  background:var(--carbon-1);border:1px solid var(--border-amber);border-radius:4px;
+  padding:22px 24px;max-width:320px;width:90%;
+  box-shadow:0 8px 32px rgba(0,0,0,0.6);
+}
+.bdtitle{
+  font-family:var(--font-u);font-size:10px;font-weight:600;letter-spacing:0.12em;
+  text-transform:uppercase;color:var(--amber);margin-bottom:12px;
+}
+.bdmsg{
+  font-family:var(--font-m);font-size:10px;line-height:1.6;color:var(--text-primary);
+  margin-bottom:16px;
+}
+.bdmsg p{ margin:0 0 8px; }
+.bdmsg ul{ margin:0 0 8px;padding-left:14px; }
+.bdmsg li{ margin-bottom:3px; }
+.bdbtns{ display:flex;gap:8px;justify-content:flex-end; }
+.bdbtns .preset-btn.primary{ border-color:var(--border-amber);color:var(--amber); }
+
 /* ══════════════════════════════════════════════
    SECTION 3: OPENING
 ══════════════════════════════════════════════ */
@@ -5027,6 +5052,7 @@ function drawStyleGauge(val){
   const thresholdTicks = [
     { cp: 0,   label: '0',   color: '#4a5568' },
     { cp: 50,  label: '50',  color: '#c8922a' },
+    { cp: 100, label: '100', color: '#b07820' },
     { cp: 250, label: '250', color: '#d06820' },
     { cp: 300, label: '300', color: '#c83030' },
   ].map(t => {
@@ -5049,7 +5075,7 @@ function drawStyleGauge(val){
   // Piece sacrifice threshold markers
   // ♟ at 100 cp = pawn sacrifice range; ♞ at 300 cp = knight sacrifice range
   const pieceMarkers = [
-    { cp: 100, glyph: '♟', color: '#b07820', outside: true  },
+    { cp: 100, glyph: '♟', color: '#b07820', outside: false },
     { cp: 300, glyph: '♞', color: '#c83030', outside: false },
   ].map(m => {
     const mf = m.cp / max;
@@ -5110,7 +5136,7 @@ function drawStyleGauge(val){
     <text x="${CX}" y="${CY - 12}" text-anchor="middle"
       font-family="'DM Mono',monospace" font-size="22" font-weight="500" fill="${fillColor}">${val}</text>
     <text x="${CX}" y="${CY + 6}" text-anchor="middle"
-      font-family="'DM Mono',monospace" font-size="8" fill="#717a8a" letter-spacing="2">cp budget</text>
+      font-family="'DM Mono',monospace" font-size="7" fill="#717a8a" letter-spacing="0.8">Centipawmeter</text>
     <!-- Quality label (dynamic) -->
     <text x="${CX}" y="${CY + 17}" text-anchor="middle"
       font-family="'DM Mono',monospace" font-size="7.5" fill="${qualityColor}" letter-spacing="0.08em">${qualityLabel}</text>
@@ -5475,6 +5501,7 @@ function getBotConfig(){
     tempValue:         _currentTempValue,
     tempPresetId:      selectedTempPresetId,
     personalityId:     selectedPersonality,
+    badDayMode:        selectedPersonality === 'badday',
     calmPanickyValue:  attractorValues['pressure'] || 0,
     hybridSlots:     hybridSlots.map(s=>({...s})),
     lcsfElo:         parseInt(document.getElementById('lcsf-lc-elo')?.value || '2000'),
@@ -6773,27 +6800,47 @@ function renderPersonalities(){
   `).join('');
 }
 
+/* ── Grandmaster Bad Day: custom modal (replaces window.confirm) ── */
+let _bdPendingId = null;
+function _showBadDayConfirm(id){
+  _bdPendingId = id;
+  document.getElementById('bdconfirm-overlay').classList.add('show');
+}
+function _bdCancel(){
+  document.getElementById('bdconfirm-overlay').classList.remove('show');
+  _bdPendingId = null;
+}
+function _bdApply(){
+  document.getElementById('bdconfirm-overlay').classList.remove('show');
+  const id = _bdPendingId;
+  _bdPendingId = null;
+  if(id) _applyPersonality(id);
+}
+
 function selPersonality(id){
   const p = PERSONALITIES.find(x=>x.id===id);
   if(!p) return;
-  // Grandmaster Bad Day changes more than attractors — confirm first
   if(id === 'badday'){
-    const ok = window.confirm(
-      'Grandmaster Bad Day will set:\n\n' +
-      '• Engine → Maia 3\n' +
-      '• ELO → 2400\n' +
-      '• Move quality range → 0–4% (top of the distribution)\n\n' +
-      'You can adjust any of these manually afterwards. Apply?');
-    if(!ok) return;
+    _showBadDayConfirm(id);
+    return; // waits for _bdApply → _applyPersonality
+  }
+  _applyPersonality(id);
+}
+
+function _applyPersonality(id){
+  const p = PERSONALITIES.find(x=>x.id===id);
+  if(!p) return;
+  // Bad Day: configure engine, ELO, and quality threshold
+  if(id === 'badday'){
     const card = document.querySelector('#engine-mode-grid .mcard[data-engine="maia3"]');
     if(card) selEngineMode(card);
     setElo(2400);
     const lo = document.getElementById('day-lower'), hi = document.getElementById('day-upper');
-    if(lo) lo.value = 0;
-    if(hi) hi.value = 4;
+    if(lo) lo.value = 4;    // minProbPct=4: keep only moves with individual prob ≥ 4%
+    if(hi) hi.value = 100;  // dayUpper=100: engine then selects the worst acceptable move
     onDaySlider();
   }
-  // Deselect all
+  // Select card
   document.querySelectorAll('.pcard').forEach(c=>c.classList.remove('sel'));
   document.querySelector(`.pcard[data-pid="${id}"]`).classList.add('sel');
   selectedPersonality = id;
@@ -7376,5 +7423,26 @@ document.addEventListener('DOMContentLoaded', ()=>{
   });
 });
 </script>
+
+<!-- Grandmaster Bad Day custom confirm modal -->
+<div id="bdconfirm-overlay">
+  <div id="bdconfirm-box">
+    <div class="bdtitle">👑 Grandmaster Bad Day</div>
+    <div class="bdmsg">
+      <p>This personality will set:</p>
+      <ul>
+        <li>Engine → Maia 3</li>
+        <li>ELO → 2400</li>
+        <li>Plays lowest probability move that is greater than 4%</li>
+      </ul>
+      <p style="opacity:0.65;margin-bottom:0;">You can adjust any of these manually afterwards.</p>
+    </div>
+    <div class="bdbtns">
+      <button class="preset-btn" onclick="_bdCancel()">Cancel</button>
+      <button class="preset-btn primary" onclick="_bdApply()">Apply</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

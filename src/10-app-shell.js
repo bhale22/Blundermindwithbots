@@ -98,6 +98,7 @@ let botSfVar2 = 0;                 // % of SF calls at ±2 level (0–20)
 let botTimePressureMaxDrop = null; // max ELO drop from r-drop; null = use DOM slider
 let botMinProbPct       = 0;      // min absolute probability % — 0 = off (default); set by panel
 let botBlunderLimitCp   = 400;    // max cp loss — 400 = off (default); set by panel
+let botBadDayMode       = false;  // Grandmaster Bad Day: pick worst plausible move above minProbPct threshold
 let botPressureCurveA   = null;   // ctrlA points [{x,y}] — ELO degradation vs think-time (s)
 let botPressureCurveB   = null;   // ctrlB points [{x,y}] — confidence floor % vs think-time (s)
 let botWeaponizerEnabled = false; // weaponizer: instant play when ahead on clock

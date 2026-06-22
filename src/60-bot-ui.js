@@ -1250,6 +1250,7 @@ window.addEventListener('message', function(e) {
   // Candidate filter + blunder limit
   botMinProbPct     = (cfg.minProbPct     != null) ? cfg.minProbPct     : 5;
   botBlunderLimitCp = (cfg.blunderLimitCp != null) ? cfg.blunderLimitCp : 150;
+  botBadDayMode     = !!cfg.badDayMode;
 
   // Time pressure curves (cvA = ELO degradation, cvB = distribution cutoff)
   // pressureOff disables both curves (flat ELO, 100% distribution at all times)
