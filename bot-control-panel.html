@@ -753,7 +753,25 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
       </div>
     </div>
 
-    <!-- 4. MY BOTS — named configurations saved in localStorage -->
+    <!-- 5. THINK TIME — click opens timing section -->
+    <button class="qs-pill-btn" id="qs-ttime-btn" onclick="openThinkTimeSection()" aria-label="Think time">
+      <span class="qs-label">Think Time</span>
+      <span class="qs-pill-value" id="qs-ttime-value">2 sec</span>
+    </button>
+
+    <!-- 6. PERSONALITY — active preset name, bot name, Custom, or None -->
+    <button class="qs-pill-btn" id="qs-pers-btn" onclick="openAttrSection()" aria-label="Bot personality">
+      <span class="qs-label">Personality</span>
+      <span class="qs-pill-value" id="qs-pers-value">None</span>
+    </button>
+
+    <!-- 7. CP BUDGET — current centipawn budget; — when nothing set -->
+    <button class="qs-pill-btn" id="qs-cpb-btn" onclick="openAttrSection()" aria-label="Centipawn budget">
+      <span class="qs-label">CP Budget</span>
+      <span class="qs-pill-value" id="qs-cpb-value">—</span>
+    </button>
+
+    <!-- 8. MY BOTS — named configurations saved in localStorage -->
     <div class="qs-pill-wrap" id="qs-bots-wrap">
       <button class="qs-pill-btn" id="qs-bots-btn" onclick="toggleQsDropdown('bots')" aria-label="Saved bots">
         <span class="qs-label">My Bots</span>
@@ -1031,8 +1049,8 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
   <div class="sec-trigger" onclick="toggleSec('attract')">
     <div class="sec-icon"><svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></div>
     <div class="sec-labels">
-      <div class="sec-label">Style Attractors</div>
-      <div class="sec-sub">Bidirectional sliders that shape how the bot thinks and plays</div>
+      <div class="sec-label">Personality</div>
+      <div class="sec-sub">Preset personalities, style attractors &amp; centipawn budget</div>
     </div>
     <div class="sec-status" id="st-attract">Neutral</div>
     <svg class="chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
@@ -1259,7 +1277,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
           </div>
           <div id="timing-fixed-ctrl" style="display:block;">
             <div class="dlbl"><span>Fixed interval</span></div>
-            <div class="ctrl"><span class="ctrl-lbl">Duration</span><input type="range" id="r-fixed" min="1" max="60" value="2" oninput="sv(this,'v-fixed',v=>v+'s')"><span class="ctrl-val" id="v-fixed">2s</span></div>
+            <div class="ctrl"><span class="ctrl-lbl">Duration</span><input type="range" id="r-fixed" min="1" max="60" value="2" oninput="sv(this,'v-fixed',v=>v+'s'); updateQsThinkTime()"><span class="ctrl-val" id="v-fixed">2s</span></div>
           </div>
           <div id="timing-mirror-ctrl" style="display:none;">
             <div class="dlbl"><span>Mirror user</span></div>
@@ -1659,6 +1677,7 @@ let currentElo = SPEEDO.default;
 let attractorValues = {};      // id -> -5..5
 let pieceValues = {};          // pieceId -> -5..5
 let selectedPersonality = null;
+let _activeBotName      = null;  // name of the loaded/saved bot; clears on any manual edit
 let openingMode = 'off';
 let selectedTempPresetId = 'neutral'; // tracks active temperature preset
 
@@ -4900,6 +4919,7 @@ function _setGaugeValue(val){
   drawStyleGauge(val);
   updateAttrCpDisplays();
   _syncBlunderFloorToBudget(val);
+  updateQsCpBudget();
 }
 
 function onGaugeSliderInput(val){
@@ -5026,6 +5046,30 @@ function drawStyleGauge(val){
               font-family="'DM Mono',monospace" font-size="7" fill="${t.color}">${t.label}</text>`;
   }).join('');
 
+  // Piece sacrifice threshold markers
+  // ♟ at 100 cp = pawn sacrifice range; ♞ at 300 cp = knight sacrifice range
+  const pieceMarkers = [
+    { cp: 100, glyph: '♟', color: '#b07820', outside: true  },
+    { cp: 300, glyph: '♞', color: '#c83030', outside: false },
+  ].map(m => {
+    const mf = m.cp / max;
+    const ma = (startDeg + mf * sweepDeg) * DEG;
+    const mc = Math.cos(ma), ms = Math.sin(ma);
+    if(m.outside){
+      const tx1 = (CX+(R-6)*mc).toFixed(1), ty1 = (CY+(R-6)*ms).toFixed(1);
+      const tx2 = (CX+(R+6)*mc).toFixed(1), ty2 = (CY+(R+6)*ms).toFixed(1);
+      const lx  = (CX+(R+14)*mc).toFixed(1);
+      const ly  = Math.max(5, CY+(R+14)*ms).toFixed(1);
+      return `<line x1="${tx1}" y1="${ty1}" x2="${tx2}" y2="${ty2}" stroke="${m.color}" stroke-width="1.5" opacity="0.65"/>
+              <text x="${lx}" y="${ly}" text-anchor="middle" dominant-baseline="middle"
+                font-family="Arial,sans-serif" font-size="11" fill="${m.color}" opacity="0.85">${m.glyph}</text>`;
+    } else {
+      const lx = (CX+(R-26)*mc).toFixed(1), ly = (CY+(R-26)*ms).toFixed(1);
+      return `<text x="${lx}" y="${ly}" text-anchor="middle" dominant-baseline="middle"
+        font-family="Arial,sans-serif" font-size="11" fill="${m.color}" opacity="0.85">${m.glyph}</text>`;
+    }
+  }).join('');
+
   // Zone arc backgrounds
   const zonePaths = zoneSegments.map(z =>
     `<path d="${arcPath(startDeg + z.start*sweepDeg, (z.end-z.start)*sweepDeg, R)}"
@@ -5053,6 +5097,8 @@ function drawStyleGauge(val){
       style="filter:drop-shadow(0 0 4px ${fillColor}99)"/>` : ''}
     <!-- Threshold ticks & cp labels -->
     ${thresholdTicks}
+    <!-- Piece sacrifice markers (♟ 100 cp, ♞ 300 cp) -->
+    ${pieceMarkers}
     <!-- Needle -->
     <line x1="${CX}" y1="${CY}" x2="${nx}" y2="${ny}" stroke="#e8aa40" stroke-width="2" stroke-linecap="round"/>
     <!-- Hub -->
@@ -5650,6 +5696,8 @@ function saveCurrentBot(){
       renderSavedBots();
       const pill = document.getElementById('qs-bots-value');
       if(pill) pill.textContent = name;
+      _activeBotName = name;
+      updateQsPersonality();
     }
   }
   if(doDownload){
@@ -5678,6 +5726,10 @@ function uploadBotFile(input){
       if(nameEl) nameEl.value = name;
       var pill = document.getElementById('qs-bots-value');
       if(pill) pill.textContent = name;
+      _activeBotName = name;
+      updateQsPersonality();
+      updateQsCpBudget();
+      updateQsThinkTime();
     } catch(err) {
       alert('Could not import bot: ' + err.message);
     }
@@ -5695,6 +5747,10 @@ function loadSavedBot(name){
   if(nameEl) nameEl.value = name;
   const pill = document.getElementById('qs-bots-value');
   if(pill) pill.textContent = name;
+  _activeBotName = name;
+  updateQsPersonality();
+  updateQsCpBudget();
+  updateQsThinkTime();
   setTimeout(() => closeAllQsDropdowns(), 240);
 }
 
@@ -6350,6 +6406,9 @@ function onAttractorChange(id, val){
     document.querySelectorAll('.pcard').forEach(c=>c.classList.remove('sel'));
     selectedPersonality = null;
   }
+  _activeBotName = null;
+  updateQsPersonality();
+  updateQsCpBudget();
 }
 
 function onCalmPanickyChange(val){
@@ -6395,6 +6454,9 @@ function onPieceChange(id, val){
   pieceValues[id] = +val;
   drawRadar();
   updateAttrCpDisplays();
+  _activeBotName = null;
+  updateQsPersonality();
+  updateQsCpBudget();
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -6641,6 +6703,62 @@ function initRadarInteraction(){
 }
 
 /* ══════════════════════════════════════════════════════════════
+   QUICK-START BAR PILL UPDATERS
+══════════════════════════════════════════════════════════════ */
+function updateQsPersonality(){
+  const pill = document.getElementById('qs-pers-value');
+  if(!pill) return;
+  if(_activeBotName){
+    pill.textContent = _activeBotName;
+  } else if(selectedPersonality && selectedPersonality !== 'custom'){
+    const p = PERSONALITIES.find(x => x.id === selectedPersonality);
+    pill.textContent = p ? p.name : selectedPersonality;
+  } else {
+    const isCustom = ATTRACTORS.some(a => (attractorValues[a.id]??0) !== 0)
+      || PIECE_TYPES.some(p => (pieceValues[p.id]??0) !== 0);
+    pill.textContent = isCustom ? 'Custom' : 'None';
+  }
+}
+
+function updateQsCpBudget(){
+  const pill = document.getElementById('qs-cpb-value');
+  if(!pill) return;
+  const hasActivity = selectedPersonality || _activeBotName
+    || ATTRACTORS.some(a => (attractorValues[a.id]??0) !== 0)
+    || PIECE_TYPES.some(p => (pieceValues[p.id]??0) !== 0);
+  if(!hasActivity){
+    pill.textContent = '—';
+    return;
+  }
+  const budget = +(document.getElementById('r-style')?.value ?? 100);
+  pill.textContent = budget + ' cp';
+}
+
+function updateQsThinkTime(){
+  const pill = document.getElementById('qs-ttime-value');
+  if(!pill) return;
+  const sel  = document.querySelector('#timing-mode-grid .mcard.sel');
+  const mode = sel?.dataset.v || 'Fixed interval';
+  if(mode === 'Instantaneous')    { pill.textContent = 'Instant';       return; }
+  if(mode === 'Complexity-scaled'){ pill.textContent = 'By complexity'; return; }
+  if(mode === 'Mirror user')      { pill.textContent = 'Mirrors you';   return; }
+  const secs = +(document.getElementById('r-fixed')?.value || 2);
+  pill.textContent = secs + ' sec';
+}
+
+function openAttrSection(){
+  const sec = document.getElementById('sec-attract');
+  if(sec && !sec.classList.contains('open')) toggleSec('attract');
+  sec?.scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+
+function openThinkTimeSection(){
+  const sec = document.getElementById('sec-timing');
+  if(sec && !sec.classList.contains('open')) toggleSec('timing');
+  sec?.scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+
+/* ══════════════════════════════════════════════════════════════
    PERSONALITIES
 ══════════════════════════════════════════════════════════════ */
 function renderPersonalities(){
@@ -6679,6 +6797,9 @@ function selPersonality(id){
   document.querySelectorAll('.pcard').forEach(c=>c.classList.remove('sel'));
   document.querySelector(`.pcard[data-pid="${id}"]`).classList.add('sel');
   selectedPersonality = id;
+  _activeBotName = null;
+  updateQsPersonality();
+  updateQsCpBudget();
 
   if(id==='custom') return;
   // Apply attractor values
@@ -6820,6 +6941,7 @@ function showTimingCtrl(mode){
     const el = document.getElementById('timing-'+m+'-ctrl');
     if(el) el.style.display = m===mode ? 'block' : 'none';
   });
+  updateQsThinkTime();
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -7232,6 +7354,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
   setupDrag('cvA', ()=>ctrlA, sigA, true,  'tipA', ()=>scaleA);
   setupDrag('cvB', ()=>ctrlB, sigB, false, 'tipB', ()=>scaleB);
   renderSavedBots();           // populate the My Bots dropdown from localStorage
+  updateQsPersonality();
+  updateQsCpBudget();
+  updateQsThinkTime();
   // Pull Maia model status from parent on load (same-origin iframe)
   try{
     if(window.parent && window.parent !== window){
