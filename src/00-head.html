@@ -684,9 +684,10 @@ canvas{
 #mpPanel .mp-tg-xaxis{
   font-family:var(--mp-font-u);font-size:8px;font-weight:500;
   letter-spacing:0.18em;text-transform:uppercase;color:var(--mp-text-2);
-  margin-bottom:6px;padding-left:2px;
+  margin-bottom:6px;text-align:center;padding-left:28px;
 }
 #mpPanel .mp-tg-wrap{ display:flex;align-items:stretch; }
+#mpPanel .mp-tg-cols{ flex:1; }
 #mpPanel .mp-tg-yaxis{
   display:flex;align-items:center;justify-content:center;
   writing-mode:vertical-lr;transform:rotate(180deg);
@@ -1992,11 +1993,10 @@ canvas{
         <div class="mp-review-row"><span class="mp-review-k">Rating (ELO)</span><span class="mp-review-v" id="mpRevRating">Unrated</span></div>
         <div class="mp-review-row"><span class="mp-review-k">Time Control</span><span class="mp-review-v" id="mpTCDisplay">Untimed</span></div>
         <div class="mp-review-row" id="mpRevRangeRow"><span class="mp-review-k">Opponent ELO Range</span><span class="mp-review-v" id="mpRevRange">Any</span></div>
+        <!-- Primary submit sits right under the summary, in the same visual field -->
+        <button class="mp-action-primary" id="mpTimeConfirmBtn" onclick="mpConfirmTime()" style="margin-top:12px;">Confirm</button>
         <button class="mp-change-time" id="mpChangeTimeBtn" onclick="mpExpandGrid()" style="display:none;">⟲ Change time control</button>
       </div>
-    </div>
-    <div class="mp-time-foot">
-      <button class="mp-action-primary" id="mpTimeConfirmBtn" onclick="mpConfirmTime()">Confirm</button>
     </div>
   </div>
 

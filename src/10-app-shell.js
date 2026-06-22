@@ -1433,10 +1433,12 @@ function mpBuildTimeGrid() {
   tbody += '</tbody>';
 
   panel.innerHTML =
-    '<div class="mp-tg-xaxis">Game time</div>' +
     '<div class="mp-tg-wrap">' +
       '<div class="mp-tg-yaxis">Increment</div>' +
-      '<table class="mp-tg">' + thead + tbody + '</table>' +
+      '<div class="mp-tg-cols">' +
+        '<div class="mp-tg-xaxis">Minutes</div>' +
+        '<table class="mp-tg">' + thead + tbody + '</table>' +
+      '</div>' +
     '</div>';
 }
 
