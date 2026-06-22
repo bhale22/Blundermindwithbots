@@ -362,7 +362,11 @@ function openPanel(id) {
   document.getElementById('panelOverlay').classList.add('open');
   // Refresh lobby list whenever the 2-player panel opens, then auto-refresh every 5s
   if (id === 'mpPanel') {
-    mpBuildTimeGrid();      // render the time-control matrix (reflects current selection)
+    mpLoadInfo();           // restore last-entered handle / rating / range
+    mpCloseTimeOverlay();   // ensure the time selector starts hidden
+    mpHideAnonPrompt();
+    if (!mpRoomId) mpSetMode('idle');  // default view unless mid-game / waiting
+    mpBuildTimeGrid();      // prebuild the matrix (reflects current selection)
     mpUpdateTCDisplay();    // sync the readout line
     mpRefreshLobby();
     clearInterval(mpLobbyRefreshTimer);
@@ -815,37 +819,64 @@ let mpMode = 'idle';
 
 function mpSetMode(mode) {
   mpMode = mode;
-  const lobbyInfo  = document.getElementById('mpLobbyInfoBlock');
-  const joinBlock  = document.getElementById('mpJoinBlock');
-  const inviteRow  = document.getElementById('mpInviteRow');
-  const actionBtns = document.getElementById('mpActionBtns');
-  const leaveRow   = document.getElementById('mpLeaveRow');
-  // Always hide everything first
-  if (lobbyInfo)  lobbyInfo.style.display  = 'none';
-  if (joinBlock)  joinBlock.style.display  = 'none';
-  if (inviteRow)  inviteRow.style.display  = 'none';
-  if (actionBtns) actionBtns.style.display = '';
-  if (leaveRow)   leaveRow.style.display   = 'none';
+  const mainView  = document.getElementById('mpMainView');
+  const joinBlock = document.getElementById('mpJoinBlock');
+  const inviteRow = document.getElementById('mpInviteRow');
+  const leaveRow  = document.getElementById('mpLeaveRow');
+  // Hide all conditional regions first
+  if (mainView)  mainView.style.display  = 'none';
+  if (joinBlock) joinBlock.style.display = 'none';
+  if (inviteRow) inviteRow.style.display = 'none';
+  if (leaveRow)  leaveRow.style.display  = 'none';
 
-  if (mode === 'lobby-form') {
-    if (lobbyInfo)  lobbyInfo.style.display  = '';
+  if (mode === 'idle') {
+    if (mainView) mainView.style.display = '';
   } else if (mode === 'join') {
-    if (joinBlock)  joinBlock.style.display  = '';
+    if (joinBlock) joinBlock.style.display = '';
+    if (leaveRow)  leaveRow.style.display  = '';   // doubles as Cancel/Back
   } else if (mode === 'private-waiting' || mode === 'lobby-waiting') {
-    if (inviteRow)  inviteRow.style.display  = '';
-    if (actionBtns) actionBtns.style.display = 'none';
-    if (leaveRow)   leaveRow.style.display   = '';
+    if (inviteRow) inviteRow.style.display = '';
+    if (leaveRow)  leaveRow.style.display  = '';
   } else if (mode === 'ingame') {
-    if (actionBtns) actionBtns.style.display = 'none';
-    if (leaveRow)   leaveRow.style.display   = '';
+    if (leaveRow) leaveRow.style.display = '';
   }
 }
 
-// Called by the three large buttons
-function mpStartPrivateFlow() {
-  // Create room immediately, show invite link when server confirms
-  mpCreatePrivate();
+/* ── Slide-in time-control flow ──────────────────────────────────────────────
+   The time grid is hidden by default. It slides in only when the user starts a
+   game (Post Open Challenge / Start Private Game). Picking a cell sets the TC;
+   the footer button confirms and runs the pending action.
+──────────────────────────────────────────────────────────────────────────────*/
+let mpPendingTimeAction = null;   // 'post' | 'private' | 'set'
+
+function mpOpenTimeOverlay(action) {
+  mpPendingTimeAction = action;
+  mpBuildTimeGrid();
+  mpUpdateTCDisplay();
+  const btn = document.getElementById('mpTimeConfirmBtn');
+  if (btn) btn.textContent =
+    action === 'post'    ? '🌐 Post Challenge' :
+    action === 'private' ? '🔒 Create Private Game' : 'Done';
+  const ov = document.getElementById('mpTimeOverlay');
+  if (ov) ov.classList.add('open');
 }
+
+function mpCloseTimeOverlay() {
+  const ov = document.getElementById('mpTimeOverlay');
+  if (ov) ov.classList.remove('open');
+  mpPendingTimeAction = null;
+}
+
+function mpConfirmTime() {
+  const action = mpPendingTimeAction;
+  mpCloseTimeOverlay();
+  if (action === 'post')         mpPostChallenge();
+  else if (action === 'private') mpCreatePrivate();
+}
+
+// Called by the action buttons
+function mpStartPost()        { mpOpenTimeOverlay('post'); }
+function mpStartPrivateGame() { mpOpenTimeOverlay('private'); }
 
 function mpStartJoinFlow() {
   mpSetMode('join');
@@ -853,21 +884,9 @@ function mpStartJoinFlow() {
   mpRefreshLobby();
 }
 
-function mpStartLobbyFlow() {
-  if (mpMode === 'lobby-form') {
-    // Second click = confirm & post
-    mpPostChallenge();
-  } else {
-    mpSetMode('lobby-form');
-    mpShowStatus('Fill in your info below (optional), then click Post again to go live.');
-    // Update the lobby button text
-    const btns = document.querySelectorAll('#mpActionBtns .mp-action-btn');
-    if (btns[2]) btns[2].textContent = '✓ Confirm & Post Challenge';
-    mpRefreshLobby();
-  }
-}
-
-// Legacy no-op kept so any stale references don't throw
+// Legacy aliases — keep older call sites (deep links, landing page) working
+function mpStartPrivateFlow() { mpOpenTimeOverlay('private'); }
+function mpStartLobbyFlow()   { mpOpenTimeOverlay('post'); }
 function mpSwitchTab() {}
 
 // ── WebSocket connection ─────────────────────────────────────────────────────
@@ -1099,11 +1118,51 @@ function mpRenderLobby(challenges) {
 }
 
 function mpAcceptLobbyChallenge(code) {
+  // If the user hasn't entered a handle OR a rating, prompt before joining
+  const nameEl   = document.getElementById('mpLobbyName');
+  const ratingEl = document.getElementById('mpLobbyRating');
+  const hasName   = nameEl   && nameEl.value.trim();
+  const hasRating = ratingEl && ratingEl.value.trim();
+  if (!hasName && !hasRating) {
+    mpShowAnonPrompt(code);
+    return;
+  }
+  mpDoAcceptLobby(code);
+}
+
+function mpDoAcceptLobby(code) {
   mpConnect(() => {
     if (mpWs && mpWs.readyState === WebSocket.OPEN)
       mpWs.send(JSON.stringify({ type: 'join', code }));
     else mpShowStatus('Connection failed — try again', true);
   });
+}
+
+// ── Anonymous-join confirm prompt ───────────────────────────────────────────
+let mpAnonPendingCode = null;
+function mpShowAnonPrompt(code) {
+  mpAnonPendingCode = code;
+  const el = document.getElementById('mpAnonPrompt');
+  if (el) el.classList.add('open');
+}
+function mpHideAnonPrompt() {
+  const el = document.getElementById('mpAnonPrompt');
+  if (el) el.classList.remove('open');
+}
+function mpAnonJoinAnon() {
+  const code = mpAnonPendingCode;
+  mpAnonPendingCode = null;
+  mpHideAnonPrompt();
+  if (code) mpDoAcceptLobby(code);
+}
+function mpAnonFillInfo() {
+  mpAnonPendingCode = null;
+  mpHideAnonPrompt();
+  const nameEl = document.getElementById('mpLobbyName');
+  if (nameEl) {
+    nameEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => nameEl.focus(), 300);
+  }
 }
 
 // ── Private game ─────────────────────────────────────────────────────────────
@@ -1198,10 +1257,9 @@ function mpLeave() {
   document.getElementById('mpRoomCode').textContent = '';
   const jc = document.getElementById('mpJoinCode'); if (jc) jc.value = '';
   mpShowStatus('');
+  mpCloseTimeOverlay();
+  mpHideAnonPrompt();
   mpSetMode('idle');
-  // Restore lobby button text
-  const btns = document.querySelectorAll('#mpActionBtns .mp-action-btn');
-  if (btns[2]) btns[2].textContent = '🌐 Post Open Challenge to Lobby';
   const ga = document.getElementById('gameActions');
   if (ga) ga.style.display = 'none';
   resetGame();
@@ -1325,13 +1383,14 @@ function mpUpdateTCDisplay() {
    TIME-CONTROL GRID — 2D matrix (increment × base time), ported from the
    bot-control-panel design. A single click sets both base + increment.
    ══════════════════════════════════════════════════════════════════════════ */
-const MP_TC_TIMES   = [1, 2, 3, 5, 10, 15, 20, 30, 0];
-const MP_TC_LABELS  = ['1', '2', '3', '5', '10', '15', '20', '30', '∞'];
-const MP_TC_INCS    = [0, 1, 2, 3, 5, 10];
+const MP_TC_TIMES   = [1, 2, 3, 5, 10, 15, 20, 30, 60, 90, 0];
+const MP_TC_LABELS  = ['1', '2', '3', '5', '10', '15', '20', '30', '60', '90', '∞'];
+const MP_TC_INCS    = [0, 1, 2, 3, 5, 10, 20, 30];
 // "Famous" presets get a rounded card + category badge; everything else is a plain cell
 const MP_TC_PRESETS = new Set([
   '1-0', '2-1', '3-0', '3-2', '5-0', '5-3',
-  '10-0', '10-5', '15-0', '15-10', '20-0', '30-0', '30-20', '0-0'
+  '10-0', '10-5', '15-0', '15-10', '20-0', '30-0', '30-20',
+  '60-0', '90-0', '90-30', '0-0'
 ]);
 
 function mpTcCategory(t, i) {
@@ -1405,6 +1464,27 @@ function mpSetRatingRange(r) {
   mpRatingRange = r;
   document.querySelectorAll('[id^="mprange-"]').forEach(b => b.classList.remove('tc-active'));
   const btn = document.getElementById('mprange-' + r); if (btn) btn.classList.add('tc-active');
+  try { localStorage.setItem('bm_mpRange', String(r)); } catch (e) {}
+}
+
+// ── Persist "Your Info" (handle / rating / range) across sessions ────────────
+function mpSaveInfo() {
+  const nameEl   = document.getElementById('mpLobbyName');
+  const ratingEl = document.getElementById('mpLobbyRating');
+  try {
+    if (nameEl)   localStorage.setItem('bm_mpHandle', nameEl.value || '');
+    if (ratingEl) localStorage.setItem('bm_mpRating', ratingEl.value || '');
+  } catch (e) {}
+}
+function mpLoadInfo() {
+  const nameEl   = document.getElementById('mpLobbyName');
+  const ratingEl = document.getElementById('mpLobbyRating');
+  try {
+    const h = localStorage.getItem('bm_mpHandle'); if (nameEl   && h != null) nameEl.value   = h;
+    const r = localStorage.getItem('bm_mpRating'); if (ratingEl && r != null) ratingEl.value = r;
+    const rng = parseInt(localStorage.getItem('bm_mpRange'));
+    if (!isNaN(rng)) mpSetRatingRange(rng);
+  } catch (e) {}
 }
 
 // ── Hide/Show toggle ─────────────────────────────────────────────────────────

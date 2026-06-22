@@ -619,9 +619,10 @@ canvas{
    untouched. The panel is a fixed dark carbon surface regardless of app theme.
    ══════════════════════════════════════════════════════════════════════════ */
 #mpPanel{
-  width:420px;
+  width:480px;
   background:#0e0f11;
   border-left:1px solid rgba(200,146,42,0.3);
+  overflow:hidden;   /* contain the slide-in time overlay */
   /* scoped carbon/amber tokens */
   --mp-carbon:#0e0f11;
   --mp-carbon-mid:#14161a;
@@ -641,7 +642,7 @@ canvas{
   --mp-font-u:'Chakra Petch',sans-serif;
   --mp-font-d:'Cormorant Garamond',serif;
 }
-#mpPanel:not(.open){ right:-440px; }
+#mpPanel:not(.open){ right:-500px; }
 /* faint scanline texture, like the bot panel */
 #mpPanel .panel-body::before{
   content:'';position:absolute;inset:0;pointer-events:none;z-index:0;
@@ -728,8 +729,8 @@ canvas{
 }
 #mpPanel .mp-tg-cell.selected .mp-tg-cname{ color:var(--mp-amber-bright); }
 #mpPanel .mp-tg-cbadge{
-  font-family:var(--mp-font-m);font-size:6px;
-  padding:0 3px;border-radius:2px;line-height:1.6;
+  font-family:var(--mp-font-m);font-size:5.5px;
+  padding:0 2px;border-radius:2px;line-height:1.6;
 }
 #mpPanel .badge-bullet{ background:rgba(200,74,42,0.2);color:#e87050; }
 #mpPanel .badge-blitz{ background:rgba(200,146,42,0.2);color:var(--mp-amber-bright); }
@@ -788,7 +789,64 @@ canvas{
   text-align:center;padding:12px 0;
 }
 
-@media(max-width:480px){
+/* ── Slide-in time-control overlay ── */
+#mpTimeOverlay{
+  position:absolute;top:0;right:0;bottom:0;width:100%;
+  background:var(--mp-carbon);
+  transform:translateX(100%);
+  transition:transform 0.28s cubic-bezier(0.4,0,0.2,1);
+  display:flex;flex-direction:column;z-index:6;
+}
+#mpTimeOverlay.open{ transform:translateX(0); }
+#mpTimeOverlay .mp-time-head{
+  display:flex;align-items:center;gap:10px;
+  padding:12px 14px 10px;flex-shrink:0;
+  border-bottom:0.5px solid var(--mp-border-amber);
+  background:linear-gradient(180deg,#14161a,#0e0f11);
+}
+#mpTimeOverlay .mp-time-back{
+  font-family:var(--mp-font-m);font-size:9px;letter-spacing:0.06em;
+  color:var(--mp-amber);background:transparent;
+  border:0.5px solid var(--mp-border-amber);border-radius:3px;
+  padding:4px 9px;cursor:pointer;transition:all 0.12s;
+}
+#mpTimeOverlay .mp-time-back:hover{ background:var(--mp-amber-glow);color:var(--mp-amber-bright); }
+#mpTimeOverlay .mp-time-title{
+  font-family:var(--mp-font-d);font-size:15px;font-weight:300;font-style:italic;
+  color:var(--mp-text-1);letter-spacing:0.02em;
+}
+#mpTimeOverlay .mp-time-body{
+  flex:1;overflow-y:auto;padding:14px;
+}
+#mpTimeOverlay .mp-time-foot{
+  flex-shrink:0;padding:12px 14px;
+  border-top:0.5px solid var(--mp-border);
+  background:var(--mp-carbon-mid);
+}
+
+/* ── Anonymous-join confirm modal ── */
+#mpAnonPrompt{
+  position:absolute;inset:0;background:rgba(0,0,0,0.72);
+  display:none;align-items:center;justify-content:center;
+  z-index:20;padding:20px;
+}
+#mpAnonPrompt.open{ display:flex; }
+#mpAnonPrompt .mp-anon-box{
+  background:var(--mp-carbon-mid);border:0.5px solid var(--mp-border-amber);
+  border-radius:5px;padding:18px;max-width:300px;width:100%;
+  box-shadow:0 12px 40px rgba(0,0,0,0.6);
+}
+#mpAnonPrompt .mp-anon-title{
+  font-family:var(--mp-font-u);font-size:11px;font-weight:500;
+  letter-spacing:0.08em;text-transform:uppercase;color:var(--mp-amber);margin-bottom:8px;
+}
+#mpAnonPrompt .mp-anon-msg{
+  font-family:var(--mp-font-m);font-size:9px;color:var(--mp-text-2);
+  line-height:1.6;margin-bottom:14px;
+}
+#mpAnonPrompt .mp-anon-btns{ display:flex;flex-direction:column;gap:7px; }
+
+@media(max-width:520px){
   #mpPanel{ width:100vw; }
   #mpPanel:not(.open){ right:-100vw; }
 }
@@ -1751,51 +1809,61 @@ canvas{
       ℹ Multiplayer requires the deployed server. Local-only = Solo &amp; Bot modes only.
     </div>
 
-    <!-- ══ TIME CONTROL ══ -->
-    <div class="mp-card">
-      <div class="mp-sec-lbl">Time Control</div>
-      <!-- 2D matrix grid (increment × base time) — built by mpBuildTimeGrid() -->
-      <div class="mp-tg-panel" id="mpTgPanel"></div>
-      <div class="mp-tc-readout" id="mpTCDisplay">Untimed</div>
-    </div>
+    <!-- ════════ DEFAULT VIEW (Info · Challenges · Actions) ════════ -->
+    <div id="mpMainView" style="display:flex;flex-direction:column;gap:8px;">
 
-    <!-- ══ LOBBY LIST ══ -->
-    <div class="mp-card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;">
-        <div class="mp-sec-lbl" style="margin-bottom:0;border-bottom:none;padding-bottom:0;">
-          Open Challenges <span id="mpLobbyCount" style="color:var(--mp-text-dim);font-weight:400;"></span>
+      <!-- ══ YOUR INFO (always visible, persisted) ══ -->
+      <div class="mp-card">
+        <div class="mp-sec-lbl">Your Info <span style="font-weight:400;font-style:italic;color:var(--mp-text-dim);">(optional)</span></div>
+        <div style="display:flex;gap:6px;margin-bottom:9px;">
+          <div style="flex:1;">
+            <div class="mp-micro-lbl">Handle</div>
+            <input id="mpLobbyName" placeholder="Anonymous" maxlength="20" class="mp-input" oninput="mpSaveInfo()">
+          </div>
+          <div style="width:80px;">
+            <div class="mp-micro-lbl">Rating</div>
+            <input id="mpLobbyRating" placeholder="—" maxlength="4" type="number" min="100" max="3000" class="mp-input" oninput="mpSaveInfo()">
+          </div>
         </div>
-        <button onclick="mpRefreshLobby()"
-          style="padding:3px 9px;background:transparent;border:0.5px solid var(--mp-border-amber);
-          border-radius:2px;color:var(--mp-amber);cursor:pointer;font-size:7.5px;
-          font-family:var(--mp-font-m);letter-spacing:0.08em;transition:border-color 0.12s;">↻ Refresh</button>
+        <div class="mp-micro-lbl" style="margin-bottom:6px;">Rating range</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;">
+          <button onclick="mpSetRatingRange(100)"  class="tc-btn" id="mprange-100">±100</button>
+          <button onclick="mpSetRatingRange(200)"  class="tc-btn" id="mprange-200">±200</button>
+          <button onclick="mpSetRatingRange(500)"  class="tc-btn" id="mprange-500">±500</button>
+          <button onclick="mpSetRatingRange(9999)" class="tc-btn tc-active" id="mprange-9999">Any</button>
+        </div>
       </div>
-      <div id="mpLobbyList" style="display:flex;flex-direction:column;gap:4px;min-height:36px;">
-        <div id="mpLobbyEmpty" class="mp-lobby-empty">No open challenges yet — be the first!</div>
-      </div>
-    </div>
 
-    <!-- ══ LOBBY PLAYER INFO (shown when posting) ══ -->
-    <div id="mpLobbyInfoBlock" class="mp-card" style="display:none;">
-      <div class="mp-sec-lbl">Your Info <span style="font-weight:400;font-style:italic;color:var(--mp-text-dim);">(optional)</span></div>
-      <div style="display:flex;gap:6px;margin-bottom:9px;">
-        <div style="flex:1;">
-          <div class="mp-micro-lbl">Handle</div>
-          <input id="mpLobbyName" placeholder="Anonymous" maxlength="20" class="mp-input">
+      <!-- ══ OPEN CHALLENGES ══ -->
+      <div class="mp-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;">
+          <div class="mp-sec-lbl" style="margin-bottom:0;border-bottom:none;padding-bottom:0;">
+            Open Challenges <span id="mpLobbyCount" style="color:var(--mp-text-dim);font-weight:400;"></span>
+          </div>
+          <button onclick="mpRefreshLobby()"
+            style="padding:3px 9px;background:transparent;border:0.5px solid var(--mp-border-amber);
+            border-radius:2px;color:var(--mp-amber);cursor:pointer;font-size:7.5px;
+            font-family:var(--mp-font-m);letter-spacing:0.08em;transition:border-color 0.12s;">↻ Refresh</button>
         </div>
-        <div style="width:76px;">
-          <div class="mp-micro-lbl">Rating</div>
-          <input id="mpLobbyRating" placeholder="—" maxlength="4" type="number" min="100" max="3000" class="mp-input">
+        <div id="mpLobbyList" style="display:flex;flex-direction:column;gap:4px;min-height:36px;">
+          <div id="mpLobbyEmpty" class="mp-lobby-empty">No open challenges yet — be the first!</div>
         </div>
       </div>
-      <div class="mp-micro-lbl" style="margin-bottom:6px;">Rating range</div>
-      <div style="display:flex;gap:4px;flex-wrap:wrap;">
-        <button onclick="mpSetRatingRange(100)"  class="tc-btn" id="mprange-100">±100</button>
-        <button onclick="mpSetRatingRange(200)"  class="tc-btn" id="mprange-200">±200</button>
-        <button onclick="mpSetRatingRange(500)"  class="tc-btn" id="mprange-500">±500</button>
-        <button onclick="mpSetRatingRange(9999)" class="tc-btn tc-active" id="mprange-9999">Any</button>
+
+      <!-- ══ ACTION BUTTONS — Post · Private · Join ══ -->
+      <div id="mpActionBtns" style="display:flex;flex-direction:column;gap:6px;margin-top:2px;">
+        <button onclick="mpStartPost()" class="mp-action-primary">
+          🌐 Post Open Challenge
+        </button>
+        <button onclick="mpStartPrivateGame()" class="mp-action-primary">
+          🔒 Start Private Game
+        </button>
+        <button onclick="mpStartJoinFlow()" class="mp-action-secondary">
+          🔑 Join Private Game
+        </button>
       </div>
-    </div>
+
+    </div><!-- /#mpMainView -->
 
     <!-- ══ JOIN CODE INPUT (shown when joining) ══ -->
     <div id="mpJoinBlock" class="mp-card" style="display:none;">
@@ -1807,6 +1875,7 @@ canvas{
         letter-spacing:0.2em;text-transform:uppercase;box-sizing:border-box;
         outline:none;text-align:center;"
         onkeydown="if(event.key==='Enter')mpJoinRoom()">
+      <button onclick="mpJoinRoom()" class="mp-action-primary" style="margin-top:9px;">Join Game ▸</button>
     </div>
 
     <!-- ══ INVITE LINK (shown after private room created) ══ -->
@@ -1864,26 +1933,43 @@ canvas{
       </button>
     </div>
 
-    <!-- ══ ACTION BUTTONS ══ -->
-    <div id="mpActionBtns" style="display:flex;flex-direction:column;gap:6px;margin-top:2px;">
-      <button onclick="mpStartPrivateFlow()" class="mp-action-primary">
-        🔒 Start Private Game
-      </button>
-      <button onclick="mpStartJoinFlow()" class="mp-action-primary">
-        🔑 Join Private Game
-      </button>
-      <button onclick="mpStartLobbyFlow()" class="mp-action-secondary">
-        🌐 Post Open Challenge
-      </button>
-    </div>
-
     <!-- compat shim + legacy tab shims -->
     <div id="mpCodeRow" style="display:none;"></div>
     <div id="mp-tab-lobby" style="display:none;"></div>
     <div id="mp-tab-private" style="display:none;"></div>
     <div id="mp-tab-join" style="display:none;"></div>
 
+  </div><!-- /panel-body -->
+
+  <!-- ════════ SLIDE-IN TIME-CONTROL SELECTOR ════════ -->
+  <!-- Appears only when starting a game (Post Open Challenge / Start Private Game) -->
+  <div id="mpTimeOverlay">
+    <div class="mp-time-head">
+      <button class="mp-time-back" onclick="mpCloseTimeOverlay()">‹ Back</button>
+      <span class="mp-time-title">Select Time Control</span>
+    </div>
+    <div class="mp-time-body">
+      <!-- 2D matrix grid (increment × base time) — built by mpBuildTimeGrid() -->
+      <div class="mp-tg-panel" id="mpTgPanel"></div>
+      <div class="mp-tc-readout" id="mpTCDisplay">Untimed</div>
+    </div>
+    <div class="mp-time-foot">
+      <button class="mp-action-primary" id="mpTimeConfirmBtn" onclick="mpConfirmTime()">Confirm</button>
+    </div>
   </div>
+
+  <!-- ════════ ANONYMOUS-JOIN CONFIRM MODAL ════════ -->
+  <div id="mpAnonPrompt">
+    <div class="mp-anon-box">
+      <div class="mp-anon-title">Join without a handle?</div>
+      <div class="mp-anon-msg">You haven't entered a handle or rating. Join this challenge as an anonymous, unrated player — or add your info first.</div>
+      <div class="mp-anon-btns">
+        <button class="mp-action-primary" onclick="mpAnonJoinAnon()">Join as Anonymous</button>
+        <button class="mp-action-secondary" onclick="mpAnonFillInfo()">Add Handle &amp; Rating</button>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- ── Theme panel ────────────────────────────────────────────────────────── -->
