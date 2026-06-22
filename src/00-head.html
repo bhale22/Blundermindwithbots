@@ -745,6 +745,38 @@ canvas{
   border-top:0.5px solid var(--mp-border);
 }
 
+/* ── Collapsible grid + review summary (time overlay) ── */
+#mpPanel .mp-grid-collapse{
+  overflow:hidden;max-height:420px;opacity:1;
+  transition:max-height 0.3s ease, opacity 0.22s ease, margin 0.3s ease;
+}
+#mpPanel .mp-grid-collapse.collapsed{ max-height:0;opacity:0;margin:0; }
+#mpPanel .mp-review{
+  margin-top:14px;padding:12px 13px;
+  background:var(--mp-carbon-mid);
+  border:0.5px solid var(--mp-border-amber);border-radius:4px;
+}
+#mpPanel .mp-review-row{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:6px 0;border-bottom:0.5px solid var(--mp-border);
+}
+#mpPanel .mp-review-row:last-of-type{ border-bottom:none; }
+#mpPanel .mp-review-k{
+  font-family:var(--mp-font-m);font-size:8px;letter-spacing:0.1em;
+  text-transform:uppercase;color:var(--mp-text-dim);flex-shrink:0;
+}
+#mpPanel .mp-review-v{
+  font-family:var(--mp-font-u);font-size:11px;font-weight:500;
+  color:var(--mp-amber-bright);text-align:right;
+}
+#mpPanel .mp-change-time{
+  margin-top:11px;width:100%;padding:7px;
+  background:transparent;border:0.5px solid var(--mp-border);border-radius:3px;
+  color:var(--mp-text-2);font-family:var(--mp-font-m);font-size:8px;
+  letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;transition:all 0.12s;
+}
+#mpPanel .mp-change-time:hover{ border-color:var(--mp-amber-dim);color:var(--mp-amber); }
+
 /* Rating-range pills (reuse tc-btn markup, restyled) */
 #mpPanel .tc-btn{
   padding:4px 9px;font-size:8px;font-family:var(--mp-font-m);letter-spacing:0.04em;
@@ -1946,12 +1978,22 @@ canvas{
   <div id="mpTimeOverlay">
     <div class="mp-time-head">
       <button class="mp-time-back" onclick="mpCloseTimeOverlay()">‹ Back</button>
-      <span class="mp-time-title">Select Time Control</span>
+      <span class="mp-time-title" id="mpTimeTitle">Select Time Control</span>
     </div>
     <div class="mp-time-body">
-      <!-- 2D matrix grid (increment × base time) — built by mpBuildTimeGrid() -->
-      <div class="mp-tg-panel" id="mpTgPanel"></div>
-      <div class="mp-tc-readout" id="mpTCDisplay">Untimed</div>
+      <!-- Collapsible 2D matrix grid (increment × base time) — built by mpBuildTimeGrid() -->
+      <div class="mp-grid-collapse" id="mpGridCollapse">
+        <div class="mp-tg-panel" id="mpTgPanel"></div>
+      </div>
+      <!-- Review summary — collapses the grid and shows everything in one spot -->
+      <div class="mp-review" id="mpReview">
+        <div class="mp-sec-lbl">Review</div>
+        <div class="mp-review-row"><span class="mp-review-k">Handle</span><span class="mp-review-v" id="mpRevName">Anonymous</span></div>
+        <div class="mp-review-row"><span class="mp-review-k">Rating (ELO)</span><span class="mp-review-v" id="mpRevRating">Unrated</span></div>
+        <div class="mp-review-row"><span class="mp-review-k">Time Control</span><span class="mp-review-v" id="mpTCDisplay">Untimed</span></div>
+        <div class="mp-review-row" id="mpRevRangeRow"><span class="mp-review-k">Opponent ELO Range</span><span class="mp-review-v" id="mpRevRange">Any</span></div>
+        <button class="mp-change-time" id="mpChangeTimeBtn" onclick="mpExpandGrid()" style="display:none;">⟲ Change time control</button>
+      </div>
     </div>
     <div class="mp-time-foot">
       <button class="mp-action-primary" id="mpTimeConfirmBtn" onclick="mpConfirmTime()">Confirm</button>

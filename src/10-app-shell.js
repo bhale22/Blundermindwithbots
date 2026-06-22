@@ -852,7 +852,8 @@ let mpPendingTimeAction = null;   // 'post' | 'private' | 'set'
 function mpOpenTimeOverlay(action) {
   mpPendingTimeAction = action;
   mpBuildTimeGrid();
-  mpUpdateTCDisplay();
+  mpExpandGrid();     // start with the grid open for choosing
+  mpBuildReview();    // populate the review preview below
   const btn = document.getElementById('mpTimeConfirmBtn');
   if (btn) btn.textContent =
     action === 'post'    ? '🌐 Post Challenge' :
@@ -1375,8 +1376,8 @@ function mpUpdateTCDisplay() {
   mpSelectedTC = mpBaseMin === 0 ? 'untimed' : 'custom';
   if (!disp) return;
   disp.textContent = mpBaseMin === 0
-    ? 'Untimed · ' + mpTcCategory(0, 0).n
-    : mpBaseMin + ' min + ' + mpIncSec + ' sec · ' + mpTcCategory(mpBaseMin, mpIncSec).n;
+    ? 'Untimed'
+    : mpBaseMin + ' min + ' + mpIncSec + 's · ' + mpTcCategory(mpBaseMin, mpIncSec).n;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -1445,6 +1446,45 @@ function mpSelectTC(t, inc, cell) {
   document.querySelectorAll('#mpPanel .mp-tg-cell').forEach(c => c.classList.remove('selected'));
   if (cell) cell.classList.add('selected');
   mpUpdateTCDisplay();
+  mpBuildReview();
+  // After picking, collapse the grid into the concise review summary
+  if (document.getElementById('mpTimeOverlay').classList.contains('open')) {
+    mpCollapseGrid();
+  }
+}
+
+// ── Time-overlay review summary + grid collapse/expand ───────────────────────
+function mpBuildReview() {
+  const nameEl   = document.getElementById('mpLobbyName');
+  const ratingEl = document.getElementById('mpLobbyRating');
+  const name   = (nameEl   && nameEl.value.trim())   || 'Anonymous';
+  const rating = (ratingEl && ratingEl.value.trim()) ? ratingEl.value.trim() : 'Unrated';
+  const rn = document.getElementById('mpRevName');   if (rn) rn.textContent = name;
+  const rr = document.getElementById('mpRevRating'); if (rr) rr.textContent = rating;
+  const rv = document.getElementById('mpRevRange');
+  if (rv) rv.textContent = mpRatingRange >= 9999 ? 'Any' : ('±' + mpRatingRange);
+  // ELO range only applies to open challenges (lobby matchmaking), not private games
+  const rangeRow = document.getElementById('mpRevRangeRow');
+  if (rangeRow) rangeRow.style.display = (mpPendingTimeAction === 'post') ? '' : 'none';
+  mpUpdateTCDisplay();   // refreshes the Time Control row (#mpTCDisplay)
+}
+
+function mpCollapseGrid() {
+  const grid  = document.getElementById('mpGridCollapse');
+  const chg   = document.getElementById('mpChangeTimeBtn');
+  const title = document.getElementById('mpTimeTitle');
+  if (grid)  grid.classList.add('collapsed');
+  if (chg)   chg.style.display = '';
+  if (title) title.textContent = 'Review & Submit';
+}
+
+function mpExpandGrid() {
+  const grid  = document.getElementById('mpGridCollapse');
+  const chg   = document.getElementById('mpChangeTimeBtn');
+  const title = document.getElementById('mpTimeTitle');
+  if (grid)  grid.classList.remove('collapsed');
+  if (chg)   chg.style.display = 'none';
+  if (title) title.textContent = 'Select Time Control';
 }
 
 // Legacy alias kept for any old calls
