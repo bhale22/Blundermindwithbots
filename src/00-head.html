@@ -8,6 +8,9 @@
 <meta property="og:title" content="Blundermind">
 <meta property="og:description" content="Stop getting blundermined. Board vision training for novice chess players.">
 <meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Chakra+Petch:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 /* ── Reset & base ─────────────────────────────────────────────────────────── */
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -609,6 +612,277 @@ canvas{
    so the player's clock always appears adjacent to their pieces. */
 #board-col.board-flipped #playerBoxW { order: -1; }
 #board-col.board-flipped #playerBoxB { order:  3; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MULTIPLAYER PANEL — carbon/amber design system (matches bot-control-panel)
+   All tokens are scoped to #mpPanel so the rest of the themeable app is
+   untouched. The panel is a fixed dark carbon surface regardless of app theme.
+   ══════════════════════════════════════════════════════════════════════════ */
+#mpPanel{
+  width:480px;
+  background:#0e0f11;
+  border-left:1px solid rgba(200,146,42,0.3);
+  overflow:hidden;   /* contain the slide-in time overlay */
+  /* scoped carbon/amber tokens */
+  --mp-carbon:#0e0f11;
+  --mp-carbon-mid:#14161a;
+  --mp-carbon-surface:#22262d;
+  --mp-carbon-raise:#2a2f38;
+  --mp-amber:#c8922a;
+  --mp-amber-bright:#e8aa40;
+  --mp-amber-dim:#8a6420;
+  --mp-amber-glow:rgba(200,146,42,0.12);
+  --mp-amber-glow-s:rgba(200,146,42,0.22);
+  --mp-text-1:#e8e6e0;
+  --mp-text-2:#aab4c6;
+  --mp-text-dim:#717a8a;
+  --mp-border:rgba(255,255,255,0.06);
+  --mp-border-amber:rgba(200,146,42,0.3);
+  --mp-font-m:'DM Mono',monospace;
+  --mp-font-u:'Chakra Petch',sans-serif;
+  --mp-font-d:'Cormorant Garamond',serif;
+}
+#mpPanel:not(.open){ right:-500px; }
+/* faint scanline texture, like the bot panel */
+#mpPanel .panel-body::before{
+  content:'';position:absolute;inset:0;pointer-events:none;z-index:0;
+  background-image:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(255,255,255,0.006) 2px,rgba(255,255,255,0.006) 4px);
+}
+#mpPanel .panel-body{ position:relative;background:var(--mp-carbon); }
+#mpPanel .panel-body > *{ position:relative;z-index:1; }
+#mpPanel .panel-header{
+  border-bottom:0.5px solid var(--mp-border-amber);
+  background:linear-gradient(180deg,#14161a,#0e0f11);
+}
+#mpPanel .panel-title{
+  font-family:var(--mp-font-d);font-size:17px;font-weight:300;font-style:italic;
+  letter-spacing:0.02em;color:var(--mp-text-1);
+}
+#mpPanel .panel-close{ color:var(--mp-text-dim); }
+#mpPanel .panel-close:hover{ color:var(--mp-amber-bright);background:rgba(200,146,42,0.08); }
+
+/* Cards & section labels */
+#mpPanel .mp-card{
+  padding:10px 11px;
+  background:var(--mp-carbon-mid);
+  border:0.5px solid var(--mp-border);
+  border-radius:4px;
+}
+#mpPanel .mp-sec-lbl{
+  font-family:var(--mp-font-u);font-size:9px;font-weight:500;
+  letter-spacing:0.14em;text-transform:uppercase;color:var(--mp-amber);
+  margin-bottom:9px;padding-bottom:6px;
+  border-bottom:0.5px solid var(--mp-border-amber);
+}
+#mpPanel .mp-micro-lbl{
+  font-family:var(--mp-font-m);font-size:7.5px;color:var(--mp-text-dim);
+  letter-spacing:0.08em;text-transform:uppercase;margin-bottom:4px;
+}
+
+/* ── Time-control grid (ported from bot-control-panel) ── */
+#mpPanel .mp-tg-panel{ overflow-x:auto; }
+#mpPanel .mp-tg-xaxis{
+  font-family:var(--mp-font-u);font-size:8px;font-weight:500;
+  letter-spacing:0.18em;text-transform:uppercase;color:var(--mp-text-2);
+  margin-bottom:6px;text-align:center;padding-left:28px;
+}
+#mpPanel .mp-tg-wrap{ display:flex;align-items:stretch; }
+#mpPanel .mp-tg-cols{ flex:1; }
+#mpPanel .mp-tg-yaxis{
+  display:flex;align-items:center;justify-content:center;
+  writing-mode:vertical-lr;transform:rotate(180deg);
+  font-family:var(--mp-font-u);font-size:8px;font-weight:500;
+  letter-spacing:0.18em;text-transform:uppercase;color:var(--mp-text-2);
+  padding:0 6px 0 0;border-right:0.5px solid var(--mp-border-amber);
+  margin-right:6px;white-space:nowrap;flex-shrink:0;
+}
+#mpPanel table.mp-tg{ border-collapse:collapse;table-layout:fixed; }
+#mpPanel table.mp-tg th{
+  font-family:var(--mp-font-m);font-size:8px;color:var(--mp-text-2);
+  letter-spacing:0.04em;padding:0 2px 6px;text-align:center;
+  font-weight:500;white-space:nowrap;width:32px;
+}
+#mpPanel table.mp-tg td{ padding:1.5px; }
+#mpPanel table.mp-tg td.mp-tg-inclbl{
+  font-family:var(--mp-font-m);font-size:8px;color:var(--mp-text-2);
+  font-weight:500;text-align:right;padding:0 6px 0 0;white-space:nowrap;
+  border-right:0.5px solid var(--mp-border-amber);vertical-align:middle;
+}
+#mpPanel .mp-tg-cell{
+  width:32px;height:28px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+  cursor:pointer;border:0.5px solid transparent;
+  transition:background 0.1s,border-color 0.1s;
+}
+#mpPanel .mp-tg-cell.preset{
+  background:var(--mp-carbon-surface);border-color:var(--mp-border);border-radius:5px;
+}
+#mpPanel .mp-tg-cell.custom{ background:transparent;border-radius:2px; }
+#mpPanel .mp-tg-cell.preset:hover{ border-color:var(--mp-amber-dim);background:var(--mp-carbon-raise); }
+#mpPanel .mp-tg-cell.custom:hover{ border-color:var(--mp-border);background:rgba(255,255,255,0.03);border-radius:5px; }
+#mpPanel .mp-tg-cell.selected{
+  background:var(--mp-amber-glow) !important;
+  border-color:var(--mp-amber) !important;border-radius:5px !important;
+}
+#mpPanel .mp-tg-cname{
+  font-family:var(--mp-font-u);font-size:8px;font-weight:500;
+  letter-spacing:0.03em;color:var(--mp-text-2);line-height:1;
+}
+#mpPanel .mp-tg-cell.selected .mp-tg-cname{ color:var(--mp-amber-bright); }
+#mpPanel .mp-tg-cbadge{
+  font-family:var(--mp-font-m);font-size:5.5px;
+  padding:0 2px;border-radius:2px;line-height:1.6;
+}
+#mpPanel .badge-bullet{ background:rgba(200,74,42,0.2);color:#e87050; }
+#mpPanel .badge-blitz{ background:rgba(200,146,42,0.2);color:var(--mp-amber-bright); }
+#mpPanel .badge-rapid{ background:rgba(50,160,100,0.2);color:#60c880; }
+#mpPanel .badge-classic{ background:rgba(93,173,226,0.2);color:#7ec8e8; }
+#mpPanel .mp-tg-cell.selected .mp-tg-cbadge{ background:var(--mp-amber-glow-s);color:var(--mp-amber-bright); }
+#mpPanel .mp-tg-cval{ font-family:var(--mp-font-m);font-size:7px;color:var(--mp-text-dim); }
+#mpPanel .mp-tg-cell.selected .mp-tg-cval{ color:var(--mp-amber); }
+#mpPanel .mp-tc-readout{
+  font-family:var(--mp-font-m);font-size:10px;color:var(--mp-amber-bright);
+  letter-spacing:0.1em;margin-top:9px;padding-top:7px;
+  border-top:0.5px solid var(--mp-border);
+}
+
+/* ── Collapsible grid + review summary (time overlay) ── */
+#mpPanel .mp-grid-collapse{
+  overflow:hidden;max-height:420px;opacity:1;
+  transition:max-height 0.3s ease, opacity 0.22s ease, margin 0.3s ease;
+}
+#mpPanel .mp-grid-collapse.collapsed{ max-height:0;opacity:0;margin:0; }
+#mpPanel .mp-review{
+  margin-top:14px;padding:12px 13px;
+  background:var(--mp-carbon-mid);
+  border:0.5px solid var(--mp-border-amber);border-radius:4px;
+}
+#mpPanel .mp-review-row{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:6px 0;border-bottom:0.5px solid var(--mp-border);
+}
+#mpPanel .mp-review-row:last-of-type{ border-bottom:none; }
+#mpPanel .mp-review-k{
+  font-family:var(--mp-font-m);font-size:8px;letter-spacing:0.1em;
+  text-transform:uppercase;color:var(--mp-text-dim);flex-shrink:0;
+}
+#mpPanel .mp-review-v{
+  font-family:var(--mp-font-u);font-size:11px;font-weight:500;
+  color:var(--mp-amber-bright);text-align:right;
+}
+#mpPanel .mp-change-time{
+  margin-top:11px;width:100%;padding:7px;
+  background:transparent;border:0.5px solid var(--mp-border);border-radius:3px;
+  color:var(--mp-text-2);font-family:var(--mp-font-m);font-size:8px;
+  letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;transition:all 0.12s;
+}
+#mpPanel .mp-change-time:hover{ border-color:var(--mp-amber-dim);color:var(--mp-amber); }
+
+/* Rating-range pills (reuse tc-btn markup, restyled) */
+#mpPanel .tc-btn{
+  padding:4px 9px;font-size:8px;font-family:var(--mp-font-m);letter-spacing:0.04em;
+  background:var(--mp-carbon-surface);border:0.5px solid var(--mp-border);
+  border-radius:3px;color:var(--mp-text-dim);cursor:pointer;
+  transition:all 0.12s;min-width:26px;text-align:center;
+}
+#mpPanel .tc-btn:hover{ border-color:var(--mp-amber-dim);color:var(--mp-amber); }
+#mpPanel .tc-btn.tc-active{ background:var(--mp-amber-glow);border-color:var(--mp-amber);color:var(--mp-amber-bright); }
+
+/* Inputs */
+#mpPanel .mp-input{
+  width:100%;padding:5px 8px;background:var(--mp-carbon-surface);
+  border:0.5px solid var(--mp-border);border-radius:3px;
+  color:var(--mp-text-1);font-size:10px;font-family:var(--mp-font-m);
+  box-sizing:border-box;outline:none;transition:border-color 0.12s;
+}
+#mpPanel .mp-input::placeholder{ color:var(--mp-text-dim); }
+#mpPanel .mp-input:focus{ border-color:var(--mp-amber); }
+
+/* Action buttons */
+#mpPanel .mp-action-primary{
+  width:100%;padding:10px 12px;font-family:var(--mp-font-u);font-size:9.5px;
+  font-weight:500;letter-spacing:0.12em;text-transform:uppercase;
+  background:var(--mp-amber-glow);border:0.5px solid var(--mp-border-amber);
+  border-radius:3px;color:var(--mp-amber);cursor:pointer;
+  transition:all 0.15s;text-align:center;
+}
+#mpPanel .mp-action-primary:hover{ background:var(--mp-amber-glow-s);border-color:var(--mp-amber);color:var(--mp-amber-bright); }
+#mpPanel .mp-action-secondary{
+  width:100%;padding:10px 12px;font-family:var(--mp-font-u);font-size:9.5px;
+  font-weight:500;letter-spacing:0.12em;text-transform:uppercase;
+  background:rgba(93,173,226,0.08);border:0.5px solid rgba(93,173,226,0.3);
+  border-radius:3px;color:#7ec8e8;cursor:pointer;
+  transition:all 0.15s;text-align:center;
+}
+#mpPanel .mp-action-secondary:hover{ background:rgba(93,173,226,0.15);border-color:#5dade2;color:#9fd4f0; }
+
+/* Lobby rows */
+#mpPanel .mp-lobby-empty{
+  font-family:var(--mp-font-m);font-size:8.5px;color:var(--mp-text-dim);
+  text-align:center;padding:12px 0;
+}
+
+/* ── Slide-in time-control overlay ── */
+#mpTimeOverlay{
+  position:absolute;top:0;right:0;bottom:0;width:100%;
+  background:var(--mp-carbon);
+  transform:translateX(100%);
+  transition:transform 0.28s cubic-bezier(0.4,0,0.2,1);
+  display:flex;flex-direction:column;z-index:6;
+}
+#mpTimeOverlay.open{ transform:translateX(0); }
+#mpTimeOverlay .mp-time-head{
+  display:flex;align-items:center;gap:10px;
+  padding:12px 14px 10px;flex-shrink:0;
+  border-bottom:0.5px solid var(--mp-border-amber);
+  background:linear-gradient(180deg,#14161a,#0e0f11);
+}
+#mpTimeOverlay .mp-time-back{
+  font-family:var(--mp-font-m);font-size:9px;letter-spacing:0.06em;
+  color:var(--mp-amber);background:transparent;
+  border:0.5px solid var(--mp-border-amber);border-radius:3px;
+  padding:4px 9px;cursor:pointer;transition:all 0.12s;
+}
+#mpTimeOverlay .mp-time-back:hover{ background:var(--mp-amber-glow);color:var(--mp-amber-bright); }
+#mpTimeOverlay .mp-time-title{
+  font-family:var(--mp-font-d);font-size:15px;font-weight:300;font-style:italic;
+  color:var(--mp-text-1);letter-spacing:0.02em;
+}
+#mpTimeOverlay .mp-time-body{
+  flex:1;overflow-y:auto;padding:14px;
+}
+#mpTimeOverlay .mp-time-foot{
+  flex-shrink:0;padding:12px 14px;
+  border-top:0.5px solid var(--mp-border);
+  background:var(--mp-carbon-mid);
+}
+
+/* ── Anonymous-join confirm modal ── */
+#mpAnonPrompt{
+  position:absolute;inset:0;background:rgba(0,0,0,0.72);
+  display:none;align-items:center;justify-content:center;
+  z-index:20;padding:20px;
+}
+#mpAnonPrompt.open{ display:flex; }
+#mpAnonPrompt .mp-anon-box{
+  background:var(--mp-carbon-mid);border:0.5px solid var(--mp-border-amber);
+  border-radius:5px;padding:18px;max-width:300px;width:100%;
+  box-shadow:0 12px 40px rgba(0,0,0,0.6);
+}
+#mpAnonPrompt .mp-anon-title{
+  font-family:var(--mp-font-u);font-size:11px;font-weight:500;
+  letter-spacing:0.08em;text-transform:uppercase;color:var(--mp-amber);margin-bottom:8px;
+}
+#mpAnonPrompt .mp-anon-msg{
+  font-family:var(--mp-font-m);font-size:9px;color:var(--mp-text-2);
+  line-height:1.6;margin-bottom:14px;
+}
+#mpAnonPrompt .mp-anon-btns{ display:flex;flex-direction:column;gap:7px; }
+
+@media(max-width:520px){
+  #mpPanel{ width:100vw; }
+  #mpPanel:not(.open){ right:-100vw; }
+}
 </style>
 </head>
 <body>
@@ -1556,142 +1830,188 @@ canvas{
 <!-- ── Multiplayer panel ─────────────────────────────────────────────────── -->
 <div class="slide-panel" id="mpPanel">
   <div class="panel-header">
-    <span class="panel-title">⚔️ 2-Player</span>
+    <span class="panel-title">⚔ 2-Player</span>
     <button class="panel-close" onclick="closeAllPanels()">✕</button>
   </div>
   <div class="panel-body" style="padding:10px 12px;display:flex;flex-direction:column;gap:8px;">
 
     <!-- Server status note -->
-    <div id="mpServerNote" style="font-size:8px;padding:4px 8px;border-radius:4px;background:rgba(74,159,212,0.08);border:0.5px solid rgba(74,159,212,0.2);color:var(--text-dim);">
-      ℹ️ Multiplayer requires the deployed server. Local-only = Solo &amp; Bot modes only.
+    <div id="mpServerNote" style="font-size:7.5px;padding:6px 9px;border-radius:3px;
+      background:rgba(93,173,226,0.07);border:0.5px solid rgba(93,173,226,0.2);
+      color:var(--mp-text-dim);font-family:var(--mp-font-m);letter-spacing:0.04em;line-height:1.5;">
+      ℹ Multiplayer requires the deployed server. Local-only = Solo &amp; Bot modes only.
     </div>
 
-    <!-- ══ TIME CONTROL ══ -->
-    <div style="padding:8px;background:var(--bg-panel2);border:0.5px solid var(--border2);border-radius:6px;">
-      <div style="font-size:8px;color:var(--text-dim);margin-bottom:5px;font-weight:600;letter-spacing:0.05em;">TIME CONTROL</div>
-      <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:3px;">Game time (minutes)</div>
-      <div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:6px;">
-        <button onclick="mpSetBase(0)"  class="tc-btn tc-active" id="mpbase-0">∞</button>
-        <button onclick="mpSetBase(1)"  class="tc-btn" id="mpbase-1">1</button>
-        <button onclick="mpSetBase(2)"  class="tc-btn" id="mpbase-2">2</button>
-        <button onclick="mpSetBase(3)"  class="tc-btn" id="mpbase-3">3</button>
-        <button onclick="mpSetBase(5)"  class="tc-btn" id="mpbase-5">5</button>
-        <button onclick="mpSetBase(10)" class="tc-btn" id="mpbase-10">10</button>
-        <button onclick="mpSetBase(15)" class="tc-btn" id="mpbase-15">15</button>
-        <button onclick="mpSetBase(20)" class="tc-btn" id="mpbase-20">20</button>
-        <button onclick="mpSetBase(30)" class="tc-btn" id="mpbase-30">30</button>
-      </div>
-      <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:3px;">Increment (seconds)</div>
-      <div style="display:flex;gap:3px;flex-wrap:wrap;">
-        <button onclick="mpSetInc(0)"  class="tc-btn tc-active" id="mpinc-0">0</button>
-        <button onclick="mpSetInc(1)"  class="tc-btn" id="mpinc-1">1</button>
-        <button onclick="mpSetInc(2)"  class="tc-btn" id="mpinc-2">2</button>
-        <button onclick="mpSetInc(3)"  class="tc-btn" id="mpinc-3">3</button>
-        <button onclick="mpSetInc(5)"  class="tc-btn" id="mpinc-5">5</button>
-        <button onclick="mpSetInc(10)" class="tc-btn" id="mpinc-10">10</button>
-        <button onclick="mpSetInc(20)" class="tc-btn" id="mpinc-20">20</button>
-      </div>
-      <div id="mpTCDisplay" style="font-size:8px;color:var(--text-dim);margin-top:4px;">Untimed</div>
-    </div>
+    <!-- ════════ DEFAULT VIEW (Info · Challenges · Actions) ════════ -->
+    <div id="mpMainView" style="display:flex;flex-direction:column;gap:8px;">
 
-    <!-- ══ LOBBY LIST (always visible) ══ -->
-    <div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">
-        <div style="font-size:8px;color:var(--text-dim);font-weight:600;letter-spacing:0.05em;">OPEN CHALLENGES <span id="mpLobbyCount" style="font-weight:400;"></span></div>
-        <button onclick="mpRefreshLobby()" style="padding:2px 7px;background:transparent;border:0.5px solid var(--border2);border-radius:3px;color:var(--text-dim);cursor:pointer;font-size:8px;">↻</button>
-      </div>
-      <div id="mpLobbyList" style="display:flex;flex-direction:column;gap:4px;min-height:36px;">
-        <div style="font-size:8.5px;color:var(--text-dim);text-align:center;padding:10px 0;" id="mpLobbyEmpty">No open challenges yet — be the first!</div>
-      </div>
-    </div>
-
-    <!-- ══ LOBBY PLAYER INFO (shown when posting) ══ -->
-    <div id="mpLobbyInfoBlock" style="padding:8px;background:var(--bg-panel2);border:0.5px solid var(--border2);border-radius:6px;display:none;">
-      <div style="font-size:8px;color:var(--text-dim);margin-bottom:5px;font-weight:600;letter-spacing:0.05em;">YOUR INFO <span style="font-weight:400;font-style:italic;">(self-reported, optional)</span></div>
-      <div style="display:flex;gap:6px;margin-bottom:6px;">
-        <div style="flex:1;">
-          <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:2px;">Name / Handle</div>
-          <input id="mpLobbyName" placeholder="Anonymous" maxlength="20"
-            style="width:100%;padding:4px 6px;background:var(--bg-panel);border:0.5px solid var(--border);
-            border-radius:3px;color:var(--text-primary);font-size:9px;font-family:inherit;box-sizing:border-box;">
+      <!-- ══ YOUR INFO (always visible, persisted) ══ -->
+      <div class="mp-card">
+        <div class="mp-sec-lbl">Your Info <span style="font-weight:400;font-style:italic;color:var(--mp-text-dim);">(optional)</span></div>
+        <div style="display:flex;gap:6px;margin-bottom:9px;">
+          <div style="flex:1;">
+            <div class="mp-micro-lbl">Handle</div>
+            <input id="mpLobbyName" placeholder="Anonymous" maxlength="20" class="mp-input" oninput="mpSaveInfo()">
+          </div>
+          <div style="width:80px;">
+            <div class="mp-micro-lbl">Rating</div>
+            <input id="mpLobbyRating" placeholder="—" maxlength="4" type="number" min="100" max="3000" class="mp-input" oninput="mpSaveInfo()">
+          </div>
         </div>
-        <div style="width:70px;">
-          <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:2px;">Rating</div>
-          <input id="mpLobbyRating" placeholder="—" maxlength="4" type="number" min="100" max="3000"
-            style="width:100%;padding:4px 6px;background:var(--bg-panel);border:0.5px solid var(--border);
-            border-radius:3px;color:var(--text-primary);font-size:9px;font-family:inherit;box-sizing:border-box;">
+        <div class="mp-micro-lbl" style="margin-bottom:6px;">Rating range</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;">
+          <button onclick="mpSetRatingRange(100)"  class="tc-btn" id="mprange-100">±100</button>
+          <button onclick="mpSetRatingRange(200)"  class="tc-btn" id="mprange-200">±200</button>
+          <button onclick="mpSetRatingRange(500)"  class="tc-btn" id="mprange-500">±500</button>
+          <button onclick="mpSetRatingRange(9999)" class="tc-btn tc-active" id="mprange-9999">Any</button>
         </div>
       </div>
-      <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:3px;">Seeking opponent within</div>
-      <div style="display:flex;gap:3px;flex-wrap:wrap;">
-        <button onclick="mpSetRatingRange(100)"  class="tc-btn" id="mprange-100">±100</button>
-        <button onclick="mpSetRatingRange(200)"  class="tc-btn" id="mprange-200">±200</button>
-        <button onclick="mpSetRatingRange(500)"  class="tc-btn" id="mprange-500">±500</button>
-        <button onclick="mpSetRatingRange(9999)" class="tc-btn tc-active" id="mprange-9999">Any</button>
+
+      <!-- ══ OPEN CHALLENGES ══ -->
+      <div class="mp-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;">
+          <div class="mp-sec-lbl" style="margin-bottom:0;border-bottom:none;padding-bottom:0;">
+            Open Challenges <span id="mpLobbyCount" style="color:var(--mp-text-dim);font-weight:400;"></span>
+          </div>
+          <button onclick="mpRefreshLobby()"
+            style="padding:3px 9px;background:transparent;border:0.5px solid var(--mp-border-amber);
+            border-radius:2px;color:var(--mp-amber);cursor:pointer;font-size:7.5px;
+            font-family:var(--mp-font-m);letter-spacing:0.08em;transition:border-color 0.12s;">↻ Refresh</button>
+        </div>
+        <div id="mpLobbyList" style="display:flex;flex-direction:column;gap:4px;min-height:36px;">
+          <div id="mpLobbyEmpty" class="mp-lobby-empty">No open challenges yet — be the first!</div>
+        </div>
       </div>
-    </div>
+
+      <!-- ══ ACTION BUTTONS — Post · Private · Join ══ -->
+      <div id="mpActionBtns" style="display:flex;flex-direction:column;gap:6px;margin-top:2px;">
+        <button onclick="mpStartPost()" class="mp-action-primary">
+          🌐 Post Open Challenge
+        </button>
+        <button onclick="mpStartPrivateGame()" class="mp-action-primary">
+          🔒 Start Private Game
+        </button>
+        <button onclick="mpStartJoinFlow()" class="mp-action-secondary">
+          🔑 Join Private Game
+        </button>
+      </div>
+
+    </div><!-- /#mpMainView -->
 
     <!-- ══ JOIN CODE INPUT (shown when joining) ══ -->
-    <div id="mpJoinBlock" style="display:none;">
-      <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:4px;">Enter room code from your friend</div>
+    <div id="mpJoinBlock" class="mp-card" style="display:none;">
+      <div class="mp-sec-lbl">Room Code</div>
       <input id="mpJoinCode" placeholder="ABC123" maxlength="6"
-        style="width:100%;padding:8px 10px;background:var(--bg-panel2);border:0.5px solid var(--border);
-        border-radius:4px;color:var(--text-primary);font-family:monospace;font-size:15px;
-        letter-spacing:0.15em;text-transform:uppercase;box-sizing:border-box;"
+        style="width:100%;padding:9px 10px;background:var(--mp-carbon-surface);
+        border:0.5px solid var(--mp-border-amber);border-radius:3px;
+        color:var(--mp-amber-bright);font-family:var(--mp-font-m);font-size:16px;
+        letter-spacing:0.2em;text-transform:uppercase;box-sizing:border-box;
+        outline:none;text-align:center;"
         onkeydown="if(event.key==='Enter')mpJoinRoom()">
+      <button onclick="mpJoinRoom()" class="mp-action-primary" style="margin-top:9px;">Join Game ▸</button>
     </div>
 
     <!-- ══ INVITE LINK (shown after private room created) ══ -->
-    <div id="mpInviteRow" style="display:none;">
-      <div style="font-size:8px;color:var(--text-dim);margin-bottom:4px;font-weight:600;letter-spacing:0.05em;">INVITE LINK — share this anywhere</div>
-      <div style="display:flex;gap:5px;align-items:center;margin-bottom:5px;">
+    <div id="mpInviteRow" class="mp-card" style="display:none;">
+      <div class="mp-sec-lbl">Invite Link</div>
+      <div style="display:flex;gap:5px;align-items:center;margin-bottom:7px;">
         <input id="mpInviteLink" readonly
-          style="flex:1;padding:5px 7px;background:var(--bg-panel2);border:0.5px solid var(--border);
-          border-radius:4px;color:var(--accent);font-size:8px;font-family:monospace;cursor:pointer;"
+          style="flex:1;padding:6px 8px;background:var(--mp-carbon-surface);
+          border:0.5px solid rgba(93,173,226,0.3);border-radius:3px;
+          color:#7ec8e8;font-size:8px;font-family:var(--mp-font-m);
+          cursor:pointer;outline:none;"
           onclick="this.select()">
         <button onclick="mpCopyLink()" id="mpCopyLinkBtn"
-          style="padding:4px 8px;background:rgba(74,159,212,0.12);border:0.5px solid var(--accent);
-          border-radius:4px;color:var(--accent);cursor:pointer;font-size:9px;white-space:nowrap;">Copy</button>
+          style="padding:5px 10px;background:rgba(93,173,226,0.1);
+          border:0.5px solid rgba(93,173,226,0.35);border-radius:3px;
+          color:#7ec8e8;cursor:pointer;font-size:8px;
+          font-family:var(--mp-font-m);letter-spacing:0.06em;white-space:nowrap;">Copy</button>
       </div>
-      <div style="display:flex;gap:4px;margin-bottom:5px;">
-        <button onclick="mpShareDiscord()" style="flex:1;padding:4px;font-size:8px;background:rgba(88,101,242,0.12);border:0.5px solid rgba(88,101,242,0.4);border-radius:4px;color:#8891f2;cursor:pointer;">🎮 Discord</button>
-        <button onclick="mpShareText()" style="flex:1;padding:4px;font-size:8px;background:rgba(74,159,212,0.08);border:0.5px solid rgba(74,159,212,0.3);border-radius:4px;color:var(--accent);cursor:pointer;">💬 Text/Share</button>
+      <div style="display:flex;gap:5px;margin-bottom:8px;">
+        <button onclick="mpShareDiscord()"
+          style="flex:1;padding:6px;font-size:8px;font-family:var(--mp-font-m);
+          letter-spacing:0.05em;background:rgba(88,101,242,0.1);
+          border:0.5px solid rgba(88,101,242,0.3);border-radius:3px;
+          color:#8891f2;cursor:pointer;">🎮 Discord</button>
+        <button onclick="mpShareText()"
+          style="flex:1;padding:6px;font-size:8px;font-family:var(--mp-font-m);
+          letter-spacing:0.05em;background:rgba(93,173,226,0.08);
+          border:0.5px solid rgba(93,173,226,0.25);border-radius:3px;
+          color:#7ec8e8;cursor:pointer;">💬 Share</button>
       </div>
-      <div style="display:flex;align-items:center;gap:6px;">
-        <span style="font-size:8px;color:var(--text-dim);">or code:</span>
-        <span id="mpRoomCode" style="font-family:monospace;font-size:13px;font-weight:700;color:var(--text-primary);letter-spacing:0.15em;"></span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="mp-micro-lbl" style="margin-bottom:0;">Code</span>
+        <span id="mpRoomCode"
+          style="font-family:var(--mp-font-m);font-size:15px;font-weight:700;
+          color:var(--mp-amber);letter-spacing:0.2em;"></span>
       </div>
     </div>
 
     <!-- Status line -->
-    <div id="mpStatus" style="font-size:9px;color:var(--text-secondary);min-height:14px;line-height:1.5;"></div>
+    <div id="mpStatus"
+      style="font-size:8px;color:var(--mp-text-2);min-height:14px;line-height:1.5;
+      font-family:var(--mp-font-m);letter-spacing:0.04em;"></div>
 
     <!-- Leave / reset (shown after joining a room) -->
     <div id="mpLeaveRow" style="display:none;">
-      <button onclick="mpLeave()" style="width:100%;padding:5px;background:transparent;border:0.5px solid var(--border);border-radius:4px;color:var(--text-dim);cursor:pointer;font-size:9px;">Leave room / Reset</button>
-    </div>
-
-    <!-- ══ THREE LARGE ACTION BUTTONS ══ -->
-    <div id="mpActionBtns" style="display:flex;flex-direction:column;gap:6px;margin-top:2px;">
-      <button onclick="mpStartPrivateFlow()" class="mp-action-btn mp-action-green">
-        🔒 Start Private Game
-      </button>
-      <button onclick="mpStartJoinFlow()" class="mp-action-btn mp-action-green">
-        🔑 Join Private Game
-      </button>
-      <button onclick="mpStartLobbyFlow()" class="mp-action-btn mp-action-blue">
-        🌐 Post Open Challenge to Lobby
+      <button onclick="mpLeave()"
+        style="width:100%;padding:6px;background:transparent;
+        border:0.5px solid rgba(190,70,70,0.3);border-radius:3px;
+        color:rgba(190,100,100,0.8);cursor:pointer;font-size:8px;
+        font-family:'DM Mono',monospace;letter-spacing:0.1em;text-transform:uppercase;
+        transition:border-color 0.15s,color 0.15s;"
+        onmouseover="this.style.borderColor='rgba(190,70,70,0.65)';this.style.color='rgba(210,110,110,1)'"
+        onmouseout="this.style.borderColor='rgba(190,70,70,0.3)';this.style.color='rgba(190,100,100,0.8)'">
+        Leave Room / Reset
       </button>
     </div>
 
-    <!-- compat shim -->
+    <!-- compat shim + legacy tab shims -->
     <div id="mpCodeRow" style="display:none;"></div>
-    <!-- legacy tab shims (no-ops, kept so old references don't throw) -->
     <div id="mp-tab-lobby" style="display:none;"></div>
     <div id="mp-tab-private" style="display:none;"></div>
     <div id="mp-tab-join" style="display:none;"></div>
 
+  </div><!-- /panel-body -->
+
+  <!-- ════════ SLIDE-IN TIME-CONTROL SELECTOR ════════ -->
+  <!-- Appears only when starting a game (Post Open Challenge / Start Private Game) -->
+  <div id="mpTimeOverlay">
+    <div class="mp-time-head">
+      <button class="mp-time-back" onclick="mpCloseTimeOverlay()">‹ Back</button>
+      <span class="mp-time-title" id="mpTimeTitle">Select Time Control</span>
+    </div>
+    <div class="mp-time-body">
+      <!-- Collapsible 2D matrix grid (increment × base time) — built by mpBuildTimeGrid() -->
+      <div class="mp-grid-collapse" id="mpGridCollapse">
+        <div class="mp-tg-panel" id="mpTgPanel"></div>
+      </div>
+      <!-- Review summary — collapses the grid and shows everything in one spot -->
+      <div class="mp-review" id="mpReview">
+        <div class="mp-sec-lbl">Review</div>
+        <div class="mp-review-row"><span class="mp-review-k">Handle</span><span class="mp-review-v" id="mpRevName">Anonymous</span></div>
+        <div class="mp-review-row"><span class="mp-review-k">Rating (ELO)</span><span class="mp-review-v" id="mpRevRating">Unrated</span></div>
+        <div class="mp-review-row"><span class="mp-review-k">Time Control</span><span class="mp-review-v" id="mpTCDisplay">Untimed</span></div>
+        <div class="mp-review-row" id="mpRevRangeRow"><span class="mp-review-k">Opponent ELO Range</span><span class="mp-review-v" id="mpRevRange">Any</span></div>
+        <!-- Primary submit sits right under the summary, in the same visual field -->
+        <button class="mp-action-primary" id="mpTimeConfirmBtn" onclick="mpConfirmTime()" style="margin-top:12px;">Confirm</button>
+        <button class="mp-change-time" id="mpChangeTimeBtn" onclick="mpExpandGrid()" style="display:none;">⟲ Change time control</button>
+      </div>
+    </div>
   </div>
+
+  <!-- ════════ ANONYMOUS-JOIN CONFIRM MODAL ════════ -->
+  <div id="mpAnonPrompt">
+    <div class="mp-anon-box">
+      <div class="mp-anon-title">Join without a handle?</div>
+      <div class="mp-anon-msg">You haven't entered a handle or rating. Join this challenge as an anonymous, unrated player — or add your info first.</div>
+      <div class="mp-anon-btns">
+        <button class="mp-action-primary" onclick="mpAnonJoinAnon()">Join as Anonymous</button>
+        <button class="mp-action-secondary" onclick="mpAnonFillInfo()">Add Handle &amp; Rating</button>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- ── Theme panel ────────────────────────────────────────────────────────── -->

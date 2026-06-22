@@ -175,6 +175,16 @@ function applyMoveAttractors(moveProbs) {
     }
   }
 
+  // ── Bad Day mode: pick worst plausible move ───────────────────────────────
+  // Grandmaster Bad Day: sort by probability ascending, return the first move
+  // that meets the minProbPct threshold (lowest prob still considered plausible).
+  if (botBadDayMode) {
+    const _floor = botMinProbPct > 0 ? botMinProbPct / 100 : 0.04;
+    const _asc = Object.entries(filtered).sort((a, b) => a[1] - b[1]);
+    const _worst = _asc.find(([, p]) => p >= _floor);
+    if (_worst) filtered = { [_worst[0]]: _worst[1] };
+  }
+
   // ── Per-move reweighting ──────────────────────────────────────────────────
   const needsPerMove = scale > 0 &&
     (hasPiece || hasTrade || hasPawnS || hasSpace || hasFortkx || hasGambito || hasAttacker || hasStructure);
@@ -595,6 +605,68 @@ function botRecordMove(uciMove, sanMove) {
 //   botBehavClockMirror — halve delay when opponent clock < 60% of bot's
 //   botCanFlag          — if false, always keep ≥3 s on clock
 // Hustle attractor (window._bcpAttractorValues.hustle, −5..+5) scales think time.
+// ── Opening familiarity decay ─────────────────────────────────────────────────
+// Models the real pattern where players spend less time in familiar opening
+// territory and slow down as positions become unfamiliar or recall gets harder.
+//
+// Returns a familiarity score 0–1 (1 = "know this by heart", 0 = fully on own).
+// Applied in botThinkTime() as a think-time multiplier: at peak familiarity the
+// bot plays at ~15% of its normal pace; at zero familiarity it's unchanged.
+//
+// Two sigmoid parameters scale with ELO:
+//   threshold — ply depth at which familiarity starts dropping
+//               (600→8 plies / ~4 moves, 2600→44 plies / ~22 moves)
+//   slope k   — steepness of drop (600→sharp cliff, 2600→gentle slope)
+//
+// A per-game threshold jitter (sampled once at game start, stored in
+// _bookFamiliarityJitter) reflects that lower-rated players have uneven
+// book knowledge — they may know one line deeply but nothing else.
+let _bookFamiliarityJitter   = 0;    // reset at each new bot game
+let _explorerConfidence     = null; // 0-1 when known; null = no data yet this game
+let _explorerSurpriseBoost  = 0;    // 0-1; consumed by next botThinkTime() call
+
+// Compute a 0-1 confidence score from an explorer response.
+// Uses log10 of total game count: 100 games→0.33, 1K→0.50, 10K→0.67, 1M→1.00.
+// A high-confidence position (deeply charted theory) extends the familiarity
+// threshold; a low-confidence or off-book position compresses it.
+function explorerConfidenceFromData(data) {
+  if (!data || !data.moves || !data.moves.length) return 0;
+  const totalGames = data.moves.reduce((s, m) => s + m.white + m.draws + m.black, 0);
+  if (totalGames < 10) return 0;
+  return Math.min(1, Math.log10(totalGames) / 6);
+}
+
+function botEffectiveElo() {
+  // Unified ELO across engine tabs. Maia3/LC modes use maia3SelectedRating
+  // directly. SF uses a 1-20 level slider mapped to ~650-2600 ELO.
+  if (typeof botTab !== 'undefined' && botTab === 'sf') {
+    const lvl = parseInt(document.getElementById('sfLevel')?.value) || 8;
+    return Math.round(650 + (lvl - 1) / 19 * 1950); // 1→650, 20→2600
+  }
+  return (typeof maia3SelectedRating !== 'undefined' && maia3SelectedRating)
+    ? maia3SelectedRating : 1500;
+}
+
+function openingFamiliarity(plies) {
+  const elo = Math.max(600, Math.min(2600, botEffectiveElo()));
+  const t   = (elo - 600) / 2000; // 0 at 600, 1 at 2600
+
+  // Threshold: 600→8 plies, 2600→44 plies (linear)
+  const baseThreshold = 8 + t * 36;
+
+  // Explorer confidence shifts the threshold: high-confidence deeply-charted
+  // theory extends it (+6 plies at conf=1.0); off-book compresses it (-2 plies
+  // at conf=0); null (no data yet) leaves it unchanged.
+  const confExtension = _explorerConfidence !== null ? _explorerConfidence * 8 - 2 : 0;
+
+  const threshold = baseThreshold + _bookFamiliarityJitter + confExtension;
+
+  // Slope: 600→0.85 (sharp), 2600→0.22 (gentle) (linear)
+  const k = 0.85 - t * 0.63;
+
+  return 1 / (1 + Math.exp(k * (plies - threshold)));
+}
+
 // Upper bound on simulated think time, scaled to the time control: 6 s for
 // blitz-and-faster, growing to 45 s for long classical. A 6 s ceiling in a
 // 90-minute game made every bot feel like a speed player.
@@ -666,6 +738,27 @@ function botThinkTime(moveProbs, clockMs) {
   // ── Hustle attractor: +5 (faster hustler) … −5 (slower grinder) ────────────
   const hustle = (window._bcpAttractorValues && window._bcpAttractorValues['hustle']) || 0;
   if (hustle !== 0) thinkMs *= (1 - hustle * 0.15);
+
+  // ── Opening familiarity decay ─────────────────────────────────────────────
+  // botMoveHistory tracks all plies (both sides). Familiarity is highest early
+  // in a game when the bot is in known territory, and decays sigmoidally as
+  // the position leaves familiar lines. The decay rate and depth both scale
+  // with ELO: a 600-rated bot knows ~4 moves; a 2600 bot knows ~22.
+  // Explorer confidence extends or compresses the familiarity zone.
+  // Multiplier: familiarity=1 → 15% of normal pace; familiarity=0 → unchanged.
+  const _fam = openingFamiliarity(botMoveHistory.length);
+  if (_fam > 0.02) thinkMs *= (0.15 + 0.85 * (1 - _fam));
+
+  // ── Novelty pause ────────────────────────────────────────────────────────
+  // If the human just played a low-frequency move (set by botPostMoveHook after
+  // checking the explorer cache), slow down to model the "wait, I didn't expect
+  // that" recalibration — even in otherwise-familiar opening territory.
+  // Applied after familiarity so it partially overrides the speed savings.
+  // _explorerSurpriseBoost is consumed here (fires on this move only).
+  if (_explorerSurpriseBoost > 0) {
+    thinkMs *= (1 + _explorerSurpriseBoost * 1.5);
+    _explorerSurpriseBoost = 0;
+  }
 
   // ── Reconsideration pause: occasional extended hesitation ────────────────
   if (botBehavReconsider && Math.random() < 0.15) {
@@ -825,6 +918,7 @@ async function botMakeMove() {
         uciMove = openingMove;
         lastBotMoveSource = 'Book';
         const _od = await openingExplorerFetch(botMoveHistory);
+        _explorerConfidence = explorerConfidenceFromData(_od);
         document.getElementById('botStatus').textContent = botOpeningStatusText(_od);
         const bookDelay = 400 + Math.random() * 800;
         await new Promise(r => setTimeout(r, bookDelay));
@@ -855,6 +949,7 @@ async function botMakeMove() {
       } else {
         // Explorer returned nothing — off-book, don't call it again this game
         lichessExplorerActive = false;
+        _explorerConfidence = 0;
       }
     }
     // ── End opening book layer ────────────────────────────────────────────
@@ -937,6 +1032,7 @@ async function botMakeMove() {
           lastBotMoveSource = 'LC Explorer';
         } else {
           lichessExplorerActive = false; // off-book — don't call again this game
+          _explorerConfidence = 0;
           probs = null;
         }
       }
@@ -994,6 +1090,7 @@ async function botMakeMove() {
           lastBotMoveSource = 'LC Explorer';
         } else {
           lichessExplorerActive = false; // off-book — don't call again this game
+          _explorerConfidence = 0;
           lcsfProbs = null;
         }
       }
@@ -1408,6 +1505,24 @@ function botPostMoveHook() {
       // Only record if not already pushed (bot move path already called botRecordMove)
       const last = botMoveHistory[botMoveHistory.length - 1];
       if (last !== humanUci) {
+        // Explorer surprise detection: was this human move expected?
+        // Cache key is botMoveHistory BEFORE the human's move is pushed — this is
+        // the exact position the bot last fetched from the explorer (mainline mode).
+        // Surprise fires only when the explorer is still active and cache has data.
+        if (lichessExplorerActive && botMoveHistory.length > 0) {
+          const _preKey = botMoveHistory.join(',');
+          const _ed = _openingCache.get(_preKey);
+          if (_ed && _ed.moves && _ed.moves.length) {
+            const _total = _ed.moves.reduce((s, m) => s + m.white + m.draws + m.black, 0);
+            const _entry = _ed.moves.find(m => m.uci === humanUci);
+            const _freq  = _entry && _total > 0
+              ? (_entry.white + _entry.draws + _entry.black) / _total : 0;
+            // <5%: full surprise; 5-15%: partial; ≥15%: expected (no boost)
+            _explorerSurpriseBoost = _freq < 0.05 ? 1.0
+              : _freq < 0.15 ? (0.15 - _freq) / 0.10
+              : 0;
+          }
+        }
         // gameMovesAlgebraic has the SAN for every move including this one
         const humanSan = gameMovesAlgebraic[gameMovesAlgebraic.length - 1] || null;
         botRecordMove(humanUci, humanSan);
