@@ -1107,7 +1107,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
                 </div>
                 <div class="gauge-wrap-interactive">
                   <svg class="gauge-svg-interactive" id="style-gauge" viewBox="0 0 280 140" style="cursor:crosshair;touch-action:none;"></svg>
-                  <div class="dial-zones" style="margin-top:-4px;"><span class="dial-zone">Pure engine</span><span class="dial-zone">Subtle</span><span class="dial-zone">Moderate</span><span class="dial-zone">Bold</span></div>
+                  <div class="dial-zones" style="margin-top:-4px;width:100%;"><span class="dial-zone">Pure engine</span><span class="dial-zone">Subtle</span><span class="dial-zone">Moderate</span><span class="dial-zone">Bold</span><span class="dial-zone">Reckless</span></div>
                 </div>
                 <div class="ctrl" style="margin-top:4px;">
                   <span class="ctrl-lbl" style="min-width:80px;">Budget</span>
@@ -5090,7 +5090,7 @@ function drawStyleGauge(val){
               <text x="${lx}" y="${ly}" text-anchor="middle" dominant-baseline="middle"
                 font-family="Arial,sans-serif" font-size="11" fill="${m.color}" opacity="0.85">${m.glyph}</text>`;
     } else {
-      const lx = (CX+(R-26)*mc).toFixed(1), ly = (CY+(R-26)*ms).toFixed(1);
+      const lx = (CX+(R-14)*mc).toFixed(1), ly = (CY+(R-14)*ms).toFixed(1);
       return `<text x="${lx}" y="${ly}" text-anchor="middle" dominant-baseline="middle"
         font-family="Arial,sans-serif" font-size="11" fill="${m.color}" opacity="0.85">${m.glyph}</text>`;
     }
@@ -5104,7 +5104,7 @@ function drawStyleGauge(val){
 
   // Chess quality zone legend — placed inside the gauge below center hub
   // Three items spaced across the bottom of the gauge
-  const legendY = CY + 22;  // single row — quality labels only
+  const legendY = CY + 35;  // single row — quality labels only
   const legend = `
     <line x1="30" y1="${legendY - 7}" x2="250" y2="${legendY - 7}" stroke="rgba(255,255,255,0.05)" stroke-width="0.5"/>
     <text x="52"  y="${legendY}" text-anchor="middle" dominant-baseline="middle" font-family="'DM Mono',monospace" font-size="7" fill="#c8922a" letter-spacing="0.06em">INACCURACY</text>
@@ -5135,10 +5135,10 @@ function drawStyleGauge(val){
     <!-- Current value -->
     <text x="${CX}" y="${CY - 12}" text-anchor="middle"
       font-family="'DM Mono',monospace" font-size="22" font-weight="500" fill="${fillColor}">${val}</text>
-    <text x="${CX}" y="${CY + 6}" text-anchor="middle"
+    <text x="${CX}" y="${CY + 14}" text-anchor="middle"
       font-family="'DM Mono',monospace" font-size="7" fill="#717a8a" letter-spacing="0.8">Centipawmeter</text>
     <!-- Quality label (dynamic) -->
-    <text x="${CX}" y="${CY + 17}" text-anchor="middle"
+    <text x="${CX}" y="${CY + 25}" text-anchor="middle"
       font-family="'DM Mono',monospace" font-size="7.5" fill="${qualityColor}" letter-spacing="0.08em">${qualityLabel}</text>
     <!-- Bottom legend: chess quality zones -->
     ${legend}
