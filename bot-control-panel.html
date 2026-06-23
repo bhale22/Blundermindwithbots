@@ -1090,7 +1090,8 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
       <div class="pr" style="margin-top:0;">
         <div class="itab-strip">
           <button class="itab active" onclick="switchItab('attract','quality')">Move Quality &amp; Strategy</button>
-          <button class="itab" onclick="switchItab('attract','pieces')">Piece Focus &amp; Radar</button>
+          <button class="itab" onclick="switchItab('attract','custom')">Custom Controls</button>
+          <button class="itab" onclick="switchItab('attract','pieces')">Piece Focus &amp; Strategy</button>
           <button class="itab" onclick="switchItab('attract','presets')">Preset Personalities</button>
         </div>
 
@@ -1146,19 +1147,33 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
               <div class="dual-range-labels"><span>← Bad Day, lowest probability moves</span><span>Good Day, Highest Probability moves →</span></div>
               <div class="ctrl-hint" style="margin-top:6px;">Sets the Maia3 probability band. Good Day = best moves; Bad Day = lower-probability alternatives. Forced moves (≥95%) are never skipped.</div>
               </div><!-- /move-quality-range -->
-              <div class="dlbl" style="margin-top:14px;"><span>Strategic preferences</span></div>
-              <div id="attractor-rows"></div>
 
+              <!-- Custom-control entry — the full builder lives on its own tab -->
               <div class="dlbl" style="margin-top:14px;"><span>Custom controls</span></div>
-              <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-bottom:8px;">Build your own attractor: pick a board feature, the phase it applies in, and a direction. Each one shares the centipawn budget above and only re-ranks moves the engine already considers plausible.</div>
-              <div id="custom-control-rows"></div>
-              <button type="button" onclick="addCustomControl()"
-                style="margin-top:8px;background:rgba(0,0,0,0.25);border:1px dashed var(--amber);color:var(--amber);font-family:var(--font-u);font-size:9px;letter-spacing:0.08em;padding:6px 10px;border-radius:4px;cursor:pointer;width:100%;">+ Add custom control</button>
+              <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-bottom:8px;">Build your own attractor — pick a board feature, a phase, and a direction. Opens the Custom Controls tab.</div>
+              <button type="button" onclick="addCustomControlAndGo()"
+                style="background:rgba(0,0,0,0.25);border:1px dashed var(--amber);color:var(--amber);font-family:var(--font-u);font-size:9px;letter-spacing:0.08em;padding:6px 10px;border-radius:4px;cursor:pointer;width:100%;">+ Add custom control</button>
+
+              <!-- Personality fingerprint (radar) -->
+              <div class="dlbl" style="margin-top:14px;"><span>Personality fingerprint</span></div>
+              <div class="radar-wrap">
+                <canvas id="radar-canvas" width="320" height="260"></canvas>
+                <div class="radar-hint">drag nodes or click axis to set value</div>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- TAB 2: Piece Focus & Radar -->
+        <!-- TAB: Custom Controls (user-built attractors) -->
+        <div class="itab-pane" id="itab-attract-custom">
+          <div class="dlbl"><span>Custom controls</span></div>
+          <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-bottom:8px;">Build your own attractor: pick a board feature, the phase it applies in, and a direction. Each one shares the centipawn budget and only re-ranks moves the engine already considers plausible. No other site lets you do this.</div>
+          <div id="custom-control-rows"></div>
+          <button type="button" onclick="addCustomControl()"
+            style="margin-top:8px;background:rgba(0,0,0,0.25);border:1px dashed var(--amber);color:var(--amber);font-family:var(--font-u);font-size:9px;letter-spacing:0.08em;padding:6px 10px;border-radius:4px;cursor:pointer;width:100%;">+ Add custom control</button>
+        </div>
+
+        <!-- TAB: Piece Focus & Strategy -->
         <div class="itab-pane" id="itab-attract-pieces">
           <div class="panel-2col">
             <!-- LEFT: Piece attractors -->
@@ -1167,13 +1182,10 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
               <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-bottom:8px;">Left = avoid · Right = seek · Center = neutral</div>
               <div id="piece-rows"></div>
             </div>
-            <!-- RIGHT: Radar chart -->
+            <!-- RIGHT: Strategic preference sliders -->
             <div>
-              <div class="dlbl"><span>Personality fingerprint</span></div>
-              <div class="radar-wrap">
-                <canvas id="radar-canvas" width="320" height="260"></canvas>
-                <div class="radar-hint">drag nodes or click axis to set value</div>
-              </div>
+              <div class="dlbl"><span>Strategic preferences</span></div>
+              <div id="attractor-rows"></div>
             </div>
           </div>
         </div>
@@ -5264,8 +5276,8 @@ function switchItab(sectionId, tabId){
     if(t.getAttribute('onclick') && t.getAttribute('onclick').includes("'" + tabId + "'"))
       t.classList.add('active');
   });
-  // Trigger chart draws if needed
-  if(sectionId === 'attract' && tabId === 'pieces'){
+  // Trigger chart draws if needed — the radar now lives on the Quality tab
+  if(sectionId === 'attract' && tabId === 'quality'){
     setTimeout(drawRadar, 60);
   }
   if(sectionId === 'pressure' && tabId === 'curves'){
@@ -6616,6 +6628,12 @@ function removeCustomControl(id){
   customControls = customControls.filter(c => c.id !== id);
   renderCustomControls();
   _ccDirty();
+}
+// Entry button on the Move Quality & Strategy tab: add a control and jump to the
+// dedicated Custom Controls tab so the builder is right there.
+function addCustomControlAndGo(){
+  addCustomControl();
+  if(typeof switchItab === 'function') switchItab('attract','custom');
 }
 function onCustomControlValue(id, val){
   const c = _ccFind(id); if(!c) return;
