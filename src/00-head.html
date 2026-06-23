@@ -967,15 +967,14 @@ body.pro-mode #proSide{
 }
 .pro-gear-menu button:hover{ background:var(--pc-surface);color:var(--pa-bright); }
 
-/* Relocated chat, restyled for the pro column */
-body.pro-mode #proChatMount{ display:flex;flex:1;min-height:120px; }
+/* Relocated chat, restyled for the pro column.
+   Visibility stays governed by chatShow() — only shows during 2-player games. */
+body.pro-mode #proChatMount{ display:flex;flex-direction:column; }
 body.pro-mode #proChatMount #chatBox{
-  display:flex !important;width:auto;flex:1;
-  background:var(--pc-mid);border:0.5px solid var(--pbd);
+  width:auto;background:var(--pc-mid);border:0.5px solid var(--pbd);
 }
 body.pro-mode #chatBox #chatHeader{ background:var(--pc-surface);color:var(--ptd); }
-body.pro-mode #chatBox #chatBody{ display:flex !important; }
-body.pro-mode #chatBox #chatMessages{ height:auto;flex:1;min-height:80px;color:var(--pt2); }
+body.pro-mode #chatBox #chatMessages{ color:var(--pt2); }
 body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 </style>
 </head>

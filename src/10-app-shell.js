@@ -479,6 +479,8 @@ const IND = {
 };
 
 function indActive(key) {
+  // Pro shell: no board-vision indicators at all (pieces + last move only)
+  if (typeof proMode !== 'undefined' && proMode) return false;
   if (typeof IND==='undefined') return false;
   const ind=IND[key]; if(!ind) return false;
   if(key==='legal'){const el=document.getElementById('cbLegalToggle');return el?el.checked:true;}
@@ -699,6 +701,7 @@ function proApplyBoardClean(){
   const gh = document.getElementById('soloGhostDepth');
   if(gh){ gh.value = '0'; if(typeof ghostModeChanged === 'function') ghostModeChanged(); }
   if(typeof clearAllSelections === 'function') clearAllSelections();
+  if(typeof indApply === 'function') indApply();   // recompute → all showing* flags off
 }
 function proRestoreBoard(){
   if(!_proSaved) return;
@@ -707,6 +710,7 @@ function proRestoreBoard(){
   const gh = document.getElementById('soloGhostDepth');
   if(gh && _proSaved.ghost != null){ gh.value = _proSaved.ghost; if(typeof ghostModeChanged === 'function') ghostModeChanged(); }
   _proSaved = null;
+  if(typeof indApply === 'function') indApply();   // recompute the amateur indicators
 }
 
 function proMountChat(){
