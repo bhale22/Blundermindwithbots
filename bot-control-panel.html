@@ -1379,20 +1379,9 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
     <div class="panel">
       <div class="pr" style="margin-top:0;">
 
-        <!-- Description box -->
-        <div class="formula-box" style="margin-bottom:12px;">
-          <div class="formula-title">How time pressure simulation works</div>
-          <div class="formula-body" style="text-align:left;line-height:1.75;">
-            The bot simulates a rated player under time pressure using two complementary mechanisms:<br>
-            <span style="color:var(--amber);">▸ ELO reduction</span> — Maia is called at a lower ELO as the clock runs down, playing like a lower-rated player under time scramble.<br>
-            <span style="color:#5dade2;">▸ Distribution restriction</span> — ELO stays fixed but only the top portion of Maia's move distribution is available (instinctive, less creative play — typical of a strong player with no time to calculate).<br>
-            Both curves apply simultaneously. Toggle <strong>OFF</strong> to disable all time-pressure effects and play at constant strength.
-          </div>
-        </div>
-
         <!-- OFF toggle + ELO info row -->
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-          <button id="pressure-off-btn" class="preset-btn" onclick="togglePressureOff()" style="min-width:44px;">OFF</button>
+          <button id="pressure-off-btn" class="preset-btn active" onclick="togglePressureOff()" style="min-width:44px;">ON</button>
           <span id="pressure-off-lbl" style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);">Curves active — bot degrades with clock</span>
           <span style="margin-left:auto;font-family:var(--font-m);font-size:8px;color:var(--text-dim);">Base ELO: <span id="tp-elo-display" style="color:var(--amber);">1500</span></span>
         </div>
@@ -1461,6 +1450,17 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
                 <span class="formula-hl">ELO(t) = E₀ − Δ · σ(log(t) anchored at game start)</span>
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- How it works — placed below the controls/graphs -->
+        <div class="formula-box" style="margin-top:12px;">
+          <div class="formula-title">How time pressure simulation works</div>
+          <div class="formula-body" style="text-align:left;line-height:1.75;">
+            The bot simulates a rated player under time pressure using two complementary mechanisms:<br>
+            <span style="color:var(--amber);">▸ ELO reduction</span> — Maia is called at a lower ELO as the clock runs down, playing like a lower-rated player under time scramble.<br>
+            <span style="color:#5dade2;">▸ Distribution restriction</span> — ELO stays fixed but only the top portion of Maia's move distribution is available (instinctive, less creative play — typical of a strong player with no time to calculate).<br>
+            Both curves apply simultaneously. Switch the toggle to <strong>OFF</strong> to disable all time-pressure effects and play at constant strength.
           </div>
         </div>
 
@@ -5331,12 +5331,24 @@ function toggleSec(id){
       scheduleDraw();
     }
     if(id==='attract'){
-      // Only draw radar if the pieces tab is active
-      const piecesPane = document.getElementById('itab-attract-pieces');
-      if(piecesPane && piecesPane.classList.contains('active')){
-        setTimeout(drawRadar, 80);
-      }
+      // Radar now lives on the (default) Move Quality tab — draw it whenever the
+      // section opens so it isn't blank until the user hovers over it.
+      setTimeout(drawRadar, 80);
     }
+    // Scroll the opened section fully into view once its expand animation settles.
+    const shell = target.querySelector('.panel-shell');
+    let _scrolled = false;
+    const _doScroll = () => {
+      if(_scrolled || !target.classList.contains('open')) return; _scrolled = true;
+      try { target.scrollIntoView({ behavior:'smooth', block:'start' }); } catch(e){}
+    };
+    if(shell){
+      const onEnd = (e) => {
+        if(e.propertyName === 'max-height'){ shell.removeEventListener('transitionend', onEnd); _doScroll(); }
+      };
+      shell.addEventListener('transitionend', onEnd);
+    }
+    setTimeout(_doScroll, 520); // fallback if transitionend doesn't fire
   }
 }
 
@@ -7514,7 +7526,10 @@ function togglePressureOff(){
   pressureOff = !pressureOff;
   const btn = document.getElementById('pressure-off-btn');
   const lbl = document.getElementById('pressure-off-lbl');
-  if(btn) btn.classList.toggle('active', pressureOff);
+  if(btn){
+    btn.classList.toggle('active', !pressureOff); // highlighted when simulation is ON
+    btn.textContent = pressureOff ? 'OFF' : 'ON';
+  }
   if(lbl) lbl.textContent = pressureOff
     ? 'OFF — bot plays at constant ELO regardless of clock'
     : 'Curves active — bot degrades with clock';
