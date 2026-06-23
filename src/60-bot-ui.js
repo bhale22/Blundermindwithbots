@@ -1315,6 +1315,8 @@ window.addEventListener('message', function(e) {
   window._bcpAttractorValues  = cfg.attractorValues || {};
   window._bcpPieceValues      = cfg.pieceValues     || {};
   window._bcpCpBudget         = cfg.cpBudget;
+  // User-defined custom controls: [{ id, name, metric, phase, value }]
+  window._bcpCustomControls   = Array.isArray(cfg.customControls) ? cfg.customControls : [];
   window._bcpHustlerTempMode  = (cfg.personalityId === 'hustler');
 
   closeBotModal();

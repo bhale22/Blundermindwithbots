@@ -105,12 +105,227 @@ function botRemainingMovesEstimate() {
 //   Left label = negative value = that behaviour boosted when value < 0.
 //   Trade seeker is on the LEFT (negative) → captures boosted by -tradeVal * scale.
 //   All other attractors: positive value → boost the right-label behaviour.
+// ── Custom controls: user-defined attractors ─────────────────────────────────
+// A custom control is { id, name, metric, phase, value(-5..+5) }. It reuses the
+// exact attractor mechanism: count a board feature before and after a candidate
+// move, squash the delta through tanh, and add value×scale×tanh(delta/k) to the
+// move's logBoost. The sign of `value` is the direction (right/+ = maximize the
+// metric, left/- = minimize it). Each control also counts toward the CP budget's
+// totalAbs so the panel's cp-allocation display stays accurate.
+//
+//   metricFn(bd, ctx) → number   ctx = { me, opp, atk }
+//     me / opp  'w'|'b' colour strings for the bot and its opponent
+//     atk       attack map for bd (atk[sq]={w:[...],b:[...]}); only supplied when
+//               the metric sets needsAtk:true, else null.
+// Higher return = "more of this feature for the bot"; k scales the tanh response.
+const _ccMetrics = {
+  passedPawns: {
+    label: 'Passed pawns', needsAtk: false, k: 1,
+    fn(bd, ctx) {
+      const me = ctx.me, opp = ctx.opp;
+      const oppPawns = [];
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (p && p.piece === 'P' && p.color === opp) oppPawns.push(sq);
+      }
+      let count = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (!p || p.piece !== 'P' || p.color !== me) continue;
+        const f = sq % 8, r = (sq / 8) | 0;
+        let passed = true;
+        for (const o of oppPawns) {
+          const f2 = o % 8, r2 = (o / 8) | 0;
+          if (Math.abs(f2 - f) > 1) continue;
+          // r decreases as White advances (r=0 is the 8th rank); an opponent pawn
+          // ahead of ours on this/adjacent file blocks the passer.
+          if (me === 'w' ? (r2 < r) : (r2 > r)) { passed = false; break; }
+        }
+        if (passed) count++;
+      }
+      return count;
+    }
+  },
+  pawnAdvance: {
+    label: 'Pawn advancement', needsAtk: false, k: 4,
+    fn(bd, ctx) {
+      const me = ctx.me;
+      let s = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (!p || p.piece !== 'P' || p.color !== me) continue;
+        const r = (sq / 8) | 0;
+        s += me === 'w' ? (6 - r) : (r - 1); // ranks advanced from the pawn's start
+      }
+      return s;
+    }
+  },
+  kingZoneAttackers: {
+    label: 'King-zone pressure', needsAtk: true, k: 3,
+    fn(bd, ctx) {
+      const me = ctx.me, opp = ctx.opp, atk = ctx.atk;
+      if (!atk) return 0;
+      let ksq = -1;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (p && p.piece === 'K' && p.color === opp) { ksq = sq; break; }
+      }
+      if (ksq < 0) return 0;
+      const kf = ksq % 8, kr = (ksq / 8) | 0;
+      let cnt = 0;
+      for (let df = -1; df <= 1; df++) {
+        for (let dr = -1; dr <= 1; dr++) {
+          const f = kf + df, r = kr + dr;
+          if (f < 0 || f > 7 || r < 0 || r > 7) continue;
+          const sq = r * 8 + f;
+          if (atk[sq]) cnt += (atk[sq][me] || []).length;
+        }
+      }
+      return cnt;
+    }
+  },
+  attackedPieces: {
+    label: 'Enemy pieces attacked', needsAtk: true, k: 2,
+    fn(bd, ctx) {
+      const me = ctx.me, opp = ctx.opp, atk = ctx.atk;
+      if (!atk) return 0;
+      let cnt = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (p && p.color === opp && atk[sq] && (atk[sq][me] || []).length > 0) cnt++;
+      }
+      return cnt;
+    }
+  },
+  weakSquares: {
+    label: 'My weak squares', needsAtk: true, k: 5,
+    fn(bd, ctx) {
+      const me = ctx.me, atk = ctx.atk;
+      if (!atk) return 0;
+      let cnt = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        if (!bd[sq] && atk[sq] && (atk[sq][me] || []).length === 0) cnt++;
+      }
+      return cnt;
+    }
+  },
+  hangingPieces: {
+    label: 'My hanging pieces', needsAtk: true, k: 2,
+    fn(bd, ctx) {
+      const me = ctx.me, opp = ctx.opp, atk = ctx.atk;
+      if (!atk) return 0;
+      let cnt = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (!p || p.color !== me || p.piece === 'K' || !atk[sq]) continue;
+        const att = (atk[sq][opp] || []).length;
+        const def = (atk[sq][me]  || []).length;
+        if (att > 0 && def === 0) cnt++;
+      }
+      return cnt;
+    }
+  },
+  centralization: {
+    label: 'Piece centralization', needsAtk: false, k: 3,
+    fn(bd, ctx) {
+      const me = ctx.me;
+      let s = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (!p || p.color !== me || p.piece === 'P' || p.piece === 'K') continue;
+        const f = sq % 8, r = (sq / 8) | 0;
+        // Closeness to the central 4×4 (max at the d/e, 4/5 squares).
+        s += (3.5 - Math.abs(f - 3.5)) + (3.5 - Math.abs(r - 3.5));
+      }
+      return s;
+    }
+  },
+  outpost: {
+    label: 'Knight/bishop outposts', needsAtk: false, k: 1,
+    fn(bd, ctx) {
+      const me = ctx.me, opp = ctx.opp;
+      const fwd = me === 'w' ? -1 : 1; // Δr the bot's pawns advance (r=0 is rank 8)
+      let count = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (!p || p.color !== me || (p.piece !== 'N' && p.piece !== 'B')) continue;
+        const f = sq % 8, r = (sq / 8) | 0;
+        // Must be advanced past the middle into enemy territory.
+        if (me === 'w' ? (r > 4) : (r < 3)) continue;
+        // Supported by a friendly pawn one rank behind, diagonally.
+        const br = r - fwd;
+        let supported = false;
+        for (const df of [-1, 1]) {
+          const bf = f + df;
+          if (bf < 0 || bf > 7 || br < 0 || br > 7) continue;
+          const q = bd[br * 8 + bf];
+          if (q && q.piece === 'P' && q.color === me) { supported = true; break; }
+        }
+        if (!supported) continue;
+        // No enemy pawn on an adjacent file can ever advance to challenge it.
+        let challengeable = false;
+        for (let s2 = 0; s2 < 64 && !challengeable; s2++) {
+          const q = bd[s2];
+          if (!q || q.piece !== 'P' || q.color !== opp) continue;
+          const f2 = s2 % 8, r2 = (s2 / 8) | 0;
+          if (Math.abs(f2 - f) !== 1) continue;
+          if (me === 'w' ? (r2 < r) : (r2 > r)) challengeable = true;
+        }
+        if (!challengeable) count++;
+      }
+      return count;
+    }
+  }
+};
+
+// Current game phase from material + ply. Mirrors the opening gate used elsewhere
+// (gameMovesAlgebraic.length < 20) and an endgame material heuristic (≤6 non-king,
+// non-pawn pieces left on the board, both colours).
+function _botGamePhase() {
+  let majMin = 0;
+  for (let sq = 0; sq < 64; sq++) {
+    const p = board[sq];
+    if (!p || p.piece === 'K' || p.piece === 'P') continue;
+    majMin++;
+  }
+  if (majMin <= 6) return 'endgame';
+  const ply = (typeof gameMovesAlgebraic !== 'undefined') ? gameMovesAlgebraic.length : 0;
+  if (ply < 20) return 'opening';
+  return 'middlegame';
+}
+
+function _ccPhaseMatch(phase, current) {
+  return !phase || phase === 'all' || phase === current;
+}
+
+// Optional game-state gate keyed on the Stockfish complexity-probe eval (cp, from
+// the bot's perspective; null when no probe ran this move). ±50 cp = "equal".
+function _ccResultMatch(result, evalCp) {
+  if (!result || result === 'any') return true;
+  if (evalCp === null || evalCp === undefined) return false; // no eval → don't fire
+  if (result === 'winning') return evalCp >  50;
+  if (result === 'losing')  return evalCp < -50;
+  if (result === 'equal')   return evalCp >= -50 && evalCp <= 50;
+  return true;
+}
+
 function applyMoveAttractors(moveProbs) {
   if (!moveProbs || !Object.keys(moveProbs).length) return moveProbs;
 
   const attrVals  = window._bcpAttractorValues || {};
   const pieceVals = window._bcpPieceValues     || {};
   const cpBudget  = window._bcpCpBudget != null ? window._bcpCpBudget : 100;
+
+  // Custom controls (user-defined attractors): keep ones with a non-zero value
+  // and a known metric, then gate by current game phase. Phase depends only on
+  // the board, so it can be resolved here before colour strings are set up.
+  const customControls = (window._bcpCustomControls || [])
+    .filter(c => c && c.value && _ccMetrics[c.metric]);
+  const _ccPhase  = customControls.length ? _botGamePhase() : null;
+  const _ccEval   = (typeof sfCplxEval !== 'undefined') ? sfCplxEval : null;
+  const activeCC  = customControls.filter(c =>
+    _ccPhaseMatch(c.phase, _ccPhase) && _ccResultMatch(c.result, _ccEval));
+  const hasCustom = activeCC.length > 0;
 
   const luckVal       = attrVals['luck']       || 0;
   const tradeVal      = attrVals['trade']      || 0;
@@ -147,7 +362,8 @@ function applyMoveAttractors(moveProbs) {
   // toward totalAbs so the panel's cp allocation display stays accurate.
   const CP_PER_LOG_UNIT = 150;
   const allVals  = [...Object.values(attrVals), ...Object.values(pieceVals)];
-  const totalAbs = allVals.reduce((s, v) => s + Math.abs(v || 0), 0);
+  const ccAbs    = customControls.reduce((s, c) => s + Math.abs(c.value || 0), 0);
+  const totalAbs = allVals.reduce((s, v) => s + Math.abs(v || 0), 0) + ccAbs;
   const scale = (cpBudget > 0 && totalAbs > 0)
     ? cpBudget / (totalAbs * CP_PER_LOG_UNIT)
     : 0;
@@ -187,7 +403,7 @@ function applyMoveAttractors(moveProbs) {
 
   // ── Per-move reweighting ──────────────────────────────────────────────────
   const needsPerMove = scale > 0 &&
-    (hasPiece || hasTrade || hasPawnS || hasSpace || hasFortkx || hasGambito || hasAttacker || hasStructure);
+    (hasPiece || hasTrade || hasPawnS || hasSpace || hasFortkx || hasGambito || hasAttacker || hasStructure || hasCustom);
   if (!needsPerMove) return filtered;
 
   const PIECE_MAP   = { p:'pawn', n:'knight', b:'bishop', r:'rook', q:'queen', k:'king' };
@@ -230,6 +446,20 @@ function applyMoveAttractors(moveProbs) {
   // per-move check below is gated on pieceLetter === 'p'.
   let currentStructPenalty = 0;
   if (hasStructure) currentStructPenalty = _pawnStructurePenalty(board, botColorStr);
+
+  // ── Custom controls: per-turn baselines on the current board ──────────────
+  // The global atkMap is the attack map for the current position (the same one
+  // the space/fortkx baselines above read), so metric baselines can reuse it.
+  const ccNeedsAtk = hasCustom && activeCC.some(c => _ccMetrics[c.metric].needsAtk);
+  if (hasCustom) {
+    // atkMap is the current position's map; build one if it isn't available so
+    // the metric baseline matches what getSimAtkCC computes for candidates.
+    const baseAtk = ccNeedsAtk
+      ? (atkMap || buildDirectAtk(board, _EMPTY, _EMPTY, _EMPTY, _EMPTY))
+      : null;
+    const baseCtx = { me: botColorStr, opp: oppColorStr, atk: baseAtk };
+    for (const c of activeCC) c._ccBefore = _ccMetrics[c.metric].fn(board, baseCtx);
+  }
 
   // ── Gambito: ECO gambit continuation UCIs (computed once per bot turn) ────
   // Scan ECO entries whose name contains 'gambit' and whose move prefix matches
@@ -292,6 +522,13 @@ function applyMoveAttractors(moveProbs) {
     const getSimToAtk = () => {
       if (!_simToAtk) _simToAtk = rawAttacks(mv.to, getSimBd());
       return _simToAtk;
+    };
+    // Full attack map on the simulated board — shared by every custom-control
+    // metric that sets needsAtk, built once per candidate.
+    let _simAtkCC = null;
+    const getSimAtkCC = () => {
+      if (!_simAtkCC) _simAtkCC = buildDirectAtk(getSimBd(), _EMPTY, _EMPTY, _EMPTY, _EMPTY);
+      return _simAtkCC;
     };
 
     let logBoost = 0;
@@ -397,6 +634,20 @@ function applyMoveAttractors(moveProbs) {
       const simPenalty = _pawnStructurePenalty(getSimBd(), botColorStr);
       const delta = currentStructPenalty - simPenalty;
       if (delta !== 0) logBoost += structureVal * scale * Math.tanh(delta);
+    }
+
+    // ── Custom controls: metric delta on the simulated board ──────────────────
+    // Build the sim attack map once (if any active metric needs it) and reuse it
+    // across every control. delta = metric(after) − metric(before); value sign is
+    // the direction (right/+ maximizes the metric, left/− minimizes it).
+    if (hasCustom) {
+      const ccAtk = ccNeedsAtk ? getSimAtkCC() : null;
+      for (const c of activeCC) {
+        const m = _ccMetrics[c.metric];
+        const after = m.fn(getSimBd(), { me: botColorStr, opp: oppColorStr, atk: m.needsAtk ? ccAtk : null });
+        const delta = after - c._ccBefore;
+        if (delta !== 0) logBoost += c.value * scale * Math.tanh(delta / m.k);
+      }
     }
 
     result[uciMove] = logBoost !== 0 ? prob * Math.exp(logBoost) : prob;

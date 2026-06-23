@@ -1148,6 +1148,12 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
               </div><!-- /move-quality-range -->
               <div class="dlbl" style="margin-top:14px;"><span>Strategic preferences</span></div>
               <div id="attractor-rows"></div>
+
+              <div class="dlbl" style="margin-top:14px;"><span>Custom controls</span></div>
+              <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-bottom:8px;">Build your own attractor: pick a board feature, the phase it applies in, and a direction. Each one shares the centipawn budget above and only re-ranks moves the engine already considers plausible.</div>
+              <div id="custom-control-rows"></div>
+              <button type="button" onclick="addCustomControl()"
+                style="margin-top:8px;background:rgba(0,0,0,0.25);border:1px dashed var(--amber);color:var(--amber);font-family:var(--font-u);font-size:9px;letter-spacing:0.08em;padding:6px 10px;border-radius:4px;cursor:pointer;width:100%;">+ Add custom control</button>
             </div>
           </div>
         </div>
@@ -1668,6 +1674,24 @@ const PIECE_TYPES = [
   { id:'king',   name:'King',   icon:'♔' },
 ];
 
+// ── Custom-control metrics ───────────────────────────────────
+// Each id MUST match a key in _ccMetrics (50-bot-engine.js). The slider sign is
+// the direction: left/− minimizes the metric, right/+ maximizes it. min/max are
+// the slider end labels; desc is the row hint.
+const CUSTOM_METRICS = [
+  { id:'passedPawns',       name:'Passed pawns',          min:'Avoid passers',      max:'Create / push passers', desc:'Counts the bot’s passed pawns (no enemy pawn ahead on its file or the adjacent files).' },
+  { id:'pawnAdvance',       name:'Pawn advancement',      min:'Hold pawns back',    max:'Push pawns forward',    desc:'Sum of how far the bot’s pawns have advanced from their start rank. Pairs well with the Endgame phase.' },
+  { id:'kingZoneAttackers', name:'King-zone pressure',    min:'Ease off the king',  max:'Hunt the enemy king',   desc:'Counts the bot’s attacks on the nine squares around the enemy king.' },
+  { id:'attackedPieces',    name:'Enemy pieces attacked', min:'Make peace',         max:'Attack more pieces',    desc:'Number of distinct enemy pieces the bot attacks after the move.' },
+  { id:'weakSquares',       name:'My weak squares',       min:'Fewer weak squares', max:'Don’t mind weak squares', desc:'Empty squares in the bot’s camp it controls with no piece. Slide left to minimise them.' },
+  { id:'hangingPieces',     name:'My hanging pieces',     min:'Stop hanging pieces',max:'Ignore loose pieces',   desc:'The bot’s own undefended, attacked pieces. Slide left for prophylaxis.' },
+  { id:'centralization',    name:'Piece centralization',  min:'Pieces on the rim',  max:'Centralize pieces',     desc:'Rewards knights, bishops, rooks and queens placed near the centre of the board.' },
+  { id:'outpost',           name:'Knight/bishop outposts',min:'Avoid outposts',     max:'Plant outposts',        desc:'A minor piece on an advanced square defended by a pawn that no enemy pawn can challenge.' },
+];
+
+// Optional game-state gate for a custom control (uses the Stockfish eval probe).
+const CUSTOM_RESULTS = [['any','Any result'],['winning','When winning'],['losing','When losing'],['equal','When equal']];
+
 // ── Personalities ────────────────────────────────────────────
 // Add a new personality: one entry here, nothing else changes
 const PERSONALITIES = [
@@ -1701,6 +1725,8 @@ const PERSONALITIES = [
 let currentElo = SPEEDO.default;
 let attractorValues = {};      // id -> -5..5
 let pieceValues = {};          // pieceId -> -5..5
+let customControls = [];        // [{ id, name, metric, phase, value(-5..5) }]
+let _ccSeq = 0;                 // monotonic id source for new custom controls
 let selectedPersonality = null;
 let _activeBotName      = null;  // name of the loaded/saved bot; clears on any manual edit
 let openingMode = 'off';
@@ -5159,6 +5185,10 @@ function updateAttrCpDisplays(){
       absVal: Math.abs(pieceValues[p.id] ?? 0),
       domId: 'pieceval-' + p.id
     })),
+    ...customControls.map(c => ({
+      absVal: Math.abs(c.value ?? 0),
+      domId: 'ccval-' + c.id
+    })),
   ];
   const totalAbs = allEntries.reduce((s, e) => s + e.absVal, 0);
   allEntries.forEach(e => {
@@ -5488,6 +5518,7 @@ function getBotConfig(){
     dayUpper:        dayUpper,
     attractorValues: {...attractorValues},
     pieceValues:     {...pieceValues},
+    customControls:  customControls.map(c => ({ id:c.id, name:c.name, metric:c.metric, phase:c.phase, result:c.result||'any', value:c.value })),
     timingMode:        _getTimingMode(),
     fixedDelayMs:      parseInt(document.getElementById('r-fixed')?.value     || '5') * 1000,
     mirrorOffsetPct:   parseInt(document.getElementById('r-mirror')?.value    || '0'),
@@ -5602,6 +5633,21 @@ function applyBotConfig(cfg){
     document.querySelectorAll('.pcard').forEach(c => c.classList.remove('sel'));
     selectedPersonality = null;
     drawRadar(); updateAttractorStatus(); updateAttrCpDisplays();
+  });
+  grp(() => {
+    customControls = Array.isArray(cfg.customControls)
+      ? cfg.customControls
+          .filter(c => c && _ccMeta && CUSTOM_METRICS.some(m => m.id === c.metric))
+          .map(c => ({
+            id:     c.id || ('cc' + Date.now().toString(36) + (++_ccSeq)),
+            name:   c.name || _ccMeta(c.metric).name,
+            metric: c.metric,
+            phase:  c.phase || 'all',
+            result: c.result || 'any',
+            value:  +c.value || 0
+          }))
+      : [];
+    renderCustomControls();
   });
   grp(() => onCalmPanickyChange(cfg.calmPanickyValue || 0));
 
@@ -6486,6 +6532,122 @@ function onPieceChange(id, val){
   updateQsCpBudget();
 }
 
+/* ── Custom controls ── */
+function _ccMeta(metricId){ return CUSTOM_METRICS.find(m => m.id === metricId) || CUSTOM_METRICS[0]; }
+function _ccFind(id){ return customControls.find(c => c.id === id); }
+function _ccEsc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, ch =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+// Mirror the side-effects of onAttractorChange: editing a custom control is a
+// manual edit, so it deselects any active preset / saved bot.
+function _ccDirty(){
+  if(selectedPersonality){
+    document.querySelectorAll('.pcard').forEach(c => c.classList.remove('sel'));
+    selectedPersonality = null;
+  }
+  _activeBotName = null;
+  updateQsPersonality();
+  updateQsCpBudget();
+}
+
+function renderCustomControls(){
+  const container = document.getElementById('custom-control-rows');
+  if(!container) return;
+  if(!customControls.length){
+    container.innerHTML = '<div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);opacity:0.7;padding:2px 0 4px;">No custom controls yet — add one to give the bot a bias the presets don’t cover.</div>';
+    updateAttrCpDisplays();
+    return;
+  }
+  const PHASES = [['all','All phases'],['opening','Opening'],['middlegame','Middlegame'],['endgame','Endgame']];
+  const inStyle = 'background:rgba(0,0,0,0.25);border:1px solid var(--line);color:var(--text);border-radius:3px;';
+  container.innerHTML = customControls.map(c => {
+    const m = _ccMeta(c.metric);
+    const metricOpts = CUSTOM_METRICS.map(mm =>
+      `<option value="${mm.id}" ${mm.id===c.metric?'selected':''}>${mm.name}</option>`).join('');
+    const phaseOpts = PHASES.map(([v,l]) =>
+      `<option value="${v}" ${v===c.phase?'selected':''}>${l}</option>`).join('');
+    const resultOpts = CUSTOM_RESULTS.map(([v,l]) =>
+      `<option value="${v}" ${v===(c.result||'any')?'selected':''}>${l}</option>`).join('');
+    return `
+    <div class="attr-group cc-group" data-cc="${c.id}" style="border:1px solid var(--line);border-radius:5px;padding:8px;margin-bottom:8px;">
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
+        <input value="${_ccEsc(c.name || m.name)}" oninput="onCustomControlName('${c.id}',this.value)"
+          style="flex:1;${inStyle}font-family:var(--font-u);font-size:9px;padding:3px 5px;">
+        <button type="button" onclick="removeCustomControl('${c.id}')" title="Remove control"
+          style="background:none;border:1px solid var(--line);color:var(--text-dim);font-size:12px;line-height:1;width:20px;height:20px;border-radius:3px;cursor:pointer;">×</button>
+      </div>
+      <div style="margin-bottom:6px;">
+        <select onchange="onCustomControlMetric('${c.id}',this.value)"
+          style="width:100%;${inStyle}font-family:var(--font-m);font-size:8.5px;padding:3px;">${metricOpts}</select>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:6px;">
+        <select onchange="onCustomControlPhase('${c.id}',this.value)"
+          style="flex:1;${inStyle}font-family:var(--font-m);font-size:8.5px;padding:3px;">${phaseOpts}</select>
+        <select onchange="onCustomControlResult('${c.id}',this.value)"
+          style="flex:1;${inStyle}font-family:var(--font-m);font-size:8.5px;padding:3px;">${resultOpts}</select>
+      </div>
+      <div class="attractor-row">
+        <span class="attr-left attr-left-narrow">${m.min}</span>
+        <div class="attr-slider-wrap">
+          <div class="attr-center-tick"></div>
+          <input class="attr-slider" type="range" min="-5" max="5" step="1" value="${c.value||0}"
+            oninput="onCustomControlValue('${c.id}',this.value)">
+        </div>
+        <span class="attr-right attr-right-narrow">${m.max}</span>
+        <span class="attr-val" id="ccval-${c.id}">—</span>
+      </div>
+      <div class="attr-desc">${m.desc}</div>
+    </div>`;
+  }).join('');
+  updateAttrCpDisplays();
+}
+
+function addCustomControl(){
+  const m = CUSTOM_METRICS[0];
+  customControls.push({
+    id: 'cc' + Date.now().toString(36) + (++_ccSeq),
+    name: m.name, metric: m.id, phase: 'all', result: 'any', value: 0
+  });
+  renderCustomControls();
+  _ccDirty();
+}
+function removeCustomControl(id){
+  customControls = customControls.filter(c => c.id !== id);
+  renderCustomControls();
+  _ccDirty();
+}
+function onCustomControlValue(id, val){
+  const c = _ccFind(id); if(!c) return;
+  c.value = +val;
+  updateAttrCpDisplays();
+  _ccDirty();
+}
+function onCustomControlMetric(id, val){
+  const c = _ccFind(id); if(!c) return;
+  // Only auto-rename if the user hadn't given the control its own name.
+  const prev = _ccMeta(c.metric);
+  if(!c.name || c.name === prev.name) c.name = _ccMeta(val).name;
+  c.metric = val;
+  renderCustomControls();
+  _ccDirty();
+}
+function onCustomControlPhase(id, val){
+  const c = _ccFind(id); if(!c) return;
+  c.phase = val;
+  _ccDirty();
+}
+function onCustomControlResult(id, val){
+  const c = _ccFind(id); if(!c) return;
+  c.result = val;
+  _ccDirty();
+}
+function onCustomControlName(id, val){
+  const c = _ccFind(id); if(!c) return;
+  c.name = val;
+  _ccDirty();
+}
+
 /* ══════════════════════════════════════════════════════════════
    RADAR CHART — interactive (drag nodes or click axis to set)
 ══════════════════════════════════════════════════════════════ */
@@ -6742,7 +6904,8 @@ function updateQsPersonality(){
     pill.textContent = p ? p.name : selectedPersonality;
   } else {
     const isCustom = ATTRACTORS.some(a => (attractorValues[a.id]??0) !== 0)
-      || PIECE_TYPES.some(p => (pieceValues[p.id]??0) !== 0);
+      || PIECE_TYPES.some(p => (pieceValues[p.id]??0) !== 0)
+      || customControls.some(c => (c.value??0) !== 0);
     pill.textContent = isCustom ? 'Custom' : 'None';
   }
 }
@@ -6752,7 +6915,8 @@ function updateQsCpBudget(){
   if(!pill) return;
   const hasActivity = selectedPersonality || _activeBotName
     || ATTRACTORS.some(a => (attractorValues[a.id]??0) !== 0)
-    || PIECE_TYPES.some(p => (pieceValues[p.id]??0) !== 0);
+    || PIECE_TYPES.some(p => (pieceValues[p.id]??0) !== 0)
+    || customControls.some(c => (c.value??0) !== 0);
   if(!hasActivity){
     pill.textContent = '—';
     return;
@@ -7389,6 +7553,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   buildSFPips('lcsf-sf-pips');
   renderAttractors();
   renderPieceAttractors();
+  renderCustomControls();
   renderPersonalities();
   renderHybridSlots();
   initSpeedo();

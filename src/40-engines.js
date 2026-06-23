@@ -264,9 +264,12 @@ function _computeCplxScore(lines) {
 // Returns true if the complexity probe is worth running this move
 function _needsComplexity() {
   const av = window._bcpAttractorValues || {};
-  return (av['chaos'] || 0) !== 0 ||
-         (av['compwin'] || 0) !== 0 ||
-         botTimeBehavior === 'complexity';
+  if ((av['chaos'] || 0) !== 0 || (av['compwin'] || 0) !== 0 || botTimeBehavior === 'complexity') {
+    return true;
+  }
+  // A custom control with a winning/losing/equal condition needs the eval probe.
+  const cc = window._bcpCustomControls || [];
+  return cc.some(c => c && c.value && c.result && c.result !== 'any');
 }
 
 // Scales base Maia temperature up/down based on position complexity + attractor values
