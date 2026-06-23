@@ -1687,18 +1687,50 @@ const PIECE_TYPES = [
 ];
 
 // ── Custom-control metrics ───────────────────────────────────
-// Each id MUST match a key in _ccMetrics (50-bot-engine.js). The slider sign is
-// the direction: left/− minimizes the metric, right/+ maximizes it. min/max are
-// the slider end labels; desc is the row hint.
+// Each id MUST match a key in _ccMetrics (50-bot-engine.js). `cat` groups the
+// dropdown; the slider sign is the direction (left/− minimize, right/+ maximize);
+// min/max are the slider end labels; desc is the row hint. Adding an entry here
+// AND a matching fn in _ccMetrics is all it takes to expose a new variable.
 const CUSTOM_METRICS = [
-  { id:'passedPawns',       name:'Passed pawns',          min:'Avoid passers',      max:'Create / push passers', desc:'Counts the bot’s passed pawns (no enemy pawn ahead on its file or the adjacent files).' },
-  { id:'pawnAdvance',       name:'Pawn advancement',      min:'Hold pawns back',    max:'Push pawns forward',    desc:'Sum of how far the bot’s pawns have advanced from their start rank. Pairs well with the Endgame phase.' },
-  { id:'kingZoneAttackers', name:'King-zone pressure',    min:'Ease off the king',  max:'Hunt the enemy king',   desc:'Counts the bot’s attacks on the nine squares around the enemy king.' },
-  { id:'attackedPieces',    name:'Enemy pieces attacked', min:'Make peace',         max:'Attack more pieces',    desc:'Number of distinct enemy pieces the bot attacks after the move.' },
-  { id:'weakSquares',       name:'My weak squares',       min:'Fewer weak squares', max:'Don’t mind weak squares', desc:'Empty squares in the bot’s camp it controls with no piece. Slide left to minimise them.' },
-  { id:'hangingPieces',     name:'My hanging pieces',     min:'Stop hanging pieces',max:'Ignore loose pieces',   desc:'The bot’s own undefended, attacked pieces. Slide left for prophylaxis.' },
-  { id:'centralization',    name:'Piece centralization',  min:'Pieces on the rim',  max:'Centralize pieces',     desc:'Rewards knights, bishops, rooks and queens placed near the centre of the board.' },
-  { id:'outpost',           name:'Knight/bishop outposts',min:'Avoid outposts',     max:'Plant outposts',        desc:'A minor piece on an advanced square defended by a pawn that no enemy pawn can challenge.' },
+  // Pawns
+  { id:'passedPawns',    cat:'Pawns', name:'Passed pawns',        min:'Avoid passers',       max:'Create / push passers',  desc:'The bot’s passed pawns (no enemy pawn ahead on its file or the adjacent files).' },
+  { id:'pawnAdvance',    cat:'Pawns', name:'Pawn advancement',    min:'Hold pawns back',     max:'Push pawns forward',     desc:'How far the bot’s pawns have advanced from their start rank. Pairs well with the Endgame phase.' },
+  { id:'doubledPawns',   cat:'Pawns', name:'Doubled pawns',       min:'Avoid doubling',      max:'Don’t mind doubling',    desc:'The bot’s doubled pawns. Slide left to keep the structure clean.' },
+  { id:'isolatedPawns',  cat:'Pawns', name:'Isolated pawns',      min:'Avoid isolani',       max:'Don’t mind isolani',     desc:'The bot’s isolated pawns (no friendly pawn on an adjacent file). Slide left to avoid them.' },
+  { id:'pawnIslands',    cat:'Pawns', name:'Pawn islands',        min:'Keep pawns connected',max:'Don’t mind islands',     desc:'Number of separate groups of the bot’s pawns. Fewer = healthier structure.' },
+  { id:'connectedPawns', cat:'Pawns', name:'Connected pawns',     min:'Don’t mind loose pawns',max:'Connect pawns',        desc:'Pawns supported by a neighbour (phalanx or chain).' },
+
+  // Pieces & activity
+  { id:'centralization', cat:'Pieces & activity', name:'Piece centralization', min:'Pieces on the rim', max:'Centralize pieces', desc:'Rewards knights, bishops, rooks and queens near the centre.' },
+  { id:'outpost',        cat:'Pieces & activity', name:'Knight/bishop outposts', min:'Avoid outposts', max:'Plant outposts',     desc:'A minor on an advanced square defended by a pawn that no enemy pawn can challenge.' },
+  { id:'mobility',       cat:'Pieces & activity', name:'Piece mobility',       min:'Cramped is fine',  max:'Maximize mobility',   desc:'Total squares the bot’s pieces attack/reach — a cheap proxy for activity.' },
+  { id:'bishopPair',     cat:'Pieces & activity', name:'Bishop pair',          min:'Trade a bishop',   max:'Keep the bishop pair',desc:'Whether the bot holds both bishops.' },
+  { id:'rooksOpenFiles', cat:'Pieces & activity', name:'Rooks on open files',  min:'Rooks anywhere',   max:'Rooks to open files', desc:'The bot’s rooks on files with no pawns.' },
+  { id:'rooksSeventh',   cat:'Pieces & activity', name:'Rooks on the 7th',     min:'Rooks back',       max:'Rooks to the 7th',    desc:'The bot’s rooks on the enemy’s second rank.' },
+  { id:'developedPieces',cat:'Pieces & activity', name:'Development',          min:'Leave pieces home',max:'Develop minors',      desc:'Knights and bishops off their back rank. Best gated to the Opening.' },
+
+  // Material
+  { id:'material',       cat:'Material', name:'Material balance',   min:'Sacrifice material', max:'Win material',         desc:'Bot material minus the opponent’s (P1 N/B3 R5 Q9).' },
+  { id:'pieceCount',     cat:'Material', name:'Pieces on board',    min:'Simplify (trade off)',max:'Keep pieces on',      desc:'Total pieces on the board — simplify when ahead, keep tension when not.' },
+  { id:'queens',         cat:'Material', name:'Queens on board',    min:'Trade queens',       max:'Keep queens on',       desc:'Queens still on the board.' },
+
+  // King attack & safety
+  { id:'kingZoneAttackers', cat:'King', name:'Enemy king pressure', min:'Ease off the king', max:'Hunt the enemy king',  desc:'The bot’s attacks on the nine squares around the enemy king.' },
+  { id:'kingDanger',     cat:'King', name:'My king safety',         min:'Keep my king safe', max:'Ignore king safety',    desc:'Enemy attacks on the squares around the bot’s own king. Slide left to play safe.' },
+  { id:'kingShield',     cat:'King', name:'My pawn shield',         min:'Draughty king is fine',max:'Keep a pawn shield', desc:'Friendly pawns sheltering the bot’s king.' },
+  { id:'givesCheck',     cat:'King', name:'Gives check',            min:'Avoid checks',      max:'Give checks',           desc:'Boosts moves that put the enemy king in check.' },
+
+  // Threats
+  { id:'attackedPieces', cat:'Threats', name:'Enemy pieces attacked', min:'Make peace',     max:'Attack more pieces',    desc:'Distinct enemy pieces the bot attacks after the move.' },
+  { id:'enemyHanging',   cat:'Threats', name:'Loose enemy pieces',    min:'Ignore loose pieces',max:'Win loose pieces',  desc:'Enemy pieces the bot attacks that have no defender — free-material radar.' },
+  { id:'hangingPieces',  cat:'Threats', name:'My hanging pieces',     min:'Stop hanging pieces',max:'Ignore my loose pieces',desc:'The bot’s own undefended, attacked pieces. Slide left for prophylaxis.' },
+  { id:'defendedPieces', cat:'Threats', name:'My defended pieces',    min:'Don’t over-protect', max:'Keep pieces defended',desc:'The bot’s pieces that have at least one defender.' },
+
+  // Square control
+  { id:'weakSquares',     cat:'Square control', name:'My weak squares',     min:'Fewer weak squares', max:'Don’t mind weak squares', desc:'Empty squares in the bot’s camp it no longer controls. Slide left to minimise.' },
+  { id:'enemyWeakSquares',cat:'Square control', name:'Holes in enemy camp', min:'Don’t chase holes',  max:'Open holes in enemy camp',desc:'Empty squares in the enemy half the opponent doesn’t control — outpost targets.' },
+  { id:'centerControl',   cat:'Square control', name:'Central control',     min:'Cede the centre',    max:'Control the centre',      desc:'The bot’s control of d4, e4, d5 and e5.' },
+  { id:'spaceControl',    cat:'Square control', name:'Space',               min:'Cramped is fine',    max:'Grab space',              desc:'Empty squares in the enemy half the bot controls.' },
 ];
 
 // Optional game-state gate for a custom control (uses the Stockfish eval probe).
@@ -6575,8 +6607,13 @@ function renderCustomControls(){
   const inStyle = 'background:rgba(0,0,0,0.25);border:1px solid var(--line);color:var(--text);border-radius:3px;';
   container.innerHTML = customControls.map(c => {
     const m = _ccMeta(c.metric);
-    const metricOpts = CUSTOM_METRICS.map(mm =>
-      `<option value="${mm.id}" ${mm.id===c.metric?'selected':''}>${mm.name}</option>`).join('');
+    const cats = [];
+    CUSTOM_METRICS.forEach(mm => { if(!cats.includes(mm.cat)) cats.push(mm.cat); });
+    const metricOpts = cats.map(cat =>
+      `<optgroup label="${cat}">` +
+      CUSTOM_METRICS.filter(mm => mm.cat === cat).map(mm =>
+        `<option value="${mm.id}" ${mm.id===c.metric?'selected':''}>${mm.name}</option>`).join('') +
+      `</optgroup>`).join('');
     const phaseOpts = PHASES.map(([v,l]) =>
       `<option value="${v}" ${v===c.phase?'selected':''}>${l}</option>`).join('');
     const resultOpts = CUSTOM_RESULTS.map(([v,l]) =>

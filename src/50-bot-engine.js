@@ -118,6 +118,7 @@ function botRemainingMovesEstimate() {
 //     atk       attack map for bd (atk[sq]={w:[...],b:[...]}); only supplied when
 //               the metric sets needsAtk:true, else null.
 // Higher return = "more of this feature for the bot"; k scales the tanh response.
+const _CC_PIECEVAL = { P: 1, N: 3, B: 3, R: 5, Q: 9, K: 0 };
 const _ccMetrics = {
   passedPawns: {
     label: 'Passed pawns', needsAtk: false, k: 1,
@@ -274,6 +275,250 @@ const _ccMetrics = {
         if (!challengeable) count++;
       }
       return count;
+    }
+  },
+
+  // ── Material & trades ──────────────────────────────────────────────────────
+  material: {
+    label: 'Material balance', needsAtk: false, k: 3,
+    fn(bd, ctx) {
+      const me = ctx.me;
+      let s = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (!p) continue;
+        const v = _CC_PIECEVAL[p.piece] || 0;
+        s += p.color === me ? v : -v;
+      }
+      return s;
+    }
+  },
+  pieceCount: {
+    label: 'Total pieces on board', needsAtk: false, k: 3,
+    fn(bd) { let n = 0; for (let sq = 0; sq < 64; sq++) if (bd[sq]) n++; return n; }
+  },
+  queens: {
+    label: 'Queens on board', needsAtk: false, k: 1,
+    fn(bd) { let n = 0; for (let sq = 0; sq < 64; sq++) { const p = bd[sq]; if (p && p.piece === 'Q') n++; } return n; }
+  },
+
+  // ── King attack & safety ───────────────────────────────────────────────────
+  kingDanger: {
+    label: 'Enemy pressure on my king', needsAtk: true, k: 3,
+    fn(bd, ctx) {
+      const me = ctx.me, opp = ctx.opp, atk = ctx.atk;
+      if (!atk) return 0;
+      let ksq = -1;
+      for (let sq = 0; sq < 64; sq++) { const p = bd[sq]; if (p && p.piece === 'K' && p.color === me) { ksq = sq; break; } }
+      if (ksq < 0) return 0;
+      const kf = ksq % 8, kr = (ksq / 8) | 0;
+      let c = 0;
+      for (let df = -1; df <= 1; df++) for (let dr = -1; dr <= 1; dr++) {
+        const f = kf + df, r = kr + dr;
+        if (f < 0 || f > 7 || r < 0 || r > 7) continue;
+        const s = r * 8 + f;
+        if (atk[s]) c += (atk[s][opp] || []).length;
+      }
+      return c;
+    }
+  },
+  kingShield: {
+    label: 'Pawn shield on my king', needsAtk: false, k: 1,
+    fn(bd, ctx) {
+      const me = ctx.me, fwd = me === 'w' ? -1 : 1;
+      let ksq = -1;
+      for (let sq = 0; sq < 64; sq++) { const p = bd[sq]; if (p && p.piece === 'K' && p.color === me) { ksq = sq; break; } }
+      if (ksq < 0) return 0;
+      const kf = ksq % 8, kr = (ksq / 8) | 0;
+      let c = 0;
+      for (let df = -1; df <= 1; df++) for (let dd = 1; dd <= 2; dd++) {
+        const f = kf + df, r = kr + fwd * dd;
+        if (f < 0 || f > 7 || r < 0 || r > 7) continue;
+        const p = bd[r * 8 + f];
+        if (p && p.piece === 'P' && p.color === me) c++;
+      }
+      return c;
+    }
+  },
+  givesCheck: {
+    label: 'Gives check', needsAtk: false, k: 1,
+    fn(bd, ctx) { return (typeof inCheck === 'function' && inCheck(bd, ctx.opp)) ? 1 : 0; }
+  },
+
+  // ── Pawn structure ─────────────────────────────────────────────────────────
+  doubledPawns: {
+    label: 'My doubled pawns', needsAtk: false, k: 1,
+    fn(bd, ctx) {
+      const me = ctx.me, files = [0,0,0,0,0,0,0,0];
+      for (let sq = 0; sq < 64; sq++) { const p = bd[sq]; if (p && p.piece === 'P' && p.color === me) files[sq % 8]++; }
+      let d = 0; for (let f = 0; f < 8; f++) if (files[f] > 1) d += files[f] - 1; return d;
+    }
+  },
+  isolatedPawns: {
+    label: 'My isolated pawns', needsAtk: false, k: 1,
+    fn(bd, ctx) {
+      const me = ctx.me, files = [0,0,0,0,0,0,0,0];
+      for (let sq = 0; sq < 64; sq++) { const p = bd[sq]; if (p && p.piece === 'P' && p.color === me) files[sq % 8]++; }
+      let iso = 0;
+      for (let f = 0; f < 8; f++) if (files[f] > 0 && (f === 0 || files[f-1] === 0) && (f === 7 || files[f+1] === 0)) iso += files[f];
+      return iso;
+    }
+  },
+  pawnIslands: {
+    label: 'My pawn islands', needsAtk: false, k: 1,
+    fn(bd, ctx) {
+      const me = ctx.me, files = [0,0,0,0,0,0,0,0];
+      for (let sq = 0; sq < 64; sq++) { const p = bd[sq]; if (p && p.piece === 'P' && p.color === me) files[sq % 8]++; }
+      let isl = 0, inIsl = false;
+      for (let f = 0; f < 8; f++) { if (files[f] > 0) { if (!inIsl) { isl++; inIsl = true; } } else inIsl = false; }
+      return isl;
+    }
+  },
+  connectedPawns: {
+    label: 'My connected pawns', needsAtk: false, k: 2,
+    fn(bd, ctx) {
+      const me = ctx.me;
+      let c = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (!p || p.piece !== 'P' || p.color !== me) continue;
+        const f = sq % 8, r = (sq / 8) | 0;
+        let conn = false;
+        for (const df of [-1, 1]) {
+          const af = f + df; if (af < 0 || af > 7) continue;
+          for (let ar = r - 1; ar <= r + 1; ar++) {
+            if (ar < 0 || ar > 7) continue;
+            const q = bd[ar * 8 + af];
+            if (q && q.piece === 'P' && q.color === me) { conn = true; break; }
+          }
+          if (conn) break;
+        }
+        if (conn) c++;
+      }
+      return c;
+    }
+  },
+
+  // ── Piece placement & activity ─────────────────────────────────────────────
+  mobility: {
+    label: 'My piece mobility', needsAtk: false, k: 8,
+    fn(bd, ctx) {
+      const me = ctx.me;
+      let m = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (p && p.color === me) { const a = rawAttacks(sq, bd); m += a ? a.length : 0; }
+      }
+      return m;
+    }
+  },
+  bishopPair: {
+    label: 'Bishop pair', needsAtk: false, k: 1,
+    fn(bd, ctx) {
+      const me = ctx.me; let b = 0;
+      for (let sq = 0; sq < 64; sq++) { const p = bd[sq]; if (p && p.piece === 'B' && p.color === me) b++; }
+      return b >= 2 ? 1 : 0;
+    }
+  },
+  rooksOpenFiles: {
+    label: 'Rooks on open files', needsAtk: false, k: 1,
+    fn(bd, ctx) {
+      const me = ctx.me, pawnFiles = [0,0,0,0,0,0,0,0];
+      for (let sq = 0; sq < 64; sq++) { const p = bd[sq]; if (p && p.piece === 'P') pawnFiles[sq % 8]++; }
+      let c = 0;
+      for (let sq = 0; sq < 64; sq++) { const p = bd[sq]; if (p && p.piece === 'R' && p.color === me && pawnFiles[sq % 8] === 0) c++; }
+      return c;
+    }
+  },
+  rooksSeventh: {
+    label: 'Rooks on the 7th rank', needsAtk: false, k: 1,
+    fn(bd, ctx) {
+      const me = ctx.me, target = me === 'w' ? 1 : 6; // the enemy's 2nd rank
+      let c = 0;
+      for (let sq = 0; sq < 64; sq++) { const p = bd[sq]; if (p && p.piece === 'R' && p.color === me && ((sq / 8) | 0) === target) c++; }
+      return c;
+    }
+  },
+  developedPieces: {
+    label: 'Developed minor pieces', needsAtk: false, k: 2,
+    fn(bd, ctx) {
+      const me = ctx.me, back = me === 'w' ? 7 : 0;
+      let c = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (p && p.color === me && (p.piece === 'N' || p.piece === 'B') && ((sq / 8) | 0) !== back) c++;
+      }
+      return c;
+    }
+  },
+
+  // ── Threats & square control ───────────────────────────────────────────────
+  enemyHanging: {
+    label: 'Loose enemy pieces', needsAtk: true, k: 1,
+    fn(bd, ctx) {
+      const me = ctx.me, opp = ctx.opp, atk = ctx.atk;
+      if (!atk) return 0;
+      let c = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (!p || p.color !== opp || p.piece === 'K' || !atk[sq]) continue;
+        if ((atk[sq][me] || []).length > 0 && (atk[sq][opp] || []).length === 0) c++;
+      }
+      return c;
+    }
+  },
+  defendedPieces: {
+    label: 'My defended pieces', needsAtk: true, k: 3,
+    fn(bd, ctx) {
+      const me = ctx.me, atk = ctx.atk;
+      if (!atk) return 0;
+      let c = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (!p || p.color !== me || p.piece === 'K' || !atk[sq]) continue;
+        if ((atk[sq][me] || []).length > 0) c++;
+      }
+      return c;
+    }
+  },
+  enemyWeakSquares: {
+    label: 'Holes in enemy camp', needsAtk: true, k: 5,
+    fn(bd, ctx) {
+      const me = ctx.me, opp = ctx.opp, atk = ctx.atk;
+      if (!atk) return 0;
+      let c = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        if (bd[sq]) continue;
+        const r = (sq / 8) | 0;
+        const inEnemyHalf = me === 'w' ? (r <= 3) : (r >= 4);
+        if (inEnemyHalf && atk[sq] && (atk[sq][opp] || []).length === 0) c++;
+      }
+      return c;
+    }
+  },
+  centerControl: {
+    label: 'Central square control', needsAtk: true, k: 3,
+    fn(bd, ctx) {
+      const me = ctx.me, atk = ctx.atk;
+      if (!atk) return 0;
+      let c = 0;
+      for (const s of [27, 28, 35, 36]) if (atk[s]) c += (atk[s][me] || []).length; // d5 e5 d4 e4
+      return c;
+    }
+  },
+  spaceControl: {
+    label: 'Space in enemy half', needsAtk: true, k: 5,
+    fn(bd, ctx) {
+      const me = ctx.me, atk = ctx.atk;
+      if (!atk) return 0;
+      let c = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        if (bd[sq]) continue;
+        const r = (sq / 8) | 0;
+        const inEnemyHalf = me === 'w' ? (r <= 3) : (r >= 4);
+        if (inEnemyHalf && atk[sq] && (atk[sq][me] || []).length > 0) c++;
+      }
+      return c;
     }
   }
 };

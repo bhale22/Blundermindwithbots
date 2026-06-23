@@ -158,3 +158,40 @@ test('zero budget neutralizes a custom control', () => {
   const out = ctx.applyMoveAttractors({ e2e4: 0.5, g1f3: 0.5 });
   assert.equal(out.e2e4, out.g1f3);
 });
+
+// ── Expanded metric catalog ──────────────────────────────────────────────────
+
+test('material: counts net piece value from the bot side', () => {
+  assert.equal(metric('material', '4k3/8/8/8/8/8/8/3QK3 w - - 0 1'), 9); // lone extra queen
+});
+
+test('mobility: a rook on an open board reaches 14 squares', () => {
+  assert.equal(metric('mobility', '8/8/8/3R4/8/8/8/8 w - - 0 1'), 14);
+});
+
+test('givesCheck: 1 when the enemy king is in check, else 0', () => {
+  assert.equal(metric('givesCheck', '4k3/8/8/8/8/8/8/4R3 w - - 0 1'), 1); // Re1 checks Ke8
+  assert.equal(metric('givesCheck', '4k3/8/8/8/8/8/8/R3K3 w - - 0 1'), 0);
+});
+
+test('doubledPawns / bishopPair / rooksOpenFiles', () => {
+  assert.equal(metric('doubledPawns', '8/8/8/8/3P4/8/3P4/8 w - - 0 1'), 1);
+  assert.equal(metric('bishopPair', '8/8/8/8/8/8/8/2B2B2 w - - 0 1'), 1);
+  assert.equal(metric('bishopPair', '8/8/8/8/8/8/8/2B5 w - - 0 1'), 0);
+  assert.equal(metric('rooksOpenFiles', '8/8/8/8/8/8/8/R7 w - - 0 1'), 1);
+  assert.equal(metric('rooksOpenFiles', 'P7/8/8/8/8/8/8/R7 w - - 0 1'), 0); // a-pawn blocks the file
+});
+
+test('centerControl / enemyHanging / kingDanger', () => {
+  assert.equal(metric('centerControl', '8/8/8/8/8/5N2/8/8 w - - 0 1'), 2);  // Nf3 hits d4 + e5
+  assert.equal(metric('enemyHanging', '8/8/8/8/8/8/n7/R7 w - - 0 1'), 1);   // Ra1 wins loose Na2
+  assert.equal(metric('kingDanger', '4r3/8/8/8/8/8/8/4K3 w - - 0 1'), 2);   // Re8 hits e1 + e2
+});
+
+test('a givesCheck control boosts a checking move over a quiet one', () => {
+  reweightSetup([{ id: 'k', name: 'Checks', metric: 'givesCheck', phase: 'all', result: 'any', value: 5 }]);
+  ctx.board = pos('4k3/8/8/8/8/8/8/3QK3 w - - 0 1'); // Qd1, Ke1 vs Ke8
+  ctx.atkMap = atkOf(ctx.board);
+  const out = ctx.applyMoveAttractors({ d1d8: 0.5, d1d2: 0.5 }); // Qd8+ vs quiet Qd2
+  assert.ok(out.d1d8 > out.d1d2, `Qd8+ ${out.d1d8} should exceed Qd2 ${out.d1d2}`);
+});
