@@ -1129,11 +1129,8 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
                 <div class="ctrl-hint" id="blunder-floor-hint">Bot will not play any single move costing more than this centipawn loss. Raised automatically if below Max CP Budget.</div>
               </div>
 
-            </div>
-            <!-- RIGHT: Move quality range (top, for visibility) + strategic attractors -->
-            <div>
               <!-- Move quality range — only shown for Maia/LC+Maia/Hybrid -->
-              <div id="move-quality-range">
+              <div id="move-quality-range" style="margin-top:14px;">
               <div class="dlbl"><span>Move quality range</span></div>
               <div class="day-vals">
                 <span>Exclude lowest: <span id="day-lower-val">0</span>%</span>
@@ -1145,21 +1142,24 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
                 <input type="range" id="day-upper" min="0" max="100" value="100" step="1" oninput="onDaySlider()">
               </div>
               <div class="dual-range-labels"><span>← Bad Day, lowest probability moves</span><span>Good Day, Highest Probability moves →</span></div>
-              <div class="ctrl-hint" style="margin-top:6px;">Sets the Maia3 probability band. Good Day = best moves; Bad Day = lower-probability alternatives. Forced moves (≥95%) are never skipped.</div>
+              <div class="ctrl-hint" style="margin-top:6px;">Sets the Maia3 probability band. Good Day = best moves; Bad Day = lower-probability alternatives.</div>
               </div><!-- /move-quality-range -->
+
+            </div>
+            <!-- RIGHT: personality fingerprint (top) + custom-control entry -->
+            <div>
+              <!-- Personality fingerprint (radar) -->
+              <div class="dlbl"><span>Personality fingerprint</span></div>
+              <div class="radar-wrap">
+                <canvas id="radar-canvas" width="320" height="260"></canvas>
+                <div class="radar-hint">drag nodes or click axis to set value</div>
+              </div>
 
               <!-- Custom-control entry — the full builder lives on its own tab -->
               <div class="dlbl" style="margin-top:14px;"><span>Custom controls</span></div>
               <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-bottom:8px;">Build your own attractor — pick a board feature, a phase, and a direction. Opens the Custom Controls tab.</div>
               <button type="button" onclick="addCustomControlAndGo()"
                 style="background:rgba(0,0,0,0.25);border:1px dashed var(--amber);color:var(--amber);font-family:var(--font-u);font-size:9px;letter-spacing:0.08em;padding:6px 10px;border-radius:4px;cursor:pointer;width:100%;">+ Add custom control</button>
-
-              <!-- Personality fingerprint (radar) -->
-              <div class="dlbl" style="margin-top:14px;"><span>Personality fingerprint</span></div>
-              <div class="radar-wrap">
-                <canvas id="radar-canvas" width="320" height="260"></canvas>
-                <div class="radar-hint">drag nodes or click axis to set value</div>
-              </div>
             </div>
           </div>
         </div>
