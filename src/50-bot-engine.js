@@ -520,6 +520,27 @@ const _ccMetrics = {
       }
       return c;
     }
+  },
+
+  // ── Mirrors of the built-in attractors (so they can be phase/result-gated) ──
+  // Fort Knox: total friendly defender coverage over all of the bot's pieces.
+  pieceDefense: {
+    label: 'Piece defense (Fort Knox)', needsAtk: true, k: 3,
+    fn(bd, ctx) {
+      const me = ctx.me, atk = ctx.atk;
+      if (!atk) return 0;
+      let total = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (p && p.color === me && atk[sq]) total += (atk[sq][me] || []).length;
+      }
+      return total;
+    }
+  },
+  // Structure: negative of (islands + doubled + isolated) — higher = tighter.
+  pawnStructure: {
+    label: 'Pawn structure health', needsAtk: false, k: 1,
+    fn(bd, ctx) { return -_pawnStructurePenalty(bd, ctx.me); }
   }
 };
 
