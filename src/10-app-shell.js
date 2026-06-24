@@ -458,24 +458,30 @@ function openHelp(key, e) {
 const PIECE_VALUE = {K:0,Q:9,R:5,B:3,N:3,P:1};
 
 const IND = {
-  checkthreats:{on:false,pre:true, pressing:false},
-  threats:     {on:false,pre:true, pressing:false},
+  // Indicators INITIALIZE to preview-on (`pre:true`) so a first-time user sees
+  // them in action while exploring a move and learns how they work. Nothing is
+  // always-on (`on:false`). ibRefreshAll() syncs every button's highlight to
+  // these flags, so what the buttons show always matches what actually renders —
+  // and the user can switch any of them off. A few overlays init off because
+  // they're noisier or gated by their own checkbox (xray/weak*/battery).
+  checkthreats:  {on:false,pre:true, pressing:false},
+  threats:       {on:false,pre:true, pressing:false},
   // captures merged into threats button
-  unprotected: {on:false,pre:true, pressing:false},
-  pins:        {on:false,pre:true, pressing:false},
-  forksw:      {on:false,pre:true, pressing:false}, // hold-only, no exploration
-  forksb:      {on:false,pre:true, pressing:false},
-  discoveredopp:{on:false,pre:true, pressing:false},  // opponent threats (always-on)
-  discoveredself:{on:false,pre:true, pressing:false}, // own discoveries (hold-only)
-  xray:        {on:false,pre:false,pressing:false},
-  overloaded:  {on:false,pre:true, pressing:false},
-  weakw:       {on:false,pre:false,pressing:false},
-  weakb:       {on:false,pre:false,pressing:false},
-  rings:       {on:false,pre:true, pressing:false},
-  counts:      {on:false,pre:true, pressing:false},
-  influence:   {on:false,pre:true, pressing:false},
-  battery:     {on:false,pre:false,pressing:false},
-  legal:       {on:false,pre:true, pressing:false},
+  unprotected:   {on:false,pre:true, pressing:false},
+  pins:          {on:false,pre:true, pressing:false},
+  forksw:        {on:false,pre:true, pressing:false},
+  forksb:        {on:false,pre:true, pressing:false},
+  discoveredopp: {on:false,pre:true, pressing:false},
+  discoveredself:{on:false,pre:true, pressing:false},
+  xray:          {on:false,pre:false,pressing:false},
+  overloaded:    {on:false,pre:true, pressing:false},
+  weakw:         {on:false,pre:false,pressing:false},
+  weakb:         {on:false,pre:false,pressing:false},
+  rings:         {on:false,pre:true, pressing:false},
+  counts:        {on:false,pre:true, pressing:false},
+  influence:     {on:false,pre:true, pressing:false},
+  battery:       {on:false,pre:false,pressing:false},
+  legal:         {on:false,pre:true, pressing:false},
 };
 
 function indActive(key) {
@@ -517,14 +523,15 @@ function ibTogglePre(key){
 }
 function ibUpdateUI(key){
   const ind=IND[key]; if(!ind) return;
-  const el=document.getElementById('ib-'+key); if(!el) return;
-  const isPre=!!previewBoard||currentlyPreviewing;
-  el.classList.remove('on','pre','pressing');
-  if(ind.pressing) el.classList.add('pressing');
-  else if(ind.on) el.classList.add('on');        // always-on: full green
-  else if(ind.pre && isPre) el.classList.add('pre'); // exploration-only: subtle
+  // Keep the "Show During Exploration" (pre) button highlight in sync with the
+  // variable first, so it always matches even if the main button is absent.
   const preBtn=document.getElementById('pre-'+key);
   if(preBtn) preBtn.classList.toggle('active',ind.pre);
+  const el=document.getElementById('ib-'+key); if(!el) return;
+  el.classList.remove('on','pre','pressing');
+  if(ind.pressing) el.classList.add('pressing');
+  else if(ind.on) el.classList.add('on');  // always-on: full green
+  else if(ind.pre) el.classList.add('pre'); // preview mode: persistent subtle highlight + status dot
 }
 function ibRefreshAll(){Object.keys(IND).forEach(k=>ibUpdateUI(k));}
 
