@@ -575,6 +575,24 @@ function _ccResultMatch(result, evalCp) {
   return true;
 }
 
+// "Under time pressure" = a side's clock has entered the scramble zone: below
+// 30 s, or below 15% of its starting time (covers blitz through classical).
+// null / untimed clocks are never under pressure.
+function _ccUnderPressure(clockMs) {
+  if (clockMs === null || clockMs === undefined) return false;
+  if (clockMs < 30000) return true;
+  return (typeof botStartClockMs === 'number' && botStartClockMs > 0) && clockMs < botStartClockMs * 0.15;
+}
+function _ccPressureMatch(cond, botClock, oppClock) {
+  if (!cond || cond === 'any') return true;
+  const meP  = _ccUnderPressure(botClock);
+  const oppP = _ccUnderPressure(oppClock);
+  if (cond === 'self')   return meP;
+  if (cond === 'opp')    return oppP;
+  if (cond === 'either') return meP || oppP;
+  return true;
+}
+
 function applyMoveAttractors(moveProbs) {
   if (!moveProbs || !Object.keys(moveProbs).length) return moveProbs;
 
@@ -589,8 +607,12 @@ function applyMoveAttractors(moveProbs) {
     .filter(c => c && c.value && _ccMetrics[c.metric]);
   const _ccPhase  = customControls.length ? _botGamePhase() : null;
   const _ccEval   = (typeof sfCplxEval !== 'undefined') ? sfCplxEval : null;
+  const _ccBotClk = (typeof botClockMs === 'function') ? botClockMs() : null;
+  const _ccOppClk = (typeof botOppClockMs !== 'undefined') ? botOppClockMs : null;
   const activeCC  = customControls.filter(c =>
-    _ccPhaseMatch(c.phase, _ccPhase) && _ccResultMatch(c.result, _ccEval));
+    _ccPhaseMatch(c.phase, _ccPhase) &&
+    _ccResultMatch(c.result, _ccEval) &&
+    _ccPressureMatch(c.pressure, _ccBotClk, _ccOppClk));
   const hasCustom = activeCC.length > 0;
 
   const luckVal       = attrVals['luck']       || 0;

@@ -409,19 +409,26 @@ canvas{display:block;background:transparent;}
 .leg-dot{width:7px;height:7px;border-radius:50%;background:var(--amber);border:1.5px solid var(--carbon);flex-shrink:0;}
 .formula-box{margin-top:10px;padding:10px 12px;background:var(--carbon-surface);border:0.5px solid var(--border);border-radius:var(--r);border-left:2px solid var(--amber-dim);}
 /* Custom controls — themed to match the rest of the panel */
-.cc-wrap{max-width:440px;}
+/* One control per row: Variable · Game phase · Advantage · Time pressure · Strength · remove */
+.cc-wrap{--cc-cols:minmax(118px,1.5fr) minmax(76px,0.9fr) minmax(82px,0.95fr) minmax(96px,1.1fr) minmax(150px,1.8fr) 22px;width:100%;}
 .cc-empty{font-family:var(--font-m);font-size:8px;color:var(--text-dim);opacity:0.75;padding:2px 0 6px;}
-.cc-card{background:var(--carbon-surface);border:0.5px solid var(--border);border-left:2px solid var(--amber-dim);border-radius:var(--r);padding:9px 10px;margin-bottom:8px;}
-.cc-row{display:flex;gap:6px;align-items:center;margin-bottom:6px;}
-.cc-field{appearance:none;-webkit-appearance:none;background:var(--carbon-mid);border:0.5px solid var(--border);color:var(--text-secondary);font-family:var(--font-m);font-size:9px;padding:4px 6px;border-radius:2px;outline:none;transition:border-color 0.15s;}
+.cc-headers{display:grid;grid-template-columns:var(--cc-cols);gap:6px;align-items:end;padding:0 8px 4px;}
+.cc-headers span{font-family:var(--font-m);font-size:7px;letter-spacing:0.07em;text-transform:uppercase;color:var(--text-dim);}
+.cc-row2{display:grid;grid-template-columns:var(--cc-cols);gap:6px;align-items:center;background:var(--carbon-surface);border:0.5px solid var(--border);border-left:2px solid var(--amber-dim);border-radius:var(--r);padding:6px 8px;margin-bottom:6px;}
+.cc-field{appearance:none;-webkit-appearance:none;width:100%;min-width:0;background:var(--carbon-mid);border:0.5px solid var(--border);color:var(--text-secondary);font-family:var(--font-m);font-size:9px;padding:4px 6px;border-radius:2px;outline:none;transition:border-color 0.15s;}
 .cc-field:focus{border-color:var(--amber);}
-.cc-name{flex:1;font-family:var(--font-u);}
-.cc-select{cursor:pointer;padding-right:18px;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'><path d='M0 0l4 4 4-4' fill='none' stroke='%23717a8a' stroke-width='1.2'/></svg>");background-repeat:no-repeat;background-position:right 6px center;}
+.cc-select{cursor:pointer;padding-right:16px;text-overflow:ellipsis;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'><path d='M0 0l4 4 4-4' fill='none' stroke='%23717a8a' stroke-width='1.2'/></svg>");background-repeat:no-repeat;background-position:right 5px center;}
 .cc-select option,.cc-select optgroup{background:var(--carbon-mid);color:var(--text-secondary);}
-.cc-del{flex-shrink:0;width:20px;height:20px;line-height:1;font-size:13px;background:none;border:0.5px solid var(--border);border-radius:2px;color:var(--text-dim);cursor:pointer;transition:all 0.15s;}
+.cc-slidecell{display:flex;align-items:center;gap:5px;min-width:0;}
+.cc-slidecell .attr-slider{flex:1;min-width:46px;}
+.cc-mm{font-family:var(--font-m);font-size:6.5px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px;flex-shrink:1;}
+.cc-sval{font-family:var(--font-m);font-size:8px;color:var(--amber);min-width:24px;text-align:right;flex-shrink:0;}
+.cc-del{justify-self:center;width:20px;height:20px;line-height:1;font-size:13px;background:none;border:0.5px solid var(--border);border-radius:2px;color:var(--text-dim);cursor:pointer;transition:all 0.15s;}
 .cc-del:hover{border-color:var(--amber);color:var(--amber);}
 .cc-add-btn{display:inline-block;margin-top:8px;padding:6px 14px;font-family:var(--font-u);font-size:9px;letter-spacing:0.06em;background:var(--carbon-surface);border:0.5px dashed var(--amber-dim);border-radius:2px;color:var(--amber);cursor:pointer;transition:all 0.15s;}
 .cc-add-btn:hover{background:var(--carbon-raise);border-color:var(--amber);}
+/* Keep all Personality inner-tab panes the same height so switching doesn't resize */
+#sec-attract .itab-pane{min-height:460px;}
 .formula-title{font-family:var(--font-m);font-size:8px;letter-spacing:0.14em;text-transform:uppercase;color:var(--amber-dim);margin-bottom:5px;}
 .formula-body{font-family:var(--font-m);font-size:9px;color:var(--text-secondary);line-height:1.8;}
 .formula-hl{color:var(--amber-bright);}
@@ -1751,6 +1758,8 @@ const CUSTOM_METRICS = [
 
 // Optional game-state gate for a custom control (uses the Stockfish eval probe).
 const CUSTOM_RESULTS = [['any','Any result'],['winning','When winning'],['losing','When losing'],['equal','When equal']];
+// Optional clock gate — fires only when a side is in time pressure (<30 s or <15% of start).
+const CUSTOM_PRESSURE = [['any','Any clock'],['self','Bot time-pressured'],['opp','Opp time-pressured'],['either','Either side']];
 
 // ── Personalities ────────────────────────────────────────────
 // Add a new personality: one entry here, nothing else changes
@@ -5590,7 +5599,7 @@ function getBotConfig(){
     dayUpper:        dayUpper,
     attractorValues: {...attractorValues},
     pieceValues:     {...pieceValues},
-    customControls:  customControls.map(c => ({ id:c.id, name:c.name, metric:c.metric, phase:c.phase, result:c.result||'any', value:c.value })),
+    customControls:  customControls.map(c => ({ id:c.id, name:c.name, metric:c.metric, phase:c.phase, result:c.result||'any', pressure:c.pressure||'any', value:c.value })),
     timingMode:        _getTimingMode(),
     fixedDelayMs:      parseInt(document.getElementById('r-fixed')?.value     || '5') * 1000,
     mirrorOffsetPct:   parseInt(document.getElementById('r-mirror')?.value    || '0'),
@@ -5711,12 +5720,13 @@ function applyBotConfig(cfg){
       ? cfg.customControls
           .filter(c => c && _ccMeta && CUSTOM_METRICS.some(m => m.id === c.metric))
           .map(c => ({
-            id:     c.id || ('cc' + Date.now().toString(36) + (++_ccSeq)),
-            name:   c.name || _ccMeta(c.metric).name,
-            metric: c.metric,
-            phase:  c.phase || 'all',
-            result: c.result || 'any',
-            value:  +c.value || 0
+            id:       c.id || ('cc' + Date.now().toString(36) + (++_ccSeq)),
+            name:     c.name || _ccMeta(c.metric).name,
+            metric:   c.metric,
+            phase:    c.phase || 'all',
+            result:   c.result || 'any',
+            pressure: c.pressure || 'any',
+            value:    +c.value || 0
           }))
       : [];
     renderCustomControls();
@@ -6634,7 +6644,8 @@ function renderCustomControls(){
   const PHASES = [['all','All phases'],['opening','Opening'],['middlegame','Middlegame'],['endgame','Endgame']];
   const cats = [];
   CUSTOM_METRICS.forEach(mm => { if(!cats.includes(mm.cat)) cats.push(mm.cat); });
-  container.innerHTML = customControls.map(c => {
+  const header = `<div class="cc-headers"><span>Variable</span><span>Game phase</span><span>Advantage</span><span>Time pressure</span><span>Strength</span><span></span></div>`;
+  container.innerHTML = header + customControls.map(c => {
     const m = _ccMeta(c.metric);
     const metricOpts = cats.map(cat =>
       `<optgroup label="${cat}">` +
@@ -6645,30 +6656,22 @@ function renderCustomControls(){
       `<option value="${v}" ${v===c.phase?'selected':''}>${l}</option>`).join('');
     const resultOpts = CUSTOM_RESULTS.map(([v,l]) =>
       `<option value="${v}" ${v===(c.result||'any')?'selected':''}>${l}</option>`).join('');
+    const pressureOpts = CUSTOM_PRESSURE.map(([v,l]) =>
+      `<option value="${v}" ${v===(c.pressure||'any')?'selected':''}>${l}</option>`).join('');
     return `
-    <div class="cc-card" data-cc="${c.id}">
-      <div class="cc-row">
-        <input class="cc-field cc-name" value="${_ccEsc(c.name || m.name)}" oninput="onCustomControlName('${c.id}',this.value)">
-        <button type="button" class="cc-del" onclick="removeCustomControl('${c.id}')" title="Remove control">×</button>
+    <div class="cc-row2" data-cc="${c.id}">
+      <select class="cc-field cc-select" title="${_ccEsc(m.desc)}" onchange="onCustomControlMetric('${c.id}',this.value)">${metricOpts}</select>
+      <select class="cc-field cc-select" onchange="onCustomControlPhase('${c.id}',this.value)">${phaseOpts}</select>
+      <select class="cc-field cc-select" onchange="onCustomControlResult('${c.id}',this.value)">${resultOpts}</select>
+      <select class="cc-field cc-select" onchange="onCustomControlPressure('${c.id}',this.value)">${pressureOpts}</select>
+      <div class="cc-slidecell">
+        <span class="cc-mm" title="${_ccEsc(m.min)}">${m.min}</span>
+        <input class="attr-slider" type="range" min="-5" max="5" step="1" value="${c.value||0}"
+          oninput="onCustomControlValue('${c.id}',this.value)">
+        <span class="cc-mm" title="${_ccEsc(m.max)}">${m.max}</span>
+        <span class="attr-val cc-sval" id="ccval-${c.id}">—</span>
       </div>
-      <div class="cc-row">
-        <select class="cc-field cc-select" style="flex:1;" onchange="onCustomControlMetric('${c.id}',this.value)">${metricOpts}</select>
-      </div>
-      <div class="cc-row">
-        <select class="cc-field cc-select" style="flex:1;" onchange="onCustomControlPhase('${c.id}',this.value)">${phaseOpts}</select>
-        <select class="cc-field cc-select" style="flex:1;" onchange="onCustomControlResult('${c.id}',this.value)">${resultOpts}</select>
-      </div>
-      <div class="attractor-row">
-        <span class="attr-left attr-left-narrow">${m.min}</span>
-        <div class="attr-slider-wrap">
-          <div class="attr-center-tick"></div>
-          <input class="attr-slider" type="range" min="-5" max="5" step="1" value="${c.value||0}"
-            oninput="onCustomControlValue('${c.id}',this.value)">
-        </div>
-        <span class="attr-right attr-right-narrow">${m.max}</span>
-        <span class="attr-val" id="ccval-${c.id}">—</span>
-      </div>
-      <div class="attr-desc">${m.desc}</div>
+      <button type="button" class="cc-del" onclick="removeCustomControl('${c.id}')" title="Remove control">×</button>
     </div>`;
   }).join('');
   updateAttrCpDisplays();
@@ -6678,7 +6681,7 @@ function addCustomControl(){
   const m = CUSTOM_METRICS[0];
   customControls.push({
     id: 'cc' + Date.now().toString(36) + (++_ccSeq),
-    name: m.name, metric: m.id, phase: 'all', result: 'any', value: 0
+    name: m.name, metric: m.id, phase: 'all', result: 'any', pressure: 'any', value: 0
   });
   renderCustomControls();
   _ccDirty();
@@ -6717,6 +6720,11 @@ function onCustomControlPhase(id, val){
 function onCustomControlResult(id, val){
   const c = _ccFind(id); if(!c) return;
   c.result = val;
+  _ccDirty();
+}
+function onCustomControlPressure(id, val){
+  const c = _ccFind(id); if(!c) return;
+  c.pressure = val;
   _ccDirty();
 }
 function onCustomControlName(id, val){

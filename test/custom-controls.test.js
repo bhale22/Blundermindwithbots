@@ -106,6 +106,20 @@ test('_ccPhaseMatch and _ccResultMatch', () => {
   assert.equal(ctx._ccResultMatch('equal', 10), true);
 });
 
+test('_ccUnderPressure and _ccPressureMatch (time-pressure gate)', () => {
+  ctx.botStartClockMs = 300000;                  // 5-minute game
+  assert.equal(ctx._ccUnderPressure(null), false);    // untimed
+  assert.equal(ctx._ccUnderPressure(20000), true);    // < 30 s
+  assert.equal(ctx._ccUnderPressure(40000), true);    // < 15% of start (45 s)
+  assert.equal(ctx._ccUnderPressure(60000), false);   // above both thresholds
+  assert.equal(ctx._ccPressureMatch('any',    999999, 999999), true);
+  assert.equal(ctx._ccPressureMatch('self',   10000,  999999), true);
+  assert.equal(ctx._ccPressureMatch('self',   999999, 10000),  false);
+  assert.equal(ctx._ccPressureMatch('opp',    999999, 10000),  true);
+  assert.equal(ctx._ccPressureMatch('either', 999999, 10000),  true);
+  assert.equal(ctx._ccPressureMatch('either', 999999, 999999), false);
+});
+
 // ── Full reweight through applyMoveAttractors ────────────────────────────────
 
 function reweightSetup(controls) {
