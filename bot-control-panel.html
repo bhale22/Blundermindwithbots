@@ -410,7 +410,7 @@ canvas{display:block;background:transparent;}
 .formula-box{margin-top:10px;padding:10px 12px;background:var(--carbon-surface);border:0.5px solid var(--border);border-radius:var(--r);border-left:2px solid var(--amber-dim);}
 /* Custom controls — themed to match the rest of the panel */
 /* One control per row: Variable · Game phase · Advantage · Time pressure · Strength · remove */
-.cc-wrap{--cc-cols:minmax(118px,1.5fr) minmax(76px,0.9fr) minmax(82px,0.95fr) minmax(96px,1.1fr) minmax(150px,1.8fr) 22px;width:100%;}
+.cc-wrap{--cc-cols:minmax(82px,1fr) minmax(56px,0.58fr) minmax(62px,0.64fr) minmax(76px,0.84fr) minmax(195px,2.8fr) 22px;width:100%;}
 .cc-empty{font-family:var(--font-m);font-size:8px;color:var(--text-dim);opacity:0.75;padding:2px 0 6px;}
 .cc-headers{display:grid;grid-template-columns:var(--cc-cols);gap:6px;align-items:end;padding:0 8px 4px;}
 .cc-headers span{font-family:var(--font-m);font-size:7px;letter-spacing:0.07em;text-transform:uppercase;color:var(--text-dim);}
@@ -420,8 +420,8 @@ canvas{display:block;background:transparent;}
 .cc-select{cursor:pointer;padding-right:16px;text-overflow:ellipsis;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'><path d='M0 0l4 4 4-4' fill='none' stroke='%23717a8a' stroke-width='1.2'/></svg>");background-repeat:no-repeat;background-position:right 5px center;}
 .cc-select option,.cc-select optgroup{background:var(--carbon-mid);color:var(--text-secondary);}
 .cc-slidecell{display:flex;align-items:center;gap:5px;min-width:0;}
-.cc-slidecell .attr-slider{flex:1;min-width:46px;}
-.cc-mm{font-family:var(--font-m);font-size:6.5px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px;flex-shrink:1;}
+.cc-slidecell .attr-slider{flex:1;min-width:52px;}
+.cc-mm{font-family:var(--font-m);font-size:6.5px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px;flex-shrink:1;}
 .cc-sval{font-family:var(--font-m);font-size:8px;color:var(--amber);min-width:24px;text-align:right;flex-shrink:0;}
 .cc-del{justify-self:center;width:20px;height:20px;line-height:1;font-size:13px;background:none;border:0.5px solid var(--border);border-radius:2px;color:var(--text-dim);cursor:pointer;transition:all 0.15s;}
 .cc-del:hover{border-color:var(--amber);color:var(--amber);}
@@ -431,7 +431,9 @@ canvas{display:block;background:transparent;}
 #sec-attract .itab-pane{min-height:460px;}
 
 /* ════════════════════════════════════════════════════════════════
-   READABILITY THEMES — Default (current) · Readable · High-vis
+   READABILITY THEMES — Standard (default) · Stylized · High-vis
+   Internal keys: readable = "Standard" (the initial look),
+   default = "Stylized" (original), highvis = "High-vis".
    Picker lives in the header; choice persists in localStorage.
 ════════════════════════════════════════════════════════════════ */
 .rs-picker{display:flex;align-items:center;gap:4px;align-self:center;flex-shrink:0;}
@@ -820,8 +822,8 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
   <div class="header-line"></div>
   <div class="rs-picker" role="group" aria-label="Text readability">
     <span class="rs-label">Text</span>
-    <button class="rs-btn active" data-rs="default" onclick="setReadability('default')" title="Original look">Default</button>
-    <button class="rs-btn" data-rs="readable" onclick="setReadability('readable')" title="Brighter, slightly larger text">Readable</button>
+    <button class="rs-btn active" data-rs="readable" onclick="setReadability('readable')" title="Cleaner, brighter standard text">Standard</button>
+    <button class="rs-btn" data-rs="default" onclick="setReadability('default')" title="Original stylized look">Stylized</button>
     <button class="rs-btn" data-rs="highvis" onclick="setReadability('highvis')" title="Larger, high-contrast text for low vision">High-vis</button>
   </div>
 </div>
@@ -7716,8 +7718,8 @@ function setReadability(mode){
   try { localStorage.setItem('bm_readability', mode); } catch(e){}
 }
 function _initReadability(){
-  let saved = 'default';
-  try { saved = localStorage.getItem('bm_readability') || 'default'; } catch(e){}
+  let saved = 'readable'; // "Standard" is the initial look
+  try { saved = localStorage.getItem('bm_readability') || 'readable'; } catch(e){}
   setReadability(saved);
 }
 
