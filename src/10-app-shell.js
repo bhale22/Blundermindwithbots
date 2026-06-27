@@ -63,6 +63,9 @@ let botOpeningConfig = {
   // repertoire-specific (arrays per color)
   white: [],
   black: [],
+  // per-color opening mode (new panel): 'off' | 'mainline' | 'repertoire'
+  modeWhite: 'off',
+  modeBlack: 'off',
   strictness: 0.8,
 };
 // 0–100: percentage of games where the bot follows its preferred opening.
