@@ -429,6 +429,72 @@ canvas{display:block;background:transparent;}
 .cc-add-btn:hover{background:var(--carbon-raise);border-color:var(--amber);}
 /* Keep all Personality inner-tab panes the same height so switching doesn't resize */
 #sec-attract .itab-pane{min-height:460px;}
+
+/* ════════════════════════════════════════════════════════════════
+   READABILITY THEMES — Default (current) · Readable · High-vis
+   Picker lives in the header; choice persists in localStorage.
+════════════════════════════════════════════════════════════════ */
+.rs-picker{display:flex;align-items:center;gap:4px;align-self:center;flex-shrink:0;}
+.rs-label{font-family:var(--font-m);font-size:8px;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-dim);margin-right:2px;}
+.rs-btn{font-family:var(--font-m);font-size:8.5px;letter-spacing:0.04em;padding:4px 9px;background:var(--carbon-surface);border:0.5px solid var(--border);border-radius:2px;color:var(--text-dim);cursor:pointer;transition:all 0.15s;}
+.rs-btn:hover{color:var(--text-secondary);border-color:var(--border-amber);}
+.rs-btn.active{background:var(--carbon-raise);border-color:var(--amber);color:var(--amber);}
+
+/* READABLE — minimal change: brighter dim text, stronger borders, slightly larger/bolder */
+body.rs-readable{
+  --text-primary:#f1efe9;
+  --text-secondary:#c6cedb;
+  --text-dim:#97a2b6;
+  --border:rgba(255,255,255,0.13);
+  --amber-dim:#a87a28;
+  font-weight:400;
+}
+body.rs-readable .ctrl-hint,
+body.rs-readable .attr-desc,
+body.rs-readable .formula-body,
+body.rs-readable .cc-headers span,
+body.rs-readable .cc-mm,
+body.rs-readable .sec-sub{font-size:9px;}
+body.rs-readable [style*="font-size:6px"]{font-size:8px !important;}
+body.rs-readable [style*="font-size:6.5px"]{font-size:8.5px !important;}
+body.rs-readable [style*="font-size:7px"]{font-size:8.5px !important;}
+body.rs-readable [style*="font-size:8px"]{font-size:9px !important;}
+body.rs-readable [style*="font-size:8.5px"]{font-size:9.5px !important;}
+
+/* HIGH-VIS — low vision: high-contrast near-white text, larger + bolder, looser spacing */
+body.rs-highvis{
+  --text-primary:#ffffff;
+  --text-secondary:#e6ebf2;
+  --text-dim:#c7cfdc;
+  --border:rgba(255,255,255,0.24);
+  --border-amber:rgba(232,170,64,0.55);
+  --amber:#f0b550;
+  --amber-bright:#ffc56a;
+  --amber-dim:#caa040;
+  font-weight:500;
+  letter-spacing:0.01em;
+}
+body.rs-highvis .ctrl-hint,
+body.rs-highvis .attr-desc,
+body.rs-highvis .formula-body,
+body.rs-highvis .cc-headers span,
+body.rs-highvis .cc-mm,
+body.rs-highvis .sec-sub,
+body.rs-highvis .dlbl,
+body.rs-highvis .ctrl-lbl,
+body.rs-highvis .ctrl-val,
+body.rs-highvis .attr-left,
+body.rs-highvis .attr-right,
+body.rs-highvis .day-vals,
+body.rs-highvis .dual-range-labels{font-size:11px !important;line-height:1.45;}
+body.rs-highvis .cc-field,body.rs-highvis .cc-select{font-size:12px !important;}
+body.rs-highvis [style*="font-size:6px"]{font-size:11px !important;}
+body.rs-highvis [style*="font-size:6.5px"]{font-size:11px !important;}
+body.rs-highvis [style*="font-size:7px"]{font-size:11px !important;}
+body.rs-highvis [style*="font-size:8px"]{font-size:12px !important;}
+body.rs-highvis [style*="font-size:8.5px"]{font-size:12px !important;}
+body.rs-highvis [style*="font-size:9px"]{font-size:13px !important;}
+body.rs-highvis [style*="font-size:10px"]{font-size:14px !important;}
 .formula-title{font-family:var(--font-m);font-size:8px;letter-spacing:0.14em;text-transform:uppercase;color:var(--amber-dim);margin-bottom:5px;}
 .formula-body{font-family:var(--font-m);font-size:9px;color:var(--text-secondary);line-height:1.8;}
 .formula-hl{color:var(--amber-bright);}
@@ -752,6 +818,12 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
     <div class="header-title">Opponent Profile</div>
   </div>
   <div class="header-line"></div>
+  <div class="rs-picker" role="group" aria-label="Text readability">
+    <span class="rs-label">Text</span>
+    <button class="rs-btn active" data-rs="default" onclick="setReadability('default')" title="Original look">Default</button>
+    <button class="rs-btn" data-rs="readable" onclick="setReadability('readable')" title="Brighter, slightly larger text">Readable</button>
+    <button class="rs-btn" data-rs="highvis" onclick="setReadability('highvis')" title="Larger, high-contrast text for low vision">High-vis</button>
+  </div>
 </div>
 
 <!-- ══════════════════════════════════════════
@@ -7634,7 +7706,23 @@ function scheduleDraw(){
 /* ══════════════════════════════════════════════════════════════
    INIT
 ══════════════════════════════════════════════════════════════ */
+/* ── Readability theme: Default · Readable · High-vis ── */
+function setReadability(mode){
+  if(mode !== 'readable' && mode !== 'highvis') mode = 'default';
+  document.body.classList.remove('rs-readable','rs-highvis');
+  if(mode === 'readable') document.body.classList.add('rs-readable');
+  else if(mode === 'highvis') document.body.classList.add('rs-highvis');
+  document.querySelectorAll('.rs-btn').forEach(b => b.classList.toggle('active', b.dataset.rs === mode));
+  try { localStorage.setItem('bm_readability', mode); } catch(e){}
+}
+function _initReadability(){
+  let saved = 'default';
+  try { saved = localStorage.getItem('bm_readability') || 'default'; } catch(e){}
+  setReadability(saved);
+}
+
 document.addEventListener('DOMContentLoaded', ()=>{
+  _initReadability();
   buildTimeGrid();
   renderTempGrid();
   buildSFPips('sf-pips');
