@@ -432,8 +432,17 @@ canvas{display:block;background:transparent;}
 
 /* Opening panel — per-colour columns; greyed when that colour isn't on Repertoire */
 .op-col{min-width:0;}
+.op-body{min-height:34px;}
 .op-rep{transition:opacity 0.15s;}
 .op-rep-disabled{opacity:0.4;pointer-events:none;filter:grayscale(0.4);}
+/* Main Line bar — compact one-line pills (DB · modern · depth), shared state */
+.ml-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.ml-pill{font-family:var(--font-m);font-size:9px;letter-spacing:0.03em;padding:5px 10px;background:var(--carbon-surface);border:0.5px solid var(--border);border-radius:2px;color:var(--text-secondary);cursor:pointer;transition:all 0.15s;white-space:nowrap;}
+.ml-pill:hover{border-color:var(--amber);color:var(--amber);}
+.ml-depth{display:flex;align-items:center;gap:4px;font-family:var(--font-m);color:var(--text-dim);}
+.ml-depth input{width:40px;background:var(--carbon-mid);border:0.5px solid var(--border);color:var(--text-secondary);font-family:var(--font-m);font-size:9px;padding:4px 5px;border-radius:2px;outline:none;text-align:center;}
+.ml-depth input:focus{border-color:var(--amber);}
+.ml-depth-lbl{font-size:7.5px;text-transform:uppercase;letter-spacing:0.08em;}
 
 /* ════════════════════════════════════════════════════════════════
    READABILITY THEMES — Standard (default) · Stylized · High-vis
@@ -1316,32 +1325,9 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
     <div class="panel">
 
       <div class="pr">
-        <!-- Shared book settings — apply to Main Line & Repertoire, both colours -->
+        <!-- Two colours side by side; each column's body (Main Line bar OR
+             repertoire search+list) is rendered by renderOpColumn(). -->
         <div class="panel-2col" style="align-items:start;">
-          <div>
-            <div class="dlbl"><span>Book source</span></div>
-            <div class="seg-row" id="db-source-seg">
-              <div class="seg-btn sel" data-v="masters" onclick="selSeg(this,'db-source-seg')">Masters DB</div>
-              <div class="seg-btn" data-v="lichess" onclick="selSeg(this,'db-source-seg')">Lichess DB</div>
-            </div>
-            <div class="tog-row" style="margin-top:10px;">
-              <div><div class="tog-lbl">Modern theory only</div><div class="tog-desc">Games since 2020</div></div>
-              <label class="tog"><input type="checkbox" id="cb-modern-theory"><div class="tog-track"><div class="tog-thumb"></div></div></label>
-            </div>
-          </div>
-          <div>
-            <div class="dlbl"><span>Max book depth — shared</span></div>
-            <div class="ctrl">
-              <span class="ctrl-lbl">Depth</span>
-              <input type="range" id="ob-bookdepth" min="5" max="40" value="20" step="1" oninput="sv(this,'v-bookdepth',v=>v+' moves')">
-              <span class="ctrl-val" id="v-bookdepth">20 moves</span>
-            </div>
-            <div class="ctrl-hint">Bot leaves book and plays its engine after this many moves.</div>
-          </div>
-        </div>
-
-        <!-- Per-colour repertoires, side by side -->
-        <div class="panel-2col" style="margin-top:14px;align-items:start;">
           <!-- AS WHITE -->
           <div class="op-col">
             <div class="dlbl"><span>As White</span></div>
@@ -1350,15 +1336,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
               <div class="seg-btn"     data-v="mainline"   onclick="setOpColorMode('white','mainline')">Main Line</div>
               <div class="seg-btn"     data-v="repertoire" onclick="setOpColorMode('white','repertoire')">Repertoire</div>
             </div>
-            <div class="op-rep op-rep-disabled" id="op-rep-white">
-              <div class="eco-search-wrap" id="rep-search-wrap-white">
-                <input class="eco-search" id="rep-search-input-white" type="text" placeholder="Add opening — name or ECO…"
-                  oninput="onRepSearch(this.value,'white')" onfocus="onRepSearch(this.value,'white')" autocomplete="off">
-                <div class="eco-dropdown" id="rep-dropdown-white"></div>
-              </div>
-              <div id="rep-slots-list-white" style="margin-top:8px;"></div>
-              <div class="rep-total ok" id="rep-total-white" style="display:none;"></div>
-            </div>
+            <div class="op-body" id="op-body-white"></div>
           </div>
           <!-- AS BLACK -->
           <div class="op-col">
@@ -1368,18 +1346,10 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
               <div class="seg-btn"     data-v="mainline"   onclick="setOpColorMode('black','mainline')">Main Line</div>
               <div class="seg-btn"     data-v="repertoire" onclick="setOpColorMode('black','repertoire')">Repertoire</div>
             </div>
-            <div class="op-rep op-rep-disabled" id="op-rep-black">
-              <div class="eco-search-wrap" id="rep-search-wrap-black">
-                <input class="eco-search" id="rep-search-input-black" type="text" placeholder="Add opening — name or ECO…"
-                  oninput="onRepSearch(this.value,'black')" onfocus="onRepSearch(this.value,'black')" autocomplete="off">
-                <div class="eco-dropdown" id="rep-dropdown-black"></div>
-              </div>
-              <div id="rep-slots-list-black" style="margin-top:8px;"></div>
-              <div class="rep-total ok" id="rep-total-black" style="display:none;"></div>
-            </div>
+            <div class="op-body" id="op-body-black"></div>
           </div>
         </div>
-        <div class="ctrl-hint" style="margin-top:10px;"><strong>Off</strong> = straight to engine · <strong>Main Line</strong> = popular book moves · <strong>Repertoire</strong> = your selected openings (sum to 100%). Each colour is independent; inactive repertoires are greyed.</div>
+        <div class="ctrl-hint" style="margin-top:10px;"><strong>Off</strong> = straight to engine · <strong>Main Line</strong> = popular book moves · <strong>Repertoire</strong> = your selected openings (sum to 100%). Adding an opening switches that colour into Repertoire automatically.</div>
       </div>
 
     </div>
@@ -1894,6 +1864,10 @@ let selectedPersonality = null;
 let _activeBotName      = null;  // name of the loaded/saved bot; clears on any manual edit
 // Per-colour opening mode: 'off' | 'mainline' | 'repertoire'
 const repMode = { white:'off', black:'off' };
+// Shared Main Line book settings (one set, mirrored in both colours' bars)
+let bookSource = 'masters'; // 'masters' | 'lichess'
+let bookModern = false;
+let bookDepth  = 20;
 let selectedTempPresetId = 'neutral'; // tracks active temperature preset
 
 // Initialize attractor state
@@ -5668,8 +5642,6 @@ function getBotConfig(){
   const color    = colorBtn ? colorBtn.dataset.color : 'random';
   const cpBudget = parseInt(document.getElementById('r-style')?.value || '100');
   const maia3Temp = Math.max(0.3, Math.min(3.0, +(0.3 + (cpBudget / 300) * 2.7).toFixed(2)));
-  const srcBtn   = document.querySelector('#db-source-seg .seg-btn.sel');
-  const depthEl  = document.getElementById('ob-bookdepth');
   return {
     type:            'botConfig',
     engine:          currentEngine,
@@ -5687,9 +5659,9 @@ function getBotConfig(){
     tcIncFromMove:   tcIncFromMove,
     openingModeWhite: repMode.white,
     openingModeBlack: repMode.black,
-    openingSource:   srcBtn ? srcBtn.dataset.v : 'masters',
-    openingDepth:    depthEl ? parseInt(depthEl.value) : 20,
-    modernOnly:      document.getElementById('cb-modern-theory')?.checked || false,
+    openingSource:   bookSource,
+    openingDepth:    bookDepth,
+    modernOnly:      bookModern,
     repSlots:        { white: repSlots.white.map(s=>({...s})), black: repSlots.black.map(s=>({...s})) },
     dayLower:        dayLower,
     dayUpper:        dayUpper,
@@ -5869,11 +5841,9 @@ function applyBotConfig(cfg){
 
   // Opening behaviour — per-colour modes (back-compat: old global openingMode)
   grp(() => {
-    const srcBtn = document.querySelector('#db-source-seg .seg-btn[data-v="' + (cfg.openingSource || 'masters') + '"]');
-    if(srcBtn) selSeg(srcBtn, 'db-source-seg');
-    _setRange('ob-bookdepth', cfg.openingDepth);
-    const mt = document.getElementById('cb-modern-theory');
-    if(mt) mt.checked = !!cfg.modernOnly;
+    bookSource = cfg.openingSource || 'masters';
+    bookDepth  = cfg.openingDepth || 20;
+    bookModern = !!cfg.modernOnly;
     repSlots.white.length = 0;
     repSlots.black.length = 0;
     ((cfg.repSlots && cfg.repSlots.white) || []).forEach(s => repSlots.white.push({...s}));
@@ -5882,7 +5852,6 @@ function applyBotConfig(cfg){
     if(wMode === undefined && bMode === undefined && cfg.openingMode){ wMode = bMode = cfg.openingMode; }
     setOpColorMode('white', wMode || 'off');
     setOpColorMode('black', bMode || 'off');
-    renderRepSlots('white'); renderRepSlots('black');
   });
 
   // Hybrid slots
@@ -7211,14 +7180,64 @@ function _applyPersonality(id){
 /* ══════════════════════════════════════════════════════════════
    OPENING ECO SEARCH
 ══════════════════════════════════════════════════════════════ */
-// Set the opening mode for one colour and sync its column UI (buttons + greying).
+// Set the opening mode for one colour and re-render its column body.
 function setOpColorMode(color, mode){
   repMode[color] = mode;
+  renderOpColumn(color);
+  updateOpStatus();
+}
+
+// Render a colour's column body: Main Line bar, or the add-opening search + slot
+// list (search always usable; slot list greyed in Off so the indicator is still
+// visible). Adding an opening auto-switches Off → Repertoire (see addRepFromSearch).
+function renderOpColumn(color){
+  const mode = repMode[color];
   const seg = document.getElementById('op-mode-' + color);
   if(seg) seg.querySelectorAll('.seg-btn').forEach(b => b.classList.toggle('sel', b.dataset.v === mode));
-  const rep = document.getElementById('op-rep-' + color);
-  if(rep) rep.classList.toggle('op-rep-disabled', mode !== 'repertoire');
-  updateOpStatus();
+  const body = document.getElementById('op-body-' + color);
+  if(!body) return;
+  if(mode === 'mainline'){
+    body.innerHTML = _mainLineBarHTML();
+    return;
+  }
+  // off | repertoire — search always active; slot list greyed when off
+  body.innerHTML =
+    '<div class="eco-search-wrap" id="rep-search-wrap-' + color + '">' +
+      '<input class="eco-search" id="rep-search-input-' + color + '" type="text" placeholder="Add opening — name or ECO…" ' +
+        'oninput="onRepSearch(this.value,\'' + color + '\')" onfocus="onRepSearch(this.value,\'' + color + '\')" autocomplete="off">' +
+      '<div class="eco-dropdown" id="rep-dropdown-' + color + '"></div>' +
+    '</div>' +
+    '<div class="op-rep' + (mode==='off' ? ' op-rep-disabled' : '') + '" id="op-rep-' + color + '">' +
+      '<div id="rep-slots-list-' + color + '" style="margin-top:8px;"></div>' +
+      '<div class="rep-total ok" id="rep-total-' + color + '" style="display:none;"></div>' +
+    '</div>';
+  renderRepSlots(color);
+}
+
+// Compact one-line Main Line controls (shared state, identical in both columns).
+function _mainLineBarHTML(){
+  return '<div class="ml-bar">' +
+    '<button type="button" class="ml-pill" onclick="toggleBookSource()" title="Opening database">' +
+      (bookSource==='masters' ? 'Masters DB' : 'Lichess DB') + '</button>' +
+    '<button type="button" class="ml-pill" onclick="toggleBookModern()" title="Restrict to games since 2020">' +
+      'Modern: ' + (bookModern ? 'On' : 'Off') + '</button>' +
+    '<span class="ml-depth" title="Leave book after this many moves">' +
+      '<span class="ml-depth-lbl">Depth</span>' +
+      '<input type="number" min="5" max="40" value="' + bookDepth + '" oninput="setBookDepth(this.value)">' +
+      '<span class="ml-depth-lbl">mv</span></span>' +
+    '</div>';
+}
+
+// Book settings are shared: re-render only the columns currently on Main Line.
+function _refreshMainLineBars(){
+  ['white','black'].forEach(c => { if(repMode[c] === 'mainline') renderOpColumn(c); });
+}
+function toggleBookSource(){ bookSource = bookSource==='masters' ? 'lichess' : 'masters'; _refreshMainLineBars(); }
+function toggleBookModern(){ bookModern = !bookModern; _refreshMainLineBars(); }
+function setBookDepth(v){
+  bookDepth = Math.max(5, Math.min(40, parseInt(v) || 20));
+  // Update the other column's depth input in place (avoid clobbering focus here).
+  document.querySelectorAll('.ml-depth input').forEach(inp => { if(+inp.value !== bookDepth) inp.value = bookDepth; });
 }
 
 function updateOpStatus(){
@@ -7254,12 +7273,16 @@ function onRepSearch(query, color){
 }
 
 function addRepFromSearch(code, name, color){
-  document.getElementById('rep-search-input-' + color).value = '';
-  document.getElementById('rep-dropdown-' + color).classList.remove('visible');
+  const inp = document.getElementById('rep-search-input-' + color);
+  if(inp) inp.value = '';
+  const dd = document.getElementById('rep-dropdown-' + color);
+  if(dd) dd.classList.remove('visible');
   // Allow multiple variants of the same ECO code (e.g. B20 Sicilian variations)
   repSlots[color].push({ code, name, pct:0 });
   autoDistributeRepPct(color);
-  renderRepSlots(color);
+  // Adding an opening means the user wants a repertoire — activate it if needed.
+  if(repMode[color] !== 'repertoire') setOpColorMode(color, 'repertoire');
+  else renderRepSlots(color);
 }
 
 function autoDistributeRepPct(color){
@@ -7762,7 +7785,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
   renderAttractors();
   renderPieceAttractors();
   renderCustomControls();
-  renderRepSlots('white'); renderRepSlots('black');
   setOpColorMode('white', repMode.white); setOpColorMode('black', repMode.black);
   renderPersonalities();
   renderHybridSlots();
