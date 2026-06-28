@@ -512,6 +512,25 @@ canvas{
 }
 .landing-shell-btn .ls-name { font-size:12px;font-weight:700;color:var(--text-primary); }
 .landing-shell-btn .ls-desc { font-size:9px;color:var(--text-dim);line-height:1.45; }
+
+/* ── Expert landing theme — carbon/amber palette + panel fonts (matches the
+      Expert board & bot control panels). Applied when Expert Board is chosen. ── */
+#landingOverlay.landing-expert { background:#0e0f11; font-family:'Chakra Petch',sans-serif; }
+.landing-expert .landing-title { font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:300;letter-spacing:0.01em;color:#e8e6e0; }
+.landing-expert .landing-title span { color:#c8922a; }
+.landing-expert .landing-tagline { font-family:'DM Mono',monospace;color:#717a8a;font-style:normal;letter-spacing:0.06em; }
+.landing-expert .landing-shell-btn { background:#22262d;border-color:rgba(255,255,255,0.08); }
+.landing-expert .landing-shell-btn:hover { border-color:#c8922a; }
+.landing-expert .landing-shell-btn.sel { border-color:#c8922a;box-shadow:0 0 0 2px rgba(200,146,42,0.2); }
+.landing-expert .landing-shell-btn .ls-name { color:#e8e6e0; }
+.landing-expert .landing-shell-btn .ls-desc { color:#717a8a;font-family:'DM Mono',monospace; }
+.landing-expert .landing-card { background:#22262d;border-color:rgba(255,255,255,0.08); }
+.landing-expert .landing-card:hover { border-color:#c8922a;box-shadow:0 0 0 2px rgba(200,146,42,0.18);transform:translateY(-2px); }
+.landing-expert .landing-card.green-card:hover,
+.landing-expert .landing-card.gold-card:hover { border-color:#c8922a;box-shadow:0 0 0 2px rgba(200,146,42,0.18); }
+.landing-expert .landing-card-title { color:#e8e6e0;font-family:'Chakra Petch',sans-serif; }
+.landing-expert .landing-card-desc { color:#717a8a;font-family:'DM Mono',monospace; }
+.landing-expert .landing-footer { color:#717a8a;font-family:'DM Mono',monospace; }
 .landing-cards {
   display:flex;flex-wrap:wrap;gap:14px;justify-content:center;
   max-width:720px;margin-bottom:28px;
@@ -1087,8 +1106,8 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     No account · No tracking · Your games are yours · <em>Free forever</em>
   </div>
 </div>
-<!-- Returning visitors skip the landing (already booted into their saved shell). -->
-<script>try{if(localStorage.getItem('bm_shell')){var _lo=document.getElementById('landingOverlay');if(_lo)_lo.style.display='none';}}catch(e){}</script>
+<!-- Open the landing in the style of the visitor's last-chosen board (no flash). -->
+<script>try{if(localStorage.getItem('bm_shell')==='pro'){var _lo=document.getElementById('landingOverlay');if(_lo){_lo.classList.add('landing-expert');_lo.querySelectorAll('.landing-shell-btn').forEach(function(b){b.classList.toggle('sel',b.dataset.shell==='pro');});}}}catch(e){}</script>
 
 <!-- ── Page wrapper: aligns header and board column ──────────────────────── -->
 <div id="page-wrap">

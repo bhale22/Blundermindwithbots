@@ -1081,11 +1081,19 @@ function landingSetShell(shell) {
   // setShell no-ops (and skips persisting) when already in that shell, so commit
   // the choice here too — this is also what marks the visitor as "returning".
   try { localStorage.setItem('bm_shell', s); } catch (e) {}
+  _landingApplyShellStyle(s);
+}
+
+// Re-style the landing to match a shell: Expert = carbon/amber panel look,
+// Beginner = the default blue look. Also syncs the selected toggle button.
+function _landingApplyShellStyle(s) {
+  const ov = document.getElementById('landingOverlay');
+  if (ov) ov.classList.toggle('landing-expert', s === 'pro');
   document.querySelectorAll('.landing-shell-btn').forEach(b =>
     b.classList.toggle('sel', b.dataset.shell === s));
 }
 
-// Re-open the landing (Home). Pre-selects the currently active shell.
+// Re-open the landing (Home), styled for the currently active shell.
 function landingShow() {
   const ov = document.getElementById('landingOverlay');
   if (!ov) return;
@@ -1093,9 +1101,7 @@ function landingShow() {
   // force reflow so the fade-in transition re-runs after removing fade-out
   void ov.offsetWidth;
   ov.classList.remove('fade-out');
-  const cur = (typeof proMode !== 'undefined' && proMode) ? 'pro' : 'amateur';
-  document.querySelectorAll('.landing-shell-btn').forEach(b =>
-    b.classList.toggle('sel', b.dataset.shell === cur));
+  _landingApplyShellStyle((typeof proMode !== 'undefined' && proMode) ? 'pro' : 'amateur');
 }
 
 function landingChoose(mode) {
@@ -1194,6 +1200,8 @@ function openBotModal() {
           type: 'maiaStatus', status: _maiaStatus || 'idle',
           ready: _maiaReady, progress: _maiaProgress || 0
         }, location.origin);
+        // Panel auto-starts its guided tour the first time it's opened.
+        frame.contentWindow.postMessage({ type: 'botTourAuto' }, location.origin);
       }
     } catch(e) {}
   }, 120);
