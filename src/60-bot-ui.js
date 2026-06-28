@@ -873,6 +873,12 @@ async function botStart() {
   // Activate preferred-opening fast path if mode is 'preferred' and slots exist.
   // Bot color is opposite of human player color.
   const _resolvedBotCol = (pc === 'white' ? 'black' : 'white');
+  // Per-color opening mode (new panel): pick the mode for the color the bot plays
+  // this game. off→none, mainline→mainline, repertoire→preferred.
+  if (botOpeningConfig.modeWhite !== undefined || botOpeningConfig.modeBlack !== undefined) {
+    const _cm = botOpeningConfig[_resolvedBotCol === 'white' ? 'modeWhite' : 'modeBlack'] || 'off';
+    botOpeningMode = (_cm === 'mainline') ? 'mainline' : (_cm === 'repertoire') ? 'preferred' : 'none';
+  }
   if (botOpeningMode === 'preferred') {
     const _hasSlots = (botOpeningConfig[_resolvedBotCol] || [])
                         .filter(s => s.name).length > 0;
@@ -1271,24 +1277,28 @@ window.addEventListener('message', function(e) {
   var cp = cfg.calmPanickyValue || 0;
   botTimePressure = cp >= 3 ? 'panicky' : cp >= 1 ? 'normal' : 'steady';
 
-  // Opening mode
-  if (!cfg.openingMode || cfg.openingMode === 'off') {
-    botSetOpeningMode('none');
-  } else if (cfg.openingMode === 'mainline') {
-    botOpeningConfig.source       = cfg.openingSource || 'masters';
-    botOpeningConfig.maxBookDepth = cfg.openingDepth  || 20;
-    if (cfg.modernOnly) botOpeningConfig.since = '2020-01'; else delete botOpeningConfig.since;
-    botSetOpeningMode('mainline');
-  } else if (cfg.openingMode === 'repertoire') {
-    var mapSlot = function(s) { return { eco: s.code, familyPrefix: (s.code || '').slice(0,2), name: s.name, pct: s.pct }; };
-    botOpeningConfig.white        = (cfg.repSlots && cfg.repSlots.white || []).map(mapSlot);
-    botOpeningConfig.black        = (cfg.repSlots && cfg.repSlots.black || []).map(mapSlot);
-    botOpeningConfig.source       = cfg.openingSource || 'masters';
-    botOpeningConfig.maxBookDepth = cfg.openingDepth  || 20;
-    botOpeningConfig.strictness   = 0.8;
-    if (cfg.modernOnly) botOpeningConfig.since = '2020-01'; else delete botOpeningConfig.since;
-    botSetOpeningMode('preferred');
+  // Opening — per-color modes (As White / As Black): off | mainline | repertoire.
+  // The bot only plays one color per game, so the effective global botOpeningMode
+  // is resolved from the bot's color at game start (see botStartGameSetup).
+  // Back-compat: older configs sent a single global cfg.openingMode.
+  var _owMode = cfg.openingModeWhite, _obMode = cfg.openingModeBlack;
+  if (_owMode === undefined && _obMode === undefined && cfg.openingMode) {
+    _owMode = _obMode = cfg.openingMode;
   }
+  var mapSlot = function(s) { return { eco: s.code, familyPrefix: (s.code || '').slice(0,2), name: s.name, pct: s.pct }; };
+  botOpeningConfig.white        = (cfg.repSlots && cfg.repSlots.white || []).map(mapSlot);
+  botOpeningConfig.black        = (cfg.repSlots && cfg.repSlots.black || []).map(mapSlot);
+  botOpeningConfig.source       = cfg.openingSource || 'masters';
+  botOpeningConfig.maxBookDepth = cfg.openingDepth  || 20;
+  botOpeningConfig.strictness   = 0.8;
+  if (cfg.modernOnly) botOpeningConfig.since = '2020-01'; else delete botOpeningConfig.since;
+  botOpeningConfig.modeWhite    = _owMode || 'off';
+  botOpeningConfig.modeBlack    = _obMode || 'off';
+  // Provisional global mode for the legacy inline opening UI; per-color mode wins
+  // at game start. Map: off→none, mainline→mainline, repertoire→preferred.
+  var _provMode = (botOpeningConfig.modeWhite !== 'off') ? botOpeningConfig.modeWhite
+                : (botOpeningConfig.modeBlack !== 'off') ? botOpeningConfig.modeBlack : 'off';
+  botSetOpeningMode(_provMode === 'mainline' ? 'mainline' : _provMode === 'repertoire' ? 'preferred' : 'none');
 
   // Hybrid slots: panel sends type 'sf' (level 1–10 in s.level); the legacy
   // panel sent 'stockfish' (s.sfLevel). Accept both — checking only
@@ -1315,6 +1325,8 @@ window.addEventListener('message', function(e) {
   window._bcpAttractorValues  = cfg.attractorValues || {};
   window._bcpPieceValues      = cfg.pieceValues     || {};
   window._bcpCpBudget         = cfg.cpBudget;
+  // User-defined custom controls: [{ id, name, metric, phase, value }]
+  window._bcpCustomControls   = Array.isArray(cfg.customControls) ? cfg.customControls : [];
   window._bcpHustlerTempMode  = (cfg.personalityId === 'hustler');
 
   closeBotModal();

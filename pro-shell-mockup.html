@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blundermind — Pro (mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Chakra+Petch:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+
+:root{
+  --carbon:#0e0f11;
+  --carbon-mid:#14161a;
+  --carbon-light:#1c1f24;
+  --carbon-surface:#22262d;
+  --carbon-raise:#2a2f38;
+  --amber:#c8922a;
+  --amber-bright:#e8aa40;
+  --amber-dim:#8a6420;
+  --amber-glow:rgba(200,146,42,0.12);
+  --amber-glow-s:rgba(200,146,42,0.22);
+  --text-1:#e8e6e0;
+  --text-2:#aab4c6;
+  --text-dim:#717a8a;
+  --border:rgba(255,255,255,0.06);
+  --border-amber:rgba(200,146,42,0.3);
+  --red:#c84a4a;
+  --blue:#5dade2;
+  --sq-light:#7d8694;
+  --sq-dark:#3f4651;
+  --font-d:'Cormorant Garamond',serif;
+  --font-m:'DM Mono',monospace;
+  --font-u:'Chakra Petch',sans-serif;
+}
+
+body{
+  background:
+    radial-gradient(1200px 700px at 50% -10%, #16181d 0%, #0e0f11 55%) ,
+    var(--carbon);
+  color:var(--text-1);
+  font-family:var(--font-u);
+  min-height:100vh;
+  display:flex;flex-direction:column;align-items:center;
+  padding:0 0 40px;
+}
+/* scanline texture */
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(255,255,255,0.006) 2px,rgba(255,255,255,0.006) 4px);}
+
+.wrap{position:relative;z-index:1;width:100%;max-width:920px;padding:0 20px;}
+
+/* ── Header ── */
+.hdr{display:flex;align-items:center;gap:14px;padding:18px 2px 16px;}
+.brand{font-family:var(--font-d);font-size:22px;font-weight:300;font-style:italic;letter-spacing:0.02em;}
+.brand b{font-weight:400;color:var(--amber);}
+.pro-chip{font-family:var(--font-m);font-size:8px;letter-spacing:0.22em;text-transform:uppercase;
+  color:var(--amber);border:0.5px solid var(--border-amber);border-radius:2px;padding:2px 7px;}
+.hdr-line{flex:1;height:0.5px;background:linear-gradient(90deg,var(--border-amber),transparent);}
+.round-meta{font-family:var(--font-m);font-size:8.5px;letter-spacing:0.12em;color:var(--text-dim);text-transform:uppercase;}
+
+/* ── Main layout ── */
+.app{display:flex;gap:18px;align-items:flex-start;}
+
+/* ── Board ── */
+.board-col{flex-shrink:0;}
+.board{
+  width:512px;height:512px;
+  display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr);
+  border:1px solid rgba(0,0,0,0.5);
+  border-radius:3px;overflow:hidden;
+  box-shadow:0 18px 50px rgba(0,0,0,0.55), 0 0 0 1px rgba(200,146,42,0.07);
+}
+.sq{position:relative;display:flex;align-items:center;justify-content:center;}
+.sq.l{background:var(--sq-light);}
+.sq.d{background:var(--sq-dark);}
+.sq.last::after{content:'';position:absolute;inset:0;background:rgba(200,146,42,0.30);mix-blend-mode:screen;}
+.pc{
+  font-family:'Segoe UI Symbol','Noto Sans Symbols 2','Apple Symbols',sans-serif;
+  font-size:46px;line-height:1;position:relative;z-index:1;cursor:default;
+  user-select:none;
+}
+.pc.w{color:#f3efe7;text-shadow:0 1px 0 rgba(0,0,0,0.35),0 0 2px rgba(0,0,0,0.4);}
+.pc.b{color:#17191e;text-shadow:0 1px 0 rgba(255,255,255,0.12);}
+.coord{position:absolute;font-family:var(--font-m);font-size:8px;font-weight:500;letter-spacing:0.04em;z-index:2;opacity:0.8;}
+.coord.file{right:3px;bottom:1px;}
+.coord.rank{left:3px;top:1px;}
+.coord.on-l{color:#3f4651;}
+.coord.on-d{color:#7d8694;}
+
+/* ── Side column ── */
+.side{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;align-self:stretch;}
+
+.player{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 11px;border-radius:5px;
+  background:var(--carbon-mid);border:0.5px solid var(--border);
+}
+.player.active{border-color:var(--border-amber);box-shadow:0 0 0 1px var(--amber-glow-s) inset;}
+.pavatar{width:30px;height:30px;border-radius:50%;flex-shrink:0;
+  background:linear-gradient(135deg,#2a2f38,#14161a);border:0.5px solid var(--border-amber);
+  display:flex;align-items:center;justify-content:center;font-size:14px;}
+.pmeta{flex:1;min-width:0;}
+.pname{font-family:var(--font-u);font-size:12px;font-weight:500;color:var(--text-1);display:flex;align-items:center;gap:6px;}
+.ptitle{font-family:var(--font-m);font-size:8px;letter-spacing:0.05em;color:#0e0f11;background:var(--amber);padding:0 4px;border-radius:2px;}
+.prating{font-family:var(--font-m);font-size:9px;color:var(--text-dim);margin-top:1px;}
+.pcaptured{font-family:'Segoe UI Symbol',sans-serif;font-size:12px;color:var(--text-dim);letter-spacing:-1px;margin-top:1px;min-height:14px;}
+.pclock{
+  font-family:var(--font-m);font-size:21px;font-weight:500;letter-spacing:0.04em;
+  color:var(--text-2);padding:4px 12px;border-radius:4px;background:var(--carbon);
+  border:0.5px solid var(--border);min-width:92px;text-align:center;
+}
+.player.active .pclock{color:var(--amber-bright);border-color:var(--border-amber);background:#0b0c0e;}
+
+/* ── Notation ── */
+.card{background:var(--carbon-mid);border:0.5px solid var(--border);border-radius:5px;}
+.card-hd{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:8px 11px;border-bottom:0.5px solid var(--border);
+}
+.card-title{font-family:var(--font-u);font-size:9px;font-weight:500;letter-spacing:0.14em;text-transform:uppercase;color:var(--amber);}
+.card-sub{font-family:var(--font-m);font-size:8px;color:var(--text-dim);letter-spacing:0.04em;}
+
+.moves{flex:1;overflow-y:auto;max-height:184px;padding:3px 0;}
+.moverow{display:grid;grid-template-columns:30px 1fr 1fr;align-items:center;font-family:var(--font-m);font-size:11px;}
+.moverow:nth-child(odd){background:rgba(255,255,255,0.012);}
+.mnum{color:var(--text-dim);font-size:9px;text-align:right;padding-right:9px;}
+.mw,.mb{padding:4px 8px;color:var(--text-2);cursor:pointer;border-radius:2px;}
+.mw:hover,.mb:hover{background:var(--carbon-raise);color:var(--text-1);}
+.mw.sel,.mb.sel{background:var(--amber-glow);color:var(--amber-bright);}
+
+/* ── Action buttons ── */
+.actions{display:flex;gap:7px;align-items:stretch;}
+.abtn{
+  flex:1;display:flex;align-items:center;justify-content:center;gap:5px;
+  padding:9px 6px;border-radius:4px;cursor:pointer;
+  font-family:var(--font-u);font-size:9.5px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;
+  background:var(--carbon-surface);border:0.5px solid var(--border);color:var(--text-2);
+  transition:all 0.13s;
+}
+.abtn:hover{border-color:var(--border-amber);color:var(--text-1);}
+.abtn.danger{color:#d98080;}
+.abtn.danger:hover{border-color:rgba(200,74,74,0.6);color:#e89090;}
+.abtn.draw:hover{border-color:rgba(93,173,226,0.5);color:#9fd4f0;}
+.abtn.gear{flex:0 0 38px;font-size:13px;}
+
+/* ── Chat (beside board, always-visible inline messages) ── */
+.chat{display:flex;flex-direction:column;flex:1;min-height:150px;}
+.chat-msgs{flex:1;overflow-y:auto;padding:9px 11px;display:flex;flex-direction:column;gap:5px;min-height:90px;}
+.cmsg{font-family:var(--font-m);font-size:9.5px;line-height:1.45;color:var(--text-2);word-break:break-word;}
+.cmsg .who{font-weight:500;letter-spacing:0.02em;}
+.cmsg.me  .who{color:var(--amber);}
+.cmsg.them .who{color:var(--blue);}
+.cmsg.sys{color:var(--text-dim);font-style:italic;font-family:var(--font-d);font-size:11px;}
+.chat-input-row{display:flex;gap:7px;padding:8px 9px;border-top:0.5px solid var(--border);}
+.chat-input{
+  flex:1;background:var(--carbon);border:0.5px solid var(--border);border-radius:3px;
+  color:var(--text-1);font-family:var(--font-m);font-size:10px;padding:6px 9px;outline:none;
+}
+.chat-input:focus{border-color:var(--border-amber);}
+.chat-send{
+  background:var(--amber-glow);border:0.5px solid var(--border-amber);border-radius:3px;
+  color:var(--amber);font-family:var(--font-u);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;
+  padding:0 12px;cursor:pointer;transition:all 0.13s;
+}
+.chat-send:hover{background:var(--amber-glow-s);color:var(--amber-bright);}
+
+.mock-note{margin:22px 2px 0;font-family:var(--font-m);font-size:8px;color:var(--text-dim);letter-spacing:0.06em;opacity:0.7;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Header -->
+  <div class="hdr">
+    <div class="brand">Blunder<b>mind</b></div>
+    <div class="pro-chip">Pro</div>
+    <div class="hdr-line"></div>
+    <div class="round-meta">Rated · Blitz 5+0</div>
+  </div>
+
+  <!-- App -->
+  <div class="app">
+
+    <!-- Board -->
+    <div class="board-col">
+      <div class="board" id="board"></div>
+    </div>
+
+    <!-- Side column -->
+    <div class="side">
+
+      <!-- Opponent -->
+      <div class="player" id="oppStrip">
+        <div class="pavatar">♚</div>
+        <div class="pmeta">
+          <div class="pname">Magnus C. <span class="ptitle">GM</span></div>
+          <div class="prating">2839</div>
+          <div class="pcaptured">♙♙</div>
+        </div>
+        <div class="pclock">8:47</div>
+      </div>
+
+      <!-- Notation -->
+      <div class="card">
+        <div class="card-hd">
+          <span class="card-title">Notation</span>
+        </div>
+        <div class="moves" id="moves"></div>
+      </div>
+
+      <!-- You -->
+      <div class="player active" id="youStrip">
+        <div class="pavatar">♔</div>
+        <div class="pmeta">
+          <div class="pname">You</div>
+          <div class="prating">1850</div>
+          <div class="pcaptured">♟♟</div>
+        </div>
+        <div class="pclock">9:32</div>
+      </div>
+
+      <!-- Actions -->
+      <div class="actions">
+        <div class="abtn danger">⚑ Resign</div>
+        <div class="abtn draw">½ Draw</div>
+        <div class="abtn" onclick="flipBoard()">⇅ Flip</div>
+        <div class="abtn gear" title="More">⚙</div>
+      </div>
+
+      <!-- Chat -->
+      <div class="card chat">
+        <div class="card-hd">
+          <span class="card-title">Chat</span>
+          <span class="card-sub">live</span>
+        </div>
+        <div class="chat-msgs" id="chatMsgs">
+          <div class="cmsg sys">Game started — good luck!</div>
+          <div class="cmsg them"><span class="who">Magnus:</span> hi, have a good game</div>
+          <div class="cmsg me"><span class="who">You:</span> you too! 🙂</div>
+          <div class="cmsg them"><span class="who">Magnus:</span> nice line</div>
+        </div>
+        <div class="chat-input-row">
+          <input class="chat-input" id="chatInput" placeholder="Message…" onkeydown="if(event.key==='Enter')sendChat()">
+          <button class="chat-send" onclick="sendChat()">Send</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="mock-note">STATIC MOCKUP · placeholder data · not wired to the engine</div>
+</div>
+
+<script>
+// ── Minimal board renderer (mockup only) ──────────────────────────────────
+const GLYPH = { K:'♚',Q:'♛',R:'♜',B:'♝',N:'♞',P:'♟' }; // solid set, recoloured by CSS
+const FEN = 'r1bqk2r/ppp2ppp/2np1n2/2b1p3/2B1P3/2PP1N2/PP3PPP/RNBQK2R';
+const LAST = ['d7','d6'];   // last move highlight
+let flipped = false;
+
+function sqName(file, rank){ return 'abcdefgh'[file] + (rank+1); }
+
+function renderBoard(){
+  const el = document.getElementById('board');
+  el.innerHTML = '';
+  const rows = FEN.split('/');               // rank 8 → rank 1
+  // Build an 8x8 grid of pieces indexed [rank0..7 from bottom][file0..7]
+  const grid = [];
+  for(let r=7;r>=0;r--){
+    const fenRow = rows[7-r];
+    const line = [];
+    for(const ch of fenRow){
+      if(/\d/.test(ch)){ for(let k=0;k<+ch;k++) line.push(null); }
+      else line.push(ch);
+    }
+    grid[r] = line;
+  }
+  const order = [];
+  for(let rank=7;rank>=0;rank--) for(let file=0;file<8;file++) order.push([rank,file]);
+  if(flipped) order.reverse();
+
+  for(const [rank,file] of order){
+    const sq = document.createElement('div');
+    const dark = (rank+file)%2===0;          // a1 dark
+    sq.className = 'sq ' + (dark?'d':'l');
+    const name = sqName(file,rank);
+    if(LAST.includes(name)) sq.classList.add('last');
+
+    const pc = grid[rank][file];
+    if(pc){
+      const span = document.createElement('span');
+      const isW = pc===pc.toUpperCase();
+      span.className = 'pc ' + (isW?'w':'b');
+      span.textContent = GLYPH[pc.toUpperCase()];
+      sq.appendChild(span);
+    }
+    // coordinates — files on bottom rank, ranks on left file
+    const showFile = flipped ? rank===7 : rank===0;
+    const showRank = flipped ? file===7 : file===0;
+    if(showFile){
+      const c=document.createElement('span'); c.className='coord file '+(dark?'on-d':'on-l');
+      c.textContent='abcdefgh'[file]; sq.appendChild(c);
+    }
+    if(showRank){
+      const c=document.createElement('span'); c.className='coord rank '+(dark?'on-d':'on-l');
+      c.textContent=(rank+1); sq.appendChild(c);
+    }
+    el.appendChild(sq);
+  }
+}
+function flipBoard(){ flipped=!flipped; renderBoard(); }
+
+// ── Notation ──────────────────────────────────────────────────────────────
+const MOVES = [
+  ['e4','e5'],['Nf3','Nc6'],['Bc4','Bc5'],['c3','Nf6'],['d3','d6']
+];
+function renderMoves(){
+  const el = document.getElementById('moves');
+  el.innerHTML = '';
+  MOVES.forEach((m,i)=>{
+    const row=document.createElement('div'); row.className='moverow';
+    const last = i===MOVES.length-1;
+    row.innerHTML = '<span class="mnum">'+(i+1)+'.</span>'
+      + '<span class="mw">'+m[0]+'</span>'
+      + '<span class="mb'+(last?' sel':'')+'">'+(m[1]||'')+'</span>';
+    el.appendChild(row);
+  });
+  el.scrollTop = el.scrollHeight;
+}
+
+// ── Chat (mockup) ─────────────────────────────────────────────────────────
+function sendChat(){
+  const inp=document.getElementById('chatInput');
+  const t=inp.value.trim(); if(!t) return;
+  const box=document.getElementById('chatMsgs');
+  const d=document.createElement('div'); d.className='cmsg me';
+  d.innerHTML='<span class="who">You:</span> '+t.replace(/</g,'&lt;');
+  box.appendChild(d); box.scrollTop=box.scrollHeight; inp.value='';
+}
+
+renderBoard();
+renderMoves();
+</script>
+</body>
+</html>

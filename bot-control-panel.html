@@ -408,6 +408,109 @@ canvas{display:block;background:transparent;}
 .leg-line{width:18px;height:1.5px;background:var(--amber);border-radius:1px;flex-shrink:0;}
 .leg-dot{width:7px;height:7px;border-radius:50%;background:var(--amber);border:1.5px solid var(--carbon);flex-shrink:0;}
 .formula-box{margin-top:10px;padding:10px 12px;background:var(--carbon-surface);border:0.5px solid var(--border);border-radius:var(--r);border-left:2px solid var(--amber-dim);}
+/* Custom controls — themed to match the rest of the panel */
+/* One control per row: Variable · Game phase · Advantage · Time pressure · Strength · remove */
+.cc-wrap{--cc-cols:minmax(82px,1fr) minmax(56px,0.58fr) minmax(62px,0.64fr) minmax(76px,0.84fr) minmax(195px,2.8fr) 22px;width:100%;}
+.cc-empty{font-family:var(--font-m);font-size:8px;color:var(--text-dim);opacity:0.75;padding:2px 0 6px;}
+.cc-headers{display:grid;grid-template-columns:var(--cc-cols);gap:6px;align-items:end;padding:0 8px 4px;}
+.cc-headers span{font-family:var(--font-m);font-size:7px;letter-spacing:0.07em;text-transform:uppercase;color:var(--text-dim);}
+.cc-row2{display:grid;grid-template-columns:var(--cc-cols);gap:6px;align-items:center;background:var(--carbon-surface);border:0.5px solid var(--border);border-left:2px solid var(--amber-dim);border-radius:var(--r);padding:6px 8px;margin-bottom:6px;}
+.cc-field{appearance:none;-webkit-appearance:none;width:100%;min-width:0;background:var(--carbon-mid);border:0.5px solid var(--border);color:var(--text-secondary);font-family:var(--font-m);font-size:9px;padding:4px 6px;border-radius:2px;outline:none;transition:border-color 0.15s;}
+.cc-field:focus{border-color:var(--amber);}
+.cc-select{cursor:pointer;padding-right:16px;text-overflow:ellipsis;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'><path d='M0 0l4 4 4-4' fill='none' stroke='%23717a8a' stroke-width='1.2'/></svg>");background-repeat:no-repeat;background-position:right 5px center;}
+.cc-select option,.cc-select optgroup{background:var(--carbon-mid);color:var(--text-secondary);}
+.cc-slidecell{display:flex;align-items:center;gap:5px;min-width:0;}
+.cc-slidecell .attr-slider{flex:1;min-width:52px;}
+.cc-mm{font-family:var(--font-m);font-size:6.5px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px;flex-shrink:1;}
+.cc-sval{font-family:var(--font-m);font-size:8px;color:var(--amber);min-width:24px;text-align:right;flex-shrink:0;}
+.cc-del{justify-self:center;width:20px;height:20px;line-height:1;font-size:13px;background:none;border:0.5px solid var(--border);border-radius:2px;color:var(--text-dim);cursor:pointer;transition:all 0.15s;}
+.cc-del:hover{border-color:var(--amber);color:var(--amber);}
+.cc-add-btn{display:inline-block;margin-top:8px;padding:6px 14px;font-family:var(--font-u);font-size:9px;letter-spacing:0.06em;background:var(--carbon-surface);border:0.5px dashed var(--amber-dim);border-radius:2px;color:var(--amber);cursor:pointer;transition:all 0.15s;}
+.cc-add-btn:hover{background:var(--carbon-raise);border-color:var(--amber);}
+/* Keep all Personality inner-tab panes the same height so switching doesn't resize */
+#sec-attract .itab-pane{min-height:460px;}
+
+/* Opening panel — per-colour columns; greyed when that colour isn't on Repertoire */
+.op-col{min-width:0;}
+.op-body{min-height:34px;}
+.op-rep{transition:opacity 0.15s;}
+.op-rep-disabled{opacity:0.4;pointer-events:none;filter:grayscale(0.4);}
+/* Main Line bar — compact one-line pills (DB · modern · depth), shared state */
+.ml-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.ml-pill{font-family:var(--font-m);font-size:9px;letter-spacing:0.03em;padding:5px 10px;background:var(--carbon-surface);border:0.5px solid var(--border);border-radius:2px;color:var(--text-secondary);cursor:pointer;transition:all 0.15s;white-space:nowrap;}
+.ml-pill:hover{border-color:var(--amber);color:var(--amber);}
+.ml-depth{display:flex;align-items:center;gap:4px;font-family:var(--font-m);color:var(--text-dim);}
+.ml-depth input{width:40px;background:var(--carbon-mid);border:0.5px solid var(--border);color:var(--text-secondary);font-family:var(--font-m);font-size:9px;padding:4px 5px;border-radius:2px;outline:none;text-align:center;}
+.ml-depth input:focus{border-color:var(--amber);}
+.ml-depth-lbl{font-size:7.5px;text-transform:uppercase;letter-spacing:0.08em;}
+
+/* ════════════════════════════════════════════════════════════════
+   READABILITY THEMES — Standard (default) · Stylized · High-vis
+   Internal keys: readable = "Standard" (the initial look),
+   default = "Stylized" (original), highvis = "High-vis".
+   Picker lives in the header; choice persists in localStorage.
+════════════════════════════════════════════════════════════════ */
+.rs-picker{display:flex;align-items:center;gap:4px;align-self:center;flex-shrink:0;}
+.rs-label{font-family:var(--font-m);font-size:8px;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-dim);margin-right:2px;}
+.rs-btn{font-family:var(--font-m);font-size:8.5px;letter-spacing:0.04em;padding:4px 9px;background:var(--carbon-surface);border:0.5px solid var(--border);border-radius:2px;color:var(--text-dim);cursor:pointer;transition:all 0.15s;}
+.rs-btn:hover{color:var(--text-secondary);border-color:var(--border-amber);}
+.rs-btn.active{background:var(--carbon-raise);border-color:var(--amber);color:var(--amber);}
+
+/* READABLE — minimal change: brighter dim text, stronger borders, slightly larger/bolder */
+body.rs-readable{
+  --text-primary:#f1efe9;
+  --text-secondary:#c6cedb;
+  --text-dim:#97a2b6;
+  --border:rgba(255,255,255,0.13);
+  --amber-dim:#a87a28;
+  font-weight:400;
+}
+body.rs-readable .ctrl-hint,
+body.rs-readable .attr-desc,
+body.rs-readable .formula-body,
+body.rs-readable .cc-headers span,
+body.rs-readable .cc-mm,
+body.rs-readable .sec-sub{font-size:9px;}
+body.rs-readable [style*="font-size:6px"]{font-size:8px !important;}
+body.rs-readable [style*="font-size:6.5px"]{font-size:8.5px !important;}
+body.rs-readable [style*="font-size:7px"]{font-size:8.5px !important;}
+body.rs-readable [style*="font-size:8px"]{font-size:9px !important;}
+body.rs-readable [style*="font-size:8.5px"]{font-size:9.5px !important;}
+
+/* HIGH-VIS — low vision: high-contrast near-white text, larger + bolder, looser spacing */
+body.rs-highvis{
+  --text-primary:#ffffff;
+  --text-secondary:#e6ebf2;
+  --text-dim:#c7cfdc;
+  --border:rgba(255,255,255,0.24);
+  --border-amber:rgba(232,170,64,0.55);
+  --amber:#f0b550;
+  --amber-bright:#ffc56a;
+  --amber-dim:#caa040;
+  font-weight:500;
+  letter-spacing:0.01em;
+}
+body.rs-highvis .ctrl-hint,
+body.rs-highvis .attr-desc,
+body.rs-highvis .formula-body,
+body.rs-highvis .cc-headers span,
+body.rs-highvis .cc-mm,
+body.rs-highvis .sec-sub,
+body.rs-highvis .dlbl,
+body.rs-highvis .ctrl-lbl,
+body.rs-highvis .ctrl-val,
+body.rs-highvis .attr-left,
+body.rs-highvis .attr-right,
+body.rs-highvis .day-vals,
+body.rs-highvis .dual-range-labels{font-size:11px !important;line-height:1.45;}
+body.rs-highvis .cc-field,body.rs-highvis .cc-select{font-size:12px !important;}
+body.rs-highvis [style*="font-size:6px"]{font-size:11px !important;}
+body.rs-highvis [style*="font-size:6.5px"]{font-size:11px !important;}
+body.rs-highvis [style*="font-size:7px"]{font-size:11px !important;}
+body.rs-highvis [style*="font-size:8px"]{font-size:12px !important;}
+body.rs-highvis [style*="font-size:8.5px"]{font-size:12px !important;}
+body.rs-highvis [style*="font-size:9px"]{font-size:13px !important;}
+body.rs-highvis [style*="font-size:10px"]{font-size:14px !important;}
 .formula-title{font-family:var(--font-m);font-size:8px;letter-spacing:0.14em;text-transform:uppercase;color:var(--amber-dim);margin-bottom:5px;}
 .formula-body{font-family:var(--font-m);font-size:9px;color:var(--text-secondary);line-height:1.8;}
 .formula-hl{color:var(--amber-bright);}
@@ -731,6 +834,12 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
     <div class="header-title">Opponent Profile</div>
   </div>
   <div class="header-line"></div>
+  <div class="rs-picker" role="group" aria-label="Text readability">
+    <span class="rs-label">Text</span>
+    <button class="rs-btn active" data-rs="readable" onclick="setReadability('readable')" title="Cleaner, brighter standard text">Standard</button>
+    <button class="rs-btn" data-rs="default" onclick="setReadability('default')" title="Original stylized look">Stylized</button>
+    <button class="rs-btn" data-rs="highvis" onclick="setReadability('highvis')" title="Larger, high-contrast text for low vision">High-vis</button>
+  </div>
 </div>
 
 <!-- ══════════════════════════════════════════
@@ -1090,7 +1199,8 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
       <div class="pr" style="margin-top:0;">
         <div class="itab-strip">
           <button class="itab active" onclick="switchItab('attract','quality')">Move Quality &amp; Strategy</button>
-          <button class="itab" onclick="switchItab('attract','pieces')">Piece Focus &amp; Radar</button>
+          <button class="itab" onclick="switchItab('attract','custom')">Custom Controls</button>
+          <button class="itab" onclick="switchItab('attract','pieces')">Strategy &amp; Piece Focus</button>
           <button class="itab" onclick="switchItab('attract','presets')">Preset Personalities</button>
         </div>
 
@@ -1128,11 +1238,8 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
                 <div class="ctrl-hint" id="blunder-floor-hint">Bot will not play any single move costing more than this centipawn loss. Raised automatically if below Max CP Budget.</div>
               </div>
 
-            </div>
-            <!-- RIGHT: Move quality range (top, for visibility) + strategic attractors -->
-            <div>
               <!-- Move quality range — only shown for Maia/LC+Maia/Hybrid -->
-              <div id="move-quality-range">
+              <div id="move-quality-range" style="margin-top:14px;">
               <div class="dlbl"><span>Move quality range</span></div>
               <div class="day-vals">
                 <span>Exclude lowest: <span id="day-lower-val">0</span>%</span>
@@ -1144,30 +1251,50 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
                 <input type="range" id="day-upper" min="0" max="100" value="100" step="1" oninput="onDaySlider()">
               </div>
               <div class="dual-range-labels"><span>← Bad Day, lowest probability moves</span><span>Good Day, Highest Probability moves →</span></div>
-              <div class="ctrl-hint" style="margin-top:6px;">Sets the Maia3 probability band. Good Day = best moves; Bad Day = lower-probability alternatives. Forced moves (≥95%) are never skipped.</div>
+              <div class="ctrl-hint" style="margin-top:6px;">Sets the Maia3 probability band. Good Day = best moves; Bad Day = lower-probability alternatives.</div>
               </div><!-- /move-quality-range -->
-              <div class="dlbl" style="margin-top:14px;"><span>Strategic preferences</span></div>
-              <div id="attractor-rows"></div>
-            </div>
-          </div>
-        </div>
 
-        <!-- TAB 2: Piece Focus & Radar -->
-        <div class="itab-pane" id="itab-attract-pieces">
-          <div class="panel-2col">
-            <!-- LEFT: Piece attractors -->
-            <div>
-              <div class="dlbl"><span>Piece focus</span></div>
-              <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-bottom:8px;">Left = avoid · Right = seek · Center = neutral</div>
-              <div id="piece-rows"></div>
             </div>
-            <!-- RIGHT: Radar chart -->
+            <!-- RIGHT: personality fingerprint (top) + custom-control entry -->
             <div>
+              <!-- Personality fingerprint (radar) -->
               <div class="dlbl"><span>Personality fingerprint</span></div>
               <div class="radar-wrap">
                 <canvas id="radar-canvas" width="320" height="260"></canvas>
                 <div class="radar-hint">drag nodes or click axis to set value</div>
               </div>
+
+              <!-- Custom-control entry — the full builder lives on its own tab -->
+              <div class="dlbl" style="margin-top:14px;"><span>Custom controls</span></div>
+              <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-bottom:8px;">Build your own attractor — pick a board feature, a phase, and a direction. Opens the Custom Controls tab.</div>
+              <button type="button" class="cc-add-btn" onclick="addCustomControlAndGo()">+ Add custom control</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: Custom Controls (user-built attractors) -->
+        <div class="itab-pane" id="itab-attract-custom">
+          <div class="dlbl"><span>Custom controls</span></div>
+          <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-bottom:8px;max-width:440px;">Build your own attractor: pick a board feature, the phase it applies in, and a direction. Each one shares the centipawn budget and only re-ranks moves the engine already considers plausible. No other site lets you do this.</div>
+          <div class="cc-wrap">
+            <div id="custom-control-rows"></div>
+            <button type="button" class="cc-add-btn" onclick="addCustomControl()">+ Add custom control</button>
+          </div>
+        </div>
+
+        <!-- TAB: Strategy & Piece Focus -->
+        <div class="itab-pane" id="itab-attract-pieces">
+          <div class="panel-2col" style="grid-template-columns:1.4fr 1fr;">
+            <!-- LEFT: Strategic preference sliders (more prominent) -->
+            <div>
+              <div class="dlbl"><span>Strategic preferences</span></div>
+              <div id="attractor-rows"></div>
+            </div>
+            <!-- RIGHT: Piece focus -->
+            <div>
+              <div class="dlbl"><span>Piece focus</span></div>
+              <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-bottom:8px;">Left = avoid · Right = seek · Center = neutral</div>
+              <div id="piece-rows"></div>
             </div>
           </div>
         </div>
@@ -1198,55 +1325,31 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
     <div class="panel">
 
       <div class="pr">
-        <div class="dlbl"><span>Mode</span></div>
-        <div class="seg-row" id="opening-mode-seg">
-          <div class="seg-btn" data-v="repertoire" onclick="selOpeningMode(this)">Opening Repertoire</div>
-          <div class="seg-btn" data-v="mainline" onclick="selOpeningMode(this)">Main Line</div>
-          <div class="seg-btn sel" data-v="off" onclick="selOpeningMode(this)">Off</div>
-        </div>
-      </div>
-
-      <!-- Common controls (mainline / repertoire) -->
-      <div class="pr" id="opening-common" style="display:none;">
-        <div class="dlbl"><span>Source</span></div>
-        <div class="seg-row" id="db-source-seg">
-          <div class="seg-btn sel" data-v="masters" onclick="selSeg(this,'db-source-seg')">Masters DB</div>
-          <div class="seg-btn" data-v="lichess" onclick="selSeg(this,'db-source-seg')">Lichess DB</div>
-        </div>
-        <div style="margin-top:10px;">
-          <div class="ctrl">
-            <span class="ctrl-lbl">Max book depth</span>
-            <input type="range" id="ob-bookdepth" min="5" max="40" value="20" step="1" oninput="sv(this,'v-bookdepth',v=>v+' moves')">
-            <span class="ctrl-val" id="v-bookdepth">20 moves</span>
+        <!-- Two colours side by side; each column's body (Main Line bar OR
+             repertoire search+list) is rendered by renderOpColumn(). -->
+        <div class="panel-2col" style="align-items:start;">
+          <!-- AS WHITE -->
+          <div class="op-col">
+            <div class="dlbl"><span>As White</span></div>
+            <div class="seg-row" id="op-mode-white" style="margin-bottom:10px;">
+              <div class="seg-btn sel" data-v="off"        onclick="setOpColorMode('white','off')">Off</div>
+              <div class="seg-btn"     data-v="mainline"   onclick="setOpColorMode('white','mainline')">Main Line</div>
+              <div class="seg-btn"     data-v="repertoire" onclick="setOpColorMode('white','repertoire')">Repertoire</div>
+            </div>
+            <div class="op-body" id="op-body-white"></div>
           </div>
-          <div class="ctrl-hint">Bot switches to engine after this many book moves.</div>
-        </div>
-        <div class="tog-row" style="margin-top:6px;">
-          <div><div class="tog-lbl">Modern theory only</div><div class="tog-desc">Restrict to games played since 2020</div></div>
-          <label class="tog"><input type="checkbox" id="cb-modern-theory"><div class="tog-track"><div class="tog-thumb"></div></div></label>
-        </div>
-      </div>
-
-      <!-- Repertoire mode sub-panel — ECO search + percentage list -->
-      <div class="pr" id="opening-repertoire" style="display:none;">
-        <div class="sub-panel">
-          <div class="sub-title">Opening repertoire</div>
-          <div class="seg-row" id="rep-color-seg" style="margin-bottom:12px;">
-            <div class="seg-btn sel" data-v="white" onclick="selSeg(this,'rep-color-seg');renderRepSlots()">As White</div>
-            <div class="seg-btn" data-v="black" onclick="selSeg(this,'rep-color-seg');renderRepSlots()">As Black</div>
+          <!-- AS BLACK -->
+          <div class="op-col">
+            <div class="dlbl"><span>As Black</span></div>
+            <div class="seg-row" id="op-mode-black" style="margin-bottom:10px;">
+              <div class="seg-btn sel" data-v="off"        onclick="setOpColorMode('black','off')">Off</div>
+              <div class="seg-btn"     data-v="mainline"   onclick="setOpColorMode('black','mainline')">Main Line</div>
+              <div class="seg-btn"     data-v="repertoire" onclick="setOpColorMode('black','repertoire')">Repertoire</div>
+            </div>
+            <div class="op-body" id="op-body-black"></div>
           </div>
-          <!-- ECO search — same dropdown as Loyal mode -->
-          <div class="eco-search-wrap" id="rep-search-wrap">
-            <input class="eco-search" id="rep-search-input" type="text"
-              placeholder="Search opening name or ECO code…"
-              oninput="onRepSearch(this.value)" onfocus="onRepSearch(this.value)" autocomplete="off">
-            <div class="eco-dropdown" id="rep-dropdown"></div>
-          </div>
-          <!-- Slot list with percentages -->
-          <div id="rep-slots-list" style="margin-top:10px;"></div>
-          <div class="rep-total ok" id="rep-total" style="display:none;"></div>
-          <div class="ctrl-hint" style="margin-top:8px;">Percentages must sum to 100%. When multiple openings share the same first move, the bot blends them proportionally. Set to 0% to keep an opening as a backup without weighting it.</div>
         </div>
+        <div class="ctrl-hint" style="margin-top:10px;"><strong>Off</strong> = straight to engine · <strong>Main Line</strong> = popular book moves · <strong>Repertoire</strong> = your selected openings (sum to 100%). Adding an opening switches that colour into Repertoire automatically.</div>
       </div>
 
     </div>
@@ -1361,20 +1464,9 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
     <div class="panel">
       <div class="pr" style="margin-top:0;">
 
-        <!-- Description box -->
-        <div class="formula-box" style="margin-bottom:12px;">
-          <div class="formula-title">How time pressure simulation works</div>
-          <div class="formula-body" style="text-align:left;line-height:1.75;">
-            The bot simulates a rated player under time pressure using two complementary mechanisms:<br>
-            <span style="color:var(--amber);">▸ ELO reduction</span> — Maia is called at a lower ELO as the clock runs down, playing like a lower-rated player under time scramble.<br>
-            <span style="color:#5dade2;">▸ Distribution restriction</span> — ELO stays fixed but only the top portion of Maia's move distribution is available (instinctive, less creative play — typical of a strong player with no time to calculate).<br>
-            Both curves apply simultaneously. Toggle <strong>OFF</strong> to disable all time-pressure effects and play at constant strength.
-          </div>
-        </div>
-
         <!-- OFF toggle + ELO info row -->
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-          <button id="pressure-off-btn" class="preset-btn" onclick="togglePressureOff()" style="min-width:44px;">OFF</button>
+          <button id="pressure-off-btn" class="preset-btn active" onclick="togglePressureOff()" style="min-width:44px;">ON</button>
           <span id="pressure-off-lbl" style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);">Curves active — bot degrades with clock</span>
           <span style="margin-left:auto;font-family:var(--font-m);font-size:8px;color:var(--text-dim);">Base ELO: <span id="tp-elo-display" style="color:var(--amber);">1500</span></span>
         </div>
@@ -1443,6 +1535,17 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
                 <span class="formula-hl">ELO(t) = E₀ − Δ · σ(log(t) anchored at game start)</span>
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- How it works — placed below the controls/graphs -->
+        <div class="formula-box" style="margin-top:12px;">
+          <div class="formula-title">How time pressure simulation works</div>
+          <div class="formula-body" style="text-align:left;line-height:1.75;">
+            The bot simulates a rated player under time pressure using two complementary mechanisms:<br>
+            <span style="color:var(--amber);">▸ ELO reduction</span> — Maia is called at a lower ELO as the clock runs down, playing like a lower-rated player under time scramble.<br>
+            <span style="color:#5dade2;">▸ Distribution restriction</span> — ELO stays fixed but only the top portion of Maia's move distribution is available (instinctive, less creative play — typical of a strong player with no time to calculate).<br>
+            Both curves apply simultaneously. Switch the toggle to <strong>OFF</strong> to disable all time-pressure effects and play at constant strength.
           </div>
         </div>
 
@@ -1668,6 +1771,60 @@ const PIECE_TYPES = [
   { id:'king',   name:'King',   icon:'♔' },
 ];
 
+// ── Custom-control metrics ───────────────────────────────────
+// Each id MUST match a key in _ccMetrics (50-bot-engine.js). `cat` groups the
+// dropdown; the slider sign is the direction (left/− minimize, right/+ maximize);
+// min/max are the slider end labels; desc is the row hint. Adding an entry here
+// AND a matching fn in _ccMetrics is all it takes to expose a new variable.
+const CUSTOM_METRICS = [
+  // Pawns
+  { id:'passedPawns',    cat:'Pawns', name:'Passed pawns',        min:'Avoid passers',       max:'Push passers',  desc:'The bot’s passed pawns (no enemy pawn ahead on its file or the adjacent files).' },
+  { id:'pawnAdvance',    cat:'Pawns', name:'Pawn advancement',    min:'Hold back',     max:'Push forward',     desc:'How far the bot’s pawns have advanced from their start rank. Pairs well with the Endgame phase.' },
+  { id:'doubledPawns',   cat:'Pawns', name:'Doubled pawns',       min:'Avoid doubling',      max:'Allow doubling',    desc:'The bot’s doubled pawns. Slide left to keep the structure clean.' },
+  { id:'isolatedPawns',  cat:'Pawns', name:'Isolated pawns',      min:'Avoid isolani',       max:'Allow isolani',     desc:'The bot’s isolated pawns (no friendly pawn on an adjacent file). Slide left to avoid them.' },
+  { id:'pawnIslands',    cat:'Pawns', name:'Pawn islands',        min:'Few islands',max:'Allow islands',     desc:'Number of separate groups of the bot’s pawns. Fewer = healthier structure.' },
+  { id:'connectedPawns', cat:'Pawns', name:'Connected pawns',     min:'Allow loose',max:'Connect pawns',        desc:'Pawns supported by a neighbour (phalanx or chain).' },
+  { id:'pawnStructure',  cat:'Pawns', name:'Pawn structure',      min:'Loosen',      max:'Tighten structure',    desc:'Overall pawn-structure health — fewer islands, doubled and isolated pawns. The built-in “Structure” attractor, as a gateable control.' },
+
+  // Pieces & activity
+  { id:'centralization', cat:'Pieces & activity', name:'Piece centralization', min:'On the rim', max:'Centralize', desc:'Rewards knights, bishops, rooks and queens near the centre.' },
+  { id:'outpost',        cat:'Pieces & activity', name:'Knight/bishop outposts', min:'Avoid outposts', max:'Plant outposts',     desc:'A minor on an advanced square defended by a pawn that no enemy pawn can challenge.' },
+  { id:'mobility',       cat:'Pieces & activity', name:'Piece mobility',       min:'Cramped ok',  max:'Max mobility',   desc:'Total squares the bot’s pieces attack/reach — a cheap proxy for activity.' },
+  { id:'bishopPair',     cat:'Pieces & activity', name:'Bishop pair',          min:'Trade bishop',   max:'Keep pair',desc:'Whether the bot holds both bishops.' },
+  { id:'rooksOpenFiles', cat:'Pieces & activity', name:'Rooks on open files',  min:'Rooks anywhere',   max:'Open files', desc:'The bot’s rooks on files with no pawns.' },
+  { id:'rooksSeventh',   cat:'Pieces & activity', name:'Rooks on the 7th',     min:'Rooks back',       max:'To the 7th',    desc:'The bot’s rooks on the enemy’s second rank.' },
+  { id:'developedPieces',cat:'Pieces & activity', name:'Development',          min:'Stay home',max:'Develop',      desc:'Knights and bishops off their back rank. Best gated to the Opening.' },
+
+  // Material
+  { id:'material',       cat:'Material', name:'Material balance',   min:'Sacrifice', max:'Win material',         desc:'Bot material minus the opponent’s (P1 N/B3 R5 Q9).' },
+  { id:'pieceCount',     cat:'Material', name:'Pieces on board',    min:'Simplify',max:'Keep pieces',      desc:'Total pieces on the board — simplify when ahead, keep tension when not.' },
+  { id:'queens',         cat:'Material', name:'Queens on board',    min:'Trade queens',       max:'Keep queens',       desc:'Queens still on the board.' },
+
+  // King attack & safety
+  { id:'kingZoneAttackers', cat:'King', name:'Enemy king pressure', min:'Ease off', max:'Hunt king',  desc:'The bot’s attacks on the nine squares around the enemy king.' },
+  { id:'kingDanger',     cat:'King', name:'My king safety',         min:'King safe', max:'Ignore safety',    desc:'Enemy attacks on the squares around the bot’s own king. Slide left to play safe.' },
+  { id:'kingShield',     cat:'King', name:'My pawn shield',         min:'No shield',max:'Pawn shield', desc:'Friendly pawns sheltering the bot’s king.' },
+  { id:'givesCheck',     cat:'King', name:'Gives check',            min:'Avoid checks',      max:'Give checks',           desc:'Boosts moves that put the enemy king in check.' },
+
+  // Threats
+  { id:'attackedPieces', cat:'Threats', name:'Enemy pieces attacked', min:'Make peace',     max:'Attack more',    desc:'Distinct enemy pieces the bot attacks after the move.' },
+  { id:'enemyHanging',   cat:'Threats', name:'Loose enemy pieces',    min:'Ignore loose',max:'Win loose',  desc:'Enemy pieces the bot attacks that have no defender — free-material radar.' },
+  { id:'hangingPieces',  cat:'Threats', name:'My hanging pieces',     min:'Stop hanging',max:'Allow loose',desc:'The bot’s own undefended, attacked pieces. Slide left for prophylaxis.' },
+  { id:'defendedPieces', cat:'Threats', name:'My defended pieces',    min:'Loose pieces', max:'Defend all',desc:'The bot’s pieces that have at least one defender.' },
+  { id:'pieceDefense',   cat:'Threats', name:'Piece defense',         min:'Loose pieces', max:'Max defense',desc:'Total defensive coverage of the bot’s pieces — the built-in “Fort Knox” attractor. Slide right to minimise exposed pieces.' },
+
+  // Square control
+  { id:'weakSquares',     cat:'Square control', name:'My weak squares',     min:'Fewer weak sq', max:'Allow weak sq', desc:'Empty squares in the bot’s camp it no longer controls. Slide left to minimise.' },
+  { id:'enemyWeakSquares',cat:'Square control', name:'Holes in enemy camp', min:'Ignore holes',  max:'Make holes',desc:'Empty squares in the enemy half the opponent doesn’t control — outpost targets.' },
+  { id:'centerControl',   cat:'Square control', name:'Central control',     min:'Cede centre',    max:'Take centre',      desc:'The bot’s control of d4, e4, d5 and e5.' },
+  { id:'spaceControl',    cat:'Square control', name:'Space',               min:'Cramped ok',    max:'Grab space',              desc:'Empty squares in the enemy half the bot controls.' },
+];
+
+// Optional game-state gate for a custom control (uses the Stockfish eval probe).
+const CUSTOM_RESULTS = [['any','Any result'],['winning','When winning'],['losing','When losing'],['equal','When equal']];
+// Optional clock gate — fires only when a side is in time pressure (<30 s or <15% of start).
+const CUSTOM_PRESSURE = [['any','Any clock'],['self','Bot time-pressured'],['opp','Opp time-pressured'],['either','Either side']];
+
 // ── Personalities ────────────────────────────────────────────
 // Add a new personality: one entry here, nothing else changes
 const PERSONALITIES = [
@@ -1701,9 +1858,16 @@ const PERSONALITIES = [
 let currentElo = SPEEDO.default;
 let attractorValues = {};      // id -> -5..5
 let pieceValues = {};          // pieceId -> -5..5
+let customControls = [];        // [{ id, name, metric, phase, value(-5..5) }]
+let _ccSeq = 0;                 // monotonic id source for new custom controls
 let selectedPersonality = null;
 let _activeBotName      = null;  // name of the loaded/saved bot; clears on any manual edit
-let openingMode = 'off';
+// Per-colour opening mode: 'off' | 'mainline' | 'repertoire'
+const repMode = { white:'off', black:'off' };
+// Shared Main Line book settings (one set, mirrored in both colours' bars)
+let bookSource = 'masters'; // 'masters' | 'lichess'
+let bookModern = false;
+let bookDepth  = 20;
 let selectedTempPresetId = 'neutral'; // tracks active temperature preset
 
 // Initialize attractor state
@@ -5159,6 +5323,10 @@ function updateAttrCpDisplays(){
       absVal: Math.abs(pieceValues[p.id] ?? 0),
       domId: 'pieceval-' + p.id
     })),
+    ...customControls.map(c => ({
+      absVal: Math.abs(c.value ?? 0),
+      domId: 'ccval-' + c.id
+    })),
   ];
   const totalAbs = allEntries.reduce((s, e) => s + e.absVal, 0);
   allEntries.forEach(e => {
@@ -5185,9 +5353,9 @@ function onRepPctChange(changedIdx, newVal, color){
   if(!otherIdxs.length){
     // Only one slot — force it to 100 and exit
     slots[changedIdx].pct = 100;
-    const inp = document.querySelectorAll('#rep-slots-list .rep-pct input');
+    const inp = document.querySelectorAll('#rep-slots-list-' + color + ' .rep-pct input');
     if(inp[changedIdx]) inp[changedIdx].value = 100;
-    updateRepTotal();
+    updateRepTotal(color);
     return;
   }
   const otherTotal = otherIdxs.reduce((s, i) => s + slots[i].pct, 0);
@@ -5211,11 +5379,11 @@ function onRepPctChange(changedIdx, newVal, color){
     otherIdxs.forEach((i, k) => { slots[i].pct = each + (k < leftover ? 1 : 0); });
   }
   // Update DOM without full re-render (preserves focus on changed input)
-  const inputs = document.querySelectorAll('#rep-slots-list .rep-pct input');
+  const inputs = document.querySelectorAll('#rep-slots-list-' + color + ' .rep-pct input');
   slots.forEach((sl, i) => {
     if(inputs[i] && i !== changedIdx) inputs[i].value = sl.pct;
   });
-  updateRepTotal();
+  updateRepTotal(color);
 }
 
 /* ── Inner tab switching ── */
@@ -5234,8 +5402,8 @@ function switchItab(sectionId, tabId){
     if(t.getAttribute('onclick') && t.getAttribute('onclick').includes("'" + tabId + "'"))
       t.classList.add('active');
   });
-  // Trigger chart draws if needed
-  if(sectionId === 'attract' && tabId === 'pieces'){
+  // Trigger chart draws if needed — the radar now lives on the Quality tab
+  if(sectionId === 'attract' && tabId === 'quality'){
     setTimeout(drawRadar, 60);
   }
   if(sectionId === 'pressure' && tabId === 'curves'){
@@ -5257,12 +5425,24 @@ function toggleSec(id){
       scheduleDraw();
     }
     if(id==='attract'){
-      // Only draw radar if the pieces tab is active
-      const piecesPane = document.getElementById('itab-attract-pieces');
-      if(piecesPane && piecesPane.classList.contains('active')){
-        setTimeout(drawRadar, 80);
-      }
+      // Radar now lives on the (default) Move Quality tab — draw it whenever the
+      // section opens so it isn't blank until the user hovers over it.
+      setTimeout(drawRadar, 80);
     }
+    // Scroll the opened section fully into view once its expand animation settles.
+    const shell = target.querySelector('.panel-shell');
+    let _scrolled = false;
+    const _doScroll = () => {
+      if(_scrolled || !target.classList.contains('open')) return; _scrolled = true;
+      try { target.scrollIntoView({ behavior:'smooth', block:'start' }); } catch(e){}
+    };
+    if(shell){
+      const onEnd = (e) => {
+        if(e.propertyName === 'max-height'){ shell.removeEventListener('transitionend', onEnd); _doScroll(); }
+      };
+      shell.addEventListener('transitionend', onEnd);
+    }
+    setTimeout(_doScroll, 520); // fallback if transitionend doesn't fire
   }
 }
 
@@ -5462,8 +5642,6 @@ function getBotConfig(){
   const color    = colorBtn ? colorBtn.dataset.color : 'random';
   const cpBudget = parseInt(document.getElementById('r-style')?.value || '100');
   const maia3Temp = Math.max(0.3, Math.min(3.0, +(0.3 + (cpBudget / 300) * 2.7).toFixed(2)));
-  const srcBtn   = document.querySelector('#db-source-seg .seg-btn.sel');
-  const depthEl  = document.getElementById('ob-bookdepth');
   return {
     type:            'botConfig',
     engine:          currentEngine,
@@ -5479,15 +5657,17 @@ function getBotConfig(){
     tcBonus:         tcBonus,
     tcBonusAtMove:   tcBonusAtMove,
     tcIncFromMove:   tcIncFromMove,
-    openingMode:     openingMode,
-    openingSource:   srcBtn ? srcBtn.dataset.v : 'masters',
-    openingDepth:    depthEl ? parseInt(depthEl.value) : 20,
-    modernOnly:      document.getElementById('cb-modern-theory')?.checked || false,
+    openingModeWhite: repMode.white,
+    openingModeBlack: repMode.black,
+    openingSource:   bookSource,
+    openingDepth:    bookDepth,
+    modernOnly:      bookModern,
     repSlots:        { white: repSlots.white.map(s=>({...s})), black: repSlots.black.map(s=>({...s})) },
     dayLower:        dayLower,
     dayUpper:        dayUpper,
     attractorValues: {...attractorValues},
     pieceValues:     {...pieceValues},
+    customControls:  customControls.map(c => ({ id:c.id, name:c.name, metric:c.metric, phase:c.phase, result:c.result||'any', pressure:c.pressure||'any', value:c.value })),
     timingMode:        _getTimingMode(),
     fixedDelayMs:      parseInt(document.getElementById('r-fixed')?.value     || '5') * 1000,
     mirrorOffsetPct:   parseInt(document.getElementById('r-mirror')?.value    || '0'),
@@ -5603,6 +5783,22 @@ function applyBotConfig(cfg){
     selectedPersonality = null;
     drawRadar(); updateAttractorStatus(); updateAttrCpDisplays();
   });
+  grp(() => {
+    customControls = Array.isArray(cfg.customControls)
+      ? cfg.customControls
+          .filter(c => c && _ccMeta && CUSTOM_METRICS.some(m => m.id === c.metric))
+          .map(c => ({
+            id:       c.id || ('cc' + Date.now().toString(36) + (++_ccSeq)),
+            name:     c.name || _ccMeta(c.metric).name,
+            metric:   c.metric,
+            phase:    c.phase || 'all',
+            result:   c.result || 'any',
+            pressure: c.pressure || 'any',
+            value:    +c.value || 0
+          }))
+      : [];
+    renderCustomControls();
+  });
   grp(() => onCalmPanickyChange(cfg.calmPanickyValue || 0));
 
   // Temperature — prefer raw float (tempValue); fall back to preset ID for old saves
@@ -5643,20 +5839,19 @@ function applyBotConfig(cfg){
     _setRange('r-wlead', cfg.weaponizerLeadSec);
   });
 
-  // Opening behaviour
+  // Opening behaviour — per-colour modes (back-compat: old global openingMode)
   grp(() => {
-    const modeBtn = document.querySelector('#opening-mode-seg .seg-btn[data-v="' + (cfg.openingMode || 'off') + '"]');
-    if(modeBtn) selOpeningMode(modeBtn);
-    const srcBtn = document.querySelector('#db-source-seg .seg-btn[data-v="' + (cfg.openingSource || 'masters') + '"]');
-    if(srcBtn) selSeg(srcBtn, 'db-source-seg');
-    _setRange('ob-bookdepth', cfg.openingDepth);
-    const mt = document.getElementById('cb-modern-theory');
-    if(mt) mt.checked = !!cfg.modernOnly;
+    bookSource = cfg.openingSource || 'masters';
+    bookDepth  = cfg.openingDepth || 20;
+    bookModern = !!cfg.modernOnly;
     repSlots.white.length = 0;
     repSlots.black.length = 0;
     ((cfg.repSlots && cfg.repSlots.white) || []).forEach(s => repSlots.white.push({...s}));
     ((cfg.repSlots && cfg.repSlots.black) || []).forEach(s => repSlots.black.push({...s}));
-    renderRepSlots(); updateRepTotal();
+    let wMode = cfg.openingModeWhite, bMode = cfg.openingModeBlack;
+    if(wMode === undefined && bMode === undefined && cfg.openingMode){ wMode = bMode = cfg.openingMode; }
+    setOpColorMode('white', wMode || 'off');
+    setOpColorMode('black', bMode || 'off');
   });
 
   // Hybrid slots
@@ -6486,6 +6681,125 @@ function onPieceChange(id, val){
   updateQsCpBudget();
 }
 
+/* ── Custom controls ── */
+function _ccMeta(metricId){ return CUSTOM_METRICS.find(m => m.id === metricId) || CUSTOM_METRICS[0]; }
+function _ccFind(id){ return customControls.find(c => c.id === id); }
+function _ccEsc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, ch =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+// Mirror the side-effects of onAttractorChange: editing a custom control is a
+// manual edit, so it deselects any active preset / saved bot.
+function _ccDirty(){
+  if(selectedPersonality){
+    document.querySelectorAll('.pcard').forEach(c => c.classList.remove('sel'));
+    selectedPersonality = null;
+  }
+  _activeBotName = null;
+  updateQsPersonality();
+  updateQsCpBudget();
+}
+
+function renderCustomControls(){
+  const container = document.getElementById('custom-control-rows');
+  if(!container) return;
+  if(!customControls.length){
+    container.innerHTML = '<div class="cc-empty">No custom controls yet — add one to give the bot a bias the presets don’t cover.</div>';
+    updateAttrCpDisplays();
+    return;
+  }
+  const PHASES = [['all','All phases'],['opening','Opening'],['middlegame','Middlegame'],['endgame','Endgame']];
+  const cats = [];
+  CUSTOM_METRICS.forEach(mm => { if(!cats.includes(mm.cat)) cats.push(mm.cat); });
+  const header = `<div class="cc-headers"><span>Variable</span><span>Game phase</span><span>Advantage</span><span>Time pressure</span><span>Strength</span><span></span></div>`;
+  container.innerHTML = header + customControls.map(c => {
+    const m = _ccMeta(c.metric);
+    const metricOpts = cats.map(cat =>
+      `<optgroup label="${cat}">` +
+      CUSTOM_METRICS.filter(mm => mm.cat === cat).map(mm =>
+        `<option value="${mm.id}" ${mm.id===c.metric?'selected':''}>${mm.name}</option>`).join('') +
+      `</optgroup>`).join('');
+    const phaseOpts = PHASES.map(([v,l]) =>
+      `<option value="${v}" ${v===c.phase?'selected':''}>${l}</option>`).join('');
+    const resultOpts = CUSTOM_RESULTS.map(([v,l]) =>
+      `<option value="${v}" ${v===(c.result||'any')?'selected':''}>${l}</option>`).join('');
+    const pressureOpts = CUSTOM_PRESSURE.map(([v,l]) =>
+      `<option value="${v}" ${v===(c.pressure||'any')?'selected':''}>${l}</option>`).join('');
+    return `
+    <div class="cc-row2" data-cc="${c.id}">
+      <select class="cc-field cc-select" title="${_ccEsc(m.desc)}" onchange="onCustomControlMetric('${c.id}',this.value)">${metricOpts}</select>
+      <select class="cc-field cc-select" onchange="onCustomControlPhase('${c.id}',this.value)">${phaseOpts}</select>
+      <select class="cc-field cc-select" onchange="onCustomControlResult('${c.id}',this.value)">${resultOpts}</select>
+      <select class="cc-field cc-select" onchange="onCustomControlPressure('${c.id}',this.value)">${pressureOpts}</select>
+      <div class="cc-slidecell">
+        <span class="cc-mm" title="${_ccEsc(m.min)}">${m.min}</span>
+        <input class="attr-slider" type="range" min="-5" max="5" step="1" value="${c.value||0}"
+          oninput="onCustomControlValue('${c.id}',this.value)">
+        <span class="cc-mm" title="${_ccEsc(m.max)}">${m.max}</span>
+        <span class="attr-val cc-sval" id="ccval-${c.id}">—</span>
+      </div>
+      <button type="button" class="cc-del" onclick="removeCustomControl('${c.id}')" title="Remove control">×</button>
+    </div>`;
+  }).join('');
+  updateAttrCpDisplays();
+}
+
+function addCustomControl(){
+  const m = CUSTOM_METRICS[0];
+  customControls.push({
+    id: 'cc' + Date.now().toString(36) + (++_ccSeq),
+    name: m.name, metric: m.id, phase: 'all', result: 'any', pressure: 'any', value: 0
+  });
+  renderCustomControls();
+  _ccDirty();
+}
+function removeCustomControl(id){
+  customControls = customControls.filter(c => c.id !== id);
+  renderCustomControls();
+  _ccDirty();
+}
+// Entry button on the Move Quality & Strategy tab: add a control and jump to the
+// dedicated Custom Controls tab so the builder is right there.
+function addCustomControlAndGo(){
+  addCustomControl();
+  if(typeof switchItab === 'function') switchItab('attract','custom');
+}
+function onCustomControlValue(id, val){
+  const c = _ccFind(id); if(!c) return;
+  c.value = +val;
+  updateAttrCpDisplays();
+  _ccDirty();
+}
+function onCustomControlMetric(id, val){
+  const c = _ccFind(id); if(!c) return;
+  // Only auto-rename if the user hadn't given the control its own name.
+  const prev = _ccMeta(c.metric);
+  if(!c.name || c.name === prev.name) c.name = _ccMeta(val).name;
+  c.metric = val;
+  renderCustomControls();
+  _ccDirty();
+}
+function onCustomControlPhase(id, val){
+  const c = _ccFind(id); if(!c) return;
+  c.phase = val;
+  _ccDirty();
+}
+function onCustomControlResult(id, val){
+  const c = _ccFind(id); if(!c) return;
+  c.result = val;
+  _ccDirty();
+}
+function onCustomControlPressure(id, val){
+  const c = _ccFind(id); if(!c) return;
+  c.pressure = val;
+  _ccDirty();
+}
+function onCustomControlName(id, val){
+  const c = _ccFind(id); if(!c) return;
+  c.name = val;
+  _ccDirty();
+}
+
 /* ══════════════════════════════════════════════════════════════
    RADAR CHART — interactive (drag nodes or click axis to set)
 ══════════════════════════════════════════════════════════════ */
@@ -6742,7 +7056,8 @@ function updateQsPersonality(){
     pill.textContent = p ? p.name : selectedPersonality;
   } else {
     const isCustom = ATTRACTORS.some(a => (attractorValues[a.id]??0) !== 0)
-      || PIECE_TYPES.some(p => (pieceValues[p.id]??0) !== 0);
+      || PIECE_TYPES.some(p => (pieceValues[p.id]??0) !== 0)
+      || customControls.some(c => (c.value??0) !== 0);
     pill.textContent = isCustom ? 'Custom' : 'None';
   }
 }
@@ -6752,7 +7067,8 @@ function updateQsCpBudget(){
   if(!pill) return;
   const hasActivity = selectedPersonality || _activeBotName
     || ATTRACTORS.some(a => (attractorValues[a.id]??0) !== 0)
-    || PIECE_TYPES.some(p => (pieceValues[p.id]??0) !== 0);
+    || PIECE_TYPES.some(p => (pieceValues[p.id]??0) !== 0)
+    || customControls.some(c => (c.value??0) !== 0);
   if(!hasActivity){
     pill.textContent = '—';
     return;
@@ -6864,21 +7180,86 @@ function _applyPersonality(id){
 /* ══════════════════════════════════════════════════════════════
    OPENING ECO SEARCH
 ══════════════════════════════════════════════════════════════ */
-function selOpeningMode(btn){
-  selSeg(btn, 'opening-mode-seg');
-  openingMode = btn.dataset.v;
-  document.getElementById('st-opening').textContent = btn.textContent.trim();
-  // Masters/Lichess source + depth only relevant for Main Line
-  document.getElementById('opening-common').style.display     = openingMode==='mainline' ? 'block' : 'none';
-  document.getElementById('opening-repertoire').style.display = openingMode==='repertoire' ? 'block' : 'none';
+// Set the opening mode for one colour and re-render its column body.
+function setOpColorMode(color, mode){
+  repMode[color] = mode;
+  renderOpColumn(color);
+  updateOpStatus();
+}
+
+// Render a colour's column body: Main Line bar, or the add-opening search + slot
+// list (search always usable; slot list greyed in Off so the indicator is still
+// visible). Adding an opening auto-switches Off → Repertoire (see addRepFromSearch).
+function renderOpColumn(color){
+  const mode = repMode[color];
+  const seg = document.getElementById('op-mode-' + color);
+  if(seg) seg.querySelectorAll('.seg-btn').forEach(b => b.classList.toggle('sel', b.dataset.v === mode));
+  const body = document.getElementById('op-body-' + color);
+  if(!body) return;
+  if(mode === 'mainline'){
+    body.innerHTML = _mainLineBarHTML();
+    return;
+  }
+  // off | repertoire — search always active; slot list greyed when off
+  body.innerHTML =
+    '<div class="eco-search-wrap" id="rep-search-wrap-' + color + '">' +
+      '<input class="eco-search" id="rep-search-input-' + color + '" type="text" placeholder="Add opening — name or ECO…" ' +
+        'oninput="onRepSearch(this.value,\'' + color + '\')" onfocus="onRepSearch(this.value,\'' + color + '\')" autocomplete="off">' +
+      '<div class="eco-dropdown" id="rep-dropdown-' + color + '"></div>' +
+    '</div>' +
+    '<div class="op-rep' + (mode==='off' ? ' op-rep-disabled' : '') + '" id="op-rep-' + color + '">' +
+      '<div id="rep-slots-list-' + color + '" style="margin-top:8px;"></div>' +
+      '<div class="rep-total ok" id="rep-total-' + color + '" style="display:none;"></div>' +
+    '</div>';
+  renderRepSlots(color);
+}
+
+// Compact one-line Main Line controls (shared state, identical in both columns).
+function _mainLineBarHTML(){
+  const dbTitle = bookSource==='masters'
+    ? 'Masters DB — Lichess Masters database (master-level, titled-player games). Click to switch to the Lichess DB.'
+    : 'Lichess DB — Lichess online games at the rating level in use. Click to switch to the Masters DB.';
+  return '<div class="ml-bar">' +
+    '<button type="button" class="ml-pill" onclick="toggleBookSource()" title="' + dbTitle + '">' +
+      (bookSource==='masters' ? 'Masters DB' : 'Lichess DB') + '</button>' +
+    '<button type="button" class="ml-pill" onclick="toggleBookModern()" title="Modern theory only — restrict the book to games from 2020 to the present.">' +
+      'Modern: ' + (bookModern ? '2020+' : 'Off') + '</button>' +
+    '<span class="ml-depth" title="Leave the book and play the engine after this many moves.">' +
+      '<span class="ml-depth-lbl">Depth</span>' +
+      '<input type="number" min="5" max="40" value="' + bookDepth + '" oninput="setBookDepth(this.value)">' +
+      '<span class="ml-depth-lbl">mv</span></span>' +
+    '</div>';
+}
+
+// Book settings are shared: re-render only the columns currently on Main Line.
+function _refreshMainLineBars(){
+  ['white','black'].forEach(c => { if(repMode[c] === 'mainline') renderOpColumn(c); });
+}
+function toggleBookSource(){ bookSource = bookSource==='masters' ? 'lichess' : 'masters'; _refreshMainLineBars(); }
+function toggleBookModern(){ bookModern = !bookModern; _refreshMainLineBars(); }
+function setBookDepth(v){
+  bookDepth = Math.max(5, Math.min(40, parseInt(v) || 20));
+  // Update the other column's depth input in place (avoid clobbering focus here).
+  document.querySelectorAll('.ml-depth input').forEach(inp => { if(+inp.value !== bookDepth) inp.value = bookDepth; });
+}
+
+function updateOpStatus(){
+  const st = document.getElementById('st-opening');
+  if(!st) return;
+  const lbl = m => m==='mainline' ? 'Main Line' : m==='repertoire' ? 'Repertoire' : 'Off';
+  const w = repMode.white, b = repMode.black;
+  st.textContent = (w==='off' && b==='off') ? 'Off'
+    : (w===b) ? lbl(w)
+    : 'W: ' + lbl(w) + ' · B: ' + lbl(b);
 }
 
 /* ── Opening Repertoire: ECO search + percentage slots ─────────────────────── */
 // repSlots: { white: [{code,name,pct}], black: [{code,name,pct}] }
 const repSlots = { white:[], black:[] };
 
-function onRepSearch(query){
-  const dd = document.getElementById('rep-dropdown');
+function onRepSearch(query, color){
+  const dd = document.getElementById('rep-dropdown-' + color);
+  if(!dd) return;
   const q = query.trim().toLowerCase();
   if(!q){ dd.classList.remove('visible'); return; }
   const results = ECO_DATA.filter(e =>
@@ -6886,7 +7267,7 @@ function onRepSearch(query){
   ).slice(0, 30);
   if(!results.length){ dd.classList.remove('visible'); return; }
   dd.innerHTML = results.map(e=>`
-    <div class="eco-option" onclick="addRepFromSearch('${e.e.replace(/'/g,"\\'")}','${e.n.replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">
+    <div class="eco-option" onclick="addRepFromSearch('${e.e.replace(/'/g,"\\'")}','${e.n.replace(/'/g,"\\'").replace(/"/g,'&quot;')}','${color}')">
       <span class="eco-code">${e.e}</span>
       <span class="eco-name">${e.n}</span>
     </div>
@@ -6894,15 +7275,17 @@ function onRepSearch(query){
   dd.classList.add('visible');
 }
 
-function addRepFromSearch(code, name){
-  const colorBtn = document.querySelector('#rep-color-seg .seg-btn.sel');
-  const color = colorBtn ? colorBtn.dataset.v : 'white';
-  document.getElementById('rep-search-input').value = '';
-  document.getElementById('rep-dropdown').classList.remove('visible');
+function addRepFromSearch(code, name, color){
+  const inp = document.getElementById('rep-search-input-' + color);
+  if(inp) inp.value = '';
+  const dd = document.getElementById('rep-dropdown-' + color);
+  if(dd) dd.classList.remove('visible');
   // Allow multiple variants of the same ECO code (e.g. B20 Sicilian variations)
   repSlots[color].push({ code, name, pct:0 });
   autoDistributeRepPct(color);
-  renderRepSlots();
+  // Adding an opening means the user wants a repertoire — activate it if needed.
+  if(repMode[color] !== 'repertoire') setOpColorMode(color, 'repertoire');
+  else renderRepSlots(color);
 }
 
 function autoDistributeRepPct(color){
@@ -6914,12 +7297,10 @@ function autoDistributeRepPct(color){
   slots.forEach((s,i) => { s.pct = each + (i < rem ? 1 : 0); });
 }
 
-function renderRepSlots(){
-  const colorBtn = document.querySelector('#rep-color-seg .seg-btn.sel');
-  const color = colorBtn ? colorBtn.dataset.v : 'white';
+function renderRepSlots(color){
   const slots = repSlots[color];
-  const container = document.getElementById('rep-slots-list');
-  const totalEl = document.getElementById('rep-total');
+  const container = document.getElementById('rep-slots-list-' + color);
+  const totalEl = document.getElementById('rep-total-' + color);
   if(!container) return;
   container.innerHTML = slots.length
     ? slots.map((s,i)=>`
@@ -6933,14 +7314,13 @@ function renderRepSlots(){
           <span class="hybrid-remove" onclick="removeRepSlot(${i},'${color}')" title="Remove">✕</span>
         </div>`).join('')
     : '<div style="font-family:var(--font-m);font-size:9px;color:var(--text-dim);padding:6px 0;">Search and add openings above.</div>';
-  if(totalEl){ totalEl.style.display=slots.length?'block':'none'; updateRepTotal(); }
+  if(totalEl) totalEl.style.display = slots.length ? 'block' : 'none';
+  updateRepTotal(color);
 }
 
-function updateRepTotal(){
-  const colorBtn = document.querySelector('#rep-color-seg .seg-btn.sel');
-  const color = colorBtn ? colorBtn.dataset.v : 'white';
+function updateRepTotal(color){
   const total = repSlots[color].reduce((s,sl)=>s+sl.pct,0);
-  const el = document.getElementById('rep-total');
+  const el = document.getElementById('rep-total-' + color);
   if(!el) return;
   el.textContent = 'Total: ' + total + '%';
   el.className = 'rep-total ' + (total===100?'ok':'err');
@@ -6948,14 +7328,13 @@ function updateRepTotal(){
 
 function removeRepSlot(i,color){
   repSlots[color].splice(i,1);
-  renderRepSlots();
+  renderRepSlots(color);
 }
 
-// Close rep dropdown on outside click
+// Close rep dropdowns on outside click (one per colour column)
 document.addEventListener('click', e=>{
-  if(!e.target.closest('#rep-search-wrap')){
-    document.getElementById('rep-dropdown')?.classList.remove('visible');
-  }
+  if(!e.target.closest('#rep-search-wrap-white')) document.getElementById('rep-dropdown-white')?.classList.remove('visible');
+  if(!e.target.closest('#rep-search-wrap-black')) document.getElementById('rep-dropdown-black')?.classList.remove('visible');
 });
 
 /* ── Good Day / Bad Day dual-range slider ──────────────────────────────────── */
@@ -7295,7 +7674,10 @@ function togglePressureOff(){
   pressureOff = !pressureOff;
   const btn = document.getElementById('pressure-off-btn');
   const lbl = document.getElementById('pressure-off-lbl');
-  if(btn) btn.classList.toggle('active', pressureOff);
+  if(btn){
+    btn.classList.toggle('active', !pressureOff); // highlighted when simulation is ON
+    btn.textContent = pressureOff ? 'OFF' : 'ON';
+  }
   if(lbl) lbl.textContent = pressureOff
     ? 'OFF — bot plays at constant ELO regardless of clock'
     : 'Curves active — bot degrades with clock';
@@ -7382,13 +7764,31 @@ function scheduleDraw(){
 /* ══════════════════════════════════════════════════════════════
    INIT
 ══════════════════════════════════════════════════════════════ */
+/* ── Readability theme: Default · Readable · High-vis ── */
+function setReadability(mode){
+  if(mode !== 'readable' && mode !== 'highvis') mode = 'default';
+  document.body.classList.remove('rs-readable','rs-highvis');
+  if(mode === 'readable') document.body.classList.add('rs-readable');
+  else if(mode === 'highvis') document.body.classList.add('rs-highvis');
+  document.querySelectorAll('.rs-btn').forEach(b => b.classList.toggle('active', b.dataset.rs === mode));
+  try { localStorage.setItem('bm_readability', mode); } catch(e){}
+}
+function _initReadability(){
+  let saved = 'readable'; // "Standard" is the initial look
+  try { saved = localStorage.getItem('bm_readability') || 'readable'; } catch(e){}
+  setReadability(saved);
+}
+
 document.addEventListener('DOMContentLoaded', ()=>{
+  _initReadability();
   buildTimeGrid();
   renderTempGrid();
   buildSFPips('sf-pips');
   buildSFPips('lcsf-sf-pips');
   renderAttractors();
   renderPieceAttractors();
+  renderCustomControls();
+  setOpColorMode('white', repMode.white); setOpColorMode('black', repMode.black);
   renderPersonalities();
   renderHybridSlots();
   initSpeedo();

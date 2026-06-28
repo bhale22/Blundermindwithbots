@@ -63,6 +63,9 @@ let botOpeningConfig = {
   // repertoire-specific (arrays per color)
   white: [],
   black: [],
+  // per-color opening mode (new panel): 'off' | 'mainline' | 'repertoire'
+  modeWhite: 'off',
+  modeBlack: 'off',
   strictness: 0.8,
 };
 // 0–100: percentage of games where the bot follows its preferred opening.
@@ -458,27 +461,35 @@ function openHelp(key, e) {
 const PIECE_VALUE = {K:0,Q:9,R:5,B:3,N:3,P:1};
 
 const IND = {
-  checkthreats:{on:false,pre:true, pressing:false},
-  threats:     {on:false,pre:true, pressing:false},
+  // Indicators INITIALIZE to preview-on (`pre:true`) so a first-time user sees
+  // them in action while exploring a move and learns how they work. Nothing is
+  // always-on (`on:false`). ibRefreshAll() syncs every button's highlight to
+  // these flags, so what the buttons show always matches what actually renders —
+  // and the user can switch any of them off. A few overlays init off because
+  // they're noisier or gated by their own checkbox (xray/weak*/battery).
+  checkthreats:  {on:false,pre:true, pressing:false},
+  threats:       {on:false,pre:true, pressing:false},
   // captures merged into threats button
-  unprotected: {on:false,pre:true, pressing:false},
-  pins:        {on:false,pre:true, pressing:false},
-  forksw:      {on:false,pre:true, pressing:false}, // hold-only, no exploration
-  forksb:      {on:false,pre:true, pressing:false},
-  discoveredopp:{on:false,pre:true, pressing:false},  // opponent threats (always-on)
-  discoveredself:{on:false,pre:true, pressing:false}, // own discoveries (hold-only)
-  xray:        {on:false,pre:false,pressing:false},
-  overloaded:  {on:false,pre:true, pressing:false},
-  weakw:       {on:false,pre:false,pressing:false},
-  weakb:       {on:false,pre:false,pressing:false},
-  rings:       {on:false,pre:true, pressing:false},
-  counts:      {on:false,pre:true, pressing:false},
-  influence:   {on:false,pre:true, pressing:false},
-  battery:     {on:false,pre:false,pressing:false},
-  legal:       {on:false,pre:true, pressing:false},
+  unprotected:   {on:false,pre:true, pressing:false},
+  pins:          {on:false,pre:true, pressing:false},
+  forksw:        {on:false,pre:true, pressing:false},
+  forksb:        {on:false,pre:true, pressing:false},
+  discoveredopp: {on:false,pre:true, pressing:false},
+  discoveredself:{on:false,pre:true, pressing:false},
+  xray:          {on:false,pre:false,pressing:false},
+  overloaded:    {on:false,pre:true, pressing:false},
+  weakw:         {on:false,pre:false,pressing:false},
+  weakb:         {on:false,pre:false,pressing:false},
+  rings:         {on:false,pre:true, pressing:false},
+  counts:        {on:false,pre:true, pressing:false},
+  influence:     {on:false,pre:true, pressing:false},
+  battery:       {on:false,pre:false,pressing:false},
+  legal:         {on:false,pre:true, pressing:false},
 };
 
 function indActive(key) {
+  // Pro shell: no board-vision indicators at all (pieces + last move only)
+  if (typeof proMode !== 'undefined' && proMode) return false;
   if (typeof IND==='undefined') return false;
   const ind=IND[key]; if(!ind) return false;
   if(key==='legal'){const el=document.getElementById('cbLegalToggle');return el?el.checked:true;}
@@ -515,14 +526,15 @@ function ibTogglePre(key){
 }
 function ibUpdateUI(key){
   const ind=IND[key]; if(!ind) return;
-  const el=document.getElementById('ib-'+key); if(!el) return;
-  const isPre=!!previewBoard||currentlyPreviewing;
-  el.classList.remove('on','pre','pressing');
-  if(ind.pressing) el.classList.add('pressing');
-  else if(ind.on) el.classList.add('on');        // always-on: full green
-  else if(ind.pre && isPre) el.classList.add('pre'); // exploration-only: subtle
+  // Keep the "Show During Exploration" (pre) button highlight in sync with the
+  // variable first, so it always matches even if the main button is absent.
   const preBtn=document.getElementById('pre-'+key);
   if(preBtn) preBtn.classList.toggle('active',ind.pre);
+  const el=document.getElementById('ib-'+key); if(!el) return;
+  el.classList.remove('on','pre','pressing');
+  if(ind.pressing) el.classList.add('pressing');
+  else if(ind.on) el.classList.add('on');  // always-on: full green
+  else if(ind.pre) el.classList.add('pre'); // preview mode: persistent subtle highlight + status dot
 }
 function ibRefreshAll(){Object.keys(IND).forEach(k=>ibUpdateUI(k));}
 
@@ -647,6 +659,149 @@ function chatAppend(from, text, isMe){
     const inp = document.getElementById('chatInput');
     if(document.activeElement !== inp) chatShowUnread();
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// PRO SHELL — in-app switchable mode. Reuses the live board/engine/game state;
+// only the surrounding chrome changes. Additive: amateur shell is untouched
+// unless proMode is on.
+// ══════════════════════════════════════════════════════════════════════════
+let proMode = false;
+let _proSaved = null;   // amateur board settings, restored on exit
+
+function setShell(mode){
+  const toPro = (mode === 'pro');
+  if(toPro === proMode) return;
+  proMode = toPro;
+  document.body.classList.toggle('pro-mode', proMode);
+  try{ localStorage.setItem('bm_shell', proMode ? 'pro' : 'amateur'); }catch(e){}
+  if(proMode){
+    proMountChat();
+    proApplyBoardClean();   // slate board + indicators off (minimal look)
+    proSync();
+  } else {
+    const gm = document.getElementById('proGearMenu'); if(gm) gm.style.display = 'none';
+    proUnmountChat();
+    proRestoreBoard();
+  }
+  if(typeof render === 'function') render();
+}
+function toggleShell(){ setShell(proMode ? 'amateur' : 'pro'); }
+
+function proToggleGear(){
+  const m = document.getElementById('proGearMenu');
+  if(m) m.style.display = (m.style.display === 'none' || !m.style.display) ? 'flex' : 'none';
+}
+
+function proFlipBoard(){
+  if(typeof boardFlipped !== 'undefined') boardFlipped = !boardFlipped;
+  if(typeof render === 'function') render();
+  proSync();
+}
+
+// Minimal board: slate squares, no legal dots, no ghosts, no indicator overlays
+function proApplyBoardClean(){
+  _proSaved = {
+    boardTheme: (typeof currentBoardTheme !== 'undefined') ? currentBoardTheme : null,
+    legal: document.getElementById('cbLegalToggle') ? document.getElementById('cbLegalToggle').checked : null,
+    ghost: document.getElementById('soloGhostDepth') ? document.getElementById('soloGhostDepth').value : null,
+  };
+  if(typeof applyBoardTheme === 'function') applyBoardTheme('slate');
+  const lg = document.getElementById('cbLegalToggle'); if(lg) lg.checked = false;
+  const gh = document.getElementById('soloGhostDepth');
+  if(gh){ gh.value = '0'; if(typeof ghostModeChanged === 'function') ghostModeChanged(); }
+  if(typeof clearAllSelections === 'function') clearAllSelections();
+  if(typeof indApply === 'function') indApply();   // recompute → all showing* flags off
+}
+function proRestoreBoard(){
+  if(!_proSaved) return;
+  if(_proSaved.boardTheme && typeof applyBoardTheme === 'function') applyBoardTheme(_proSaved.boardTheme);
+  const lg = document.getElementById('cbLegalToggle'); if(lg && _proSaved.legal != null){ lg.checked = _proSaved.legal; }
+  const gh = document.getElementById('soloGhostDepth');
+  if(gh && _proSaved.ghost != null){ gh.value = _proSaved.ghost; if(typeof ghostModeChanged === 'function') ghostModeChanged(); }
+  _proSaved = null;
+  if(typeof indApply === 'function') indApply();   // recompute the amateur indicators
+}
+
+function proMountChat(){
+  const chat = document.getElementById('chatBox');
+  const mount = document.getElementById('proChatMount');
+  if(chat && mount && chat.parentNode !== mount) mount.appendChild(chat);
+}
+function proUnmountChat(){
+  const chat = document.getElementById('chatBox');
+  const col = document.getElementById('board-col');
+  if(chat && col && chat.parentNode !== col){
+    const pw = document.getElementById('playerBoxW');
+    if(pw && pw.nextSibling) col.insertBefore(chat, pw.nextSibling);
+    else col.appendChild(chat);
+  }
+}
+
+function proRenderNotation(){
+  const el = document.getElementById('proMoves');
+  if(!el || typeof gameMovesAlgebraic === 'undefined') return;
+  if(!gameMovesAlgebraic.length){ el.innerHTML = '<div class="pro-moves-empty">No moves yet</div>'; return; }
+  let html = '';
+  for(let i=0;i<gameMovesAlgebraic.length;i+=2){
+    const n = i/2 + 1;
+    const w = gameMovesAlgebraic[i] || '';
+    const b = gameMovesAlgebraic[i+1] || '';
+    html += '<div class="pro-moverow"><span class="pro-mnum">' + n + '.</span>' +
+            '<span class="pro-mw">' + w + '</span><span class="pro-mb">' + b + '</span></div>';
+  }
+  el.innerHTML = html;
+  el.scrollTop = el.scrollHeight;
+}
+
+// Mirror live game state into the pro side column (clocks, names, turn, moves)
+function proSync(){
+  if(!proMode) return;
+  proRenderNotation();
+  const flipped = (typeof boardFlipped !== 'undefined') && boardFlipped;
+  const topIsWhite = flipped;             // top strip = side at top of the board
+  const tTime = document.getElementById(topIsWhite ? 'timeW' : 'timeB');
+  const bTime = document.getElementById(topIsWhite ? 'timeB' : 'timeW');
+  const ct = document.getElementById('proClockTop'), cb = document.getElementById('proClockBottom');
+  if(ct && tTime) ct.textContent = tTime.textContent;
+  if(cb && bTime) cb.textContent = bTime.textContent;
+  const whiteToMove = (typeof turn !== 'undefined') && (turn === 'w');
+  const over = (typeof gameOver !== 'undefined') && gameOver;
+  const topActive = topIsWhite ? whiteToMove : !whiteToMove;
+  const pt = document.getElementById('proPlayerTop'), pb = document.getElementById('proPlayerBottom');
+  if(pt) pt.classList.toggle('active', topActive && !over);
+  if(pb) pb.classList.toggle('active', !topActive && !over);
+  const pnW = document.querySelector('#playerBoxW .player-name');
+  const pnB = document.querySelector('#playerBoxB .player-name');
+  const wName = pnW ? pnW.textContent : 'White';
+  const bName = pnB ? pnB.textContent : 'Black';
+  const nt = document.getElementById('proNameTop'), nb = document.getElementById('proNameBottom');
+  const at = document.getElementById('proAvatarTop'), ab = document.getElementById('proAvatarBottom');
+  if(nt) nt.textContent = topIsWhite ? wName : bName;
+  if(nb) nb.textContent = topIsWhite ? bName : wName;
+  if(at) at.textContent = topIsWhite ? '♔' : '♚';
+  if(ab) ab.textContent = topIsWhite ? '♚' : '♔';
+}
+
+// Restore the saved shell on load
+document.addEventListener('DOMContentLoaded', () => {
+  try{ if(localStorage.getItem('bm_shell') === 'pro') setShell('pro'); }catch(e){}
+});
+
+// ── Ghost availability indicator (amateur shell) ────────────────────────────
+// Ghost responses are gated off during a LIVE 2-player game (see ghostEnabled()
+// in 50-bot-engine.js). Reflect that in the settings UI: disable the depth
+// selector and surface a note so the player knows it's intentional.
+function mpUpdateGhostAvailability(){
+  const live = (typeof mpRoomId !== 'undefined' && mpRoomId &&
+                typeof mpMode   !== 'undefined' && mpMode === 'ingame' &&
+                typeof gameOver  !== 'undefined' && !gameOver);
+  const sel  = document.getElementById('soloGhostDepth');
+  const note = document.getElementById('ghostMpNote');
+  const row  = document.getElementById('ghostRow');
+  if(sel)  sel.disabled = live;
+  if(note) note.style.display = live ? '' : 'none';
+  if(row)  row.style.opacity  = live ? '0.5' : '';
 }
 
 function chatShowUnread(){
@@ -1818,22 +1973,102 @@ document.getElementById('themePanel').addEventListener('transitionend',()=>{
 });
 
 // ── PGN Export ────────────────────────────────────────────────────────
-function savePgn(){
-  const date=new Date().toISOString().split('T')[0];
-  let pgn='[Event "Blundermind Game"]\n[Date "'+date+'"]\n[White "White"]\n[Black "Black"]\n[Result "*"]\n\n';
-  if(gameMovesAlgebraic.length===0){pgn+='*';}
+// ── PGN build + save (auto-save to history · prompt to save-as a file) ───────
+let _gameAutoSaved = false;   // guards one auto-save per finished game
+
+function _pgnResultToken(){
+  const m = (typeof gameOverMsg !== 'undefined' ? gameOverMsg : '') || '';
+  if(/1-0|white wins/i.test(m)) return '1-0';
+  if(/0-1|black wins/i.test(m)) return '0-1';
+  if(/draw|½-½|1\/2|stalemate|insufficient|repetition|fifty/i.test(m)) return '1/2-1/2';
+  return '*';
+}
+
+function buildPgnText(){
+  const date   = new Date().toISOString().split('T')[0];
+  const result = _pgnResultToken();
+  let pgn = '[Event "Blundermind Game"]\n[Site "Blundermind"]\n[Date "' + date +
+            '"]\n[White "White"]\n[Black "Black"]\n[Result "' + result + '"]\n\n';
+  if(gameMovesAlgebraic.length === 0){ pgn += result; }
   else{
     for(let i=0;i<gameMovesAlgebraic.length;i++){
-      if(i%2===0)pgn+=(Math.floor(i/2)+1)+'. ';
-      pgn+=gameMovesAlgebraic[i]+' ';
+      if(i%2===0) pgn += (Math.floor(i/2)+1) + '. ';
+      pgn += gameMovesAlgebraic[i] + ' ';
     }
-    pgn+='*';
+    pgn += result;
   }
-  const blob=new Blob([pgn],{type:'text/plain'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download='blundermind_'+date+'.pgn';
+  return { pgn, date, result };
+}
+
+function downloadPgn(pgn, filename){
+  const blob = new Blob([pgn], {type:'application/x-chess-pgn'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
   a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// Prompt the user for a filename, then download — "save as a specific file"
+function savePgnAs(){
+  const { pgn, date } = buildPgnText();
+  const def = 'blundermind_' + date + '.pgn';
+  let name = prompt('Save game as:', def);
+  if(name === null) return;              // cancelled
+  name = name.trim() || def;
+  if(!/\.pgn$/i.test(name)) name += '.pgn';
+  downloadPgn(pgn, name);
+}
+// Existing "Save game" button entry point
+function savePgn(){ savePgnAs(); }
+
+// Silent auto-save of every finished game to a rolling local history
+function autoSaveGame(){
+  if(!gameMovesAlgebraic.length) return;
+  const { pgn, date, result } = buildPgnText();
+  try{
+    const hist = JSON.parse(localStorage.getItem('bm_gameHistory') || '[]');
+    hist.push({ date, ts: Date.now(), result, moves: gameMovesAlgebraic.length, pgn });
+    while(hist.length > 50) hist.shift();   // keep the last 50 games
+    localStorage.setItem('bm_gameHistory', JSON.stringify(hist));
+  }catch(e){}
+}
+
+// Called from updatePlayerBoxes() — fires once when a game ends
+function maybeAutoSaveGame(){
+  if(typeof gameOver === 'undefined') return;
+  if(gameOver && !_gameAutoSaved && gameMovesAlgebraic.length > 0){
+    _gameAutoSaved = true;
+    autoSaveGame();
+    showSaveGameToast();
+  } else if(!gameOver){
+    _gameAutoSaved = false;               // a new game is in progress
+  }
+}
+
+// Non-blocking offer to also download the finished game as a file
+function showSaveGameToast(){
+  const old = document.getElementById('bm-save-toast'); if(old) old.remove();
+  const d = document.createElement('div');
+  d.id = 'bm-save-toast';
+  d.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);' +
+    'background:#14161a;border:0.5px solid rgba(200,146,42,0.5);border-radius:6px;' +
+    'color:#e8e6e0;font-family:system-ui,sans-serif;font-size:12px;padding:10px 14px;' +
+    'z-index:9999;display:flex;align-items:center;gap:12px;box-shadow:0 8px 30px rgba(0,0,0,0.6);';
+  d.innerHTML = '<span>💾 Game auto-saved.</span>';
+  const btn = document.createElement('button');
+  btn.textContent = 'Download .pgn';
+  btn.style.cssText = 'background:rgba(200,146,42,0.15);border:0.5px solid rgba(200,146,42,0.5);' +
+    'border-radius:4px;color:#e8aa40;font-family:inherit;font-size:11px;padding:4px 10px;cursor:pointer;';
+  btn.onclick = () => savePgnAs();
+  d.appendChild(btn);
+  const x = document.createElement('button');
+  x.textContent = '✕';
+  x.style.cssText = 'background:none;border:none;color:#717a8a;cursor:pointer;font-size:12px;line-height:1;';
+  x.onclick = () => d.remove();
+  d.appendChild(x);
+  document.body.appendChild(d);
+  setTimeout(() => { if(d.parentNode) d.remove(); }, 12000);
 }
 
 // ── PGN Import & Replay ───────────────────────────────────────────────

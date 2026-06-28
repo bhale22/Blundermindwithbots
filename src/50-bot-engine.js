@@ -105,12 +105,515 @@ function botRemainingMovesEstimate() {
 //   Left label = negative value = that behaviour boosted when value < 0.
 //   Trade seeker is on the LEFT (negative) → captures boosted by -tradeVal * scale.
 //   All other attractors: positive value → boost the right-label behaviour.
+// ── Custom controls: user-defined attractors ─────────────────────────────────
+// A custom control is { id, name, metric, phase, value(-5..+5) }. It reuses the
+// exact attractor mechanism: count a board feature before and after a candidate
+// move, squash the delta through tanh, and add value×scale×tanh(delta/k) to the
+// move's logBoost. The sign of `value` is the direction (right/+ = maximize the
+// metric, left/- = minimize it). Each control also counts toward the CP budget's
+// totalAbs so the panel's cp-allocation display stays accurate.
+//
+//   metricFn(bd, ctx) → number   ctx = { me, opp, atk }
+//     me / opp  'w'|'b' colour strings for the bot and its opponent
+//     atk       attack map for bd (atk[sq]={w:[...],b:[...]}); only supplied when
+//               the metric sets needsAtk:true, else null.
+// Higher return = "more of this feature for the bot"; k scales the tanh response.
+const _CC_PIECEVAL = { P: 1, N: 3, B: 3, R: 5, Q: 9, K: 0 };
+const _ccMetrics = {
+  passedPawns: {
+    label: 'Passed pawns', needsAtk: false, k: 1,
+    fn(bd, ctx) {
+      const me = ctx.me, opp = ctx.opp;
+      const oppPawns = [];
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (p && p.piece === 'P' && p.color === opp) oppPawns.push(sq);
+      }
+      let count = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (!p || p.piece !== 'P' || p.color !== me) continue;
+        const f = sq % 8, r = (sq / 8) | 0;
+        let passed = true;
+        for (const o of oppPawns) {
+          const f2 = o % 8, r2 = (o / 8) | 0;
+          if (Math.abs(f2 - f) > 1) continue;
+          // r decreases as White advances (r=0 is the 8th rank); an opponent pawn
+          // ahead of ours on this/adjacent file blocks the passer.
+          if (me === 'w' ? (r2 < r) : (r2 > r)) { passed = false; break; }
+        }
+        if (passed) count++;
+      }
+      return count;
+    }
+  },
+  pawnAdvance: {
+    label: 'Pawn advancement', needsAtk: false, k: 4,
+    fn(bd, ctx) {
+      const me = ctx.me;
+      let s = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (!p || p.piece !== 'P' || p.color !== me) continue;
+        const r = (sq / 8) | 0;
+        s += me === 'w' ? (6 - r) : (r - 1); // ranks advanced from the pawn's start
+      }
+      return s;
+    }
+  },
+  kingZoneAttackers: {
+    label: 'King-zone pressure', needsAtk: true, k: 3,
+    fn(bd, ctx) {
+      const me = ctx.me, opp = ctx.opp, atk = ctx.atk;
+      if (!atk) return 0;
+      let ksq = -1;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (p && p.piece === 'K' && p.color === opp) { ksq = sq; break; }
+      }
+      if (ksq < 0) return 0;
+      const kf = ksq % 8, kr = (ksq / 8) | 0;
+      let cnt = 0;
+      for (let df = -1; df <= 1; df++) {
+        for (let dr = -1; dr <= 1; dr++) {
+          const f = kf + df, r = kr + dr;
+          if (f < 0 || f > 7 || r < 0 || r > 7) continue;
+          const sq = r * 8 + f;
+          if (atk[sq]) cnt += (atk[sq][me] || []).length;
+        }
+      }
+      return cnt;
+    }
+  },
+  attackedPieces: {
+    label: 'Enemy pieces attacked', needsAtk: true, k: 2,
+    fn(bd, ctx) {
+      const me = ctx.me, opp = ctx.opp, atk = ctx.atk;
+      if (!atk) return 0;
+      let cnt = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (p && p.color === opp && atk[sq] && (atk[sq][me] || []).length > 0) cnt++;
+      }
+      return cnt;
+    }
+  },
+  weakSquares: {
+    label: 'My weak squares', needsAtk: true, k: 5,
+    fn(bd, ctx) {
+      const me = ctx.me, atk = ctx.atk;
+      if (!atk) return 0;
+      let cnt = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        if (!bd[sq] && atk[sq] && (atk[sq][me] || []).length === 0) cnt++;
+      }
+      return cnt;
+    }
+  },
+  hangingPieces: {
+    label: 'My hanging pieces', needsAtk: true, k: 2,
+    fn(bd, ctx) {
+      const me = ctx.me, opp = ctx.opp, atk = ctx.atk;
+      if (!atk) return 0;
+      let cnt = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (!p || p.color !== me || p.piece === 'K' || !atk[sq]) continue;
+        const att = (atk[sq][opp] || []).length;
+        const def = (atk[sq][me]  || []).length;
+        if (att > 0 && def === 0) cnt++;
+      }
+      return cnt;
+    }
+  },
+  centralization: {
+    label: 'Piece centralization', needsAtk: false, k: 3,
+    fn(bd, ctx) {
+      const me = ctx.me;
+      let s = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (!p || p.color !== me || p.piece === 'P' || p.piece === 'K') continue;
+        const f = sq % 8, r = (sq / 8) | 0;
+        // Closeness to the central 4×4 (max at the d/e, 4/5 squares).
+        s += (3.5 - Math.abs(f - 3.5)) + (3.5 - Math.abs(r - 3.5));
+      }
+      return s;
+    }
+  },
+  outpost: {
+    label: 'Knight/bishop outposts', needsAtk: false, k: 1,
+    fn(bd, ctx) {
+      const me = ctx.me, opp = ctx.opp;
+      const fwd = me === 'w' ? -1 : 1; // Δr the bot's pawns advance (r=0 is rank 8)
+      let count = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (!p || p.color !== me || (p.piece !== 'N' && p.piece !== 'B')) continue;
+        const f = sq % 8, r = (sq / 8) | 0;
+        // Must be advanced past the middle into enemy territory.
+        if (me === 'w' ? (r > 4) : (r < 3)) continue;
+        // Supported by a friendly pawn one rank behind, diagonally.
+        const br = r - fwd;
+        let supported = false;
+        for (const df of [-1, 1]) {
+          const bf = f + df;
+          if (bf < 0 || bf > 7 || br < 0 || br > 7) continue;
+          const q = bd[br * 8 + bf];
+          if (q && q.piece === 'P' && q.color === me) { supported = true; break; }
+        }
+        if (!supported) continue;
+        // No enemy pawn on an adjacent file can ever advance to challenge it.
+        let challengeable = false;
+        for (let s2 = 0; s2 < 64 && !challengeable; s2++) {
+          const q = bd[s2];
+          if (!q || q.piece !== 'P' || q.color !== opp) continue;
+          const f2 = s2 % 8, r2 = (s2 / 8) | 0;
+          if (Math.abs(f2 - f) !== 1) continue;
+          if (me === 'w' ? (r2 < r) : (r2 > r)) challengeable = true;
+        }
+        if (!challengeable) count++;
+      }
+      return count;
+    }
+  },
+
+  // ── Material & trades ──────────────────────────────────────────────────────
+  material: {
+    label: 'Material balance', needsAtk: false, k: 3,
+    fn(bd, ctx) {
+      const me = ctx.me;
+      let s = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (!p) continue;
+        const v = _CC_PIECEVAL[p.piece] || 0;
+        s += p.color === me ? v : -v;
+      }
+      return s;
+    }
+  },
+  pieceCount: {
+    label: 'Total pieces on board', needsAtk: false, k: 3,
+    fn(bd) { let n = 0; for (let sq = 0; sq < 64; sq++) if (bd[sq]) n++; return n; }
+  },
+  queens: {
+    label: 'Queens on board', needsAtk: false, k: 1,
+    fn(bd) { let n = 0; for (let sq = 0; sq < 64; sq++) { const p = bd[sq]; if (p && p.piece === 'Q') n++; } return n; }
+  },
+
+  // ── King attack & safety ───────────────────────────────────────────────────
+  kingDanger: {
+    label: 'Enemy pressure on my king', needsAtk: true, k: 3,
+    fn(bd, ctx) {
+      const me = ctx.me, opp = ctx.opp, atk = ctx.atk;
+      if (!atk) return 0;
+      let ksq = -1;
+      for (let sq = 0; sq < 64; sq++) { const p = bd[sq]; if (p && p.piece === 'K' && p.color === me) { ksq = sq; break; } }
+      if (ksq < 0) return 0;
+      const kf = ksq % 8, kr = (ksq / 8) | 0;
+      let c = 0;
+      for (let df = -1; df <= 1; df++) for (let dr = -1; dr <= 1; dr++) {
+        const f = kf + df, r = kr + dr;
+        if (f < 0 || f > 7 || r < 0 || r > 7) continue;
+        const s = r * 8 + f;
+        if (atk[s]) c += (atk[s][opp] || []).length;
+      }
+      return c;
+    }
+  },
+  kingShield: {
+    label: 'Pawn shield on my king', needsAtk: false, k: 1,
+    fn(bd, ctx) {
+      const me = ctx.me, fwd = me === 'w' ? -1 : 1;
+      let ksq = -1;
+      for (let sq = 0; sq < 64; sq++) { const p = bd[sq]; if (p && p.piece === 'K' && p.color === me) { ksq = sq; break; } }
+      if (ksq < 0) return 0;
+      const kf = ksq % 8, kr = (ksq / 8) | 0;
+      let c = 0;
+      for (let df = -1; df <= 1; df++) for (let dd = 1; dd <= 2; dd++) {
+        const f = kf + df, r = kr + fwd * dd;
+        if (f < 0 || f > 7 || r < 0 || r > 7) continue;
+        const p = bd[r * 8 + f];
+        if (p && p.piece === 'P' && p.color === me) c++;
+      }
+      return c;
+    }
+  },
+  givesCheck: {
+    label: 'Gives check', needsAtk: false, k: 1,
+    fn(bd, ctx) { return (typeof inCheck === 'function' && inCheck(bd, ctx.opp)) ? 1 : 0; }
+  },
+
+  // ── Pawn structure ─────────────────────────────────────────────────────────
+  doubledPawns: {
+    label: 'My doubled pawns', needsAtk: false, k: 1,
+    fn(bd, ctx) {
+      const me = ctx.me, files = [0,0,0,0,0,0,0,0];
+      for (let sq = 0; sq < 64; sq++) { const p = bd[sq]; if (p && p.piece === 'P' && p.color === me) files[sq % 8]++; }
+      let d = 0; for (let f = 0; f < 8; f++) if (files[f] > 1) d += files[f] - 1; return d;
+    }
+  },
+  isolatedPawns: {
+    label: 'My isolated pawns', needsAtk: false, k: 1,
+    fn(bd, ctx) {
+      const me = ctx.me, files = [0,0,0,0,0,0,0,0];
+      for (let sq = 0; sq < 64; sq++) { const p = bd[sq]; if (p && p.piece === 'P' && p.color === me) files[sq % 8]++; }
+      let iso = 0;
+      for (let f = 0; f < 8; f++) if (files[f] > 0 && (f === 0 || files[f-1] === 0) && (f === 7 || files[f+1] === 0)) iso += files[f];
+      return iso;
+    }
+  },
+  pawnIslands: {
+    label: 'My pawn islands', needsAtk: false, k: 1,
+    fn(bd, ctx) {
+      const me = ctx.me, files = [0,0,0,0,0,0,0,0];
+      for (let sq = 0; sq < 64; sq++) { const p = bd[sq]; if (p && p.piece === 'P' && p.color === me) files[sq % 8]++; }
+      let isl = 0, inIsl = false;
+      for (let f = 0; f < 8; f++) { if (files[f] > 0) { if (!inIsl) { isl++; inIsl = true; } } else inIsl = false; }
+      return isl;
+    }
+  },
+  connectedPawns: {
+    label: 'My connected pawns', needsAtk: false, k: 2,
+    fn(bd, ctx) {
+      const me = ctx.me;
+      let c = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (!p || p.piece !== 'P' || p.color !== me) continue;
+        const f = sq % 8, r = (sq / 8) | 0;
+        let conn = false;
+        for (const df of [-1, 1]) {
+          const af = f + df; if (af < 0 || af > 7) continue;
+          for (let ar = r - 1; ar <= r + 1; ar++) {
+            if (ar < 0 || ar > 7) continue;
+            const q = bd[ar * 8 + af];
+            if (q && q.piece === 'P' && q.color === me) { conn = true; break; }
+          }
+          if (conn) break;
+        }
+        if (conn) c++;
+      }
+      return c;
+    }
+  },
+
+  // ── Piece placement & activity ─────────────────────────────────────────────
+  mobility: {
+    label: 'My piece mobility', needsAtk: false, k: 8,
+    fn(bd, ctx) {
+      const me = ctx.me;
+      let m = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (p && p.color === me) { const a = rawAttacks(sq, bd); m += a ? a.length : 0; }
+      }
+      return m;
+    }
+  },
+  bishopPair: {
+    label: 'Bishop pair', needsAtk: false, k: 1,
+    fn(bd, ctx) {
+      const me = ctx.me; let b = 0;
+      for (let sq = 0; sq < 64; sq++) { const p = bd[sq]; if (p && p.piece === 'B' && p.color === me) b++; }
+      return b >= 2 ? 1 : 0;
+    }
+  },
+  rooksOpenFiles: {
+    label: 'Rooks on open files', needsAtk: false, k: 1,
+    fn(bd, ctx) {
+      const me = ctx.me, pawnFiles = [0,0,0,0,0,0,0,0];
+      for (let sq = 0; sq < 64; sq++) { const p = bd[sq]; if (p && p.piece === 'P') pawnFiles[sq % 8]++; }
+      let c = 0;
+      for (let sq = 0; sq < 64; sq++) { const p = bd[sq]; if (p && p.piece === 'R' && p.color === me && pawnFiles[sq % 8] === 0) c++; }
+      return c;
+    }
+  },
+  rooksSeventh: {
+    label: 'Rooks on the 7th rank', needsAtk: false, k: 1,
+    fn(bd, ctx) {
+      const me = ctx.me, target = me === 'w' ? 1 : 6; // the enemy's 2nd rank
+      let c = 0;
+      for (let sq = 0; sq < 64; sq++) { const p = bd[sq]; if (p && p.piece === 'R' && p.color === me && ((sq / 8) | 0) === target) c++; }
+      return c;
+    }
+  },
+  developedPieces: {
+    label: 'Developed minor pieces', needsAtk: false, k: 2,
+    fn(bd, ctx) {
+      const me = ctx.me, back = me === 'w' ? 7 : 0;
+      let c = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (p && p.color === me && (p.piece === 'N' || p.piece === 'B') && ((sq / 8) | 0) !== back) c++;
+      }
+      return c;
+    }
+  },
+
+  // ── Threats & square control ───────────────────────────────────────────────
+  enemyHanging: {
+    label: 'Loose enemy pieces', needsAtk: true, k: 1,
+    fn(bd, ctx) {
+      const me = ctx.me, opp = ctx.opp, atk = ctx.atk;
+      if (!atk) return 0;
+      let c = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (!p || p.color !== opp || p.piece === 'K' || !atk[sq]) continue;
+        if ((atk[sq][me] || []).length > 0 && (atk[sq][opp] || []).length === 0) c++;
+      }
+      return c;
+    }
+  },
+  defendedPieces: {
+    label: 'My defended pieces', needsAtk: true, k: 3,
+    fn(bd, ctx) {
+      const me = ctx.me, atk = ctx.atk;
+      if (!atk) return 0;
+      let c = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (!p || p.color !== me || p.piece === 'K' || !atk[sq]) continue;
+        if ((atk[sq][me] || []).length > 0) c++;
+      }
+      return c;
+    }
+  },
+  enemyWeakSquares: {
+    label: 'Holes in enemy camp', needsAtk: true, k: 5,
+    fn(bd, ctx) {
+      const me = ctx.me, opp = ctx.opp, atk = ctx.atk;
+      if (!atk) return 0;
+      let c = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        if (bd[sq]) continue;
+        const r = (sq / 8) | 0;
+        const inEnemyHalf = me === 'w' ? (r <= 3) : (r >= 4);
+        if (inEnemyHalf && atk[sq] && (atk[sq][opp] || []).length === 0) c++;
+      }
+      return c;
+    }
+  },
+  centerControl: {
+    label: 'Central square control', needsAtk: true, k: 3,
+    fn(bd, ctx) {
+      const me = ctx.me, atk = ctx.atk;
+      if (!atk) return 0;
+      let c = 0;
+      for (const s of [27, 28, 35, 36]) if (atk[s]) c += (atk[s][me] || []).length; // d5 e5 d4 e4
+      return c;
+    }
+  },
+  spaceControl: {
+    label: 'Space in enemy half', needsAtk: true, k: 5,
+    fn(bd, ctx) {
+      const me = ctx.me, atk = ctx.atk;
+      if (!atk) return 0;
+      let c = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        if (bd[sq]) continue;
+        const r = (sq / 8) | 0;
+        const inEnemyHalf = me === 'w' ? (r <= 3) : (r >= 4);
+        if (inEnemyHalf && atk[sq] && (atk[sq][me] || []).length > 0) c++;
+      }
+      return c;
+    }
+  },
+
+  // ── Mirrors of the built-in attractors (so they can be phase/result-gated) ──
+  // Fort Knox: total friendly defender coverage over all of the bot's pieces.
+  pieceDefense: {
+    label: 'Piece defense (Fort Knox)', needsAtk: true, k: 3,
+    fn(bd, ctx) {
+      const me = ctx.me, atk = ctx.atk;
+      if (!atk) return 0;
+      let total = 0;
+      for (let sq = 0; sq < 64; sq++) {
+        const p = bd[sq];
+        if (p && p.color === me && atk[sq]) total += (atk[sq][me] || []).length;
+      }
+      return total;
+    }
+  },
+  // Structure: negative of (islands + doubled + isolated) — higher = tighter.
+  pawnStructure: {
+    label: 'Pawn structure health', needsAtk: false, k: 1,
+    fn(bd, ctx) { return -_pawnStructurePenalty(bd, ctx.me); }
+  }
+};
+
+// Current game phase from material + ply. Mirrors the opening gate used elsewhere
+// (gameMovesAlgebraic.length < 20) and an endgame material heuristic (≤6 non-king,
+// non-pawn pieces left on the board, both colours).
+function _botGamePhase() {
+  let majMin = 0;
+  for (let sq = 0; sq < 64; sq++) {
+    const p = board[sq];
+    if (!p || p.piece === 'K' || p.piece === 'P') continue;
+    majMin++;
+  }
+  if (majMin <= 6) return 'endgame';
+  const ply = (typeof gameMovesAlgebraic !== 'undefined') ? gameMovesAlgebraic.length : 0;
+  if (ply < 20) return 'opening';
+  return 'middlegame';
+}
+
+function _ccPhaseMatch(phase, current) {
+  return !phase || phase === 'all' || phase === current;
+}
+
+// Optional game-state gate keyed on the Stockfish complexity-probe eval (cp, from
+// the bot's perspective; null when no probe ran this move). ±50 cp = "equal".
+function _ccResultMatch(result, evalCp) {
+  if (!result || result === 'any') return true;
+  if (evalCp === null || evalCp === undefined) return false; // no eval → don't fire
+  if (result === 'winning') return evalCp >  50;
+  if (result === 'losing')  return evalCp < -50;
+  if (result === 'equal')   return evalCp >= -50 && evalCp <= 50;
+  return true;
+}
+
+// "Under time pressure" = a side's clock has entered the scramble zone: below
+// 30 s, or below 15% of its starting time (covers blitz through classical).
+// null / untimed clocks are never under pressure.
+function _ccUnderPressure(clockMs) {
+  if (clockMs === null || clockMs === undefined) return false;
+  if (clockMs < 30000) return true;
+  return (typeof botStartClockMs === 'number' && botStartClockMs > 0) && clockMs < botStartClockMs * 0.15;
+}
+function _ccPressureMatch(cond, botClock, oppClock) {
+  if (!cond || cond === 'any') return true;
+  const meP  = _ccUnderPressure(botClock);
+  const oppP = _ccUnderPressure(oppClock);
+  if (cond === 'self')   return meP;
+  if (cond === 'opp')    return oppP;
+  if (cond === 'either') return meP || oppP;
+  return true;
+}
+
 function applyMoveAttractors(moveProbs) {
   if (!moveProbs || !Object.keys(moveProbs).length) return moveProbs;
 
   const attrVals  = window._bcpAttractorValues || {};
   const pieceVals = window._bcpPieceValues     || {};
   const cpBudget  = window._bcpCpBudget != null ? window._bcpCpBudget : 100;
+
+  // Custom controls (user-defined attractors): keep ones with a non-zero value
+  // and a known metric, then gate by current game phase. Phase depends only on
+  // the board, so it can be resolved here before colour strings are set up.
+  const customControls = (window._bcpCustomControls || [])
+    .filter(c => c && c.value && _ccMetrics[c.metric]);
+  const _ccPhase  = customControls.length ? _botGamePhase() : null;
+  const _ccEval   = (typeof sfCplxEval !== 'undefined') ? sfCplxEval : null;
+  const _ccBotClk = (typeof botClockMs === 'function') ? botClockMs() : null;
+  const _ccOppClk = (typeof botOppClockMs !== 'undefined') ? botOppClockMs : null;
+  const activeCC  = customControls.filter(c =>
+    _ccPhaseMatch(c.phase, _ccPhase) &&
+    _ccResultMatch(c.result, _ccEval) &&
+    _ccPressureMatch(c.pressure, _ccBotClk, _ccOppClk));
+  const hasCustom = activeCC.length > 0;
 
   const luckVal       = attrVals['luck']       || 0;
   const tradeVal      = attrVals['trade']      || 0;
@@ -147,7 +650,8 @@ function applyMoveAttractors(moveProbs) {
   // toward totalAbs so the panel's cp allocation display stays accurate.
   const CP_PER_LOG_UNIT = 150;
   const allVals  = [...Object.values(attrVals), ...Object.values(pieceVals)];
-  const totalAbs = allVals.reduce((s, v) => s + Math.abs(v || 0), 0);
+  const ccAbs    = customControls.reduce((s, c) => s + Math.abs(c.value || 0), 0);
+  const totalAbs = allVals.reduce((s, v) => s + Math.abs(v || 0), 0) + ccAbs;
   const scale = (cpBudget > 0 && totalAbs > 0)
     ? cpBudget / (totalAbs * CP_PER_LOG_UNIT)
     : 0;
@@ -187,7 +691,7 @@ function applyMoveAttractors(moveProbs) {
 
   // ── Per-move reweighting ──────────────────────────────────────────────────
   const needsPerMove = scale > 0 &&
-    (hasPiece || hasTrade || hasPawnS || hasSpace || hasFortkx || hasGambito || hasAttacker || hasStructure);
+    (hasPiece || hasTrade || hasPawnS || hasSpace || hasFortkx || hasGambito || hasAttacker || hasStructure || hasCustom);
   if (!needsPerMove) return filtered;
 
   const PIECE_MAP   = { p:'pawn', n:'knight', b:'bishop', r:'rook', q:'queen', k:'king' };
@@ -230,6 +734,20 @@ function applyMoveAttractors(moveProbs) {
   // per-move check below is gated on pieceLetter === 'p'.
   let currentStructPenalty = 0;
   if (hasStructure) currentStructPenalty = _pawnStructurePenalty(board, botColorStr);
+
+  // ── Custom controls: per-turn baselines on the current board ──────────────
+  // The global atkMap is the attack map for the current position (the same one
+  // the space/fortkx baselines above read), so metric baselines can reuse it.
+  const ccNeedsAtk = hasCustom && activeCC.some(c => _ccMetrics[c.metric].needsAtk);
+  if (hasCustom) {
+    // atkMap is the current position's map; build one if it isn't available so
+    // the metric baseline matches what getSimAtkCC computes for candidates.
+    const baseAtk = ccNeedsAtk
+      ? (atkMap || buildDirectAtk(board, _EMPTY, _EMPTY, _EMPTY, _EMPTY))
+      : null;
+    const baseCtx = { me: botColorStr, opp: oppColorStr, atk: baseAtk };
+    for (const c of activeCC) c._ccBefore = _ccMetrics[c.metric].fn(board, baseCtx);
+  }
 
   // ── Gambito: ECO gambit continuation UCIs (computed once per bot turn) ────
   // Scan ECO entries whose name contains 'gambit' and whose move prefix matches
@@ -292,6 +810,13 @@ function applyMoveAttractors(moveProbs) {
     const getSimToAtk = () => {
       if (!_simToAtk) _simToAtk = rawAttacks(mv.to, getSimBd());
       return _simToAtk;
+    };
+    // Full attack map on the simulated board — shared by every custom-control
+    // metric that sets needsAtk, built once per candidate.
+    let _simAtkCC = null;
+    const getSimAtkCC = () => {
+      if (!_simAtkCC) _simAtkCC = buildDirectAtk(getSimBd(), _EMPTY, _EMPTY, _EMPTY, _EMPTY);
+      return _simAtkCC;
     };
 
     let logBoost = 0;
@@ -397,6 +922,20 @@ function applyMoveAttractors(moveProbs) {
       const simPenalty = _pawnStructurePenalty(getSimBd(), botColorStr);
       const delta = currentStructPenalty - simPenalty;
       if (delta !== 0) logBoost += structureVal * scale * Math.tanh(delta);
+    }
+
+    // ── Custom controls: metric delta on the simulated board ──────────────────
+    // Build the sim attack map once (if any active metric needs it) and reuse it
+    // across every control. delta = metric(after) − metric(before); value sign is
+    // the direction (right/+ maximizes the metric, left/− minimizes it).
+    if (hasCustom) {
+      const ccAtk = ccNeedsAtk ? getSimAtkCC() : null;
+      for (const c of activeCC) {
+        const m = _ccMetrics[c.metric];
+        const after = m.fn(getSimBd(), { me: botColorStr, opp: oppColorStr, atk: m.needsAtk ? ccAtk : null });
+        const delta = after - c._ccBefore;
+        if (delta !== 0) logBoost += c.value * scale * Math.tanh(delta / m.k);
+      }
     }
 
     result[uciMove] = logBoost !== 0 ? prob * Math.exp(logBoost) : prob;
