@@ -6104,10 +6104,13 @@ function _btAddDemo(){
 // `action` = extra setup; `stage` groups steps for the jump chips.
 const BOT_TOUR = [
   { stage:'Engine', open:'engine', sel:'#engine-mode-grid', title:'1 · The engine',
-    body:'Pick the brain — <b>Maia</b> (a neural net trained on millions of human games), <b>Stockfish</b>, or blends that pull openings from the <b>Lichess explorer</b> and fall back to an engine. You can even build a <b>Hybrid</b> bot that mixes engines by weight, and set the exact playing strength. Hybrid bots like this exist nowhere else.' },
+    body:'Pick the brain — <b>Maia</b> (a neural net trained on millions of human games), <b>Stockfish</b>, or blends that pull openings from the <b>Lichess explorer</b> and fall back to an engine. You can build a <b>Hybrid</b> bot that mixes engines by weight, and set the exact playing strength.' },
 
-  { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#style-gauge', title:'2 · The Centipawn-meter',
-    body:'The master dial: how far the bot’s personality may pull it away from the best engine move, in centipawns. Low = near-perfect; high = a bot with strong opinions. A single, tunable "how opinionated is this bot" control — unique to Blundermind.' },
+  { stage:'Engine', open:'engine', sel:'#engine-temp-col', title:'Move sampling — temperature',
+    body:'How adventurously the bot samples from Maia’s move probabilities. <b>Focused</b> = almost always the top move; <b>Wild</b> = it’ll reach for lower-probability tries. The live chart shows the reshaped distribution.' },
+
+  { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#style-gauge', title:'2 · The Centipawmeter',
+    body:'The master dial: how far the bot’s personality may pull it away from the best engine move, in centipawns. Low = near-perfect play; high = a bot with strong opinions.' },
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#move-quality-range', title:'Move-quality distribution',
     body:'Choose <i>which slice</i> of the move distribution the bot draws from — only the best moves, or deliberately weaker ones for a believable "bad day". Direct control over a bot’s play distribution.' },
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#radar-canvas', title:'Personality fingerprint',
@@ -6115,18 +6118,18 @@ const BOT_TOUR = [
   { stage:'Personality', open:'attract', tab:['attract','pieces'], sel:'#attractor-rows', title:'Strategic preferences',
     body:'Bias the bot toward chaos or order, attacking or trading, tight or loose pawns, piece activity and more — all sharing the centipawn budget above.' },
   { stage:'Personality', open:'attract', tab:['attract','custom'], action:_btAddDemo, sel:'#custom-control-rows', title:'★ Custom controls — write your own rule',
-    body:'The headline feature. Build a rule from <b>30+ board features</b> (passed pawns, king safety, outposts, mobility, hanging pieces…), then <b>restrict when it fires</b>: by <b>game phase</b> (opening / middlegame / endgame), by <b>advantage</b> (only when winning or losing), or by <b>time pressure</b> (yours or the opponent’s). Nothing like this exists on any other chess site.' },
+    body:'Build a rule from <b>30+ board features</b> (passed pawns, king safety, outposts, mobility, hanging pieces…), then <b>restrict when it fires</b>: by <b>game phase</b> (opening / middlegame / endgame), by <b>advantage</b> (only when winning or losing), or by <b>time pressure</b> (yours or the opponent’s). Stack several and the bot follows them all at once.' },
   { stage:'Personality', open:'attract', tab:['attract','presets'], sel:'#persona-grid', title:'One-click personalities',
     body:'In a hurry? Start from a ready-made character — then tweak any of the dials above.' },
 
   { stage:'Opening', open:'opening', sel:'#op-mode-white', title:'3 · Per-colour openings',
-    body:'Give White and Black <i>separate</i> opening behaviour: <b>Off</b>, <b>Main Line</b> (the most popular book moves), or a <b>Repertoire</b> of several openings you weight by percentage. A bot that always plays the main line, or that blends multiple pet lines — rare anywhere.' },
+    body:'Give White and Black <i>separate</i> opening behaviour: <b>Off</b>, <b>Main Line</b> (the most popular book moves), or a <b>Repertoire</b> of several openings you weight by percentage.' },
 
   { stage:'Timing', open:'timing', sel:'#timing-mode-grid', title:'4 · Move timing',
     body:'How the bot spends its clock between moves — instant, fixed, scaled to position complexity, or mirroring your own pace. The little things that make it feel human.' },
 
   { stage:'Time pressure', open:'pressure', sel:'#cvA', title:'5 · Time-pressure degradation',
-    body:'Make it crack under the clock: the bot’s <b>ELO and move quality fall as its time runs low</b>, along curves you can drag by hand. Per-bot, customizable degradation — a Blundermind original.' },
+    body:'Make it crack under the clock: the bot’s <b>ELO and move quality fall as its time runs low</b>, along curves you can drag by hand. For example, a 2400 in time trouble doesn’t suddenly play like a calm 1900 — it’s closer to a <i>lower-probability</i> move from a 2300. Both the strength <i>and</i> which part of the distribution it draws from shift.' },
 
   { stage:'Start', sel:'.start-btn', title:'Start — and save your creation',
     body:'When the bot is ready, press <b>Start</b>. Any bot can be <b>saved and shared as a file</b>, so you can trade custom opponents with friends.' },
@@ -6217,18 +6220,31 @@ function _btPos(rect){
   const panel = document.getElementById('btPanel'); if(!panel) return;
   const pw = panel.offsetWidth || 300, ph = panel.offsetHeight || 200;
   const vw = window.innerWidth, vh = window.innerHeight, gap = 14;
-  let top, left;
-  if(rect && rect.width > 0){
-    if(rect.bottom + gap + ph <= vh) top = rect.bottom + gap;
-    else if(rect.top - gap - ph >= 0) top = rect.top - gap - ph;
-    else top = Math.max(gap, Math.min(vh - ph - gap, rect.top));
-    left = Math.max(gap, Math.min(vw - pw - gap, rect.left + rect.width/2 - pw/2));
-  } else {
-    top = Math.max(gap, vh/2 - ph/2);
-    left = Math.max(gap, vw/2 - pw/2);
+  if(!(rect && rect.width > 0)){
+    panel.style.top = Math.max(gap, (vh - ph) / 2) + 'px';
+    panel.style.left = Math.max(gap, (vw - pw) / 2) + 'px';
+    return;
   }
-  panel.style.top = top + 'px';
-  panel.style.left = left + 'px';
+  const clampL = x => Math.max(gap, Math.min(vw - pw - gap, x));
+  const clampT = y => Math.max(gap, Math.min(vh - ph - gap, y));
+  const cx = clampL(rect.left + rect.width / 2 - pw / 2);   // centered on target horizontally
+  const cy = clampT(rect.top + rect.height / 2 - ph / 2);   // centered on target vertically
+  let top, left;
+  if(rect.bottom + gap + ph <= vh){            // below the target
+    top = rect.bottom + gap; left = cx;
+  } else if(rect.top - gap - ph >= 0){         // above the target
+    top = rect.top - gap - ph; left = cx;
+  } else if(rect.right + gap + pw <= vw){       // to the right of it
+    left = rect.right + gap; top = cy;
+  } else if(rect.left - gap - pw >= 0){          // to the left of it
+    left = rect.left - gap - pw; top = cy;
+  } else {                                       // no clear side — opposite corner (least overlap)
+    const tcx = rect.left + rect.width / 2, tcy = rect.top + rect.height / 2;
+    left = (tcx < vw / 2) ? (vw - pw - gap) : gap;
+    top  = (tcy < vh / 2) ? (vh - ph - gap) : gap;
+  }
+  panel.style.top = clampT(top) + 'px';
+  panel.style.left = clampL(left) + 'px';
 }
 window.addEventListener('resize', function(){ if(_btOn) _btSpot(); });
 window.addEventListener('scroll', function(){ if(_btOn) _btSpot(); }, true);
