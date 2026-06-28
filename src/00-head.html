@@ -496,8 +496,22 @@ canvas{
 .landing-title span { color:#4a9fd4; }
 .landing-tagline {
   font-size:13px;color:var(--text-dim);font-style:italic;
-  margin-bottom:36px;letter-spacing:0.02em;
+  margin-bottom:24px;letter-spacing:0.02em;
 }
+.landing-shell-pick {
+  display:flex;gap:12px;margin-bottom:28px;flex-wrap:wrap;justify-content:center;
+}
+.landing-shell-btn {
+  display:flex;flex-direction:column;gap:4px;align-items:flex-start;text-align:left;
+  width:240px;padding:11px 14px;background:var(--bg-panel);
+  border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all 0.15s;
+}
+.landing-shell-btn:hover { border-color:var(--accent); }
+.landing-shell-btn.sel {
+  border-color:var(--accent);box-shadow:0 0 0 2px rgba(74,159,212,0.18);
+}
+.landing-shell-btn .ls-name { font-size:12px;font-weight:700;color:var(--text-primary); }
+.landing-shell-btn .ls-desc { font-size:9px;color:var(--text-dim);line-height:1.45; }
 .landing-cards {
   display:flex;flex-wrap:wrap;gap:14px;justify-content:center;
   max-width:720px;margin-bottom:28px;
@@ -545,6 +559,35 @@ canvas{
   font-size:8.5px;color:var(--text-dim);text-align:center;
   margin-top:8px;
 }
+
+/* ── Guided tour ──────────────────────────────────────────────────────────── */
+#tourOverlay { position:fixed;inset:0;z-index:4500;pointer-events:none; }
+#tourBackdrop { position:absolute;inset:0;background:rgba(0,0,0,0.5);pointer-events:none;display:none; }
+#tourRing {
+  position:absolute;display:none;border-radius:8px;
+  border:2px solid var(--accent,#4a9fd4);
+  box-shadow:0 0 0 9999px rgba(0,0,0,0.5), 0 0 16px 2px rgba(74,159,212,0.55);
+  pointer-events:none;
+  transition:top 0.25s ease,left 0.25s ease,width 0.25s ease,height 0.25s ease;
+}
+#tourPanel {
+  position:absolute;top:50%;left:50%;width:288px;max-width:calc(100vw - 24px);
+  background:var(--bg-panel,#14161a);border:1px solid var(--accent,#4a9fd4);
+  border-radius:10px;box-shadow:0 14px 44px rgba(0,0,0,0.6);
+  padding:14px 16px;pointer-events:auto;
+  font-family:var(--font-u,'Chakra Petch',sans-serif);
+  transition:top 0.22s ease,left 0.22s ease;
+}
+.tour-count { font-size:8px;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-dim);margin-bottom:5px; }
+.tour-title { font-size:14px;font-weight:700;color:var(--text-primary);margin-bottom:6px;line-height:1.25; }
+.tour-body { font-size:11px;line-height:1.55;color:var(--text-secondary,#aab4c6);margin-bottom:13px; }
+.tour-actions { display:flex;align-items:center;gap:8px; }
+.tour-btn { font-size:11px;padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);cursor:pointer;transition:all 0.15s; }
+.tour-btn:hover { border-color:var(--accent);color:var(--accent); }
+.tour-next { background:var(--accent,#4a9fd4);border-color:var(--accent,#4a9fd4);color:#fff; }
+.tour-next:hover { color:#fff;opacity:0.9; }
+.tour-skip { font-size:10px;background:none;border:none;color:var(--text-dim);cursor:pointer;text-decoration:underline;padding:0; }
+.tour-skip:hover { color:var(--text-secondary); }
 
 /* ── Bot panel needs wider width ──────────────────────────────────────────── */
 #botPanel { width:340px;right:-365px; }
@@ -987,6 +1030,18 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
   <div class="landing-title">♟ Blunder<span>mind</span></div>
   <div class="landing-tagline">Stop getting blundermined.</div>
 
+  <!-- Board experience: Beginner (full overlays) vs Expert (clean tournament look) -->
+  <div class="landing-shell-pick">
+    <button class="landing-shell-btn sel" data-shell="amateur" onclick="landingSetShell('amateur')">
+      <span class="ls-name">🎓 Beginner Board</span>
+      <span class="ls-desc">Full board-vision indicators, ghost moves &amp; coaching overlays.</span>
+    </button>
+    <button class="landing-shell-btn" data-shell="pro" onclick="landingSetShell('pro')">
+      <span class="ls-name">♟ Expert Board</span>
+      <span class="ls-desc">Clean tournament look — minimal chrome, side notation, no overlays.</span>
+    </button>
+  </div>
+
   <div class="landing-cards">
 
     <!-- Solo / Explore -->
@@ -1032,15 +1087,24 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     No account · No tracking · Your games are yours · <em>Free forever</em>
   </div>
 </div>
+<!-- Returning visitors skip the landing (already booted into their saved shell). -->
+<script>try{if(localStorage.getItem('bm_shell')){var _lo=document.getElementById('landingOverlay');if(_lo)_lo.style.display='none';}}catch(e){}</script>
 
 <!-- ── Page wrapper: aligns header and board column ──────────────────────── -->
 <div id="page-wrap">
 
 <!-- ── Site header ──────────────────────────────────────────────────────── -->
 <div id="site-header">
-  <span id="site-name">♟ Blunder<span>mind</span></span>
+  <span id="site-name" onclick="landingShow()" style="cursor:pointer;" title="Home — choose board experience">♟ Blunder<span>mind</span></span>
   <span id="site-tagline">Stop getting blundermined.</span>
   <div id="headerBtnGroup" style="display:flex;gap:8px;align-items:center;flex-shrink:0;margin-left:20px;">
+    <button id="tourBtn" onclick="startTour()"
+      style="font-size:10px;padding:4px 12px;background:transparent;
+      border:1px solid var(--border);border-radius:12px;
+      color:var(--text-secondary);cursor:pointer;transition:all 0.15s;white-space:nowrap;"
+      onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
+      onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-secondary)'"
+      title="Take a guided tour">🧭 Tour</button>
     <button id="aboutFeedbackBtn" onclick="openPanel('aboutFeedbackPanel')"
       style="font-size:10px;padding:4px 12px;background:transparent;
       border:1px solid var(--border);border-radius:12px;
@@ -1383,7 +1447,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <button class="ctrl-btn util-btn" id="btnSavePgn" onclick="savePgn()">↓ Save game</button>
       </div>
       <div class="ctrl-row">
-        <button class="ctrl-btn util-btn" onclick="toggleShell()" style="border-color:rgba(200,146,42,0.5);color:#c8922a;">♟ Switch to Pro board</button>
+        <button class="ctrl-btn util-btn" id="proSwitchBtn" onclick="toggleShell()" style="border-color:rgba(200,146,42,0.5);color:#c8922a;">♟ Switch to Pro board</button>
       </div>
       <div class="util-row" style="display:none;"></div>
     </div>
@@ -1429,6 +1493,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 
     <!-- Gear / overflow menu -->
     <div class="pro-gear-menu" id="proGearMenu" style="display:none;">
+      <button onclick="proToggleGear();startTour()">🧭 Tour</button>
       <button onclick="openBotModal();proToggleGear()">🤖 vs Bot</button>
       <button onclick="openPanel('mpPanel');proToggleGear()">⚔ 2-Player</button>
       <button onclick="savePgnAs();proToggleGear()">💾 Save game…</button>

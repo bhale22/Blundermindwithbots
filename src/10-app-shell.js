@@ -788,6 +788,123 @@ document.addEventListener('DOMContentLoaded', () => {
   try{ if(localStorage.getItem('bm_shell') === 'pro') setShell('pro'); }catch(e){}
 });
 
+// ══════════════════════════════════════════════════════════════════════════
+// GUIDED TOUR — spotlight overlay with per-shell step sequences. The overlay
+// is click-through (pointer-events:none) so users can jump straight into an
+// action; clicking anything outside the tour panel ends the tour.
+// ══════════════════════════════════════════════════════════════════════════
+const TOURS = {
+  amateur: [
+    { sel:'#bottom-controls', title:'Start playing',
+      body:'Play a bot, challenge a friend online, or just explore. You can click any button here right now — or keep touring.' },
+    { sel:'#botSidebarBtn', title:'Play vs Bots',
+      body:'Build a custom opponent: pick an engine and rating, give it a personality, custom controls, an opening repertoire, and time-pressure behaviour.' },
+    { sel:'.ind-grid', title:'Board-vision indicators',
+      body:'Overlays for threats, pins, weak squares, forks and more. Each has three modes — Off, “Show During Exploration” (while you drag a piece), or Always-on.' },
+    { sel:'#soloGhostDepth', title:'Ghost moves',
+      body:'Hover a destination square and the bot shows the most likely replies as faint “ghost” pieces — handy for training your calculation.' },
+    { sel:'#proSwitchBtn', title:'Expert board',
+      body:'Prefer a clean tournament look with no overlays? Switch to the Expert board here — and switch back anytime.' },
+    { sel:'#site-name', title:'Home',
+      body:'Click the Blundermind logo anytime to return Home and switch between the Beginner and Expert boards.' },
+  ],
+  pro: [
+    { sel:'#proSide', title:'The Expert board',
+      body:'A clean tournament view — minimal chrome, live notation, and no coaching overlays.' },
+    { sel:'.pro-actions', title:'Board controls',
+      body:'Resign, offer a draw, flip the board, change the theme, or open the ⚙ menu for more — including a bot game, 2-player, and switching back to the Beginner board.' },
+    { sel:'#proMoves', title:'Move list',
+      body:'Your game notation updates here live as you play.' },
+  ],
+};
+
+let _tourSteps = [], _tourIdx = 0, _tourActive = false, _tourShell = 'amateur';
+
+function startTour(){
+  _tourShell = (typeof proMode !== 'undefined' && proMode) ? 'pro' : 'amateur';
+  const all = TOURS[_tourShell] || [];
+  // Keep only steps whose target is present and visible (drops hidden chrome).
+  _tourSteps = all.filter(s => {
+    if(!s.sel) return true;
+    const el = document.querySelector(s.sel);
+    return el && el.getBoundingClientRect().width > 0;
+  });
+  if(!_tourSteps.length) return;
+  _tourIdx = 0; _tourActive = true;
+  const ov = document.getElementById('tourOverlay'); if(ov) ov.style.display = 'block';
+  _renderTourStep();
+}
+function endTour(){
+  _tourActive = false;
+  const ov = document.getElementById('tourOverlay'); if(ov) ov.style.display = 'none';
+  try{ localStorage.setItem('bm_tour_' + _tourShell, '1'); }catch(e){}
+}
+function tourNext(){ if(_tourIdx < _tourSteps.length - 1){ _tourIdx++; _renderTourStep(); } else endTour(); }
+function tourPrev(){ if(_tourIdx > 0){ _tourIdx--; _renderTourStep(); } }
+
+function _renderTourStep(){
+  const step = _tourSteps[_tourIdx];
+  const ring = document.getElementById('tourRing');
+  const back = document.getElementById('tourBackdrop');
+  if(!step || !ring) return;
+  const el = step.sel ? document.querySelector(step.sel) : null;
+  let rect = null;
+  if(el){ try{ el.scrollIntoView({block:'nearest'}); }catch(e){} rect = el.getBoundingClientRect(); }
+  if(rect && rect.width > 0){
+    ring.style.display = 'block';
+    ring.style.top = (rect.top - 6) + 'px';
+    ring.style.left = (rect.left - 6) + 'px';
+    ring.style.width = (rect.width + 12) + 'px';
+    ring.style.height = (rect.height + 12) + 'px';
+    if(back) back.style.display = 'none';
+  } else {
+    ring.style.display = 'none';
+    if(back) back.style.display = 'block';
+  }
+  const cEl = document.getElementById('tourCount'); if(cEl) cEl.textContent = (_tourIdx + 1) + ' / ' + _tourSteps.length;
+  const tEl = document.getElementById('tourTitle'); if(tEl) tEl.textContent = step.title;
+  const bEl = document.getElementById('tourBody'); if(bEl) bEl.innerHTML = step.body;
+  const pv = document.getElementById('tourPrev'); if(pv) pv.style.visibility = _tourIdx === 0 ? 'hidden' : 'visible';
+  const nx = document.getElementById('tourNext'); if(nx) nx.textContent = (_tourIdx === _tourSteps.length - 1) ? 'Done ✓' : 'Next →';
+  _positionTourPanel(rect);
+}
+
+function _positionTourPanel(rect){
+  const panel = document.getElementById('tourPanel');
+  if(!panel) return;
+  const pw = panel.offsetWidth || 288, ph = panel.offsetHeight || 170;
+  const vw = window.innerWidth, vh = window.innerHeight, gap = 14;
+  let top, left;
+  if(rect && rect.width > 0){
+    if(rect.bottom + gap + ph <= vh) top = rect.bottom + gap;          // below
+    else if(rect.top - gap - ph >= 0) top = rect.top - gap - ph;       // above
+    else top = Math.max(gap, Math.min(vh - ph - gap, rect.top));       // beside-ish
+    left = Math.max(gap, Math.min(vw - pw - gap, rect.left + rect.width/2 - pw/2));
+  } else {
+    top = Math.max(gap, vh/2 - ph/2);
+    left = Math.max(gap, vw/2 - pw/2);
+  }
+  panel.style.top = top + 'px';
+  panel.style.left = left + 'px';
+}
+
+// Start the tour automatically the first time per shell (called after the user
+// lands on the board from the landing page).
+function maybeAutoTour(){
+  const shell = (typeof proMode !== 'undefined' && proMode) ? 'pro' : 'amateur';
+  let seen = null; try{ seen = localStorage.getItem('bm_tour_' + shell); }catch(e){}
+  if(!seen) startTour();
+}
+
+// Click outside the tour panel ends the tour (capture phase, before the click
+// reaches the app, so e.g. the welcome step's buttons still fire).
+document.addEventListener('click', function(e){
+  if(!_tourActive) return;
+  if(e.target.closest && e.target.closest('#tourPanel')) return;
+  endTour();
+}, true);
+window.addEventListener('resize', function(){ if(_tourActive) _renderTourStep(); });
+
 // ── Ghost availability indicator (amateur shell) ────────────────────────────
 // Ghost responses are gated off during a LIVE 2-player game (see ghostEnabled()
 // in 50-bot-engine.js). Reflect that in the settings UI: disable the depth
