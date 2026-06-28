@@ -7216,12 +7216,15 @@ function renderOpColumn(color){
 
 // Compact one-line Main Line controls (shared state, identical in both columns).
 function _mainLineBarHTML(){
+  const dbTitle = bookSource==='masters'
+    ? 'Masters DB — Lichess Masters database (master-level, titled-player games). Click to switch to the Lichess DB.'
+    : 'Lichess DB — Lichess online games at the rating level in use. Click to switch to the Masters DB.';
   return '<div class="ml-bar">' +
-    '<button type="button" class="ml-pill" onclick="toggleBookSource()" title="Opening database">' +
+    '<button type="button" class="ml-pill" onclick="toggleBookSource()" title="' + dbTitle + '">' +
       (bookSource==='masters' ? 'Masters DB' : 'Lichess DB') + '</button>' +
-    '<button type="button" class="ml-pill" onclick="toggleBookModern()" title="Restrict to games since 2020">' +
-      'Modern: ' + (bookModern ? 'On' : 'Off') + '</button>' +
-    '<span class="ml-depth" title="Leave book after this many moves">' +
+    '<button type="button" class="ml-pill" onclick="toggleBookModern()" title="Modern theory only — restrict the book to games from 2020 to the present.">' +
+      'Modern: ' + (bookModern ? '2020+' : 'Off') + '</button>' +
+    '<span class="ml-depth" title="Leave the book and play the engine after this many moves.">' +
       '<span class="ml-depth-lbl">Depth</span>' +
       '<input type="number" min="5" max="40" value="' + bookDepth + '" oninput="setBookDepth(this.value)">' +
       '<span class="ml-depth-lbl">mv</span></span>' +
