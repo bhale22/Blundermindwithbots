@@ -452,6 +452,11 @@ canvas{display:block;background:transparent;}
 .bt-count{font-family:var(--font-m);font-size:8px;letter-spacing:0.14em;text-transform:uppercase;color:var(--amber-dim);margin-bottom:5px;}
 .bt-title{font-family:var(--font-u);font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:6px;line-height:1.25;}
 .bt-body{font-family:var(--font-m);font-size:10px;line-height:1.6;color:var(--text-secondary);margin-bottom:13px;}
+.bt-stages{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:11px;}
+.bt-chip{font-family:var(--font-m);font-size:8px;letter-spacing:0.04em;padding:3px 7px;border-radius:3px;border:0.5px solid var(--border);background:var(--carbon-surface);color:var(--text-dim);cursor:pointer;transition:all 0.12s;}
+.bt-chip:hover{border-color:var(--amber-dim);color:var(--text-secondary);}
+.bt-chip.on{border-color:var(--amber);color:var(--amber);background:var(--carbon-raise);}
+.bt-body b{color:var(--amber-bright);font-weight:600;}
 .bt-actions{display:flex;align-items:center;gap:8px;}
 .bt-btn{font-family:var(--font-u);font-size:10px;padding:5px 12px;border-radius:4px;border:0.5px solid var(--border);background:var(--carbon-surface);color:var(--text-secondary);cursor:pointer;transition:all 0.15s;}
 .bt-btn:hover{border-color:var(--amber);color:var(--amber);}
@@ -6084,34 +6089,53 @@ window.addEventListener('message', function(e){
    BOT-CONTROLS GUIDED TOUR — spotlight overlay, click-through so the
    panel stays usable. Ends via Skip / Done. Replay from the 🧭 button.
 ══════════════════════════════════════════════════════════════ */
+// A demo custom control is added (only when the list is empty) so the tour can
+// show the real builder, then removed when the tour ends.
+let _btDemoId = null;
+function _btAddDemo(){
+  if(typeof customControls !== 'undefined' && typeof addCustomControl === 'function' && !customControls.length){
+    addCustomControl();
+    const last = customControls[customControls.length - 1];
+    _btDemoId = last ? last.id : null;
+  }
+}
+
+// Steps. `open` = accordion section to expand; `tab` = inner tab to activate;
+// `action` = extra setup; `stage` groups steps for the jump chips.
 const BOT_TOUR = [
-  { sel:'#quickstart', title:'Your bot at a glance',
-    body:'Build your opponent in the sections below, then press Start. The pills here show a live summary — engine, rating, personality and time control.' },
-  { sel:'#sec-engine', title:'1 · Engine & rating',
-    body:'Pick the brain: Maia (human-like neural net), Stockfish, or blends that use the Lichess explorer for openings and fall back to an engine. Set the playing strength here too.' },
-  { sel:'#sec-attract', title:'2 · Personality & custom controls',
-    body:'Shape how it plays — a centipawn “opinion” budget, strategic sliders, piece focus and a fingerprint radar. Or open Custom Controls to build your own rules from 30+ board features, gated by phase, advantage or time pressure.' },
-  { sel:'#sec-opening', title:'3 · Openings',
-    body:'Give each colour its own opening: Off, popular Main-Line book moves, or a weighted repertoire you choose.' },
-  { sel:'#sec-timing', title:'4 · Move timing',
-    body:'How the bot spends time between moves — instant, fixed, complexity-scaled, or mirroring your pace.' },
-  { sel:'#sec-pressure', title:'5 · Time pressure',
-    body:'Make it crack under the clock: its ELO and move quality degrade as its time runs low, with tunable curves.' },
-  { sel:'.rs-picker', title:'Text size',
-    body:'Hard to read? Switch between Standard, Stylized and High-vis text up here anytime.' },
-  { sel:'.start-btn', title:'Start the game',
-    body:'When your bot is ready, press Start. You can also save and share any bot as a file.' },
+  { stage:'Engine', open:'engine', sel:'#engine-mode-grid', title:'1 · The engine',
+    body:'Pick the brain — <b>Maia</b> (a neural net trained on millions of human games), <b>Stockfish</b>, or blends that pull openings from the <b>Lichess explorer</b> and fall back to an engine. You can even build a <b>Hybrid</b> bot that mixes engines by weight, and set the exact playing strength. Hybrid bots like this exist nowhere else.' },
+
+  { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#style-gauge', title:'2 · The Centipawn-meter',
+    body:'The master dial: how far the bot’s personality may pull it away from the best engine move, in centipawns. Low = near-perfect; high = a bot with strong opinions. A single, tunable "how opinionated is this bot" control — unique to Blundermind.' },
+  { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#move-quality-range', title:'Move-quality distribution',
+    body:'Choose <i>which slice</i> of the move distribution the bot draws from — only the best moves, or deliberately weaker ones for a believable "bad day". Direct control over a bot’s play distribution.' },
+  { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#radar-canvas', title:'Personality fingerprint',
+    body:'Drag the radar nodes (or the sliders) to sculpt the bot’s style — the fingerprint updates live as you go.' },
+  { stage:'Personality', open:'attract', tab:['attract','pieces'], sel:'#attractor-rows', title:'Strategic preferences',
+    body:'Bias the bot toward chaos or order, attacking or trading, tight or loose pawns, piece activity and more — all sharing the centipawn budget above.' },
+  { stage:'Personality', open:'attract', tab:['attract','custom'], action:_btAddDemo, sel:'#custom-control-rows', title:'★ Custom controls — write your own rule',
+    body:'The headline feature. Build a rule from <b>30+ board features</b> (passed pawns, king safety, outposts, mobility, hanging pieces…), then <b>restrict when it fires</b>: by <b>game phase</b> (opening / middlegame / endgame), by <b>advantage</b> (only when winning or losing), or by <b>time pressure</b> (yours or the opponent’s). Nothing like this exists on any other chess site.' },
+  { stage:'Personality', open:'attract', tab:['attract','presets'], sel:'#persona-grid', title:'One-click personalities',
+    body:'In a hurry? Start from a ready-made character — then tweak any of the dials above.' },
+
+  { stage:'Opening', open:'opening', sel:'#op-mode-white', title:'3 · Per-colour openings',
+    body:'Give White and Black <i>separate</i> opening behaviour: <b>Off</b>, <b>Main Line</b> (the most popular book moves), or a <b>Repertoire</b> of several openings you weight by percentage. A bot that always plays the main line, or that blends multiple pet lines — rare anywhere.' },
+
+  { stage:'Timing', open:'timing', sel:'#timing-mode-grid', title:'4 · Move timing',
+    body:'How the bot spends its clock between moves — instant, fixed, scaled to position complexity, or mirroring your own pace. The little things that make it feel human.' },
+
+  { stage:'Time pressure', open:'pressure', sel:'#cvA', title:'5 · Time-pressure degradation',
+    body:'Make it crack under the clock: the bot’s <b>ELO and move quality fall as its time runs low</b>, along curves you can drag by hand. Per-bot, customizable degradation — a Blundermind original.' },
+
+  { stage:'Start', sel:'.start-btn', title:'Start — and save your creation',
+    body:'When the bot is ready, press <b>Start</b>. Any bot can be <b>saved and shared as a file</b>, so you can trade custom opponents with friends.' },
 ];
 
-let _bt = [], _btIdx = 0, _btOn = false;
+let _bt = [], _btIdx = 0, _btOn = false, _btTimer = null;
 
 function startTour(){
-  _bt = BOT_TOUR.filter(s => {
-    if(!s.sel) return true;
-    const el = document.querySelector(s.sel);
-    return el && el.getBoundingClientRect().width > 0;
-  });
-  if(!_bt.length) return;
+  _bt = BOT_TOUR.slice(); // keep all steps; missing targets just show centered
   _btIdx = 0; _btOn = true;
   const ov = document.getElementById('botTourOverlay'); if(ov) ov.style.display = 'block';
   _btRender();
@@ -6119,18 +6143,62 @@ function startTour(){
 function endTour(){
   _btOn = false;
   const ov = document.getElementById('botTourOverlay'); if(ov) ov.style.display = 'none';
+  // Remove the tour's demo custom control if it added one.
+  if(_btDemoId && typeof removeCustomControl === 'function'){
+    try { removeCustomControl(_btDemoId); } catch(e){}
+    _btDemoId = null;
+  }
   try { localStorage.setItem('bm_bottour','1'); } catch(e){}
 }
 function tourNext(){ if(_btIdx < _bt.length - 1){ _btIdx++; _btRender(); } else endTour(); }
 function tourPrev(){ if(_btIdx > 0){ _btIdx--; _btRender(); } }
+function _btJump(i){ if(i >= 0 && i < _bt.length){ _btIdx = i; _btRender(); } }
+
+// Ordered unique stages with the index of their first step (for the jump chips).
+function _btStageList(){
+  const seen = {}, list = [];
+  _bt.forEach((s, i) => { if(s.stage && !(s.stage in seen)){ seen[s.stage] = i; list.push({ name:s.stage, idx:i }); } });
+  return list;
+}
 
 function _btRender(){
   const step = _bt[_btIdx];
+  if(!step) return;
+  // Panel text + stage chips immediately.
+  document.getElementById('btCount').textContent = (_btIdx + 1) + ' / ' + _bt.length;
+  document.getElementById('btTitle').textContent = step.title;
+  document.getElementById('btBody').innerHTML = step.body;
+  document.getElementById('btStages').innerHTML = _btStageList().map(st =>
+    '<button class="bt-chip' + (st.name === step.stage ? ' on' : '') + '" onclick="_btJump(' + st.idx + ')">' + st.name + '</button>').join('');
+  document.getElementById('btPrev').style.visibility = _btIdx === 0 ? 'hidden' : 'visible';
+  document.getElementById('btNext').textContent = (_btIdx === _bt.length - 1) ? 'Done ✓' : 'Next →';
+
+  // Reveal the relevant controls: open the section, switch tab, run any action.
+  let opened = false;
+  if(step.open){
+    const sec = document.getElementById('sec-' + step.open);
+    if(sec && !sec.classList.contains('open') && typeof toggleSec === 'function'){ toggleSec(step.open); opened = true; }
+  }
+  if(step.tab && typeof switchItab === 'function'){ try{ switchItab(step.tab[0], step.tab[1]); }catch(e){} }
+  if(step.action){ try{ step.action(); }catch(e){} }
+
+  // Quick spotlight, then scroll the target into view once layout settles and
+  // re-spotlight. The scroll listener keeps the ring aligned during the scroll.
+  _btSpot();
+  clearTimeout(_btTimer);
+  _btTimer = setTimeout(function(){
+    const tgt = step.sel ? document.querySelector(step.sel) : null;
+    if(tgt){ try{ tgt.scrollIntoView({block:'center', behavior:'smooth'}); }catch(e){} }
+    _btSpot();
+  }, opened ? 520 : 120);
+}
+
+function _btSpot(){
+  const step = _bt[_btIdx]; if(!step) return;
   const ring = document.getElementById('btRing'), back = document.getElementById('btBackdrop');
-  if(!step || !ring) return;
+  if(!ring) return;
   const el = step.sel ? document.querySelector(step.sel) : null;
-  let rect = null;
-  if(el){ try{ el.scrollIntoView({block:'nearest'}); }catch(e){} rect = el.getBoundingClientRect(); }
+  let rect = el ? el.getBoundingClientRect() : null;
   if(rect && rect.width > 0){
     ring.style.display = 'block';
     ring.style.top = (rect.top - 5) + 'px';
@@ -6142,17 +6210,12 @@ function _btRender(){
     ring.style.display = 'none';
     if(back) back.style.display = 'block';
   }
-  document.getElementById('btCount').textContent = (_btIdx + 1) + ' / ' + _bt.length;
-  document.getElementById('btTitle').textContent = step.title;
-  document.getElementById('btBody').innerHTML = step.body;
-  document.getElementById('btPrev').style.visibility = _btIdx === 0 ? 'hidden' : 'visible';
-  document.getElementById('btNext').textContent = (_btIdx === _bt.length - 1) ? 'Done ✓' : 'Next →';
   _btPos(rect);
 }
 
 function _btPos(rect){
   const panel = document.getElementById('btPanel'); if(!panel) return;
-  const pw = panel.offsetWidth || 300, ph = panel.offsetHeight || 170;
+  const pw = panel.offsetWidth || 300, ph = panel.offsetHeight || 200;
   const vw = window.innerWidth, vh = window.innerHeight, gap = 14;
   let top, left;
   if(rect && rect.width > 0){
@@ -6167,7 +6230,8 @@ function _btPos(rect){
   panel.style.top = top + 'px';
   panel.style.left = left + 'px';
 }
-window.addEventListener('resize', function(){ if(_btOn) _btRender(); });
+window.addEventListener('resize', function(){ if(_btOn) _btSpot(); });
+window.addEventListener('scroll', function(){ if(_btOn) _btSpot(); }, true);
 
 function startGame(){
   // Block Maia games if the model isn't downloaded yet
@@ -7963,6 +8027,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
     <div class="bt-count" id="btCount"></div>
     <div class="bt-title" id="btTitle"></div>
     <div class="bt-body" id="btBody"></div>
+    <div class="bt-stages" id="btStages"></div>
     <div class="bt-actions">
       <button class="bt-skip" onclick="endTour()">Skip tour</button>
       <span style="flex:1"></span>
