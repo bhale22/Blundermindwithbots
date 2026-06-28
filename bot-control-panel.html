@@ -5823,6 +5823,18 @@ function applyBotConfig(cfg){
   });
   grp(() => onCalmPanickyChange(cfg.calmPanickyValue || 0));
 
+  // Restore a selected preset personality (the attractor block cleared it). This
+  // also drives badDayMode, which getBotConfig() re-derives from the selection.
+  grp(() => {
+    if(cfg.personalityId){
+      selectedPersonality = cfg.personalityId;
+      const pc = document.querySelector('.pcard[data-pid="' + cfg.personalityId + '"]');
+      if(pc){ document.querySelectorAll('.pcard').forEach(c => c.classList.remove('sel')); pc.classList.add('sel'); }
+      if(typeof updateQsPersonality === 'function') updateQsPersonality();
+      if(typeof updateQsCpBudget === 'function') updateQsCpBudget();
+    }
+  });
+
   // Temperature — prefer raw float (tempValue); fall back to preset ID for old saves
   grp(() => {
     const T = cfg.tempValue != null
@@ -6111,8 +6123,8 @@ const BOT_TOUR = [
 
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#style-gauge', title:'2 · The Centipawmeter',
     body:'The master dial: how far the bot’s personality may pull it away from the best engine move, in centipawns. Low = near-perfect play; high = a bot with strong opinions.' },
-  { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#move-quality-range', title:'Move-quality distribution',
-    body:'Choose <i>which slice</i> of the move distribution the bot draws from — only the best moves, or deliberately weaker ones for a believable "bad day". Direct control over a bot’s play distribution.' },
+  { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#move-quality-range', title:'Move quality range',
+    body:'Set the band of move quality the bot stays within — from only its best moves to deliberately weaker ones for a believable "bad day".' },
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#radar-canvas', title:'Personality fingerprint',
     body:'Drag the radar nodes (or the sliders) to sculpt the bot’s style — the fingerprint updates live as you go.' },
   { stage:'Personality', open:'attract', tab:['attract','pieces'], sel:'#attractor-rows', title:'Strategic preferences',
@@ -7947,7 +7959,9 @@ let _drawScheduled = false;
 function scheduleDraw(){
   if(_drawScheduled) return;
   _drawScheduled = true;
-  initPts();
+  // Only seed the default sigmoid if no curve exists yet — never overwrite a
+  // hand-dragged or loaded curve when the section is (re)opened.
+  if(!ctrlA || !ctrlA.length || !ctrlB || !ctrlB.length) initPts();
   [60, 220, 520].forEach(ms => setTimeout(()=>{ drawA(); drawB(); }, ms));
   setTimeout(()=>{ _drawScheduled=false; }, 600);
 }
