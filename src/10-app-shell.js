@@ -800,7 +800,33 @@ const TOURS = {
     { sel:'#botSidebarBtn', title:'Play vs Bots',
       body:'Build a custom opponent: pick an engine and rating, give it a personality, custom controls, an opening repertoire, and time-pressure behaviour.' },
     { sel:'.ind-grid', title:'Board-vision indicators',
-      body:'Overlays for threats, pins, weak squares, forks and more. Each has three modes — Off, “Show During Exploration” (while you drag a piece), or Always-on.' },
+      body:'These overlays train you to see the board like a stronger player. Each one has three modes — Off, “Show During Exploration” (only while you drag a piece), or Always-on. Here’s what each shows…' },
+    { sel:'#ib-checkthreats', title:'Check threats',
+      body:'Squares where a check could be delivered next move — and the pieces that could give it. Spot perpetuals and king-hunt ideas.' },
+    { sel:'#ib-threats', title:'Threats & captures',
+      body:'Red rings mark your pieces that are attacked. It flags hanging pieces and what can be captured right now — the #1 way to stop getting blundermined.' },
+    { sel:'#ib-counts', title:'Threat / defender counts',
+      body:'For each piece, how many attackers vs defenders it has. When attackers outnumber defenders, something’s about to fall.' },
+    { sel:'#ib-unprotected', title:'Unprotected pieces',
+      body:'Pieces with no defender at all — loose pieces that drop to a single tactic.' },
+    { sel:'#ib-pins', title:'Pins',
+      body:'Pieces pinned to a more valuable piece (or the king) behind them — they can’t safely move off the line.' },
+    { sel:'#ib-forksw', title:'My forks & skewers',
+      body:'Squares where one of your pieces could fork or skewer two enemy pieces at once.' },
+    { sel:'#ib-forksb', title:'Fork & skewer threats',
+      body:'The same, but against you — where the opponent could fork or skewer your pieces.' },
+    { sel:'#ib-overloaded', title:'Overloaded defenders',
+      body:'A piece doing too many defensive jobs at once. Remove or distract it and one of its charges falls.' },
+    { sel:'#ib-discoveredopp', title:'Opponent discovered threats',
+      body:'Moves that would unveil an attack from a piece hiding behind the one that moves — easy to miss.' },
+    { sel:'#ib-discoveredself', title:'My discovered attacks',
+      body:'Your own discovered-attack chances — move the front piece and the one behind springs to life.' },
+    { sel:'#ib-weakw', title:'My weak squares',
+      body:'Holes in your own camp that no pawn can defend — squares the opponent would love to plant a piece on.' },
+    { sel:'#ib-weakb', title:'Opponent weak squares',
+      body:'Holes in their camp — outpost squares where your knight or bishop can sit untouchable.' },
+    { sel:'#ib-xray', title:'X-ray pressure',
+      body:'Pressure or defence acting through another piece on the same line — the lines that matter once a blocker moves.' },
     { sel:'#soloGhostDepth', title:'Ghost moves',
       body:'Hover a destination square and the bot shows the most likely replies as faint “ghost” pieces — handy for training your calculation.' },
     { sel:'#proSwitchBtn', title:'Expert board',
@@ -874,18 +900,31 @@ function _positionTourPanel(rect){
   if(!panel) return;
   const pw = panel.offsetWidth || 288, ph = panel.offsetHeight || 170;
   const vw = window.innerWidth, vh = window.innerHeight, gap = 14;
-  let top, left;
-  if(rect && rect.width > 0){
-    if(rect.bottom + gap + ph <= vh) top = rect.bottom + gap;          // below
-    else if(rect.top - gap - ph >= 0) top = rect.top - gap - ph;       // above
-    else top = Math.max(gap, Math.min(vh - ph - gap, rect.top));       // beside-ish
-    left = Math.max(gap, Math.min(vw - pw - gap, rect.left + rect.width/2 - pw/2));
-  } else {
-    top = Math.max(gap, vh/2 - ph/2);
-    left = Math.max(gap, vw/2 - pw/2);
+  if(!(rect && rect.width > 0)){
+    panel.style.top = Math.max(gap, (vh - ph) / 2) + 'px';
+    panel.style.left = Math.max(gap, (vw - pw) / 2) + 'px';
+    return;
   }
-  panel.style.top = top + 'px';
-  panel.style.left = left + 'px';
+  const clampL = x => Math.max(gap, Math.min(vw - pw - gap, x));
+  const clampT = y => Math.max(gap, Math.min(vh - ph - gap, y));
+  const cx = clampL(rect.left + rect.width / 2 - pw / 2);
+  const cy = clampT(rect.top + rect.height / 2 - ph / 2);
+  let top, left;
+  if(rect.bottom + gap + ph <= vh){            // below
+    top = rect.bottom + gap; left = cx;
+  } else if(rect.top - gap - ph >= 0){          // above
+    top = rect.top - gap - ph; left = cx;
+  } else if(rect.right + gap + pw <= vw){       // right
+    left = rect.right + gap; top = cy;
+  } else if(rect.left - gap - pw >= 0){          // left
+    left = rect.left - gap - pw; top = cy;
+  } else {                                       // opposite corner (least overlap)
+    const tcx = rect.left + rect.width / 2, tcy = rect.top + rect.height / 2;
+    left = (tcx < vw / 2) ? (vw - pw - gap) : gap;
+    top  = (tcy < vh / 2) ? (vh - ph - gap) : gap;
+  }
+  panel.style.top = clampT(top) + 'px';
+  panel.style.left = clampL(left) + 'px';
 }
 
 // Start the tour automatically the first time per shell (called after the user
@@ -1999,8 +2038,10 @@ function clearAllSelections(){
 
 // ── Multiplayer actions ────────────────────────────────────────────────
 function resign() {
-  // Reuses the same confirmation overlay; confirmResign() sends WS resign if in a room
-  if (mpRoomId) showResignConfirm();
+  if (typeof gameOver !== 'undefined' && gameOver) return;
+  // Works vs a bot as well as online — confirmResign() only notifies the server
+  // when actually in a room, so this is safe for solo bot games too.
+  if (mpRoomId || (typeof botActive !== 'undefined' && botActive)) showResignConfirm();
 }
 
 function offerDraw() {

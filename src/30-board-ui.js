@@ -1280,8 +1280,13 @@ function confirmResign(){
   // Notify opponent if playing online
   if (mpRoomId && mpWs && mpWs.readyState === WebSocket.OPEN)
     mpWs.send(JSON.stringify({ type: 'resign' }));
+  // Who resigned? Online/solo uses side-to-move; vs a bot it's always the human
+  // (botPlayerColor is the human's colour), regardless of whose turn it is.
+  let loser = turn;
+  if (typeof botActive !== 'undefined' && botActive && typeof botPlayerColor !== 'undefined')
+    loser = (botPlayerColor === 'white') ? 'w' : 'b';
   gameOver=true;
-  gameOverMsg=(turn==='w'?'White resigned — Black wins!':'Black resigned — White wins!');
+  gameOverMsg=(loser==='w'?'White resigned — Black wins!':'Black resigned — White wins!');
   updatePlayerBoxes();
   showRematchBtn(true);
 }
