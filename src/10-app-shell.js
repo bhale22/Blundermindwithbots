@@ -2223,23 +2223,30 @@ function _pgnResultToken(){
   if(/1-0|white wins/i.test(m)) return '1-0';
   if(/0-1|black wins/i.test(m)) return '0-1';
   if(/draw|½-½|1\/2|stalemate|insufficient|repetition|fifty/i.test(m)) return '1/2-1/2';
+  // Multiplayer "Opponent resigned — You win!" — derive from whose turn it is
+  // (the winner just moved, so turn is now the loser's color).
+  if(/you win|opponent resigned/i.test(m)){
+    return (typeof turn !== 'undefined' && turn === 'w') ? '0-1' : '1-0';
+  }
   return '*';
 }
 
 function buildPgnText(){
-  const date   = new Date().toISOString().split('T')[0];
-  const result = _pgnResultToken();
-  let pgn = '[Event "Blundermind Game"]\n[Site "Blundermind"]\n[Date "' + date +
+  // PGN standard requires YYYY.MM.DD — dashes cause Lichess import to fail.
+  const isoDate = new Date().toISOString().split('T')[0];
+  const date    = isoDate.replace(/-/g, '.');
+  const result  = _pgnResultToken();
+  let pgn = '[Event "Blundermind Game"]\n[Site "Blundermindchess.com"]\n[Date "' + date +
             '"]\n[White "White"]\n[Black "Black"]\n[Result "' + result + '"]\n\n';
-  if(gameMovesAlgebraic.length === 0){ pgn += result; }
+  if(gameMovesAlgebraic.length === 0){ pgn += result + '\n'; }
   else{
     for(let i=0;i<gameMovesAlgebraic.length;i++){
       if(i%2===0) pgn += (Math.floor(i/2)+1) + '. ';
       pgn += gameMovesAlgebraic[i] + ' ';
     }
-    pgn += result;
+    pgn += result + '\n';
   }
-  return { pgn, date, result };
+  return { pgn, date: isoDate, result };
 }
 
 function downloadPgn(pgn, filename){
