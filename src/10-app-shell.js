@@ -788,6 +788,246 @@ document.addEventListener('DOMContentLoaded', () => {
   try{ if(localStorage.getItem('bm_shell') === 'pro') setShell('pro'); }catch(e){}
 });
 
+// ══════════════════════════════════════════════════════════════════════════
+// GUIDED TOUR — spotlight overlay with per-shell step sequences. The overlay
+// is click-through (pointer-events:none) so users can jump straight into an
+// action; clicking anything outside the tour panel ends the tour.
+// ══════════════════════════════════════════════════════════════════════════
+const TOURS = {
+  amateur: [
+    { sel:'#bottom-controls', title:'Start playing',
+      body:'Play a bot, challenge a friend online, or just explore. You can click any button here right now — or keep touring.' },
+    { sel:'#botSidebarBtn', title:'Play vs Bots',
+      body:'Build a custom opponent: pick an engine and rating, give it a personality, custom controls, an opening repertoire, and time-pressure behaviour.' },
+    { sel:'.ind-grid', title:'Board-vision indicators', indSection:true,
+      body:'These overlays draw what a stronger player sees — threats, pins, forks and more. We’ll light each one up on a sample position so you can see exactly what it does.' },
+    { sel:'#ib-threats', title:'Three ways to show an indicator', indSection:true, modes:'threats',
+      body:'Watch this button cycle through its three modes — <b>Off</b> (grey) → <b>Show during exploration</b> (only while you drag a piece) → <b>Always-on</b> (green). Single-click any indicator to peek, double-click to keep it on.' },
+    { sel:'.ind-grid', title:'How to train with these', indSection:true,
+      body:'Best habit: <b>look first and try to spot it yourself</b> — plan your move and picture the threats and replies in your head. <i>Then</i> switch an indicator on as instant feedback to catch anything you missed.' },
+    { sel:'#ib-checkthreats', title:'Check threats', indSection:true, ind:'checkthreats',
+      body:'Squares where a check could be delivered next move — and the pieces that could give it. Spot perpetuals and king-hunt ideas.' },
+    { sel:'#ib-threats', title:'Threats & captures', indSection:true, ind:'threats',
+      body:'Red rings mark your pieces that are attacked. It flags hanging pieces and what can be captured right now — the #1 way to stop getting blundermined.' },
+    { sel:'#ib-counts', title:'Threat / defender counts', indSection:true, ind:'counts',
+      body:'For each piece, how many attackers vs defenders it has. When attackers outnumber defenders, something’s about to fall.' },
+    { sel:'#ib-unprotected', title:'Unprotected pieces', indSection:true, ind:'unprotected',
+      body:'Pieces with no defender at all — loose pieces that drop to a single tactic.' },
+    { sel:'#ib-pins', title:'Pins', indSection:true, ind:'pins',
+      body:'Pieces pinned to a more valuable piece (or the king) behind them — they can’t safely move off the line.' },
+    { sel:'#ib-forksw', title:'My forks & skewers', indSection:true, ind:'forksw',
+      body:'Squares where one of your pieces could fork or skewer two enemy pieces at once.' },
+    { sel:'#ib-forksb', title:'Fork & skewer threats', indSection:true, ind:'forksb',
+      body:'The same, but against you — where the opponent could fork or skewer your pieces.' },
+    { sel:'#ib-overloaded', title:'Overloaded defenders', indSection:true, ind:'overloaded',
+      body:'A piece doing too many defensive jobs at once. Remove or distract it and one of its charges falls.' },
+    { sel:'#ib-discoveredopp', title:'Opponent discovered threats', indSection:true, ind:'discoveredopp',
+      body:'Moves that would unveil an attack from a piece hiding behind the one that moves — easy to miss.' },
+    { sel:'#ib-discoveredself', title:'My discovered attacks', indSection:true, ind:'discoveredself',
+      body:'Your own discovered-attack chances — move the front piece and the one behind springs to life.' },
+    { sel:'#ib-weakw', title:'My weak squares', indSection:true, ind:'weakw',
+      body:'Holes in your own camp that no pawn can defend — squares the opponent would love to plant a piece on.' },
+    { sel:'#ib-weakb', title:'Opponent weak squares', indSection:true, ind:'weakb',
+      body:'Holes in their camp — outpost squares where your knight or bishop can sit untouchable.' },
+    { sel:'#ib-xray', title:'X-ray pressure', indSection:true, ind:'xray',
+      body:'Pressure or defence acting through another piece on the same line — the lines that matter once a blocker moves.' },
+    { sel:'#soloGhostDepth', title:'Ghost moves',
+      body:'Hover a destination square and the bot shows the most likely replies as faint “ghost” pieces — handy for training your calculation.' },
+    { sel:'#proSwitchBtn', title:'Expert board',
+      body:'Prefer a clean tournament look with no overlays? Switch to the Expert board here — and switch back anytime.' },
+    { sel:'#site-name', title:'Home',
+      body:'Click the Blundermind logo anytime to return Home and switch between the Beginner and Expert boards.' },
+  ],
+  pro: [
+    { sel:'#proSide', title:'The Expert board',
+      body:'A clean tournament view — minimal chrome, live notation, and no coaching overlays.' },
+    { sel:'.pro-actions', title:'Board controls',
+      body:'Resign, offer a draw, flip the board, change the theme, or open the ⚙ menu for more — including a bot game, 2-player, and switching back to the Beginner board.' },
+    { sel:'#proMoves', title:'Move list',
+      body:'Your game notation updates here live as you play.' },
+  ],
+};
+
+let _tourSteps = [], _tourIdx = 0, _tourActive = false, _tourShell = 'amateur';
+
+// ── Indicator demo: light each overlay on a sample position during the tour ──
+// A tactic-rich position so threats/pins/counts/weak-squares actually appear.
+const _TOUR_DEMO_FEN = 'r2q1rk1/ppp2ppp/2np1n2/2b1p1B1/2B1P1b1/2NP1N2/PPP2PPP/R2Q1RK1 w - - 0 1';
+let _tourSavedInd = null, _tourSavedFen = null, _tourDidDemo = false, _tourModeTimer = null;
+
+function _tourSafeToDemo(){
+  // Never disturb a live game — only swap in the demo position from a fresh/idle board.
+  return (typeof gameMovesAlgebraic === 'undefined' || !gameMovesAlgebraic.length ||
+          (typeof gameOver !== 'undefined' && gameOver));
+}
+function _tourSnapshotInd(){
+  if(typeof IND === 'undefined'){ _tourSavedInd = null; return; }
+  _tourSavedInd = {};
+  Object.keys(IND).forEach(k => { _tourSavedInd[k] = { on:IND[k].on, pre:IND[k].pre, pressing:IND[k].pressing }; });
+}
+function _tourLoadFen(fen){
+  try{
+    board = parseFen(fen);
+    if(typeof buildAtk === 'function') atkMap = buildAtk(board);
+    if(typeof computePins === 'function'){ const p = computePins(board); pinnedWSquares = p.w; pinnedBSquares = p.b; }
+    if(typeof indApply === 'function') indApply();
+    if(typeof render === 'function') render();
+  }catch(e){}
+}
+function _tourEnsureDemo(){
+  if(_tourDidDemo || !_tourSafeToDemo()) return;
+  try{ _tourSavedFen = boardToFen(board, turn, castling, epSq); }catch(e){ _tourSavedFen = null; }
+  _tourLoadFen(_TOUR_DEMO_FEN);
+  _tourDidDemo = true;
+}
+function _tourShowIndicator(key){
+  if(typeof IND === 'undefined') return;
+  Object.keys(IND).forEach(k => { IND[k].on = false; IND[k].pressing = false; });
+  if(key && IND[key]) IND[key].on = true;   // always-on so the overlay shows now
+  if(typeof ibRefreshAll === 'function') ibRefreshAll();
+  if(typeof indApply === 'function') indApply();
+  if(typeof render === 'function') render();
+}
+function _tourCycleModes(key){
+  if(typeof IND === 'undefined' || !IND[key]) return;
+  const seq = [ {on:false,pre:false}, {on:false,pre:true}, {on:true,pre:false} ]; // off → premove → always-on
+  let i = 0;
+  const apply = () => {
+    IND[key].on = seq[i].on; IND[key].pre = seq[i].pre; IND[key].pressing = false;
+    if(typeof ibUpdateUI === 'function') ibUpdateUI(key);
+    if(typeof indApply === 'function') indApply();
+    if(typeof render === 'function') render();
+    i = (i + 1) % seq.length;
+  };
+  apply();
+  _tourModeTimer = setInterval(apply, 1100);
+}
+function _tourRestoreBoard(){
+  if(_tourModeTimer){ clearInterval(_tourModeTimer); _tourModeTimer = null; }
+  if(_tourSavedInd && typeof IND !== 'undefined'){
+    Object.keys(_tourSavedInd).forEach(k => { if(IND[k]){ IND[k].on=_tourSavedInd[k].on; IND[k].pre=_tourSavedInd[k].pre; IND[k].pressing=_tourSavedInd[k].pressing; } });
+  }
+  if(_tourDidDemo && _tourSavedFen) _tourLoadFen(_tourSavedFen);
+  _tourDidDemo = false;
+  if(typeof ibRefreshAll === 'function') ibRefreshAll();
+  if(typeof indApply === 'function') indApply();
+  if(typeof render === 'function') render();
+}
+
+function startTour(){
+  _tourShell = (typeof proMode !== 'undefined' && proMode) ? 'pro' : 'amateur';
+  _tourDidDemo = false; _tourSavedFen = null;
+  if(_tourShell === 'amateur') _tourSnapshotInd();
+  const all = TOURS[_tourShell] || [];
+  // Keep only steps whose target is present and visible (drops hidden chrome).
+  _tourSteps = all.filter(s => {
+    if(!s.sel) return true;
+    const el = document.querySelector(s.sel);
+    return el && el.getBoundingClientRect().width > 0;
+  });
+  if(!_tourSteps.length) return;
+  _tourIdx = 0; _tourActive = true;
+  const ov = document.getElementById('tourOverlay'); if(ov) ov.style.display = 'block';
+  _renderTourStep();
+}
+function endTour(){
+  _tourActive = false;
+  const ov = document.getElementById('tourOverlay'); if(ov) ov.style.display = 'none';
+  if(_tourShell === 'amateur') _tourRestoreBoard();
+  try{ localStorage.setItem('bm_tour_' + _tourShell, '1'); }catch(e){}
+}
+function tourNext(){ if(_tourIdx < _tourSteps.length - 1){ _tourIdx++; _renderTourStep(); } else endTour(); }
+function tourPrev(){ if(_tourIdx > 0){ _tourIdx--; _renderTourStep(); } }
+
+function _renderTourStep(){
+  const step = _tourSteps[_tourIdx];
+  const ring = document.getElementById('tourRing');
+  const back = document.getElementById('tourBackdrop');
+  if(!step || !ring) return;
+  // Indicator demo (Beginner shell): show each overlay on a sample position.
+  if(_tourModeTimer){ clearInterval(_tourModeTimer); _tourModeTimer = null; }
+  if(_tourShell === 'amateur'){
+    if(step.indSection){
+      _tourEnsureDemo();
+      if(step.modes) _tourCycleModes(step.modes);
+      else _tourShowIndicator(step.ind || null);
+    } else if(_tourDidDemo){
+      _tourRestoreBoard();         // left the indicator section — restore the board
+    } else {
+      _tourShowIndicator(null);    // earlier steps: keep the board free of overlays
+    }
+  }
+  const el = step.sel ? document.querySelector(step.sel) : null;
+  let rect = null;
+  if(el){ try{ el.scrollIntoView({block:'nearest'}); }catch(e){} rect = el.getBoundingClientRect(); }
+  if(rect && rect.width > 0){
+    ring.style.display = 'block';
+    ring.style.top = (rect.top - 6) + 'px';
+    ring.style.left = (rect.left - 6) + 'px';
+    ring.style.width = (rect.width + 12) + 'px';
+    ring.style.height = (rect.height + 12) + 'px';
+    if(back) back.style.display = 'none';
+  } else {
+    ring.style.display = 'none';
+    if(back) back.style.display = 'block';
+  }
+  const cEl = document.getElementById('tourCount'); if(cEl) cEl.textContent = (_tourIdx + 1) + ' / ' + _tourSteps.length;
+  const tEl = document.getElementById('tourTitle'); if(tEl) tEl.textContent = step.title;
+  const bEl = document.getElementById('tourBody'); if(bEl) bEl.innerHTML = step.body;
+  const pv = document.getElementById('tourPrev'); if(pv) pv.style.visibility = _tourIdx === 0 ? 'hidden' : 'visible';
+  const nx = document.getElementById('tourNext'); if(nx) nx.textContent = (_tourIdx === _tourSteps.length - 1) ? 'Done ✓' : 'Next →';
+  _positionTourPanel(rect);
+}
+
+function _positionTourPanel(rect){
+  const panel = document.getElementById('tourPanel');
+  if(!panel) return;
+  const pw = panel.offsetWidth || 288, ph = panel.offsetHeight || 170;
+  const vw = window.innerWidth, vh = window.innerHeight, gap = 14;
+  if(!(rect && rect.width > 0)){
+    panel.style.top = Math.max(gap, (vh - ph) / 2) + 'px';
+    panel.style.left = Math.max(gap, (vw - pw) / 2) + 'px';
+    return;
+  }
+  const clampL = x => Math.max(gap, Math.min(vw - pw - gap, x));
+  const clampT = y => Math.max(gap, Math.min(vh - ph - gap, y));
+  const cx = clampL(rect.left + rect.width / 2 - pw / 2);
+  const cy = clampT(rect.top + rect.height / 2 - ph / 2);
+  let top, left;
+  if(rect.bottom + gap + ph <= vh){            // below
+    top = rect.bottom + gap; left = cx;
+  } else if(rect.top - gap - ph >= 0){          // above
+    top = rect.top - gap - ph; left = cx;
+  } else if(rect.right + gap + pw <= vw){       // right
+    left = rect.right + gap; top = cy;
+  } else if(rect.left - gap - pw >= 0){          // left
+    left = rect.left - gap - pw; top = cy;
+  } else {                                       // opposite corner (least overlap)
+    const tcx = rect.left + rect.width / 2, tcy = rect.top + rect.height / 2;
+    left = (tcx < vw / 2) ? (vw - pw - gap) : gap;
+    top  = (tcy < vh / 2) ? (vh - ph - gap) : gap;
+  }
+  panel.style.top = clampT(top) + 'px';
+  panel.style.left = clampL(left) + 'px';
+}
+
+// Start the tour automatically the first time per shell (called after the user
+// lands on the board from the landing page).
+function maybeAutoTour(){
+  const shell = (typeof proMode !== 'undefined' && proMode) ? 'pro' : 'amateur';
+  let seen = null; try{ seen = localStorage.getItem('bm_tour_' + shell); }catch(e){}
+  if(!seen) startTour();
+}
+
+// Click outside the tour panel ends the tour (capture phase, before the click
+// reaches the app, so e.g. the welcome step's buttons still fire).
+document.addEventListener('click', function(e){
+  if(!_tourActive) return;
+  if(e.target.closest && e.target.closest('#tourPanel')) return;
+  endTour();
+}, true);
+window.addEventListener('resize', function(){ if(_tourActive) _renderTourStep(); });
+
 // ── Ghost availability indicator (amateur shell) ────────────────────────────
 // Ghost responses are gated off during a LIVE 2-player game (see ghostEnabled()
 // in 50-bot-engine.js). Reflect that in the settings UI: disable the depth
@@ -1882,8 +2122,10 @@ function clearAllSelections(){
 
 // ── Multiplayer actions ────────────────────────────────────────────────
 function resign() {
-  // Reuses the same confirmation overlay; confirmResign() sends WS resign if in a room
-  if (mpRoomId) showResignConfirm();
+  if (typeof gameOver !== 'undefined' && gameOver) return;
+  // Works vs a bot as well as online — confirmResign() only notifies the server
+  // when actually in a room, so this is safe for solo bot games too.
+  if (mpRoomId || (typeof botActive !== 'undefined' && botActive)) showResignConfirm();
 }
 
 function offerDraw() {

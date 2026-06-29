@@ -444,6 +444,27 @@ canvas{display:block;background:transparent;}
 .ml-depth input:focus{border-color:var(--amber);}
 .ml-depth-lbl{font-size:7.5px;text-transform:uppercase;letter-spacing:0.08em;}
 
+/* ── Bot-controls guided tour (spotlight; click-through) ──────────────────── */
+#botTourOverlay{position:fixed;inset:0;z-index:9000;pointer-events:none;}
+#btBackdrop{position:absolute;inset:0;background:rgba(0,0,0,0.55);pointer-events:none;display:none;}
+#btRing{position:absolute;display:none;border-radius:5px;border:2px solid var(--amber);box-shadow:0 0 0 9999px rgba(0,0,0,0.55),0 0 16px 2px rgba(200,146,42,0.5);pointer-events:none;transition:top 0.25s ease,left 0.25s ease,width 0.25s ease,height 0.25s ease;}
+#btPanel{position:absolute;top:50%;left:50%;width:300px;max-width:calc(100vw - 24px);background:var(--carbon-mid);border:1px solid var(--border-amber);border-radius:var(--r);box-shadow:0 14px 44px rgba(0,0,0,0.65);padding:14px 16px;pointer-events:auto;transition:top 0.22s ease,left 0.22s ease;}
+.bt-count{font-family:var(--font-m);font-size:8px;letter-spacing:0.14em;text-transform:uppercase;color:var(--amber-dim);margin-bottom:5px;}
+.bt-title{font-family:var(--font-u);font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:6px;line-height:1.25;}
+.bt-body{font-family:var(--font-m);font-size:10px;line-height:1.6;color:var(--text-secondary);margin-bottom:13px;}
+.bt-stages{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:11px;}
+.bt-chip{font-family:var(--font-m);font-size:8px;letter-spacing:0.04em;padding:3px 7px;border-radius:3px;border:0.5px solid var(--border);background:var(--carbon-surface);color:var(--text-dim);cursor:pointer;transition:all 0.12s;}
+.bt-chip:hover{border-color:var(--amber-dim);color:var(--text-secondary);}
+.bt-chip.on{border-color:var(--amber);color:var(--amber);background:var(--carbon-raise);}
+.bt-body b{color:var(--amber-bright);font-weight:600;}
+.bt-actions{display:flex;align-items:center;gap:8px;}
+.bt-btn{font-family:var(--font-u);font-size:10px;padding:5px 12px;border-radius:4px;border:0.5px solid var(--border);background:var(--carbon-surface);color:var(--text-secondary);cursor:pointer;transition:all 0.15s;}
+.bt-btn:hover{border-color:var(--amber);color:var(--amber);}
+.bt-next{background:var(--amber);border-color:var(--amber);color:var(--carbon);font-weight:600;}
+.bt-next:hover{color:var(--carbon);background:var(--amber-bright);}
+.bt-skip{font-family:var(--font-m);font-size:9px;background:none;border:none;color:var(--text-dim);cursor:pointer;text-decoration:underline;padding:0;}
+.bt-skip:hover{color:var(--text-secondary);}
+
 /* ════════════════════════════════════════════════════════════════
    READABILITY THEMES — Standard (default) · Stylized · High-vis
    Internal keys: readable = "Standard" (the initial look),
@@ -834,6 +855,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
     <div class="header-title">Opponent Profile</div>
   </div>
   <div class="header-line"></div>
+  <button class="rs-btn" onclick="startTour()" style="align-self:center;margin-right:8px;" title="Guided tour of the bot controls">🧭 Tour</button>
   <div class="rs-picker" role="group" aria-label="Text readability">
     <span class="rs-label">Text</span>
     <button class="rs-btn active" data-rs="readable" onclick="setReadability('readable')" title="Cleaner, brighter standard text">Standard</button>
@@ -5801,6 +5823,18 @@ function applyBotConfig(cfg){
   });
   grp(() => onCalmPanickyChange(cfg.calmPanickyValue || 0));
 
+  // Restore a selected preset personality (the attractor block cleared it). This
+  // also drives badDayMode, which getBotConfig() re-derives from the selection.
+  grp(() => {
+    if(cfg.personalityId){
+      selectedPersonality = cfg.personalityId;
+      const pc = document.querySelector('.pcard[data-pid="' + cfg.personalityId + '"]');
+      if(pc){ document.querySelectorAll('.pcard').forEach(c => c.classList.remove('sel')); pc.classList.add('sel'); }
+      if(typeof updateQsPersonality === 'function') updateQsPersonality();
+      if(typeof updateQsCpBudget === 'function') updateQsCpBudget();
+    }
+  });
+
   // Temperature — prefer raw float (tempValue); fall back to preset ID for old saves
   grp(() => {
     const T = cfg.tempValue != null
@@ -6056,7 +6090,176 @@ window.addEventListener('message', function(e){
   if(e.data && e.data.type === 'maiaStatus'){
     bcpMaiaSetStatus(e.data.status, e.data.ready, e.data.progress);
   }
+  if(e.data && e.data.type === 'botTourAuto'){
+    // First time the panel is opened — auto-start the tour once.
+    let seen = null; try { seen = localStorage.getItem('bm_bottour'); } catch(err){}
+    if(!seen) setTimeout(startTour, 350);
+  }
 });
+
+/* ══════════════════════════════════════════════════════════════
+   BOT-CONTROLS GUIDED TOUR — spotlight overlay, click-through so the
+   panel stays usable. Ends via Skip / Done. Replay from the 🧭 button.
+══════════════════════════════════════════════════════════════ */
+// A demo custom control is added (only when the list is empty) so the tour can
+// show the real builder, then removed when the tour ends.
+let _btDemoId = null;
+function _btAddDemo(){
+  if(typeof customControls !== 'undefined' && typeof addCustomControl === 'function' && !customControls.length){
+    addCustomControl();
+    const last = customControls[customControls.length - 1];
+    _btDemoId = last ? last.id : null;
+  }
+}
+
+// Steps. `open` = accordion section to expand; `tab` = inner tab to activate;
+// `action` = extra setup; `stage` groups steps for the jump chips.
+const BOT_TOUR = [
+  { stage:'Engine', open:'engine', sel:'#engine-mode-grid', title:'1 · The engine',
+    body:'Pick the brain — <b>Maia</b> (a neural net trained on millions of human games), <b>Stockfish</b>, or blends that pull openings from the <b>Lichess explorer</b> and fall back to an engine. You can build a <b>Hybrid</b> bot that mixes engines by weight, and set the exact playing strength.' },
+
+  { stage:'Engine', open:'engine', sel:'#engine-temp-col', title:'Move sampling — temperature',
+    body:'How adventurously the bot samples from Maia’s move probabilities. <b>Focused</b> = almost always the top move; <b>Wild</b> = it’ll reach for lower-probability tries. The live chart shows the reshaped distribution.' },
+
+  { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#style-gauge', title:'2 · The Centipawmeter',
+    body:'The master dial: how far the bot’s personality may pull it away from the best engine move, in centipawns. Low = near-perfect play; high = a bot with strong opinions.' },
+  { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#move-quality-range', title:'Move quality range',
+    body:'Set the band of move quality the bot stays within — from only its best moves to deliberately weaker ones for a believable "bad day".' },
+  { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#radar-canvas', title:'Personality fingerprint',
+    body:'Drag the radar nodes (or the sliders) to sculpt the bot’s style — the fingerprint updates live as you go.' },
+  { stage:'Personality', open:'attract', tab:['attract','pieces'], sel:'#attractor-rows', title:'Strategic preferences',
+    body:'Bias the bot toward chaos or order, attacking or trading, tight or loose pawns, piece activity and more — all sharing the centipawn budget above.' },
+  { stage:'Personality', open:'attract', tab:['attract','custom'], action:_btAddDemo, sel:'#custom-control-rows', title:'★ Custom controls — write your own rule',
+    body:'Build a rule from <b>30+ board features</b> (passed pawns, king safety, outposts, mobility, hanging pieces…), then <b>restrict when it fires</b>: by <b>game phase</b> (opening / middlegame / endgame), by <b>advantage</b> (only when winning or losing), or by <b>time pressure</b> (yours or the opponent’s). Stack several and the bot follows them all at once.' },
+  { stage:'Personality', open:'attract', tab:['attract','presets'], sel:'#persona-grid', title:'One-click personalities',
+    body:'In a hurry? Start from a ready-made character — then tweak any of the dials above.' },
+
+  { stage:'Opening', open:'opening', sel:'#op-mode-white', title:'3 · Per-colour openings',
+    body:'Give White and Black <i>separate</i> opening behaviour: <b>Off</b>, <b>Main Line</b> (the most popular book moves), or a <b>Repertoire</b> of several openings you weight by percentage.' },
+
+  { stage:'Timing', open:'timing', sel:'#timing-mode-grid', title:'4 · Move timing',
+    body:'How the bot spends its clock between moves — instant, fixed, scaled to position complexity, or mirroring your own pace. The little things that make it feel human.' },
+
+  { stage:'Time pressure', open:'pressure', sel:'#cvA', title:'5 · Time-pressure degradation',
+    body:'Make it crack under the clock: the bot’s <b>ELO and move quality fall as its time runs low</b>, along curves you can drag by hand. For example, a 2400 in time trouble doesn’t suddenly play like a calm 1900 — it’s closer to a <i>lower-probability</i> move from a 2300. Both the strength <i>and</i> which part of the distribution it draws from shift.' },
+
+  { stage:'Start', sel:'.start-btn', title:'Start — and save your creation',
+    body:'When the bot is ready, press <b>Start</b>. Any bot can be <b>saved and shared as a file</b>, so you can trade custom opponents with friends.' },
+];
+
+let _bt = [], _btIdx = 0, _btOn = false, _btTimer = null;
+
+function startTour(){
+  _bt = BOT_TOUR.slice(); // keep all steps; missing targets just show centered
+  _btIdx = 0; _btOn = true;
+  const ov = document.getElementById('botTourOverlay'); if(ov) ov.style.display = 'block';
+  _btRender();
+}
+function endTour(){
+  _btOn = false;
+  const ov = document.getElementById('botTourOverlay'); if(ov) ov.style.display = 'none';
+  // Remove the tour's demo custom control if it added one.
+  if(_btDemoId && typeof removeCustomControl === 'function'){
+    try { removeCustomControl(_btDemoId); } catch(e){}
+    _btDemoId = null;
+  }
+  try { localStorage.setItem('bm_bottour','1'); } catch(e){}
+}
+function tourNext(){ if(_btIdx < _bt.length - 1){ _btIdx++; _btRender(); } else endTour(); }
+function tourPrev(){ if(_btIdx > 0){ _btIdx--; _btRender(); } }
+function _btJump(i){ if(i >= 0 && i < _bt.length){ _btIdx = i; _btRender(); } }
+
+// Ordered unique stages with the index of their first step (for the jump chips).
+function _btStageList(){
+  const seen = {}, list = [];
+  _bt.forEach((s, i) => { if(s.stage && !(s.stage in seen)){ seen[s.stage] = i; list.push({ name:s.stage, idx:i }); } });
+  return list;
+}
+
+function _btRender(){
+  const step = _bt[_btIdx];
+  if(!step) return;
+  // Panel text + stage chips immediately.
+  document.getElementById('btCount').textContent = (_btIdx + 1) + ' / ' + _bt.length;
+  document.getElementById('btTitle').textContent = step.title;
+  document.getElementById('btBody').innerHTML = step.body;
+  document.getElementById('btStages').innerHTML = _btStageList().map(st =>
+    '<button class="bt-chip' + (st.name === step.stage ? ' on' : '') + '" onclick="_btJump(' + st.idx + ')">' + st.name + '</button>').join('');
+  document.getElementById('btPrev').style.visibility = _btIdx === 0 ? 'hidden' : 'visible';
+  document.getElementById('btNext').textContent = (_btIdx === _bt.length - 1) ? 'Done ✓' : 'Next →';
+
+  // Reveal the relevant controls: open the section, switch tab, run any action.
+  let opened = false;
+  if(step.open){
+    const sec = document.getElementById('sec-' + step.open);
+    if(sec && !sec.classList.contains('open') && typeof toggleSec === 'function'){ toggleSec(step.open); opened = true; }
+  }
+  if(step.tab && typeof switchItab === 'function'){ try{ switchItab(step.tab[0], step.tab[1]); }catch(e){} }
+  if(step.action){ try{ step.action(); }catch(e){} }
+
+  // Quick spotlight, then scroll the target into view once layout settles and
+  // re-spotlight. The scroll listener keeps the ring aligned during the scroll.
+  _btSpot();
+  clearTimeout(_btTimer);
+  _btTimer = setTimeout(function(){
+    const tgt = step.sel ? document.querySelector(step.sel) : null;
+    if(tgt){ try{ tgt.scrollIntoView({block:'center', behavior:'smooth'}); }catch(e){} }
+    _btSpot();
+  }, opened ? 520 : 120);
+}
+
+function _btSpot(){
+  const step = _bt[_btIdx]; if(!step) return;
+  const ring = document.getElementById('btRing'), back = document.getElementById('btBackdrop');
+  if(!ring) return;
+  const el = step.sel ? document.querySelector(step.sel) : null;
+  let rect = el ? el.getBoundingClientRect() : null;
+  if(rect && rect.width > 0){
+    ring.style.display = 'block';
+    ring.style.top = (rect.top - 5) + 'px';
+    ring.style.left = (rect.left - 5) + 'px';
+    ring.style.width = (rect.width + 10) + 'px';
+    ring.style.height = (rect.height + 10) + 'px';
+    if(back) back.style.display = 'none';
+  } else {
+    ring.style.display = 'none';
+    if(back) back.style.display = 'block';
+  }
+  _btPos(rect);
+}
+
+function _btPos(rect){
+  const panel = document.getElementById('btPanel'); if(!panel) return;
+  const pw = panel.offsetWidth || 300, ph = panel.offsetHeight || 200;
+  const vw = window.innerWidth, vh = window.innerHeight, gap = 14;
+  if(!(rect && rect.width > 0)){
+    panel.style.top = Math.max(gap, (vh - ph) / 2) + 'px';
+    panel.style.left = Math.max(gap, (vw - pw) / 2) + 'px';
+    return;
+  }
+  const clampL = x => Math.max(gap, Math.min(vw - pw - gap, x));
+  const clampT = y => Math.max(gap, Math.min(vh - ph - gap, y));
+  const cx = clampL(rect.left + rect.width / 2 - pw / 2);   // centered on target horizontally
+  const cy = clampT(rect.top + rect.height / 2 - ph / 2);   // centered on target vertically
+  let top, left;
+  if(rect.bottom + gap + ph <= vh){            // below the target
+    top = rect.bottom + gap; left = cx;
+  } else if(rect.top - gap - ph >= 0){         // above the target
+    top = rect.top - gap - ph; left = cx;
+  } else if(rect.right + gap + pw <= vw){       // to the right of it
+    left = rect.right + gap; top = cy;
+  } else if(rect.left - gap - pw >= 0){          // to the left of it
+    left = rect.left - gap - pw; top = cy;
+  } else {                                       // no clear side — opposite corner (least overlap)
+    const tcx = rect.left + rect.width / 2, tcy = rect.top + rect.height / 2;
+    left = (tcx < vw / 2) ? (vw - pw - gap) : gap;
+    top  = (tcy < vh / 2) ? (vh - ph - gap) : gap;
+  }
+  panel.style.top = clampT(top) + 'px';
+  panel.style.left = clampL(left) + 'px';
+}
+window.addEventListener('resize', function(){ if(_btOn) _btSpot(); });
+window.addEventListener('scroll', function(){ if(_btOn) _btSpot(); }, true);
 
 function startGame(){
   // Block Maia games if the model isn't downloaded yet
@@ -7756,7 +7959,9 @@ let _drawScheduled = false;
 function scheduleDraw(){
   if(_drawScheduled) return;
   _drawScheduled = true;
-  initPts();
+  // Only seed the default sigmoid if no curve exists yet — never overwrite a
+  // hand-dragged or loaded curve when the section is (re)opened.
+  if(!ctrlA || !ctrlA.length || !ctrlB || !ctrlB.length) initPts();
   [60, 220, 520].forEach(ms => setTimeout(()=>{ drawA(); drawB(); }, ms));
   setTimeout(()=>{ _drawScheduled=false; }, 600);
 }
@@ -7840,6 +8045,24 @@ document.addEventListener('DOMContentLoaded', ()=>{
     <div class="bdbtns">
       <button class="preset-btn" onclick="_bdCancel()">Cancel</button>
       <button class="preset-btn primary" onclick="_bdApply()">Apply</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Bot-controls guided tour overlay ─────────────────────────────────────── -->
+<div id="botTourOverlay" style="display:none;">
+  <div id="btBackdrop"></div>
+  <div id="btRing"></div>
+  <div id="btPanel">
+    <div class="bt-count" id="btCount"></div>
+    <div class="bt-title" id="btTitle"></div>
+    <div class="bt-body" id="btBody"></div>
+    <div class="bt-stages" id="btStages"></div>
+    <div class="bt-actions">
+      <button class="bt-skip" onclick="endTour()">Skip tour</button>
+      <span style="flex:1"></span>
+      <button class="bt-btn" id="btPrev" onclick="tourPrev()">← Back</button>
+      <button class="bt-btn bt-next" id="btNext" onclick="tourNext()">Next →</button>
     </div>
   </div>
 </div>

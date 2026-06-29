@@ -13,5 +13,22 @@
     style="width:100%;height:100%;border:none;display:block;" title="Bot Configuration"></iframe>
 </div>
 
+<!-- ── Guided tour overlay (spotlight; clicks pass through to the app) ───────── -->
+<div id="tourOverlay" style="display:none;">
+  <div id="tourBackdrop"></div>
+  <div id="tourRing"></div>
+  <div id="tourPanel">
+    <div class="tour-count" id="tourCount"></div>
+    <div class="tour-title" id="tourTitle"></div>
+    <div class="tour-body" id="tourBody"></div>
+    <div class="tour-actions">
+      <button class="tour-skip" onclick="endTour()">Skip tour</button>
+      <span style="flex:1"></span>
+      <button class="tour-btn" id="tourPrev" onclick="tourPrev()">← Back</button>
+      <button class="tour-btn tour-next" id="tourNext" onclick="tourNext()">Next →</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

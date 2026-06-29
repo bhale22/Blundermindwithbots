@@ -1073,7 +1073,42 @@ function landingDismiss() {
   setTimeout(() => { overlay.style.display = 'none'; }, 420);
 }
 
+// Choose the board experience from the landing: Beginner (amateur) or Expert (pro).
+// setShell persists bm_shell, so the choice is remembered for next visit.
+function landingSetShell(shell) {
+  const s = (shell === 'pro') ? 'pro' : 'amateur';
+  if (typeof setShell === 'function') setShell(s);
+  // setShell no-ops (and skips persisting) when already in that shell, so commit
+  // the choice here too — this is also what marks the visitor as "returning".
+  try { localStorage.setItem('bm_shell', s); } catch (e) {}
+  _landingApplyShellStyle(s);
+}
+
+// Re-style the landing to match a shell: Expert = carbon/amber panel look,
+// Beginner = the default blue look. Also syncs the selected toggle button.
+function _landingApplyShellStyle(s) {
+  const ov = document.getElementById('landingOverlay');
+  if (ov) ov.classList.toggle('landing-expert', s === 'pro');
+  document.querySelectorAll('.landing-shell-btn').forEach(b =>
+    b.classList.toggle('sel', b.dataset.shell === s));
+}
+
+// Re-open the landing (Home), styled for the currently active shell.
+function landingShow() {
+  const ov = document.getElementById('landingOverlay');
+  if (!ov) return;
+  ov.style.display = 'flex';
+  // force reflow so the fade-in transition re-runs after removing fade-out
+  void ov.offsetWidth;
+  ov.classList.remove('fade-out');
+  _landingApplyShellStyle((typeof proMode !== 'undefined' && proMode) ? 'pro' : 'amateur');
+}
+
 function landingChoose(mode) {
+  // Commit the current shell so returning visitors skip the landing next time.
+  try {
+    localStorage.setItem('bm_shell', (typeof proMode !== 'undefined' && proMode) ? 'pro' : 'amateur');
+  } catch (e) {}
   landingDismiss();
   setTimeout(() => {
     if (mode === 'bot') {
@@ -1085,6 +1120,10 @@ function landingChoose(mode) {
     }
     // 'solo' just dismisses — board is already set up and ready
   }, 300);
+  // First time landing on the board, auto-start the guided tour (once per shell).
+  if (mode === 'solo' && typeof maybeAutoTour === 'function') {
+    setTimeout(maybeAutoTour, 700);
+  }
 }
 
 function landingLoadBotConfig(event) {
@@ -1161,6 +1200,8 @@ function openBotModal() {
           type: 'maiaStatus', status: _maiaStatus || 'idle',
           ready: _maiaReady, progress: _maiaProgress || 0
         }, location.origin);
+        // Panel auto-starts its guided tour the first time it's opened.
+        frame.contentWindow.postMessage({ type: 'botTourAuto' }, location.origin);
       }
     } catch(e) {}
   }, 120);
