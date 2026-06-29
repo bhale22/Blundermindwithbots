@@ -6079,6 +6079,17 @@ function bcpMaiaSetStatus(status, ready, progress){
 }
 
 // Receive live status pushes from parent
+function _applyPanelTheme(vars){
+  const root = document.documentElement;
+  Object.keys(vars).forEach(function(k){ root.style.setProperty(k, vars[k]); });
+}
+(function(){
+  try {
+    const saved = localStorage.getItem('bm_panelTheme');
+    if(saved) _applyPanelTheme(JSON.parse(saved));
+  } catch(e){}
+})();
+
 window.addEventListener('message', function(e){
   if(e.origin !== location.origin) return; // only the parent page may push status
   if(e.data && e.data.type === 'maiaStatus'){
@@ -6088,6 +6099,9 @@ window.addEventListener('message', function(e){
     // First time the panel is opened — auto-start the tour once.
     let seen = null; try { seen = localStorage.getItem('bm_bottour'); } catch(err){}
     if(!seen) setTimeout(startTour, 350);
+  }
+  if(e.data && e.data.type === 'setTheme' && e.data.vars){
+    _applyPanelTheme(e.data.vars);
   }
 });
 

@@ -1200,8 +1200,13 @@ function openBotModal() {
           type: 'maiaStatus', status: _maiaStatus || 'idle',
           ready: _maiaReady, progress: _maiaProgress || 0
         }, location.origin);
-        // Panel auto-starts its guided tour the first time it's opened.
         frame.contentWindow.postMessage({ type: 'botTourAuto' }, location.origin);
+        // Push current palette so the panel always matches the app's active BG theme.
+        if (typeof _syncPanelTheme === 'function') {
+          const t = (typeof BG_THEMES !== 'undefined' && typeof currentBgTheme !== 'undefined')
+            ? (BG_THEMES[currentBgTheme] || BG_THEMES.navy) : null;
+          if (t) _syncPanelTheme(t);
+        }
       }
     } catch(e) {}
   }, 120);

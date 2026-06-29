@@ -356,6 +356,27 @@ function applyBgTheme(name) {
   document.querySelectorAll('#bgSwatches .swatch').forEach(s =>
     s.classList.toggle('active', s.dataset.theme === name));
   localStorage.setItem('bm_bgTheme', name);
+  _syncPanelTheme(t);
+}
+function _syncPanelTheme(t) {
+  const vars = {
+    '--carbon':         t.bg,
+    '--carbon-mid':     t.panel,
+    '--carbon-light':   t.panel,
+    '--carbon-surface': t.panel2,
+    '--carbon-raise':   t.panel2,
+    '--text-primary':   t.text,
+    '--text-secondary': t.textSec,
+    '--text-dim':       t.textDim,
+    '--border':         t.border
+  };
+  try { localStorage.setItem('bm_panelTheme', JSON.stringify(vars)); } catch(e) {}
+  try {
+    const frame = document.getElementById('botModalFrame');
+    if (frame && frame.contentWindow) {
+      frame.contentWindow.postMessage({ type: 'setTheme', vars }, location.origin);
+    }
+  } catch(e) {}
 }
 
 // ── Panel system ─────────────────────────────────────────────────────
