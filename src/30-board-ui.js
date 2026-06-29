@@ -984,7 +984,9 @@ function render(){
 
   // ── Sawtooth alert: the explored piece would HANG on its destination ──────
   // (attacked, zero defenders on the previewed board — fact, not judgment)
-  if (isPreviewing && premoveTo >= 0 && dispBoard[premoveTo] && dispBoard[premoveTo].piece !== 'K') {
+  // Only shown when threat/capture indicators are active (respects pro mode and button state)
+  if (isPreviewing && premoveTo >= 0 && dispBoard[premoveTo] && dispBoard[premoveTo].piece !== 'K'
+      && (indActive('threats') || indActive('captures'))) {
     const _hp = dispBoard[premoveTo];
     const _hA = dispAtk[premoveTo] || {w:[],b:[]};
     const _hAtt = (_hA[_hp.color==='w'?'b':'w'] || []).length;
