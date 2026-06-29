@@ -799,33 +799,37 @@ const TOURS = {
       body:'Play a bot, challenge a friend online, or just explore. You can click any button here right now — or keep touring.' },
     { sel:'#botSidebarBtn', title:'Play vs Bots',
       body:'Build a custom opponent: pick an engine and rating, give it a personality, custom controls, an opening repertoire, and time-pressure behaviour.' },
-    { sel:'.ind-grid', title:'Board-vision indicators',
-      body:'These overlays train you to see the board like a stronger player. Each one has three modes — Off, “Show During Exploration” (only while you drag a piece), or Always-on. Here’s what each shows…' },
-    { sel:'#ib-checkthreats', title:'Check threats',
+    { sel:'.ind-grid', title:'Board-vision indicators', indSection:true,
+      body:'These overlays draw what a stronger player sees — threats, pins, forks and more. We’ll light each one up on a sample position so you can see exactly what it does.' },
+    { sel:'#ib-threats', title:'Three ways to show an indicator', indSection:true, modes:'threats',
+      body:'Watch this button cycle through its three modes — <b>Off</b> (grey) → <b>Show during exploration</b> (only while you drag a piece) → <b>Always-on</b> (green). Single-click any indicator to peek, double-click to keep it on.' },
+    { sel:'.ind-grid', title:'How to train with these', indSection:true,
+      body:'Best habit: <b>look first and try to spot it yourself</b> — plan your move and picture the threats and replies in your head. <i>Then</i> switch an indicator on as instant feedback to catch anything you missed.' },
+    { sel:'#ib-checkthreats', title:'Check threats', indSection:true, ind:'checkthreats',
       body:'Squares where a check could be delivered next move — and the pieces that could give it. Spot perpetuals and king-hunt ideas.' },
-    { sel:'#ib-threats', title:'Threats & captures',
+    { sel:'#ib-threats', title:'Threats & captures', indSection:true, ind:'threats',
       body:'Red rings mark your pieces that are attacked. It flags hanging pieces and what can be captured right now — the #1 way to stop getting blundermined.' },
-    { sel:'#ib-counts', title:'Threat / defender counts',
+    { sel:'#ib-counts', title:'Threat / defender counts', indSection:true, ind:'counts',
       body:'For each piece, how many attackers vs defenders it has. When attackers outnumber defenders, something’s about to fall.' },
-    { sel:'#ib-unprotected', title:'Unprotected pieces',
+    { sel:'#ib-unprotected', title:'Unprotected pieces', indSection:true, ind:'unprotected',
       body:'Pieces with no defender at all — loose pieces that drop to a single tactic.' },
-    { sel:'#ib-pins', title:'Pins',
+    { sel:'#ib-pins', title:'Pins', indSection:true, ind:'pins',
       body:'Pieces pinned to a more valuable piece (or the king) behind them — they can’t safely move off the line.' },
-    { sel:'#ib-forksw', title:'My forks & skewers',
+    { sel:'#ib-forksw', title:'My forks & skewers', indSection:true, ind:'forksw',
       body:'Squares where one of your pieces could fork or skewer two enemy pieces at once.' },
-    { sel:'#ib-forksb', title:'Fork & skewer threats',
+    { sel:'#ib-forksb', title:'Fork & skewer threats', indSection:true, ind:'forksb',
       body:'The same, but against you — where the opponent could fork or skewer your pieces.' },
-    { sel:'#ib-overloaded', title:'Overloaded defenders',
+    { sel:'#ib-overloaded', title:'Overloaded defenders', indSection:true, ind:'overloaded',
       body:'A piece doing too many defensive jobs at once. Remove or distract it and one of its charges falls.' },
-    { sel:'#ib-discoveredopp', title:'Opponent discovered threats',
+    { sel:'#ib-discoveredopp', title:'Opponent discovered threats', indSection:true, ind:'discoveredopp',
       body:'Moves that would unveil an attack from a piece hiding behind the one that moves — easy to miss.' },
-    { sel:'#ib-discoveredself', title:'My discovered attacks',
+    { sel:'#ib-discoveredself', title:'My discovered attacks', indSection:true, ind:'discoveredself',
       body:'Your own discovered-attack chances — move the front piece and the one behind springs to life.' },
-    { sel:'#ib-weakw', title:'My weak squares',
+    { sel:'#ib-weakw', title:'My weak squares', indSection:true, ind:'weakw',
       body:'Holes in your own camp that no pawn can defend — squares the opponent would love to plant a piece on.' },
-    { sel:'#ib-weakb', title:'Opponent weak squares',
+    { sel:'#ib-weakb', title:'Opponent weak squares', indSection:true, ind:'weakb',
       body:'Holes in their camp — outpost squares where your knight or bishop can sit untouchable.' },
-    { sel:'#ib-xray', title:'X-ray pressure',
+    { sel:'#ib-xray', title:'X-ray pressure', indSection:true, ind:'xray',
       body:'Pressure or defence acting through another piece on the same line — the lines that matter once a blocker moves.' },
     { sel:'#soloGhostDepth', title:'Ghost moves',
       body:'Hover a destination square and the bot shows the most likely replies as faint “ghost” pieces — handy for training your calculation.' },
@@ -846,8 +850,74 @@ const TOURS = {
 
 let _tourSteps = [], _tourIdx = 0, _tourActive = false, _tourShell = 'amateur';
 
+// ── Indicator demo: light each overlay on a sample position during the tour ──
+// A tactic-rich position so threats/pins/counts/weak-squares actually appear.
+const _TOUR_DEMO_FEN = 'r2q1rk1/ppp2ppp/2np1n2/2b1p1B1/2B1P1b1/2NP1N2/PPP2PPP/R2Q1RK1 w - - 0 1';
+let _tourSavedInd = null, _tourSavedFen = null, _tourDidDemo = false, _tourModeTimer = null;
+
+function _tourSafeToDemo(){
+  // Never disturb a live game — only swap in the demo position from a fresh/idle board.
+  return (typeof gameMovesAlgebraic === 'undefined' || !gameMovesAlgebraic.length ||
+          (typeof gameOver !== 'undefined' && gameOver));
+}
+function _tourSnapshotInd(){
+  if(typeof IND === 'undefined'){ _tourSavedInd = null; return; }
+  _tourSavedInd = {};
+  Object.keys(IND).forEach(k => { _tourSavedInd[k] = { on:IND[k].on, pre:IND[k].pre, pressing:IND[k].pressing }; });
+}
+function _tourLoadFen(fen){
+  try{
+    board = parseFen(fen);
+    if(typeof buildAtk === 'function') atkMap = buildAtk(board);
+    if(typeof computePins === 'function'){ const p = computePins(board); pinnedWSquares = p.w; pinnedBSquares = p.b; }
+    if(typeof indApply === 'function') indApply();
+    if(typeof render === 'function') render();
+  }catch(e){}
+}
+function _tourEnsureDemo(){
+  if(_tourDidDemo || !_tourSafeToDemo()) return;
+  try{ _tourSavedFen = boardToFen(board, turn, castling, epSq); }catch(e){ _tourSavedFen = null; }
+  _tourLoadFen(_TOUR_DEMO_FEN);
+  _tourDidDemo = true;
+}
+function _tourShowIndicator(key){
+  if(typeof IND === 'undefined') return;
+  Object.keys(IND).forEach(k => { IND[k].on = false; IND[k].pressing = false; });
+  if(key && IND[key]) IND[key].on = true;   // always-on so the overlay shows now
+  if(typeof ibRefreshAll === 'function') ibRefreshAll();
+  if(typeof indApply === 'function') indApply();
+  if(typeof render === 'function') render();
+}
+function _tourCycleModes(key){
+  if(typeof IND === 'undefined' || !IND[key]) return;
+  const seq = [ {on:false,pre:false}, {on:false,pre:true}, {on:true,pre:false} ]; // off → premove → always-on
+  let i = 0;
+  const apply = () => {
+    IND[key].on = seq[i].on; IND[key].pre = seq[i].pre; IND[key].pressing = false;
+    if(typeof ibUpdateUI === 'function') ibUpdateUI(key);
+    if(typeof indApply === 'function') indApply();
+    if(typeof render === 'function') render();
+    i = (i + 1) % seq.length;
+  };
+  apply();
+  _tourModeTimer = setInterval(apply, 1100);
+}
+function _tourRestoreBoard(){
+  if(_tourModeTimer){ clearInterval(_tourModeTimer); _tourModeTimer = null; }
+  if(_tourSavedInd && typeof IND !== 'undefined'){
+    Object.keys(_tourSavedInd).forEach(k => { if(IND[k]){ IND[k].on=_tourSavedInd[k].on; IND[k].pre=_tourSavedInd[k].pre; IND[k].pressing=_tourSavedInd[k].pressing; } });
+  }
+  if(_tourDidDemo && _tourSavedFen) _tourLoadFen(_tourSavedFen);
+  _tourDidDemo = false;
+  if(typeof ibRefreshAll === 'function') ibRefreshAll();
+  if(typeof indApply === 'function') indApply();
+  if(typeof render === 'function') render();
+}
+
 function startTour(){
   _tourShell = (typeof proMode !== 'undefined' && proMode) ? 'pro' : 'amateur';
+  _tourDidDemo = false; _tourSavedFen = null;
+  if(_tourShell === 'amateur') _tourSnapshotInd();
   const all = TOURS[_tourShell] || [];
   // Keep only steps whose target is present and visible (drops hidden chrome).
   _tourSteps = all.filter(s => {
@@ -863,6 +933,7 @@ function startTour(){
 function endTour(){
   _tourActive = false;
   const ov = document.getElementById('tourOverlay'); if(ov) ov.style.display = 'none';
+  if(_tourShell === 'amateur') _tourRestoreBoard();
   try{ localStorage.setItem('bm_tour_' + _tourShell, '1'); }catch(e){}
 }
 function tourNext(){ if(_tourIdx < _tourSteps.length - 1){ _tourIdx++; _renderTourStep(); } else endTour(); }
@@ -873,6 +944,19 @@ function _renderTourStep(){
   const ring = document.getElementById('tourRing');
   const back = document.getElementById('tourBackdrop');
   if(!step || !ring) return;
+  // Indicator demo (Beginner shell): show each overlay on a sample position.
+  if(_tourModeTimer){ clearInterval(_tourModeTimer); _tourModeTimer = null; }
+  if(_tourShell === 'amateur'){
+    if(step.indSection){
+      _tourEnsureDemo();
+      if(step.modes) _tourCycleModes(step.modes);
+      else _tourShowIndicator(step.ind || null);
+    } else if(_tourDidDemo){
+      _tourRestoreBoard();         // left the indicator section — restore the board
+    } else {
+      _tourShowIndicator(null);    // earlier steps: keep the board free of overlays
+    }
+  }
   const el = step.sel ? document.querySelector(step.sel) : null;
   let rect = null;
   if(el){ try{ el.scrollIntoView({block:'nearest'}); }catch(e){} rect = el.getBoundingClientRect(); }
