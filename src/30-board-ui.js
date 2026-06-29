@@ -597,7 +597,9 @@ function render(){
 
 
   // Check threat highlights — orange for white's threats, purple for black's
-  if(showingCheckThreats){
+  // Belt-and-suspenders proMode guard: indApply is async (RAF) so stale state
+  // could render for one frame before it fires; skip unconditionally in pro mode.
+  if(showingCheckThreats && !(typeof proMode!=='undefined'&&proMode)){
     // Highlight DESTINATION squares (where check would occur)
     checkThreatSquaresW.forEach(sq=>{
       const{r,c}=sqCanvas(sq);

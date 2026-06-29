@@ -1003,6 +1003,8 @@ body.pro-mode #proSide{
 .pro-moverow:nth-child(odd){ background:rgba(255,255,255,0.012); }
 .pro-mnum{ color:var(--ptd);font-size:9px;text-align:right;padding-right:9px; }
 .pro-mw,.pro-mb{ padding:4px 8px;color:var(--pt2); }
+.pro-mhi{ background:rgba(200,146,42,0.18);color:var(--pa)!important;border-radius:3px;font-weight:600; }
+.pro-mat{ font-size:11px;line-height:1.2;margin-top:1px; }
 
 .pro-actions{ display:flex;gap:7px;align-items:stretch; }
 .pro-abtn{
@@ -1481,6 +1483,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="pro-meta">
         <div class="pro-name" id="proNameTop">Black</div>
         <div class="pro-rating" id="proRatingTop"></div>
+        <div class="pro-mat" id="proMatTop"></div>
       </div>
       <div class="pro-clock" id="proClockTop">—</div>
     </div>
@@ -1497,6 +1500,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="pro-meta">
         <div class="pro-name" id="proNameBottom">White</div>
         <div class="pro-rating" id="proRatingBottom"></div>
+        <div class="pro-mat" id="proMatBottom"></div>
       </div>
       <div class="pro-clock" id="proClockBottom">—</div>
     </div>

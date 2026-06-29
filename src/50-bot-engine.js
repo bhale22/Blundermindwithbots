@@ -1432,7 +1432,7 @@ async function botMakeMove() {
                 const lm = legalMovesFor(mv.from, board, epSq, castling);
                 if (lm.includes(mv.to)) {
                   clearGhostPieces();
-                  executeMove(mv.from, mv.to, mv.promo || 'Q');
+                  executeMove(mv.from, mv.to, mv.promo || null);
                   const _botSan = gameMovesAlgebraic[gameMovesAlgebraic.length - 1] || null;
                   botRecordMove(uciMove, _botSan);
                   updatePlayerBoxes();
@@ -1474,7 +1474,7 @@ async function botMakeMove() {
             const lm = legalMovesFor(mv.from, board, epSq, castling);
             if (lm.includes(mv.to)) {
               clearGhostPieces();
-              executeMove(mv.from, mv.to, mv.promo || 'Q');
+              executeMove(mv.from, mv.to, mv.promo || null);
               const _botSan = gameMovesAlgebraic[gameMovesAlgebraic.length - 1] || null;
               botRecordMove(uciMove, _botSan);
               updatePlayerBoxes();
@@ -1712,7 +1712,7 @@ async function botMakeMove() {
       const lm = legalMovesFor(mv.from, board, epSq, castling);
       if (lm.includes(mv.to)) {
         clearGhostPieces();
-        executeMove(mv.from, mv.to, mv.promo || 'Q');
+        executeMove(mv.from, mv.to, mv.promo || null);
         // botRecordMove(uciMove); // Phase 1: track bot's move
         botRecordMove(uciMove, gameMovesAlgebraic[gameMovesAlgebraic.length - 1] || null); // Phase 1: track bot's move
         updatePlayerBoxes();

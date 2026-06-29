@@ -742,13 +742,18 @@ function proRenderNotation(){
   const el = document.getElementById('proMoves');
   if(!el || typeof gameMovesAlgebraic === 'undefined') return;
   if(!gameMovesAlgebraic.length){ el.innerHTML = '<div class="pro-moves-empty">No moves yet</div>'; return; }
+  // During replay, highlight the move at the current replay position.
+  const hiIdx = (typeof inReplay !== 'undefined' && inReplay && typeof replayIdx !== 'undefined')
+    ? replayIdx - 1 : -1;
   let html = '';
   for(let i=0;i<gameMovesAlgebraic.length;i+=2){
     const n = i/2 + 1;
     const w = gameMovesAlgebraic[i] || '';
     const b = gameMovesAlgebraic[i+1] || '';
+    const wHi = i === hiIdx ? ' pro-mhi' : '';
+    const bHi = i+1 === hiIdx ? ' pro-mhi' : '';
     html += '<div class="pro-moverow"><span class="pro-mnum">' + n + '.</span>' +
-            '<span class="pro-mw">' + w + '</span><span class="pro-mb">' + b + '</span></div>';
+            '<span class="pro-mw' + wHi + '">' + w + '</span><span class="pro-mb' + bHi + '">' + b + '</span></div>';
   }
   el.innerHTML = html;
   el.scrollTop = el.scrollHeight;
@@ -781,6 +786,17 @@ function proSync(){
   if(nb) nb.textContent = topIsWhite ? bName : wName;
   if(at) at.textContent = topIsWhite ? '♔' : '♚';
   if(ab) ab.textContent = topIsWhite ? '♚' : '♔';
+  // Material advantage
+  if(typeof computeMaterial === 'function' && typeof board !== 'undefined'){
+    const mat = computeMaterial(board);
+    const diff = mat.w - mat.b;
+    const topMat  = document.getElementById('proMatTop');
+    const botMat  = document.getElementById('proMatBottom');
+    if(topMat)  topMat.innerHTML  = (topIsWhite  ? diff  > 0 : diff  < 0) && typeof matAdvString==='function'
+      ? matAdvString(Math.abs(diff), topIsWhite ? mat.wPieces : mat.bPieces, topIsWhite ? mat.bPieces : mat.wPieces) : '';
+    if(botMat)  botMat.innerHTML  = (!topIsWhite ? diff  > 0 : diff  < 0) && typeof matAdvString==='function'
+      ? matAdvString(Math.abs(diff), !topIsWhite ? mat.wPieces : mat.bPieces, !topIsWhite ? mat.bPieces : mat.wPieces) : '';
+  }
 }
 
 // Restore the saved shell on load
@@ -2366,22 +2382,27 @@ function replayGo(idx){
 function rebuildToReplayIdx(targetIdx){
   board=parseFen(FENS[0]);turn='w';
   castling={wK:true,wQ:true,bK:true,bQ:true};epSq=-1;
-  gameMovesAlgebraic=[];
+  // Show all moves in the notation panel; highlight the current position.
+  gameMovesAlgebraic=replayMoves.slice();
+  // Apply only moves up to targetIdx to reconstruct the board at that point.
+  let _bd=parseFen(FENS[0]),_turn='w',_cst={wK:true,wQ:true,bK:true,bQ:true},_ep=-1;
   for(let i=0;i<targetIdx&&i<replayMoves.length;i++){
-    const mv=algebraicToMove(replayMoves[i],board,turn,epSq,castling);
+    const mv=algebraicToMove(replayMoves[i],_bd,_turn,_ep,_cst);
     if(!mv){break;}
-    const prevBoard=board;
-    board=applyMove(mv.from,mv.to,board,epSq,mv.promo||'Q');
+    const prevBoard=_bd;
+    _bd=applyMove(mv.from,mv.to,_bd,_ep,mv.promo||'Q');
     const movedPiece=prevBoard[mv.from];
-    castling=updateCastling(mv.from,mv.to,movedPiece,castling);
-    epSq=computeEP(mv.from,mv.to,prevBoard);
-    turn=turn==='w'?'b':'w';
+    _cst=updateCastling(mv.from,mv.to,movedPiece,_cst);
+    _ep=computeEP(mv.from,mv.to,prevBoard);
+    _turn=_turn==='w'?'b':'w';
   }
+  board=_bd;turn=_turn;castling=_cst;epSq=_ep;
   replayIdx=targetIdx;
   atkMap=buildAtk(board);
   const pins=computePins(board);
   pinnedWSquares=pins.w;pinnedBSquares=pins.b;
   updateReplayInfo();indApply();
+  if(typeof proSync==='function') proSync();
 }
 function updateReplayInfo(){
   document.getElementById('replayInfo').textContent='Move '+replayIdx+' / '+replayMoves.length;
