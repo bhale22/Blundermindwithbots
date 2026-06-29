@@ -1018,6 +1018,16 @@ body.pro-mode #proSide{
 .pro-abtn.danger{ color:#d98080; }
 .pro-abtn.danger:hover{ border-color:rgba(200,74,74,0.6);color:#e89090; }
 .pro-abtn.draw:hover{ border-color:rgba(93,173,226,0.5);color:#9fd4f0; }
+.pro-abtn.disabled{ opacity:0.28; pointer-events:none; cursor:default; }
+#proResultBar{
+  display:none;
+  padding:9px 12px;text-align:center;
+  font-family:var(--pfm);font-size:11px;letter-spacing:0.04em;
+  color:var(--pa);
+  background:var(--pc-surface);
+  border:0.5px solid var(--pbd-a);
+  border-radius:4px;
+}
 .pro-abtn.icon{ flex:0 0 40px;font-size:14px; }
 
 .pro-gear-menu{
@@ -1505,10 +1515,13 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="pro-clock" id="proClockBottom">—</div>
     </div>
 
+    <!-- Game-over result (shown when checkmate / stalemate / resign / draw) -->
+    <div id="proResultBar"></div>
+
     <!-- Actions: Resign · Draw · Flip · Theme · Gear -->
     <div class="pro-actions">
-      <div class="pro-abtn danger" onclick="resign()">⚑ Resign</div>
-      <div class="pro-abtn draw" onclick="offerDraw()">½ Draw</div>
+      <div class="pro-abtn danger" id="proResignBtn" onclick="resign()">⚑ Resign</div>
+      <div class="pro-abtn draw" id="proDrawBtn" onclick="offerDraw()">½ Draw</div>
       <div class="pro-abtn icon" onclick="proFlipBoard()" title="Flip board">⇅</div>
       <div class="pro-abtn icon" onclick="openPanel('themePanel')" title="Theme &amp; pieces">🎨</div>
       <div class="pro-abtn icon" onclick="proToggleGear()" title="More">⚙</div>

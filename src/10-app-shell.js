@@ -539,7 +539,16 @@ function indActive(key) {
   }
   if(ind.pressing) return true;
   if(ind.on) return true;
-  if(ind.pre&&(!!previewBoard||currentlyPreviewing)) return true;
+  if(ind.pre&&(!!previewBoard||currentlyPreviewing)){
+    // In preview-only mode (not explicitly "always on"), suppress during active
+    // drag — circles jumping onto the carried piece feel like a bug to users.
+    if(!ind.on){
+      const _dragging = typeof dragFrom !== 'undefined' && dragFrom >= 0 &&
+                        typeof dragMoved !== 'undefined' && dragMoved;
+      if(_dragging) return false;
+    }
+    return true;
+  }
   return false;
 }
 
@@ -849,6 +858,19 @@ function proSync(){
     if(botMat)  botMat.innerHTML  = (!topIsWhite ? diff  > 0 : diff  < 0) && typeof matAdvString==='function'
       ? matAdvString(Math.abs(diff), !topIsWhite ? mat.wPieces : mat.bPieces, !topIsWhite ? mat.bPieces : mat.wPieces) : '';
   }
+  // Result bar and button state
+  const resultBar = document.getElementById('proResultBar');
+  if(resultBar){
+    resultBar.style.display = over ? 'block' : 'none';
+    if(over){
+      const msg = (typeof gameOverMsg !== 'undefined' && gameOverMsg) ? gameOverMsg : 'Game over';
+      resultBar.textContent = msg;
+    }
+  }
+  const resignBtn = document.getElementById('proResignBtn');
+  const drawBtn   = document.getElementById('proDrawBtn');
+  if(resignBtn) resignBtn.classList.toggle('disabled', over);
+  if(drawBtn)   drawBtn.classList.toggle('disabled', over);
 }
 
 // Restore the saved shell on load
