@@ -332,7 +332,7 @@ const BG_THEMES = {
   slate:      {bg:'#0d1520', panel:'#0a1018', panel2:'#060a10', border:'#1a2a3a', border2:'#101820', text:'#c0ccd8', textDim:'#405060', textSec:'#708090', name:'Slate'},
 };
 let currentBoardTheme = 'blue';
-let currentBgTheme = 'slate';
+let currentBgTheme = 'lightblue';
 
 function applyBoardTheme(name) {
   currentBoardTheme = name;
@@ -358,17 +358,34 @@ function applyBgTheme(name) {
   localStorage.setItem('bm_bgTheme', name);
   _syncPanelTheme(t);
 }
+function _isLightTheme(t) {
+  const m = (t.text || '').match(/#([0-9a-f]{2})/i);
+  return m ? parseInt(m[1], 16) < 128 : false;
+}
 function _syncPanelTheme(t) {
+  const light = _isLightTheme(t);
   const vars = {
     '--carbon':         t.bg,
     '--carbon-mid':     t.panel,
     '--carbon-light':   t.panel,
     '--carbon-surface': t.panel2,
-    '--carbon-raise':   t.panel2,
+    '--carbon-raise':   light ? t.border : t.panel2,
     '--text-primary':   t.text,
     '--text-secondary': t.textSec,
     '--text-dim':       t.textDim,
-    '--border':         t.border
+    '--border':         t.border,
+    '--amber':          light ? '#9a6820' : '#c8922a',
+    '--amber-bright':   light ? '#c8922a' : '#e8aa40',
+    '--amber-dim':      light ? '#6a4a10' : '#8a6420',
+    '--amber-glow':     light ? 'rgba(154,104,32,0.14)' : 'rgba(200,146,42,0.12)',
+    '--amber-glow-s':   light ? 'rgba(154,104,32,0.26)' : 'rgba(200,146,42,0.22)',
+    '--border-amber':   light ? 'rgba(154,104,32,0.40)' : 'rgba(200,146,42,0.30)',
+    '--radar-ring':     light ? 'rgba(0,0,0,0.10)'       : 'rgba(255,255,255,0.06)',
+    '--radar-axis':     light ? 'rgba(0,0,0,0.10)'       : 'rgba(255,255,255,0.07)',
+    '--radar-node-inactive': light ? '#708090' : '#4a5060',
+    '--radar-node-fill':     light ? '#c8922a' : '#e8aa40',
+    '--radar-node-active':   light ? '#ffcc55' : '#ffcc55',
+    '--radar-label-badge':   light ? '#9a6820' : '#ffcc55',
   };
   try { localStorage.setItem('bm_panelTheme', JSON.stringify(vars)); } catch(e) {}
   try {
@@ -686,10 +703,13 @@ function chatAppend(from, text, isMe){
   line.innerHTML = '<span class="chat-sender">' + (isMe ? 'You' : from) + ':</span> ' + safe;
   msgs.appendChild(line);
   msgs.scrollTop = msgs.scrollHeight;
-  // Show unread dot if incoming and input isn't focused
+  // Auto-expand chat on incoming message; show unread dot if already open but unfocused
   if(!isMe){
-    const inp = document.getElementById('chatInput');
-    if(document.activeElement !== inp) chatShowUnread();
+    if(!chatExpanded) chatToggleExpand();
+    else {
+      const inp = document.getElementById('chatInput');
+      if(document.activeElement !== inp) chatShowUnread();
+    }
   }
 }
 
@@ -1234,6 +1254,16 @@ function clockUpdateDisplay() {
     if(clockTimeB < 30 && clockActive && turn==='b' && !isUntimed)
       tbEl.style.color='#e03535'; else tbEl.style.color='';
   }
+  // Keep pro-mode clock column in sync without waiting for a move
+  if(typeof proMode !== 'undefined' && proMode && !isUntimed){
+    const _fl = typeof boardFlipped !== 'undefined' && boardFlipped;
+    const ct = document.getElementById('proClockTop');
+    const cb = document.getElementById('proClockBottom');
+    if(ct){ ct.textContent = clockFmtTime(_fl ? clockTimeW : clockTimeB);
+            ct.style.color = (_fl ? (turn==='w'&&clockTimeW<30) : (turn==='b'&&clockTimeB<30)) ? '#e03535' : ''; }
+    if(cb){ cb.textContent = clockFmtTime(_fl ? clockTimeB : clockTimeW);
+            cb.style.color = (_fl ? (turn==='b'&&clockTimeB<30) : (turn==='w'&&clockTimeW<30)) ? '#e03535' : ''; }
+  }
 }
 
 function clockSetControl(key) {
@@ -1696,7 +1726,7 @@ function mpLeave() {
   clearInterval(mpLobbyRefreshTimer);
   chatShow(false);
   const cm = document.getElementById('chatMessages'); if (cm) cm.innerHTML = '';
-  const boardCol = document.querySelector('.board-col') || document.getElementById('boardCol');
+  const boardCol = document.getElementById('board-col');
   if (boardCol) boardCol.classList.remove('board-flipped');
   document.getElementById('mpRoomCode').textContent = '';
   const jc = document.getElementById('mpJoinCode'); if (jc) jc.value = '';
@@ -1727,6 +1757,8 @@ function mpStartGame(tcKey) {
   clockInit(tc);
   chatShow(true);
   boardFlipped = (mpRole === 'black');
+  const _bcEl = document.getElementById('board-col');
+  if (_bcEl) _bcEl.classList.toggle('board-flipped', boardFlipped);
   render();
   if (tc !== 'untimed') clockStart();
   updatePlayerBoxes();
@@ -2493,7 +2525,7 @@ function savePrefs(){
 }
 function loadPrefs(){
   const bt=localStorage.getItem('bm_boardTheme');if(bt&&BOARD_THEMES[bt])applyBoardTheme(bt);
-  const bg=localStorage.getItem('bm_bgTheme');if(bg&&BG_THEMES[bg])applyBgTheme(bg);
+  const bg=localStorage.getItem('bm_bgTheme');applyBgTheme(bg&&BG_THEMES[bg]?bg:'lightblue');
   const ps=localStorage.getItem('bm_pieceSet');if(ps)setPieceSet(ps);
   try{
     const ind=JSON.parse(localStorage.getItem('bm_ind')||'{}');
