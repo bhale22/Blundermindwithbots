@@ -2240,10 +2240,13 @@ function buildPgnText(){
             '"]\n[White "White"]\n[Black "Black"]\n[Result "' + result + '"]\n\n';
   if(gameMovesAlgebraic.length === 0){ pgn += result + '\n'; }
   else{
+    let line = '';
     for(let i=0;i<gameMovesAlgebraic.length;i++){
-      if(i%2===0) pgn += (Math.floor(i/2)+1) + '. ';
-      pgn += gameMovesAlgebraic[i] + ' ';
+      const token = (i%2===0 ? (Math.floor(i/2)+1) + '. ' : '') + gameMovesAlgebraic[i];
+      if(line && line.length + 1 + token.length > 79){ pgn += line + '\n'; line = ''; }
+      line += (line ? ' ' : '') + token;
     }
+    if(line) pgn += line + '\n';
     pgn += result + '\n';
   }
   return { pgn, date: isoDate, result };
