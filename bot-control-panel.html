@@ -1297,7 +1297,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
         <!-- TAB: Custom Controls (user-built attractors) -->
         <div class="itab-pane" id="itab-attract-custom">
           <div class="dlbl"><span>Custom controls</span></div>
-          <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-bottom:8px;max-width:440px;">Build your own attractor: pick a board feature, the phase it applies in, and a direction. Each one shares the centipawn budget and only re-ranks moves the engine already considers plausible. No other site lets you do this.</div>
+          <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-bottom:8px;max-width:440px;">Build your own attractor: pick a board feature, the phase it applies in, and a direction. Each one only re-ranks moves the engine already considers plausible. The centipawn budget is shared only among the controls active at the same time — so a control that's the only one active in its phase uses the full budget.</div>
           <div class="cc-wrap">
             <div id="custom-control-rows"></div>
             <button type="button" class="cc-add-btn" onclick="addCustomControl()">+ Add custom control</button>
@@ -5336,29 +5336,23 @@ function drawStyleGauge(val){
 ══════════════════════════════════════════════════════════════ */
 function updateAttrCpDisplays(){
   const budget = +(document.getElementById('r-style')?.value ?? 100);
-  const allEntries = [
-    ...ATTRACTORS.map(a => ({
-      absVal: Math.abs(attractorValues[a.id] ?? 0),
-      domId: 'attrval-' + a.id
-    })),
-    ...PIECE_TYPES.map(p => ({
-      absVal: Math.abs(pieceValues[p.id] ?? 0),
-      domId: 'pieceval-' + p.id
-    })),
-    ...customControls.map(c => ({
-      absVal: Math.abs(c.value ?? 0),
-      domId: 'ccval-' + c.id
-    })),
+  const entries = [
+    ...ATTRACTORS.map(a => ({ absVal: Math.abs(attractorValues[a.id] ?? 0), domId: 'attrval-' + a.id, phase: null })),
+    ...PIECE_TYPES.map(p => ({ absVal: Math.abs(pieceValues[p.id] ?? 0), domId: 'pieceval-' + p.id, phase: null })),
+    ...customControls.map(c => ({ absVal: Math.abs(c.value ?? 0), domId: 'ccval-' + c.id, phase: c.phase || 'all' })),
   ];
-  const totalAbs = allEntries.reduce((s, e) => s + e.absVal, 0);
-  allEntries.forEach(e => {
+  // Two custom controls only compete for the budget if they can be active at the
+  // same time. Controls locked to different game phases never co-fire, so the
+  // budget re-divides per phase — a control alone in its phase gets the whole
+  // budget. (Mirrors the engine's per-active recalibration in applyMoveAttractors.)
+  const exclusive = (a, b) =>
+    a.phase && b.phase && a.phase !== 'all' && b.phase !== 'all' && a.phase !== b.phase;
+  entries.forEach(e => {
     const el = document.getElementById(e.domId);
     if(!el) return;
-    if(totalAbs === 0 || e.absVal === 0){
-      el.textContent = '—';
-    } else {
-      el.textContent = Math.round(budget * e.absVal / totalAbs) + ' cp';
-    }
+    if(e.absVal === 0){ el.textContent = '—'; return; }
+    const denom = entries.reduce((s, f) => s + (exclusive(e, f) ? 0 : f.absVal), 0);
+    el.textContent = denom > 0 ? (Math.round(budget * e.absVal / denom) + ' cp') : '—';
   });
 }
 

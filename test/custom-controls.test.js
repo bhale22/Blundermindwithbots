@@ -173,6 +173,21 @@ test('zero budget neutralizes a custom control', () => {
   assert.equal(out.e2e4, out.g1f3);
 });
 
+test('budget recalibrates to active controls — an inactive phase-gated sibling does not dilute', () => {
+  // Active control alone (start position = opening phase).
+  reweightSetup([{ id:'a', name:'A', metric:'pawnAdvance', phase:'all', result:'any', pressure:'any', value:5 }]);
+  const solo = ctx.applyMoveAttractors({ e2e4: 0.5, g1f3: 0.5 });
+  // Same control + an endgame-only sibling that is INACTIVE in the opening.
+  reweightSetup([
+    { id:'a', name:'A', metric:'pawnAdvance',    phase:'all',     result:'any', pressure:'any', value:5 },
+    { id:'b', name:'B', metric:'centralization', phase:'endgame', result:'any', pressure:'any', value:5 },
+  ]);
+  const withInactive = ctx.applyMoveAttractors({ e2e4: 0.5, g1f3: 0.5 });
+  // Per-active recalibration: the inactive sibling must not change A's effect.
+  assert.ok(Math.abs(withInactive.e2e4 - solo.e2e4) < 1e-9,
+    'inactive sibling diluted the active control: ' + withInactive.e2e4 + ' vs ' + solo.e2e4);
+});
+
 // ── Expanded metric catalog ──────────────────────────────────────────────────
 
 test('material: counts net piece value from the bot side', () => {
