@@ -576,8 +576,19 @@ function ibMainUp(key){
     const now = Date.now();
     const sinceLastClick = now - (ibLastClick[key]||0);
     if(sinceLastClick < 400) {
-      // Double click = toggle permanently ON/OFF
-      IND[key].on = !IND[key].on;
+      // Double click cycles: off(pre-only) → always-on → truly-off → off(pre-only)…
+      // Key invariant: once a user explicitly turns an indicator OFF, it is
+      // completely off (pre=false too). "Off means off."
+      if(!IND[key].on && IND[key].pre){
+        // preview-only → always-on
+        IND[key].on = true; IND[key].pre = true;
+      } else if(IND[key].on){
+        // always-on → truly off
+        IND[key].on = false; IND[key].pre = false;
+      } else {
+        // truly-off → preview-only (re-enable preview without always-on)
+        IND[key].on = false; IND[key].pre = true;
+      }
       ibLastClick[key] = 0; // reset so next click starts fresh
     } else {
       // Single click = just a peek (press/release already handled)
