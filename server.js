@@ -308,6 +308,14 @@ wss.on('connection', (ws) => {
         opponent.send(JSON.stringify({ type: 'move', move: msg.move }));
       }
 
+    } else if (msg.type === 'ping') {
+      const room = rooms[ws.roomCode];
+      if (!room) return;
+      const opponent = ws.role === 'white' ? room.black : room.white;
+      if (opponent && opponent.readyState === 1) {
+        opponent.send(JSON.stringify({ type: 'opponent_ping' }));
+      }
+
     } else if (['resign','rematch','rematch_offer','rematch_declined','timeout','chat','draw_offer','draw_accept','draw_decline'].includes(msg.type)) {
       const room = rooms[ws.roomCode];
       if (!room) return;

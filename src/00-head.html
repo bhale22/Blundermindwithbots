@@ -1168,7 +1168,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <!-- Black player box -->
     <div class="player-box" id="playerBoxB">
       <div class="player-col">
-        <div class="player-name">Black</div>
+        <div class="player-name">Black<span id="mpPresenceDotB" style="display:none;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-left:6px;vertical-align:middle;cursor:default;"></span></div>
         <div class="player-time solo" id="timeB">—</div>
       </div>
       <div class="mid-col">
@@ -1214,7 +1214,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <!-- White player box -->
     <div class="player-box" id="playerBoxW" style="width:var(--board-size);box-sizing:border-box;">
       <div class="player-col">
-        <div class="player-name">White</div>
+        <div class="player-name">White<span id="mpPresenceDotW" style="display:none;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-left:6px;vertical-align:middle;cursor:default;"></span></div>
         <div class="player-time solo active" id="timeW">—</div>
       </div>
       <div class="mid-col">
@@ -2205,7 +2205,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 
     <!-- Leave / reset (shown after joining a room) -->
     <div id="mpLeaveRow" style="display:none;">
-      <button onclick="mpLeave()"
+      <button onclick="mpMaybeLeave()"
         style="width:100%;padding:6px;background:transparent;
         border:0.5px solid rgba(190,70,70,0.3);border-radius:3px;
         color:rgba(190,100,100,0.8);cursor:pointer;font-size:8px;

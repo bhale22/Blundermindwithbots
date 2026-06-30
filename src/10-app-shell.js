@@ -1175,6 +1175,8 @@ let clockTimeB = 0;   // seconds remaining for black
 let clockInc = 0;     // increment in seconds
 let clockBonusApplied = false; // true once the mid-game bonus time has been awarded
 let clockControl = 'untimed';
+let _clockAnchorMs  = 0;  // Date.now() when the current player's turn began
+let _clockAnchorSec = 0;  // seconds that player had at that moment
 
 function clockInit(controlKey) {
   clockStop();
@@ -1202,38 +1204,54 @@ function clockStop() {
 
 function clockTick() {
   if(clockInterval) clearInterval(clockInterval);
+  // Anchor to absolute wall-clock time so the clock stays accurate even if the
+  // tab is hidden (browsers throttle setInterval when a tab is not visible).
+  _clockAnchorMs  = Date.now();
+  _clockAnchorSec = turn === 'w' ? clockTimeW : clockTimeB;
   clockInterval = setInterval(()=>{
     if(!clockActive || gameOver) { clockStop(); return; }
-    if(turn === 'w') {
-      clockTimeW = Math.max(0, clockTimeW - 1);
-      if(clockTimeW === 0) { clockStop(); clockTimeout('w'); return; }
-    } else {
-      clockTimeB = Math.max(0, clockTimeB - 1);
-      if(clockTimeB === 0) { clockStop(); clockTimeout('b'); return; }
-    }
+    const elapsed    = Math.floor((Date.now() - _clockAnchorMs) / 1000);
+    const remaining  = Math.max(0, _clockAnchorSec - elapsed);
+    if(turn === 'w') clockTimeW = remaining;
+    else             clockTimeB = remaining;
+    if(remaining === 0) { clockStop(); clockTimeout(turn); return; }
     clockUpdateDisplay();
-  }, 1000);
+  }, 250);
 }
 
 function clockAfterMove() {
   const tc = TIME_CONTROLS[clockControl] || {};
   const movesSoFar = (typeof gameMovesAlgebraic !== 'undefined') ? gameMovesAlgebraic.length : 0;
-  // Full move number just completed (both sides count toward one full move)
   const fullMoveNum = Math.ceil(movesSoFar / 2);
+
+  // Snap: record the just-moved player's exact remaining time from the wall clock
+  // before applying increment (turn has already switched at this point).
+  const justMoved = turn === 'w' ? 'b' : 'w';
+  if (clockActive && _clockAnchorMs) {
+    const elapsed   = Math.floor((Date.now() - _clockAnchorMs) / 1000);
+    const remaining = Math.max(0, _clockAnchorSec - elapsed);
+    if (justMoved === 'w') clockTimeW = remaining;
+    else                   clockTimeB = remaining;
+  }
 
   // Mid-game bonus time (e.g. +30 min after move 40 in 90+30 format)
   if (tc.bonusSecs && tc.bonusAtMove && !clockBonusApplied && fullMoveNum >= tc.bonusAtMove) {
-    clockTimeW = Math.min(clockTimeW + tc.bonusSecs, 59940); // cap at 999 min
+    clockTimeW = Math.min(clockTimeW + tc.bonusSecs, 59940);
     clockTimeB = Math.min(clockTimeB + tc.bonusSecs, 59940);
     clockBonusApplied = true;
   }
 
   // Increment — only applied starting from incFromMove (default: move 1)
-  const justMoved = turn === 'w' ? 'b' : 'w';
   const incFromMove = tc.incFromMove || 1;
   if (clockInc > 0 && fullMoveNum >= incFromMove) {
     if (justMoved === 'w') clockTimeW = Math.min(clockTimeW + clockInc, 59940);
     else clockTimeB = Math.min(clockTimeB + clockInc, 59940);
+  }
+
+  // Reset anchor for the new active player so their clock counts from now
+  if (clockActive) {
+    _clockAnchorMs  = Date.now();
+    _clockAnchorSec = turn === 'w' ? clockTimeW : clockTimeB;
   }
 
   if(!clockActive && clockControl !== 'untimed' && !gameOver) clockStart();
@@ -1306,6 +1324,20 @@ let mpConnected = false;
 let mpOriginalRole = null;  // role as assigned by server (never changes per session)
 let mpCurrentTab = 'lobby';
 let mpLobbyRefreshTimer = null;
+
+// ── Presence / heartbeat ─────────────────────────────────────────────────────
+let _mpPingTimer       = null;  // interval sending our ping to the server
+let _mpPresenceTimer   = null;  // interval checking opponent last-seen time
+let _mpLastOpponentPing = 0;    // Date.now() of last opponent_ping received
+
+// Warn browser-close/navigate while in a live game
+window.addEventListener('beforeunload', e => {
+  if (typeof mpRoomId !== 'undefined' && mpRoomId &&
+      typeof gameOver !== 'undefined' && !gameOver) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
 
 // ── Panel flow helpers — replace old tab system ──────────────────────────────
 // "mode" is 'idle' | 'private-waiting' | 'join' | 'lobby-waiting' | 'ingame'
@@ -1537,7 +1569,13 @@ function mpHandleMessage(msg) {
       if (drawBtn) drawBtn.disabled = false;
       break;
 
+    case 'opponent_ping':
+      _mpLastOpponentPing = Date.now();
+      mpSetPresenceDot('green');
+      break;
+
     case 'opponent_disconnected':
+      mpSetPresenceDot('red');
       mpShowStatus('Opponent disconnected.', true);
       gameOver = true; updatePlayerBoxes();
       break;
@@ -1741,7 +1779,67 @@ function mpJoinRoom() {
 // Keep mpCreateRoom as alias for backward compat with landing page
 function mpCreateRoom() { mpCreatePrivate(); }
 
+function mpSetPresenceDot(color) {
+  // color: 'green' | 'amber' | 'red' | 'off'
+  ['mpPresenceDotW','mpPresenceDotB'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (color === 'off') { el.style.display = 'none'; return; }
+    el.style.display = 'inline-block';
+    el.style.background = color === 'green' ? '#22c55e'
+                        : color === 'amber' ? '#f59e0b'
+                        : '#ef4444';
+    el.title = color === 'green' ? 'Opponent is online'
+             : color === 'amber' ? 'Opponent may have left'
+             : 'Opponent disconnected';
+  });
+  // Only show on the opponent's box
+  if (mpRole) {
+    const ownBox = mpRole === 'white' ? 'mpPresenceDotW' : 'mpPresenceDotB';
+    const el = document.getElementById(ownBox);
+    if (el) el.style.display = 'none'; // never show dot on own box
+  }
+}
+
+function _mpStartPresence() {
+  _mpLastOpponentPing = Date.now(); // assume online at game start
+  clearInterval(_mpPingTimer);
+  clearInterval(_mpPresenceTimer);
+  _mpPingTimer = setInterval(() => {
+    if (mpWs && mpWs.readyState === WebSocket.OPEN && mpRoomId) {
+      try { mpWs.send(JSON.stringify({ type: 'ping' })); } catch(e) {}
+    }
+  }, 12000);
+  _mpPresenceTimer = setInterval(() => {
+    if (!mpRoomId || (typeof gameOver !== 'undefined' && gameOver)) return;
+    const ago = Date.now() - _mpLastOpponentPing;
+    if (ago < 20000)      mpSetPresenceDot('green');
+    else if (ago < 45000) mpSetPresenceDot('amber');
+    else                  mpSetPresenceDot('red');
+  }, 3000);
+}
+
+function _mpStopPresence() {
+  clearInterval(_mpPingTimer);
+  clearInterval(_mpPresenceTimer);
+  _mpPingTimer = null;
+  _mpPresenceTimer = null;
+  mpSetPresenceDot('off');
+}
+
+function mpMaybeLeave() {
+  if (mpRoomId && !(typeof gameOver !== 'undefined' && gameOver)) {
+    if (!confirm('Leave this game? You will forfeit to your opponent.')) return;
+    // Send forfeit so opponent sees the result immediately
+    if (mpWs && mpWs.readyState === WebSocket.OPEN) {
+      try { mpWs.send(JSON.stringify({ type: 'resign' })); } catch(e) {}
+    }
+  }
+  mpLeave();
+}
+
 function mpLeave() {
+  _mpStopPresence();
   if (mpWs) { mpWs.close(); mpWs = null; }
   mpRoomId = null; mpRole = null; mpConnected = false;
   mpOriginalRole = null; mpGameCount = 0;
@@ -1789,6 +1887,7 @@ function mpStartGame(tcKey) {
   const ga = document.getElementById('gameActions');
   if (ga) ga.style.display = 'flex';
   closeAllPanels();
+  _mpStartPresence();
 }
 
 function mpUpdateTurnIndicator() {

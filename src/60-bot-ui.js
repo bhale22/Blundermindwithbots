@@ -816,6 +816,16 @@ function _checkEngineReady(tab) {
 }
 
 async function botStart() {
+  // Guard: if in a live multiplayer game, confirm before abandoning it
+  if (typeof mpRoomId !== 'undefined' && mpRoomId &&
+      typeof gameOver !== 'undefined' && !gameOver) {
+    if (!confirm('Start a bot game? You will forfeit your current online game.')) return;
+    if (typeof mpWs !== 'undefined' && mpWs && mpWs.readyState === WebSocket.OPEN) {
+      try { mpWs.send(JSON.stringify({ type: 'resign' })); } catch(e) {}
+    }
+    if (typeof mpLeave === 'function') mpLeave();
+  }
+
   botActive = false;
   botThinking = false;
   clearGhostPieces();
