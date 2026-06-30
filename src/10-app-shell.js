@@ -372,7 +372,9 @@ function _syncPanelTheme(t) {
     '--carbon-raise':   light ? t.border : t.panel2,
     '--text-primary':   t.text,
     '--text-secondary': t.textSec,
-    '--text-dim':       t.textDim,
+    // For dark themes textDim is darker than the panel — invisible. Use textSec
+    // (a readable mid-tone) as the dim color inside the bot panel instead.
+    '--text-dim':       light ? t.textDim : t.textSec,
     '--border':         t.border,
     '--amber':          light ? '#9a6820' : '#c8922a',
     '--amber-bright':   light ? '#c8922a' : '#e8aa40',
@@ -1497,7 +1499,7 @@ function mpHandleMessage(msg) {
       break;
 
     case 'move':
-      mpReceiveMove(msg.move);
+      mpReceiveMove(msg.move, msg.timeW, msg.timeB);
       break;
 
     case 'chat':
@@ -1899,11 +1901,12 @@ function mpUpdateTurnIndicator() {
 
 function mpSendMove(from, to, promo) {
   if (!mpWs || mpWs.readyState !== WebSocket.OPEN) return;
-  mpWs.send(JSON.stringify({ type: 'move', move: { from, to, promo } }));
+  // Include post-move clock state so receiver uses our values as ground truth
+  mpWs.send(JSON.stringify({ type: 'move', move: { from, to, promo }, timeW: clockTimeW, timeB: clockTimeB }));
 }
 
-function mpReceiveMove(move) {
-  if (promotionPending) { setTimeout(() => mpReceiveMove(move), 300); return; }
+function mpReceiveMove(move, syncTimeW, syncTimeB) {
+  if (promotionPending) { setTimeout(() => mpReceiveMove(move, syncTimeW, syncTimeB), 300); return; }
   // Never trust the wire: verify shape, turn, ownership, and legality before
   // executing. A malformed or malicious message must not corrupt the board.
   if (!move || !Number.isInteger(move.from) || !Number.isInteger(move.to) ||
@@ -1924,6 +1927,17 @@ function mpReceiveMove(move) {
   }
   const promo = ['Q','R','B','N'].includes(move.promo) ? move.promo : null;
   executeMove(move.from, move.to, promo);
+  // Overwrite local clock state with sender's authoritative post-move values.
+  // This eliminates accumulated drift from anchor-reset timing differences.
+  if (typeof syncTimeW === 'number' && typeof syncTimeB === 'number' && !gameOver) {
+    clockTimeW = syncTimeW;
+    clockTimeB = syncTimeB;
+    if (clockActive) {
+      _clockAnchorMs  = Date.now();
+      _clockAnchorSec = turn === 'w' ? clockTimeW : clockTimeB;
+    }
+    clockUpdateDisplay();
+  }
   mpUpdateTurnIndicator();
   // Fire queued premove if any
   if(activePremove) setTimeout(tryFirePremove, 50);

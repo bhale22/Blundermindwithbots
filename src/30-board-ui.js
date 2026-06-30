@@ -101,11 +101,11 @@ function tryFirePremove(){
   if(!legal.includes(to)){render();return;}
   // Pawn reaching back rank with no promo choice: auto-queen
   const resolvedPromo=promo||(p.piece==='P'&&(Math.floor(to/8)===0||Math.floor(to/8)===7)?'Q':null);
-  // Send to opponent before mutating board (consistent with tryCommit)
+  executeMove(from,to,resolvedPromo);
+  // Send after execute so clock state is current post-increment
   if(typeof mpSendMove==='function'&&typeof mpRoomId!=='undefined'&&mpRoomId){
     mpSendMove(from,to,resolvedPromo||null);
   }
-  executeMove(from,to,resolvedPromo);
   if(typeof mpUpdateTurnIndicator==='function'&&typeof mpRoomId!=='undefined'&&mpRoomId) mpUpdateTurnIndicator();
 }
 
@@ -126,11 +126,11 @@ function tryCommit(from,to,promo){
   if(p.piece==='P'&&(Math.floor(to/8)===0||Math.floor(to/8)===7)&&!promo){
     promotionPending={from,to,color:p.color};clearPreview();render();return true;
   }
-  // Send to opponent before executing (board state still valid for SAN)
+  executeMove(from,to,promo||null);
+  // Send after execute so clock state (clockTimeW/B) is current post-increment
   if(typeof mpSendMove==='function'&&mpRoomId){
     mpSendMove(from,to,promo||null);
   }
-  executeMove(from,to,promo||null);
   if(typeof mpUpdateTurnIndicator==='function'&&mpRoomId) mpUpdateTurnIndicator();
   return true;
 }

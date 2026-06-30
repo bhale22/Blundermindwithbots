@@ -305,7 +305,10 @@ wss.on('connection', (ws) => {
       if (!room) return;
       const opponent = ws.role === 'white' ? room.black : room.white;
       if (opponent && opponent.readyState === 1) {
-        opponent.send(JSON.stringify({ type: 'move', move: msg.move }));
+        const relay = { type: 'move', move: msg.move };
+        if (typeof msg.timeW === 'number') relay.timeW = msg.timeW;
+        if (typeof msg.timeB === 'number') relay.timeB = msg.timeB;
+        opponent.send(JSON.stringify(relay));
       }
 
     } else if (msg.type === 'ping') {
