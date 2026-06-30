@@ -6138,8 +6138,9 @@ const BOT_TOUR = [
   { stage:'Engine', open:'engine', sel:'#engine-mode-grid', title:'1 · The engine',
     body:'Pick the brain — <b>Maia</b> (a neural net trained on millions of human games), <b>Stockfish</b>, or blends that pull openings from the <b>Lichess explorer</b> and fall back to an engine. You can build a <b>Hybrid</b> bot that mixes engines by weight, and set the exact playing strength.' },
 
-  { stage:'Engine', open:'engine', sel:'#engine-temp-col', title:'Move sampling — temperature',
-    body:'How adventurously the bot samples from Maia’s move probabilities. <b>Focused</b> = almost always the top move; <b>Wild</b> = it’ll reach for lower-probability tries. The live chart shows the reshaped distribution.' },
+  { stage:’Engine’, open:’engine’, sel:’#engine-temp-col’, title:’Move sampling — temperature’,
+    body:’How adventurously the bot samples from Maia’s move probabilities. <b>Focused</b> = almost always the top move; <b>Wild</b> = it’ll reach for lower-probability tries. The live chart shows the reshaped distribution.’,
+    action: function(){ setTimeout(function(){ if(typeof drawTempChart===’function’) drawTempChart(_currentTempValue); }, 620); } },
 
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#style-gauge', title:'2 · The Centipawmeter',
     body:'The master dial: how far the bot’s personality may pull it away from the best engine move, in centipawns. Low = near-perfect play; high = a bot with strong opinions.' },
