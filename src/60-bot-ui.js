@@ -67,6 +67,11 @@ function obPrefSetColor(color) {
 // ── ECO data loading ──────────────────────────────────────────────────────────
 // Loaded once from /data/eco.tsv; used for full-text search.
 let _ecoData = null; // [{eco, name, familyPrefix, exactEco}]
+// In-flight/settled load promise. Without this, concurrent callers (startup
+// kickoff + a bot move + a panel search) each race past the _ecoData guard
+// while the first fetch is still pending, so the parse and the log run N times.
+// Caching the promise makes the fetch+parse+log happen exactly once.
+let _ecoLoadPromise = null;
 
 // Parse a PGN move sequence string into a plain SAN array.
 // "1. e4 c5 2. Nf3" → ["e4", "c5", "Nf3"]
@@ -95,7 +100,18 @@ function _buildEcoIndex(data) {
 }
 
 async function obLoadEcoData() {
-  if (_ecoData && _ecoData.length) return _ecoData; // only skip if successfully loaded
+  if (_ecoData && _ecoData.length) return _ecoData; // already loaded
+  if (_ecoLoadPromise) return _ecoLoadPromise;       // load in flight — share it
+  _ecoLoadPromise = _obLoadEcoDataOnce().finally(() => {
+    // Keep the resolved promise cached on success (the _ecoData guard covers
+    // future calls anyway); only clear it if we ended up with nothing usable,
+    // so a later call can retry a genuinely failed load.
+    if (!_ecoData || !_ecoData.length) _ecoLoadPromise = null;
+  });
+  return _ecoLoadPromise;
+}
+
+async function _obLoadEcoDataOnce() {
   try {
     const resp = await fetch('/data/eco.tsv');
     if (!resp.ok) throw new Error('eco.tsv ' + resp.status);
