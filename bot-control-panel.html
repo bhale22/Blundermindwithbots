@@ -5918,6 +5918,21 @@ function applyBotConfig(cfg){
   });
 
   grp(() => _updateEnginePanelHeader());
+  grp(() => _maybePromptMaiaForConfig());
+}
+
+// When a just-loaded bot needs Maia (engine Maia 3 / LC+Maia, or a hybrid that
+// includes a Maia slot) but the model isn't in this browser, surface the download
+// prompt instead of letting it silently fall back to Stockfish at game start.
+function _maybePromptMaiaForConfig(){
+  const needsMaia = (currentEngine === 'maia3' || currentEngine === 'lcmaia' ||
+    (currentEngine === 'hybrid' && hybridSlots.some(s => s.type === 'maia' && (+s.pct || 0) > 0)));
+  if(!needsMaia || _bcpMaiaReady) return;
+  openEngineSection();
+  document.querySelectorAll('.bcp-maia-status-txt').forEach(function(el){
+    el.textContent = 'This bot uses Maia 3 — download the model to play it';
+    el.style.color = '#e8aa40';
+  });
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -6094,6 +6109,17 @@ function bcpMaiaSetStatus(status, ready, progress){
     btn.disabled      = done;
     btn.style.opacity = done ? '0.5' : '1';
     btn.style.cursor  = done ? 'default' : 'pointer';
+  });
+  // Reflect model availability on the Maia engine cards themselves, so the option
+  // reads as "download to enable" before it's selected — never hidden, and never a
+  // silent Stockfish fallback. Cards stay clickable: selecting reveals the inline
+  // download button in the sub-panel.
+  ['maia3','lcmaia'].forEach(function(eng){
+    var card = document.querySelector('#engine-mode-grid .mcard[data-engine="' + eng + '"]');
+    if(card){
+      card.style.opacity = ready ? '' : '0.6';
+      card.title = ready ? '' : 'Maia 3 model not downloaded — select to download (~87 MB)';
+    }
   });
 }
 

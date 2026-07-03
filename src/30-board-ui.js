@@ -1581,7 +1581,8 @@ function updatePlayerBoxes(){
       hint.textContent = 'King must move, block, or capture';
       hint.className = 'hint-text check';
     } else if(isWhiteTurn){
-      hint.textContent = 'Click a piece · hover to explore · release to commit';
+      hint.textContent = 'Click a piece · hover to explore · ' +
+        (isHoverMode() ? 'click again to commit' : 'release to commit');
       hint.className = 'hint-text';
     } else {
       hint.textContent = "Black to move";
