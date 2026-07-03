@@ -646,11 +646,16 @@ function applyMoveAttractors(moveProbs) {
   }
 
   // ── CP budget → per-unit scale ────────────────────────────────────────────
-  // Attractors without per-move logic (luck, hustle, pressure) still count
-  // toward totalAbs so the panel's cp allocation display stays accurate.
+  // The budget is re-divided among whatever is actually exerting an opinion this
+  // move: the always-on built-in attractors plus only the custom controls whose
+  // conditions (phase / advantage / time-pressure) currently match (activeCC).
+  // So a control that's the only active one in its phase gets the full budget —
+  // the bot's "personality strength" stays at the set budget in every phase
+  // where at least one control is active. (Attractors without per-move logic —
+  // luck, hustle, pressure — still count so they keep their budget share.)
   const CP_PER_LOG_UNIT = 150;
   const allVals  = [...Object.values(attrVals), ...Object.values(pieceVals)];
-  const ccAbs    = customControls.reduce((s, c) => s + Math.abs(c.value || 0), 0);
+  const ccAbs    = activeCC.reduce((s, c) => s + Math.abs(c.value || 0), 0);
   const totalAbs = allVals.reduce((s, v) => s + Math.abs(v || 0), 0) + ccAbs;
   const scale = (cpBudget > 0 && totalAbs > 0)
     ? cpBudget / (totalAbs * CP_PER_LOG_UNIT)
@@ -1427,7 +1432,7 @@ async function botMakeMove() {
                 const lm = legalMovesFor(mv.from, board, epSq, castling);
                 if (lm.includes(mv.to)) {
                   clearGhostPieces();
-                  executeMove(mv.from, mv.to, mv.promo || 'Q');
+                  executeMove(mv.from, mv.to, mv.promo || null);
                   const _botSan = gameMovesAlgebraic[gameMovesAlgebraic.length - 1] || null;
                   botRecordMove(uciMove, _botSan);
                   updatePlayerBoxes();
@@ -1469,7 +1474,7 @@ async function botMakeMove() {
             const lm = legalMovesFor(mv.from, board, epSq, castling);
             if (lm.includes(mv.to)) {
               clearGhostPieces();
-              executeMove(mv.from, mv.to, mv.promo || 'Q');
+              executeMove(mv.from, mv.to, mv.promo || null);
               const _botSan = gameMovesAlgebraic[gameMovesAlgebraic.length - 1] || null;
               botRecordMove(uciMove, _botSan);
               updatePlayerBoxes();
@@ -1707,7 +1712,7 @@ async function botMakeMove() {
       const lm = legalMovesFor(mv.from, board, epSq, castling);
       if (lm.includes(mv.to)) {
         clearGhostPieces();
-        executeMove(mv.from, mv.to, mv.promo || 'Q');
+        executeMove(mv.from, mv.to, mv.promo || null);
         // botRecordMove(uciMove); // Phase 1: track bot's move
         botRecordMove(uciMove, gameMovesAlgebraic[gameMovesAlgebraic.length - 1] || null); // Phase 1: track bot's move
         updatePlayerBoxes();

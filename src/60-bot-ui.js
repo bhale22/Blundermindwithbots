@@ -816,6 +816,16 @@ function _checkEngineReady(tab) {
 }
 
 async function botStart() {
+  // Guard: if in a live multiplayer game, confirm before abandoning it
+  if (typeof mpRoomId !== 'undefined' && mpRoomId &&
+      typeof gameOver !== 'undefined' && !gameOver) {
+    if (!confirm('Start a bot game? You will forfeit your current online game.')) return;
+    if (typeof mpWs !== 'undefined' && mpWs && mpWs.readyState === WebSocket.OPEN) {
+      try { mpWs.send(JSON.stringify({ type: 'resign' })); } catch(e) {}
+    }
+    if (typeof mpLeave === 'function') mpLeave();
+  }
+
   botActive = false;
   botThinking = false;
   clearGhostPieces();
@@ -1200,8 +1210,13 @@ function openBotModal() {
           type: 'maiaStatus', status: _maiaStatus || 'idle',
           ready: _maiaReady, progress: _maiaProgress || 0
         }, location.origin);
-        // Panel auto-starts its guided tour the first time it's opened.
         frame.contentWindow.postMessage({ type: 'botTourAuto' }, location.origin);
+        // Push current palette so the panel always matches the app's active BG theme.
+        if (typeof _syncPanelTheme === 'function') {
+          const t = (typeof BG_THEMES !== 'undefined' && typeof currentBgTheme !== 'undefined')
+            ? (BG_THEMES[currentBgTheme] || BG_THEMES.navy) : null;
+          if (t) _syncPanelTheme(t);
+        }
       }
     } catch(e) {}
   }, 120);

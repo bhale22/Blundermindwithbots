@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -37,6 +37,12 @@
   --font-d:'Cormorant Garamond',serif;
   --font-m:'DM Mono',monospace;
   --font-u:'Chakra Petch',sans-serif;
+  --radar-ring:rgba(255,255,255,0.06);
+  --radar-axis:rgba(255,255,255,0.07);
+  --radar-node-inactive:#4a5060;
+  --radar-node-fill:#e8aa40;
+  --radar-node-active:#ffcc55;
+  --radar-label-badge:#ffcc55;
 }
 
 body{background:var(--carbon);color:var(--text-primary);font-family:var(--font-u);min-height:100vh;padding:0;overflow-x:hidden;}
@@ -1297,7 +1303,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
         <!-- TAB: Custom Controls (user-built attractors) -->
         <div class="itab-pane" id="itab-attract-custom">
           <div class="dlbl"><span>Custom controls</span></div>
-          <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-bottom:8px;max-width:440px;">Build your own attractor: pick a board feature, the phase it applies in, and a direction. Each one shares the centipawn budget and only re-ranks moves the engine already considers plausible. No other site lets you do this.</div>
+          <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-bottom:8px;max-width:440px;">Build your own attractor: pick a board feature, the phase it applies in, and a direction. Each one only re-ranks moves the engine already considers plausible. The centipawn budget is shared only among the controls active at the same time — so a control that's the only one active in its phase uses the full budget.</div>
           <div class="cc-wrap">
             <div id="custom-control-rows"></div>
             <button type="button" class="cc-add-btn" onclick="addCustomControl()">+ Add custom control</button>
@@ -5336,29 +5342,23 @@ function drawStyleGauge(val){
 ══════════════════════════════════════════════════════════════ */
 function updateAttrCpDisplays(){
   const budget = +(document.getElementById('r-style')?.value ?? 100);
-  const allEntries = [
-    ...ATTRACTORS.map(a => ({
-      absVal: Math.abs(attractorValues[a.id] ?? 0),
-      domId: 'attrval-' + a.id
-    })),
-    ...PIECE_TYPES.map(p => ({
-      absVal: Math.abs(pieceValues[p.id] ?? 0),
-      domId: 'pieceval-' + p.id
-    })),
-    ...customControls.map(c => ({
-      absVal: Math.abs(c.value ?? 0),
-      domId: 'ccval-' + c.id
-    })),
+  const entries = [
+    ...ATTRACTORS.map(a => ({ absVal: Math.abs(attractorValues[a.id] ?? 0), domId: 'attrval-' + a.id, phase: null })),
+    ...PIECE_TYPES.map(p => ({ absVal: Math.abs(pieceValues[p.id] ?? 0), domId: 'pieceval-' + p.id, phase: null })),
+    ...customControls.map(c => ({ absVal: Math.abs(c.value ?? 0), domId: 'ccval-' + c.id, phase: c.phase || 'all' })),
   ];
-  const totalAbs = allEntries.reduce((s, e) => s + e.absVal, 0);
-  allEntries.forEach(e => {
+  // Two custom controls only compete for the budget if they can be active at the
+  // same time. Controls locked to different game phases never co-fire, so the
+  // budget re-divides per phase — a control alone in its phase gets the whole
+  // budget. (Mirrors the engine's per-active recalibration in applyMoveAttractors.)
+  const exclusive = (a, b) =>
+    a.phase && b.phase && a.phase !== 'all' && b.phase !== 'all' && a.phase !== b.phase;
+  entries.forEach(e => {
     const el = document.getElementById(e.domId);
     if(!el) return;
-    if(totalAbs === 0 || e.absVal === 0){
-      el.textContent = '—';
-    } else {
-      el.textContent = Math.round(budget * e.absVal / totalAbs) + ' cp';
-    }
+    if(e.absVal === 0){ el.textContent = '—'; return; }
+    const denom = entries.reduce((s, f) => s + (exclusive(e, f) ? 0 : f.absVal), 0);
+    el.textContent = denom > 0 ? (Math.round(budget * e.absVal / denom) + ' cp') : '—';
   });
 }
 
@@ -6085,6 +6085,23 @@ function bcpMaiaSetStatus(status, ready, progress){
 }
 
 // Receive live status pushes from parent
+function _applyPanelTheme(vars){
+  const root = document.documentElement;
+  const body = document.body;
+  Object.keys(vars).forEach(function(k){
+    root.style.setProperty(k, vars[k]);
+    // Also set on body so inline style beats rs-readable/rs-highvis CSS overrides
+    body.style.setProperty(k, vars[k]);
+  });
+  if(typeof drawRadar === 'function') drawRadar();
+}
+(function(){
+  try {
+    const saved = localStorage.getItem('bm_panelTheme');
+    if(saved) _applyPanelTheme(JSON.parse(saved));
+  } catch(e){}
+})();
+
 window.addEventListener('message', function(e){
   if(e.origin !== location.origin) return; // only the parent page may push status
   if(e.data && e.data.type === 'maiaStatus'){
@@ -6094,6 +6111,9 @@ window.addEventListener('message', function(e){
     // First time the panel is opened — auto-start the tour once.
     let seen = null; try { seen = localStorage.getItem('bm_bottour'); } catch(err){}
     if(!seen) setTimeout(startTour, 350);
+  }
+  if(e.data && e.data.type === 'setTheme' && e.data.vars){
+    _applyPanelTheme(e.data.vars);
   }
 });
 
@@ -6119,7 +6139,8 @@ const BOT_TOUR = [
     body:'Pick the brain — <b>Maia</b> (a neural net trained on millions of human games), <b>Stockfish</b>, or blends that pull openings from the <b>Lichess explorer</b> and fall back to an engine. You can build a <b>Hybrid</b> bot that mixes engines by weight, and set the exact playing strength.' },
 
   { stage:'Engine', open:'engine', sel:'#engine-temp-col', title:'Move sampling — temperature',
-    body:'How adventurously the bot samples from Maia’s move probabilities. <b>Focused</b> = almost always the top move; <b>Wild</b> = it’ll reach for lower-probability tries. The live chart shows the reshaped distribution.' },
+    body:"How adventurously the bot samples from Maia’s move probabilities. <b>Focused</b> = almost always the top move; <b>Wild</b> = it’ll reach for lower-probability tries. The live chart shows the reshaped distribution.",
+    action: function(){ setTimeout(function(){ if(typeof drawTempChart==='function') drawTempChart(_currentTempValue); }, 620); } },
 
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#style-gauge', title:'2 · The Centipawmeter',
     body:'The master dial: how far the bot’s personality may pull it away from the best engine move, in centipawns. Low = near-perfect play; high = a bot with strong opinions.' },
@@ -6141,7 +6162,7 @@ const BOT_TOUR = [
     body:'How the bot spends its clock between moves — instant, fixed, scaled to position complexity, or mirroring your own pace. The little things that make it feel human.' },
 
   { stage:'Time pressure', open:'pressure', sel:'#cvA', title:'5 · Time-pressure degradation',
-    body:'Make it crack under the clock: the bot’s <b>ELO and move quality fall as its time runs low</b>, along curves you can drag by hand. For example, a 2400 in time trouble doesn’t suddenly play like a calm 1900 — it’s closer to a <i>lower-probability</i> move from a 2300. Both the strength <i>and</i> which part of the distribution it draws from shift.' },
+    body:'Make it crack under the clock: the bot’s <b>ELO and move quality fall as its time runs low</b>, along curves you can drag by hand. For example, a 2400 in time trouble doesn"t suddenly play like a calm 1900 — it"s closer to a <i>lower-probability</i> move from a 2300. Both the strength <i>and</i> which part of the distribution it draws from shift.' },
 
   { stage:'Start', sel:'.start-btn', title:'Start — and save your creation',
     body:'When the bot is ready, press <b>Start</b>. Any bot can be <b>saved and shared as a file</b>, so you can trade custom opponents with friends.' },
@@ -6677,6 +6698,11 @@ function drawTempChart(T){
   ctx.scale(dpr, dpr);
   const W = rect.width, H = rect.height;
 
+  // Theme-aware text colors — canvas is transparent so it sits on panel bg
+  const _tcs = getComputedStyle(document.body);
+  const _tLabel = _tcs.getPropertyValue('--text-primary').trim() || 'rgba(240,237,232,0.78)';
+  const _tDim   = _tcs.getPropertyValue('--text-dim').trim()     || 'rgba(200,185,165,0.40)';
+
   const padT=6, padB=38, padL=4, padR=4;
   const chartH = H - padT - padB;
   const chartW = W - padL - padR;
@@ -6729,7 +6755,7 @@ function drawTempChart(T){
     }
 
     // Row 1: move label
-    ctx.fillStyle = 'rgba(240,237,232,0.78)';
+    ctx.fillStyle = _tLabel;
     ctx.font = '9px "DM Mono", monospace';
     ctx.textAlign = 'center';
     ctx.fillText(mv.label, cx, H - padB + 11);
@@ -6748,7 +6774,7 @@ function drawTempChart(T){
     ctx.fillText(adjP < 0.005 ? '~0' : adjPct+'%', aX + barW/2, H - padB + 21);
 
     // Row 3: column label (M / A)
-    ctx.fillStyle = 'rgba(200,185,165,0.38)';
+    ctx.fillStyle = _tDim;
     ctx.font = '6.5px "DM Mono", monospace';
     ctx.fillText('M', mX + barW/2, H - padB + 29);
     ctx.fillText('A', aX + barW/2, H - padB + 29);
@@ -6760,11 +6786,11 @@ function drawTempChart(T){
   ctx.textAlign = 'right';
   ctx.fillStyle = 'rgba(235,140,0,0.3)';
   ctx.fillRect(W - padR - 68, legY - 8, 7, 7);
-  ctx.fillStyle = 'rgba(200,185,165,0.4)';
+  ctx.fillStyle = _tDim;
   ctx.fillText('Maia', W - padR - 57, legY);
   ctx.fillStyle = 'rgba(235,160,0,0.88)';
   ctx.fillRect(W - padR - 30, legY - 8, 7, 7);
-  ctx.fillStyle = 'rgba(200,185,165,0.4)';
+  ctx.fillStyle = _tDim;
   ctx.fillText('Adj.', W - padR, legY);
 }
 
@@ -7031,6 +7057,16 @@ function drawRadar(){
   const N = RADAR_AXES.length;
   ctx.clearRect(0,0,W,H);
 
+  // Read theme-aware colors from CSS variables
+  const cs = getComputedStyle(document.documentElement);
+  const ringColor  = cs.getPropertyValue('--radar-ring').trim()  || 'rgba(255,255,255,0.06)';
+  const axisColor  = cs.getPropertyValue('--radar-axis').trim()  || 'rgba(255,255,255,0.07)';
+  const nodeInact  = cs.getPropertyValue('--radar-node-inactive').trim() || '#4a5060';
+  const nodeFill   = cs.getPropertyValue('--radar-node-fill').trim()     || '#e8aa40';
+  const nodeActive = cs.getPropertyValue('--radar-node-active').trim()   || '#ffcc55';
+  const badgeColor = cs.getPropertyValue('--radar-label-badge').trim()   || '#ffcc55';
+  const amberColor = cs.getPropertyValue('--amber').trim() || '#c8922a';
+
   const activeIdx = _radarDragIdx >= 0 ? _radarDragIdx : _radarHoverIdx;
 
   // Grid rings
@@ -7043,7 +7079,7 @@ function drawRadar(){
       i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
     }
     ctx.closePath();
-    ctx.strokeStyle = ring===3 ? 'rgba(200,146,42,0.2)' : 'rgba(255,255,255,0.06)';
+    ctx.strokeStyle = ring===3 ? 'rgba(200,146,42,0.25)' : ringColor;
     ctx.lineWidth = ring===3 ? 1 : 0.5;
     ctx.stroke();
   }
@@ -7056,13 +7092,13 @@ function drawRadar(){
     ctx.beginPath();
     ctx.moveTo(CX,CY);
     ctx.lineTo(CX+R*Math.cos(ang), CY+R*Math.sin(ang));
-    ctx.strokeStyle = isActive ? 'rgba(200,146,42,0.5)' : 'rgba(255,255,255,0.07)';
+    ctx.strokeStyle = isActive ? 'rgba(200,146,42,0.5)' : axisColor;
     ctx.lineWidth = isActive ? 1.5 : 0.5;
     ctx.stroke();
     // Label
     const lx=CX+(R+20)*Math.cos(ang), ly=CY+(R+20)*Math.sin(ang);
     ctx.font = isActive ? '9px "DM Mono",monospace' : '8px "DM Mono",monospace';
-    ctx.fillStyle = isActive ? '#c8922a' : '#4a5060';
+    ctx.fillStyle = isActive ? amberColor : nodeInact;
     ctx.textAlign='center';
     ctx.textBaseline='middle';
     ctx.fillText(ax.label, lx, ly);
@@ -7081,7 +7117,7 @@ function drawRadar(){
   ctx.closePath();
   ctx.fillStyle='rgba(200,146,42,0.18)';
   ctx.fill();
-  ctx.strokeStyle='#c8922a';
+  ctx.strokeStyle=amberColor;
   ctx.lineWidth=1.5;
   ctx.stroke();
 
@@ -7102,18 +7138,17 @@ function drawRadar(){
     }
     ctx.beginPath();
     ctx.arc(nx, ny, nodeR, 0, Math.PI*2);
-    ctx.fillStyle = isActive ? '#ffcc55' : '#e8aa40';
+    ctx.fillStyle = isActive ? nodeActive : nodeFill;
     ctx.fill();
     ctx.shadowBlur=0;
 
     // Value badge next to active node
     if(isActive){
       const vStr = val > 0 ? '+'+val : String(val);
-      // Offset badge slightly outward from center so it doesn't overlap node
       const badgeR = r + 14;
       const bx=CX+badgeR*Math.cos(ang), by=CY+badgeR*Math.sin(ang);
       ctx.font='bold 9px "DM Mono",monospace';
-      ctx.fillStyle='#ffcc55';
+      ctx.fillStyle=badgeColor;
       ctx.textAlign='center';
       ctx.textBaseline='middle';
       ctx.fillText(vStr, bx, by);
@@ -7137,10 +7172,14 @@ function _radarNearestAxis(mx, my){
   const dx=mx-CX, dy=my-CY;
   if(Math.sqrt(dx*dx+dy*dy) < 7) return -1; // too close to center
   const N=RADAR_AXES.length;
-  const clickAng=Math.atan2(dy,dx);
+  const clickAng=Math.atan2(dy,dx); // [-π, π]
   let best=-1, bestDiff=Infinity;
   for(let i=0;i<N;i++){
-    const axAng=(i/N)*2*Math.PI - Math.PI/2;
+    // Normalize axAng to [-π, π] to match atan2 range — without this, spokes
+    // near the bottom-left (index 9, 10 with N=11) exceed π and the diff wraps
+    // incorrectly, making those spokes unreachable.
+    let axAng=(i/N)*2*Math.PI - Math.PI/2;
+    if(axAng > Math.PI) axAng -= 2*Math.PI;
     let diff=Math.abs(clickAng-axAng);
     if(diff>Math.PI) diff=2*Math.PI-diff;
     if(diff<bestDiff){ bestDiff=diff; best=i; }
@@ -7742,10 +7781,15 @@ function drawCurve(canvasId, ctrl, sigFn, yMin, yMax, yFmt, lineColor, fillColor
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, w, CH);
 
+  // Read theme-aware label colors — text outside the dark chart box needs to match panel bg
+  const _ccs = getComputedStyle(document.body);
+  const _curveLabelColor = _ccs.getPropertyValue('--text-primary').trim() || 'rgba(255,255,255,0.72)';
+  const _curveDimColor   = _ccs.getPropertyValue('--text-dim').trim()     || 'rgba(255,255,255,0.45)';
+
   const xp = makeXp(scale, w);
   function yp(v){ return PAD.t + (yMax-v)/(yMax-yMin)*(CH-PAD.t-PAD.b); }
 
-  // ── Background
+  // ── Background (always dark — intentional chart-area contrast)
   ctx.fillStyle = '#14161a';
   ctx.fillRect(PAD.l, PAD.t, w-PAD.l-PAD.r, CH-PAD.t-PAD.b);
 
@@ -7756,7 +7800,7 @@ function drawCurve(canvasId, ctrl, sigFn, yMin, yMax, yFmt, lineColor, fillColor
     const y = yp(v);
     ctx.strokeStyle='rgba(255,255,255,0.05)'; ctx.lineWidth=0.5;
     ctx.beginPath(); ctx.moveTo(PAD.l,y); ctx.lineTo(w-PAD.r,y); ctx.stroke();
-    ctx.fillStyle='rgba(255,255,255,0.72)'; ctx.font='9px "DM Mono",monospace'; ctx.textAlign='right';
+    ctx.fillStyle=_curveLabelColor; ctx.font='9px "DM Mono",monospace'; ctx.textAlign='right';
     ctx.fillText(yFmt(v), PAD.l-4, y+3);
   }
 
@@ -7769,7 +7813,7 @@ function drawCurve(canvasId, ctrl, sigFn, yMin, yMax, yFmt, lineColor, fillColor
     const x = xp(t);
     ctx.strokeStyle='rgba(255,255,255,0.05)'; ctx.lineWidth=0.5;
     ctx.beginPath(); ctx.moveTo(x,PAD.t); ctx.lineTo(x,CH-PAD.b); ctx.stroke();
-    ctx.fillStyle='rgba(255,255,255,0.72)'; ctx.font='9px "DM Mono",monospace'; ctx.textAlign='center';
+    ctx.fillStyle=_curveLabelColor; ctx.font='9px "DM Mono",monospace'; ctx.textAlign='center';
     ctx.fillText(t+'s', x, CH-PAD.b+13);
   });
 
@@ -7787,7 +7831,7 @@ function drawCurve(canvasId, ctrl, sigFn, yMin, yMax, yFmt, lineColor, fillColor
   ctx.strokeRect(PAD.l, PAD.t, w-PAD.l-PAD.r, CH-PAD.t-PAD.b);
 
   // ── Axis titles
-  ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.font='8px "DM Mono",monospace'; ctx.textAlign='center';
+  ctx.fillStyle=_curveDimColor; ctx.font='8px "DM Mono",monospace'; ctx.textAlign='center';
   ctx.fillText('think time per move — more time \u2192 left', w/2, CH-2);
   ctx.save(); ctx.translate(11, CH/2); ctx.rotate(-Math.PI/2);
   ctx.fillText(sigFn===sigA?'Effective ELO':'Available distribution %', 0, 0);

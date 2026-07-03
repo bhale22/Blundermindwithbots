@@ -486,7 +486,7 @@ canvas{
   z-index:5000;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
   padding:20px;
-  transition:opacity 0.4s ease;
+  transition:opacity 0.4s ease, background 0.3s ease;
 }
 #landingOverlay.fade-out { opacity:0;pointer-events:none; }
 .landing-title {
@@ -523,14 +523,14 @@ canvas{
 .landing-expert .landing-shell-btn:hover { border-color:#c8922a; }
 .landing-expert .landing-shell-btn.sel { border-color:#c8922a;box-shadow:0 0 0 2px rgba(200,146,42,0.2); }
 .landing-expert .landing-shell-btn .ls-name { color:#e8e6e0; }
-.landing-expert .landing-shell-btn .ls-desc { color:#717a8a;font-family:'DM Mono',monospace; }
+.landing-expert .landing-shell-btn .ls-desc { color:#717a8a; }
 .landing-expert .landing-card { background:#22262d;border-color:rgba(255,255,255,0.08); }
 .landing-expert .landing-card:hover { border-color:#c8922a;box-shadow:0 0 0 2px rgba(200,146,42,0.18);transform:translateY(-2px); }
 .landing-expert .landing-card.green-card:hover,
 .landing-expert .landing-card.gold-card:hover { border-color:#c8922a;box-shadow:0 0 0 2px rgba(200,146,42,0.18); }
-.landing-expert .landing-card-title { color:#e8e6e0;font-family:'Chakra Petch',sans-serif; }
-.landing-expert .landing-card-desc { color:#717a8a;font-family:'DM Mono',monospace; }
-.landing-expert .landing-footer { color:#717a8a;font-family:'DM Mono',monospace; }
+.landing-expert .landing-card-title { color:#e8e6e0; }
+.landing-expert .landing-card-desc { color:#717a8a; }
+.landing-expert .landing-footer { color:#717a8a; }
 .landing-cards {
   display:flex;flex-wrap:wrap;gap:14px;justify-content:center;
   max-width:720px;margin-bottom:28px;
@@ -539,7 +539,7 @@ canvas{
   width:160px;padding:20px 14px 18px;
   background:var(--bg-panel);border:1px solid var(--border);
   border-radius:10px;cursor:pointer;text-align:center;
-  transition:border-color 0.15s,box-shadow 0.15s,transform 0.12s;
+  transition:border-color 0.2s,box-shadow 0.15s,transform 0.12s,background 0.25s,color 0.25s;
   display:flex;flex-direction:column;align-items:center;gap:8px;
 }
 .landing-card:hover {
@@ -558,10 +558,10 @@ canvas{
 .landing-card-icon { font-size:36px;line-height:1; }
 .landing-card-title {
   font-size:12px;font-weight:700;color:var(--text-primary);
-  line-height:1.3;
+  line-height:1.3;transition:color 0.25s ease;
 }
 .landing-card-desc {
-  font-size:9.5px;color:var(--text-dim);line-height:1.5;
+  font-size:9.5px;color:var(--text-dim);line-height:1.5;transition:color 0.25s ease;
 }
 .landing-upload-row {
   display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center;
@@ -954,11 +954,11 @@ canvas{
 body.pro-mode{
   --pa:#c8922a; --pa-bright:#e8aa40; --pa-dim:#8a6420;
   --pa-glow:rgba(200,146,42,0.12); --pa-glow-s:rgba(200,146,42,0.22);
-  --pc:#0e0f11; --pc-mid:#14161a; --pc-surface:#22262d; --pc-raise:#2a2f38;
-  --pt1:#e8e6e0; --pt2:#aab4c6; --ptd:#717a8a;
-  --pbd:rgba(255,255,255,0.06); --pbd-a:rgba(200,146,42,0.3);
+  --pc:var(--bg-page); --pc-mid:var(--bg-panel); --pc-surface:var(--bg-panel2); --pc-raise:var(--bg-panel2);
+  --pt1:var(--text-primary); --pt2:var(--text-secondary); --ptd:var(--text-dim);
+  --pbd:var(--border); --pbd-a:rgba(200,146,42,0.3);
   --pfm:'DM Mono',monospace; --pfu:'Chakra Petch',sans-serif; --pfd:'Cormorant Garamond',serif;
-  background:radial-gradient(1200px 700px at 50% -10%, #16181d 0%, #0e0f11 55%), #0e0f11 !important;
+  background:radial-gradient(1200px 700px at 50% -10%, var(--bg-panel) 0%, var(--bg-page) 55%), var(--bg-page) !important;
 }
 /* hide amateur chrome in pro mode */
 body.pro-mode #sidebar{ display:none !important; }
@@ -980,7 +980,7 @@ body.pro-mode #proSide{
 .pro-player.active{ border-color:var(--pbd-a);box-shadow:0 0 0 1px var(--pa-glow-s) inset; }
 .pro-avatar{
   width:30px;height:30px;border-radius:50%;flex-shrink:0;
-  background:linear-gradient(135deg,#2a2f38,#14161a);border:0.5px solid var(--pbd-a);
+  background:linear-gradient(135deg,var(--pc-surface),var(--pc-mid));border:0.5px solid var(--pbd-a);
   display:flex;align-items:center;justify-content:center;font-size:14px;
   font-family:'Segoe UI Symbol',sans-serif;color:var(--pt1);
 }
@@ -992,7 +992,7 @@ body.pro-mode #proSide{
   color:var(--pt2);padding:4px 12px;border-radius:4px;background:var(--pc);
   border:0.5px solid var(--pbd);min-width:92px;text-align:center;
 }
-.pro-player.active .pro-clock{ color:var(--pa-bright);border-color:var(--pbd-a);background:#0b0c0e; }
+.pro-player.active .pro-clock{ color:var(--pa-bright);border-color:var(--pbd-a);background:var(--pc-mid); }
 
 .pro-card{ background:var(--pc-mid);border:0.5px solid var(--pbd);border-radius:5px; }
 .pro-card-hd{ padding:8px 11px;border-bottom:0.5px solid var(--pbd); }
@@ -1003,6 +1003,8 @@ body.pro-mode #proSide{
 .pro-moverow:nth-child(odd){ background:rgba(255,255,255,0.012); }
 .pro-mnum{ color:var(--ptd);font-size:9px;text-align:right;padding-right:9px; }
 .pro-mw,.pro-mb{ padding:4px 8px;color:var(--pt2); }
+.pro-mhi{ background:rgba(200,146,42,0.18);color:var(--pa)!important;border-radius:3px;font-weight:600; }
+.pro-mat{ font-size:11px;line-height:1.2;margin-top:1px; }
 
 .pro-actions{ display:flex;gap:7px;align-items:stretch; }
 .pro-abtn{
@@ -1016,6 +1018,16 @@ body.pro-mode #proSide{
 .pro-abtn.danger{ color:#d98080; }
 .pro-abtn.danger:hover{ border-color:rgba(200,74,74,0.6);color:#e89090; }
 .pro-abtn.draw:hover{ border-color:rgba(93,173,226,0.5);color:#9fd4f0; }
+.pro-abtn.disabled{ opacity:0.28; pointer-events:none; cursor:default; }
+#proResultBar{
+  display:none;
+  padding:9px 12px;text-align:center;
+  font-family:var(--pfm);font-size:11px;letter-spacing:0.04em;
+  color:var(--pa);
+  background:var(--pc-surface);
+  border:0.5px solid var(--pbd-a);
+  border-radius:4px;
+}
 .pro-abtn.icon{ flex:0 0 40px;font-size:14px; }
 
 .pro-gear-menu{
@@ -1156,7 +1168,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <!-- Black player box -->
     <div class="player-box" id="playerBoxB">
       <div class="player-col">
-        <div class="player-name">Black</div>
+        <div class="player-name">Black<span id="mpPresenceDotB" style="display:none;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-left:6px;vertical-align:middle;cursor:default;"></span></div>
         <div class="player-time solo" id="timeB">—</div>
       </div>
       <div class="mid-col">
@@ -1202,7 +1214,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <!-- White player box -->
     <div class="player-box" id="playerBoxW" style="width:var(--board-size);box-sizing:border-box;">
       <div class="player-col">
-        <div class="player-name">White</div>
+        <div class="player-name">White<span id="mpPresenceDotW" style="display:none;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-left:6px;vertical-align:middle;cursor:default;"></span></div>
         <div class="player-time solo active" id="timeW">—</div>
       </div>
       <div class="mid-col">
@@ -1481,6 +1493,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="pro-meta">
         <div class="pro-name" id="proNameTop">Black</div>
         <div class="pro-rating" id="proRatingTop"></div>
+        <div class="pro-mat" id="proMatTop"></div>
       </div>
       <div class="pro-clock" id="proClockTop">—</div>
     </div>
@@ -1497,14 +1510,18 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="pro-meta">
         <div class="pro-name" id="proNameBottom">White</div>
         <div class="pro-rating" id="proRatingBottom"></div>
+        <div class="pro-mat" id="proMatBottom"></div>
       </div>
       <div class="pro-clock" id="proClockBottom">—</div>
     </div>
 
+    <!-- Game-over result (shown when checkmate / stalemate / resign / draw) -->
+    <div id="proResultBar"></div>
+
     <!-- Actions: Resign · Draw · Flip · Theme · Gear -->
     <div class="pro-actions">
-      <div class="pro-abtn danger" onclick="resign()">⚑ Resign</div>
-      <div class="pro-abtn draw" onclick="offerDraw()">½ Draw</div>
+      <div class="pro-abtn danger" id="proResignBtn" onclick="resign()">⚑ Resign</div>
+      <div class="pro-abtn draw" id="proDrawBtn" onclick="offerDraw()">½ Draw</div>
       <div class="pro-abtn icon" onclick="proFlipBoard()" title="Flip board">⇅</div>
       <div class="pro-abtn icon" onclick="openPanel('themePanel')" title="Theme &amp; pieces">🎨</div>
       <div class="pro-abtn icon" onclick="proToggleGear()" title="More">⚙</div>
@@ -2188,7 +2205,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 
     <!-- Leave / reset (shown after joining a room) -->
     <div id="mpLeaveRow" style="display:none;">
-      <button onclick="mpLeave()"
+      <button onclick="mpMaybeLeave()"
         style="width:100%;padding:6px;background:transparent;
         border:0.5px solid rgba(190,70,70,0.3);border-radius:3px;
         color:rgba(190,100,100,0.8);cursor:pointer;font-size:8px;

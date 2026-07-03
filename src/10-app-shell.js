@@ -332,7 +332,7 @@ const BG_THEMES = {
   slate:      {bg:'#0d1520', panel:'#0a1018', panel2:'#060a10', border:'#1a2a3a', border2:'#101820', text:'#c0ccd8', textDim:'#405060', textSec:'#708090', name:'Slate'},
 };
 let currentBoardTheme = 'blue';
-let currentBgTheme = 'slate';
+let currentBgTheme = 'lightblue';
 
 function applyBoardTheme(name) {
   currentBoardTheme = name;
@@ -356,6 +356,46 @@ function applyBgTheme(name) {
   document.querySelectorAll('#bgSwatches .swatch').forEach(s =>
     s.classList.toggle('active', s.dataset.theme === name));
   localStorage.setItem('bm_bgTheme', name);
+  _syncPanelTheme(t);
+}
+function _isLightTheme(t) {
+  const m = (t.text || '').match(/#([0-9a-f]{2})/i);
+  return m ? parseInt(m[1], 16) < 128 : false;
+}
+function _syncPanelTheme(t) {
+  const light = _isLightTheme(t);
+  const vars = {
+    '--carbon':         t.bg,
+    '--carbon-mid':     t.panel,
+    '--carbon-light':   t.panel,
+    '--carbon-surface': t.panel2,
+    '--carbon-raise':   light ? t.border : t.panel2,
+    '--text-primary':   t.text,
+    '--text-secondary': t.textSec,
+    // For dark themes textDim is darker than the panel — invisible. Use textSec
+    // (a readable mid-tone) as the dim color inside the bot panel instead.
+    '--text-dim':       light ? t.textDim : t.textSec,
+    '--border':         t.border,
+    '--amber':          light ? '#9a6820' : '#c8922a',
+    '--amber-bright':   light ? '#c8922a' : '#e8aa40',
+    '--amber-dim':      light ? '#6a4a10' : '#8a6420',
+    '--amber-glow':     light ? 'rgba(154,104,32,0.14)' : 'rgba(200,146,42,0.12)',
+    '--amber-glow-s':   light ? 'rgba(154,104,32,0.26)' : 'rgba(200,146,42,0.22)',
+    '--border-amber':   light ? 'rgba(154,104,32,0.40)' : 'rgba(200,146,42,0.30)',
+    '--radar-ring':     light ? 'rgba(0,0,0,0.10)'       : 'rgba(255,255,255,0.06)',
+    '--radar-axis':     light ? 'rgba(0,0,0,0.10)'       : 'rgba(255,255,255,0.07)',
+    '--radar-node-inactive': light ? '#708090' : '#4a5060',
+    '--radar-node-fill':     light ? '#c8922a' : '#e8aa40',
+    '--radar-node-active':   light ? '#ffcc55' : '#ffcc55',
+    '--radar-label-badge':   light ? '#9a6820' : '#ffcc55',
+  };
+  try { localStorage.setItem('bm_panelTheme', JSON.stringify(vars)); } catch(e) {}
+  try {
+    const frame = document.getElementById('botModalFrame');
+    if (frame && frame.contentWindow) {
+      frame.contentWindow.postMessage({ type: 'setTheme', vars }, location.origin);
+    }
+  } catch(e) {}
 }
 
 // ── Panel system ─────────────────────────────────────────────────────
@@ -501,7 +541,16 @@ function indActive(key) {
   }
   if(ind.pressing) return true;
   if(ind.on) return true;
-  if(ind.pre&&(!!previewBoard||currentlyPreviewing)) return true;
+  if(ind.pre&&(!!previewBoard||currentlyPreviewing)){
+    // In preview-only mode (not explicitly "always on"), suppress during active
+    // drag — circles jumping onto the carried piece feel like a bug to users.
+    if(!ind.on){
+      const _dragging = typeof dragFrom !== 'undefined' && dragFrom >= 0 &&
+                        typeof dragMoved !== 'undefined' && dragMoved;
+      if(_dragging) return false;
+    }
+    return true;
+  }
   return false;
 }
 
@@ -576,8 +625,19 @@ function ibMainUp(key){
     const now = Date.now();
     const sinceLastClick = now - (ibLastClick[key]||0);
     if(sinceLastClick < 400) {
-      // Double click = toggle permanently ON/OFF
-      IND[key].on = !IND[key].on;
+      // Double click cycles: off(pre-only) → always-on → truly-off → off(pre-only)…
+      // Key invariant: once a user explicitly turns an indicator OFF, it is
+      // completely off (pre=false too). "Off means off."
+      if(!IND[key].on && IND[key].pre){
+        // preview-only → always-on
+        IND[key].on = true; IND[key].pre = true;
+      } else if(IND[key].on){
+        // always-on → truly off
+        IND[key].on = false; IND[key].pre = false;
+      } else {
+        // truly-off → preview-only (re-enable preview without always-on)
+        IND[key].on = false; IND[key].pre = true;
+      }
       ibLastClick[key] = 0; // reset so next click starts fresh
     } else {
       // Single click = just a peek (press/release already handled)
@@ -654,10 +714,13 @@ function chatAppend(from, text, isMe){
   line.innerHTML = '<span class="chat-sender">' + (isMe ? 'You' : from) + ':</span> ' + safe;
   msgs.appendChild(line);
   msgs.scrollTop = msgs.scrollHeight;
-  // Show unread dot if incoming and input isn't focused
+  // Auto-expand chat on incoming message; show unread dot if already open but unfocused
   if(!isMe){
-    const inp = document.getElementById('chatInput');
-    if(document.activeElement !== inp) chatShowUnread();
+    if(!chatExpanded) chatToggleExpand();
+    else {
+      const inp = document.getElementById('chatInput');
+      if(document.activeElement !== inp) chatShowUnread();
+    }
   }
 }
 
@@ -742,13 +805,18 @@ function proRenderNotation(){
   const el = document.getElementById('proMoves');
   if(!el || typeof gameMovesAlgebraic === 'undefined') return;
   if(!gameMovesAlgebraic.length){ el.innerHTML = '<div class="pro-moves-empty">No moves yet</div>'; return; }
+  // During replay, highlight the move at the current replay position.
+  const hiIdx = (typeof inReplay !== 'undefined' && inReplay && typeof replayIdx !== 'undefined')
+    ? replayIdx - 1 : -1;
   let html = '';
   for(let i=0;i<gameMovesAlgebraic.length;i+=2){
     const n = i/2 + 1;
     const w = gameMovesAlgebraic[i] || '';
     const b = gameMovesAlgebraic[i+1] || '';
+    const wHi = i === hiIdx ? ' pro-mhi' : '';
+    const bHi = i+1 === hiIdx ? ' pro-mhi' : '';
     html += '<div class="pro-moverow"><span class="pro-mnum">' + n + '.</span>' +
-            '<span class="pro-mw">' + w + '</span><span class="pro-mb">' + b + '</span></div>';
+            '<span class="pro-mw' + wHi + '">' + w + '</span><span class="pro-mb' + bHi + '">' + b + '</span></div>';
   }
   el.innerHTML = html;
   el.scrollTop = el.scrollHeight;
@@ -781,6 +849,30 @@ function proSync(){
   if(nb) nb.textContent = topIsWhite ? bName : wName;
   if(at) at.textContent = topIsWhite ? '♔' : '♚';
   if(ab) ab.textContent = topIsWhite ? '♚' : '♔';
+  // Material advantage
+  if(typeof computeMaterial === 'function' && typeof board !== 'undefined'){
+    const mat = computeMaterial(board);
+    const diff = mat.w - mat.b;
+    const topMat  = document.getElementById('proMatTop');
+    const botMat  = document.getElementById('proMatBottom');
+    if(topMat)  topMat.innerHTML  = (topIsWhite  ? diff  > 0 : diff  < 0) && typeof matAdvString==='function'
+      ? matAdvString(Math.abs(diff), topIsWhite ? mat.wPieces : mat.bPieces, topIsWhite ? mat.bPieces : mat.wPieces) : '';
+    if(botMat)  botMat.innerHTML  = (!topIsWhite ? diff  > 0 : diff  < 0) && typeof matAdvString==='function'
+      ? matAdvString(Math.abs(diff), !topIsWhite ? mat.wPieces : mat.bPieces, !topIsWhite ? mat.bPieces : mat.wPieces) : '';
+  }
+  // Result bar and button state
+  const resultBar = document.getElementById('proResultBar');
+  if(resultBar){
+    resultBar.style.display = over ? 'block' : 'none';
+    if(over){
+      const msg = (typeof gameOverMsg !== 'undefined' && gameOverMsg) ? gameOverMsg : 'Game over';
+      resultBar.textContent = msg;
+    }
+  }
+  const resignBtn = document.getElementById('proResignBtn');
+  const drawBtn   = document.getElementById('proDrawBtn');
+  if(resignBtn) resignBtn.classList.toggle('disabled', over);
+  if(drawBtn)   drawBtn.classList.toggle('disabled', over);
 }
 
 // Restore the saved shell on load
@@ -1085,6 +1177,8 @@ let clockTimeB = 0;   // seconds remaining for black
 let clockInc = 0;     // increment in seconds
 let clockBonusApplied = false; // true once the mid-game bonus time has been awarded
 let clockControl = 'untimed';
+let _clockAnchorMs  = 0;  // Date.now() when the current player's turn began
+let _clockAnchorSec = 0;  // seconds that player had at that moment
 
 function clockInit(controlKey) {
   clockStop();
@@ -1112,38 +1206,54 @@ function clockStop() {
 
 function clockTick() {
   if(clockInterval) clearInterval(clockInterval);
+  // Anchor to absolute wall-clock time so the clock stays accurate even if the
+  // tab is hidden (browsers throttle setInterval when a tab is not visible).
+  _clockAnchorMs  = Date.now();
+  _clockAnchorSec = turn === 'w' ? clockTimeW : clockTimeB;
   clockInterval = setInterval(()=>{
     if(!clockActive || gameOver) { clockStop(); return; }
-    if(turn === 'w') {
-      clockTimeW = Math.max(0, clockTimeW - 1);
-      if(clockTimeW === 0) { clockStop(); clockTimeout('w'); return; }
-    } else {
-      clockTimeB = Math.max(0, clockTimeB - 1);
-      if(clockTimeB === 0) { clockStop(); clockTimeout('b'); return; }
-    }
+    const elapsed    = Math.floor((Date.now() - _clockAnchorMs) / 1000);
+    const remaining  = Math.max(0, _clockAnchorSec - elapsed);
+    if(turn === 'w') clockTimeW = remaining;
+    else             clockTimeB = remaining;
+    if(remaining === 0) { clockStop(); clockTimeout(turn); return; }
     clockUpdateDisplay();
-  }, 1000);
+  }, 250);
 }
 
 function clockAfterMove() {
   const tc = TIME_CONTROLS[clockControl] || {};
   const movesSoFar = (typeof gameMovesAlgebraic !== 'undefined') ? gameMovesAlgebraic.length : 0;
-  // Full move number just completed (both sides count toward one full move)
   const fullMoveNum = Math.ceil(movesSoFar / 2);
+
+  // Snap: record the just-moved player's exact remaining time from the wall clock
+  // before applying increment (turn has already switched at this point).
+  const justMoved = turn === 'w' ? 'b' : 'w';
+  if (clockActive && _clockAnchorMs) {
+    const elapsed   = Math.floor((Date.now() - _clockAnchorMs) / 1000);
+    const remaining = Math.max(0, _clockAnchorSec - elapsed);
+    if (justMoved === 'w') clockTimeW = remaining;
+    else                   clockTimeB = remaining;
+  }
 
   // Mid-game bonus time (e.g. +30 min after move 40 in 90+30 format)
   if (tc.bonusSecs && tc.bonusAtMove && !clockBonusApplied && fullMoveNum >= tc.bonusAtMove) {
-    clockTimeW = Math.min(clockTimeW + tc.bonusSecs, 59940); // cap at 999 min
+    clockTimeW = Math.min(clockTimeW + tc.bonusSecs, 59940);
     clockTimeB = Math.min(clockTimeB + tc.bonusSecs, 59940);
     clockBonusApplied = true;
   }
 
   // Increment — only applied starting from incFromMove (default: move 1)
-  const justMoved = turn === 'w' ? 'b' : 'w';
   const incFromMove = tc.incFromMove || 1;
   if (clockInc > 0 && fullMoveNum >= incFromMove) {
     if (justMoved === 'w') clockTimeW = Math.min(clockTimeW + clockInc, 59940);
     else clockTimeB = Math.min(clockTimeB + clockInc, 59940);
+  }
+
+  // Reset anchor for the new active player so their clock counts from now
+  if (clockActive) {
+    _clockAnchorMs  = Date.now();
+    _clockAnchorSec = turn === 'w' ? clockTimeW : clockTimeB;
   }
 
   if(!clockActive && clockControl !== 'untimed' && !gameOver) clockStart();
@@ -1186,6 +1296,16 @@ function clockUpdateDisplay() {
     if(clockTimeB < 30 && clockActive && turn==='b' && !isUntimed)
       tbEl.style.color='#e03535'; else tbEl.style.color='';
   }
+  // Keep pro-mode clock column in sync without waiting for a move
+  if(typeof proMode !== 'undefined' && proMode && !isUntimed){
+    const _fl = typeof boardFlipped !== 'undefined' && boardFlipped;
+    const ct = document.getElementById('proClockTop');
+    const cb = document.getElementById('proClockBottom');
+    if(ct){ ct.textContent = clockFmtTime(_fl ? clockTimeW : clockTimeB);
+            ct.style.color = (_fl ? (turn==='w'&&clockTimeW<30) : (turn==='b'&&clockTimeB<30)) ? '#e03535' : ''; }
+    if(cb){ cb.textContent = clockFmtTime(_fl ? clockTimeB : clockTimeW);
+            cb.style.color = (_fl ? (turn==='b'&&clockTimeB<30) : (turn==='w'&&clockTimeW<30)) ? '#e03535' : ''; }
+  }
 }
 
 function clockSetControl(key) {
@@ -1206,6 +1326,20 @@ let mpConnected = false;
 let mpOriginalRole = null;  // role as assigned by server (never changes per session)
 let mpCurrentTab = 'lobby';
 let mpLobbyRefreshTimer = null;
+
+// ── Presence / heartbeat ─────────────────────────────────────────────────────
+let _mpPingTimer       = null;  // interval sending our ping to the server
+let _mpPresenceTimer   = null;  // interval checking opponent last-seen time
+let _mpLastOpponentPing = 0;    // Date.now() of last opponent_ping received
+
+// Warn browser-close/navigate while in a live game
+window.addEventListener('beforeunload', e => {
+  if (typeof mpRoomId !== 'undefined' && mpRoomId &&
+      typeof gameOver !== 'undefined' && !gameOver) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
 
 // ── Panel flow helpers — replace old tab system ──────────────────────────────
 // "mode" is 'idle' | 'private-waiting' | 'join' | 'lobby-waiting' | 'ingame'
@@ -1365,7 +1499,7 @@ function mpHandleMessage(msg) {
       break;
 
     case 'move':
-      mpReceiveMove(msg.move);
+      mpReceiveMove(msg.move, msg.timeW, msg.timeB);
       break;
 
     case 'chat':
@@ -1437,7 +1571,13 @@ function mpHandleMessage(msg) {
       if (drawBtn) drawBtn.disabled = false;
       break;
 
+    case 'opponent_ping':
+      _mpLastOpponentPing = Date.now();
+      mpSetPresenceDot('green');
+      break;
+
     case 'opponent_disconnected':
+      mpSetPresenceDot('red');
       mpShowStatus('Opponent disconnected.', true);
       gameOver = true; updatePlayerBoxes();
       break;
@@ -1641,14 +1781,74 @@ function mpJoinRoom() {
 // Keep mpCreateRoom as alias for backward compat with landing page
 function mpCreateRoom() { mpCreatePrivate(); }
 
+function mpSetPresenceDot(color) {
+  // color: 'green' | 'amber' | 'red' | 'off'
+  ['mpPresenceDotW','mpPresenceDotB'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (color === 'off') { el.style.display = 'none'; return; }
+    el.style.display = 'inline-block';
+    el.style.background = color === 'green' ? '#22c55e'
+                        : color === 'amber' ? '#f59e0b'
+                        : '#ef4444';
+    el.title = color === 'green' ? 'Opponent is online'
+             : color === 'amber' ? 'Opponent may have left'
+             : 'Opponent disconnected';
+  });
+  // Only show on the opponent's box
+  if (mpRole) {
+    const ownBox = mpRole === 'white' ? 'mpPresenceDotW' : 'mpPresenceDotB';
+    const el = document.getElementById(ownBox);
+    if (el) el.style.display = 'none'; // never show dot on own box
+  }
+}
+
+function _mpStartPresence() {
+  _mpLastOpponentPing = Date.now(); // assume online at game start
+  clearInterval(_mpPingTimer);
+  clearInterval(_mpPresenceTimer);
+  _mpPingTimer = setInterval(() => {
+    if (mpWs && mpWs.readyState === WebSocket.OPEN && mpRoomId) {
+      try { mpWs.send(JSON.stringify({ type: 'ping' })); } catch(e) {}
+    }
+  }, 12000);
+  _mpPresenceTimer = setInterval(() => {
+    if (!mpRoomId || (typeof gameOver !== 'undefined' && gameOver)) return;
+    const ago = Date.now() - _mpLastOpponentPing;
+    if (ago < 20000)      mpSetPresenceDot('green');
+    else if (ago < 45000) mpSetPresenceDot('amber');
+    else                  mpSetPresenceDot('red');
+  }, 3000);
+}
+
+function _mpStopPresence() {
+  clearInterval(_mpPingTimer);
+  clearInterval(_mpPresenceTimer);
+  _mpPingTimer = null;
+  _mpPresenceTimer = null;
+  mpSetPresenceDot('off');
+}
+
+function mpMaybeLeave() {
+  if (mpRoomId && !(typeof gameOver !== 'undefined' && gameOver)) {
+    if (!confirm('Leave this game? You will forfeit to your opponent.')) return;
+    // Send forfeit so opponent sees the result immediately
+    if (mpWs && mpWs.readyState === WebSocket.OPEN) {
+      try { mpWs.send(JSON.stringify({ type: 'resign' })); } catch(e) {}
+    }
+  }
+  mpLeave();
+}
+
 function mpLeave() {
+  _mpStopPresence();
   if (mpWs) { mpWs.close(); mpWs = null; }
   mpRoomId = null; mpRole = null; mpConnected = false;
   mpOriginalRole = null; mpGameCount = 0;
   clearInterval(mpLobbyRefreshTimer);
   chatShow(false);
   const cm = document.getElementById('chatMessages'); if (cm) cm.innerHTML = '';
-  const boardCol = document.querySelector('.board-col') || document.getElementById('boardCol');
+  const boardCol = document.getElementById('board-col');
   if (boardCol) boardCol.classList.remove('board-flipped');
   document.getElementById('mpRoomCode').textContent = '';
   const jc = document.getElementById('mpJoinCode'); if (jc) jc.value = '';
@@ -1679,6 +1879,8 @@ function mpStartGame(tcKey) {
   clockInit(tc);
   chatShow(true);
   boardFlipped = (mpRole === 'black');
+  const _bcEl = document.getElementById('board-col');
+  if (_bcEl) _bcEl.classList.toggle('board-flipped', boardFlipped);
   render();
   if (tc !== 'untimed') clockStart();
   updatePlayerBoxes();
@@ -1687,6 +1889,7 @@ function mpStartGame(tcKey) {
   const ga = document.getElementById('gameActions');
   if (ga) ga.style.display = 'flex';
   closeAllPanels();
+  _mpStartPresence();
 }
 
 function mpUpdateTurnIndicator() {
@@ -1698,11 +1901,12 @@ function mpUpdateTurnIndicator() {
 
 function mpSendMove(from, to, promo) {
   if (!mpWs || mpWs.readyState !== WebSocket.OPEN) return;
-  mpWs.send(JSON.stringify({ type: 'move', move: { from, to, promo } }));
+  // Include post-move clock state so receiver uses our values as ground truth
+  mpWs.send(JSON.stringify({ type: 'move', move: { from, to, promo }, timeW: clockTimeW, timeB: clockTimeB }));
 }
 
-function mpReceiveMove(move) {
-  if (promotionPending) { setTimeout(() => mpReceiveMove(move), 300); return; }
+function mpReceiveMove(move, syncTimeW, syncTimeB) {
+  if (promotionPending) { setTimeout(() => mpReceiveMove(move, syncTimeW, syncTimeB), 300); return; }
   // Never trust the wire: verify shape, turn, ownership, and legality before
   // executing. A malformed or malicious message must not corrupt the board.
   if (!move || !Number.isInteger(move.from) || !Number.isInteger(move.to) ||
@@ -1723,6 +1927,17 @@ function mpReceiveMove(move) {
   }
   const promo = ['Q','R','B','N'].includes(move.promo) ? move.promo : null;
   executeMove(move.from, move.to, promo);
+  // Overwrite local clock state with sender's authoritative post-move values.
+  // This eliminates accumulated drift from anchor-reset timing differences.
+  if (typeof syncTimeW === 'number' && typeof syncTimeB === 'number' && !gameOver) {
+    clockTimeW = syncTimeW;
+    clockTimeB = syncTimeB;
+    if (clockActive) {
+      _clockAnchorMs  = Date.now();
+      _clockAnchorSec = turn === 'w' ? clockTimeW : clockTimeB;
+    }
+    clockUpdateDisplay();
+  }
   mpUpdateTurnIndicator();
   // Fire queued premove if any
   if(activePremove) setTimeout(tryFirePremove, 50);
@@ -2223,23 +2438,33 @@ function _pgnResultToken(){
   if(/1-0|white wins/i.test(m)) return '1-0';
   if(/0-1|black wins/i.test(m)) return '0-1';
   if(/draw|½-½|1\/2|stalemate|insufficient|repetition|fifty/i.test(m)) return '1/2-1/2';
+  // Multiplayer "Opponent resigned — You win!" — derive from whose turn it is
+  // (the winner just moved, so turn is now the loser's color).
+  if(/you win|opponent resigned/i.test(m)){
+    return (typeof turn !== 'undefined' && turn === 'w') ? '0-1' : '1-0';
+  }
   return '*';
 }
 
 function buildPgnText(){
-  const date   = new Date().toISOString().split('T')[0];
-  const result = _pgnResultToken();
-  let pgn = '[Event "Blundermind Game"]\n[Site "Blundermind"]\n[Date "' + date +
+  // PGN standard requires YYYY.MM.DD — dashes cause Lichess import to fail.
+  const isoDate = new Date().toISOString().split('T')[0];
+  const date    = isoDate.replace(/-/g, '.');
+  const result  = _pgnResultToken();
+  let pgn = '[Event "Blundermind Game"]\n[Site "Blundermindchess.com"]\n[Date "' + date +
             '"]\n[White "White"]\n[Black "Black"]\n[Result "' + result + '"]\n\n';
-  if(gameMovesAlgebraic.length === 0){ pgn += result; }
+  if(gameMovesAlgebraic.length === 0){ pgn += result + '\n'; }
   else{
+    let line = '';
     for(let i=0;i<gameMovesAlgebraic.length;i++){
-      if(i%2===0) pgn += (Math.floor(i/2)+1) + '. ';
-      pgn += gameMovesAlgebraic[i] + ' ';
+      const token = (i%2===0 ? (Math.floor(i/2)+1) + '. ' : '') + gameMovesAlgebraic[i];
+      if(line && line.length + 1 + token.length > 79){ pgn += line + '\n'; line = ''; }
+      line += (line ? ' ' : '') + token;
     }
-    pgn += result;
+    if(line) pgn += line + '\n';
+    pgn += result + '\n';
   }
-  return { pgn, date, result };
+  return { pgn, date: isoDate, result };
 }
 
 function downloadPgn(pgn, filename){
@@ -2356,22 +2581,27 @@ function replayGo(idx){
 function rebuildToReplayIdx(targetIdx){
   board=parseFen(FENS[0]);turn='w';
   castling={wK:true,wQ:true,bK:true,bQ:true};epSq=-1;
-  gameMovesAlgebraic=[];
+  // Show all moves in the notation panel; highlight the current position.
+  gameMovesAlgebraic=replayMoves.slice();
+  // Apply only moves up to targetIdx to reconstruct the board at that point.
+  let _bd=parseFen(FENS[0]),_turn='w',_cst={wK:true,wQ:true,bK:true,bQ:true},_ep=-1;
   for(let i=0;i<targetIdx&&i<replayMoves.length;i++){
-    const mv=algebraicToMove(replayMoves[i],board,turn,epSq,castling);
+    const mv=algebraicToMove(replayMoves[i],_bd,_turn,_ep,_cst);
     if(!mv){break;}
-    const prevBoard=board;
-    board=applyMove(mv.from,mv.to,board,epSq,mv.promo||'Q');
+    const prevBoard=_bd;
+    _bd=applyMove(mv.from,mv.to,_bd,_ep,mv.promo||'Q');
     const movedPiece=prevBoard[mv.from];
-    castling=updateCastling(mv.from,mv.to,movedPiece,castling);
-    epSq=computeEP(mv.from,mv.to,prevBoard);
-    turn=turn==='w'?'b':'w';
+    _cst=updateCastling(mv.from,mv.to,movedPiece,_cst);
+    _ep=computeEP(mv.from,mv.to,prevBoard);
+    _turn=_turn==='w'?'b':'w';
   }
+  board=_bd;turn=_turn;castling=_cst;epSq=_ep;
   replayIdx=targetIdx;
   atkMap=buildAtk(board);
   const pins=computePins(board);
   pinnedWSquares=pins.w;pinnedBSquares=pins.b;
   updateReplayInfo();indApply();
+  if(typeof proSync==='function') proSync();
 }
 function updateReplayInfo(){
   document.getElementById('replayInfo').textContent='Move '+replayIdx+' / '+replayMoves.length;
@@ -2430,7 +2660,7 @@ function savePrefs(){
 }
 function loadPrefs(){
   const bt=localStorage.getItem('bm_boardTheme');if(bt&&BOARD_THEMES[bt])applyBoardTheme(bt);
-  const bg=localStorage.getItem('bm_bgTheme');if(bg&&BG_THEMES[bg])applyBgTheme(bg);
+  const bg=localStorage.getItem('bm_bgTheme');applyBgTheme(bg&&BG_THEMES[bg]?bg:'lightblue');
   const ps=localStorage.getItem('bm_pieceSet');if(ps)setPieceSet(ps);
   try{
     const ind=JSON.parse(localStorage.getItem('bm_ind')||'{}');

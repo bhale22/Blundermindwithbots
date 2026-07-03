@@ -102,6 +102,11 @@ function tryFirePremove(){
   // Pawn reaching back rank with no promo choice: auto-queen
   const resolvedPromo=promo||(p.piece==='P'&&(Math.floor(to/8)===0||Math.floor(to/8)===7)?'Q':null);
   executeMove(from,to,resolvedPromo);
+  // Send after execute so clock state is current post-increment
+  if(typeof mpSendMove==='function'&&typeof mpRoomId!=='undefined'&&mpRoomId){
+    mpSendMove(from,to,resolvedPromo||null);
+  }
+  if(typeof mpUpdateTurnIndicator==='function'&&typeof mpRoomId!=='undefined'&&mpRoomId) mpUpdateTurnIndicator();
 }
 
 function tryCommit(from,to,promo){
@@ -121,11 +126,11 @@ function tryCommit(from,to,promo){
   if(p.piece==='P'&&(Math.floor(to/8)===0||Math.floor(to/8)===7)&&!promo){
     promotionPending={from,to,color:p.color};clearPreview();render();return true;
   }
-  // Send to opponent before executing (board state still valid for SAN)
+  executeMove(from,to,promo||null);
+  // Send after execute so clock state (clockTimeW/B) is current post-increment
   if(typeof mpSendMove==='function'&&mpRoomId){
     mpSendMove(from,to,promo||null);
   }
-  executeMove(from,to,promo||null);
   if(typeof mpUpdateTurnIndicator==='function'&&mpRoomId) mpUpdateTurnIndicator();
   return true;
 }
@@ -597,7 +602,9 @@ function render(){
 
 
   // Check threat highlights — orange for white's threats, purple for black's
-  if(showingCheckThreats){
+  // Belt-and-suspenders proMode guard: indApply is async (RAF) so stale state
+  // could render for one frame before it fires; skip unconditionally in pro mode.
+  if(showingCheckThreats && !(typeof proMode!=='undefined'&&proMode)){
     // Highlight DESTINATION squares (where check would occur)
     checkThreatSquaresW.forEach(sq=>{
       const{r,c}=sqCanvas(sq);
@@ -977,7 +984,9 @@ function render(){
 
   // ── Sawtooth alert: the explored piece would HANG on its destination ──────
   // (attacked, zero defenders on the previewed board — fact, not judgment)
-  if (isPreviewing && premoveTo >= 0 && dispBoard[premoveTo] && dispBoard[premoveTo].piece !== 'K') {
+  // Only shown when threat/capture indicators are active (respects pro mode and button state)
+  if (isPreviewing && premoveTo >= 0 && dispBoard[premoveTo] && dispBoard[premoveTo].piece !== 'K'
+      && (indActive('threats') || indActive('captures'))) {
     const _hp = dispBoard[premoveTo];
     const _hA = dispAtk[premoveTo] || {w:[],b:[]};
     const _hAtt = (_hA[_hp.color==='w'?'b':'w'] || []).length;
