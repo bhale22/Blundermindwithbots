@@ -1189,6 +1189,164 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
+// ── Maia move-distribution panel (Expert board) ───────────────────────────────
+// Retrospective: after each move, show the odds Maia (at a fixed 1500 reference)
+// gave every option from the position the move was played in, with the played
+// move highlighted. Descriptive, never normative — no eval/good-bad framing.
+// Lazy: the extra inference runs only while the panel is expanded. Hidden in
+// 2-player online games (same rationale as ghost replies).
+let _distExpanded = false;
+let _distPreMove  = null;  // { board, turn, castling, epSq, fen } snapshot before last move
+let _distLastUci  = null;  // uci of the move just played (may be outside Maia's top set)
+let _distSeq      = 0;     // guards against a stale async render overwriting a newer one
+
+function _distApplicable() {
+  const pro  = (typeof proMode  !== 'undefined' && proMode);
+  const inMp = (typeof mpRoomId !== 'undefined' && mpRoomId);
+  return pro && !inMp;
+}
+
+function distUpdateVisibility() {
+  const panel = document.getElementById('distPanel');
+  if (panel) panel.style.display = _distApplicable() ? 'flex' : 'none';
+}
+
+// Snapshot the position BEFORE a move is applied (called from executeMove pre-mutation).
+function distCapturePreMove(from, to, promo) {
+  if (!_distApplicable()) { _distPreMove = null; _distLastUci = null; return; }
+  try {
+    const fullmove = Math.floor((typeof gameMovesAlgebraic !== 'undefined' ? gameMovesAlgebraic.length : 0) / 2) + 1;
+    const half     = (typeof halfmoveClock !== 'undefined') ? halfmoveClock : 0;
+    _distPreMove = {
+      board: {...board}, turn: turn, castling: {...castling}, epSq: epSq,
+      fen: boardToFen(board, turn, castling, epSq, half, fullmove),
+    };
+    _distLastUci = sqToUci(from, to, promo ? String(promo).toLowerCase() : null);
+  } catch (e) { _distPreMove = null; _distLastUci = null; }
+}
+
+// After a move completes: keep visibility in sync and refresh if the panel is open.
+function distOnMoveComplete() {
+  distUpdateVisibility();
+  if (_distApplicable() && _distExpanded) distRefresh();
+}
+
+// New game — drop any stale distribution.
+function distReset() {
+  _distPreMove = null; _distLastUci = null;
+  distUpdateVisibility();
+  if (_distExpanded) distRefresh();
+}
+
+function distToggle() {
+  _distExpanded = !_distExpanded;
+  const body = document.getElementById('distBody');
+  const chev = document.getElementById('distChevron');
+  if (body) body.style.display = _distExpanded ? 'flex' : 'none';
+  if (chev) chev.style.transform = _distExpanded ? 'rotate(180deg)' : '';
+  if (_distExpanded) distRefresh();
+}
+
+async function distRefresh() {
+  const rows = document.getElementById('distRows');
+  const hint = document.getElementById('distHint');
+  const tag  = document.getElementById('distEntropyTag');
+  if (!rows) return;
+  if (tag) tag.style.display = 'none';
+  if (!_distPreMove) {
+    rows.innerHTML = '';
+    if (hint) hint.textContent = 'Make a move to see the odds Maia gave each option here.';
+    return;
+  }
+  // Maia model required — nudge a cache/init load if it isn't up yet.
+  if (typeof _maiaReady === 'undefined' || !_maiaReady) {
+    if (typeof maiaInit === 'function' && (typeof _maiaWorker === 'undefined' || !_maiaWorker)) {
+      try { maiaInit(); if (typeof _maiaLoadMappings === 'function') _maiaLoadMappings(); } catch (e) {}
+    }
+    rows.innerHTML = '';
+    if (hint) hint.innerHTML = 'Maia 3 model not loaded — <a href="#" onclick="if(typeof maiaDownloadModel===\'function\')maiaDownloadModel();return false;" style="color:#c8922a;">download it</a> to see move odds.';
+    return;
+  }
+  const seq = ++_distSeq;
+  if (hint) hint.textContent = 'Reading Maia…';
+  // Fixed reference rating so the odds read as "what a 1500 plays from here".
+  let probs = null;
+  try {
+    const saved = lcSelectedRating; lcSelectedRating = '1500';
+    probs = await maia3GetMoveProbs(_distPreMove.fen);
+    lcSelectedRating = saved;
+  } catch (e) { probs = null; }
+  if (seq !== _distSeq) return; // superseded by a newer refresh
+  if (!probs || !Object.keys(probs).length) {
+    rows.innerHTML = '';
+    if (hint) hint.textContent = 'No Maia distribution for this position.';
+    return;
+  }
+  distRender(probs);
+}
+
+function _distUciToSan(uci) {
+  try {
+    const mv = uciToSq(uci);
+    if (!mv || !_distPreMove) return uci;
+    return moveToSAN(mv.from, mv.to, mv.promo || null, _distPreMove.board, _distPreMove.epSq, _distPreMove.castling);
+  } catch (e) { return uci; }
+}
+
+function distRender(probs) {
+  const rows = document.getElementById('distRows');
+  const hint = document.getElementById('distHint');
+  const tag  = document.getElementById('distEntropyTag');
+  if (!rows) return;
+  const entries = Object.entries(probs).sort((a, b) => b[1] - a[1]);
+  const TOP  = 5;
+  const top  = entries.slice(0, TOP);
+  const rest = entries.slice(TOP);
+  const maxP = top.length ? top[0][1] : 1;
+  const playedEntry   = _distLastUci ? entries.find(([u]) => u === _distLastUci) : null;
+  const playedInTop   = playedEntry && top.some(([u]) => u === _distLastUci);
+  const pctTxt = p => { const n = Math.round(p * 100); return (n < 1 ? '<1' : n) + '%'; };
+  const html = [];
+  const addRow = (uci, p, played, faint) => {
+    const w = Math.max(2, Math.round(p / maxP * 100));
+    html.push(
+      '<div class="dist-row' + (played ? ' played' : '') + '">' +
+        '<span class="dist-move"' + (faint ? ' style="opacity:0.6;"' : '') + '>' + _distUciToSan(uci) + '</span>' +
+        '<span class="dist-bar-wrap"><span class="dist-bar" style="width:' + w + '%' + (faint ? ';opacity:0.5' : '') + '"></span></span>' +
+        '<span class="dist-pct">' + pctTxt(p) + '</span>' +
+      '</div>');
+  };
+  top.forEach(([u, p]) => addRow(u, p, u === _distLastUci, false));
+  if (rest.length) {
+    const otherP = rest.reduce((s, [, p]) => s + p, 0);
+    const w = Math.max(2, Math.round(otherP / maxP * 100));
+    html.push(
+      '<div class="dist-row"><span class="dist-move" style="opacity:0.6;">other</span>' +
+      '<span class="dist-bar-wrap"><span class="dist-bar" style="width:' + w + '%;opacity:0.5"></span></span>' +
+      '<span class="dist-pct">' + pctTxt(otherP) + '</span></div>');
+  }
+  // Played move outside the top set — show it explicitly so "you played X" always appears.
+  if (playedEntry && !playedInTop) addRow(playedEntry[0], playedEntry[1], true, false);
+  rows.innerHTML = html.join('');
+  // Descriptive caption.
+  if (hint) {
+    if (playedEntry) {
+      hint.textContent = 'You played ' + _distUciToSan(playedEntry[0]) + ' — ' + pctTxt(playedEntry[1]) + ' of Maia 1500 moves here.';
+    } else if (_distLastUci) {
+      hint.textContent = 'Your move was below Maia’s considered options here (<0.1%).';
+    } else {
+      hint.textContent = '';
+    }
+  }
+  // Optional entropy tag (bits): 0 = one forced move, higher = many live options.
+  if (tag) {
+    const ent = (typeof positionEntropy === 'function') ? positionEntropy(probs) : null;
+    const label = (ent == null) ? '' : (ent < 1.0 ? 'forced' : ent > 2.8 ? 'wide open' : '');
+    if (label) { tag.textContent = label; tag.style.display = ''; }
+    else tag.style.display = 'none';
+  }
+}
+
 // Donate JS stubs (functionality temporarily disabled)
 function toggleHaikuBox() {
   var box = document.getElementById('haikuBox');

@@ -748,6 +748,7 @@ function setShell(mode){
     proRestoreBoard();
   }
   if(typeof render === 'function') render();
+  if(typeof distUpdateVisibility === 'function') distUpdateVisibility();
 }
 function toggleShell(){ setShell(proMode ? 'amateur' : 'pro'); }
 
