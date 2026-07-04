@@ -1347,6 +1347,11 @@ function distRender(probs) {
   }
 }
 
+// "Starter" indicator preset — reveal / re-hide the non-starter indicator toggles.
+function toggleMoreIndicators() {
+  document.body.classList.toggle('ind-starter');
+}
+
 // Donate JS stubs (functionality temporarily disabled)
 function toggleHaikuBox() {
   var box = document.getElementById('haikuBox');

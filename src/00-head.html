@@ -170,6 +170,12 @@ canvas{
 /* ── Indicator grid ───────────────────────────────────────────────────────── */
 .ind-grid{display:flex;flex-direction:row;gap:4px;width:100%;}
 .ind-col{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;}
+/* "Starter" indicator preset: show only Threats & Captures + Unprotected; the
+   rest sit behind the "More indicators" expander. Single column when collapsed. */
+body.ind-starter .ind-col:nth-child(2){display:none;}
+body.ind-starter .ind-col .ib:not(#ib-threats):not(#ib-unprotected){display:none;}
+body:not(.ind-starter) #moreIndBtn .mi-more{display:none;}
+body.ind-starter #moreIndBtn .mi-less{display:none;}
 
 /* ── Indicator button ─────────────────────────────────────────────────────── */
 .ib{display:flex;flex-direction:column;gap:0px;user-select:none;width:100%;}
@@ -1064,7 +1070,7 @@ body.pro-mode #chatBox #chatMessages{ color:var(--pt2); }
 body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 </style>
 </head>
-<body>
+<body class="ind-starter">
 
 <!-- ══════════════════════════════════════════════════════════════════════════
      LANDING PAGE OVERLAY
@@ -1091,7 +1097,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div class="landing-card" onclick="landingChoose('solo')">
       <div class="landing-card-icon">🔍</div>
       <div class="landing-card-title">Solo Play &amp; Explore</div>
-      <div class="landing-card-desc">Play alone, explore positions, and train board vision with all the indicators.</div>
+      <div class="landing-card-desc">A blundercheck for every level — hover any piece to see what hangs, forks, or falls before you commit. Play alone, explore positions, and train board vision.</div>
     </div>
 
     <!-- vs Bot -->
@@ -1471,6 +1477,11 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         </div>
       </div>
     </div><!-- end ind-grid -->
+    <!-- Starter preset expander: reveal the rest of the indicators -->
+    <button id="moreIndBtn" class="ctrl-btn util-btn" onclick="toggleMoreIndicators()"
+      style="width:100%;padding:6px 4px;font-size:8.5px;font-weight:600;margin-top:4px;">
+      <span class="mi-more">▾ More indicators</span><span class="mi-less">▴ Fewer indicators</span>
+    </button>
     <!-- Peek / Hide / Show All — larger, below the indicator columns -->
     <div style="display:flex;gap:5px;margin-top:5px;">
       <button id="btnHideShow" class="ctrl-btn util-btn"
