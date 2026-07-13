@@ -967,8 +967,8 @@ body.fj .bcp-maia-dl-btn{
   <button class="rs-btn" onclick="startTour()" style="align-self:center;margin-right:8px;" title="Guided tour of the bot controls">🧭 Tour</button>
   <div class="rs-picker" role="group" aria-label="Panel style" style="margin-right:8px;">
     <span class="rs-label">Style</span>
-    <button class="rs-btn active" data-pstyle="carbon" onclick="setPanelStyle('carbon')" title="Dark carbon &amp; amber dashboard">Carbon</button>
-    <button class="rs-btn" data-pstyle="fj" onclick="setPanelStyle('fj')" title="Light clay &amp; terracotta field journal">Journal</button>
+    <button class="rs-btn" data-pstyle="carbon" onclick="setPanelStyle('carbon')" title="Dark carbon &amp; amber dashboard">Carbon</button>
+    <button class="rs-btn active" data-pstyle="fj" onclick="setPanelStyle('fj')" title="Light clay &amp; terracotta field journal">Journal</button>
   </div>
   <div class="rs-picker" role="group" aria-label="Text readability">
     <span class="rs-label">Text</span>
@@ -6277,8 +6277,8 @@ function _applyPanelTheme(vars){
 }
 (function(){
   try {
-    const savedStyle = localStorage.getItem('bm_panelStyle');
-    if(savedStyle) setPanelStyle(savedStyle);
+    // Field Journal is the default; a previously chosen style always wins.
+    setPanelStyle(localStorage.getItem('bm_panelStyle') || 'fj');
     const saved = localStorage.getItem('bm_panelTheme');
     if(saved) _applyPanelTheme(JSON.parse(saved));
   } catch(e){}
@@ -8285,7 +8285,8 @@ function setReadability(mode){
   document.body.classList.remove('rs-readable','rs-highvis');
   if(mode === 'readable') document.body.classList.add('rs-readable');
   else if(mode === 'highvis') document.body.classList.add('rs-highvis');
-  document.querySelectorAll('.rs-btn').forEach(b => b.classList.toggle('active', b.dataset.rs === mode));
+  // Scope to the readability buttons only — the Style picker shares .rs-btn
+  document.querySelectorAll('.rs-btn[data-rs]').forEach(b => b.classList.toggle('active', b.dataset.rs === mode));
   try { localStorage.setItem('bm_readability', mode); } catch(e){}
 }
 function _initReadability(){
