@@ -442,9 +442,15 @@ canvas{display:block;background:transparent;}
 .attract-engine-note{font-family:var(--font-m);font-size:9px;line-height:1.5;
   letter-spacing:0.02em;margin:-2px 0 12px;padding:7px 10px;border-radius:3px;}
 .attract-engine-note.inactive{color:var(--text-secondary);background:rgba(120,130,145,0.10);
-  border:0.5px solid var(--steel);}
+  border:0.5px solid var(--steel);display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:10px 12px;}
 .attract-engine-note.partial{color:var(--amber);background:var(--amber-glow);
   border:0.5px solid var(--border-amber);}
+.attract-engine-jump{flex-shrink:0;padding:6px 12px;font-family:var(--font-u);font-size:9px;
+  font-weight:500;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;
+  background:var(--amber-glow);border:0.5px solid var(--border-amber);border-radius:3px;
+  color:var(--amber-bright);transition:all 0.15s;}
+.attract-engine-jump:hover{background:var(--amber-glow-s);border-color:var(--amber);}
 
 /* Opening panel — per-colour columns; greyed when that colour isn't on Repertoire */
 .op-col{min-width:0;}
@@ -1068,9 +1074,19 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
               <svg class="speedo-svg" id="speedo-svg" viewBox="0 40 360 150" style="cursor:pointer;max-width:300px;">
                 <defs>
                   <filter id="glow-f"><feGaussianBlur stdDeviation="2.5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+                  <!-- Metallic gold sweep — deep bronze at 600 warming to a bright
+                       polished gold toward 2600, like a modern car cluster. Fixed
+                       colors (not theme vars) so it reads as gold in every palette. -->
+                  <linearGradient id="gold-arc" gradientUnits="userSpaceOnUse" x1="72" y1="155" x2="288" y2="155">
+                    <stop offset="0%"  stop-color="#8a5c14"/>
+                    <stop offset="35%" stop-color="#d9a62e"/>
+                    <stop offset="70%" stop-color="#f6c944"/>
+                    <stop offset="100%" stop-color="#ffe07a"/>
+                  </linearGradient>
                 </defs>
                 <path id="speedo-track" fill="none" stroke="#22262d" stroke-width="14" stroke-linecap="round"/>
-                <path id="speedo-fill" fill="none" stroke="#c8922a" stroke-width="14" stroke-linecap="round" filter="url(#glow-f)"/>
+                <path id="speedo-fill" fill="none" stroke="url(#gold-arc)" stroke-width="14" stroke-linecap="butt" filter="url(#glow-f)"/>
+                <circle id="speedo-tip" r="5.5" fill="#ffe9a0" filter="url(#glow-f)" style="display:none;"/>
                 <g id="speedo-ticks"></g>
                 <line id="speedo-needle" stroke="#e8aa40" stroke-width="2" stroke-linecap="round"/>
                 <circle id="speedo-hub" r="5" fill="#14161a" stroke="#c8922a" stroke-width="1.5"/>
@@ -6461,7 +6477,9 @@ function updatePersonalityGating(){
   if(state === 'inactive'){
     note.className = 'attract-engine-note inactive';
     note.style.display = '';
-    note.textContent = 'Personality controls steer Maia 3’s move distribution — inactive for Stockfish and LC + Stockfish. Switch to Maia 3 or LC + Maia 3 to use them.';
+    note.innerHTML =
+      '<span style="flex:1;min-width:200px;">These controls are inactive — personality only works with the Maia 3 engine (it shapes Maia’s move choices; Stockfish ignores it).</span>' +
+      '<button type="button" class="attract-engine-jump" onclick="jumpToEngineForMaia()">Switch engine to Maia ▸</button>';
   } else if(state === 'partial'){
     note.className = 'attract-engine-note partial';
     note.style.display = '';
@@ -6469,6 +6487,19 @@ function updatePersonalityGating(){
   } else {
     note.style.display = 'none';
   }
+}
+
+// Jump from the inactive-personality note to the engine section so the user can
+// switch to Maia. Opens/scrolls the engine section and pulses the Maia cards.
+function jumpToEngineForMaia(){
+  openEngineSection();
+  ['maia3','lcmaia'].forEach(function(eng){
+    var card = document.querySelector('#engine-mode-grid .mcard[data-engine="' + eng + '"]');
+    if(!card) return;
+    card.style.transition = 'box-shadow 0.3s';
+    card.style.boxShadow = '0 0 0 2px var(--amber)';
+    setTimeout(function(){ card.style.boxShadow = ''; }, 1800);
+  });
 }
 
 // One-time heads-up the first time the user touches a personality control while
@@ -6665,9 +6696,17 @@ function updateSpeedo(elo){
   const fill  = document.getElementById('speedo-fill');
   const needle= document.getElementById('speedo-needle');
   const eloTxt= document.getElementById('speedo-elo-text');
+  const tip   = document.getElementById('speedo-tip');
   const fillPath = fillArcPath(SP_CX,SP_CY,SP_R,SP_START_DEG,elo);
   fill.setAttribute('d', fillPath || 'M 0 0');
   const ang = eloToAngle(elo);
+  // Bright highlight riding the leading edge of the fill — hidden at the very
+  // bottom of the range where there is no fill to cap.
+  if(tip){
+    const tx=SP_CX+SP_R*Math.cos(ang), ty=SP_CY+SP_R*Math.sin(ang);
+    tip.setAttribute('cx',tx.toFixed(1)); tip.setAttribute('cy',ty.toFixed(1));
+    tip.style.display = fillPath ? '' : 'none';
+  }
   const nx=SP_CX+(SP_R-22)*Math.cos(ang), ny=SP_CY+(SP_R-22)*Math.sin(ang);
   needle.setAttribute('x1',SP_CX); needle.setAttribute('y1',SP_CY);
   needle.setAttribute('x2',nx.toFixed(1)); needle.setAttribute('y2',ny.toFixed(1));
