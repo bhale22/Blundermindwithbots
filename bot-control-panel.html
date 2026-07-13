@@ -6,7 +6,7 @@
 <title>Bot Configuration</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Chakra+Petch:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Chakra+Petch:wght@300;400;500;600&family=Fraunces:ital,opsz,wght@1,9..144,500&family=Spectral:ital,wght@0,500&display=swap" rel="stylesheet">
 <style>
 /* ── Reset ── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -865,6 +865,93 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 }
 
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+/* ═══════════════════════════════════════════════════════════════════════════
+   FIELD JOURNAL STYLE (body.fj) — "Clay / Dusty Rose" light paper palette with
+   editorial serif typography (Fraunces italic display, Spectral upright body).
+   Selectable via the header Style picker; spec: bot_config_restyle_brief.md.
+   Palette + typography ONLY — layout, spacing, and behavior untouched.
+   ═══════════════════════════════════════════════════════════════════════════ */
+body.fj{
+  --carbon:#f2e3d3;
+  --carbon-mid:#f8eee1;
+  --carbon-light:#f8eee1;
+  --carbon-surface:#e9d7c1;
+  --carbon-raise:#dfc9a8;
+  --amber:#b3644f;
+  --amber-bright:#c97a63;
+  --amber-dim:#8a4a3a;
+  --amber-glow:rgba(179,100,79,0.1);
+  --amber-glow-s:rgba(179,100,79,0.22);
+  --steel:#8a7361;
+  --steel-light:#a8927c;
+  --text-primary:#3d2a22;
+  --text-secondary:#4a3226;
+  --text-dim:#6b5646;
+  --border:rgba(61,42,34,0.14);
+  --border-amber:rgba(179,100,79,0.4);
+  /* Radar tokens aren't in the brief (added later) — white-alpha rings/axes
+     would vanish on paper, so they become ink-alpha; accent nodes go terracotta. */
+  --radar-ring:rgba(61,42,34,0.14);
+  --radar-axis:rgba(61,42,34,0.16);
+  --radar-node-inactive:#a8927c;
+  --radar-node-fill:#b3644f;
+  --radar-node-active:#c97a63;
+  --radar-label-badge:#8a4a3a;
+  --font-d:'Fraunces',serif;
+  --font-u:'Fraunces',serif;
+  --font-m:'Spectral',serif;
+}
+body.fj::before{display:none;} /* no scanline texture on paper */
+
+/* --font-m tier (was DM Mono): upright Spectral, weight 500, sizes ×1.5,
+   uppercase + tracking removed — all four legibility rules from the brief. */
+body.fj .header-sub,body.fj .sec-sub,body.fj .sec-status,body.fj .dlbl span,
+body.fj .ctrl-lbl,body.fj .ctrl-val,body.fj .mdesc,body.fj .tog-lbl,
+body.fj .tog-desc,body.fj .chart-title,body.fj .xsbtn,body.fj .leg-item,
+body.fj .ctip,body.fj .formula-title,body.fj .formula-body,body.fj .stat-l,
+body.fj .stat-v,body.fj .ptrait,body.fj .ptag,body.fj .sub-title,body.fj .tag{
+  font-style:normal;font-weight:500;text-transform:none;letter-spacing:0;
+}
+body.fj .header-sub{font-size:15px;}
+body.fj .sec-sub{font-size:15px;}
+body.fj .sec-status{font-size:15px;}
+body.fj .dlbl span{font-size:13.5px;}
+body.fj .ctrl-lbl{font-size:15px;}
+body.fj .ctrl-val{font-size:16.5px;}
+body.fj .mdesc{font-size:13.5px;}
+body.fj .tog-lbl{font-size:15px;}
+body.fj .tog-desc{font-size:13.5px;}
+body.fj .chart-title{font-size:13.5px;}
+body.fj .xsbtn{font-size:12px;}
+body.fj .leg-item{font-size:13.5px;}
+body.fj .ctip{font-size:15px;}
+body.fj .formula-title{font-size:13.5px;}
+body.fj .formula-body{font-size:15px;}
+body.fj .stat-l{font-size:13.5px;}
+body.fj .stat-v{font-size:19.5px;}
+body.fj .ptrait{font-size:13.5px;}
+body.fj .ptag{font-size:12px;}
+body.fj .sub-title{font-size:13.5px;}
+body.fj .tag{font-size:13.5px;}
+
+/* --font-u name tier: italic Fraunces 500, sentence case, size UNCHANGED */
+body.fj .sec-label,body.fj .mname,body.fj .pname{
+  font-style:italic;font-weight:500;text-transform:none;letter-spacing:0;
+}
+
+/* --font-d display tier: font swap only, weight 300→500, size unchanged */
+body.fj .header-title{font-weight:500;}
+body.fj .picon{font-weight:500;}
+
+/* Inline-styled leftovers from the dark palette (need !important to win):
+   the Maia-model overlay's near-black veil and the pale-green download button
+   both vanish or glare on paper. */
+body.fj #bcp-speedo-overlay{ background:rgba(248,238,225,0.93)!important; }
+body.fj .bcp-maia-dl-btn{
+  color:#2e7d4f!important;
+  border-color:rgba(46,125,79,0.5)!important;
+  background:rgba(46,125,79,0.10)!important;
+}
 </style>
 </head>
 <body>
@@ -878,6 +965,11 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
   </div>
   <div class="header-line"></div>
   <button class="rs-btn" onclick="startTour()" style="align-self:center;margin-right:8px;" title="Guided tour of the bot controls">🧭 Tour</button>
+  <div class="rs-picker" role="group" aria-label="Panel style" style="margin-right:8px;">
+    <span class="rs-label">Style</span>
+    <button class="rs-btn active" data-pstyle="carbon" onclick="setPanelStyle('carbon')" title="Dark carbon &amp; amber dashboard">Carbon</button>
+    <button class="rs-btn" data-pstyle="fj" onclick="setPanelStyle('fj')" title="Light clay &amp; terracotta field journal">Journal</button>
+  </div>
   <div class="rs-picker" role="group" aria-label="Text readability">
     <span class="rs-label">Text</span>
     <button class="rs-btn active" data-rs="readable" onclick="setReadability('readable')" title="Cleaner, brighter standard text">Standard</button>
@@ -6139,8 +6231,41 @@ function bcpMaiaSetStatus(status, ready, progress){
   });
 }
 
+// ── Panel style: Carbon (dark, theme-synced) vs Field Journal (light clay) ──
+// FJ is a self-contained palette (body.fj class), so while it's active the
+// parent app's theme pushes are held rather than applied — they'd otherwise
+// set inline CSS vars on <body> that beat the class. Switching back to Carbon
+// re-applies the last held theme.
+let _panelStyle = 'carbon';
+let _lastThemeVars = null;
+
+function setPanelStyle(s){
+  _panelStyle = (s === 'fj') ? 'fj' : 'carbon';
+  document.body.classList.toggle('fj', _panelStyle === 'fj');
+  document.querySelectorAll('[data-pstyle]').forEach(function(b){
+    b.classList.toggle('active', b.dataset.pstyle === _panelStyle);
+  });
+  try { localStorage.setItem('bm_panelStyle', _panelStyle); } catch(e){}
+  if(_panelStyle === 'fj'){
+    // Clear any inline theme vars so the class palette shows through
+    if(_lastThemeVars){
+      Object.keys(_lastThemeVars).forEach(function(k){
+        document.documentElement.style.removeProperty(k);
+        document.body.style.removeProperty(k);
+      });
+    }
+    if(typeof drawRadar === 'function') drawRadar();
+  } else if(_lastThemeVars){
+    _applyPanelTheme(_lastThemeVars);
+  } else if(typeof drawRadar === 'function'){
+    drawRadar();
+  }
+}
+
 // Receive live status pushes from parent
 function _applyPanelTheme(vars){
+  _lastThemeVars = vars;                 // remember for a later Carbon switch
+  if(_panelStyle === 'fj') return;       // Field Journal owns the palette
   const root = document.documentElement;
   const body = document.body;
   Object.keys(vars).forEach(function(k){
@@ -6152,6 +6277,8 @@ function _applyPanelTheme(vars){
 }
 (function(){
   try {
+    const savedStyle = localStorage.getItem('bm_panelStyle');
+    if(savedStyle) setPanelStyle(savedStyle);
     const saved = localStorage.getItem('bm_panelTheme');
     if(saved) _applyPanelTheme(JSON.parse(saved));
   } catch(e){}
