@@ -1364,7 +1364,11 @@ async function botMakeMove() {
   document.getElementById('botStatus').textContent = '🤔 Thinking...';
 
   const _botMoveStartMs = Date.now(); // for inference-time accounting
-  const fen = boardToFen(board, turn, castling, epSq);
+  // Real move counters, not the frozen "0 1": halfmoveClock is maintained by
+  // executeMove; fullmove = played-plies/2 + 1. Maia ignores these, but Stockfish
+  // uses the halfmove clock for 50-move awareness and any exported FEN needs them.
+  const _fullmove = Math.floor((typeof gameMovesAlgebraic !== 'undefined' ? gameMovesAlgebraic.length : 0) / 2) + 1;
+  const fen = boardToFen(board, turn, castling, epSq, halfmoveClock, _fullmove);
   const clockMs = botClockMs();
   let uciMove = null;
 

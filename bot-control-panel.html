@@ -435,6 +435,16 @@ canvas{display:block;background:transparent;}
 .cc-add-btn:hover{background:var(--carbon-raise);border-color:var(--amber);}
 /* Keep all Personality inner-tab panes the same height so switching doesn't resize */
 #sec-attract .itab-pane{min-height:460px;}
+/* Personality controls only do something when the engine yields a move
+   distribution to reweight (Maia 3 / LC+Maia). Grey them out for pure
+   Stockfish / LC+Stockfish (and all-SF hybrids). */
+.pers-inactive{opacity:0.4;filter:grayscale(0.55);pointer-events:none;}
+.attract-engine-note{font-family:var(--font-m);font-size:9px;line-height:1.5;
+  letter-spacing:0.02em;margin:-2px 0 12px;padding:7px 10px;border-radius:3px;}
+.attract-engine-note.inactive{color:var(--text-secondary);background:rgba(120,130,145,0.10);
+  border:0.5px solid var(--steel);}
+.attract-engine-note.partial{color:var(--amber);background:var(--amber-glow);
+  border:0.5px solid var(--border-amber);}
 
 /* Opening panel — per-colour columns; greyed when that colour isn't on Repertoire */
 .op-col{min-width:0;}
@@ -1222,9 +1232,11 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 
       <!-- Current engine header -->
       <div id="attract-engine-header" style="font-family:var(--font-u);font-size:10px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:var(--amber);margin-bottom:10px;"></div>
+      <!-- Engine-gating note: personality is Maia/LC-only (set by updatePersonalityGating) -->
+      <div id="attract-engine-note" class="attract-engine-note" style="display:none;"></div>
 
       <!-- Inner tab strip -->
-      <div class="pr" style="margin-top:0;">
+      <div class="pr" id="attract-personality-body" style="margin-top:0;">
         <div class="itab-strip">
           <button class="itab active" onclick="switchItab('attract','quality')">Move Quality &amp; Strategy</button>
           <button class="itab" onclick="switchItab('attract','custom')">Custom Controls</button>
@@ -5141,6 +5153,7 @@ function _setGaugeValue(val){
 
 function onGaugeSliderInput(val){
   _setGaugeValue(val);
+  maybePersHybridAlert();
 }
 
 function _onBlunderSlider(val){
@@ -5905,6 +5918,21 @@ function applyBotConfig(cfg){
   });
 
   grp(() => _updateEnginePanelHeader());
+  grp(() => _maybePromptMaiaForConfig());
+}
+
+// When a just-loaded bot needs Maia (engine Maia 3 / LC+Maia, or a hybrid that
+// includes a Maia slot) but the model isn't in this browser, surface the download
+// prompt instead of letting it silently fall back to Stockfish at game start.
+function _maybePromptMaiaForConfig(){
+  const needsMaia = (currentEngine === 'maia3' || currentEngine === 'lcmaia' ||
+    (currentEngine === 'hybrid' && hybridSlots.some(s => s.type === 'maia' && (+s.pct || 0) > 0)));
+  if(!needsMaia || _bcpMaiaReady) return;
+  openEngineSection();
+  document.querySelectorAll('.bcp-maia-status-txt').forEach(function(el){
+    el.textContent = 'This bot uses Maia 3 — download the model to play it';
+    el.style.color = '#e8aa40';
+  });
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -6081,6 +6109,17 @@ function bcpMaiaSetStatus(status, ready, progress){
     btn.disabled      = done;
     btn.style.opacity = done ? '0.5' : '1';
     btn.style.cursor  = done ? 'default' : 'pointer';
+  });
+  // Reflect model availability on the Maia engine cards themselves, so the option
+  // reads as "download to enable" before it's selected — never hidden, and never a
+  // silent Stockfish fallback. Cards stay clickable: selecting reveals the inline
+  // download button in the sub-panel.
+  ['maia3','lcmaia'].forEach(function(eng){
+    var card = document.querySelector('#engine-mode-grid .mcard[data-engine="' + eng + '"]');
+    if(card){
+      card.style.opacity = ready ? '' : '0.6';
+      card.title = ready ? '' : 'Maia 3 model not downloaded — select to download (~87 MB)';
+    }
   });
 }
 
@@ -6386,6 +6425,61 @@ function selEngineMode(card){
   if(mqr) mqr.style.visibility = (['maia3','lcmaia','hybrid'].includes(currentEngine)) ? '' : 'hidden';
   const tempCol = document.getElementById('engine-temp-col');
   if(tempCol) tempCol.style.visibility = (['stockfish','lcsf'].includes(currentEngine)) ? 'hidden' : '';
+  updatePersonalityGating();
+}
+
+/* ══ Personality gating ══════════════════════════════════════════════════════
+   Attractors / CP budget reweight a move-probability distribution, so they only
+   do anything when the active engine produces one — Maia 3 (neural) or LC+Maia
+   (Lichess in-book distribution), never pure Stockfish. Hybrid is partial:
+   personality shapes only the Maia-bound share of moves. */
+function personalityEngineState(){
+  if(currentEngine === 'maia3' || currentEngine === 'lcmaia') return 'full';
+  if(currentEngine === 'stockfish' || currentEngine === 'lcsf') return 'inactive';
+  if(currentEngine === 'hybrid'){
+    const maiaPct = hybridSlots.filter(s=>s.type==='maia').reduce((a,s)=>a+(+s.pct||0),0);
+    const sfPct   = hybridSlots.filter(s=>s.type==='sf').reduce((a,s)=>a+(+s.pct||0),0);
+    if(maiaPct <= 0) return 'inactive';   // all-Stockfish hybrid
+    if(sfPct   <= 0) return 'full';        // all-Maia hybrid
+    return 'partial';                      // mixed → personality on the Maia share only
+  }
+  return 'full';
+}
+
+function _hybridMaiaSharePct(){
+  const maiaPct = hybridSlots.filter(s=>s.type==='maia').reduce((a,s)=>a+(+s.pct||0),0);
+  const total   = hybridSlots.reduce((a,s)=>a+(+s.pct||0),0) || 1;
+  return Math.round(maiaPct/total*100);
+}
+
+function updatePersonalityGating(){
+  const body = document.getElementById('attract-personality-body');
+  const note = document.getElementById('attract-engine-note');
+  const state = personalityEngineState();
+  if(body) body.classList.toggle('pers-inactive', state === 'inactive');
+  if(!note) return;
+  if(state === 'inactive'){
+    note.className = 'attract-engine-note inactive';
+    note.style.display = '';
+    note.textContent = 'Personality controls steer Maia 3’s move distribution — inactive for Stockfish and LC + Stockfish. Switch to Maia 3 or LC + Maia 3 to use them.';
+  } else if(state === 'partial'){
+    note.className = 'attract-engine-note partial';
+    note.style.display = '';
+    note.textContent = 'Hybrid blend: personality shapes only the ~' + _hybridMaiaSharePct() + '% of moves played by Maia — the Stockfish share ignores it.';
+  } else {
+    note.style.display = 'none';
+  }
+}
+
+// One-time heads-up the first time the user touches a personality control while
+// on a mixed hybrid (some SF, some Maia): personality only affects Maia's moves.
+let _persHybridAlertShown = false;
+function maybePersHybridAlert(){
+  if(_persHybridAlertShown) return;
+  if(personalityEngineState() !== 'partial') return;
+  _persHybridAlertShown = true;
+  const pct = _hybridMaiaSharePct();
+  alert('Heads up — your engine is a Hybrid blend.\n\nPersonality controls only shape the moves Maia plays (about ' + pct + '% with your current blend). The Stockfish share (~' + (100 - pct) + '%) ignores them.');
 }
 
 function _updateEnginePanelHeader(){
@@ -6495,6 +6589,8 @@ function updateHybridTotal(){
   if(!el) return;
   el.textContent = 'Total: ' + total + '%';
   el.className = 'hybrid-total ' + (total===100?'ok':'err');
+  // Slot mix affects whether personality is full / partial / inactive.
+  updatePersonalityGating();
 }
 
 function initSpeedo(){
@@ -6860,6 +6956,7 @@ function onAttractorChange(id, val){
   _activeBotName = null;
   updateQsPersonality();
   updateQsCpBudget();
+  maybePersHybridAlert();
 }
 
 function onCalmPanickyChange(val){
@@ -6869,6 +6966,7 @@ function onCalmPanickyChange(val){
     document.getElementById('attrval-pressure').textContent = +val===0?'0':+val>0?'+'+val:val;
   }
   drawRadar();
+  maybePersHybridAlert();
 }
 
 function updateAttractorStatus(){
@@ -6908,6 +7006,7 @@ function onPieceChange(id, val){
   _activeBotName = null;
   updateQsPersonality();
   updateQsCpBudget();
+  maybePersHybridAlert();
 }
 
 /* ── Custom controls ── */
@@ -7208,6 +7307,7 @@ function _radarSetAxis(axIdx, val){
   drawRadar();
   updateAttractorStatus();
   updateAttrCpDisplays();
+  maybePersHybridAlert();
   // Deselect personality preset
   document.querySelectorAll('.pcard').forEach(c=>c.classList.remove('sel'));
   selectedPersonality=null;
@@ -8046,6 +8146,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   updateAttrCpDisplays(); // populate attractor cp allocations
   onDaySlider(); // init dual-range fill
   _updateEnginePanelHeader();
+  updatePersonalityGating(); // reflect the initial engine in the personality section
   initPts();
   setupDrag('cvA', ()=>ctrlA, sigA, true,  'tipA', ()=>scaleA);
   setupDrag('cvB', ()=>ctrlB, sigB, false, 'tipB', ()=>scaleB);

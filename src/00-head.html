@@ -170,6 +170,12 @@ canvas{
 /* ── Indicator grid ───────────────────────────────────────────────────────── */
 .ind-grid{display:flex;flex-direction:row;gap:4px;width:100%;}
 .ind-col{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;}
+/* "Starter" indicator preset: show only Threats & Captures + Unprotected; the
+   rest sit behind the "More indicators" expander. Single column when collapsed. */
+body.ind-starter .ind-col:nth-child(2){display:none;}
+body.ind-starter .ind-col .ib:not(#ib-threats):not(#ib-unprotected){display:none;}
+body:not(.ind-starter) #moreIndBtn .mi-more{display:none;}
+body.ind-starter #moreIndBtn .mi-less{display:none;}
 
 /* ── Indicator button ─────────────────────────────────────────────────────── */
 .ib{display:flex;flex-direction:column;gap:0px;user-select:none;width:100%;}
@@ -967,6 +973,18 @@ body.pro-mode #playerBoxW,
 body.pro-mode #clockPanel{ display:none !important; }
 body.pro-mode #app{ gap:18px;align-items:flex-start;justify-content:center; }
 body.pro-mode #board-col{ gap:0; }
+/* Maia move-distribution panel rows */
+.dist-row{display:flex;align-items:center;gap:6px;margin:2px 0;
+  font-family:'DM Mono',monospace;font-size:8.5px;}
+.dist-move{width:36px;flex-shrink:0;color:var(--text-secondary);font-weight:600;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.dist-bar-wrap{flex:1;height:10px;background:rgba(255,255,255,0.05);
+  border-radius:2px;overflow:hidden;}
+.dist-bar{display:block;height:100%;background:#4a6d8a;border-radius:2px;}
+.dist-pct{width:30px;flex-shrink:0;text-align:right;color:var(--text-dim);}
+.dist-row.played .dist-move{color:#e8aa40;}
+.dist-row.played .dist-bar{background:#c8922a;}
+.dist-row.played .dist-pct{color:#e8aa40;}
 
 /* Pro side column */
 body.pro-mode #proSide{
@@ -1052,7 +1070,7 @@ body.pro-mode #chatBox #chatMessages{ color:var(--pt2); }
 body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 </style>
 </head>
-<body>
+<body class="ind-starter">
 
 <!-- ══════════════════════════════════════════════════════════════════════════
      LANDING PAGE OVERLAY
@@ -1079,7 +1097,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div class="landing-card" onclick="landingChoose('solo')">
       <div class="landing-card-icon">🔍</div>
       <div class="landing-card-title">Solo Play &amp; Explore</div>
-      <div class="landing-card-desc">Play alone, explore positions, and train board vision with all the indicators.</div>
+      <div class="landing-card-desc">A blundercheck for every level — hover any piece to see what hangs, forks, or falls before you commit. Play alone, explore positions, and train board vision.</div>
     </div>
 
     <!-- vs Bot -->
@@ -1267,6 +1285,32 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       </div>
     </div><!-- end chatBox -->
 
+    <!-- Maia move-distribution panel — Expert board only, hidden in 2-player games -->
+    <div id="distPanel" style="display:none;flex-direction:column;
+      width:var(--board-size);box-sizing:border-box;
+      background:var(--bg-panel);border:0.5px solid var(--border);border-radius:5px;
+      overflow:hidden;">
+      <div id="distHeader" onclick="distToggle()"
+        style="padding:4px 10px;font-size:8px;font-weight:600;letter-spacing:0.07em;
+        color:var(--text-dim);background:var(--bg-panel2);
+        border-bottom:0.5px solid var(--border);
+        display:flex;align-items:center;justify-content:space-between;
+        cursor:pointer;user-select:none;flex-shrink:0;">
+        <span>📊 MAIA MOVE ODDS</span>
+        <span style="display:flex;align-items:center;gap:6px;">
+          <span id="distEntropyTag" style="display:none;font-size:7px;font-weight:700;
+            letter-spacing:0.06em;text-transform:uppercase;color:#8a94a6;"></span>
+          <span id="distChevron" style="font-size:9px;color:var(--text-dim);
+            transition:transform 0.18s;">▼</span>
+        </span>
+      </div>
+      <div id="distBody" style="display:none;flex-direction:column;padding:8px 10px;">
+        <div id="distRows"></div>
+        <div id="distHint" style="font-size:7.5px;color:var(--text-dim);
+          margin-top:6px;line-height:1.5;"></div>
+      </div>
+    </div><!-- end distPanel -->
+
 </div><!-- end board-col -->
 
   <!-- RIGHT: sidebar -->
@@ -1433,6 +1477,11 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         </div>
       </div>
     </div><!-- end ind-grid -->
+    <!-- Starter preset expander: reveal the rest of the indicators -->
+    <button id="moreIndBtn" class="ctrl-btn util-btn" onclick="toggleMoreIndicators()"
+      style="width:100%;padding:6px 4px;font-size:8.5px;font-weight:600;margin-top:4px;">
+      <span class="mi-more">▾ More indicators</span><span class="mi-less">▴ Fewer indicators</span>
+    </button>
     <!-- Peek / Hide / Show All — larger, below the indicator columns -->
     <div style="display:flex;gap:5px;margin-top:5px;">
       <button id="btnHideShow" class="ctrl-btn util-btn"

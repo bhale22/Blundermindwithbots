@@ -293,7 +293,7 @@ function complexityAdjustedTemp(baseTemp) {
 }
 
 // ── Board state to FEN ───────────────────────────────────────────────────────
-function boardToFen(bd, turnColor, cst, ep) {
+function boardToFen(bd, turnColor, cst, ep, halfmove = 0, fullmove = 1) {
   const rows = [];
   for (let r = 0; r < 8; r++) {
     let row = '', empty = 0;
@@ -314,7 +314,7 @@ function boardToFen(bd, turnColor, cst, ep) {
   if (cst.bK) castStr += 'k'; if (cst.bQ) castStr += 'q';
   if (!castStr) castStr = '-';
   const epStr = ep >= 0 ? (String.fromCharCode(97 + ep % 8) + (8 - Math.floor(ep / 8))) : '-';
-  return rows.join('/') + ' ' + turnColor + ' ' + castStr + ' ' + epStr + ' 0 1';
+  return rows.join('/') + ' ' + turnColor + ' ' + castStr + ' ' + epStr + ' ' + halfmove + ' ' + fullmove;
 }
 
 // ── UCI move to from/to squares ──────────────────────────────────────────────

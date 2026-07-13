@@ -34,6 +34,8 @@ let halfmoveClock  = 0;    // plies since the last pawn move or capture
 
 function executeMove(from,to,promo){
   const p=board[from];if(!p)return;
+  // Snapshot the pre-move position for the Maia move-distribution panel.
+  if(typeof distCapturePreMove==='function') distCapturePreMove(from,to,promo);
   // Detect capture before board is modified (includes en passant)
   const isCapture=!!(board[to]||(p.piece==='P'&&to===epSq));
   const isPawnMove=p.piece==='P';
@@ -75,6 +77,8 @@ function executeMove(from,to,promo){
   else render();
   // Bot post-move hook (safe — function defined later in script)
   if(typeof botPostMoveHook==='function') botPostMoveHook();
+  // Refresh the Maia move-distribution panel (if open) for the move just played.
+  if(typeof distOnMoveComplete==='function') distOnMoveComplete();
 }
 
 // ── Premove helpers ─────────────────────────────────────────────────────
@@ -1414,7 +1418,7 @@ function enterExploreMode() {
   render();
 }
 
-function resetGame(){cancelResign();showRematchBtn(false);clockStop();clockInit(clockControl);lastMoveFrom=-1;lastMoveTo=-1;const sg=document.getElementById("saveGameBtn");if(sg)sg.remove();loadPos(0);}
+function resetGame(){cancelResign();showRematchBtn(false);clockStop();clockInit(clockControl);lastMoveFrom=-1;lastMoveTo=-1;const sg=document.getElementById("saveGameBtn");if(sg)sg.remove();loadPos(0);if(typeof distReset==='function')distReset();}
 function setPalette(name){currentPalette=PALETTES[name]||PALETTES.default;render();}
 
 let _savedMarkings=null;
@@ -1581,7 +1585,8 @@ function updatePlayerBoxes(){
       hint.textContent = 'King must move, block, or capture';
       hint.className = 'hint-text check';
     } else if(isWhiteTurn){
-      hint.textContent = 'Click a piece · hover to explore · release to commit';
+      hint.textContent = 'Click a piece · hover to explore · ' +
+        (isHoverMode() ? 'click again to commit' : 'release to commit');
       hint.className = 'hint-text';
     } else {
       hint.textContent = "Black to move";
