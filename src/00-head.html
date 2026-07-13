@@ -890,40 +890,33 @@ body.ind-starter #moreIndBtn .mi-less{display:none;}
   text-align:center;padding:12px 0;
 }
 
-/* ── Slide-in time-control overlay ── */
-#mpTimeOverlay{
-  position:absolute;top:0;right:0;bottom:0;width:100%;
-  background:var(--mp-carbon);
-  transform:translateX(100%);
-  transition:transform 0.28s cubic-bezier(0.4,0,0.2,1);
-  display:flex;flex-direction:column;z-index:6;
+/* ── Quick-setup pill bar (bot-panel quickstart pattern): everything stays
+   stationary; clicking a pill opens just that editor below the row. ── */
+#mpPanel .mp-qs-row{ display:flex;gap:5px; }
+#mpPanel .mp-qs-pill{
+  flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:2px;
+  padding:6px 9px;background:var(--mp-carbon-surface);
+  border:0.5px solid var(--mp-border);border-radius:4px;cursor:pointer;
+  text-align:left;transition:border-color 0.15s,background 0.15s;
 }
-#mpTimeOverlay.open{ transform:translateX(0); }
-#mpTimeOverlay .mp-time-head{
-  display:flex;align-items:center;gap:10px;
-  padding:12px 14px 10px;flex-shrink:0;
-  border-bottom:0.5px solid var(--mp-border-amber);
-  background:linear-gradient(180deg,#14161a,#0e0f11);
+#mpPanel .mp-qs-pill:hover{ border-color:var(--mp-amber-dim); }
+#mpPanel .mp-qs-pill.active{
+  border-color:var(--mp-amber);background:var(--mp-amber-glow);
 }
-#mpTimeOverlay .mp-time-back{
-  font-family:var(--mp-font-m);font-size:9px;letter-spacing:0.06em;
-  color:var(--mp-amber);background:transparent;
-  border:0.5px solid var(--mp-border-amber);border-radius:3px;
-  padding:4px 9px;cursor:pointer;transition:all 0.12s;
+#mpPanel .mp-qs-lbl{
+  font-family:var(--mp-font-m);font-size:6.5px;letter-spacing:0.12em;
+  text-transform:uppercase;color:var(--mp-text-dim);white-space:nowrap;
 }
-#mpTimeOverlay .mp-time-back:hover{ background:var(--mp-amber-glow);color:var(--mp-amber-bright); }
-#mpTimeOverlay .mp-time-title{
-  font-family:var(--mp-font-d);font-size:15px;font-weight:300;font-style:italic;
-  color:var(--mp-text-1);letter-spacing:0.02em;
+#mpPanel .mp-qs-val{
+  font-family:var(--mp-font-m);font-size:9.5px;color:var(--mp-amber-bright);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;
 }
-#mpTimeOverlay .mp-time-body{
-  flex:1;overflow-y:auto;padding:14px;
+#mpPanel .mp-qs-editor{
+  display:none;margin-top:6px;padding:8px 9px;
+  background:var(--mp-carbon-surface);border:0.5px solid var(--mp-border-amber);
+  border-radius:4px;
 }
-#mpTimeOverlay .mp-time-foot{
-  flex-shrink:0;padding:12px 14px;
-  border-top:0.5px solid var(--mp-border);
-  background:var(--mp-carbon-mid);
-}
+#mpPanel .mp-qs-editor.open{ display:block; }
 
 /* ── Anonymous-join confirm modal ── */
 #mpAnonPrompt{
@@ -2142,35 +2135,77 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       ℹ Multiplayer requires the deployed server. Local-only = Solo &amp; Bot modes only.
     </div>
 
-    <!-- ════════ DEFAULT VIEW (Info · Challenges · Actions) ════════ -->
+    <!-- ════════ DEFAULT VIEW (Setup pills · Actions · Challenges) ════════ -->
     <div id="mpMainView" style="display:flex;flex-direction:column;gap:8px;">
 
-      <!-- ══ YOUR INFO (always visible, persisted) ══ -->
+      <!-- ══ GAME SETUP — quickstart pill bar (bot-panel pattern). Everything is
+           visible at a glance; clicking a pill opens just that editor. ══ -->
       <div class="mp-card">
-        <div class="mp-sec-lbl">Your Info <span style="font-weight:400;font-style:italic;color:var(--mp-text-dim);">(optional)</span></div>
-        <div style="display:flex;gap:6px;margin-bottom:9px;">
-          <div style="flex:1;">
-            <div class="mp-micro-lbl">Handle</div>
-            <input id="mpLobbyName" placeholder="Anonymous" maxlength="20" class="mp-input" oninput="mpSaveInfo()">
+        <div class="mp-sec-lbl">Game Setup</div>
+        <div class="mp-qs-row">
+          <button class="mp-qs-pill" id="mpQsPill-handle" onclick="mpQsToggle('handle')">
+            <span class="mp-qs-lbl">Handle</span>
+            <span class="mp-qs-val" id="mpQsHandleVal">Anonymous</span>
+          </button>
+          <button class="mp-qs-pill" id="mpQsPill-rating" onclick="mpQsToggle('rating')">
+            <span class="mp-qs-lbl">Rating</span>
+            <span class="mp-qs-val" id="mpQsRatingVal">—</span>
+          </button>
+          <button class="mp-qs-pill" id="mpQsPill-range" onclick="mpQsToggle('range')">
+            <span class="mp-qs-lbl">Opponent</span>
+            <span class="mp-qs-val" id="mpQsRangeVal">Any</span>
+          </button>
+        </div>
+        <div class="mp-qs-row" style="margin-top:5px;">
+          <button class="mp-qs-pill" id="mpQsPill-time" onclick="mpQsToggle('time')">
+            <span class="mp-qs-lbl">Time</span>
+            <span class="mp-qs-val" id="mpTCDisplay">Untimed</span>
+          </button>
+        </div>
+
+        <!-- Editors — one open at a time, below the stationary pill rows -->
+        <div class="mp-qs-editor" id="mpQsEd-handle">
+          <div class="mp-micro-lbl">Handle</div>
+          <input id="mpLobbyName" placeholder="Anonymous" maxlength="20" class="mp-input"
+            oninput="mpSaveInfo()" onkeydown="if(event.key==='Enter')mpQsToggle('handle')">
+        </div>
+        <div class="mp-qs-editor" id="mpQsEd-rating">
+          <div class="mp-micro-lbl">Rating <span style="font-weight:400;font-style:italic;">(self-reported)</span></div>
+          <input id="mpLobbyRating" placeholder="—" maxlength="4" type="number" min="100" max="3000"
+            class="mp-input" style="width:80px;" oninput="mpSaveInfo()"
+            onkeydown="if(event.key==='Enter')mpQsToggle('rating')">
+          <div class="mp-micro-lbl" style="margin:8px 0 6px;">Rating type</div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;">
+            <button onclick="mpSetRatingType('Lichess')"   class="tc-btn tc-active" data-mprt="Lichess">Lichess</button>
+            <button onclick="mpSetRatingType('Chess.com')" class="tc-btn" data-mprt="Chess.com">Chess.com</button>
+            <button onclick="mpSetRatingType('FIDE')"      class="tc-btn" data-mprt="FIDE">FIDE</button>
           </div>
-          <div style="width:80px;">
-            <div class="mp-micro-lbl">Rating</div>
-            <input id="mpLobbyRating" placeholder="—" maxlength="4" type="number" min="100" max="3000" class="mp-input" oninput="mpSaveInfo()">
+        </div>
+        <div class="mp-qs-editor" id="mpQsEd-range">
+          <div class="mp-micro-lbl" style="margin-bottom:6px;">Opponent ELO range <span style="font-weight:400;font-style:italic;">(open challenges)</span></div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;">
+            <button onclick="mpSetRatingRange(100)"  class="tc-btn" data-mprange="100">±100</button>
+            <button onclick="mpSetRatingRange(200)"  class="tc-btn" data-mprange="200">±200</button>
+            <button onclick="mpSetRatingRange(500)"  class="tc-btn" data-mprange="500">±500</button>
+            <button onclick="mpSetRatingRange(9999)" class="tc-btn tc-active" data-mprange="9999">Any</button>
           </div>
         </div>
-        <div class="mp-micro-lbl" style="margin-bottom:6px;">Rating type</div>
-        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:9px;">
-          <button onclick="mpSetRatingType('Lichess')"   class="tc-btn tc-active" data-mprt="Lichess">Lichess</button>
-          <button onclick="mpSetRatingType('Chess.com')" class="tc-btn" data-mprt="Chess.com">Chess.com</button>
-          <button onclick="mpSetRatingType('FIDE')"      class="tc-btn" data-mprt="FIDE">FIDE</button>
+        <div class="mp-qs-editor" id="mpQsEd-time">
+          <div class="mp-tg-panel" id="mpTgPanel"></div>
         </div>
-        <div class="mp-micro-lbl" style="margin-bottom:6px;">Rating range</div>
-        <div style="display:flex;gap:4px;flex-wrap:wrap;">
-          <button onclick="mpSetRatingRange(100)"  class="tc-btn" id="mprange-100"  data-mprange="100">±100</button>
-          <button onclick="mpSetRatingRange(200)"  class="tc-btn" id="mprange-200"  data-mprange="200">±200</button>
-          <button onclick="mpSetRatingRange(500)"  class="tc-btn" id="mprange-500"  data-mprange="500">±500</button>
-          <button onclick="mpSetRatingRange(9999)" class="tc-btn tc-active" id="mprange-9999" data-mprange="9999">Any</button>
-        </div>
+      </div>
+
+      <!-- ══ ACTION BUTTONS — friends first: private games, then the open lobby ══ -->
+      <div id="mpActionBtns" style="display:flex;flex-direction:column;gap:6px;margin-top:2px;">
+        <button onclick="mpStartPrivateGame()" class="mp-action-primary">
+          🔒 Start Private Game
+        </button>
+        <button onclick="mpStartJoinFlow()" class="mp-action-primary">
+          🔑 Join Private Game
+        </button>
+        <button onclick="mpStartPost()" class="mp-action-secondary">
+          🌐 Post Open Challenge
+        </button>
       </div>
 
       <!-- ══ OPEN CHALLENGES ══ -->
@@ -2187,19 +2222,6 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <div id="mpLobbyList" style="display:flex;flex-direction:column;gap:4px;min-height:36px;">
           <div id="mpLobbyEmpty" class="mp-lobby-empty">No open challenges yet — be the first!</div>
         </div>
-      </div>
-
-      <!-- ══ ACTION BUTTONS — Post · Private · Join ══ -->
-      <div id="mpActionBtns" style="display:flex;flex-direction:column;gap:6px;margin-top:2px;">
-        <button onclick="mpStartPost()" class="mp-action-primary">
-          🌐 Post Open Challenge
-        </button>
-        <button onclick="mpStartPrivateGame()" class="mp-action-primary">
-          🔒 Start Private Game
-        </button>
-        <button onclick="mpStartJoinFlow()" class="mp-action-secondary">
-          🔑 Join Private Game
-        </button>
       </div>
 
     </div><!-- /#mpMainView -->
@@ -2279,62 +2301,6 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div id="mp-tab-join" style="display:none;"></div>
 
   </div><!-- /panel-body -->
-
-  <!-- ════════ SLIDE-IN TIME-CONTROL SELECTOR ════════ -->
-  <!-- Appears only when starting a game (Post Open Challenge / Start Private Game) -->
-  <div id="mpTimeOverlay">
-    <div class="mp-time-head">
-      <button class="mp-time-back" onclick="mpCloseTimeOverlay()">‹ Back</button>
-      <span class="mp-time-title" id="mpTimeTitle">Select Time Control</span>
-    </div>
-    <div class="mp-time-body">
-      <!-- Collapsible 2D matrix grid (increment × base time) — built by mpBuildTimeGrid() -->
-      <div class="mp-grid-collapse" id="mpGridCollapse">
-        <div class="mp-tg-panel" id="mpTgPanel"></div>
-      </div>
-      <!-- Game setup — every field is live and editable right here (no bouncing
-           back to the main panel), all left-aligned. -->
-      <div class="mp-review" id="mpReview" style="text-align:left;">
-        <div class="mp-sec-lbl">Your Game</div>
-
-        <div style="display:flex;gap:6px;margin-bottom:9px;">
-          <div style="flex:1;">
-            <div class="mp-micro-lbl">Handle</div>
-            <input id="mpOvName" placeholder="Anonymous" maxlength="20" class="mp-input" oninput="mpOvSyncInfo()">
-          </div>
-          <div style="width:80px;">
-            <div class="mp-micro-lbl">Rating</div>
-            <input id="mpOvRating" placeholder="—" maxlength="4" type="number" min="100" max="3000" class="mp-input" oninput="mpOvSyncInfo()">
-          </div>
-        </div>
-
-        <div class="mp-micro-lbl" style="margin-bottom:6px;">Rating type</div>
-        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:9px;">
-          <button onclick="mpSetRatingType('Lichess')"   class="tc-btn tc-active" data-mprt="Lichess">Lichess</button>
-          <button onclick="mpSetRatingType('Chess.com')" class="tc-btn" data-mprt="Chess.com">Chess.com</button>
-          <button onclick="mpSetRatingType('FIDE')"      class="tc-btn" data-mprt="FIDE">FIDE</button>
-        </div>
-
-        <div id="mpOvRangeBlock">
-          <div class="mp-micro-lbl" style="margin-bottom:6px;">Opponent ELO range</div>
-          <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:9px;">
-            <button onclick="mpSetRatingRange(100)"  class="tc-btn" data-mprange="100">±100</button>
-            <button onclick="mpSetRatingRange(200)"  class="tc-btn" data-mprange="200">±200</button>
-            <button onclick="mpSetRatingRange(500)"  class="tc-btn" data-mprange="500">±500</button>
-            <button onclick="mpSetRatingRange(9999)" class="tc-btn tc-active" data-mprange="9999">Any</button>
-          </div>
-        </div>
-
-        <div class="mp-micro-lbl" style="margin-bottom:6px;">Time control</div>
-        <div style="display:flex;gap:10px;align-items:center;margin-bottom:2px;">
-          <span class="mp-review-v" id="mpTCDisplay" style="font-family:var(--mp-font-m);">Untimed</span>
-          <button class="mp-change-time" id="mpChangeTimeBtn" onclick="mpExpandGrid()" style="display:none;margin:0;">⟲ Change</button>
-        </div>
-
-        <button class="mp-action-primary" id="mpTimeConfirmBtn" onclick="mpConfirmTime()" style="margin-top:12px;">Confirm</button>
-      </div>
-    </div>
-  </div>
 
   <!-- ════════ ANONYMOUS-JOIN CONFIRM MODAL ════════ -->
   <div id="mpAnonPrompt">

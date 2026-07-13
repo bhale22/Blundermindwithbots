@@ -405,12 +405,11 @@ function openPanel(id) {
   document.getElementById('panelOverlay').classList.add('open');
   // Refresh lobby list whenever the 2-player panel opens, then auto-refresh every 5s
   if (id === 'mpPanel') {
-    mpLoadInfo();           // restore last-entered handle / rating / range
-    mpCloseTimeOverlay();   // ensure the time selector starts hidden
+    mpLoadInfo();           // restore last-entered handle / rating / range / TC
     mpHideAnonPrompt();
     if (!mpRoomId) mpSetMode('idle');  // default view unless mid-game / waiting
     mpBuildTimeGrid();      // prebuild the matrix (reflects current selection)
-    mpUpdateTCDisplay();    // sync the readout line
+    if (typeof mpQsCloseAll === 'function') mpQsCloseAll();  // pills closed, values fresh
     mpRefreshLobby();
     clearInterval(mpLobbyRefreshTimer);
     mpLobbyRefreshTimer = setInterval(mpRefreshLobby, 5000);
@@ -1371,52 +1370,64 @@ function mpSetMode(mode) {
   }
 }
 
-/* ── Slide-in time-control flow ──────────────────────────────────────────────
-   The time grid is hidden by default. It slides in only when the user starts a
-   game (Post Open Challenge / Start Private Game). Picking a cell sets the TC;
-   the footer button confirms and runs the pending action.
+/* ── Quick-setup pill bar ────────────────────────────────────────────────────
+   Handle / Rating / Opponent / Time each show their current value in a
+   stationary pill; clicking a pill opens just that editor beneath the row
+   (bot-panel quickstart pattern). The action buttons act immediately using
+   whatever the pills show — no confirm/review step.
 ──────────────────────────────────────────────────────────────────────────────*/
-let mpPendingTimeAction = null;   // 'post' | 'private' | 'set'
+const MP_QS_KEYS = ['handle', 'rating', 'range', 'time'];
 
-function mpOpenTimeOverlay(action) {
-  mpPendingTimeAction = action;
-  mpBuildTimeGrid();
-  mpExpandGrid();     // start with the grid open for choosing
-  mpBuildReview();    // populate the review preview below
-  const btn = document.getElementById('mpTimeConfirmBtn');
-  if (btn) btn.textContent =
-    action === 'post'    ? '🌐 Post Challenge' :
-    action === 'private' ? '🔒 Create Private Game' : 'Done';
-  const ov = document.getElementById('mpTimeOverlay');
-  if (ov) ov.classList.add('open');
+function mpQsToggle(key) {
+  const opening = !document.getElementById('mpQsEd-' + key).classList.contains('open');
+  MP_QS_KEYS.forEach(k => {
+    const ed   = document.getElementById('mpQsEd-' + k);
+    const pill = document.getElementById('mpQsPill-' + k);
+    const on   = opening && k === key;
+    if (ed)   ed.classList.toggle('open', on);
+    if (pill) pill.classList.toggle('active', on);
+  });
+  if (opening && key === 'time')   mpBuildTimeGrid();   // reflect current selection
+  if (opening && key === 'handle') setTimeout(() => document.getElementById('mpLobbyName')?.focus(), 80);
+  if (opening && key === 'rating') setTimeout(() => document.getElementById('mpLobbyRating')?.focus(), 80);
+  if (!opening) mpQsRefresh();      // closing an editor commits its value to the pill
 }
 
-function mpCloseTimeOverlay() {
-  const ov = document.getElementById('mpTimeOverlay');
-  if (ov) ov.classList.remove('open');
-  mpPendingTimeAction = null;
+function mpQsCloseAll() {
+  MP_QS_KEYS.forEach(k => {
+    document.getElementById('mpQsEd-' + k)?.classList.remove('open');
+    document.getElementById('mpQsPill-' + k)?.classList.remove('active');
+  });
+  mpQsRefresh();
 }
 
-function mpConfirmTime() {
-  const action = mpPendingTimeAction;
-  mpCloseTimeOverlay();
-  if (action === 'post')         mpPostChallenge();
-  else if (action === 'private') mpCreatePrivate();
+// Sync every pill's value text with the underlying state
+function mpQsRefresh() {
+  const name   = document.getElementById('mpLobbyName')?.value.trim();
+  const rating = document.getElementById('mpLobbyRating')?.value.trim();
+  const hv = document.getElementById('mpQsHandleVal');
+  const rv = document.getElementById('mpQsRatingVal');
+  const gv = document.getElementById('mpQsRangeVal');
+  if (hv) hv.textContent = name || 'Anonymous';
+  if (rv) rv.textContent = rating ? rating + ' ' + mpRatingType : '—';
+  if (gv) gv.textContent = mpRatingRange >= 9999 ? 'Any' : '±' + mpRatingRange;
+  mpUpdateTCDisplay();   // time pill (#mpTCDisplay)
 }
 
-// Called by the action buttons
-function mpStartPost()        { mpOpenTimeOverlay('post'); }
-function mpStartPrivateGame() { mpOpenTimeOverlay('private'); }
+// Action buttons act immediately with the current pill settings
+function mpStartPost()        { mpQsCloseAll(); mpPostChallenge(); }
+function mpStartPrivateGame() { mpQsCloseAll(); mpCreatePrivate(); }
 
 function mpStartJoinFlow() {
+  mpQsCloseAll();
   mpSetMode('join');
   mpShowStatus('Enter the code your friend shared with you.');
   mpRefreshLobby();
 }
 
 // Legacy aliases — keep older call sites (deep links, landing page) working
-function mpStartPrivateFlow() { mpOpenTimeOverlay('private'); }
-function mpStartLobbyFlow()   { mpOpenTimeOverlay('post'); }
+function mpStartPrivateFlow() { mpStartPrivateGame(); }
+function mpStartLobbyFlow()   { mpStartPost(); }
 function mpSwitchTab() {}
 
 // ── WebSocket connection ─────────────────────────────────────────────────────
@@ -1868,7 +1879,7 @@ function mpLeave() {
   document.getElementById('mpRoomCode').textContent = '';
   const jc = document.getElementById('mpJoinCode'); if (jc) jc.value = '';
   mpShowStatus('');
-  mpCloseTimeOverlay();
+  mpQsCloseAll();
   mpHideAnonPrompt();
   mpSetMode('idle');
   const ga = document.getElementById('gameActions');
@@ -2073,47 +2084,17 @@ function mpSelectTC(t, inc, cell) {
   document.querySelectorAll('#mpPanel .mp-tg-cell').forEach(c => c.classList.remove('selected'));
   if (cell) cell.classList.add('selected');
   mpUpdateTCDisplay();
-  mpBuildReview();
-  // After picking, collapse the grid into the concise review summary
-  if (document.getElementById('mpTimeOverlay').classList.contains('open')) {
-    mpCollapseGrid();
-  }
-}
-
-// ── Time-overlay review summary + grid collapse/expand ───────────────────────
-function mpBuildReview() {
-  // Copy the main "Your Info" values into the overlay's live fields, and sync
-  // the shared toggle-button state (range + rating type) across both sets.
-  const nameEl   = document.getElementById('mpLobbyName');
-  const ratingEl = document.getElementById('mpLobbyRating');
-  const ovName   = document.getElementById('mpOvName');
-  const ovRating = document.getElementById('mpOvRating');
-  if (ovName   && nameEl)   ovName.value   = nameEl.value;
-  if (ovRating && ratingEl) ovRating.value = ratingEl.value;
-  mpSetRatingRange(mpRatingRange);
-  mpSetRatingType(mpRatingType);
-  // ELO range only applies to open challenges (lobby matchmaking), not private games
-  const rangeBlock = document.getElementById('mpOvRangeBlock');
-  if (rangeBlock) rangeBlock.style.display = (mpPendingTimeAction === 'post') ? '' : 'none';
-  mpUpdateTCDisplay();   // refreshes the Time Control readout (#mpTCDisplay)
-}
-
-function mpCollapseGrid() {
-  const grid  = document.getElementById('mpGridCollapse');
-  const chg   = document.getElementById('mpChangeTimeBtn');
-  const title = document.getElementById('mpTimeTitle');
-  if (grid)  grid.classList.add('collapsed');
-  if (chg)   chg.style.display = '';
-  if (title) title.textContent = 'Set Up Game';
-}
-
-function mpExpandGrid() {
-  const grid  = document.getElementById('mpGridCollapse');
-  const chg   = document.getElementById('mpChangeTimeBtn');
-  const title = document.getElementById('mpTimeTitle');
-  if (grid)  grid.classList.remove('collapsed');
-  if (chg)   chg.style.display = 'none';
-  if (title) title.textContent = 'Select Time Control';
+  // Remember the choice — next session's 2-player games start from it
+  try {
+    localStorage.setItem('bm_mpTcBase', String(t));
+    localStorage.setItem('bm_mpTcInc',  String(inc));
+  } catch (e) {}
+  // Grid has done its job — close the editor after a beat so the selection
+  // highlight registers, leaving the pill row showing the new time.
+  setTimeout(() => {
+    const ed = document.getElementById('mpQsEd-time');
+    if (ed && ed.classList.contains('open')) mpQsToggle('time');
+  }, 280);
 }
 
 // Legacy alias kept for any old calls
@@ -2136,6 +2117,7 @@ function mpSetRatingRange(r) {
   document.querySelectorAll('[data-mprange]').forEach(b =>
     b.classList.toggle('tc-active', parseInt(b.dataset.mprange) === r));
   try { localStorage.setItem('bm_mpRange', String(r)); } catch (e) {}
+  if (typeof mpQsRefresh === 'function') mpQsRefresh();
 }
 
 // ── Rating type (Lichess default — Maia is trained on Lichess games) ─────────
@@ -2146,6 +2128,7 @@ function mpSetRatingType(t) {
   document.querySelectorAll('[data-mprt]').forEach(b =>
     b.classList.toggle('tc-active', b.dataset.mprt === t));
   try { localStorage.setItem('bm_mpRatingType', t); } catch (e) {}
+  if (typeof mpQsRefresh === 'function') mpQsRefresh();
 }
 
 // ── Persist "Your Info" (handle / rating / range) across sessions ────────────
@@ -2156,6 +2139,7 @@ function mpSaveInfo() {
     if (nameEl)   localStorage.setItem('bm_mpHandle', nameEl.value || '');
     if (ratingEl) localStorage.setItem('bm_mpRating', ratingEl.value || '');
   } catch (e) {}
+  if (typeof mpQsRefresh === 'function') mpQsRefresh();  // live pill update while typing
 }
 function mpLoadInfo() {
   const nameEl   = document.getElementById('mpLobbyName');
@@ -2167,19 +2151,12 @@ function mpLoadInfo() {
     if (!isNaN(rng)) mpSetRatingRange(rng);
     const rt = localStorage.getItem('bm_mpRatingType');
     if (rt) mpSetRatingType(rt);
+    // Last-used time control ("Untimed" the very first time)
+    const tb = parseInt(localStorage.getItem('bm_mpTcBase'));
+    const ti = parseInt(localStorage.getItem('bm_mpTcInc'));
+    if (!isNaN(tb) && !isNaN(ti)) { mpBaseMin = tb; mpIncSec = ti; }
   } catch (e) {}
-}
-
-// Overlay game-setup fields mirror the main "Your Info" card — typing in either
-// place updates the other, so there is one source of truth (the main inputs).
-function mpOvSyncInfo() {
-  const ovName   = document.getElementById('mpOvName');
-  const ovRating = document.getElementById('mpOvRating');
-  const nameEl   = document.getElementById('mpLobbyName');
-  const ratingEl = document.getElementById('mpLobbyRating');
-  if (ovName   && nameEl)   nameEl.value   = ovName.value;
-  if (ovRating && ratingEl) ratingEl.value = ovRating.value;
-  mpSaveInfo();
+  if (typeof mpQsRefresh === 'function') mpQsRefresh();
 }
 
 // ── Hide/Show toggle ─────────────────────────────────────────────────────────
