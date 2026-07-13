@@ -443,7 +443,7 @@ const HELP = {
 <p>No circle means you cannot currently capture that piece.</p>`},
   unprotected:{title:'Unprotected Pieces',body:`<p>An <strong>unprotected piece</strong> has no friendly defender.</p><p>🎯 <strong>Bullseye</strong> — unprotected, not currently attacked (quietly vulnerable)<br>🔴 <strong>Red ring</strong> — unprotected AND under attack (immediate danger)</p><p>Good habit: keep all pieces protected.</p>`},
   pins:{title:'Pins',body:`<p>A piece is <strong>"pinned"</strong> if moving it would expose a more valuable friendly piece behind it to capture.</p><hr><h3>${PIN_SVG_PURPLE} Absolute pin — to the king</h3><p>The piece <strong>cannot legally move</strong>. Always excluded from threat and defense counts.</p><p><em>Exception: it can capture the pinner — that resolves the pin.</em></p><hr><h3>${PIN_SVG_BLUE} Relative pin — to the queen</h3><p>The piece <strong>can legally move</strong> but doing so loses the queen.</p><p>When Queen Pins is enabled, these pieces are also excluded from counts — a defender pinned to the queen doesn't actually defend.</p>`},
-  ghostresponses:{title:'Ghost Responses',body:`<p>After you hover or drag a piece to a candidate square, Stockfish calculates up to two likely opponent responses and shows them as semi-transparent <strong>ghost pieces</strong> on the board.</p><p>This lets you see the position one move deeper without committing — useful for spotting immediate threats or refutations you might otherwise miss.</p><hr><p><strong>Depth settings</strong></p><ul><li><strong>Off</strong> — no ghost responses shown.</li><li><strong>Fast (depth 4)</strong> — near-instant, good for quick checks.</li><li><strong>Medium (depth 8)</strong> — recommended balance of speed and quality.</li><li><strong>Deep (depth 12)</strong> — stronger analysis, slightly slower response.</li></ul><p><em>Stockfish runs locally in your browser. Higher depths use more CPU.</em></p>`},
+  ghostresponses:{title:'Ghost Responses',body:`<p>After you hover or drag a piece to a candidate square, Stockfish calculates up to two likely opponent responses and shows them as semi-transparent <strong>ghost pieces</strong> on the board.</p><p>This lets you see the position one move deeper without committing — useful for spotting immediate threats or refutations you might otherwise miss.</p><hr><p><strong>Depth settings</strong></p><ul><li><strong>Off</strong> — no ghost responses shown.</li><li><strong>Fast (depth 4)</strong> — near-instant, good for quick checks.</li><li><strong>Medium (depth 8)</strong> — recommended balance of speed and quality.</li><li><strong>Deep (depth 12)</strong> — stronger analysis, slightly slower response.</li></ul><p><em>Stockfish runs locally in your browser. Higher depths use more CPU.</em></p><hr><p>⚔ <strong>Not available in 2-player online games</strong> — engine hints would undercut human-vs-human play. The control is disabled while an online game is live.</p>`},
   batteriessetting:{title:'Batteries in Threat Counts',body:`<p>A <strong>battery</strong> is two or more sliding pieces (rooks, bishops, or the queen) lined up on the same rank, file, or diagonal so they reinforce each other's attacks.</p><p>When this setting is <strong>on</strong>, the threat and defense counts shown on pieces use Static Exchange Evaluation (SEE) — the full sequence of captures is simulated, so a rook behind another rook counts as a second attacker on the same square.</p><p>When <strong>off</strong>, only direct attackers are counted (faster, simpler, but undercounts battery strength).</p><p><em>Also controlled by the Battery Counts indicator button in the indicator grid.</em></p>`},
   queenpinssetting:{title:'Include Queen Pins',body:`<p>A piece is <strong>relatively pinned to the queen</strong> if moving it would expose the queen to capture. The piece can legally move, but doing so loses the queen.</p><p>When this setting is <strong>on</strong>, pieces pinned to the queen are treated as non-defenders — they are excluded from threat and defense counts, because a piece that would cost you your queen to move isn't truly defending anything.</p><p>When <strong>off</strong>, only absolute pins to the king are excluded from counts; queen-pinned pieces are counted as normal defenders.</p><p><em>See the Pins indicator for a visual display of all pinned pieces.</em></p>`},
     forksw:{title:"My Forks & Skewers",body:`<h3>Forks &amp; skewers — what are they?</h3>
@@ -677,7 +677,7 @@ function chatShow(visible){
   if(!visible) chatClearUnread();
 }
 
-function chatToggleExpand(){
+function chatToggleExpand(noFocus){
   chatExpanded = !chatExpanded;
   const body = document.getElementById('chatBody');
   const chev = document.getElementById('chatChevron');
@@ -688,9 +688,13 @@ function chatToggleExpand(){
     chatClearUnread();
     const msgs = document.getElementById('chatMessages');
     if(msgs) msgs.scrollTop = msgs.scrollHeight;
-    // Focus the input so the user can type immediately
-    const inp = document.getElementById('chatInput');
-    if(inp) inp.focus();
+    // Focus the input so the user can type immediately — but NOT when the
+    // expand was triggered by an incoming message (stealing focus mid-game,
+    // or popping the mobile keyboard, would be worse than the message).
+    if(!noFocus){
+      const inp = document.getElementById('chatInput');
+      if(inp) inp.focus();
+    }
   }
 }
 
@@ -714,14 +718,9 @@ function chatAppend(from, text, isMe){
   line.innerHTML = '<span class="chat-sender">' + (isMe ? 'You' : from) + ':</span> ' + safe;
   msgs.appendChild(line);
   msgs.scrollTop = msgs.scrollHeight;
-  // Auto-expand chat on incoming message; show unread dot if already open but unfocused
-  if(!isMe){
-    if(!chatExpanded) chatToggleExpand();
-    else {
-      const inp = document.getElementById('chatInput');
-      if(document.activeElement !== inp) chatShowUnread();
-    }
-  }
+  // Auto-expand chat on an incoming message so it's immediately visible —
+  // no unread dot to click. Expand without stealing keyboard focus.
+  if(!isMe && !chatExpanded) chatToggleExpand(true);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -1611,6 +1610,7 @@ function mpPostChallenge() {
         tc: mpSelectedTC, tcLabel,
         tcBaseMin: mpBaseMin, tcIncSec: mpIncSec,
         name, rating,
+        ratingType: rating != null ? mpRatingType : null,
         ratingRange: mpRatingRange
       }));
     } else {
@@ -1635,7 +1635,7 @@ function mpRenderLobby(challenges) {
   challenges.forEach(ch => {
     const tcLabel = ch.tcLabel || (ch.tc && TIME_CONTROLS[ch.tc] ? TIME_CONTROLS[ch.tc].label : 'Untimed');
     const nameStr = ch.name || 'Anonymous';
-    const ratingStr = ch.rating ? (' · ' + ch.rating) : '';
+    const ratingStr = ch.rating ? (' · ' + ch.rating + (ch.ratingType ? ' ' + ch.ratingType : '')) : '';
     const rangeStr = ch.ratingRange && ch.ratingRange < 9999 ? (' ±' + ch.ratingRange) : '';
     const row = document.createElement('div');
     row.className = 'mp-challenge-row';
@@ -1679,8 +1679,16 @@ function mpDoAcceptLobby(code) {
 let mpAnonPendingCode = null;
 function mpShowAnonPrompt(code) {
   mpAnonPendingCode = code;
+  // Prefill the inline fields from Your Info so anything already typed carries over
+  const an = document.getElementById('mpAnonName');
+  const ar = document.getElementById('mpAnonRating');
+  const nameEl   = document.getElementById('mpLobbyName');
+  const ratingEl = document.getElementById('mpLobbyRating');
+  if (an && nameEl)   an.value = nameEl.value;
+  if (ar && ratingEl) ar.value = ratingEl.value;
   const el = document.getElementById('mpAnonPrompt');
   if (el) el.classList.add('open');
+  if (an) setTimeout(() => an.focus(), 150);
 }
 function mpHideAnonPrompt() {
   const el = document.getElementById('mpAnonPrompt');
@@ -1692,14 +1700,20 @@ function mpAnonJoinAnon() {
   mpHideAnonPrompt();
   if (code) mpDoAcceptLobby(code);
 }
-function mpAnonFillInfo() {
+// Save the inline handle/rating into Your Info, then join the pending challenge
+// directly — the user never has to go back and find the room again.
+function mpAnonSaveJoin() {
+  const an = document.getElementById('mpAnonName');
+  const ar = document.getElementById('mpAnonRating');
+  const nameEl   = document.getElementById('mpLobbyName');
+  const ratingEl = document.getElementById('mpLobbyRating');
+  if (an && nameEl)   nameEl.value   = an.value.trim();
+  if (ar && ratingEl) ratingEl.value = ar.value.trim();
+  mpSaveInfo();
+  const code = mpAnonPendingCode;
   mpAnonPendingCode = null;
   mpHideAnonPrompt();
-  const nameEl = document.getElementById('mpLobbyName');
-  if (nameEl) {
-    nameEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    setTimeout(() => nameEl.focus(), 300);
-  }
+  if (code) mpDoAcceptLobby(code);
 }
 
 // ── Private game ─────────────────────────────────────────────────────────────
@@ -2068,18 +2082,20 @@ function mpSelectTC(t, inc, cell) {
 
 // ── Time-overlay review summary + grid collapse/expand ───────────────────────
 function mpBuildReview() {
+  // Copy the main "Your Info" values into the overlay's live fields, and sync
+  // the shared toggle-button state (range + rating type) across both sets.
   const nameEl   = document.getElementById('mpLobbyName');
   const ratingEl = document.getElementById('mpLobbyRating');
-  const name   = (nameEl   && nameEl.value.trim())   || 'Anonymous';
-  const rating = (ratingEl && ratingEl.value.trim()) ? ratingEl.value.trim() : 'Unrated';
-  const rn = document.getElementById('mpRevName');   if (rn) rn.textContent = name;
-  const rr = document.getElementById('mpRevRating'); if (rr) rr.textContent = rating;
-  const rv = document.getElementById('mpRevRange');
-  if (rv) rv.textContent = mpRatingRange >= 9999 ? 'Any' : ('±' + mpRatingRange);
+  const ovName   = document.getElementById('mpOvName');
+  const ovRating = document.getElementById('mpOvRating');
+  if (ovName   && nameEl)   ovName.value   = nameEl.value;
+  if (ovRating && ratingEl) ovRating.value = ratingEl.value;
+  mpSetRatingRange(mpRatingRange);
+  mpSetRatingType(mpRatingType);
   // ELO range only applies to open challenges (lobby matchmaking), not private games
-  const rangeRow = document.getElementById('mpRevRangeRow');
-  if (rangeRow) rangeRow.style.display = (mpPendingTimeAction === 'post') ? '' : 'none';
-  mpUpdateTCDisplay();   // refreshes the Time Control row (#mpTCDisplay)
+  const rangeBlock = document.getElementById('mpOvRangeBlock');
+  if (rangeBlock) rangeBlock.style.display = (mpPendingTimeAction === 'post') ? '' : 'none';
+  mpUpdateTCDisplay();   // refreshes the Time Control readout (#mpTCDisplay)
 }
 
 function mpCollapseGrid() {
@@ -2088,7 +2104,7 @@ function mpCollapseGrid() {
   const title = document.getElementById('mpTimeTitle');
   if (grid)  grid.classList.add('collapsed');
   if (chg)   chg.style.display = '';
-  if (title) title.textContent = 'Review & Submit';
+  if (title) title.textContent = 'Set Up Game';
 }
 
 function mpExpandGrid() {
@@ -2112,12 +2128,24 @@ function mpSetTC(key) {
 }
 
 // ── Rating range ─────────────────────────────────────────────────────────────
+// Range buttons exist in two places (Your Info card + game-setup overlay), so
+// selection toggles every button carrying data-mprange, keeping both sets live.
 let mpRatingRange = 9999;
 function mpSetRatingRange(r) {
   mpRatingRange = r;
-  document.querySelectorAll('[id^="mprange-"]').forEach(b => b.classList.remove('tc-active'));
-  const btn = document.getElementById('mprange-' + r); if (btn) btn.classList.add('tc-active');
+  document.querySelectorAll('[data-mprange]').forEach(b =>
+    b.classList.toggle('tc-active', parseInt(b.dataset.mprange) === r));
   try { localStorage.setItem('bm_mpRange', String(r)); } catch (e) {}
+}
+
+// ── Rating type (Lichess default — Maia is trained on Lichess games) ─────────
+let mpRatingType = 'Lichess';
+function mpSetRatingType(t) {
+  if (!['Lichess', 'Chess.com', 'FIDE'].includes(t)) t = 'Lichess';
+  mpRatingType = t;
+  document.querySelectorAll('[data-mprt]').forEach(b =>
+    b.classList.toggle('tc-active', b.dataset.mprt === t));
+  try { localStorage.setItem('bm_mpRatingType', t); } catch (e) {}
 }
 
 // ── Persist "Your Info" (handle / rating / range) across sessions ────────────
@@ -2137,7 +2165,21 @@ function mpLoadInfo() {
     const r = localStorage.getItem('bm_mpRating'); if (ratingEl && r != null) ratingEl.value = r;
     const rng = parseInt(localStorage.getItem('bm_mpRange'));
     if (!isNaN(rng)) mpSetRatingRange(rng);
+    const rt = localStorage.getItem('bm_mpRatingType');
+    if (rt) mpSetRatingType(rt);
   } catch (e) {}
+}
+
+// Overlay game-setup fields mirror the main "Your Info" card — typing in either
+// place updates the other, so there is one source of truth (the main inputs).
+function mpOvSyncInfo() {
+  const ovName   = document.getElementById('mpOvName');
+  const ovRating = document.getElementById('mpOvRating');
+  const nameEl   = document.getElementById('mpLobbyName');
+  const ratingEl = document.getElementById('mpLobbyRating');
+  if (ovName   && nameEl)   nameEl.value   = ovName.value;
+  if (ovRating && ratingEl) ratingEl.value = ovRating.value;
+  mpSaveInfo();
 }
 
 // ── Hide/Show toggle ─────────────────────────────────────────────────────────

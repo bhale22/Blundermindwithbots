@@ -1103,15 +1103,15 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <!-- vs Bot -->
     <div class="landing-card green-card" onclick="landingChoose('bot')">
       <div class="landing-card-icon">🤖</div>
-      <div class="landing-card-title">Build a Bot</div>
+      <div class="landing-card-title">Play or Build a Bot</div>
       <div class="landing-card-desc">If chess bots don't feel realistic, build your own. Create a bot you enjoy playing against. Practice favorite openings. Hone bullet skills against bots that panic under time pressure, or build ones that keep their cool as they try to flag you.</div>
     </div>
 
     <!-- 2 Player -->
     <div class="landing-card" onclick="landingChoose('mp')">
       <div class="landing-card-icon">⚔️</div>
-      <div class="landing-card-title">2-Player Online</div>
-      <div class="landing-card-desc">Post an open challenge or send a private invite link — one click to join.</div>
+      <div class="landing-card-title">&ldquo;Hang-Free&rdquo; 2-Player Online</div>
+      <div class="landing-card-desc">Play games with outcomes determined by strategy instead of hung pieces. Post an open challenge or send a private invite link to play games where both players can use visual overlays. No move recommendations, no engine analysis, no cheat detection.</div>
     </div>
 
     <!-- Load PGN / Bot config — split card -->
@@ -2158,12 +2158,18 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
             <input id="mpLobbyRating" placeholder="—" maxlength="4" type="number" min="100" max="3000" class="mp-input" oninput="mpSaveInfo()">
           </div>
         </div>
+        <div class="mp-micro-lbl" style="margin-bottom:6px;">Rating type</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:9px;">
+          <button onclick="mpSetRatingType('Lichess')"   class="tc-btn tc-active" data-mprt="Lichess">Lichess</button>
+          <button onclick="mpSetRatingType('Chess.com')" class="tc-btn" data-mprt="Chess.com">Chess.com</button>
+          <button onclick="mpSetRatingType('FIDE')"      class="tc-btn" data-mprt="FIDE">FIDE</button>
+        </div>
         <div class="mp-micro-lbl" style="margin-bottom:6px;">Rating range</div>
         <div style="display:flex;gap:4px;flex-wrap:wrap;">
-          <button onclick="mpSetRatingRange(100)"  class="tc-btn" id="mprange-100">±100</button>
-          <button onclick="mpSetRatingRange(200)"  class="tc-btn" id="mprange-200">±200</button>
-          <button onclick="mpSetRatingRange(500)"  class="tc-btn" id="mprange-500">±500</button>
-          <button onclick="mpSetRatingRange(9999)" class="tc-btn tc-active" id="mprange-9999">Any</button>
+          <button onclick="mpSetRatingRange(100)"  class="tc-btn" id="mprange-100"  data-mprange="100">±100</button>
+          <button onclick="mpSetRatingRange(200)"  class="tc-btn" id="mprange-200"  data-mprange="200">±200</button>
+          <button onclick="mpSetRatingRange(500)"  class="tc-btn" id="mprange-500"  data-mprange="500">±500</button>
+          <button onclick="mpSetRatingRange(9999)" class="tc-btn tc-active" id="mprange-9999" data-mprange="9999">Any</button>
         </div>
       </div>
 
@@ -2286,16 +2292,46 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="mp-grid-collapse" id="mpGridCollapse">
         <div class="mp-tg-panel" id="mpTgPanel"></div>
       </div>
-      <!-- Review summary — collapses the grid and shows everything in one spot -->
-      <div class="mp-review" id="mpReview">
-        <div class="mp-sec-lbl">Review</div>
-        <div class="mp-review-row"><span class="mp-review-k">Handle</span><span class="mp-review-v" id="mpRevName">Anonymous</span></div>
-        <div class="mp-review-row"><span class="mp-review-k">Rating (ELO)</span><span class="mp-review-v" id="mpRevRating">Unrated</span></div>
-        <div class="mp-review-row"><span class="mp-review-k">Time Control</span><span class="mp-review-v" id="mpTCDisplay">Untimed</span></div>
-        <div class="mp-review-row" id="mpRevRangeRow"><span class="mp-review-k">Opponent ELO Range</span><span class="mp-review-v" id="mpRevRange">Any</span></div>
-        <!-- Primary submit sits right under the summary, in the same visual field -->
+      <!-- Game setup — every field is live and editable right here (no bouncing
+           back to the main panel), all left-aligned. -->
+      <div class="mp-review" id="mpReview" style="text-align:left;">
+        <div class="mp-sec-lbl">Your Game</div>
+
+        <div style="display:flex;gap:6px;margin-bottom:9px;">
+          <div style="flex:1;">
+            <div class="mp-micro-lbl">Handle</div>
+            <input id="mpOvName" placeholder="Anonymous" maxlength="20" class="mp-input" oninput="mpOvSyncInfo()">
+          </div>
+          <div style="width:80px;">
+            <div class="mp-micro-lbl">Rating</div>
+            <input id="mpOvRating" placeholder="—" maxlength="4" type="number" min="100" max="3000" class="mp-input" oninput="mpOvSyncInfo()">
+          </div>
+        </div>
+
+        <div class="mp-micro-lbl" style="margin-bottom:6px;">Rating type</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:9px;">
+          <button onclick="mpSetRatingType('Lichess')"   class="tc-btn tc-active" data-mprt="Lichess">Lichess</button>
+          <button onclick="mpSetRatingType('Chess.com')" class="tc-btn" data-mprt="Chess.com">Chess.com</button>
+          <button onclick="mpSetRatingType('FIDE')"      class="tc-btn" data-mprt="FIDE">FIDE</button>
+        </div>
+
+        <div id="mpOvRangeBlock">
+          <div class="mp-micro-lbl" style="margin-bottom:6px;">Opponent ELO range</div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:9px;">
+            <button onclick="mpSetRatingRange(100)"  class="tc-btn" data-mprange="100">±100</button>
+            <button onclick="mpSetRatingRange(200)"  class="tc-btn" data-mprange="200">±200</button>
+            <button onclick="mpSetRatingRange(500)"  class="tc-btn" data-mprange="500">±500</button>
+            <button onclick="mpSetRatingRange(9999)" class="tc-btn tc-active" data-mprange="9999">Any</button>
+          </div>
+        </div>
+
+        <div class="mp-micro-lbl" style="margin-bottom:6px;">Time control</div>
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:2px;">
+          <span class="mp-review-v" id="mpTCDisplay" style="font-family:var(--mp-font-m);">Untimed</span>
+          <button class="mp-change-time" id="mpChangeTimeBtn" onclick="mpExpandGrid()" style="display:none;margin:0;">⟲ Change</button>
+        </div>
+
         <button class="mp-action-primary" id="mpTimeConfirmBtn" onclick="mpConfirmTime()" style="margin-top:12px;">Confirm</button>
-        <button class="mp-change-time" id="mpChangeTimeBtn" onclick="mpExpandGrid()" style="display:none;">⟲ Change time control</button>
       </div>
     </div>
   </div>
@@ -2304,10 +2340,21 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
   <div id="mpAnonPrompt">
     <div class="mp-anon-box">
       <div class="mp-anon-title">Join without a handle?</div>
-      <div class="mp-anon-msg">You haven't entered a handle or rating. Join this challenge as an anonymous, unrated player — or add your info first.</div>
+      <div class="mp-anon-msg">You haven't entered a handle or rating. Add them right here and join — or join as an anonymous, unrated player.</div>
+      <div style="display:flex;gap:6px;margin:10px 0;text-align:left;">
+        <div style="flex:1;">
+          <div class="mp-micro-lbl">Handle</div>
+          <input id="mpAnonName" placeholder="Anonymous" maxlength="20" class="mp-input">
+        </div>
+        <div style="width:80px;">
+          <div class="mp-micro-lbl">Rating</div>
+          <input id="mpAnonRating" placeholder="—" maxlength="4" type="number" min="100" max="3000" class="mp-input"
+            onkeydown="if(event.key==='Enter')mpAnonSaveJoin()">
+        </div>
+      </div>
       <div class="mp-anon-btns">
-        <button class="mp-action-primary" onclick="mpAnonJoinAnon()">Join as Anonymous</button>
-        <button class="mp-action-secondary" onclick="mpAnonFillInfo()">Add Handle &amp; Rating</button>
+        <button class="mp-action-primary" onclick="mpAnonSaveJoin()">Save &amp; Join Game ▸</button>
+        <button class="mp-action-secondary" onclick="mpAnonJoinAnon()">Join as Anonymous</button>
       </div>
     </div>
   </div>
