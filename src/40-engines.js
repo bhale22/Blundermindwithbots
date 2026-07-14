@@ -592,9 +592,13 @@ function maiaInit() {
       var msg = e.data;
       if (msg.type === 'status') {
         _maiaStatus = msg.status;
+        // Set the ready flag BEFORE pushing status to the UI/iframe — the push
+        // includes `ready: _maiaReady`, and sending {status:'ready', ready:false}
+        // left the panel's download overlay stuck on top of the Elometer until
+        // some later push happened to correct it.
+        _maiaReady = (msg.status === 'ready');
         _maiaUpdateStatusUI();
         if (msg.status === 'ready') {
-          _maiaReady = true;
           // After a successful download (not just a cache hit on reload) request
           // persistent storage so the browser won't evict the 87 MB model.
           // Only call persist() once — it's a no-op if already granted.

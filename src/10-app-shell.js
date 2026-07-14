@@ -305,6 +305,10 @@ function setPieceSet(name) {
   document.querySelectorAll('.piece-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.set === name));
   localStorage.setItem('bm_pieceSet', name);
+  // Keep the bot panel's Appearance popover in sync (guarded: defined below)
+  if (typeof _syncPanelTheme === 'function' && typeof BG_THEMES !== 'undefined') {
+    _syncPanelTheme(BG_THEMES[currentBgTheme] || BG_THEMES.navy);
+  }
 }
 
 // ── Theme system ─────────────────────────────────────────────────────
@@ -325,6 +329,11 @@ const BG_THEMES = {
   lightgreen: {bg:'#e8f0e8', panel:'#dce8dc', panel2:'#d0e0d0', border:'#b0c8b0', border2:'#c4d8c4', text:'#1a2a1a', textDim:'#507050', textSec:'#406040', name:'Sage'},
   lighttan:   {bg:'#f4efe0', panel:'#ece7d8', panel2:'#e4dece', border:'#d0c8b0', border2:'#dcd4c0', text:'#2a2010', textDim:'#706040', textSec:'#584830', name:'Parchment'},
   lightgray:  {bg:'#f0f0f0', panel:'#e8e8e8', panel2:'#e0e0e0', border:'#c8c8c8', border2:'#d4d4d4', text:'#1a1a1a', textDim:'#606060', textSec:'#484848', name:'Silver'},
+  // The "Field Journal" paper palette from bot_config_restyle_brief.md as a
+  // regular background theme, with its terracotta accent carried alongside so
+  // the bot panel picks it up (themes without `accent` use the amber default).
+  clay:       {bg:'#f2e3d3', panel:'#f8eee1', panel2:'#e9d7c1', border:'#d3bfa4', border2:'#e0cfb8', text:'#3d2a22', textDim:'#6b5646', textSec:'#4a3226', name:'Clay',
+               accent:{main:'#b3644f', bright:'#c97a63', dim:'#8a4a3a', glow:'rgba(179,100,79,0.1)', glowS:'rgba(179,100,79,0.22)', border:'rgba(179,100,79,0.4)'}},
   navy:       {bg:'#1a1a2e', panel:'#0d1b2a', panel2:'#060f18', border:'#2a3a4a', border2:'#1a2a3a', text:'#c8d8e8', textDim:'#506070', textSec:'#8090a0', name:'Navy'},
   green:      {bg:'#0d1a0d', panel:'#0a1a0a', panel2:'#060e06', border:'#1a3a1a', border2:'#0f220f', text:'#c0dcc0', textDim:'#4a6a4a', textSec:'#70a070', name:'Forest'},
   charcoal:   {bg:'#1a1a1a', panel:'#111111', panel2:'#080808', border:'#333333', border2:'#222222', text:'#d0d0d0', textDim:'#505050', textSec:'#909090', name:'Charcoal'},
@@ -340,6 +349,8 @@ function applyBoardTheme(name) {
     s.classList.toggle('active', s.dataset.theme === name));
   localStorage.setItem('bm_boardTheme', name);
   render();
+  // Keep the bot panel's Appearance popover in sync with the new selection
+  _syncPanelTheme(BG_THEMES[currentBgTheme] || BG_THEMES.navy);
 }
 function applyBgTheme(name) {
   const t = BG_THEMES[name] || BG_THEMES.navy;
@@ -363,7 +374,13 @@ function _isLightTheme(t) {
   return m ? parseInt(m[1], 16) < 128 : false;
 }
 function _syncPanelTheme(t) {
+  if (!t) return;
   const light = _isLightTheme(t);
+  // Accent family: themes may carry their own (e.g. Clay's terracotta);
+  // everything else uses the amber pair tuned for light/dark surfaces.
+  const ac = t.accent || (light
+    ? {main:'#9a6820', bright:'#c8922a', dim:'#6a4a10', glow:'rgba(154,104,32,0.14)', glowS:'rgba(154,104,32,0.26)', border:'rgba(154,104,32,0.40)'}
+    : {main:'#c8922a', bright:'#e8aa40', dim:'#8a6420', glow:'rgba(200,146,42,0.12)', glowS:'rgba(200,146,42,0.22)', border:'rgba(200,146,42,0.30)'});
   const vars = {
     '--carbon':         t.bg,
     '--carbon-mid':     t.panel,
@@ -376,26 +393,58 @@ function _syncPanelTheme(t) {
     // (a readable mid-tone) as the dim color inside the bot panel instead.
     '--text-dim':       light ? t.textDim : t.textSec,
     '--border':         t.border,
-    '--amber':          light ? '#9a6820' : '#c8922a',
-    '--amber-bright':   light ? '#c8922a' : '#e8aa40',
-    '--amber-dim':      light ? '#6a4a10' : '#8a6420',
-    '--amber-glow':     light ? 'rgba(154,104,32,0.14)' : 'rgba(200,146,42,0.12)',
-    '--amber-glow-s':   light ? 'rgba(154,104,32,0.26)' : 'rgba(200,146,42,0.22)',
-    '--border-amber':   light ? 'rgba(154,104,32,0.40)' : 'rgba(200,146,42,0.30)',
+    '--amber':          ac.main,
+    '--amber-bright':   ac.bright,
+    '--amber-dim':      ac.dim,
+    '--amber-glow':     ac.glow,
+    '--amber-glow-s':   ac.glowS,
+    '--border-amber':   ac.border,
     '--radar-ring':     light ? 'rgba(0,0,0,0.10)'       : 'rgba(255,255,255,0.06)',
     '--radar-axis':     light ? 'rgba(0,0,0,0.10)'       : 'rgba(255,255,255,0.07)',
     '--radar-node-inactive': light ? '#708090' : '#4a5060',
-    '--radar-node-fill':     light ? '#c8922a' : '#e8aa40',
-    '--radar-node-active':   light ? '#ffcc55' : '#ffcc55',
-    '--radar-label-badge':   light ? '#9a6820' : '#ffcc55',
+    '--radar-node-fill':     light ? ac.main   : ac.bright,
+    '--radar-node-active':   light ? ac.bright : '#ffcc55',
+    '--radar-label-badge':   light ? ac.dim    : '#ffcc55',
+    // Theme-aware fixes for two inline-styled elements in the panel: the
+    // Maia-model veil over the Elometer and the green download button.
+    '--overlay-veil': light ? 'rgba(248,244,238,0.93)' : 'rgba(14,15,17,0.90)',
+    '--dl-green':     light ? '#2e7d4f' : '#5ad490',
+    '--dl-green-bg':  light ? 'rgba(46,125,79,0.10)' : 'rgba(90,212,144,0.12)',
+    '--dl-green-bd':  light ? 'rgba(46,125,79,0.50)' : 'rgba(90,212,144,0.40)',
   };
   try { localStorage.setItem('bm_panelTheme', JSON.stringify(vars)); } catch(e) {}
   try {
     const frame = document.getElementById('botModalFrame');
     if (frame && frame.contentWindow) {
-      frame.contentWindow.postMessage({ type: 'setTheme', vars }, location.origin);
+      // Include the current selection names so the panel's Appearance popover
+      // can highlight what's active.
+      frame.contentWindow.postMessage({
+        type: 'setTheme', vars,
+        bg: currentBgTheme, board: currentBoardTheme, pieces: currentPieceSet
+      }, location.origin);
     }
   } catch(e) {}
+}
+
+// ── Format: Carbon (dark dashboard type) vs Journal (editorial serif) ────────
+// App-wide setting shared with the bot panel (same localStorage key + a live
+// postMessage push). Format controls typography/texture; COLOR stays with the
+// background theme — so "Journal + Cool Blue" or "Journal + Clay" both work.
+let currentFormat = 'carbon';
+function applyFormat(f, fromPanel) {
+  currentFormat = (f === 'journal') ? 'journal' : 'carbon';
+  document.body.classList.toggle('journal', currentFormat === 'journal');
+  try { localStorage.setItem('bm_format', currentFormat); } catch(e) {}
+  document.querySelectorAll('[data-format]').forEach(b =>
+    b.classList.toggle('active', b.dataset.format === currentFormat));
+  if (!fromPanel) {
+    try {
+      const frame = document.getElementById('botModalFrame');
+      if (frame && frame.contentWindow) {
+        frame.contentWindow.postMessage({ type: 'setFormat', format: currentFormat }, location.origin);
+      }
+    } catch(e) {}
+  }
 }
 
 // ── Panel system ─────────────────────────────────────────────────────
@@ -868,10 +917,47 @@ function proSync(){
       resultBar.textContent = msg;
     }
   }
+  // Resign/Draw only exist while a game is actually live; otherwise the side
+  // column shows the idle actions (Rematch after a finish, start a bot or
+  // 2-player game, save/load, save the current bot).
+  const liveGame = !over && (
+    (typeof botActive !== 'undefined' && botActive) ||
+    (typeof mpRoomId !== 'undefined' && mpRoomId &&
+     typeof mpMode !== 'undefined' && mpMode === 'ingame'));
   const resignBtn = document.getElementById('proResignBtn');
   const drawBtn   = document.getElementById('proDrawBtn');
-  if(resignBtn) resignBtn.classList.toggle('disabled', over);
-  if(drawBtn)   drawBtn.classList.toggle('disabled', over);
+  if(resignBtn) resignBtn.style.display = liveGame ? '' : 'none';
+  if(drawBtn)   drawBtn.style.display   = liveGame ? '' : 'none';
+  const idleRow = document.getElementById('proIdleActions');
+  if(idleRow) idleRow.style.display = liveGame ? 'none' : 'flex';
+  const rematchBtn = document.getElementById('proRematchBtn');
+  if(rematchBtn) rematchBtn.style.display = over ? '' : 'none';
+  const saveBotBtn = document.getElementById('proSaveBotBtn');
+  if(saveBotBtn) saveBotBtn.style.display = window._lastAppliedBotConfig ? '' : 'none';
+}
+
+// Rematch from the pro idle row — same dispatch as the amateur action button.
+function proRematch(){
+  if (typeof mpRoomId !== 'undefined' && mpRoomId) mpOfferRematch();
+  else if (typeof botActive !== 'undefined' && botActive) botStart();
+  else resetGame();
+}
+
+// Download the last bot config that was actually started, as a shareable file
+// the panel's "Load bot" understands. No config yet → open the Bot Builder.
+function proSaveCurrentBot(){
+  const cfg = window._lastAppliedBotConfig;
+  if(!cfg){ if(typeof openBotModal === 'function') openBotModal(); return; }
+  const suggested = (cfg.engine || 'bot') + (cfg.elo ? '-' + cfg.elo : '');
+  const name = prompt('Name this bot:', suggested);
+  if(!name) return;
+  const clean = Object.assign({}, cfg); delete clean.type;
+  const payload = JSON.stringify({ name: name, config: clean, savedAt: Date.now() }, null, 2);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([payload], { type: 'application/json' }));
+  a.download = name.replace(/[^a-z0-9_\-]/gi, '_') + '.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
 // Restore the saved shell on load
@@ -2682,6 +2768,12 @@ function loadPrefs(){
   const bt=localStorage.getItem('bm_boardTheme');if(bt&&BOARD_THEMES[bt])applyBoardTheme(bt);
   const bg=localStorage.getItem('bm_bgTheme');applyBgTheme(bg&&BG_THEMES[bg]?bg:'lightblue');
   const ps=localStorage.getItem('bm_pieceSet');if(ps)setPieceSet(ps);
+  // Format (Carbon/Journal). Migrate the old panel-only key on first run so a
+  // user who chose Journal for the bot panel keeps that choice app-wide.
+  try{
+    const fmt = localStorage.getItem('bm_format') || localStorage.getItem('bm_panelStyle') || 'journal';
+    applyFormat(fmt === 'fj' ? 'journal' : fmt);
+  }catch(e){ applyFormat('journal'); }
   try{
     const ind=JSON.parse(localStorage.getItem('bm_ind')||'{}');
     Object.keys(ind).forEach(k=>{if(IND[k]){IND[k].on=ind[k].on||false;IND[k].pre=ind[k].pre||false;}});

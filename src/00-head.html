@@ -10,7 +10,7 @@
 <meta property="og:type" content="website">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Chakra+Petch:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Chakra+Petch:wght@300;400;500;600&family=Fraunces:ital,opsz,wght@1,9..144,500&family=Spectral:ital,wght@0,500&display=swap" rel="stylesheet">
 <style>
 /* ── Reset & base ─────────────────────────────────────────────────────────── */
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -946,6 +946,27 @@ body.ind-starter #moreIndBtn .mi-less{display:none;}
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+   JOURNAL FORMAT (body.journal) — editorial serif for the display tiers across
+   landing, board chrome, panels, and the pro shell. Color still comes from the
+   background theme (pick Clay for the full field-journal look, or any other).
+   Small technical/mono text is deliberately left as-is — typewriter annotations
+   on a serif journal — which also avoids unreadable tiny serif text.
+   ══════════════════════════════════════════════════════════════════════════ */
+body.journal .landing-title{ font-family:'Fraunces',serif;font-style:italic;font-weight:500; }
+body.journal .landing-tagline{ font-family:'Spectral',serif;font-style:normal; }
+body.journal .landing-card-title{ font-family:'Fraunces',serif;font-style:italic;font-weight:500; }
+body.journal .landing-card-desc{ font-family:'Spectral',serif;font-size:11px;line-height:1.5; }
+body.journal .landing-shell-btn .ls-name{ font-family:'Fraunces',serif;font-style:italic; }
+body.journal .landing-shell-btn .ls-desc{ font-family:'Spectral',serif; }
+body.journal #site-name{ font-family:'Fraunces',serif;font-style:italic; }
+body.journal #site-tagline{ font-family:'Spectral',serif;font-style:italic; }
+body.journal .panel-title{ font-family:'Fraunces',serif;font-style:italic;font-weight:500; }
+body.journal .panel-body h3{ font-family:'Fraunces',serif;font-style:italic;font-weight:500;letter-spacing:0.01em; }
+body.journal #mpPanel{ --mp-font-d:'Fraunces',serif; }
+body.journal.pro-mode{ --pfd:'Fraunces',serif; }
+body.journal .pro-name{ font-family:'Fraunces',serif;font-style:italic;font-weight:500; }
+
+/* ══════════════════════════════════════════════════════════════════════════
    PRO SHELL — in-app switchable carbon/amber mode (body.pro-mode)
    Purely additive: the amateur shell is untouched unless .pro-mode is set.
    ══════════════════════════════════════════════════════════════════════════ */
@@ -1030,6 +1051,11 @@ body.pro-mode #proSide{
 .pro-abtn.danger:hover{ border-color:rgba(200,74,74,0.6);color:#e89090; }
 .pro-abtn.draw:hover{ border-color:rgba(93,173,226,0.5);color:#9fd4f0; }
 .pro-abtn.disabled{ opacity:0.28; pointer-events:none; cursor:default; }
+/* Idle action grid: shown when no game is live — wraps into two columns */
+.pro-actions.pro-idle{ flex-wrap:wrap; }
+.pro-actions.pro-idle .pro-abtn{ flex:1 1 45%; }
+.pro-abtn.accent{ color:var(--pa);border-color:var(--pbd-a); }
+.pro-abtn.accent:hover{ color:var(--pa-bright,#e8aa40); }
 #proResultBar{
   display:none;
   padding:9px 12px;text-align:center;
@@ -1560,7 +1586,17 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <!-- Game-over result (shown when checkmate / stalemate / resign / draw) -->
     <div id="proResultBar"></div>
 
-    <!-- Actions: Resign · Draw · Flip · Theme · Gear -->
+    <!-- Idle actions — shown when no game is live (start things, save/load) -->
+    <div class="pro-actions pro-idle" id="proIdleActions" style="display:none;">
+      <div class="pro-abtn accent" id="proRematchBtn" onclick="proRematch()" style="display:none;">↺ Rematch</div>
+      <div class="pro-abtn" onclick="openBotModal()">🤖 Play / Build Bot</div>
+      <div class="pro-abtn" onclick="openPanel('mpPanel')">⚔ 2-Player</div>
+      <div class="pro-abtn" onclick="savePgnAs()">💾 Save game</div>
+      <div class="pro-abtn" onclick="document.getElementById('pgnFileInput').click()">▶ Load game</div>
+      <div class="pro-abtn" id="proSaveBotBtn" onclick="proSaveCurrentBot()" style="display:none;">💾 Save bot</div>
+    </div>
+
+    <!-- Live-game actions + always-on utilities: Resign · Draw · Flip · Theme · Gear -->
     <div class="pro-actions">
       <div class="pro-abtn danger" id="proResignBtn" onclick="resign()">⚑ Resign</div>
       <div class="pro-abtn draw" id="proDrawBtn" onclick="offerDraw()">½ Draw</div>
@@ -2334,6 +2370,11 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <button class="panel-close" onclick="closeAllPanels()">✕</button>
   </div>
   <div class="panel-body">
+    <h3>Format</h3>
+    <div class="piece-btns" style="margin-bottom:4px;">
+      <button class="piece-btn" data-format="carbon" onclick="applyFormat('carbon')" title="Dashboard look — mono &amp; caps type">Carbon</button>
+      <button class="piece-btn" data-format="journal" onclick="applyFormat('journal')" title="Editorial look — serif type; pairs with any background">Journal</button>
+    </div>
     <h3>Board colors</h3>
     <div class="swatch-grid" id="boardSwatches"></div>
     <h3>Background</h3>
