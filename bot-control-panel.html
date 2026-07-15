@@ -6264,7 +6264,7 @@ function setPanelStyle(s){ setPanelFormat(s); }
 // ── Appearance state + popover ───────────────────────────────────────────────
 // Current app selections, kept fresh by the parent's setTheme pushes so the
 // popover can highlight what's active.
-let _appAppearance = { bg:null, board:null, pieces:null };
+let _appAppearance = { bg:null, board:null, pieces:null, shell:null };
 
 // Compact catalogs — keep in sync with BG_THEMES / BOARD_THEMES / piece sets
 // in 10-app-shell.js (they change rarely; the popover is display-only chrome).
@@ -6308,6 +6308,9 @@ function _renderAppearancePop(){
       '<div class="ap-swatch' + (active ? ' active' : '') + '" style="background:' + bgCss + ';"></div>' +
       '<div class="ap-swatch-lbl">' + label + '</div></div>';
   let html = '';
+  html += '<div class="ap-sec">Board experience</div><div class="ap-row">' +
+    '<button class="ap-btn' + (_appAppearance.shell === 'amateur' ? ' active' : '') + '" onclick="_sendAppearance({shell:\'amateur\'})" title="Full training board — all vision overlays">Training</button>' +
+    '<button class="ap-btn' + (_appAppearance.shell === 'pro' ? ' active' : '') + '" onclick="_sendAppearance({shell:\'pro\'})" title="Clean tournament look — no overlays">Expert</button></div>';
   html += '<div class="ap-sec">Format</div><div class="ap-row">' +
     ['carbon','journal'].map(f =>
       '<button class="ap-btn' + (_panelFormat === f ? ' active' : '') + '" onclick="setPanelFormat(\'' + f + '\')">' +
@@ -6372,6 +6375,7 @@ window.addEventListener('message', function(e){
     if(e.data.bg)     _appAppearance.bg     = e.data.bg;
     if(e.data.board)  _appAppearance.board  = e.data.board;
     if(e.data.pieces) _appAppearance.pieces = e.data.pieces;
+    if(e.data.shell)  _appAppearance.shell  = e.data.shell;
     _renderAppearancePop();
   }
   if(e.data && e.data.type === 'setFormat'){
@@ -6545,9 +6549,10 @@ function _btPos(rect, corner){
   const pw = panel.offsetWidth || 300, ph = panel.offsetHeight || 200;
   const vw = window.innerWidth, vh = window.innerHeight, gap = 14;
   if(corner){
-    // Bottom-right corner — least content-dense spot; page stays readable.
-    panel.style.top = Math.max(gap, vh - ph - gap) + 'px';
-    panel.style.left = Math.max(gap, vw - pw - gap) + 'px';
+    // Upper-left — first place the eye goes, so the overview is seen
+    // immediately (bottom-right proved easy to miss).
+    panel.style.top = gap + 'px';
+    panel.style.left = gap + 'px';
     return;
   }
   if(!(rect && rect.width > 0)){
@@ -8412,8 +8417,8 @@ function setReadability(mode){
   try { localStorage.setItem('bm_readability', mode); } catch(e){}
 }
 function _initReadability(){
-  let saved = 'readable'; // "Standard" is the initial look
-  try { saved = localStorage.getItem('bm_readability') || 'readable'; } catch(e){}
+  let saved = 'highvis'; // High-vis is the initial look (best first-time legibility)
+  try { saved = localStorage.getItem('bm_readability') || 'highvis'; } catch(e){}
   setReadability(saved);
 }
 

@@ -170,12 +170,6 @@ canvas{
 /* ── Indicator grid ───────────────────────────────────────────────────────── */
 .ind-grid{display:flex;flex-direction:row;gap:4px;width:100%;}
 .ind-col{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;}
-/* "Starter" indicator preset: show only Threats & Captures + Unprotected; the
-   rest sit behind the "More indicators" expander. Single column when collapsed. */
-body.ind-starter .ind-col:nth-child(2){display:none;}
-body.ind-starter .ind-col .ib:not(#ib-threats):not(#ib-unprotected){display:none;}
-body:not(.ind-starter) #moreIndBtn .mi-more{display:none;}
-body.ind-starter #moreIndBtn .mi-less{display:none;}
 
 /* ── Indicator button ─────────────────────────────────────────────────────── */
 .ib{display:flex;flex-direction:column;gap:0px;user-select:none;width:100%;}
@@ -1089,7 +1083,7 @@ body.pro-mode #chatBox #chatMessages{ color:var(--pt2); }
 body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 </style>
 </head>
-<body class="ind-starter">
+<body>
 
 <!-- ══════════════════════════════════════════════════════════════════════════
      LANDING PAGE OVERLAY
@@ -1496,11 +1490,6 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         </div>
       </div>
     </div><!-- end ind-grid -->
-    <!-- Starter preset expander: reveal the rest of the indicators -->
-    <button id="moreIndBtn" class="ctrl-btn util-btn" onclick="toggleMoreIndicators()"
-      style="width:100%;padding:6px 4px;font-size:8.5px;font-weight:600;margin-top:4px;">
-      <span class="mi-more">▾ More indicators</span><span class="mi-less">▴ Fewer indicators</span>
-    </button>
     <!-- Peek / Hide / Show All — larger, below the indicator columns -->
     <div style="display:flex;gap:5px;margin-top:5px;">
       <button id="btnHideShow" class="ctrl-btn util-btn"
@@ -1540,13 +1529,10 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       </div>
       <!-- Row 2: utilities -->
       <div class="ctrl-row">
-        <button class="ctrl-btn util-btn" onclick="openPanel('themePanel')">🎨 Theme &amp; Pieces</button>
+        <button class="ctrl-btn util-btn" id="btnTheme" onclick="openPanel('themePanel')">🎨 Theme &amp; Pieces</button>
         <button class="ctrl-btn util-btn" id="btnLoadPgn" onclick="document.getElementById('pgnFileInput').click()">▶ Load game</button>
         <input type="file" id="pgnFileInput" accept=".pgn" style="display:none" onchange="loadPgnFile(event)">
         <button class="ctrl-btn util-btn" id="btnSavePgn" onclick="savePgn()">↓ Save game</button>
-      </div>
-      <div class="ctrl-row">
-        <button class="ctrl-btn util-btn" id="proSwitchBtn" onclick="toggleShell()" style="border-color:rgba(200,146,42,0.5);color:#c8922a;">♟ Switch to Pro board</button>
       </div>
       <div class="util-row" style="display:none;"></div>
     </div>
@@ -1612,8 +1598,8 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <button onclick="openPanel('mpPanel');proToggleGear()">⚔ 2-Player</button>
       <button onclick="savePgnAs();proToggleGear()">💾 Save game…</button>
       <button onclick="document.getElementById('pgnFileInput').click();proToggleGear()">▶ Load game</button>
-      <button onclick="openPanel('themePanel');proToggleGear()">🎨 Theme &amp; pieces</button>
-      <button onclick="toggleShell();proToggleGear()">↩ Switch to Blundermind shell</button>
+      <!-- Board experience (Training/Expert) now lives in the 🎨 style palette -->
+      <button onclick="openPanel('themePanel');proToggleGear()">🎨 Style &amp; board experience</button>
     </div>
 
     <!-- Chat relocates here in pro mode -->
@@ -2370,6 +2356,11 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <button class="panel-close" onclick="closeAllPanels()">✕</button>
   </div>
   <div class="panel-body">
+    <h3>Board experience</h3>
+    <div class="piece-btns" style="margin-bottom:4px;">
+      <button class="piece-btn active" data-shell-btn="amateur" onclick="setShell('amateur')" title="Full training board — all vision overlays and indicators">Training</button>
+      <button class="piece-btn" data-shell-btn="pro" onclick="setShell('pro')" title="Clean tournament look — notation, no overlays">Expert</button>
+    </div>
     <h3>Format</h3>
     <div class="piece-btns" style="margin-bottom:4px;">
       <button class="piece-btn" data-format="carbon" onclick="applyFormat('carbon')" title="Dashboard look — mono &amp; caps type">Carbon</button>

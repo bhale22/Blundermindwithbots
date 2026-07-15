@@ -420,7 +420,8 @@ function _syncPanelTheme(t) {
       // can highlight what's active.
       frame.contentWindow.postMessage({
         type: 'setTheme', vars,
-        bg: currentBgTheme, board: currentBoardTheme, pieces: currentPieceSet
+        bg: currentBgTheme, board: currentBoardTheme, pieces: currentPieceSet,
+        shell: (typeof proMode !== 'undefined' && proMode) ? 'pro' : 'amateur'
       }, location.origin);
     }
   } catch(e) {}
@@ -565,7 +566,7 @@ const IND = {
   discoveredopp: {on:false,pre:true, pressing:false},
   discoveredself:{on:false,pre:true, pressing:false},
   xray:          {on:false,pre:false,pressing:false},
-  overloaded:    {on:false,pre:true, pressing:false},
+  overloaded:    {on:false,pre:false,pressing:false},
   weakw:         {on:false,pre:false,pressing:false},
   weakb:         {on:false,pre:false,pressing:false},
   rings:         {on:false,pre:true, pressing:false},
@@ -796,6 +797,13 @@ function setShell(mode){
   }
   if(typeof render === 'function') render();
   if(typeof distUpdateVisibility === 'function') distUpdateVisibility();
+  // Board experience lives in the style palettes now — sync their buttons and
+  // let the bot panel's Appearance popover know.
+  document.querySelectorAll('[data-shell-btn]').forEach(b =>
+    b.classList.toggle('active', b.dataset.shellBtn === (proMode ? 'pro' : 'amateur')));
+  if (typeof _syncPanelTheme === 'function' && typeof BG_THEMES !== 'undefined') {
+    _syncPanelTheme(BG_THEMES[currentBgTheme] || BG_THEMES.navy);
+  }
 }
 function toggleShell(){ setShell(proMode ? 'amateur' : 'pro'); }
 
@@ -1010,8 +1018,8 @@ const TOURS = {
       body:'Pressure or defence acting through another piece on the same line — the lines that matter once a blocker moves.' },
     { sel:'#soloGhostDepth', title:'Ghost moves',
       body:'Hover a destination square and the bot shows the most likely replies as faint “ghost” pieces — handy for training your calculation.' },
-    { sel:'#proSwitchBtn', title:'Expert board',
-      body:'Prefer a clean tournament look with no overlays? Switch to the Expert board here — and switch back anytime.' },
+    { sel:'#btnTheme', title:'Style & board experience',
+      body:'Colors, pieces, Carbon vs Journal format — and the board experience itself: switch between this Training board and the clean Expert board here, anytime.' },
     { sel:'#site-name', title:'Home',
       body:'Click the Blundermind logo anytime to return Home and switch between the Beginner and Expert boards.' },
   ],
@@ -1019,7 +1027,7 @@ const TOURS = {
     { sel:'#proSide', title:'The Expert board',
       body:'A clean tournament view — minimal chrome, live notation, and no coaching overlays.' },
     { sel:'.pro-actions', title:'Board controls',
-      body:'Resign, offer a draw, flip the board, change the theme, or open the ⚙ menu for more — including a bot game, 2-player, and switching back to the Beginner board.' },
+      body:'Resign, offer a draw, flip the board, or open the 🎨 style palette — where you can also switch back to the Training board. The ⚙ menu has more: a bot game, 2-player, save/load.' },
     { sel:'#proMoves', title:'Move list',
       body:'Your game notation updates here live as you play.' },
   ],

@@ -1347,11 +1347,6 @@ function distRender(probs) {
   }
 }
 
-// "Starter" indicator preset — reveal / re-hide the non-starter indicator toggles.
-function toggleMoreIndicators() {
-  document.body.classList.toggle('ind-starter');
-}
-
 // Donate JS stubs (functionality temporarily disabled)
 function toggleHaikuBox() {
   var box = document.getElementById('haikuBox');
@@ -1420,6 +1415,7 @@ window.addEventListener('message', function(e) {
     if (e.data.bg && BG_THEMES[e.data.bg]) applyBgTheme(e.data.bg);           // re-pushes vars
     if (e.data.board && BOARD_THEMES[e.data.board]) applyBoardTheme(e.data.board);
     if (e.data.pieces) setPieceSet(e.data.pieces);
+    if (e.data.shell && typeof setShell === 'function') setShell(e.data.shell === 'pro' ? 'pro' : 'amateur');
     return;
   }
   if (e.data.type === 'formatChanged') {
