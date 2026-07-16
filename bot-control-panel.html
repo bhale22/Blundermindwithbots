@@ -832,7 +832,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 .gauge-title{font-family:var(--font-m);font-size:9.5px;letter-spacing:0.14em;text-transform:uppercase;color:var(--amber-dim);}
 .gauge-val-badge{font-family:var(--font-m);font-size:16px;font-weight:500;color:var(--amber-bright);letter-spacing:0.02em;}
 .gauge-wrap-interactive{display:flex;flex-direction:column;align-items:center;}
-.gauge-svg-interactive{width:100%;max-width:240px;}
+.gauge-svg-interactive{width:100%;max-width:320px;}
 
 
 /* ══ ATTRACTOR HOVER DESCRIPTIONS ══ */
@@ -1619,19 +1619,18 @@ body.fj .picon{font-weight:500;}
     <div class="panel">
       <div class="pr" style="margin-top:0;">
 
-        <!-- OFF toggle + ELO info row -->
+        <!-- Status + ELO info row -->
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-          <button id="pressure-off-btn" class="preset-btn active" onclick="togglePressureOff()" style="min-width:44px;">ON</button>
-          <span id="pressure-off-lbl" style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);">Curves active — bot degrades with clock</span>
+          <span id="pressure-off-lbl" style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);">Both curves active — bot degrades with clock</span>
           <span style="margin-left:auto;font-family:var(--font-m);font-size:8px;color:var(--text-dim);">Base ELO: <span id="tp-elo-display" style="color:var(--amber);">1500</span></span>
         </div>
 
         <!-- 2-col chart area -->
         <div class="panel-2col">
           <!-- LEFT: ELO degradation curve -->
-          <div>
-            <div class="dlbl"><span>ELO degradation — drag points</span></div>
-            <div class="ctrl"><span class="ctrl-lbl">Max ELO drop</span><input type="range" id="r-drop" min="0" max="600" step="25" value="300" oninput="sv(this,'v-drop',v=>v+' ELO');initPts();drawA()"><span class="ctrl-val" id="v-drop">300 ELO</span></div>
+          <div id="tp-col-a">
+            <div class="dlbl"><span>ELO degradation — drag points</span><button class="xsbtn active" id="pressure-off-a" onclick="togglePressureOffA()" style="min-width:36px;" title="Toggle ELO degradation under time pressure">ON</button></div>
+            <div class="ctrl"><span class="ctrl-lbl">Max ELO drop</span><input type="range" id="r-drop" min="0" max="600" step="25" value="300" oninput="sv(this,'v-drop',v=>v+' ELO');initPtsA();drawA()"><span class="ctrl-val" id="v-drop">300 ELO</span></div>
             <div class="chart-box">
               <div class="chart-title-row">
                 <div class="chart-title" style="flex:1;margin:0;">Effective ELO vs think time — curve passes through Selected ELO at game start</div>
@@ -1648,9 +1647,9 @@ body.fj .picon{font-weight:500;}
             </div>
           </div>
           <!-- RIGHT: Distribution curve -->
-          <div>
-            <div class="dlbl"><span>Move quality (distribution) — drag points</span></div>
-            <div class="ctrl"><span class="ctrl-lbl">Min floor</span><input type="range" id="r-floor" min="1" max="100" step="1" value="5" oninput="sv(this,'v-floor',v=>v+'%');initPts();drawB()"><span class="ctrl-val" id="v-floor">5%</span></div>
+          <div id="tp-col-b">
+            <div class="dlbl"><span>Move quality (distribution) — drag points</span><button class="xsbtn active" id="pressure-off-b" onclick="togglePressureOffB()" style="min-width:36px;" title="Toggle move-distribution restriction under time pressure">ON</button></div>
+            <div class="ctrl"><span class="ctrl-lbl">Min floor</span><input type="range" id="r-floor" min="1" max="100" step="1" value="5" oninput="sv(this,'v-floor',v=>v+'%');initPtsB();drawB()"><span class="ctrl-val" id="v-floor">5%</span></div>
             <div class="chart-box">
               <div class="chart-title-row">
                 <div class="chart-title" style="flex:1;margin:0;">Available move distribution (%) vs think time — 100% at game start</div>
@@ -1700,7 +1699,7 @@ body.fj .picon{font-weight:500;}
             The bot simulates a rated player under time pressure using two complementary mechanisms:<br>
             <span style="color:var(--amber);">▸ ELO reduction</span> — Maia is called at a lower ELO as the clock runs down, playing like a lower-rated player under time scramble.<br>
             <span style="color:#5dade2;">▸ Distribution restriction</span> — ELO stays fixed but only the top portion of Maia's move distribution is available (instinctive, less creative play — typical of a strong player with no time to calculate).<br>
-            Both curves apply simultaneously. Switch the toggle to <strong>OFF</strong> to disable all time-pressure effects and play at constant strength.
+            Each curve has its own <strong>ON/OFF</strong> toggle next to its title, so you can run either mechanism alone, both together, or switch both off for constant strength regardless of clock.
           </div>
         </div>
 
@@ -5238,7 +5237,8 @@ function initStyleGauge(){
 
 function _applyGaugePointer(svg, e){
   const rect = svg.getBoundingClientRect();
-  const sx = 280 / rect.width, sy = 130 / rect.height;
+  // Scale factors must match the viewBox (280 × 140)
+  const sx = 280 / rect.width, sy = 140 / rect.height;
   const mx = (e.clientX - rect.left) * sx;
   const my = (e.clientY - rect.top) * sy;
   const { CX, CY, startDeg, sweepDeg, max, step } = GAUGE_CFG;
@@ -5360,12 +5360,13 @@ function drawStyleGauge(val){
     fillColor = '#c83030'; qualityLabel = 'Blunder range'; qualityColor = '#c83030';
   }
 
-  // Needle
+  // Needle — tip stops at the arc's inner edge; drag handle sits ON the arc
+  // (r 5 + stroke 2 ≈ the 12-unit arc width, so it no longer overflows it)
   const needleAng = (startDeg + frac * sweepDeg) * DEG;
-  const nx = (CX + (R - 16) * Math.cos(needleAng)).toFixed(1);
-  const ny = (CY + (R - 16) * Math.sin(needleAng)).toFixed(1);
-  const hx = (CX + (R + 4) * Math.cos(needleAng)).toFixed(1);
-  const hy = (CY + (R + 4) * Math.sin(needleAng)).toFixed(1);
+  const nx = (CX + (R - 7) * Math.cos(needleAng)).toFixed(1);
+  const ny = (CY + (R - 7) * Math.sin(needleAng)).toFixed(1);
+  const hx = (CX + R * Math.cos(needleAng)).toFixed(1);
+  const hy = (CY + R * Math.sin(needleAng)).toFixed(1);
 
   // Threshold tick marks — only at key chess-quality boundaries
   // Place labels INSIDE the arc (toward center) to avoid viewBox overflow
@@ -5404,15 +5405,15 @@ function drawStyleGauge(val){
     if(m.outside){
       const tx1 = (CX+(R-6)*mc).toFixed(1), ty1 = (CY+(R-6)*ms).toFixed(1);
       const tx2 = (CX+(R+6)*mc).toFixed(1), ty2 = (CY+(R+6)*ms).toFixed(1);
-      const lx  = (CX+(R+14)*mc).toFixed(1);
-      const ly  = Math.max(5, CY+(R+14)*ms).toFixed(1);
+      const lx  = (CX+(R+16)*mc).toFixed(1);
+      const ly  = Math.max(5, CY+(R+16)*ms).toFixed(1);
       return `<line x1="${tx1}" y1="${ty1}" x2="${tx2}" y2="${ty2}" stroke="${m.color}" stroke-width="1.5" opacity="0.65"/>
               <text x="${lx}" y="${ly}" text-anchor="middle" dominant-baseline="middle"
-                font-family="Arial,sans-serif" font-size="11" fill="${m.color}" opacity="0.85">${m.glyph}</text>`;
+                font-family="Arial,sans-serif" font-size="16" fill="${m.color}" opacity="0.95">${m.glyph}</text>`;
     } else {
-      const lx = (CX+(R-14)*mc).toFixed(1), ly = (CY+(R-14)*ms).toFixed(1);
+      const lx = (CX+(R-18)*mc).toFixed(1), ly = (CY+(R-18)*ms).toFixed(1);
       return `<text x="${lx}" y="${ly}" text-anchor="middle" dominant-baseline="middle"
-        font-family="Arial,sans-serif" font-size="11" fill="${m.color}" opacity="0.85">${m.glyph}</text>`;
+        font-family="Arial,sans-serif" font-size="16" fill="${m.color}" opacity="0.95">${m.glyph}</text>`;
     }
   }).join('');
 
@@ -5450,7 +5451,7 @@ function drawStyleGauge(val){
     <!-- Hub -->
     <circle cx="${CX}" cy="${CY}" r="5" fill="#14161a" stroke="#c8922a" stroke-width="1.5"/>
     <!-- Drag handle -->
-    <circle cx="${hx}" cy="${hy}" r="9" fill="#1c1f24" stroke="${fillColor}" stroke-width="2.5"
+    <circle cx="${hx}" cy="${hy}" r="5" fill="#1c1f24" stroke="${fillColor}" stroke-width="2"
       style="cursor:grab;"/>
     <!-- Current value -->
     <text x="${CX}" y="${CY - 12}" text-anchor="middle"
@@ -5843,7 +5844,9 @@ function getBotConfig(){
     blunderLimitCp:      parseInt(document.getElementById('r-blunder')?.value || '150'),
     ctrlA:               ctrlA.map(p => ({x: p.x, y: p.y})),
     ctrlB:               ctrlB.map(p => ({x: p.x, y: p.y})),
-    pressureOff:         pressureOff,
+    pressureOffA:        pressureOffA,
+    pressureOffB:        pressureOffB,
+    pressureOff:         pressureOffA && pressureOffB, // legacy master flag (older readers)
     weaponizerEnabled:   document.getElementById('weaponizer-toggle')?.checked || false,
     weaponizerLeadSec:   parseInt(document.getElementById('r-wlead')?.value    || '30'),
   };
@@ -5900,8 +5903,12 @@ function applyBotConfig(cfg){
     document.querySelectorAll('.tg-cell').forEach(c => c.classList.remove('selected'));
   });
 
-  // Pressure controls BEFORE curve restore — their handlers reset the curves
-  grp(() => { if(!!cfg.pressureOff !== pressureOff) togglePressureOff(); });
+  // Pressure controls BEFORE curve restore — their handlers reset the curves.
+  // Older configs only carry the master pressureOff flag → applies to both.
+  grp(() => {
+    _setPressureOffA(cfg.pressureOffA != null ? !!cfg.pressureOffA : !!cfg.pressureOff);
+    _setPressureOffB(cfg.pressureOffB != null ? !!cfg.pressureOffB : !!cfg.pressureOff);
+  });
   grp(() => { _setRange('r-drop',  cfg.timePressureMaxDrop); _setRange('r-floor', cfg.timePressureFloor); });
 
   // Quality controls
@@ -6024,11 +6031,12 @@ function applyBotConfig(cfg){
     }
   });
 
-  // Pressure curves LAST — everything above may have re-anchored them
+  // Pressure curves LAST — everything above may have re-anchored them.
+  // A switched-off mechanism keeps its flat baseline instead of saved points.
   grp(() => {
     initPts();
-    if(cfg.ctrlA && cfg.ctrlA.length >= 2) ctrlA = cfg.ctrlA.map(p => ({x: +p.x, y: +p.y}));
-    if(cfg.ctrlB && cfg.ctrlB.length >= 2) ctrlB = cfg.ctrlB.map(p => ({x: +p.x, y: +p.y}));
+    if(!pressureOffA && cfg.ctrlA && cfg.ctrlA.length >= 2) ctrlA = cfg.ctrlA.map(p => ({x: +p.x, y: +p.y}));
+    if(!pressureOffB && cfg.ctrlB && cfg.ctrlB.length >= 2) ctrlB = cfg.ctrlB.map(p => ({x: +p.x, y: +p.y}));
     drawA(); drawB(); updatePressureStats();
   });
 
@@ -8047,15 +8055,17 @@ function buildXs(){
 // reference point: sigA(startX) = currentElo, sigB(startX) = 100%.
 // Raw sigmoid: 1/(1+e^(8*(frac−0.33))) where frac = log(t) in [0,1].
 // Shifted + scaled so raw(startX) → 0, raw(X_MIN) → 1.
-// pressureOff = true → both curves are flat at their reference values.
-let pressureOff = false;
+// Each mechanism can be switched off independently:
+//   pressureOffA = true → ELO curve flat at base ELO (no ELO degradation)
+//   pressureOffB = true → distribution curve flat at 100% (no restriction)
+let pressureOffA = false;
+let pressureOffB = false;
 function _rawSig(t){
   const logMax = Math.log10(X_MAX), logMin = Math.log10(X_MIN);
   const frac = (Math.log10(Math.max(t, 0.01)) - logMin) / (logMax - logMin);
   return 1 / (1 + Math.exp(8 * (frac - 0.33)));
 }
 function _sigmoid(t){
-  if(pressureOff) return 0;
   const sx  = Math.max(X_MIN + 0.1, Math.min(X_MAX - 1, startX()));
   const ref = _rawSig(sx);
   const lo  = _rawSig(X_MIN);
@@ -8064,8 +8074,14 @@ function _sigmoid(t){
 }
 // Clamped at 600: the engine clamps the ELO it actually calls Maia with to
 // [600, 2600] (pressureEffectiveMaiaElo), so the curve shows the real value.
-function sigA(t){ return Math.max(600, Math.round(currentElo - gv('r-drop') * _sigmoid(t))); }
-function sigB(t){ const mf = gv('r-floor'); return Math.round(100 - (100-mf) * _sigmoid(t)); }
+function sigA(t){
+  if(pressureOffA) return Math.max(600, Math.round(currentElo));
+  return Math.max(600, Math.round(currentElo - gv('r-drop') * _sigmoid(t)));
+}
+function sigB(t){
+  if(pressureOffB) return 100;
+  const mf = gv('r-floor'); return Math.round(100 - (100-mf) * _sigmoid(t));
+}
 
 // ── Scale-aware coordinate transforms ────────────────────────────────────────
 // makeXp: data-time → canvas-pixel-x  (X_MAX maps to PAD.l, X_MIN to w-PAD.r)
@@ -8104,12 +8120,17 @@ function setScaleB(s){
 // ── Control-point initialisation ──────────────────────────────────────────────
 // 8 control points placed log-uniformly across the domain, on the sigmoid curve.
 // User can then drag them freely; reDraw() resets them to the current sigmoid.
-function initPts(){
-  const xs  = buildXs();                              // 121 pts, descending
-  const idx = [0, 17, 34, 51, 68, 85, 100, 120];     // evenly-spaced indices
-  ctrlA = idx.map(i => ({ x: xs[Math.min(i, xs.length-1)], y: sigA(xs[Math.min(i, xs.length-1)]) }));
-  ctrlB = idx.map(i => ({ x: xs[Math.min(i, xs.length-1)], y: sigB(xs[Math.min(i, xs.length-1)]) }));
+// Split per curve so re-anchoring one chart never wipes drags on the other.
+const _PT_IDX = [0, 17, 34, 51, 68, 85, 100, 120];   // evenly-spaced indices
+function initPtsA(){
+  const xs = buildXs();                               // 121 pts, descending
+  ctrlA = _PT_IDX.map(i => ({ x: xs[Math.min(i, xs.length-1)], y: sigA(xs[Math.min(i, xs.length-1)]) }));
 }
+function initPtsB(){
+  const xs = buildXs();
+  ctrlB = _PT_IDX.map(i => ({ x: xs[Math.min(i, xs.length-1)], y: sigB(xs[Math.min(i, xs.length-1)]) }));
+}
+function initPts(){ initPtsA(); initPtsB(); }
 
 // ── Canvas width helper ───────────────────────────────────────────────────────
 function getW(id){
@@ -8309,19 +8330,52 @@ function drawB(){
 }
 function reDraw(){ initPts(); drawA(); drawB(); }
 
-function togglePressureOff(){
-  pressureOff = !pressureOff;
-  const btn = document.getElementById('pressure-off-btn');
+// ── Per-curve ON/OFF ──────────────────────────────────────────────────────────
+// Each mechanism toggles independently. Toggling re-anchors only its own
+// control points (flat when off, sigmoid when back on).
+function _syncPressureOffUi(){
+  const states = [
+    { btn:'pressure-off-a', col:'tp-col-a', off:pressureOffA },
+    { btn:'pressure-off-b', col:'tp-col-b', off:pressureOffB },
+  ];
+  states.forEach(s => {
+    const btn = document.getElementById(s.btn);
+    if(btn){
+      btn.classList.toggle('active', !s.off); // highlighted when mechanism is ON
+      btn.textContent = s.off ? 'OFF' : 'ON';
+    }
+    // Dim the chart + slider while off; the dlbl row (with the button) stays live
+    const col = document.getElementById(s.col);
+    if(col) col.querySelectorAll('.chart-box,.ctrl').forEach(el => {
+      el.style.opacity = s.off ? '0.45' : '';
+      el.style.pointerEvents = s.off ? 'none' : '';
+    });
+  });
   const lbl = document.getElementById('pressure-off-lbl');
-  if(btn){
-    btn.classList.toggle('active', !pressureOff); // highlighted when simulation is ON
-    btn.textContent = pressureOff ? 'OFF' : 'ON';
-  }
-  if(lbl) lbl.textContent = pressureOff
-    ? 'OFF — bot plays at constant ELO regardless of clock'
-    : 'Curves active — bot degrades with clock';
-  initPts(); drawA(); drawB();
+  if(lbl) lbl.textContent =
+    pressureOffA && pressureOffB ? 'OFF — bot plays at constant strength regardless of clock'
+    : pressureOffA ? 'Distribution restriction only — ELO stays constant'
+    : pressureOffB ? 'ELO degradation only — full move distribution available'
+    : 'Both curves active — bot degrades with clock';
+  const st = document.getElementById('st-pressure');
+  if(st) st.textContent =
+    pressureOffA && pressureOffB ? 'Off'
+    : pressureOffA ? 'Dist only'
+    : pressureOffB ? 'ELO only'
+    : 'Dual curve';
 }
+function _setPressureOffA(off){
+  pressureOffA = !!off;
+  _syncPressureOffUi();
+  initPtsA(); drawA();
+}
+function _setPressureOffB(off){
+  pressureOffB = !!off;
+  _syncPressureOffUi();
+  initPtsB(); drawB();
+}
+function togglePressureOffA(){ _setPressureOffA(!pressureOffA); }
+function togglePressureOffB(){ _setPressureOffB(!pressureOffB); }
 
 // ── Drag handlers ─────────────────────────────────────────────────────────────
 // getCtrl: closure returning the live ctrl array

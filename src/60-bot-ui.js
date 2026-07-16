@@ -1503,15 +1503,13 @@ window.addEventListener('message', function(e) {
   botBlunderLimitCp = (cfg.blunderLimitCp != null) ? cfg.blunderLimitCp : 150;
   botBadDayMode     = !!cfg.badDayMode;
 
-  // Time pressure curves (cvA = ELO degradation, cvB = distribution cutoff)
-  // pressureOff disables both curves (flat ELO, 100% distribution at all times)
-  if (cfg.pressureOff) {
-    botPressureCurveA = null;
-    botPressureCurveB = null;
-  } else {
-    botPressureCurveA = (cfg.ctrlA && cfg.ctrlA.length >= 2) ? cfg.ctrlA : null;
-    botPressureCurveB = (cfg.ctrlB && cfg.ctrlB.length >= 2) ? cfg.ctrlB : null;
-  }
+  // Time pressure curves (cvA = ELO degradation, cvB = distribution cutoff).
+  // Each mechanism has its own off flag (pressureOffA / pressureOffB); older
+  // configs only carry the master pressureOff flag, which disables both.
+  var _tpOffA = (cfg.pressureOffA != null) ? !!cfg.pressureOffA : !!cfg.pressureOff;
+  var _tpOffB = (cfg.pressureOffB != null) ? !!cfg.pressureOffB : !!cfg.pressureOff;
+  botPressureCurveA = (!_tpOffA && cfg.ctrlA && cfg.ctrlA.length >= 2) ? cfg.ctrlA : null;
+  botPressureCurveB = (!_tpOffB && cfg.ctrlB && cfg.ctrlB.length >= 2) ? cfg.ctrlB : null;
 
   // Weaponizer
   botWeaponizerEnabled = !!cfg.weaponizerEnabled;
