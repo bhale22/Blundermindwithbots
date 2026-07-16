@@ -305,6 +305,10 @@ function setPieceSet(name) {
   document.querySelectorAll('.piece-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.set === name));
   localStorage.setItem('bm_pieceSet', name);
+  // Keep the bot panel's Appearance popover in sync (guarded: defined below)
+  if (typeof _syncPanelTheme === 'function' && typeof BG_THEMES !== 'undefined') {
+    _syncPanelTheme(BG_THEMES[currentBgTheme] || BG_THEMES.navy);
+  }
 }
 
 // ── Theme system ─────────────────────────────────────────────────────
@@ -325,6 +329,11 @@ const BG_THEMES = {
   lightgreen: {bg:'#e8f0e8', panel:'#dce8dc', panel2:'#d0e0d0', border:'#b0c8b0', border2:'#c4d8c4', text:'#1a2a1a', textDim:'#507050', textSec:'#406040', name:'Sage'},
   lighttan:   {bg:'#f4efe0', panel:'#ece7d8', panel2:'#e4dece', border:'#d0c8b0', border2:'#dcd4c0', text:'#2a2010', textDim:'#706040', textSec:'#584830', name:'Parchment'},
   lightgray:  {bg:'#f0f0f0', panel:'#e8e8e8', panel2:'#e0e0e0', border:'#c8c8c8', border2:'#d4d4d4', text:'#1a1a1a', textDim:'#606060', textSec:'#484848', name:'Silver'},
+  // The "Field Journal" paper palette from bot_config_restyle_brief.md as a
+  // regular background theme, with its terracotta accent carried alongside so
+  // the bot panel picks it up (themes without `accent` use the amber default).
+  clay:       {bg:'#f2e3d3', panel:'#f8eee1', panel2:'#e9d7c1', border:'#d3bfa4', border2:'#e0cfb8', text:'#3d2a22', textDim:'#6b5646', textSec:'#4a3226', name:'Clay',
+               accent:{main:'#b3644f', bright:'#c97a63', dim:'#8a4a3a', glow:'rgba(179,100,79,0.1)', glowS:'rgba(179,100,79,0.22)', border:'rgba(179,100,79,0.4)'}},
   navy:       {bg:'#1a1a2e', panel:'#0d1b2a', panel2:'#060f18', border:'#2a3a4a', border2:'#1a2a3a', text:'#c8d8e8', textDim:'#506070', textSec:'#8090a0', name:'Navy'},
   green:      {bg:'#0d1a0d', panel:'#0a1a0a', panel2:'#060e06', border:'#1a3a1a', border2:'#0f220f', text:'#c0dcc0', textDim:'#4a6a4a', textSec:'#70a070', name:'Forest'},
   charcoal:   {bg:'#1a1a1a', panel:'#111111', panel2:'#080808', border:'#333333', border2:'#222222', text:'#d0d0d0', textDim:'#505050', textSec:'#909090', name:'Charcoal'},
@@ -340,6 +349,8 @@ function applyBoardTheme(name) {
     s.classList.toggle('active', s.dataset.theme === name));
   localStorage.setItem('bm_boardTheme', name);
   render();
+  // Keep the bot panel's Appearance popover in sync with the new selection
+  _syncPanelTheme(BG_THEMES[currentBgTheme] || BG_THEMES.navy);
 }
 function applyBgTheme(name) {
   const t = BG_THEMES[name] || BG_THEMES.navy;
@@ -363,7 +374,13 @@ function _isLightTheme(t) {
   return m ? parseInt(m[1], 16) < 128 : false;
 }
 function _syncPanelTheme(t) {
+  if (!t) return;
   const light = _isLightTheme(t);
+  // Accent family: themes may carry their own (e.g. Clay's terracotta);
+  // everything else uses the amber pair tuned for light/dark surfaces.
+  const ac = t.accent || (light
+    ? {main:'#9a6820', bright:'#c8922a', dim:'#6a4a10', glow:'rgba(154,104,32,0.14)', glowS:'rgba(154,104,32,0.26)', border:'rgba(154,104,32,0.40)'}
+    : {main:'#c8922a', bright:'#e8aa40', dim:'#8a6420', glow:'rgba(200,146,42,0.12)', glowS:'rgba(200,146,42,0.22)', border:'rgba(200,146,42,0.30)'});
   const vars = {
     '--carbon':         t.bg,
     '--carbon-mid':     t.panel,
@@ -376,26 +393,59 @@ function _syncPanelTheme(t) {
     // (a readable mid-tone) as the dim color inside the bot panel instead.
     '--text-dim':       light ? t.textDim : t.textSec,
     '--border':         t.border,
-    '--amber':          light ? '#9a6820' : '#c8922a',
-    '--amber-bright':   light ? '#c8922a' : '#e8aa40',
-    '--amber-dim':      light ? '#6a4a10' : '#8a6420',
-    '--amber-glow':     light ? 'rgba(154,104,32,0.14)' : 'rgba(200,146,42,0.12)',
-    '--amber-glow-s':   light ? 'rgba(154,104,32,0.26)' : 'rgba(200,146,42,0.22)',
-    '--border-amber':   light ? 'rgba(154,104,32,0.40)' : 'rgba(200,146,42,0.30)',
+    '--amber':          ac.main,
+    '--amber-bright':   ac.bright,
+    '--amber-dim':      ac.dim,
+    '--amber-glow':     ac.glow,
+    '--amber-glow-s':   ac.glowS,
+    '--border-amber':   ac.border,
     '--radar-ring':     light ? 'rgba(0,0,0,0.10)'       : 'rgba(255,255,255,0.06)',
     '--radar-axis':     light ? 'rgba(0,0,0,0.10)'       : 'rgba(255,255,255,0.07)',
     '--radar-node-inactive': light ? '#708090' : '#4a5060',
-    '--radar-node-fill':     light ? '#c8922a' : '#e8aa40',
-    '--radar-node-active':   light ? '#ffcc55' : '#ffcc55',
-    '--radar-label-badge':   light ? '#9a6820' : '#ffcc55',
+    '--radar-node-fill':     light ? ac.main   : ac.bright,
+    '--radar-node-active':   light ? ac.bright : '#ffcc55',
+    '--radar-label-badge':   light ? ac.dim    : '#ffcc55',
+    // Theme-aware fixes for two inline-styled elements in the panel: the
+    // Maia-model veil over the Elometer and the green download button.
+    '--overlay-veil': light ? 'rgba(248,244,238,0.93)' : 'rgba(14,15,17,0.90)',
+    '--dl-green':     light ? '#2e7d4f' : '#5ad490',
+    '--dl-green-bg':  light ? 'rgba(46,125,79,0.10)' : 'rgba(90,212,144,0.12)',
+    '--dl-green-bd':  light ? 'rgba(46,125,79,0.50)' : 'rgba(90,212,144,0.40)',
   };
   try { localStorage.setItem('bm_panelTheme', JSON.stringify(vars)); } catch(e) {}
   try {
     const frame = document.getElementById('botModalFrame');
     if (frame && frame.contentWindow) {
-      frame.contentWindow.postMessage({ type: 'setTheme', vars }, location.origin);
+      // Include the current selection names so the panel's Appearance popover
+      // can highlight what's active.
+      frame.contentWindow.postMessage({
+        type: 'setTheme', vars,
+        bg: currentBgTheme, board: currentBoardTheme, pieces: currentPieceSet,
+        shell: (typeof proMode !== 'undefined' && proMode) ? 'pro' : 'amateur'
+      }, location.origin);
     }
   } catch(e) {}
+}
+
+// ── Format: Carbon (dark dashboard type) vs Journal (editorial serif) ────────
+// App-wide setting shared with the bot panel (same localStorage key + a live
+// postMessage push). Format controls typography/texture; COLOR stays with the
+// background theme — so "Journal + Cool Blue" or "Journal + Clay" both work.
+let currentFormat = 'carbon';
+function applyFormat(f, fromPanel) {
+  currentFormat = (f === 'journal') ? 'journal' : 'carbon';
+  document.body.classList.toggle('journal', currentFormat === 'journal');
+  try { localStorage.setItem('bm_format', currentFormat); } catch(e) {}
+  document.querySelectorAll('[data-format]').forEach(b =>
+    b.classList.toggle('active', b.dataset.format === currentFormat));
+  if (!fromPanel) {
+    try {
+      const frame = document.getElementById('botModalFrame');
+      if (frame && frame.contentWindow) {
+        frame.contentWindow.postMessage({ type: 'setFormat', format: currentFormat }, location.origin);
+      }
+    } catch(e) {}
+  }
 }
 
 // ── Panel system ─────────────────────────────────────────────────────
@@ -405,12 +455,11 @@ function openPanel(id) {
   document.getElementById('panelOverlay').classList.add('open');
   // Refresh lobby list whenever the 2-player panel opens, then auto-refresh every 5s
   if (id === 'mpPanel') {
-    mpLoadInfo();           // restore last-entered handle / rating / range
-    mpCloseTimeOverlay();   // ensure the time selector starts hidden
+    mpLoadInfo();           // restore last-entered handle / rating / range / TC
     mpHideAnonPrompt();
     if (!mpRoomId) mpSetMode('idle');  // default view unless mid-game / waiting
     mpBuildTimeGrid();      // prebuild the matrix (reflects current selection)
-    mpUpdateTCDisplay();    // sync the readout line
+    if (typeof mpQsCloseAll === 'function') mpQsCloseAll();  // pills closed, values fresh
     mpRefreshLobby();
     clearInterval(mpLobbyRefreshTimer);
     mpLobbyRefreshTimer = setInterval(mpRefreshLobby, 5000);
@@ -443,7 +492,7 @@ const HELP = {
 <p>No circle means you cannot currently capture that piece.</p>`},
   unprotected:{title:'Unprotected Pieces',body:`<p>An <strong>unprotected piece</strong> has no friendly defender.</p><p>🎯 <strong>Bullseye</strong> — unprotected, not currently attacked (quietly vulnerable)<br>🔴 <strong>Red ring</strong> — unprotected AND under attack (immediate danger)</p><p>Good habit: keep all pieces protected.</p>`},
   pins:{title:'Pins',body:`<p>A piece is <strong>"pinned"</strong> if moving it would expose a more valuable friendly piece behind it to capture.</p><hr><h3>${PIN_SVG_PURPLE} Absolute pin — to the king</h3><p>The piece <strong>cannot legally move</strong>. Always excluded from threat and defense counts.</p><p><em>Exception: it can capture the pinner — that resolves the pin.</em></p><hr><h3>${PIN_SVG_BLUE} Relative pin — to the queen</h3><p>The piece <strong>can legally move</strong> but doing so loses the queen.</p><p>When Queen Pins is enabled, these pieces are also excluded from counts — a defender pinned to the queen doesn't actually defend.</p>`},
-  ghostresponses:{title:'Ghost Responses',body:`<p>After you hover or drag a piece to a candidate square, Stockfish calculates up to two likely opponent responses and shows them as semi-transparent <strong>ghost pieces</strong> on the board.</p><p>This lets you see the position one move deeper without committing — useful for spotting immediate threats or refutations you might otherwise miss.</p><hr><p><strong>Depth settings</strong></p><ul><li><strong>Off</strong> — no ghost responses shown.</li><li><strong>Fast (depth 4)</strong> — near-instant, good for quick checks.</li><li><strong>Medium (depth 8)</strong> — recommended balance of speed and quality.</li><li><strong>Deep (depth 12)</strong> — stronger analysis, slightly slower response.</li></ul><p><em>Stockfish runs locally in your browser. Higher depths use more CPU.</em></p>`},
+  ghostresponses:{title:'Ghost Responses',body:`<p>After you hover or drag a piece to a candidate square, Stockfish calculates up to two likely opponent responses and shows them as semi-transparent <strong>ghost pieces</strong> on the board.</p><p>This lets you see the position one move deeper without committing — useful for spotting immediate threats or refutations you might otherwise miss.</p><hr><p><strong>Depth settings</strong></p><ul><li><strong>Off</strong> — no ghost responses shown.</li><li><strong>Fast (depth 4)</strong> — near-instant, good for quick checks.</li><li><strong>Medium (depth 8)</strong> — recommended balance of speed and quality.</li><li><strong>Deep (depth 12)</strong> — stronger analysis, slightly slower response.</li></ul><p><em>Stockfish runs locally in your browser. Higher depths use more CPU.</em></p><hr><p>⚔ <strong>Not available in 2-player online games</strong> — engine hints would undercut human-vs-human play. The control is disabled while an online game is live.</p>`},
   batteriessetting:{title:'Batteries in Threat Counts',body:`<p>A <strong>battery</strong> is two or more sliding pieces (rooks, bishops, or the queen) lined up on the same rank, file, or diagonal so they reinforce each other's attacks.</p><p>When this setting is <strong>on</strong>, the threat and defense counts shown on pieces use Static Exchange Evaluation (SEE) — the full sequence of captures is simulated, so a rook behind another rook counts as a second attacker on the same square.</p><p>When <strong>off</strong>, only direct attackers are counted (faster, simpler, but undercounts battery strength).</p><p><em>Also controlled by the Battery Counts indicator button in the indicator grid.</em></p>`},
   queenpinssetting:{title:'Include Queen Pins',body:`<p>A piece is <strong>relatively pinned to the queen</strong> if moving it would expose the queen to capture. The piece can legally move, but doing so loses the queen.</p><p>When this setting is <strong>on</strong>, pieces pinned to the queen are treated as non-defenders — they are excluded from threat and defense counts, because a piece that would cost you your queen to move isn't truly defending anything.</p><p>When <strong>off</strong>, only absolute pins to the king are excluded from counts; queen-pinned pieces are counted as normal defenders.</p><p><em>See the Pins indicator for a visual display of all pinned pieces.</em></p>`},
     forksw:{title:"My Forks & Skewers",body:`<h3>Forks &amp; skewers — what are they?</h3>
@@ -517,7 +566,7 @@ const IND = {
   discoveredopp: {on:false,pre:true, pressing:false},
   discoveredself:{on:false,pre:true, pressing:false},
   xray:          {on:false,pre:false,pressing:false},
-  overloaded:    {on:false,pre:true, pressing:false},
+  overloaded:    {on:false,pre:false,pressing:false},
   weakw:         {on:false,pre:false,pressing:false},
   weakb:         {on:false,pre:false,pressing:false},
   rings:         {on:false,pre:true, pressing:false},
@@ -677,7 +726,7 @@ function chatShow(visible){
   if(!visible) chatClearUnread();
 }
 
-function chatToggleExpand(){
+function chatToggleExpand(noFocus){
   chatExpanded = !chatExpanded;
   const body = document.getElementById('chatBody');
   const chev = document.getElementById('chatChevron');
@@ -688,9 +737,13 @@ function chatToggleExpand(){
     chatClearUnread();
     const msgs = document.getElementById('chatMessages');
     if(msgs) msgs.scrollTop = msgs.scrollHeight;
-    // Focus the input so the user can type immediately
-    const inp = document.getElementById('chatInput');
-    if(inp) inp.focus();
+    // Focus the input so the user can type immediately — but NOT when the
+    // expand was triggered by an incoming message (stealing focus mid-game,
+    // or popping the mobile keyboard, would be worse than the message).
+    if(!noFocus){
+      const inp = document.getElementById('chatInput');
+      if(inp) inp.focus();
+    }
   }
 }
 
@@ -714,14 +767,9 @@ function chatAppend(from, text, isMe){
   line.innerHTML = '<span class="chat-sender">' + (isMe ? 'You' : from) + ':</span> ' + safe;
   msgs.appendChild(line);
   msgs.scrollTop = msgs.scrollHeight;
-  // Auto-expand chat on incoming message; show unread dot if already open but unfocused
-  if(!isMe){
-    if(!chatExpanded) chatToggleExpand();
-    else {
-      const inp = document.getElementById('chatInput');
-      if(document.activeElement !== inp) chatShowUnread();
-    }
-  }
+  // Auto-expand chat on an incoming message so it's immediately visible —
+  // no unread dot to click. Expand without stealing keyboard focus.
+  if(!isMe && !chatExpanded) chatToggleExpand(true);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -749,6 +797,13 @@ function setShell(mode){
   }
   if(typeof render === 'function') render();
   if(typeof distUpdateVisibility === 'function') distUpdateVisibility();
+  // Board experience lives in the style palettes now — sync their buttons and
+  // let the bot panel's Appearance popover know.
+  document.querySelectorAll('[data-shell-btn]').forEach(b =>
+    b.classList.toggle('active', b.dataset.shellBtn === (proMode ? 'pro' : 'amateur')));
+  if (typeof _syncPanelTheme === 'function' && typeof BG_THEMES !== 'undefined') {
+    _syncPanelTheme(BG_THEMES[currentBgTheme] || BG_THEMES.navy);
+  }
 }
 function toggleShell(){ setShell(proMode ? 'amateur' : 'pro'); }
 
@@ -870,10 +925,47 @@ function proSync(){
       resultBar.textContent = msg;
     }
   }
+  // Resign/Draw only exist while a game is actually live; otherwise the side
+  // column shows the idle actions (Rematch after a finish, start a bot or
+  // 2-player game, save/load, save the current bot).
+  const liveGame = !over && (
+    (typeof botActive !== 'undefined' && botActive) ||
+    (typeof mpRoomId !== 'undefined' && mpRoomId &&
+     typeof mpMode !== 'undefined' && mpMode === 'ingame'));
   const resignBtn = document.getElementById('proResignBtn');
   const drawBtn   = document.getElementById('proDrawBtn');
-  if(resignBtn) resignBtn.classList.toggle('disabled', over);
-  if(drawBtn)   drawBtn.classList.toggle('disabled', over);
+  if(resignBtn) resignBtn.style.display = liveGame ? '' : 'none';
+  if(drawBtn)   drawBtn.style.display   = liveGame ? '' : 'none';
+  const idleRow = document.getElementById('proIdleActions');
+  if(idleRow) idleRow.style.display = liveGame ? 'none' : 'flex';
+  const rematchBtn = document.getElementById('proRematchBtn');
+  if(rematchBtn) rematchBtn.style.display = over ? '' : 'none';
+  const saveBotBtn = document.getElementById('proSaveBotBtn');
+  if(saveBotBtn) saveBotBtn.style.display = window._lastAppliedBotConfig ? '' : 'none';
+}
+
+// Rematch from the pro idle row — same dispatch as the amateur action button.
+function proRematch(){
+  if (typeof mpRoomId !== 'undefined' && mpRoomId) mpOfferRematch();
+  else if (typeof botActive !== 'undefined' && botActive) botStart();
+  else resetGame();
+}
+
+// Download the last bot config that was actually started, as a shareable file
+// the panel's "Load bot" understands. No config yet → open the Bot Builder.
+function proSaveCurrentBot(){
+  const cfg = window._lastAppliedBotConfig;
+  if(!cfg){ if(typeof openBotModal === 'function') openBotModal(); return; }
+  const suggested = (cfg.engine || 'bot') + (cfg.elo ? '-' + cfg.elo : '');
+  const name = prompt('Name this bot:', suggested);
+  if(!name) return;
+  const clean = Object.assign({}, cfg); delete clean.type;
+  const payload = JSON.stringify({ name: name, config: clean, savedAt: Date.now() }, null, 2);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([payload], { type: 'application/json' }));
+  a.download = name.replace(/[^a-z0-9_\-]/gi, '_') + '.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
 // Restore the saved shell on load
@@ -926,8 +1018,8 @@ const TOURS = {
       body:'Pressure or defence acting through another piece on the same line — the lines that matter once a blocker moves.' },
     { sel:'#soloGhostDepth', title:'Ghost moves',
       body:'Hover a destination square and the bot shows the most likely replies as faint “ghost” pieces — handy for training your calculation.' },
-    { sel:'#proSwitchBtn', title:'Expert board',
-      body:'Prefer a clean tournament look with no overlays? Switch to the Expert board here — and switch back anytime.' },
+    { sel:'#btnTheme', title:'Style & board experience',
+      body:'Colors, pieces, Carbon vs Journal format — and the board experience itself: switch between this Training board and the clean Expert board here, anytime.' },
     { sel:'#site-name', title:'Home',
       body:'Click the Blundermind logo anytime to return Home and switch between the Beginner and Expert boards.' },
   ],
@@ -935,7 +1027,7 @@ const TOURS = {
     { sel:'#proSide', title:'The Expert board',
       body:'A clean tournament view — minimal chrome, live notation, and no coaching overlays.' },
     { sel:'.pro-actions', title:'Board controls',
-      body:'Resign, offer a draw, flip the board, change the theme, or open the ⚙ menu for more — including a bot game, 2-player, and switching back to the Beginner board.' },
+      body:'Resign, offer a draw, flip the board, or open the 🎨 style palette — where you can also switch back to the Training board. The ⚙ menu has more: a bot game, 2-player, save/load.' },
     { sel:'#proMoves', title:'Move list',
       body:'Your game notation updates here live as you play.' },
   ],
@@ -1372,52 +1464,64 @@ function mpSetMode(mode) {
   }
 }
 
-/* ── Slide-in time-control flow ──────────────────────────────────────────────
-   The time grid is hidden by default. It slides in only when the user starts a
-   game (Post Open Challenge / Start Private Game). Picking a cell sets the TC;
-   the footer button confirms and runs the pending action.
+/* ── Quick-setup pill bar ────────────────────────────────────────────────────
+   Handle / Rating / Opponent / Time each show their current value in a
+   stationary pill; clicking a pill opens just that editor beneath the row
+   (bot-panel quickstart pattern). The action buttons act immediately using
+   whatever the pills show — no confirm/review step.
 ──────────────────────────────────────────────────────────────────────────────*/
-let mpPendingTimeAction = null;   // 'post' | 'private' | 'set'
+const MP_QS_KEYS = ['handle', 'rating', 'range', 'time'];
 
-function mpOpenTimeOverlay(action) {
-  mpPendingTimeAction = action;
-  mpBuildTimeGrid();
-  mpExpandGrid();     // start with the grid open for choosing
-  mpBuildReview();    // populate the review preview below
-  const btn = document.getElementById('mpTimeConfirmBtn');
-  if (btn) btn.textContent =
-    action === 'post'    ? '🌐 Post Challenge' :
-    action === 'private' ? '🔒 Create Private Game' : 'Done';
-  const ov = document.getElementById('mpTimeOverlay');
-  if (ov) ov.classList.add('open');
+function mpQsToggle(key) {
+  const opening = !document.getElementById('mpQsEd-' + key).classList.contains('open');
+  MP_QS_KEYS.forEach(k => {
+    const ed   = document.getElementById('mpQsEd-' + k);
+    const pill = document.getElementById('mpQsPill-' + k);
+    const on   = opening && k === key;
+    if (ed)   ed.classList.toggle('open', on);
+    if (pill) pill.classList.toggle('active', on);
+  });
+  if (opening && key === 'time')   mpBuildTimeGrid();   // reflect current selection
+  if (opening && key === 'handle') setTimeout(() => document.getElementById('mpLobbyName')?.focus(), 80);
+  if (opening && key === 'rating') setTimeout(() => document.getElementById('mpLobbyRating')?.focus(), 80);
+  if (!opening) mpQsRefresh();      // closing an editor commits its value to the pill
 }
 
-function mpCloseTimeOverlay() {
-  const ov = document.getElementById('mpTimeOverlay');
-  if (ov) ov.classList.remove('open');
-  mpPendingTimeAction = null;
+function mpQsCloseAll() {
+  MP_QS_KEYS.forEach(k => {
+    document.getElementById('mpQsEd-' + k)?.classList.remove('open');
+    document.getElementById('mpQsPill-' + k)?.classList.remove('active');
+  });
+  mpQsRefresh();
 }
 
-function mpConfirmTime() {
-  const action = mpPendingTimeAction;
-  mpCloseTimeOverlay();
-  if (action === 'post')         mpPostChallenge();
-  else if (action === 'private') mpCreatePrivate();
+// Sync every pill's value text with the underlying state
+function mpQsRefresh() {
+  const name   = document.getElementById('mpLobbyName')?.value.trim();
+  const rating = document.getElementById('mpLobbyRating')?.value.trim();
+  const hv = document.getElementById('mpQsHandleVal');
+  const rv = document.getElementById('mpQsRatingVal');
+  const gv = document.getElementById('mpQsRangeVal');
+  if (hv) hv.textContent = name || 'Anonymous';
+  if (rv) rv.textContent = rating ? rating + ' ' + mpRatingType : '—';
+  if (gv) gv.textContent = mpRatingRange >= 9999 ? 'Any' : '±' + mpRatingRange;
+  mpUpdateTCDisplay();   // time pill (#mpTCDisplay)
 }
 
-// Called by the action buttons
-function mpStartPost()        { mpOpenTimeOverlay('post'); }
-function mpStartPrivateGame() { mpOpenTimeOverlay('private'); }
+// Action buttons act immediately with the current pill settings
+function mpStartPost()        { mpQsCloseAll(); mpPostChallenge(); }
+function mpStartPrivateGame() { mpQsCloseAll(); mpCreatePrivate(); }
 
 function mpStartJoinFlow() {
+  mpQsCloseAll();
   mpSetMode('join');
   mpShowStatus('Enter the code your friend shared with you.');
   mpRefreshLobby();
 }
 
 // Legacy aliases — keep older call sites (deep links, landing page) working
-function mpStartPrivateFlow() { mpOpenTimeOverlay('private'); }
-function mpStartLobbyFlow()   { mpOpenTimeOverlay('post'); }
+function mpStartPrivateFlow() { mpStartPrivateGame(); }
+function mpStartLobbyFlow()   { mpStartPost(); }
 function mpSwitchTab() {}
 
 // ── WebSocket connection ─────────────────────────────────────────────────────
@@ -1611,6 +1715,7 @@ function mpPostChallenge() {
         tc: mpSelectedTC, tcLabel,
         tcBaseMin: mpBaseMin, tcIncSec: mpIncSec,
         name, rating,
+        ratingType: rating != null ? mpRatingType : null,
         ratingRange: mpRatingRange
       }));
     } else {
@@ -1635,7 +1740,7 @@ function mpRenderLobby(challenges) {
   challenges.forEach(ch => {
     const tcLabel = ch.tcLabel || (ch.tc && TIME_CONTROLS[ch.tc] ? TIME_CONTROLS[ch.tc].label : 'Untimed');
     const nameStr = ch.name || 'Anonymous';
-    const ratingStr = ch.rating ? (' · ' + ch.rating) : '';
+    const ratingStr = ch.rating ? (' · ' + ch.rating + (ch.ratingType ? ' ' + ch.ratingType : '')) : '';
     const rangeStr = ch.ratingRange && ch.ratingRange < 9999 ? (' ±' + ch.ratingRange) : '';
     const row = document.createElement('div');
     row.className = 'mp-challenge-row';
@@ -1679,8 +1784,16 @@ function mpDoAcceptLobby(code) {
 let mpAnonPendingCode = null;
 function mpShowAnonPrompt(code) {
   mpAnonPendingCode = code;
+  // Prefill the inline fields from Your Info so anything already typed carries over
+  const an = document.getElementById('mpAnonName');
+  const ar = document.getElementById('mpAnonRating');
+  const nameEl   = document.getElementById('mpLobbyName');
+  const ratingEl = document.getElementById('mpLobbyRating');
+  if (an && nameEl)   an.value = nameEl.value;
+  if (ar && ratingEl) ar.value = ratingEl.value;
   const el = document.getElementById('mpAnonPrompt');
   if (el) el.classList.add('open');
+  if (an) setTimeout(() => an.focus(), 150);
 }
 function mpHideAnonPrompt() {
   const el = document.getElementById('mpAnonPrompt');
@@ -1692,14 +1805,20 @@ function mpAnonJoinAnon() {
   mpHideAnonPrompt();
   if (code) mpDoAcceptLobby(code);
 }
-function mpAnonFillInfo() {
+// Save the inline handle/rating into Your Info, then join the pending challenge
+// directly — the user never has to go back and find the room again.
+function mpAnonSaveJoin() {
+  const an = document.getElementById('mpAnonName');
+  const ar = document.getElementById('mpAnonRating');
+  const nameEl   = document.getElementById('mpLobbyName');
+  const ratingEl = document.getElementById('mpLobbyRating');
+  if (an && nameEl)   nameEl.value   = an.value.trim();
+  if (ar && ratingEl) ratingEl.value = ar.value.trim();
+  mpSaveInfo();
+  const code = mpAnonPendingCode;
   mpAnonPendingCode = null;
   mpHideAnonPrompt();
-  const nameEl = document.getElementById('mpLobbyName');
-  if (nameEl) {
-    nameEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    setTimeout(() => nameEl.focus(), 300);
-  }
+  if (code) mpDoAcceptLobby(code);
 }
 
 // ── Private game ─────────────────────────────────────────────────────────────
@@ -1854,7 +1973,7 @@ function mpLeave() {
   document.getElementById('mpRoomCode').textContent = '';
   const jc = document.getElementById('mpJoinCode'); if (jc) jc.value = '';
   mpShowStatus('');
-  mpCloseTimeOverlay();
+  mpQsCloseAll();
   mpHideAnonPrompt();
   mpSetMode('idle');
   const ga = document.getElementById('gameActions');
@@ -2059,45 +2178,17 @@ function mpSelectTC(t, inc, cell) {
   document.querySelectorAll('#mpPanel .mp-tg-cell').forEach(c => c.classList.remove('selected'));
   if (cell) cell.classList.add('selected');
   mpUpdateTCDisplay();
-  mpBuildReview();
-  // After picking, collapse the grid into the concise review summary
-  if (document.getElementById('mpTimeOverlay').classList.contains('open')) {
-    mpCollapseGrid();
-  }
-}
-
-// ── Time-overlay review summary + grid collapse/expand ───────────────────────
-function mpBuildReview() {
-  const nameEl   = document.getElementById('mpLobbyName');
-  const ratingEl = document.getElementById('mpLobbyRating');
-  const name   = (nameEl   && nameEl.value.trim())   || 'Anonymous';
-  const rating = (ratingEl && ratingEl.value.trim()) ? ratingEl.value.trim() : 'Unrated';
-  const rn = document.getElementById('mpRevName');   if (rn) rn.textContent = name;
-  const rr = document.getElementById('mpRevRating'); if (rr) rr.textContent = rating;
-  const rv = document.getElementById('mpRevRange');
-  if (rv) rv.textContent = mpRatingRange >= 9999 ? 'Any' : ('±' + mpRatingRange);
-  // ELO range only applies to open challenges (lobby matchmaking), not private games
-  const rangeRow = document.getElementById('mpRevRangeRow');
-  if (rangeRow) rangeRow.style.display = (mpPendingTimeAction === 'post') ? '' : 'none';
-  mpUpdateTCDisplay();   // refreshes the Time Control row (#mpTCDisplay)
-}
-
-function mpCollapseGrid() {
-  const grid  = document.getElementById('mpGridCollapse');
-  const chg   = document.getElementById('mpChangeTimeBtn');
-  const title = document.getElementById('mpTimeTitle');
-  if (grid)  grid.classList.add('collapsed');
-  if (chg)   chg.style.display = '';
-  if (title) title.textContent = 'Review & Submit';
-}
-
-function mpExpandGrid() {
-  const grid  = document.getElementById('mpGridCollapse');
-  const chg   = document.getElementById('mpChangeTimeBtn');
-  const title = document.getElementById('mpTimeTitle');
-  if (grid)  grid.classList.remove('collapsed');
-  if (chg)   chg.style.display = 'none';
-  if (title) title.textContent = 'Select Time Control';
+  // Remember the choice — next session's 2-player games start from it
+  try {
+    localStorage.setItem('bm_mpTcBase', String(t));
+    localStorage.setItem('bm_mpTcInc',  String(inc));
+  } catch (e) {}
+  // Grid has done its job — close the editor after a beat so the selection
+  // highlight registers, leaving the pill row showing the new time.
+  setTimeout(() => {
+    const ed = document.getElementById('mpQsEd-time');
+    if (ed && ed.classList.contains('open')) mpQsToggle('time');
+  }, 280);
 }
 
 // Legacy alias kept for any old calls
@@ -2112,12 +2203,26 @@ function mpSetTC(key) {
 }
 
 // ── Rating range ─────────────────────────────────────────────────────────────
+// Range buttons exist in two places (Your Info card + game-setup overlay), so
+// selection toggles every button carrying data-mprange, keeping both sets live.
 let mpRatingRange = 9999;
 function mpSetRatingRange(r) {
   mpRatingRange = r;
-  document.querySelectorAll('[id^="mprange-"]').forEach(b => b.classList.remove('tc-active'));
-  const btn = document.getElementById('mprange-' + r); if (btn) btn.classList.add('tc-active');
+  document.querySelectorAll('[data-mprange]').forEach(b =>
+    b.classList.toggle('tc-active', parseInt(b.dataset.mprange) === r));
   try { localStorage.setItem('bm_mpRange', String(r)); } catch (e) {}
+  if (typeof mpQsRefresh === 'function') mpQsRefresh();
+}
+
+// ── Rating type (Lichess default — Maia is trained on Lichess games) ─────────
+let mpRatingType = 'Lichess';
+function mpSetRatingType(t) {
+  if (!['Lichess', 'Chess.com', 'FIDE'].includes(t)) t = 'Lichess';
+  mpRatingType = t;
+  document.querySelectorAll('[data-mprt]').forEach(b =>
+    b.classList.toggle('tc-active', b.dataset.mprt === t));
+  try { localStorage.setItem('bm_mpRatingType', t); } catch (e) {}
+  if (typeof mpQsRefresh === 'function') mpQsRefresh();
 }
 
 // ── Persist "Your Info" (handle / rating / range) across sessions ────────────
@@ -2128,6 +2233,7 @@ function mpSaveInfo() {
     if (nameEl)   localStorage.setItem('bm_mpHandle', nameEl.value || '');
     if (ratingEl) localStorage.setItem('bm_mpRating', ratingEl.value || '');
   } catch (e) {}
+  if (typeof mpQsRefresh === 'function') mpQsRefresh();  // live pill update while typing
 }
 function mpLoadInfo() {
   const nameEl   = document.getElementById('mpLobbyName');
@@ -2137,7 +2243,14 @@ function mpLoadInfo() {
     const r = localStorage.getItem('bm_mpRating'); if (ratingEl && r != null) ratingEl.value = r;
     const rng = parseInt(localStorage.getItem('bm_mpRange'));
     if (!isNaN(rng)) mpSetRatingRange(rng);
+    const rt = localStorage.getItem('bm_mpRatingType');
+    if (rt) mpSetRatingType(rt);
+    // Last-used time control ("Untimed" the very first time)
+    const tb = parseInt(localStorage.getItem('bm_mpTcBase'));
+    const ti = parseInt(localStorage.getItem('bm_mpTcInc'));
+    if (!isNaN(tb) && !isNaN(ti)) { mpBaseMin = tb; mpIncSec = ti; }
   } catch (e) {}
+  if (typeof mpQsRefresh === 'function') mpQsRefresh();
 }
 
 // ── Hide/Show toggle ─────────────────────────────────────────────────────────
@@ -2663,6 +2776,12 @@ function loadPrefs(){
   const bt=localStorage.getItem('bm_boardTheme');if(bt&&BOARD_THEMES[bt])applyBoardTheme(bt);
   const bg=localStorage.getItem('bm_bgTheme');applyBgTheme(bg&&BG_THEMES[bg]?bg:'lightblue');
   const ps=localStorage.getItem('bm_pieceSet');if(ps)setPieceSet(ps);
+  // Format (Carbon/Journal). Migrate the old panel-only key on first run so a
+  // user who chose Journal for the bot panel keeps that choice app-wide.
+  try{
+    const fmt = localStorage.getItem('bm_format') || localStorage.getItem('bm_panelStyle') || 'journal';
+    applyFormat(fmt === 'fj' ? 'journal' : fmt);
+  }catch(e){ applyFormat('journal'); }
   try{
     const ind=JSON.parse(localStorage.getItem('bm_ind')||'{}');
     Object.keys(ind).forEach(k=>{if(IND[k]){IND[k].on=ind[k].on||false;IND[k].pre=ind[k].pre||false;}});

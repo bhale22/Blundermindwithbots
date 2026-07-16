@@ -1347,11 +1347,6 @@ function distRender(probs) {
   }
 }
 
-// "Starter" indicator preset — reveal / re-hide the non-starter indicator toggles.
-function toggleMoreIndicators() {
-  document.body.classList.toggle('ind-starter');
-}
-
 // Donate JS stubs (functionality temporarily disabled)
 function toggleHaikuBox() {
   var box = document.getElementById('haikuBox');
@@ -1414,8 +1409,23 @@ window.addEventListener('message', function(e) {
   // Only accept config from our own origin (the bot-control-panel iframe) —
   // a page embedding this site must not be able to inject bot configs.
   if (e.origin !== location.origin) return;
-  if (!e.data || e.data.type !== 'botConfig') return;
+  if (!e.data) return;
+  // Appearance controls inside the bot panel drive the app-wide settings
+  if (e.data.type === 'setAppearance') {
+    if (e.data.bg && BG_THEMES[e.data.bg]) applyBgTheme(e.data.bg);           // re-pushes vars
+    if (e.data.board && BOARD_THEMES[e.data.board]) applyBoardTheme(e.data.board);
+    if (e.data.pieces) setPieceSet(e.data.pieces);
+    if (e.data.shell && typeof setShell === 'function') setShell(e.data.shell === 'pro' ? 'pro' : 'amateur');
+    return;
+  }
+  if (e.data.type === 'formatChanged') {
+    if (typeof applyFormat === 'function') applyFormat(e.data.format, true);  // true = no echo back
+    return;
+  }
+  if (e.data.type !== 'botConfig') return;
   const cfg = e.data;
+  // Keep the applied config so the pro board's "Save bot" can export it later
+  window._lastAppliedBotConfig = cfg;
 
   // Engine tab
   const engineMap = { maia3: 'maia3', stockfish: 'sf', hybrid: 'hybrid', lcsf: 'lcsf', lcmaia: 'maia' };

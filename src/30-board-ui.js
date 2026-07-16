@@ -2306,7 +2306,7 @@ const ALL_SETS = ['staunton','rhosgfx_solid','rhosgfx_outline','rhosgfx_wood','r
 ALL_SETS.forEach(s => preloadPieceImages(s));
 // Apply defaults BEFORE loadPrefs so saved prefs override them
 if (!localStorage.getItem('bm_boardTheme')) applyBoardTheme('blue');
-if (!localStorage.getItem('bm_bgTheme')) applyBgTheme('slate');
+if (!localStorage.getItem('bm_bgTheme')) applyBgTheme('lightblue'); // Cool blue is the first-run look
 if (!localStorage.getItem('bm_pieceSet')) { currentPieceSet = 'staunton'; }
 loadPrefs();
 loadSoundPref();

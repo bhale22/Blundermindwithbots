@@ -10,7 +10,7 @@
 <meta property="og:type" content="website">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Chakra+Petch:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Chakra+Petch:wght@300;400;500;600&family=Fraunces:ital,opsz,wght@1,9..144,500&family=Spectral:ital,wght@0,500&display=swap" rel="stylesheet">
 <style>
 /* ── Reset & base ─────────────────────────────────────────────────────────── */
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -170,12 +170,6 @@ canvas{
 /* ── Indicator grid ───────────────────────────────────────────────────────── */
 .ind-grid{display:flex;flex-direction:row;gap:4px;width:100%;}
 .ind-col{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;}
-/* "Starter" indicator preset: show only Threats & Captures + Unprotected; the
-   rest sit behind the "More indicators" expander. Single column when collapsed. */
-body.ind-starter .ind-col:nth-child(2){display:none;}
-body.ind-starter .ind-col .ib:not(#ib-threats):not(#ib-unprotected){display:none;}
-body:not(.ind-starter) #moreIndBtn .mi-more{display:none;}
-body.ind-starter #moreIndBtn .mi-less{display:none;}
 
 /* ── Indicator button ─────────────────────────────────────────────────────── */
 .ib{display:flex;flex-direction:column;gap:0px;user-select:none;width:100%;}
@@ -890,40 +884,33 @@ body.ind-starter #moreIndBtn .mi-less{display:none;}
   text-align:center;padding:12px 0;
 }
 
-/* ── Slide-in time-control overlay ── */
-#mpTimeOverlay{
-  position:absolute;top:0;right:0;bottom:0;width:100%;
-  background:var(--mp-carbon);
-  transform:translateX(100%);
-  transition:transform 0.28s cubic-bezier(0.4,0,0.2,1);
-  display:flex;flex-direction:column;z-index:6;
+/* ── Quick-setup pill bar (bot-panel quickstart pattern): everything stays
+   stationary; clicking a pill opens just that editor below the row. ── */
+#mpPanel .mp-qs-row{ display:flex;gap:5px; }
+#mpPanel .mp-qs-pill{
+  flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:2px;
+  padding:6px 9px;background:var(--mp-carbon-surface);
+  border:0.5px solid var(--mp-border);border-radius:4px;cursor:pointer;
+  text-align:left;transition:border-color 0.15s,background 0.15s;
 }
-#mpTimeOverlay.open{ transform:translateX(0); }
-#mpTimeOverlay .mp-time-head{
-  display:flex;align-items:center;gap:10px;
-  padding:12px 14px 10px;flex-shrink:0;
-  border-bottom:0.5px solid var(--mp-border-amber);
-  background:linear-gradient(180deg,#14161a,#0e0f11);
+#mpPanel .mp-qs-pill:hover{ border-color:var(--mp-amber-dim); }
+#mpPanel .mp-qs-pill.active{
+  border-color:var(--mp-amber);background:var(--mp-amber-glow);
 }
-#mpTimeOverlay .mp-time-back{
-  font-family:var(--mp-font-m);font-size:9px;letter-spacing:0.06em;
-  color:var(--mp-amber);background:transparent;
-  border:0.5px solid var(--mp-border-amber);border-radius:3px;
-  padding:4px 9px;cursor:pointer;transition:all 0.12s;
+#mpPanel .mp-qs-lbl{
+  font-family:var(--mp-font-m);font-size:6.5px;letter-spacing:0.12em;
+  text-transform:uppercase;color:var(--mp-text-dim);white-space:nowrap;
 }
-#mpTimeOverlay .mp-time-back:hover{ background:var(--mp-amber-glow);color:var(--mp-amber-bright); }
-#mpTimeOverlay .mp-time-title{
-  font-family:var(--mp-font-d);font-size:15px;font-weight:300;font-style:italic;
-  color:var(--mp-text-1);letter-spacing:0.02em;
+#mpPanel .mp-qs-val{
+  font-family:var(--mp-font-m);font-size:9.5px;color:var(--mp-amber-bright);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;
 }
-#mpTimeOverlay .mp-time-body{
-  flex:1;overflow-y:auto;padding:14px;
+#mpPanel .mp-qs-editor{
+  display:none;margin-top:6px;padding:8px 9px;
+  background:var(--mp-carbon-surface);border:0.5px solid var(--mp-border-amber);
+  border-radius:4px;
 }
-#mpTimeOverlay .mp-time-foot{
-  flex-shrink:0;padding:12px 14px;
-  border-top:0.5px solid var(--mp-border);
-  background:var(--mp-carbon-mid);
-}
+#mpPanel .mp-qs-editor.open{ display:block; }
 
 /* ── Anonymous-join confirm modal ── */
 #mpAnonPrompt{
@@ -951,6 +938,27 @@ body.ind-starter #moreIndBtn .mi-less{display:none;}
   #mpPanel{ width:100vw; }
   #mpPanel:not(.open){ right:-100vw; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   JOURNAL FORMAT (body.journal) — editorial serif for the display tiers across
+   landing, board chrome, panels, and the pro shell. Color still comes from the
+   background theme (pick Clay for the full field-journal look, or any other).
+   Small technical/mono text is deliberately left as-is — typewriter annotations
+   on a serif journal — which also avoids unreadable tiny serif text.
+   ══════════════════════════════════════════════════════════════════════════ */
+body.journal .landing-title{ font-family:'Fraunces',serif;font-style:italic;font-weight:500; }
+body.journal .landing-tagline{ font-family:'Spectral',serif;font-style:normal; }
+body.journal .landing-card-title{ font-family:'Fraunces',serif;font-style:italic;font-weight:500; }
+body.journal .landing-card-desc{ font-family:'Spectral',serif;font-size:11px;line-height:1.5; }
+body.journal .landing-shell-btn .ls-name{ font-family:'Fraunces',serif;font-style:italic; }
+body.journal .landing-shell-btn .ls-desc{ font-family:'Spectral',serif; }
+body.journal #site-name{ font-family:'Fraunces',serif;font-style:italic; }
+body.journal #site-tagline{ font-family:'Spectral',serif;font-style:italic; }
+body.journal .panel-title{ font-family:'Fraunces',serif;font-style:italic;font-weight:500; }
+body.journal .panel-body h3{ font-family:'Fraunces',serif;font-style:italic;font-weight:500;letter-spacing:0.01em; }
+body.journal #mpPanel{ --mp-font-d:'Fraunces',serif; }
+body.journal.pro-mode{ --pfd:'Fraunces',serif; }
+body.journal .pro-name{ font-family:'Fraunces',serif;font-style:italic;font-weight:500; }
 
 /* ══════════════════════════════════════════════════════════════════════════
    PRO SHELL — in-app switchable carbon/amber mode (body.pro-mode)
@@ -1037,6 +1045,11 @@ body.pro-mode #proSide{
 .pro-abtn.danger:hover{ border-color:rgba(200,74,74,0.6);color:#e89090; }
 .pro-abtn.draw:hover{ border-color:rgba(93,173,226,0.5);color:#9fd4f0; }
 .pro-abtn.disabled{ opacity:0.28; pointer-events:none; cursor:default; }
+/* Idle action grid: shown when no game is live — wraps into two columns */
+.pro-actions.pro-idle{ flex-wrap:wrap; }
+.pro-actions.pro-idle .pro-abtn{ flex:1 1 45%; }
+.pro-abtn.accent{ color:var(--pa);border-color:var(--pbd-a); }
+.pro-abtn.accent:hover{ color:var(--pa-bright,#e8aa40); }
 #proResultBar{
   display:none;
   padding:9px 12px;text-align:center;
@@ -1070,7 +1083,7 @@ body.pro-mode #chatBox #chatMessages{ color:var(--pt2); }
 body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 </style>
 </head>
-<body class="ind-starter">
+<body>
 
 <!-- ══════════════════════════════════════════════════════════════════════════
      LANDING PAGE OVERLAY
@@ -1103,15 +1116,15 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <!-- vs Bot -->
     <div class="landing-card green-card" onclick="landingChoose('bot')">
       <div class="landing-card-icon">🤖</div>
-      <div class="landing-card-title">Build a Bot</div>
+      <div class="landing-card-title">Play or Build a Bot</div>
       <div class="landing-card-desc">If chess bots don't feel realistic, build your own. Create a bot you enjoy playing against. Practice favorite openings. Hone bullet skills against bots that panic under time pressure, or build ones that keep their cool as they try to flag you.</div>
     </div>
 
     <!-- 2 Player -->
     <div class="landing-card" onclick="landingChoose('mp')">
       <div class="landing-card-icon">⚔️</div>
-      <div class="landing-card-title">2-Player Online</div>
-      <div class="landing-card-desc">Post an open challenge or send a private invite link — one click to join.</div>
+      <div class="landing-card-title">&ldquo;Hang-Free&rdquo; 2-Player Online</div>
+      <div class="landing-card-desc">Play games with outcomes determined by strategy instead of hung pieces. Post an open challenge or send a private invite link to play games where both players can use visual overlays. No move recommendations, no engine analysis, no cheat detection.</div>
     </div>
 
     <!-- Load PGN / Bot config — split card -->
@@ -1477,11 +1490,6 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         </div>
       </div>
     </div><!-- end ind-grid -->
-    <!-- Starter preset expander: reveal the rest of the indicators -->
-    <button id="moreIndBtn" class="ctrl-btn util-btn" onclick="toggleMoreIndicators()"
-      style="width:100%;padding:6px 4px;font-size:8.5px;font-weight:600;margin-top:4px;">
-      <span class="mi-more">▾ More indicators</span><span class="mi-less">▴ Fewer indicators</span>
-    </button>
     <!-- Peek / Hide / Show All — larger, below the indicator columns -->
     <div style="display:flex;gap:5px;margin-top:5px;">
       <button id="btnHideShow" class="ctrl-btn util-btn"
@@ -1521,13 +1529,10 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       </div>
       <!-- Row 2: utilities -->
       <div class="ctrl-row">
-        <button class="ctrl-btn util-btn" onclick="openPanel('themePanel')">🎨 Theme &amp; Pieces</button>
+        <button class="ctrl-btn util-btn" id="btnTheme" onclick="openPanel('themePanel')">🎨 Theme &amp; Pieces</button>
         <button class="ctrl-btn util-btn" id="btnLoadPgn" onclick="document.getElementById('pgnFileInput').click()">▶ Load game</button>
         <input type="file" id="pgnFileInput" accept=".pgn" style="display:none" onchange="loadPgnFile(event)">
         <button class="ctrl-btn util-btn" id="btnSavePgn" onclick="savePgn()">↓ Save game</button>
-      </div>
-      <div class="ctrl-row">
-        <button class="ctrl-btn util-btn" id="proSwitchBtn" onclick="toggleShell()" style="border-color:rgba(200,146,42,0.5);color:#c8922a;">♟ Switch to Pro board</button>
       </div>
       <div class="util-row" style="display:none;"></div>
     </div>
@@ -1567,7 +1572,17 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <!-- Game-over result (shown when checkmate / stalemate / resign / draw) -->
     <div id="proResultBar"></div>
 
-    <!-- Actions: Resign · Draw · Flip · Theme · Gear -->
+    <!-- Idle actions — shown when no game is live (start things, save/load) -->
+    <div class="pro-actions pro-idle" id="proIdleActions" style="display:none;">
+      <div class="pro-abtn accent" id="proRematchBtn" onclick="proRematch()" style="display:none;">↺ Rematch</div>
+      <div class="pro-abtn" onclick="openBotModal()">🤖 Play / Build Bot</div>
+      <div class="pro-abtn" onclick="openPanel('mpPanel')">⚔ 2-Player</div>
+      <div class="pro-abtn" onclick="savePgnAs()">💾 Save game</div>
+      <div class="pro-abtn" onclick="document.getElementById('pgnFileInput').click()">▶ Load game</div>
+      <div class="pro-abtn" id="proSaveBotBtn" onclick="proSaveCurrentBot()" style="display:none;">💾 Save bot</div>
+    </div>
+
+    <!-- Live-game actions + always-on utilities: Resign · Draw · Flip · Theme · Gear -->
     <div class="pro-actions">
       <div class="pro-abtn danger" id="proResignBtn" onclick="resign()">⚑ Resign</div>
       <div class="pro-abtn draw" id="proDrawBtn" onclick="offerDraw()">½ Draw</div>
@@ -1583,8 +1598,8 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <button onclick="openPanel('mpPanel');proToggleGear()">⚔ 2-Player</button>
       <button onclick="savePgnAs();proToggleGear()">💾 Save game…</button>
       <button onclick="document.getElementById('pgnFileInput').click();proToggleGear()">▶ Load game</button>
-      <button onclick="openPanel('themePanel');proToggleGear()">🎨 Theme &amp; pieces</button>
-      <button onclick="toggleShell();proToggleGear()">↩ Switch to Blundermind shell</button>
+      <!-- Board experience (Training/Expert) now lives in the 🎨 style palette -->
+      <button onclick="openPanel('themePanel');proToggleGear()">🎨 Style &amp; board experience</button>
     </div>
 
     <!-- Chat relocates here in pro mode -->
@@ -2142,29 +2157,77 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       ℹ Multiplayer requires the deployed server. Local-only = Solo &amp; Bot modes only.
     </div>
 
-    <!-- ════════ DEFAULT VIEW (Info · Challenges · Actions) ════════ -->
+    <!-- ════════ DEFAULT VIEW (Setup pills · Actions · Challenges) ════════ -->
     <div id="mpMainView" style="display:flex;flex-direction:column;gap:8px;">
 
-      <!-- ══ YOUR INFO (always visible, persisted) ══ -->
+      <!-- ══ GAME SETUP — quickstart pill bar (bot-panel pattern). Everything is
+           visible at a glance; clicking a pill opens just that editor. ══ -->
       <div class="mp-card">
-        <div class="mp-sec-lbl">Your Info <span style="font-weight:400;font-style:italic;color:var(--mp-text-dim);">(optional)</span></div>
-        <div style="display:flex;gap:6px;margin-bottom:9px;">
-          <div style="flex:1;">
-            <div class="mp-micro-lbl">Handle</div>
-            <input id="mpLobbyName" placeholder="Anonymous" maxlength="20" class="mp-input" oninput="mpSaveInfo()">
-          </div>
-          <div style="width:80px;">
-            <div class="mp-micro-lbl">Rating</div>
-            <input id="mpLobbyRating" placeholder="—" maxlength="4" type="number" min="100" max="3000" class="mp-input" oninput="mpSaveInfo()">
+        <div class="mp-sec-lbl">Game Setup</div>
+        <div class="mp-qs-row">
+          <button class="mp-qs-pill" id="mpQsPill-handle" onclick="mpQsToggle('handle')">
+            <span class="mp-qs-lbl">Handle</span>
+            <span class="mp-qs-val" id="mpQsHandleVal">Anonymous</span>
+          </button>
+          <button class="mp-qs-pill" id="mpQsPill-rating" onclick="mpQsToggle('rating')">
+            <span class="mp-qs-lbl">Rating</span>
+            <span class="mp-qs-val" id="mpQsRatingVal">—</span>
+          </button>
+          <button class="mp-qs-pill" id="mpQsPill-range" onclick="mpQsToggle('range')">
+            <span class="mp-qs-lbl">Opponent</span>
+            <span class="mp-qs-val" id="mpQsRangeVal">Any</span>
+          </button>
+        </div>
+        <div class="mp-qs-row" style="margin-top:5px;">
+          <button class="mp-qs-pill" id="mpQsPill-time" onclick="mpQsToggle('time')">
+            <span class="mp-qs-lbl">Time</span>
+            <span class="mp-qs-val" id="mpTCDisplay">Untimed</span>
+          </button>
+        </div>
+
+        <!-- Editors — one open at a time, below the stationary pill rows -->
+        <div class="mp-qs-editor" id="mpQsEd-handle">
+          <div class="mp-micro-lbl">Handle</div>
+          <input id="mpLobbyName" placeholder="Anonymous" maxlength="20" class="mp-input"
+            oninput="mpSaveInfo()" onkeydown="if(event.key==='Enter')mpQsToggle('handle')">
+        </div>
+        <div class="mp-qs-editor" id="mpQsEd-rating">
+          <div class="mp-micro-lbl">Rating <span style="font-weight:400;font-style:italic;">(self-reported)</span></div>
+          <input id="mpLobbyRating" placeholder="—" maxlength="4" type="number" min="100" max="3000"
+            class="mp-input" style="width:80px;" oninput="mpSaveInfo()"
+            onkeydown="if(event.key==='Enter')mpQsToggle('rating')">
+          <div class="mp-micro-lbl" style="margin:8px 0 6px;">Rating type</div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;">
+            <button onclick="mpSetRatingType('Lichess')"   class="tc-btn tc-active" data-mprt="Lichess">Lichess</button>
+            <button onclick="mpSetRatingType('Chess.com')" class="tc-btn" data-mprt="Chess.com">Chess.com</button>
+            <button onclick="mpSetRatingType('FIDE')"      class="tc-btn" data-mprt="FIDE">FIDE</button>
           </div>
         </div>
-        <div class="mp-micro-lbl" style="margin-bottom:6px;">Rating range</div>
-        <div style="display:flex;gap:4px;flex-wrap:wrap;">
-          <button onclick="mpSetRatingRange(100)"  class="tc-btn" id="mprange-100">±100</button>
-          <button onclick="mpSetRatingRange(200)"  class="tc-btn" id="mprange-200">±200</button>
-          <button onclick="mpSetRatingRange(500)"  class="tc-btn" id="mprange-500">±500</button>
-          <button onclick="mpSetRatingRange(9999)" class="tc-btn tc-active" id="mprange-9999">Any</button>
+        <div class="mp-qs-editor" id="mpQsEd-range">
+          <div class="mp-micro-lbl" style="margin-bottom:6px;">Opponent ELO range <span style="font-weight:400;font-style:italic;">(open challenges)</span></div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;">
+            <button onclick="mpSetRatingRange(100)"  class="tc-btn" data-mprange="100">±100</button>
+            <button onclick="mpSetRatingRange(200)"  class="tc-btn" data-mprange="200">±200</button>
+            <button onclick="mpSetRatingRange(500)"  class="tc-btn" data-mprange="500">±500</button>
+            <button onclick="mpSetRatingRange(9999)" class="tc-btn tc-active" data-mprange="9999">Any</button>
+          </div>
         </div>
+        <div class="mp-qs-editor" id="mpQsEd-time">
+          <div class="mp-tg-panel" id="mpTgPanel"></div>
+        </div>
+      </div>
+
+      <!-- ══ ACTION BUTTONS — friends first: private games, then the open lobby ══ -->
+      <div id="mpActionBtns" style="display:flex;flex-direction:column;gap:6px;margin-top:2px;">
+        <button onclick="mpStartPrivateGame()" class="mp-action-primary">
+          🔒 Start Private Game
+        </button>
+        <button onclick="mpStartJoinFlow()" class="mp-action-primary">
+          🔑 Join Private Game
+        </button>
+        <button onclick="mpStartPost()" class="mp-action-secondary">
+          🌐 Post Open Challenge
+        </button>
       </div>
 
       <!-- ══ OPEN CHALLENGES ══ -->
@@ -2181,19 +2244,6 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <div id="mpLobbyList" style="display:flex;flex-direction:column;gap:4px;min-height:36px;">
           <div id="mpLobbyEmpty" class="mp-lobby-empty">No open challenges yet — be the first!</div>
         </div>
-      </div>
-
-      <!-- ══ ACTION BUTTONS — Post · Private · Join ══ -->
-      <div id="mpActionBtns" style="display:flex;flex-direction:column;gap:6px;margin-top:2px;">
-        <button onclick="mpStartPost()" class="mp-action-primary">
-          🌐 Post Open Challenge
-        </button>
-        <button onclick="mpStartPrivateGame()" class="mp-action-primary">
-          🔒 Start Private Game
-        </button>
-        <button onclick="mpStartJoinFlow()" class="mp-action-secondary">
-          🔑 Join Private Game
-        </button>
       </div>
 
     </div><!-- /#mpMainView -->
@@ -2274,40 +2324,25 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 
   </div><!-- /panel-body -->
 
-  <!-- ════════ SLIDE-IN TIME-CONTROL SELECTOR ════════ -->
-  <!-- Appears only when starting a game (Post Open Challenge / Start Private Game) -->
-  <div id="mpTimeOverlay">
-    <div class="mp-time-head">
-      <button class="mp-time-back" onclick="mpCloseTimeOverlay()">‹ Back</button>
-      <span class="mp-time-title" id="mpTimeTitle">Select Time Control</span>
-    </div>
-    <div class="mp-time-body">
-      <!-- Collapsible 2D matrix grid (increment × base time) — built by mpBuildTimeGrid() -->
-      <div class="mp-grid-collapse" id="mpGridCollapse">
-        <div class="mp-tg-panel" id="mpTgPanel"></div>
-      </div>
-      <!-- Review summary — collapses the grid and shows everything in one spot -->
-      <div class="mp-review" id="mpReview">
-        <div class="mp-sec-lbl">Review</div>
-        <div class="mp-review-row"><span class="mp-review-k">Handle</span><span class="mp-review-v" id="mpRevName">Anonymous</span></div>
-        <div class="mp-review-row"><span class="mp-review-k">Rating (ELO)</span><span class="mp-review-v" id="mpRevRating">Unrated</span></div>
-        <div class="mp-review-row"><span class="mp-review-k">Time Control</span><span class="mp-review-v" id="mpTCDisplay">Untimed</span></div>
-        <div class="mp-review-row" id="mpRevRangeRow"><span class="mp-review-k">Opponent ELO Range</span><span class="mp-review-v" id="mpRevRange">Any</span></div>
-        <!-- Primary submit sits right under the summary, in the same visual field -->
-        <button class="mp-action-primary" id="mpTimeConfirmBtn" onclick="mpConfirmTime()" style="margin-top:12px;">Confirm</button>
-        <button class="mp-change-time" id="mpChangeTimeBtn" onclick="mpExpandGrid()" style="display:none;">⟲ Change time control</button>
-      </div>
-    </div>
-  </div>
-
   <!-- ════════ ANONYMOUS-JOIN CONFIRM MODAL ════════ -->
   <div id="mpAnonPrompt">
     <div class="mp-anon-box">
       <div class="mp-anon-title">Join without a handle?</div>
-      <div class="mp-anon-msg">You haven't entered a handle or rating. Join this challenge as an anonymous, unrated player — or add your info first.</div>
+      <div class="mp-anon-msg">You haven't entered a handle or rating. Add them right here and join — or join as an anonymous, unrated player.</div>
+      <div style="display:flex;gap:6px;margin:10px 0;text-align:left;">
+        <div style="flex:1;">
+          <div class="mp-micro-lbl">Handle</div>
+          <input id="mpAnonName" placeholder="Anonymous" maxlength="20" class="mp-input">
+        </div>
+        <div style="width:80px;">
+          <div class="mp-micro-lbl">Rating</div>
+          <input id="mpAnonRating" placeholder="—" maxlength="4" type="number" min="100" max="3000" class="mp-input"
+            onkeydown="if(event.key==='Enter')mpAnonSaveJoin()">
+        </div>
+      </div>
       <div class="mp-anon-btns">
-        <button class="mp-action-primary" onclick="mpAnonJoinAnon()">Join as Anonymous</button>
-        <button class="mp-action-secondary" onclick="mpAnonFillInfo()">Add Handle &amp; Rating</button>
+        <button class="mp-action-primary" onclick="mpAnonSaveJoin()">Save &amp; Join Game ▸</button>
+        <button class="mp-action-secondary" onclick="mpAnonJoinAnon()">Join as Anonymous</button>
       </div>
     </div>
   </div>
@@ -2321,6 +2356,16 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <button class="panel-close" onclick="closeAllPanels()">✕</button>
   </div>
   <div class="panel-body">
+    <h3>Board experience</h3>
+    <div class="piece-btns" style="margin-bottom:4px;">
+      <button class="piece-btn active" data-shell-btn="amateur" onclick="setShell('amateur')" title="Full training board — all vision overlays and indicators">Training</button>
+      <button class="piece-btn" data-shell-btn="pro" onclick="setShell('pro')" title="Clean tournament look — notation, no overlays">Expert</button>
+    </div>
+    <h3>Format</h3>
+    <div class="piece-btns" style="margin-bottom:4px;">
+      <button class="piece-btn" data-format="carbon" onclick="applyFormat('carbon')" title="Dashboard look — mono &amp; caps type">Carbon</button>
+      <button class="piece-btn" data-format="journal" onclick="applyFormat('journal')" title="Editorial look — serif type; pairs with any background">Journal</button>
+    </div>
     <h3>Board colors</h3>
     <div class="swatch-grid" id="boardSwatches"></div>
     <h3>Background</h3>

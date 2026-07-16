@@ -291,6 +291,7 @@ wss.on('connection', (ws) => {
           code,
           name:        String(msg.name || 'Anonymous').slice(0, 40),
           rating:      msg.rating || null,
+          ratingType:  ['Lichess', 'Chess.com', 'FIDE'].includes(msg.ratingType) ? msg.ratingType : null,
           ratingRange: msg.ratingRange || 9999,
           tc:          msg.tc || 'untimed',
           tcLabel:     msg.tcLabel || 'Untimed',
