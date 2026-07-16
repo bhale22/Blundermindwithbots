@@ -1173,10 +1173,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // Check for ?join= invite link in URL
     mpCheckInviteUrl();
   } else {
-    // Running locally — dim the multiplayer landing card
+    // Running locally — dim the multiplayer landing card and say why (the
+    // deployed site never hits this branch)
     if (mpCard) {
       mpCard.style.opacity = '0.55';
       mpCard.title = 'Multiplayer requires the deployed server';
+      var mpLocalNote = document.createElement('div');
+      mpLocalNote.className = 'landing-card-desc';
+      mpLocalNote.style.cssText = 'color:#c06060;font-style:italic;';
+      mpLocalNote.textContent = 'Unavailable locally — requires the deployed server';
+      mpCard.appendChild(mpLocalNote);
     }
   }
   const cv3 = document.getElementById('cv');
@@ -1502,6 +1508,12 @@ window.addEventListener('message', function(e) {
   botMinProbPct     = (cfg.minProbPct     != null) ? cfg.minProbPct     : 5;
   botBlunderLimitCp = (cfg.blunderLimitCp != null) ? cfg.blunderLimitCp : 150;
   botBadDayMode     = !!cfg.badDayMode;
+
+  // Drunken Master: per-move ELO coin flip {high, low, highPct}
+  botEloMix = (cfg.eloMix && cfg.eloMix.high > 0 && cfg.eloMix.low > 0)
+    ? { high: +cfg.eloMix.high, low: +cfg.eloMix.low,
+        highPct: (cfg.eloMix.highPct != null) ? +cfg.eloMix.highPct : 50 }
+    : null;
 
   // Time pressure curves (cvA = ELO degradation, cvB = distribution cutoff).
   // Each mechanism has its own off flag (pressureOffA / pressureOffB); older

@@ -18,15 +18,34 @@ function evalPressureCurve(ctrlPts, xSec) {
   return pts[pts.length - 1].y;
 }
 
+// ── Drunken Master ELO mix ────────────────────────────────────────────────────
+// {high, low, highPct} — each bot move rolls once between the two ELOs.
+// Was that a brilliant tactical move, or was it thinking about kittens?
+let botEloMix = null;
+let _botMoveMixElo = null; // this move's rolled ELO; stable across curve reads
+
+function _rollBotMixElo() {
+  _botMoveMixElo = botEloMix
+    ? (Math.random() * 100 < botEloMix.highPct ? botEloMix.high : botEloMix.low)
+    : null;
+}
+// Base ELO for Maia calls this move: the mix roll if active, else the panel ELO
+function _botBaseElo() {
+  return _botMoveMixElo != null ? _botMoveMixElo : maia3SelectedRating;
+}
+
 // ── Pressure-adjusted Maia ELO ────────────────────────────────────────────────
 // Reads ctrlA curve and returns the effective Maia ELO for the current clock.
-// Falls back to maia3SelectedRating when no curve is set or clockMs is null.
+// Falls back to the move's base ELO when no curve is set or clockMs is null.
+// The curve is anchored to the panel's ELO, so it applies as a delta — an ELO
+// mix roll keeps the same degradation shape shifted to its own level.
 function pressureEffectiveMaiaElo(clockMs) {
-  if (!botPressureCurveA || botPressureCurveA.length < 2 || clockMs === null) return maia3SelectedRating;
+  const base = _botBaseElo();
+  if (!botPressureCurveA || botPressureCurveA.length < 2 || clockMs === null) return base;
   const thinkSec = (clockMs / 1000) / botRemainingMovesEstimate();
   const curveElo = evalPressureCurve(botPressureCurveA, thinkSec);
-  if (curveElo === null) return maia3SelectedRating;
-  return Math.max(600, Math.min(2600, Math.round(curveElo)));
+  if (curveElo === null) return base;
+  return Math.max(600, Math.min(2600, Math.round(base + (curveElo - maia3SelectedRating))));
 }
 
 // ── Pressure-adjusted distribution upper cutoff ───────────────────────────────
@@ -46,10 +65,11 @@ function pressureEffectiveDayUpper(clockMs) {
 // a clock/remaining-moves average.  A hustler taking 0.3 s sees heavy curve
 // degradation; a grinder taking 15 s sees little.
 function pressureEffectiveMaiaEloByThink(thinkSec) {
-  if (!botPressureCurveA || botPressureCurveA.length < 2) return maia3SelectedRating;
+  const base = _botBaseElo();
+  if (!botPressureCurveA || botPressureCurveA.length < 2) return base;
   const curveElo = evalPressureCurve(botPressureCurveA, thinkSec);
-  if (curveElo === null) return maia3SelectedRating;
-  return Math.max(600, Math.min(2600, Math.round(curveElo)));
+  if (curveElo === null) return base;
+  return Math.max(600, Math.min(2600, Math.round(base + (curveElo - maia3SelectedRating))));
 }
 
 function pressureEffectiveDayUpperByThink(thinkSec) {
@@ -1364,6 +1384,9 @@ async function botMakeMove() {
   document.getElementById('botStatus').textContent = '🤔 Thinking...';
 
   const _botMoveStartMs = Date.now(); // for inference-time accounting
+  // Drunken Master: roll this move's ELO once — every pressure-curve read and
+  // fallback within this move must see the same value
+  _rollBotMixElo();
   // Real move counters, not the frozen "0 1": halfmoveClock is maintained by
   // executeMove; fullmove = played-plies/2 + 1. Maia ignores these, but Stockfish
   // uses the halfmove clock for 50-move awareness and any exported FEN needs them.
@@ -1550,9 +1573,9 @@ async function botMakeMove() {
         uciMove = sampleFromProbs(applyMoveAttractors(m3Probs), adjTemp);
         console.log('[Maia3 FULL] chose:', uciMove, '| temp:', adjTemp.toFixed(2), '(base:', m3EffTemp.toFixed(2), ')| inf:', inferenceMs, 'ms | extra wait:', delay, 'ms');
       } else {
-        // Maia3 not downloaded — fall back to SF
+        // Maia3 not downloaded — fall back to SF (honours the ELO-mix roll)
         await sfInit();
-        const fbLevel = Math.round(maia3SelectedRating / 200); // rough mapping
+        const fbLevel = Math.round(_botBaseElo() / 200); // rough mapping
         uciMove = await sfGetMove(fen, Math.max(1, Math.min(20, fbLevel)));
         lastBotMoveSource = 'SF';
       }

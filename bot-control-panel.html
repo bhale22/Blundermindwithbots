@@ -2004,6 +2004,8 @@ const PERSONALITIES = [
     attractors:{chaos:0,compwin:-2,spacecadet:0,fortkx:0,gambito:0,trade:-1,structure:0,hustle:0,luck:0,pressure:-3,attacker:0} },
   { id:'badday',     name:'Grandmaster Bad Day', icon:'👑',tag:'Human',      desc:'Maia 2400 but picks first move above 4% threshold.',
     attractors:{chaos:0,compwin:0,spacecadet:0,fortkx:0,gambito:0,trade:0,structure:0,hustle:0,luck:5,pressure:2,attacker:0} },
+  { id:'drunken',    name:'Drunken Master',      icon:'🍺', tag:'Human',      desc:'Was that a brilliant tactical move — or was it thinking about kittens? Each move: 50% Maia 2400, 50% Maia 1000.',
+    attractors:{chaos:3,compwin:2,spacecadet:1,fortkx:-3,gambito:3,trade:1,structure:-2,hustle:2,luck:2,pressure:1,attacker:4} },
 ];
 
 /* ══════════════════════════════════════════════════════════════
@@ -5833,6 +5835,7 @@ function getBotConfig(){
     tempPresetId:      selectedTempPresetId,
     personalityId:     selectedPersonality,
     badDayMode:        selectedPersonality === 'badday',
+    eloMix:            selectedPersonality === 'drunken' ? { high:2400, low:1000, highPct:50 } : null,
     calmPanickyValue:  attractorValues['pressure'] || 0,
     hybridSlots:     hybridSlots.map(s=>({...s})),
     lcsfElo:         parseInt(document.getElementById('lcsf-lc-elo')?.value || '2000'),
@@ -7752,10 +7755,29 @@ function renderPersonalities(){
   `).join('');
 }
 
-/* ── Grandmaster Bad Day: custom modal (replaces window.confirm) ── */
+/* ── Personality confirm modal (replaces window.confirm) ──
+   Personalities that reconfigure the engine confirm first; content per id. */
+const PERS_CONFIRMS = {
+  badday: { title:'👑 Grandmaster Bad Day', items:[
+    'Engine → Maia 3',
+    'ELO → 2400',
+    'Plays lowest probability move that is greater than 4%',
+  ]},
+  drunken: { title:'🍺 Drunken Master', items:[
+    'Engine → Maia 3',
+    'Each move: 50% chance Maia 2400, 50% chance Maia 1000',
+    'Aggressive attacking attractors',
+  ]},
+};
 let _bdPendingId = null;
 function _showBadDayConfirm(id){
   _bdPendingId = id;
+  const c = PERS_CONFIRMS[id];
+  if(c){
+    document.getElementById('bdconfirm-title').textContent = c.title;
+    document.getElementById('bdconfirm-list').innerHTML =
+      c.items.map(t => '<li>' + t + '</li>').join('');
+  }
   document.getElementById('bdconfirm-overlay').classList.add('show');
 }
 function _bdCancel(){
@@ -7772,7 +7794,7 @@ function _bdApply(){
 function selPersonality(id){
   const p = PERSONALITIES.find(x=>x.id===id);
   if(!p) return;
-  if(id === 'badday'){
+  if(PERS_CONFIRMS[id]){
     _showBadDayConfirm(id);
     return; // waits for _bdApply → _applyPersonality
   }
@@ -7791,6 +7813,14 @@ function _applyPersonality(id){
     if(lo) lo.value = 4;    // minProbPct=4: keep only moves with individual prob ≥ 4%
     if(hi) hi.value = 100;  // dayUpper=100: engine then selects the worst acceptable move
     onDaySlider();
+  }
+  // Drunken Master: Maia 3 with a per-move 50/50 ELO coin flip (2400 / 1000).
+  // Elometer shows the 1700 midpoint — it anchors the pressure curves and the
+  // header label; the actual per-move ELO comes from the eloMix roll in-game.
+  if(id === 'drunken'){
+    const card = document.querySelector('#engine-mode-grid .mcard[data-engine="maia3"]');
+    if(card) selEngineMode(card);
+    setElo(1700);
   }
   // Select card
   document.querySelectorAll('.pcard').forEach(c=>c.classList.remove('sel'));
@@ -8031,12 +8061,18 @@ let scaleA = 'log', scaleB = 'log';
 // startX: estimated think time per move at game start using current QS time selection.
 // Falls back to 5 min + 0s if time pill is not parseable.
 // x domain: 1–1000s (requires parent element to have non-zero width before draw)
-function _getQsTcSecs(){
+function _getQsTc(){
   const v = document.getElementById('qs-time-value')?.textContent || '5 min + 0s';
   const m = v.match(/(\d+)\s*min/); const s = v.match(/\+\s*(\d+)s/);
-  return ((m ? +m[1] : 5) * 60) + (s ? +s[1] : 0);
+  return { base: (m ? +m[1] : 5) * 60, inc: s ? +s[1] : 0 };
 }
-function startX(){ const t = _getQsTcSecs(); return +(t > 0 ? (t + 40*0)/40 : 7.5).toFixed(2); }
+// Per-move think budget over a nominal 40-move game: share of base time plus
+// one full increment (each move earns its increment back).
+function startX(){
+  const tc = _getQsTc();
+  if(tc.base <= 0 && tc.inc <= 0) return 7.5;
+  return +Math.max(1, tc.base / 40 + tc.inc).toFixed(2);
+}
 function flrX(){   const v = document.getElementById('qs-time-value')?.textContent || ''; const s = v.match(/\+\s*(\d+)s/); return Math.max(1, (s ? +s[1] : 0)*0.9); }
 
 // ── Dense log-spaced sample array (for drawing the smooth baseline) ───────────
@@ -8522,13 +8558,13 @@ document.addEventListener('DOMContentLoaded', ()=>{
 });
 </script>
 
-<!-- Grandmaster Bad Day custom confirm modal -->
+<!-- Personality confirm modal (Grandmaster Bad Day, Drunken Master, …) -->
 <div id="bdconfirm-overlay">
   <div id="bdconfirm-box">
-    <div class="bdtitle">👑 Grandmaster Bad Day</div>
+    <div class="bdtitle" id="bdconfirm-title">👑 Grandmaster Bad Day</div>
     <div class="bdmsg">
       <p>This personality will set:</p>
-      <ul>
+      <ul id="bdconfirm-list">
         <li>Engine → Maia 3</li>
         <li>ELO → 2400</li>
         <li>Plays lowest probability move that is greater than 4%</li>

@@ -485,33 +485,33 @@ canvas{
   background:var(--bg-page);
   z-index:5000;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
-  padding:20px;
+  padding:20px;overflow-y:auto;
   transition:opacity 0.4s ease, background 0.3s ease;
 }
 #landingOverlay.fade-out { opacity:0;pointer-events:none; }
 .landing-title {
-  font-size:32px;font-weight:700;color:var(--text-primary);
-  letter-spacing:-0.03em;margin-bottom:4px;
+  font-size:40px;font-weight:700;color:var(--text-primary);
+  letter-spacing:-0.03em;margin-bottom:5px;
 }
 .landing-title span { color:#4a9fd4; }
 .landing-tagline {
-  font-size:13px;color:var(--text-dim);font-style:italic;
-  margin-bottom:24px;letter-spacing:0.02em;
+  font-size:15px;color:var(--text-dim);font-style:italic;
+  margin-bottom:28px;letter-spacing:0.02em;
 }
 .landing-shell-pick {
-  display:flex;gap:12px;margin-bottom:28px;flex-wrap:wrap;justify-content:center;
+  display:flex;gap:14px;margin-bottom:30px;flex-wrap:wrap;justify-content:center;
 }
 .landing-shell-btn {
-  display:flex;flex-direction:column;gap:4px;align-items:flex-start;text-align:left;
-  width:240px;padding:11px 14px;background:var(--bg-panel);
+  display:flex;flex-direction:column;gap:5px;align-items:flex-start;text-align:left;
+  width:280px;padding:13px 16px;background:var(--bg-panel);
   border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all 0.15s;
 }
 .landing-shell-btn:hover { border-color:var(--accent); }
 .landing-shell-btn.sel {
   border-color:var(--accent);box-shadow:0 0 0 2px rgba(74,159,212,0.18);
 }
-.landing-shell-btn .ls-name { font-size:12px;font-weight:700;color:var(--text-primary); }
-.landing-shell-btn .ls-desc { font-size:9px;color:var(--text-dim);line-height:1.45; }
+.landing-shell-btn .ls-name { font-size:14px;font-weight:700;color:var(--text-primary); }
+.landing-shell-btn .ls-desc { font-size:10.5px;color:var(--text-dim);line-height:1.45; }
 
 /* ── Expert landing theme — carbon/amber palette + panel fonts (matches the
       Expert board & bot control panels). Applied when Expert Board is chosen. ── */
@@ -532,15 +532,15 @@ canvas{
 .landing-expert .landing-card-desc { color:#717a8a; }
 .landing-expert .landing-footer { color:#717a8a; }
 .landing-cards {
-  display:flex;flex-wrap:wrap;gap:14px;justify-content:center;
-  max-width:720px;margin-bottom:28px;
+  display:flex;flex-wrap:wrap;gap:16px;justify-content:center;
+  max-width:880px;margin-bottom:30px;
 }
 .landing-card {
-  width:160px;padding:20px 14px 18px;
+  width:195px;padding:24px 16px 20px;
   background:var(--bg-panel);border:1px solid var(--border);
   border-radius:10px;cursor:pointer;text-align:center;
   transition:border-color 0.2s,box-shadow 0.15s,transform 0.12s,background 0.25s,color 0.25s;
-  display:flex;flex-direction:column;align-items:center;gap:8px;
+  display:flex;flex-direction:column;align-items:center;gap:10px;
 }
 .landing-card:hover {
   border-color:var(--accent);
@@ -555,27 +555,27 @@ canvas{
   border-color:#c8a000;
   box-shadow:0 0 0 2px rgba(200,160,0,0.18);
 }
-.landing-card-icon { font-size:36px;line-height:1; }
+.landing-card-icon { font-size:42px;line-height:1; }
 .landing-card-title {
-  font-size:12px;font-weight:700;color:var(--text-primary);
+  font-size:14px;font-weight:700;color:var(--text-primary);
   line-height:1.3;transition:color 0.25s ease;
 }
 .landing-card-desc {
-  font-size:9.5px;color:var(--text-dim);line-height:1.5;transition:color 0.25s ease;
+  font-size:11px;color:var(--text-dim);line-height:1.5;transition:color 0.25s ease;
 }
 .landing-upload-row {
   display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center;
   margin-bottom:16px;
 }
 .landing-upload-btn {
-  font-size:9.5px;padding:6px 14px;
+  font-size:11px;padding:7px 16px;
   border:0.5px solid var(--border);border-radius:20px;
   background:transparent;color:var(--text-dim);cursor:pointer;
   transition:all 0.12s;
 }
 .landing-upload-btn:hover { border-color:var(--accent);color:var(--accent); }
 .landing-footer {
-  font-size:8.5px;color:var(--text-dim);text-align:center;
+  font-size:10px;color:var(--text-dim);text-align:center;
   margin-top:8px;
 }
 
@@ -949,7 +949,7 @@ canvas{
 body.journal .landing-title{ font-family:'Fraunces',serif;font-style:italic;font-weight:500; }
 body.journal .landing-tagline{ font-family:'Spectral',serif;font-style:normal; }
 body.journal .landing-card-title{ font-family:'Fraunces',serif;font-style:italic;font-weight:500; }
-body.journal .landing-card-desc{ font-family:'Spectral',serif;font-size:11px;line-height:1.5; }
+body.journal .landing-card-desc{ font-family:'Spectral',serif;font-size:12.5px;line-height:1.5; }
 body.journal .landing-shell-btn .ls-name{ font-family:'Fraunces',serif;font-style:italic; }
 body.journal .landing-shell-btn .ls-desc{ font-family:'Spectral',serif; }
 body.journal #site-name{ font-family:'Fraunces',serif;font-style:italic; }
