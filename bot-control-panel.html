@@ -1698,7 +1698,7 @@ body.fj .picon{font-weight:500;}
           <div class="formula-body" style="text-align:left;line-height:1.75;">
             The bot simulates a rated player under time pressure using two complementary mechanisms:<br>
             <span style="color:var(--amber);">▸ ELO reduction</span> — Maia is called at a lower ELO as the clock runs down, playing like a lower-rated player under time scramble.<br>
-            <span style="color:#5dade2;">▸ Distribution restriction</span> — ELO stays fixed but only the top portion of Maia's move distribution is available (instinctive, less creative play — typical of a strong player with no time to calculate).<br>
+            <span style="color:#5dade2;">▸ Distribution restriction</span> — ELO stays fixed but only the top portion of Maia's move distribution is available (instinctive, less creative play — typical of a strong player with no time to calculate). A quick engine check ensures a degraded pick never improves on Maia's top choice.<br>
             Each curve has its own <strong>ON/OFF</strong> toggle next to its title, so you can run either mechanism alone, both together, or switch both off for constant strength regardless of clock.
           </div>
         </div>
@@ -2002,7 +2002,7 @@ const PERSONALITIES = [
     attractors:{chaos:3,compwin:2,spacecadet:1,fortkx:-2,gambito:0,trade:2,structure:-2,hustle:-2,luck:1,pressure:1,attacker:3} },
   { id:'clock',      name:'Clock Watcher',      icon:'⧗', tag:'Clock',      desc:'Conservative when ahead on time, reckless when behind.',
     attractors:{chaos:0,compwin:-2,spacecadet:0,fortkx:0,gambito:0,trade:-1,structure:0,hustle:0,luck:0,pressure:-3,attacker:0} },
-  { id:'badday',     name:'Grandmaster Bad Day', icon:'👑',tag:'Human',      desc:'Maia 2400 but picks first move above 4% threshold.',
+  { id:'badday',     name:'Grandmaster Bad Day', icon:'👑',tag:'Human',      desc:'Maia 2400 but picks the lowest-probability move above 4% — never accidentally brilliant.',
     attractors:{chaos:0,compwin:0,spacecadet:0,fortkx:0,gambito:0,trade:0,structure:0,hustle:0,luck:5,pressure:2,attacker:0} },
   { id:'drunken',    name:'Drunken Master',      icon:'🍺', tag:'Human',      desc:'Was that a brilliant tactical move — or was it thinking about kittens? Each move: 50% Maia 2400, 50% Maia 1000.',
     attractors:{chaos:3,compwin:2,spacecadet:1,fortkx:-3,gambito:3,trade:1,structure:-2,hustle:2,luck:2,pressure:1,attacker:4} },
@@ -7762,6 +7762,7 @@ const PERS_CONFIRMS = {
     'Engine → Maia 3',
     'ELO → 2400',
     'Plays lowest probability move that is greater than 4%',
+    'Eval-checked: if that move accidentally beats Maia’s top choice, the top choice is played instead',
   ]},
   drunken: { title:'🍺 Drunken Master', items:[
     'Engine → Maia 3',

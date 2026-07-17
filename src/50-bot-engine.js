@@ -94,6 +94,40 @@ function timePressureTempByThink(baseTemp, thinkSec) {
   return baseTemp + fraction * boost;
 }
 
+// ── Degradation eval guard ────────────────────────────────────────────────────
+// Bad Day and the time-pressure distribution restriction steer the bot's pick
+// by PROBABILITY, which is popularity at the rating, not quality — so the
+// steered pick is occasionally an objectively strong move few players see.
+// Degradation must never upgrade play: when a degradation mechanism is active
+// and the pick differs from the top-probability move, evaluate both with one
+// shallow searchmoves probe and play whichever scores WORSE.
+async function applyDegradationEvalGuard(fen, chosenUci, rawProbs) {
+  try {
+    if (!chosenUci || !rawProbs) return chosenUci;
+    let topMove = null, topP = -1;
+    for (const m in rawProbs) { if (rawProbs[m] > topP) { topP = rawProbs[m]; topMove = m; } }
+    if (!topMove || topMove === chosenUci) return chosenUci;
+    // Is the TP distribution restriction actually narrowing the window right
+    // now? 1-point tolerance so a near-flat curve doesn't probe every move.
+    const tpRestricting = botPressureCurveB && botPressureCurveB.length >= 2 &&
+      (_botMoveThinkSec !== null
+        ? pressureEffectiveDayUpperByThink(_botMoveThinkSec) < botDayUpper - 1
+        : _botMoveClockMs !== null && pressureEffectiveDayUpper(_botMoveClockMs) < botDayUpper - 1);
+    if (!botBadDayMode && !tpRestricting) return chosenUci;
+    if (!sfReady) { try { await sfInit(); } catch (e) { return chosenUci; } }
+    const evals = await sfEvalMoves(fen, [chosenUci, topMove]);
+    if (!evals || evals[chosenUci] == null || evals[topMove] == null) return chosenUci;
+    if (evals[chosenUci] > evals[topMove]) {
+      console.log('[DegradeGuard] pick', chosenUci, '(' + evals[chosenUci] + 'cp) beats top-prob',
+        topMove, '(' + evals[topMove] + 'cp) — playing the top-probability move instead');
+      return topMove;
+    }
+    return chosenUci;
+  } catch (e) {
+    return chosenUci;
+  }
+}
+
 // clock ms at the time of the current move — set before applyMoveAttractors
 let _botMoveClockMs = null;
 // actual think time in seconds for this move — drives pressure curve lookup
@@ -708,7 +742,8 @@ function applyMoveAttractors(moveProbs) {
   // Grandmaster Bad Day: sort by probability ascending, return the first move
   // that meets the minProbPct threshold (lowest prob still considered plausible).
   // Note: probability = how often players at this rating choose the move, not
-  // engine quality — occasionally this lands on a strong move few players see.
+  // engine quality — this can land on a strong move few players see; the
+  // post-pick applyDegradationEvalGuard swaps those back to the top choice.
   if (botBadDayMode) {
     const _floor = botMinProbPct > 0 ? botMinProbPct / 100 : 0.04;
     const _asc = Object.entries(filtered).sort((a, b) => a[1] - b[1]);
@@ -1573,6 +1608,7 @@ async function botMakeMove() {
         _botMoveClockMs = clockMs; // for applyMoveAttractors distribution cutoff (ctrlB)
         const adjTemp = complexityAdjustedTemp(m3EffTemp);
         uciMove = sampleFromProbs(applyMoveAttractors(m3Probs), adjTemp);
+        uciMove = await applyDegradationEvalGuard(fen, uciMove, m3Probs);
         console.log('[Maia3 FULL] chose:', uciMove, '| temp:', adjTemp.toFixed(2), '(base:', m3EffTemp.toFixed(2), ')| inf:', inferenceMs, 'ms | extra wait:', delay, 'ms');
       } else {
         // Maia3 not downloaded — fall back to SF (honours the ELO-mix roll)
@@ -1637,6 +1673,7 @@ async function botMakeMove() {
         _botMoveClockMs = clockMs;
         _botMoveThinkSec = preciseThinkSec;
         uciMove = sampleFromProbs(applyMoveAttractors(probs), complexityAdjustedTemp(effectiveTemp));
+        uciMove = await applyDegradationEvalGuard(fen, uciMove, probs);
         _botMoveThinkSec = null;
       } else {
         await sfInit();
@@ -1677,6 +1714,7 @@ async function botMakeMove() {
         _botMoveClockMs = clockMs;
         _botMoveThinkSec = preciseThinkSecLcsf;
         uciMove = sampleFromProbs(applyMoveAttractors(lcsfProbs), lcsfEffTemp);
+        uciMove = await applyDegradationEvalGuard(fen, uciMove, lcsfProbs);
         _botMoveThinkSec = null;
       } else {
         await sfInit();
@@ -1714,6 +1752,7 @@ async function botMakeMove() {
             if (delay > 0) await new Promise(res => setTimeout(res, delay));
             _botMoveClockMs = clockMs;
             uciMove = sampleFromProbs(applyMoveAttractors(probs), effectiveTemp);
+            uciMove = await applyDegradationEvalGuard(fen, uciMove, probs);
           } else {
             // Maia3 not downloaded/failed — SF at a level matching the slot ELO
             const fbLevel = Math.max(1, Math.min(20, Math.round(slotElo / 200)));

@@ -26,16 +26,24 @@ function sfInit() {
           // move computed for a different position.
           if (sfBestmovesOwed > 0) { sfBestmovesOwed--; return; }
           if (sfCplxActive) {
-            // This bestmove closes the complexity probe, not a normal move request
+            // This bestmove closes a probe (complexity or eval-moves), not a
+            // normal move request
             sfCplxActive = false;
             sfWorker.postMessage('setoption name MultiPV value 1');
             sfCurrentSkillLevel = -1;
-            var result = _computeCplxScore(sfCplxInfoLines);
-            sfCplxScore = result ? result.cplx : null;
-            sfCplxEval  = result ? result.eval  : null;
+            var probeResult;
+            if (sfProbeMode === 'evalmoves') {
+              probeResult = _parseEvalMovesScores(sfCplxInfoLines);
+            } else {
+              var result = _computeCplxScore(sfCplxInfoLines);
+              sfCplxScore = result ? result.cplx : null;
+              sfCplxEval  = result ? result.eval  : null;
+              probeResult = result;
+            }
+            sfProbeMode = 'cplx';
             var cplxRes = sfCplxPending;
             sfCplxPending = null;
-            if (cplxRes) cplxRes(result);
+            if (cplxRes) cplxRes(probeResult);
           } else if (sfPendingResolve) {
             var parts = line.split(' ');
             var move  = parts[1];
@@ -230,6 +238,67 @@ function sfGetComplexity(fen) {
       }
     }, 3000);
   });
+}
+
+// ── Two-move eval probe (degradation guard) ───────────────────────────────────
+// Evaluates exactly the given candidate moves (searchmoves + MultiPV) and
+// returns Promise<{uci: cp}|null>, scores from the side-to-move's perspective.
+// Shares the probe plumbing with sfGetComplexity (sfCplxActive/sfCplxPending);
+// only one probe runs at a time, and probes never run while a move request is
+// in flight.
+var sfProbeMode = 'cplx'; // 'cplx' | 'evalmoves' — how to parse the probe result
+function sfEvalMoves(fen, moves, depth) {
+  return new Promise((resolve) => {
+    if (!sfWorker || !sfReady || !moves || moves.length < 2) { resolve(null); return; }
+    if (sfPendingResolve || sfCplxActive) { resolve(null); return; }
+    sfCplxActive    = true;
+    sfProbeMode     = 'evalmoves';
+    sfCplxPending   = resolve;
+    sfCplxInfoLines = [];
+    sfCplxFen       = null; // never serve this probe's residue as a cached complexity result
+    sfWorker.postMessage('stop');
+    if (sfCurrentSkillLevel !== 20) {
+      sfWorker.postMessage('setoption name Skill Level value 20');
+      sfCurrentSkillLevel = 20;
+    }
+    sfWorker.postMessage('setoption name MultiPV value ' + moves.length);
+    sfWorker.postMessage('position fen ' + fen);
+    sfWorker.postMessage('go depth ' + (depth || 10) + ' searchmoves ' + moves.join(' '));
+    // 2.5 s safety timeout — the guard must not stall the bot's move
+    setTimeout(() => {
+      if (sfCplxPending === resolve) {
+        sfCplxActive  = false;
+        sfProbeMode   = 'cplx';
+        sfCplxPending = null;
+        sfBestmovesOwed++; // probe's bestmove will still arrive — discard it
+        sfWorker.postMessage('setoption name MultiPV value 1');
+        sfCurrentSkillLevel = -1;
+        resolve(null);
+      }
+    }, 2500);
+  });
+}
+
+// Parse MultiPV info lines into {uci: cp} using the deepest score seen for the
+// first move of each pv. Mate scores map to ±(10000 − plies) so nearer mates
+// compare higher.
+function _parseEvalMovesScores(lines) {
+  var best = {}; // uci → {depth, cp}
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var dm  = line.match(/\bdepth (\d+)/);
+    var pvm = line.match(/\bpv ([a-h][1-8][a-h][1-8][qrbn]?)/);
+    var cm  = line.match(/\bscore cp (-?\d+)/);
+    var mm  = line.match(/\bscore mate (-?\d+)/);
+    if (!dm || !pvm) continue;
+    var cp = cm ? +cm[1] : mm ? (+mm[1] > 0 ? 10000 - +mm[1] : -10000 - +mm[1]) : null;
+    if (cp === null) continue;
+    var uci = pvm[1], d = +dm[1];
+    if (!best[uci] || d >= best[uci].depth) best[uci] = { depth: d, cp: cp };
+  }
+  var out = {}, n = 0;
+  for (var k in best) { out[k] = best[k].cp; n++; }
+  return n ? out : null;
 }
 
 function _computeCplxScore(lines) {
