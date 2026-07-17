@@ -74,6 +74,157 @@ function timePressureTempByThink(baseTemp, thinkSec) {
   return baseTemp + fraction * boost;
 }
 
+// ── Draw behaviour ────────────────────────────────────────────────────────────
+// Current position's engine eval from the BOT's perspective (cp), or null.
+// One shallow probe via the complexity machinery (cached per FEN).
+async function botEvalAdvantageCp() {
+  if (!sfReady) { try { await sfInit(); } catch (e) { return null; } }
+  const fullmove = Math.floor(gameMovesAlgebraic.length / 2) + 1;
+  const fen = boardToFen(board, turn, castling, epSq, halfmoveClock, fullmove);
+  const res = await sfGetComplexity(fen);
+  if (!res || res.eval == null) return null;
+  // res.eval is from the side-to-move's perspective; bot plays the color the
+  // human doesn't (botPlayerColor is the HUMAN's color)
+  const botColor = (botPlayerColor === 'white') ? 'b' : 'w';
+  return turn === botColor ? res.eval : -res.eval;
+}
+
+// Small transient toast for bot draw messages (Accept/Decline when offering)
+function _botDrawToast(html, buttons) {
+  const old = document.getElementById('bm-bot-draw'); if (old) old.remove();
+  const d = document.createElement('div');
+  d.id = 'bm-bot-draw';
+  d.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);' +
+    'background:#14161a;border:0.5px solid rgba(200,146,42,0.5);border-radius:6px;' +
+    'color:#e8e6e0;font-family:system-ui,sans-serif;font-size:12px;padding:10px 14px;' +
+    'z-index:9999;display:flex;align-items:center;gap:12px;box-shadow:0 8px 30px rgba(0,0,0,0.6);';
+  d.innerHTML = '<span>' + html + '</span>';
+  (buttons || []).forEach(b => {
+    const btn = document.createElement('button');
+    btn.textContent = b.label;
+    btn.style.cssText = 'background:rgba(200,146,42,0.15);border:0.5px solid rgba(200,146,42,0.5);' +
+      'border-radius:4px;color:#e8aa40;font-family:inherit;font-size:11px;padding:4px 10px;cursor:pointer;';
+    btn.onclick = () => { d.remove(); b.fn(); };
+    d.appendChild(btn);
+  });
+  document.body.appendChild(d);
+  setTimeout(() => { if (d.parentNode) d.remove(); }, buttons && buttons.length ? 25000 : 6000);
+  return d;
+}
+
+function _botAgreeDraw() {
+  gameOver = true;
+  gameOverMsg = 'Draw by agreement ½-½';
+  if (typeof clockStop === 'function') clockStop();
+  updatePlayerBoxes(); render(); showRematchBtn(true);
+}
+
+// Human offered a draw (½ button during a bot game): the bot evaluates the
+// position and accepts if its advantage is at most the configured margin —
+// i.e. it accepts whenever it is NOT clearly ahead.
+let _botDrawConsidering = false;
+async function botConsiderDrawOffer() {
+  if (_botDrawConsidering || gameOver || !botActive) return;
+  if (!botAcceptDraws) { _botDrawToast('🤖 The bot declines your draw offer.'); return; }
+  // Mid-think: try again once the bot's move (and its probes) are done
+  if (botThinking) { setTimeout(botConsiderDrawOffer, 1500); return; }
+  _botDrawConsidering = true;
+  try {
+    _botDrawToast('🤖 The bot is considering your draw offer…');
+    const adv = await botEvalAdvantageCp();
+    if (gameOver || !botActive) return;
+    if (adv !== null && adv <= botDrawAcceptMargin) {
+      _botDrawToast('🤖 Draw accepted. ½-½');
+      _botAgreeDraw();
+    } else {
+      _botDrawToast(adv === null
+        ? '🤖 The bot declines your draw offer.'
+        : '🤖 Declined — the bot thinks it stands better (+' + Math.round(adv) + ' cp).');
+    }
+  } finally {
+    _botDrawConsidering = false;
+  }
+}
+
+// After its move, a draw-offering bot checks whether the position is level and
+// occasionally offers — from the configured move number, never twice within a
+// dozen plies, and with human-ish irregularity.
+async function botMaybeOfferDraw() {
+  if (!botOfferDraws || gameOver || !botActive || botThinking) return;
+  const ply = gameMovesAlgebraic.length;
+  if (Math.floor(ply / 2) + 1 < botOfferDrawMove) return;
+  if (ply - _botLastDrawOfferPly < 12) return;
+  if (Math.random() > 0.5) return;
+  const adv = await botEvalAdvantageCp();
+  if (adv === null || gameOver || !botActive) return;
+  if (Math.abs(adv) > botOfferDrawThresh) return;
+  _botLastDrawOfferPly = ply;
+  _botDrawToast('🤖 The bot offers a draw.', [
+    { label: 'Accept ½-½', fn: _botAgreeDraw },
+    { label: 'Decline', fn: () => {} },
+  ]);
+}
+
+// ── Stalemate seeking (desperation mode) ─────────────────────────────────────
+// When hopelessly lost (from move X, eval worse than −Y cp), a stalemate
+// seeker boosts moves that reduce its OWN future mobility and moves that dump
+// material (desperado offers) — the classic human swindle recipe. Heuristic:
+// it steers toward stalemate-shaped positions rather than calculating one.
+let _staleSeekThisMove = false; // set per move; exempts the pick from the CP budget
+
+function _staleSeekActiveNow() {
+  // typeof guards: this file also runs in the unit-test VM without app-shell globals
+  if (typeof botStaleSeek === 'undefined' || !botStaleSeek) return false;
+  const fromMove = (typeof botStaleSeekMove !== 'undefined') ? botStaleSeekMove : 30;
+  const threshCp = (typeof botStaleSeekCp   !== 'undefined') ? botStaleSeekCp   : 500;
+  if (Math.floor(gameMovesAlgebraic.length / 2) + 1 < fromMove) return false;
+  // sfCplxEval = this move's probe eval from the bot's (side-to-move) view
+  return typeof sfCplxEval === 'number' && sfCplxEval !== null &&
+         sfCplxEval <= -threshCp;
+}
+
+function _maybeStaleSeek(moveProbs) {
+  _staleSeekThisMove = false;
+  if (!_staleSeekActiveNow() || !moveProbs) return moveProbs;
+  const keys = Object.keys(moveProbs);
+  if (keys.length < 2) return moveProbs;
+  _staleSeekThisMove = true;
+  const botIsBlack  = (botPlayerColor === 'white');
+  const botColorStr = botIsBlack ? 'b' : 'w';
+  const oppColorStr = botIsBlack ? 'w' : 'b';
+  const _E = new Set();
+  const out = {};
+  for (const uci of keys) {
+    const from = fileRankToSq(uci.slice(0, 2));
+    const to   = fileRankToSq(uci.slice(2, 4));
+    let boost = 0;
+    try {
+      const moved = board[from];
+      const nb = applyMove(from, to, board, epSq, 'Q');
+      // (a) fewer own legal replies afterwards → closer to stalemate shape
+      let mob = 0;
+      for (let sq = 0; sq < 64 && mob < 24; sq++) {
+        const pc = nb[sq];
+        if (pc && pc.color === botColorStr) mob += legalMovesFor(sq, nb, -1, castling).length;
+      }
+      boost += Math.max(0, 24 - mob) * 0.05;
+      // (b) desperado: the arrived piece (not the king) is offered — boost by
+      // its value, more when undefended. Dumping the queen is the point.
+      if (moved && moved.piece !== 'K') {
+        const nAtk = buildDirectAtk(nb, _E, _E, _E, _E);
+        const attackers = nAtk[to] ? (nAtk[to][oppColorStr] || []).length : 0;
+        if (attackers > 0) {
+          const val = { P:1, N:3, B:3, R:5, Q:9 }[moved.piece] || 1;
+          const defenders = nAtk[to] ? (nAtk[to][botColorStr] || []).length : 0;
+          boost += Math.min(1.3, (defenders === 0 ? 0.25 : 0.08) * val);
+        }
+      }
+    } catch (e) { /* keep original weight */ }
+    out[uci] = moveProbs[uci] * Math.exp(boost);
+  }
+  return out;
+}
+
 // ── CP-budget acceptance (engine-verified centipawmeter) ─────────────────────
 // Maia probability is popularity, not quality — at low ratings the correlation
 // between the two is weak (popular trap-falls, unseen strong moves), so the
@@ -90,6 +241,8 @@ let _attrReweightApplied = false; // set by applyMoveAttractors each call
 async function applyCpBudgetAcceptance(fen, chosenUci, rawProbs, shapedProbs) {
   try {
     if (!chosenUci || !rawProbs || !_attrReweightApplied) return chosenUci;
+    // Stalemate-seeking moves deliberately throw material — exempt from budget
+    if (_staleSeekThisMove) return chosenUci;
     const budget = window._bcpCpBudget != null ? +window._bcpCpBudget : 0;
     if (!(budget >= 0)) return chosenUci;
     let topMove = null, topP = -1;
@@ -777,7 +930,7 @@ function applyMoveAttractors(moveProbs) {
   // ── Per-move reweighting ──────────────────────────────────────────────────
   const needsPerMove = scale > 0 &&
     (hasPiece || hasTrade || hasPawnS || hasSpace || hasFortkx || hasGambito || hasAttacker || hasStructure || hasCustom);
-  if (!needsPerMove) return filtered;
+  if (!needsPerMove) return _maybeStaleSeek(filtered);
 
   const PIECE_MAP   = { p:'pawn', n:'knight', b:'bishop', r:'rook', q:'queen', k:'king' };
   const botIsBlack  = (botPlayerColor === 'white'); // bot is black when human plays white
@@ -1026,9 +1179,10 @@ function applyMoveAttractors(moveProbs) {
     result[uciMove] = logBoost !== 0 ? prob * Math.exp(logBoost) : prob;
   }
   _attrReweightApplied = true; // personality actually reshaped the distribution
-  return Object.keys(result).length ? result
-       : Object.keys(filtered).length ? filtered
-       : moveProbs;
+  return _maybeStaleSeek(
+    Object.keys(result).length ? result
+      : Object.keys(filtered).length ? filtered
+      : moveProbs);
 }
 
 // ── Pawn-structure penalty: islands + doubled + isolated (lower = tighter) ──
@@ -1815,6 +1969,9 @@ async function botMakeMove() {
           }
           gameOver = true;
           updatePlayerBoxes(); render();
+        } else if (botOfferDraws) {
+          // A draw-offering personality checks the position after its move
+          setTimeout(botMaybeOfferDraw, 700);
         }
       }
     }

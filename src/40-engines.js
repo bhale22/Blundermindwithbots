@@ -336,6 +336,8 @@ function _needsComplexity() {
   if ((av['chaos'] || 0) !== 0 || (av['compwin'] || 0) !== 0 || botTimeBehavior === 'complexity') {
     return true;
   }
+  // Stalemate seeking needs the eval to know when desperation kicks in
+  if (typeof botStaleSeek !== 'undefined' && botStaleSeek) return true;
   // A custom control with a winning/losing/equal condition needs the eval probe.
   const cc = window._bcpCustomControls || [];
   return cc.some(c => c && c.value && c.result && c.result !== 'any');

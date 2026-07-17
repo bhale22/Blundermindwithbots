@@ -112,6 +112,17 @@ let botPressureCurveA   = null;   // ctrlA points [{x,y}] — ELO degradation vs
 let botPressureCurveB   = null;   // ctrlB points [{x,y}] — confidence floor % vs think-time (s)
 let botWeaponizerEnabled = false; // weaponizer: instant play when ahead on clock
 let botWeaponizerLeadMs  = 30000; // clock lead (ms) required to activate weaponizer
+// ── Draw behaviour ───────────────────────────────────────────────────────────
+let botAcceptDraws      = false;  // bot accepts draw offers when not clearly ahead
+let botDrawAcceptMargin = 50;     // accept if bot's advantage ≤ this many cp (engine eval)
+let botOfferDraws       = false;  // bot proactively offers draws in level positions
+let botOfferDrawThresh  = 50;     // |advantage| ≤ this cp → position counts as level
+let botOfferDrawMove    = 20;     // no offers before this full-move number
+let _botLastDrawOfferPly = -99;   // ply of the bot's last draw offer (anti-spam)
+// ── Stalemate seeking (desperation) ──────────────────────────────────────────
+let botStaleSeek     = false;     // seek stalemate when losing badly
+let botStaleSeekMove = 30;        // active from this full-move number
+let botStaleSeekCp   = 500;       // and only when the bot is worse than −this cp
 
 // Rolling window of the human player's move durations (ms), capped at N=6.
 // x domain: 0–∞ ms (practically 200–30000 ms for most games)
@@ -2500,6 +2511,11 @@ function resign() {
 }
 
 function offerDraw() {
+  // Vs a bot: the bot decides based on its draw-behaviour settings
+  if (typeof botActive !== 'undefined' && botActive && !gameOver) {
+    if (typeof botConsiderDrawOffer === 'function') botConsiderDrawOffer();
+    return;
+  }
   if (!mpRoomId || !mpWs || mpWs.readyState !== WebSocket.OPEN) return;
   mpWs.send(JSON.stringify({ type: 'draw_offer' }));
   mpShowStatus('Draw offered — waiting for response…');

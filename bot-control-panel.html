@@ -1594,6 +1594,35 @@ body.fj .picon{font-weight:500;}
               </div>
             </div>
           </div>
+
+          <!-- Draw behaviour + desperation -->
+          <div class="dlbl" style="margin-top:10px;"><span>Draws &amp; desperation</span></div>
+          <div class="tog-row">
+            <div><div class="tog-lbl">Accepts draw offers</div><div class="tog-desc">Accepts your ½ offer unless its engine eval says it's clearly ahead</div></div>
+            <label class="tog"><input type="checkbox" id="cb-draw-accept" onchange="showDrawAccept(this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label>
+          </div>
+          <div id="draw-accept-sub" style="display:none;">
+            <div class="ctrl"><span class="ctrl-lbl">Accept margin</span><input type="range" id="r-draw-margin" min="0" max="300" step="10" value="50" oninput="sv(this,'v-draw-margin',v=>v+' cp')"><span class="ctrl-val" id="v-draw-margin">50 cp</span></div>
+            <div class="ctrl-hint">Accepts when its advantage is at most this many centipawns (engine check). 0 = only accepts when equal or worse.</div>
+          </div>
+          <div class="tog-row">
+            <div><div class="tog-lbl">Offers draws</div><div class="tog-desc">Occasionally offers a draw in level positions — playing for the half point</div></div>
+            <label class="tog"><input type="checkbox" id="cb-draw-offer" onchange="showDrawOffer(this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label>
+          </div>
+          <div id="draw-offer-sub" style="display:none;">
+            <div class="ctrl"><span class="ctrl-lbl">Level within</span><input type="range" id="r-draw-offer-thresh" min="10" max="200" step="10" value="50" oninput="sv(this,'v-draw-offer-thresh',v=>'±'+v+' cp')"><span class="ctrl-val" id="v-draw-offer-thresh">±50 cp</span></div>
+            <div class="ctrl"><span class="ctrl-lbl">From move</span><input type="range" id="r-draw-offer-move" min="10" max="60" step="2" value="20" oninput="sv(this,'v-draw-offer-move')"><span class="ctrl-val" id="v-draw-offer-move">20</span></div>
+            <div class="ctrl-hint">Offers only when the engine eval is within the band, never before the move number, and never twice in quick succession.</div>
+          </div>
+          <div class="tog-row">
+            <div><div class="tog-lbl">Seeks stalemate when losing</div><div class="tog-desc">Desperation: locks its own pieces and dumps material hoping for stalemate</div></div>
+            <label class="tog"><input type="checkbox" id="cb-stale-seek" onchange="showStaleSeek(this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label>
+          </div>
+          <div id="stale-seek-sub" style="display:none;">
+            <div class="ctrl"><span class="ctrl-lbl">From move</span><input type="range" id="r-stale-move" min="10" max="60" step="2" value="30" oninput="sv(this,'v-stale-move')"><span class="ctrl-val" id="v-stale-move">30</span></div>
+            <div class="ctrl"><span class="ctrl-lbl">When behind</span><input type="range" id="r-stale-cp" min="200" max="900" step="50" value="500" oninput="sv(this,'v-stale-cp',v=>'−'+v+' cp')"><span class="ctrl-val" id="v-stale-cp">−500 cp</span></div>
+            <div class="ctrl-hint">Kicks in when the engine eval says the bot is worse than the threshold. The CP budget does not veto these moves — throwing material is the point.</div>
+          </div>
         </div>
       </div><!-- /panel-2col -->
     </div>
@@ -2014,6 +2043,8 @@ const PERSONALITIES = [
     attractors:{chaos:0,compwin:0,spacecadet:0,fortkx:0,gambito:0,trade:0,structure:0,hustle:0,luck:5,pressure:2,attacker:0} },
   { id:'drunken',    name:'Drunken Master',      icon:'🍺', tag:'Human',      desc:'Was that a brilliant tactical move — or was it thinking about kittens? Each move: 50% Maia 2400, 50% Maia 1000.',
     attractors:{chaos:3,compwin:2,spacecadet:1,fortkx:-3,gambito:3,trade:1,structure:-2,hustle:2,luck:2,pressure:1,attacker:4} },
+  { id:'drawmeister',name:'The Drawmeister',     icon:'½', tag:'Human',      desc:'Plays for the draw: solid drawish openings, simplifies everything, and offers a draw whenever things look level.',
+    attractors:{chaos:-4,compwin:-3,spacecadet:0,fortkx:3,gambito:-3,trade:4,structure:2,hustle:0,luck:-1,pressure:-2,attacker:-3} },
 ];
 
 /* ══════════════════════════════════════════════════════════════
@@ -5721,6 +5752,24 @@ function showWeaponizer(on){
   const sub = document.getElementById('weaponizer-sub');
   if(sub) sub.style.display = on ? 'block' : 'none';
 }
+function showDrawAccept(on){
+  const sub = document.getElementById('draw-accept-sub');
+  if(sub) sub.style.display = on ? 'block' : 'none';
+}
+function showDrawOffer(on){
+  const sub = document.getElementById('draw-offer-sub');
+  if(sub) sub.style.display = on ? 'block' : 'none';
+}
+function showStaleSeek(on){
+  const sub = document.getElementById('stale-seek-sub');
+  if(sub) sub.style.display = on ? 'block' : 'none';
+}
+// Set a draw/desperation toggle + reveal its sub-panel (personality presets)
+function _setTog(id, on, showFn){
+  const el = document.getElementById(id);
+  if(el){ el.checked = !!on; }
+  showFn(!!on);
+}
 
 function openEngineSection(){
   const sec = document.getElementById('sec-engine');
@@ -5812,6 +5861,14 @@ function getBotConfig(){
     pressureOff:         pressureOffA && pressureOffB, // legacy master flag (older readers)
     weaponizerEnabled:   document.getElementById('weaponizer-toggle')?.checked || false,
     weaponizerLeadSec:   parseInt(document.getElementById('r-wlead')?.value    || '30'),
+    acceptDraws:         document.getElementById('cb-draw-accept')?.checked || false,
+    drawAcceptMarginCp:  parseInt(document.getElementById('r-draw-margin')?.value || '50'),
+    offerDraws:          document.getElementById('cb-draw-offer')?.checked  || false,
+    offerDrawThreshCp:   parseInt(document.getElementById('r-draw-offer-thresh')?.value || '50'),
+    offerDrawFromMove:   parseInt(document.getElementById('r-draw-offer-move')?.value   || '20'),
+    staleSeek:           document.getElementById('cb-stale-seek')?.checked || false,
+    staleSeekFromMove:   parseInt(document.getElementById('r-stale-move')?.value || '30'),
+    staleSeekCp:         parseInt(document.getElementById('r-stale-cp')?.value   || '500'),
   };
 }
 
@@ -5966,6 +6023,18 @@ function applyBotConfig(cfg){
     const wz = document.getElementById('weaponizer-toggle');
     if(wz){ wz.checked = !!cfg.weaponizerEnabled; showWeaponizer(wz.checked); }
     _setRange('r-wlead', cfg.weaponizerLeadSec);
+  });
+
+  // Draw behaviour + desperation
+  grp(() => {
+    _setTog('cb-draw-accept', cfg.acceptDraws, showDrawAccept);
+    _setTog('cb-draw-offer',  cfg.offerDraws,  showDrawOffer);
+    _setTog('cb-stale-seek',  cfg.staleSeek,   showStaleSeek);
+    _setRange('r-draw-margin',       cfg.drawAcceptMarginCp);
+    _setRange('r-draw-offer-thresh', cfg.offerDrawThreshCp);
+    _setRange('r-draw-offer-move',   cfg.offerDrawFromMove);
+    _setRange('r-stale-move',        cfg.staleSeekFromMove);
+    _setRange('r-stale-cp',          cfg.staleSeekCp);
   });
 
   // Opening behaviour — per-colour modes (back-compat: old global openingMode)
@@ -7726,6 +7795,12 @@ const PERS_CONFIRMS = {
     'Each move rolls which of the two it plays',
     'Aggressive attacking attractors',
   ]},
+  drawmeister: { title:'½ The Drawmeister', items:[
+    'Drawish attractors: simplify, trade down, fortress up',
+    'Offers draws in level positions (from move 20, within ±50 cp)',
+    'Accepts your draw offers unless clearly ahead (50 cp margin)',
+    'Opening repertoire → solid lines (London, Exchange Slav, Four Knights; Petroff, Berlin, Slav)',
+  ]},
 };
 let _bdPendingId = null;
 function _showBadDayConfirm(id){
@@ -7783,6 +7858,29 @@ function _applyPersonality(id){
       { type:'maia', elo:1000, pct:50 },
     ];
     renderHybridSlots();
+  }
+  // Drawmeister: draw behaviours + a solid, drawish opening repertoire.
+  // Attractors (trade/fortress/anti-chaos) come from the catalog entry below.
+  if(id === 'drawmeister'){
+    _setTog('cb-draw-accept', true, showDrawAccept);
+    _setTog('cb-draw-offer',  true, showDrawOffer);
+    _setRange('r-draw-margin', 50);
+    _setRange('r-draw-offer-thresh', 50);
+    _setRange('r-draw-offer-move', 20);
+    repSlots.white = [
+      { code:'D02', name:'London System',   pct:40 },
+      { code:'D10', name:'Exchange Slav',   pct:30 },
+      { code:'C47', name:'Four Knights',    pct:30 },
+    ];
+    repSlots.black = [
+      { code:'C42', name:'Petroff Defence', pct:40 },
+      { code:'C65', name:'Berlin Defence',  pct:30 },
+      { code:'D10', name:'Slav Defence',    pct:30 },
+    ];
+    setOpColorMode('white','repertoire');
+    setOpColorMode('black','repertoire');
+    renderRepSlots('white'); renderRepSlots('black');
+    updateRepTotal('white'); updateRepTotal('black');
   }
   // Select card
   document.querySelectorAll('.pcard').forEach(c=>c.classList.remove('sel'));

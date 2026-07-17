@@ -938,6 +938,11 @@ async function botStart() {
   } catch(e) { botStartClockMs = null; }
 
   botActive = true;
+  _botLastDrawOfferPly = -99;
+
+  // Show the Resign/Draw row in the beginner shell so draw offers work vs bots
+  var _gaEl = document.getElementById('gameActions');
+  if (_gaEl) _gaEl.style.display = 'flex';
 
   // Update player name displays
   botUpdatePlayerNames(pc);
@@ -1001,6 +1006,9 @@ function botStop() {
   if (stopBtn)  stopBtn.style.display = 'none';
   if (sideBtn)  { sideBtn.textContent = '🤖 vs Bot'; sideBtn.style.borderColor = 'rgba(90,212,144,0.4)'; }
   document.getElementById('botStatus').textContent = '';
+  // Hide the Resign/Draw row shown for bot games (MP manages it separately)
+  var _gaEl2 = document.getElementById('gameActions');
+  if (_gaEl2 && (typeof mpRoomId === 'undefined' || !mpRoomId)) _gaEl2.style.display = 'none';
 }
 
 // ── Save / Load bot config ───────────────────────────────────────────────────
@@ -1521,6 +1529,16 @@ window.addEventListener('message', function(e) {
   // ignored — the CP budget is now engine-verified per pick instead)
   botMinProbPct     = (cfg.minProbPct     != null) ? cfg.minProbPct     : 5;
   botBadDayMode     = !!cfg.badDayMode;
+
+  // Draw behaviour + stalemate seeking (desperation)
+  botAcceptDraws      = !!cfg.acceptDraws;
+  botDrawAcceptMargin = (cfg.drawAcceptMarginCp != null) ? +cfg.drawAcceptMarginCp : 50;
+  botOfferDraws       = !!cfg.offerDraws;
+  botOfferDrawThresh  = (cfg.offerDrawThreshCp  != null) ? +cfg.offerDrawThreshCp  : 50;
+  botOfferDrawMove    = (cfg.offerDrawFromMove  != null) ? +cfg.offerDrawFromMove  : 20;
+  botStaleSeek        = !!cfg.staleSeek;
+  botStaleSeekMove    = (cfg.staleSeekFromMove  != null) ? +cfg.staleSeekFromMove  : 30;
+  botStaleSeekCp      = (cfg.staleSeekCp        != null) ? +cfg.staleSeekCp        : 500;
 
   // Time pressure curves (cvA = ELO degradation, cvB = distribution cutoff).
   // Each mechanism has its own off flag (pressureOffA / pressureOffB); older
