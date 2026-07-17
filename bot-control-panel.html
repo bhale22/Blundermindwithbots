@@ -1603,7 +1603,7 @@ body.fj .picon{font-weight:500;}
           </div>
           <div id="draw-accept-sub" style="display:none;">
             <div class="ctrl"><span class="ctrl-lbl">Accept margin</span><input type="range" id="r-draw-margin" min="0" max="300" step="10" value="50" oninput="sv(this,'v-draw-margin',v=>v+' cp')"><span class="ctrl-val" id="v-draw-margin">50 cp</span></div>
-            <div class="ctrl-hint">Accepts when its <em>perceived</em> advantage is at most this many centipawns. Perception = engine eval blurred to the bot's rating — a 700 misjudges by ±200 cp, a 2400 barely at all. Declines are wordless, like a human's.</div>
+            <div class="ctrl-hint">Accepts when its <em>perceived</em> advantage is at most this many centipawns. Perception = engine eval blurred to the bot's rating — a 700 misjudges by ±200 cp, a 2400 barely at all. Clock-aware: never accepts while you're about to flag (it's playing for the win on time), and gets far more agreeable when it's the one about to flag. Declines are wordless, like a human's.</div>
           </div>
           <div class="tog-row">
             <div><div class="tog-lbl">Offers draws</div><div class="tog-desc">Occasionally offers a draw in level positions — playing for the half point</div></div>

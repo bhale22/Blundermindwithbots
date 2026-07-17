@@ -143,9 +143,36 @@ function _botAgreeDraw() {
   updatePlayerBoxes(); render(); showRematchBtn(true);
 }
 
+// ── Clock context for draw decisions ─────────────────────────────────────────
+// With a healthy increment nobody flags, so time pressure is a non-factor.
+function _botDrawClockState() {
+  if (typeof clockControl === 'undefined' || clockControl === 'untimed') return null;
+  if (typeof clockTimeW !== 'number' || typeof clockTimeB !== 'number') return null;
+  const humanSecs = (botPlayerColor === 'white') ? clockTimeW : clockTimeB;
+  const botSecs   = (botPlayerColor === 'white') ? clockTimeB : clockTimeW;
+  const inc = (typeof clockInc === 'number') ? clockInc : 0;
+  return { humanSecs, botSecs, flaggable: inc < 10 };
+}
+// Opponent about to flag while the bot is comfortable → play for the clock,
+// never agree to a draw (a full point is coming on time).
+function _botExpectsToFlagOpponent() {
+  const cs = _botDrawClockState();
+  return !!(cs && cs.flaggable && cs.humanSecs < 20 &&
+            cs.botSecs > Math.max(45, cs.humanSecs * 2.5));
+}
+// Bot itself about to flag while the human is comfortable → a human in that
+// spot grabs the half point even from a better position.
+function _botDesperateForDraw() {
+  const cs = _botDrawClockState();
+  return !!(cs && cs.flaggable && cs.botSecs < 20 &&
+            cs.humanSecs > Math.max(45, cs.botSecs * 2.5));
+}
+
 // Human offered a draw (½ button during a bot game): the bot judges the
 // position AT ITS OWN STRENGTH (perceived eval, not raw Stockfish) and
 // accepts if its perceived advantage is at most the configured margin.
+// Clock-aware: it never accepts when the human is about to flag, and gets
+// far more agreeable when it is the one about to flag.
 // Declines are human: no eval talk — a person just shakes their head,
 // even when they know they're worse and are only hoping for a blunder.
 const _BOT_DECLINE_LINES = [
@@ -159,6 +186,9 @@ async function botConsiderDrawOffer() {
   const decline = () => _botDrawToast(
     _BOT_DECLINE_LINES[Math.floor(Math.random() * _BOT_DECLINE_LINES.length)]);
   if (!botAcceptDraws) { decline(); return; }
+  // Opponent is about to flag: instant decline, no thought required — the
+  // bot is playing for the win on time.
+  if (_botExpectsToFlagOpponent()) { decline(); return; }
   // Mid-think: try again once the bot's move (and its probes) are done
   if (botThinking) { setTimeout(botConsiderDrawOffer, 1500); return; }
   _botDrawConsidering = true;
@@ -166,7 +196,9 @@ async function botConsiderDrawOffer() {
     _botDrawToast('🤖 The bot is considering your draw offer…');
     const adv = await botPerceivedAdvantageCp();
     if (gameOver || !botActive) return;
-    if (adv !== null && adv <= botDrawAcceptMargin) {
+    // About to flag itself → takes the half point from far better positions
+    const margin = botDrawAcceptMargin + (_botDesperateForDraw() ? 200 : 0);
+    if (adv !== null && adv <= margin) {
       _botDrawToast('🤖 Draw accepted. ½-½');
       _botAgreeDraw();
     } else {
@@ -183,13 +215,17 @@ async function botConsiderDrawOffer() {
 // move number, never twice within a dozen plies, with human-ish irregularity.
 async function botMaybeOfferDraw() {
   if (!botOfferDraws || gameOver || !botActive || botThinking) return;
+  // Never offer while the opponent is about to flag — the point is coming
+  if (_botExpectsToFlagOpponent()) return;
   const ply = gameMovesAlgebraic.length;
   if (Math.floor(ply / 2) + 1 < botOfferDrawMove) return;
   if (ply - _botLastDrawOfferPly < 12) return;
   if (Math.random() > 0.5) return;
   const adv = await botPerceivedAdvantageCp();
   if (adv === null || gameOver || !botActive) return;
-  if (Math.abs(adv) > botOfferDrawThresh) return;
+  // About to flag itself → offers from a much wider band, hoping you take it
+  const band = botOfferDrawThresh + (_botDesperateForDraw() ? 150 : 0);
+  if (Math.abs(adv) > band) return;
   _botLastDrawOfferPly = ply;
   _botDrawToast('🤖 The bot offers a draw.', [
     { label: 'Accept ½-½', fn: _botAgreeDraw },
