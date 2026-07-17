@@ -1598,12 +1598,12 @@ body.fj .picon{font-weight:500;}
           <!-- Draw behaviour + desperation -->
           <div class="dlbl" style="margin-top:10px;"><span>Draws &amp; desperation</span></div>
           <div class="tog-row">
-            <div><div class="tog-lbl">Accepts draw offers</div><div class="tog-desc">Accepts your ½ offer unless its engine eval says it's clearly ahead</div></div>
+            <div><div class="tog-lbl">Accepts draw offers</div><div class="tog-desc">Accepts your ½ offer unless it thinks it's clearly ahead — judged at its own rating</div></div>
             <label class="tog"><input type="checkbox" id="cb-draw-accept" onchange="showDrawAccept(this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label>
           </div>
           <div id="draw-accept-sub" style="display:none;">
             <div class="ctrl"><span class="ctrl-lbl">Accept margin</span><input type="range" id="r-draw-margin" min="0" max="300" step="10" value="50" oninput="sv(this,'v-draw-margin',v=>v+' cp')"><span class="ctrl-val" id="v-draw-margin">50 cp</span></div>
-            <div class="ctrl-hint">Accepts when its advantage is at most this many centipawns (engine check). 0 = only accepts when equal or worse.</div>
+            <div class="ctrl-hint">Accepts when its <em>perceived</em> advantage is at most this many centipawns. Perception = engine eval blurred to the bot's rating — a 700 misjudges by ±200 cp, a 2400 barely at all. Declines are wordless, like a human's.</div>
           </div>
           <div class="tog-row">
             <div><div class="tog-lbl">Offers draws</div><div class="tog-desc">Occasionally offers a draw in level positions — playing for the half point</div></div>
@@ -1612,7 +1612,7 @@ body.fj .picon{font-weight:500;}
           <div id="draw-offer-sub" style="display:none;">
             <div class="ctrl"><span class="ctrl-lbl">Level within</span><input type="range" id="r-draw-offer-thresh" min="10" max="200" step="10" value="50" oninput="sv(this,'v-draw-offer-thresh',v=>'±'+v+' cp')"><span class="ctrl-val" id="v-draw-offer-thresh">±50 cp</span></div>
             <div class="ctrl"><span class="ctrl-lbl">From move</span><input type="range" id="r-draw-offer-move" min="10" max="60" step="2" value="20" oninput="sv(this,'v-draw-offer-move')"><span class="ctrl-val" id="v-draw-offer-move">20</span></div>
-            <div class="ctrl-hint">Offers only when the engine eval is within the band, never before the move number, and never twice in quick succession.</div>
+            <div class="ctrl-hint">Offers when the position <em>feels</em> level to the bot (rating-blurred eval — a novice may offer from a lost position it believes is fine), never before the move number, and never twice in quick succession.</div>
           </div>
           <div class="tog-row">
             <div><div class="tog-lbl">Seeks stalemate when losing</div><div class="tog-desc">Desperation: locks its own pieces and dumps material hoping for stalemate</div></div>

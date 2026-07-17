@@ -89,6 +89,30 @@ async function botEvalAdvantageCp() {
   return turn === botColor ? res.eval : -res.eval;
 }
 
+// ── ELO-scaled position judgment ─────────────────────────────────────────────
+// Humans don't assess positions at Stockfish accuracy. The bot's PERCEPTION
+// of its advantage = true eval + rating-scaled noise (σ ≈ 225 cp at 600 ELO
+// shrinking to ~20 cp at 2600) plus a mild self-optimism bias — so a novice
+// can genuinely believe a lost position is fine, and vice versa. Draw
+// decisions use the perception, not the raw eval.
+function _eloEvalNoiseSigma(elo) {
+  return 15 + 700 * Math.exp(-(elo || 1500) / 500);
+}
+function _gaussRand() {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+async function botPerceivedAdvantageCp() {
+  const adv = await botEvalAdvantageCp();
+  if (adv === null) return null;
+  const elo = Math.max(600, Math.min(2600,
+    (typeof botEffectiveElo === 'function') ? botEffectiveElo() : 1500));
+  const sigma = _eloEvalNoiseSigma(elo);
+  return Math.round(adv + _gaussRand() * sigma + 0.25 * sigma);
+}
+
 // Small transient toast for bot draw messages (Accept/Decline when offering)
 function _botDrawToast(html, buttons) {
   const old = document.getElementById('bm-bot-draw'); if (old) old.remove();
@@ -119,43 +143,51 @@ function _botAgreeDraw() {
   updatePlayerBoxes(); render(); showRematchBtn(true);
 }
 
-// Human offered a draw (½ button during a bot game): the bot evaluates the
-// position and accepts if its advantage is at most the configured margin —
-// i.e. it accepts whenever it is NOT clearly ahead.
+// Human offered a draw (½ button during a bot game): the bot judges the
+// position AT ITS OWN STRENGTH (perceived eval, not raw Stockfish) and
+// accepts if its perceived advantage is at most the configured margin.
+// Declines are human: no eval talk — a person just shakes their head,
+// even when they know they're worse and are only hoping for a blunder.
+const _BOT_DECLINE_LINES = [
+  '🤖 The bot declines and plays on.',
+  '🤖 No thanks — the bot wants to keep playing.',
+  '🤖 The bot shakes its head. Play on.',
+];
 let _botDrawConsidering = false;
 async function botConsiderDrawOffer() {
   if (_botDrawConsidering || gameOver || !botActive) return;
-  if (!botAcceptDraws) { _botDrawToast('🤖 The bot declines your draw offer.'); return; }
+  const decline = () => _botDrawToast(
+    _BOT_DECLINE_LINES[Math.floor(Math.random() * _BOT_DECLINE_LINES.length)]);
+  if (!botAcceptDraws) { decline(); return; }
   // Mid-think: try again once the bot's move (and its probes) are done
   if (botThinking) { setTimeout(botConsiderDrawOffer, 1500); return; }
   _botDrawConsidering = true;
   try {
     _botDrawToast('🤖 The bot is considering your draw offer…');
-    const adv = await botEvalAdvantageCp();
+    const adv = await botPerceivedAdvantageCp();
     if (gameOver || !botActive) return;
     if (adv !== null && adv <= botDrawAcceptMargin) {
       _botDrawToast('🤖 Draw accepted. ½-½');
       _botAgreeDraw();
     } else {
-      _botDrawToast(adv === null
-        ? '🤖 The bot declines your draw offer.'
-        : '🤖 Declined — the bot thinks it stands better (+' + Math.round(adv) + ' cp).');
+      decline();
     }
   } finally {
     _botDrawConsidering = false;
   }
 }
 
-// After its move, a draw-offering bot checks whether the position is level and
-// occasionally offers — from the configured move number, never twice within a
-// dozen plies, and with human-ish irregularity.
+// After its move, a draw-offering bot checks whether the position FEELS level
+// (perceived eval at its own strength — a novice may offer from a lost
+// position it believes is fine) and occasionally offers — from the configured
+// move number, never twice within a dozen plies, with human-ish irregularity.
 async function botMaybeOfferDraw() {
   if (!botOfferDraws || gameOver || !botActive || botThinking) return;
   const ply = gameMovesAlgebraic.length;
   if (Math.floor(ply / 2) + 1 < botOfferDrawMove) return;
   if (ply - _botLastDrawOfferPly < 12) return;
   if (Math.random() > 0.5) return;
-  const adv = await botEvalAdvantageCp();
+  const adv = await botPerceivedAdvantageCp();
   if (adv === null || gameOver || !botActive) return;
   if (Math.abs(adv) > botOfferDrawThresh) return;
   _botLastDrawOfferPly = ply;
