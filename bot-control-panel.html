@@ -342,7 +342,9 @@ table.tg td.tg-inc-lbl{
 .ctrl-val{font-family:var(--font-m);font-size:11px;color:var(--amber-bright);min-width:46px;text-align:right;}
 .ctrl-hint{font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);margin-top:2px;line-height:1.4;}
 
-input[type=range]{-webkit-appearance:none;appearance:none;flex:1;height:2px;background:var(--carbon-raise);border-radius:1px;outline:none;cursor:pointer;}
+/* Track: fixed mid-gray alpha, not a theme surface var — stays visible on
+   dark/slate and light/paper palettes alike */
+input[type=range]{-webkit-appearance:none;appearance:none;flex:1;height:3px;background:rgba(128,140,160,0.55);border-radius:2px;outline:none;cursor:pointer;}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--carbon-mid);border:1.5px solid var(--amber);box-shadow:0 0 6px var(--amber-glow-s);cursor:grab;transition:border-color 0.15s,box-shadow 0.15s,transform 0.15s;}
 input[type=range]::-webkit-slider-thumb:hover{border-color:var(--amber-bright);box-shadow:0 0 12px rgba(232,170,64,0.4);transform:scale(1.2);}
 input[type=range]::-webkit-slider-thumb:active{cursor:grabbing;}
@@ -565,7 +567,7 @@ body.rs-highvis [style*="font-size:10px"]{font-size:14px !important;}
 .dual-range-wrap input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--carbon-mid);border:1.5px solid var(--amber);box-shadow:0 0 7px var(--amber-glow-s);cursor:grab;pointer-events:all;transition:border-color 0.15s,box-shadow 0.15s;}
 .dual-range-wrap input[type=range]::-webkit-slider-thumb:hover{border-color:var(--amber-bright);box-shadow:0 0 13px rgba(232,170,64,0.4);}
 .dual-range-wrap input[type=range]::-webkit-slider-thumb:active{cursor:grabbing;}
-.dual-range-track{position:absolute;top:50%;left:0;right:0;height:2px;transform:translateY(-50%);background:var(--carbon-raise);border-radius:1px;pointer-events:none;}
+.dual-range-track{position:absolute;top:50%;left:0;right:0;height:3px;transform:translateY(-50%);background:rgba(128,140,160,0.55);border-radius:2px;pointer-events:none;}
 .dual-range-fill{position:absolute;top:0;height:100%;background:var(--amber);border-radius:1px;transition:left 0.05s,right 0.05s;}
 .dual-range-labels{display:flex;justify-content:space-between;font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:2px;letter-spacing:0.06em;}
 .day-vals{display:flex;justify-content:space-between;font-family:var(--font-m);font-size:10px;color:var(--amber-bright);margin-bottom:4px;}
@@ -708,7 +710,9 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 }
 #bdconfirm-overlay.show{ display:flex; }
 #bdconfirm-box{
-  background:var(--carbon-1);border:1px solid var(--border-amber);border-radius:4px;
+  /* --carbon-mid is the theme-pushed panel surface (var(--carbon-1) was
+     never defined → transparent box, unreadable on light palettes) */
+  background:var(--carbon-mid,#14161a);border:1px solid var(--border-amber);border-radius:4px;
   padding:22px 24px;max-width:320px;width:90%;
   box-shadow:0 8px 32px rgba(0,0,0,0.6);
 }
@@ -1374,40 +1378,43 @@ body.fj .picon{font-weight:500;}
                   <svg class="gauge-svg-interactive" id="style-gauge" viewBox="0 0 280 140" style="cursor:crosshair;touch-action:none;"></svg>
                   <div class="dial-zones" style="margin-top:-4px;width:100%;"><span class="dial-zone">Pure engine</span><span class="dial-zone">Subtle</span><span class="dial-zone">Moderate</span><span class="dial-zone">Bold</span><span class="dial-zone">Reckless</span></div>
                 </div>
-                <div class="ctrl" style="margin-top:4px;">
-                  <span class="ctrl-lbl" style="min-width:80px;">Budget</span>
-                  <input type="range" id="r-style" min="0" max="300" step="10" value="100"
-                    oninput="onGaugeSliderInput(+this.value)">
-                  <span class="ctrl-val" id="v-style">100 cp</span>
+                <!-- Budget + blunder hard floor share one row — the floor can
+                     never sit below the budget, so pairing them makes the
+                     coupling visible -->
+                <div style="display:flex;gap:16px;margin-top:4px;flex-wrap:wrap;">
+                  <div class="ctrl" style="flex:1;min-width:170px;margin-bottom:0;">
+                    <span class="ctrl-lbl" style="min-width:0;">Budget</span>
+                    <input type="range" id="r-style" min="0" max="300" step="10" value="100"
+                      oninput="onGaugeSliderInput(+this.value)">
+                    <span class="ctrl-val" id="v-style">100 cp</span>
+                  </div>
+                  <div class="ctrl" style="flex:1;min-width:170px;margin-bottom:0;">
+                    <span class="ctrl-lbl" id="blunder-limit-label" style="min-width:0;white-space:nowrap;">Hard floor</span>
+                    <input type="range" id="r-blunder" min="10" max="400" step="10" value="150"
+                      oninput="_onBlunderSlider(+this.value)">
+                    <span class="ctrl-val" id="v-blunder">150 cp</span>
+                  </div>
                 </div>
-                <div class="ctrl-hint">Primary personality driver. Sliders below show each attractor's share. 0 cp = pure engine; 300 cp = strongly opinionated bot.</div>
+                <div class="ctrl-hint" style="margin-top:6px;">Budget = primary personality driver (0 cp pure engine, 300 cp strongly opinionated); attractor sliders below show each one's share.</div>
+                <div class="ctrl-hint" id="blunder-floor-hint">Hard floor: the bot never plays a single move costing more than this centipawn loss. Raised automatically if below Max CP Budget.</div>
 
-                <!-- HARD FLOOR — lives directly below CP Budget -->
-                <div class="dlbl" style="margin-top:10px;"><span id="blunder-limit-label">Blunder limit — hard floor</span></div>
-                <div class="ctrl">
-                  <span class="ctrl-lbl">Hard floor</span>
-                  <input type="range" id="r-blunder" min="10" max="400" step="10" value="150"
-                    oninput="_onBlunderSlider(+this.value)">
-                  <span class="ctrl-val" id="v-blunder">150 cp</span>
+                <!-- Move quality range — only shown for Maia/LC+Maia/Hybrid.
+                     Lives inside the gauge box so it can't get lost below the fold -->
+                <div id="move-quality-range" style="margin-top:12px;">
+                <div class="dlbl"><span>Move quality range</span></div>
+                <div class="day-vals">
+                  <span>Exclude lowest: <span id="day-lower-val">0</span>%</span>
+                  <span>Exclude moves above: <span id="day-upper-val">100</span>%</span>
                 </div>
-                <div class="ctrl-hint" id="blunder-floor-hint">Bot will not play any single move costing more than this centipawn loss. Raised automatically if below Max CP Budget.</div>
+                <div class="dual-range-wrap">
+                  <div class="dual-range-track"><div class="dual-range-fill" id="day-fill"></div></div>
+                  <input type="range" id="day-lower" min="0" max="100" value="0" step="1" oninput="onDaySlider()">
+                  <input type="range" id="day-upper" min="0" max="100" value="100" step="1" oninput="onDaySlider()">
+                </div>
+                <div class="dual-range-labels"><span>← Bad Day, lowest probability moves</span><span>Good Day, Highest Probability moves →</span></div>
+                <div class="ctrl-hint" style="margin-top:6px;">Sets the Maia3 probability band. Good Day = highest-probability moves; Bad Day = low-probability alternatives. Probability means "how often players at this rating choose it" — not engine quality; a hard-to-see strong move can sit low in the distribution.</div>
+                </div><!-- /move-quality-range -->
               </div>
-
-              <!-- Move quality range — only shown for Maia/LC+Maia/Hybrid -->
-              <div id="move-quality-range" style="margin-top:14px;">
-              <div class="dlbl"><span>Move quality range</span></div>
-              <div class="day-vals">
-                <span>Exclude lowest: <span id="day-lower-val">0</span>%</span>
-                <span>Exclude moves above: <span id="day-upper-val">100</span>%</span>
-              </div>
-              <div class="dual-range-wrap">
-                <div class="dual-range-track"><div class="dual-range-fill" id="day-fill"></div></div>
-                <input type="range" id="day-lower" min="0" max="100" value="0" step="1" oninput="onDaySlider()">
-                <input type="range" id="day-upper" min="0" max="100" value="100" step="1" oninput="onDaySlider()">
-              </div>
-              <div class="dual-range-labels"><span>← Bad Day, lowest probability moves</span><span>Good Day, Highest Probability moves →</span></div>
-              <div class="ctrl-hint" style="margin-top:6px;">Sets the Maia3 probability band. Good Day = highest-probability moves; Bad Day = low-probability alternatives. Probability means "how often players at this rating choose it" — not engine quality; a hard-to-see strong move can sit low in the distribution.</div>
-              </div><!-- /move-quality-range -->
 
             </div>
             <!-- RIGHT: personality fingerprint (top) + custom-control entry -->
@@ -5314,7 +5321,7 @@ function _setBlunderHighlight(on){
     if (label)    { label.style.color = ''; label.style.fontWeight = ''; }
     if (valEl)    { valEl.style.color = ''; valEl.style.fontWeight = ''; }
     if (sliderEl) sliderEl.style.accentColor = '';
-    if (hint)     hint.textContent = 'Bot will not play any single move costing more than this centipawn loss. Raised automatically if below Max CP Budget.';
+    if (hint)     hint.textContent = 'Hard floor: the bot never plays a single move costing more than this centipawn loss. Raised automatically if below Max CP Budget.';
   }
 }
 
