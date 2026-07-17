@@ -1504,9 +1504,9 @@ window.addEventListener('message', function(e) {
   // Time pressure max drop → drives sfEffectiveLevel floor
   botTimePressureMaxDrop = (cfg.timePressureMaxDrop != null) ? cfg.timePressureMaxDrop : null;
 
-  // Candidate filter + blunder limit
+  // Candidate filter (absolute popularity floor; legacy cfg.blunderLimitCp is
+  // ignored — the CP budget is now engine-verified per pick instead)
   botMinProbPct     = (cfg.minProbPct     != null) ? cfg.minProbPct     : 5;
-  botBlunderLimitCp = (cfg.blunderLimitCp != null) ? cfg.blunderLimitCp : 150;
   botBadDayMode     = !!cfg.badDayMode;
 
   // Time pressure curves (cvA = ELO degradation, cvB = distribution cutoff).

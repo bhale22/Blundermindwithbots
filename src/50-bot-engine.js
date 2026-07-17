@@ -74,6 +74,49 @@ function timePressureTempByThink(baseTemp, thinkSec) {
   return baseTemp + fraction * boost;
 }
 
+// ── CP-budget acceptance (engine-verified centipawmeter) ─────────────────────
+// Maia probability is popularity, not quality — at low ratings the correlation
+// between the two is weak (popular trap-falls, unseen strong moves), so the
+// centipawn budget is enforced with REAL Stockfish evals, not a probability
+// heuristic. When the personality reweighting produced a pick that differs
+// from the most-popular move, the pick, the most-popular move, and the next
+// few personality favourites are evaluated in one shallow searchmoves probe.
+// The pick is accepted only if it loses ≤ budget cp versus the most-popular
+// move; otherwise we walk down the personality's preference order and, if
+// nothing fits, fall back to the most-popular move itself (0 cp by
+// definition of the reference).
+let _attrReweightApplied = false; // set by applyMoveAttractors each call
+
+async function applyCpBudgetAcceptance(fen, chosenUci, rawProbs, shapedProbs) {
+  try {
+    if (!chosenUci || !rawProbs || !_attrReweightApplied) return chosenUci;
+    const budget = window._bcpCpBudget != null ? +window._bcpCpBudget : 0;
+    if (!(budget >= 0)) return chosenUci;
+    let topMove = null, topP = -1;
+    for (const m in rawProbs) { if (rawProbs[m] > topP) { topP = rawProbs[m]; topMove = m; } }
+    if (!topMove || topMove === chosenUci) return chosenUci;
+    // Personality preference order = reweighted probability, descending
+    const order = Object.entries(shapedProbs || {}).sort((a, b) => b[1] - a[1]).map(([m]) => m);
+    const walk = [chosenUci, ...order.filter(m => m !== chosenUci && m !== topMove)].slice(0, 5);
+    if (!sfReady) { try { await sfInit(); } catch (e) { return chosenUci; } }
+    const evals = await sfEvalMoves(fen, [topMove, ...walk], 10);
+    if (!evals || evals[topMove] == null) return chosenUci; // fail-open on probe failure
+    let accepted = topMove;
+    for (const m of walk) {
+      if (evals[m] == null) continue;
+      if (evals[topMove] - evals[m] <= budget) { accepted = m; break; }
+    }
+    if (accepted !== chosenUci) {
+      const loss = evals[chosenUci] != null ? Math.round(evals[topMove] - evals[chosenUci]) : '?';
+      console.log('[CpBudget] pick', chosenUci, '(' + loss + 'cp vs most-popular) exceeds budget',
+        budget, '— playing', accepted, 'instead');
+    }
+    return accepted;
+  } catch (e) {
+    return chosenUci;
+  }
+}
+
 // ── Degradation eval guard ────────────────────────────────────────────────────
 // Bad Day and the time-pressure distribution restriction steer the bot's pick
 // by PROBABILITY, which is popularity at the rating, not quality — so the
@@ -628,6 +671,7 @@ function _ccPressureMatch(cond, botClock, oppClock) {
 }
 
 function applyMoveAttractors(moveProbs) {
+  _attrReweightApplied = false;
   if (!moveProbs || !Object.keys(moveProbs).length) return moveProbs;
 
   const attrVals  = window._bcpAttractorValues || {};
@@ -666,17 +710,16 @@ function applyMoveAttractors(moveProbs) {
   const hasAttacker = attackerVal  !== 0;
   const hasStructure = structureVal !== 0;
 
-  // ── Min-probability + blunder-limit filter (Maia3 / LC modes) ────────────
-  if (botMinProbPct > 0 || botBlunderLimitCp < 400) {
+  // ── Min-probability filter (Maia3 / LC modes) ─────────────────────────────
+  // Absolute popularity floor — an honest distribution control. The old
+  // relative "blunder limit" cutoff (e^(−cp/100) of the top move) pretended
+  // probability ratios were centipawns; real centipawn enforcement now
+  // happens post-pick in applyCpBudgetAcceptance (Stockfish-verified).
+  if (botMinProbPct > 0) {
     const entries  = Object.entries(moveProbs).sort((a, b) => b[1] - a[1]);
-    const bestProb = entries.length ? entries[0][1] : 0;
-    if (bestProb > 0) {
-      const absFloor  = botMinProbPct / 100;
-      const relFloor  = bestProb * Math.exp(-botBlunderLimitCp / 100);
-      const threshold = Math.max(absFloor, relFloor);
-      const passed    = entries.filter(([, p]) => p >= threshold);
-      moveProbs = Object.fromEntries(passed.length ? passed : [entries[0]]);
-    }
+    const absFloor = botMinProbPct / 100;
+    const passed   = entries.filter(([, p]) => p >= absFloor);
+    moveProbs = Object.fromEntries(passed.length ? passed : (entries.length ? [entries[0]] : []));
   }
 
   // ── CP budget → per-unit scale ────────────────────────────────────────────
@@ -982,6 +1025,7 @@ function applyMoveAttractors(moveProbs) {
 
     result[uciMove] = logBoost !== 0 ? prob * Math.exp(logBoost) : prob;
   }
+  _attrReweightApplied = true; // personality actually reshaped the distribution
   return Object.keys(result).length ? result
        : Object.keys(filtered).length ? filtered
        : moveProbs;
@@ -1073,10 +1117,9 @@ function sfPickLevel(targetLevel) {
 }
 
 // ── Effective Stockfish level (degrades under time pressure) ─────────────────
-// Priority order for floor calculation:
-//   1. blunderLimitCp  → quality guarantee (lower limit = higher floor)
-//   2. botTimePressureMaxDrop / sfPressureLevel → time-pressure floor
-//   The effective floor is max(blunderFloor, pressureFloor) — most conservative wins.
+// Floor = time-pressure floor (botTimePressureMaxDrop / sfPressureLevel).
+// (The old blunderLimitCp-derived quality floor is gone — the blunder-limit
+// control was removed in favour of the engine-verified CP budget.)
 // Time degradation sources (highest priority first):
 //   1. Weaponizer active (ahead on clock) → use floor immediately
 //   2. cvA pressure curve → spline interpolation in log-time space
@@ -1084,20 +1127,13 @@ function sfPickLevel(targetLevel) {
 function sfEffectiveLevel(clockMs) {
   const startLevel = parseInt(document.getElementById('sfLevel').value) || 8;
 
-  // ── Blunder limit floor (quality guarantee) ───────────────────────────────
-  // botBlunderLimitCp 50 → floor ≈ startLevel-1; 400 → floor → 1
-  const blunderFloor = Math.max(1, Math.round(startLevel * (1 - botBlunderLimitCp / 400)));
-
   // ── Time-pressure floor (from r-drop or DOM slider) ───────────────────────
-  let pressureFloor;
+  let floorLevel;
   if (botTimePressureMaxDrop !== null) {
-    pressureFloor = Math.max(1, startLevel - Math.round(botTimePressureMaxDrop / 50));
+    floorLevel = Math.max(1, startLevel - Math.round(botTimePressureMaxDrop / 50));
   } else {
-    pressureFloor = parseInt(document.getElementById('sfPressureLevel').value) || 4;
+    floorLevel = parseInt(document.getElementById('sfPressureLevel').value) || 4;
   }
-
-  // Effective floor: more conservative (higher) of the two
-  const floorLevel = Math.max(blunderFloor, pressureFloor);
 
   if (clockMs === null) return startLevel;
 
@@ -1584,7 +1620,9 @@ async function botMakeMove() {
         if (delay > 0) await new Promise(r => setTimeout(r, delay));
         _botMoveClockMs = clockMs; // for applyMoveAttractors distribution cutoff (ctrlB)
         const adjTemp = complexityAdjustedTemp(m3EffTemp);
-        uciMove = sampleFromProbs(applyMoveAttractors(m3Probs), adjTemp);
+        const m3Shaped = applyMoveAttractors(m3Probs);
+        uciMove = sampleFromProbs(m3Shaped, adjTemp);
+        uciMove = await applyCpBudgetAcceptance(fen, uciMove, m3Probs, m3Shaped);
         uciMove = await applyDegradationEvalGuard(fen, uciMove, m3Probs);
         console.log('[Maia3 FULL] chose:', uciMove, '| temp:', adjTemp.toFixed(2), '(base:', m3EffTemp.toFixed(2), ')| inf:', inferenceMs, 'ms | extra wait:', delay, 'ms');
       } else {
@@ -1649,7 +1687,9 @@ async function botMakeMove() {
         if (delay > 0) await new Promise(r => setTimeout(r, delay));
         _botMoveClockMs = clockMs;
         _botMoveThinkSec = preciseThinkSec;
-        uciMove = sampleFromProbs(applyMoveAttractors(probs), complexityAdjustedTemp(effectiveTemp));
+        const maiaShaped = applyMoveAttractors(probs);
+        uciMove = sampleFromProbs(maiaShaped, complexityAdjustedTemp(effectiveTemp));
+        uciMove = await applyCpBudgetAcceptance(fen, uciMove, probs, maiaShaped);
         uciMove = await applyDegradationEvalGuard(fen, uciMove, probs);
         _botMoveThinkSec = null;
       } else {
@@ -1690,7 +1730,9 @@ async function botMakeMove() {
         if (delay > 0) await new Promise(r => setTimeout(r, delay));
         _botMoveClockMs = clockMs;
         _botMoveThinkSec = preciseThinkSecLcsf;
-        uciMove = sampleFromProbs(applyMoveAttractors(lcsfProbs), lcsfEffTemp);
+        const lcsfShaped = applyMoveAttractors(lcsfProbs);
+        uciMove = sampleFromProbs(lcsfShaped, lcsfEffTemp);
+        uciMove = await applyCpBudgetAcceptance(fen, uciMove, lcsfProbs, lcsfShaped);
         uciMove = await applyDegradationEvalGuard(fen, uciMove, lcsfProbs);
         _botMoveThinkSec = null;
       } else {
@@ -1728,7 +1770,9 @@ async function botMakeMove() {
             const delay = Math.max(0, targetDelay - inferenceMs);
             if (delay > 0) await new Promise(res => setTimeout(res, delay));
             _botMoveClockMs = clockMs;
-            uciMove = sampleFromProbs(applyMoveAttractors(probs), effectiveTemp);
+            const hybShaped = applyMoveAttractors(probs);
+            uciMove = sampleFromProbs(hybShaped, effectiveTemp);
+            uciMove = await applyCpBudgetAcceptance(fen, uciMove, probs, hybShaped);
             uciMove = await applyDegradationEvalGuard(fen, uciMove, probs);
           } else {
             // Maia3 not downloaded/failed — SF at a level matching the slot ELO

@@ -569,23 +569,6 @@ body.rs-highvis [style*="font-size:10px"]{font-size:14px !important;}
 .dual-range-wrap input[type=range]::-webkit-slider-thumb:active{cursor:grabbing;}
 .dual-range-track{position:absolute;top:50%;left:0;right:0;height:3px;transform:translateY(-50%);background:rgba(128,140,160,0.55);border-radius:2px;pointer-events:none;}
 
-/* ── Budget + hard-floor shared line (tensometer style) ──
-   One 0–300 track, two thumbs: the amber budget handle rides ABOVE the line,
-   the red hard-floor disk hangs BELOW it — both grabbable even when equal.
-   The budget handle pushes the floor disk right (JS); the disk stays put
-   when the budget retreats. */
-.bf-vals{display:flex;justify-content:space-between;font-family:var(--font-m);font-size:9px;color:var(--text-secondary);margin-bottom:0;}
-.bf-wrap{position:relative;height:44px;}
-.bf-track{position:absolute;top:50%;left:7px;right:7px;height:3px;transform:translateY(-50%);background:rgba(128,140,160,0.55);border-radius:2px;pointer-events:none;}
-.bf-fill{position:absolute;top:0;bottom:0;left:0;background:var(--amber);border-radius:2px;}
-.bf-slack{position:absolute;top:0;bottom:0;background:rgba(200,48,48,0.4);border-radius:2px;}
-.bf-wrap input[type=range]{position:absolute;left:0;width:100%;height:3px;top:50%;transform:translateY(-50%);pointer-events:none;-webkit-appearance:none;appearance:none;background:transparent;}
-.bf-wrap input[type=range]::-webkit-slider-thumb{pointer-events:all;-webkit-appearance:none;width:14px;height:14px;border-radius:50%;cursor:grab;transition:border-color 0.15s,box-shadow 0.15s;}
-.bf-wrap input[type=range]::-webkit-slider-thumb:active{cursor:grabbing;}
-#r-style::-webkit-slider-thumb{background:var(--carbon-mid);border:1.5px solid var(--amber);box-shadow:0 0 6px var(--amber-glow-s);margin-top:-13px;}
-#r-style::-webkit-slider-thumb:hover{border-color:var(--amber-bright);box-shadow:0 0 12px rgba(232,170,64,0.4);}
-#r-blunder::-webkit-slider-thumb{background:#2a1212;border:1.5px solid #c83030;box-shadow:0 0 6px rgba(200,48,48,0.35);margin-top:13px;}
-#r-blunder::-webkit-slider-thumb:hover{border-color:#e05050;box-shadow:0 0 12px rgba(200,48,48,0.45);}
 .dual-range-fill{position:absolute;top:0;height:100%;background:var(--amber);border-radius:1px;transition:left 0.05s,right 0.05s;}
 .dual-range-labels{display:flex;justify-content:space-between;font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:2px;letter-spacing:0.06em;}
 .day-vals{display:flex;justify-content:space-between;font-family:var(--font-m);font-size:10px;color:var(--amber-bright);margin-bottom:4px;}
@@ -1396,22 +1379,13 @@ body.fj .picon{font-weight:500;}
                   <svg class="gauge-svg-interactive" id="style-gauge" viewBox="0 0 280 140" style="cursor:crosshair;touch-action:none;"></svg>
                   <div class="dial-zones" style="margin-top:-4px;width:100%;"><span class="dial-zone">Pure engine</span><span class="dial-zone">Subtle</span><span class="dial-zone">Moderate</span><span class="dial-zone">Bold</span><span class="dial-zone">Reckless</span></div>
                 </div>
-                <!-- Budget + blunder hard floor on ONE 0–300 line: moving the
-                     budget handle right pushes the floor disk along with it
-                     (the disk stays where it was pushed when budget retreats) -->
-                <div class="bf-vals" style="margin-top:8px;">
-                  <span style="color:var(--amber-bright);">▲ Budget <span id="v-style">100 cp</span></span>
-                  <span id="blunder-limit-label">▼ Hard floor <span id="v-blunder">150 cp</span></span>
-                </div>
-                <div class="bf-wrap">
-                  <div class="bf-track"><div class="bf-fill" id="bf-fill"></div><div class="bf-slack" id="bf-slack"></div></div>
+                <div class="ctrl" style="margin-top:8px;">
+                  <span class="ctrl-lbl" style="min-width:80px;">Budget</span>
                   <input type="range" id="r-style" min="0" max="300" step="10" value="100"
                     oninput="onGaugeSliderInput(+this.value)">
-                  <input type="range" id="r-blunder" min="0" max="300" step="10" value="150"
-                    oninput="_onBlunderSlider(+this.value)">
+                  <span class="ctrl-val" id="v-style">100 cp</span>
                 </div>
-                <div class="ctrl-hint">Budget (▲ above the line) = primary personality driver; attractor sliders below show each one's share.</div>
-                <div class="ctrl-hint" id="blunder-floor-hint">Hard floor (▼ below the line): the bot never plays a single move costing more than this centipawn loss. The budget handle drags it right — it can never sit below the budget.</div>
+                <div class="ctrl-hint">Real centipawns, engine-verified: when the personality's pick differs from Maia's most-popular move, Stockfish evaluates both. A pick losing more than the budget is rejected and the bot walks down its preference list until a move fits (worst case: the most-popular move itself). Attractor sliders below show each one's share of the push.</div>
 
                 <!-- Move quality range — only shown for Maia/LC+Maia/Hybrid.
                      Lives inside the gauge box so it can't get lost below the fold -->
@@ -1793,8 +1767,8 @@ body.fj .picon{font-weight:500;}
                 <div style="width:1px;flex:1;background:rgba(235,140,0,0.25);margin:2px 0;"></div>
               </div>
               <div style="padding:0 0 12px 8px;">
-                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">BLUNDER GATE — hard eligibility floor</div>
-                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Any move below an absolute minimum probability, or more than the Blunder Limit below the top-probability move, is discarded. Prevents attractor reweighting from ever surfacing a catastrophic blunder.</div>
+                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">MIN-PROBABILITY FILTER — absolute popularity floor</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Any move below the absolute minimum probability (the "Exclude lowest %" slider) is discarded. This is a pure distribution control — real centipawn protection happens at step 7, with actual engine evals rather than probability as a stand-in.</div>
               </div>
             </div>
 
@@ -1824,10 +1798,22 @@ body.fj .picon{font-weight:500;}
             <div style="display:flex;align-items:stretch;gap:0;">
               <div style="display:flex;flex-direction:column;align-items:center;width:28px;flex-shrink:0;">
                 <div style="width:20px;height:20px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-family:var(--font-u);font-size:8px;font-weight:600;color:var(--carbon);flex-shrink:0;">6</div>
+                <div style="width:1px;flex:1;background:rgba(235,140,0,0.25);margin:2px 0;"></div>
               </div>
-              <div style="padding:0 0 0 8px;">
+              <div style="padding:0 0 12px 8px;">
                 <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">TEMPERATURE SAMPLING — weighted random draw</div>
                 <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Each reweighted probability is raised to <span style="color:var(--amber-bright);">p^(1/T)</span>, then one move is drawn proportionally. T&nbsp;&lt;&nbsp;0.15 → always picks the top move; T&nbsp;=&nbsp;1.0 → unmodified Maia distribution; T&nbsp;&gt;&nbsp;1 → flattened toward uniform. Temperature can also be boosted by the Panicky pressure setting, scaled by how much of the quality window has been lost to curve B — short think time tightens the window <em>and</em> raises T simultaneously. The Coffeehouse Hustler personality overrides T with a phase curve: T&nbsp;=&nbsp;5.0 in the opening (many pieces), fading to T&nbsp;=&nbsp;0.6 in the endgame.</div>
+              </div>
+            </div>
+
+            <!-- Step 7 -->
+            <div style="display:flex;align-items:stretch;gap:0;">
+              <div style="display:flex;flex-direction:column;align-items:center;width:28px;flex-shrink:0;">
+                <div style="width:20px;height:20px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-family:var(--font-u);font-size:8px;font-weight:600;color:var(--carbon);flex-shrink:0;">7</div>
+              </div>
+              <div style="padding:0 0 0 8px;">
+                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">CP BUDGET ACCEPTANCE — real engine check</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Runs only when attractors reshaped the distribution and the sampled pick differs from Maia's most-popular move. One shallow Stockfish probe evaluates the pick, the most-popular move, and the next few personality favourites. The pick is played only if it loses ≤ CP Budget versus the most-popular move; otherwise the bot walks down its preference order, falling back to the most-popular move itself. This is what makes the Centipawmeter <em>real</em> centipawns — probability is never used as a stand-in for move quality.</div>
               </div>
             </div>
 
@@ -5245,7 +5231,6 @@ function initStyleGauge(){
   const svg = document.getElementById('style-gauge');
   if(!svg) return;
   drawStyleGauge(100);
-  _updateBfLine(); // initial paint of the shared budget/floor line
   svg.addEventListener('pointerdown', e => {
     e.preventDefault();
     _gaugeDragging = true;
@@ -5287,77 +5272,12 @@ function _setGaugeValue(val){
   if(badge) badge.textContent = val + ' cp';
   drawStyleGauge(val);
   updateAttrCpDisplays();
-  _syncBlunderFloorToBudget(val);
   updateQsCpBudget();
 }
 
 function onGaugeSliderInput(val){
   _setGaugeValue(val);
   maybePersHybridAlert();
-}
-
-function _onBlunderSlider(val){
-  const blunderEl  = document.getElementById('r-blunder');
-  const blunderVal = document.getElementById('v-blunder');
-  const budget     = parseInt(document.getElementById('r-style')?.value || '0');
-  // Shared 0–300 line with the budget; old saves may carry up to 400
-  val = Math.max(10, Math.min(300, val));
-  if (blunderEl) blunderEl.value = val;
-  const forced = val < budget;
-  if (forced) {
-    val = budget;
-    if (blunderEl) blunderEl.value = val;
-  }
-  if (blunderVal) blunderVal.textContent = val + ' cp';
-  _setBlunderHighlight(forced);
-  _updateBfLine();
-}
-
-function _syncBlunderFloorToBudget(budget){
-  const blunderEl  = document.getElementById('r-blunder');
-  const blunderVal = document.getElementById('v-blunder');
-  if (!blunderEl) return;
-  const current = parseInt(blunderEl.value);
-  if (current < budget) {
-    blunderEl.value = budget;
-    if (blunderVal) blunderVal.textContent = budget + ' cp';
-    _setBlunderHighlight(true);
-  } else {
-    _setBlunderHighlight(false);
-  }
-  _updateBfLine();
-}
-
-// Repaint the shared budget/floor line: amber fill 0→budget, red slack
-// segment budget→floor (the single-move loss headroom the floor still allows)
-function _updateBfLine(){
-  const b = +(document.getElementById('r-style')?.value || 0);
-  const f = +(document.getElementById('r-blunder')?.value || 0);
-  const fill  = document.getElementById('bf-fill');
-  const slack = document.getElementById('bf-slack');
-  if (fill)  fill.style.width = (b / 300 * 100) + '%';
-  if (slack) {
-    slack.style.left  = (b / 300 * 100) + '%';
-    slack.style.width = (Math.max(0, f - b) / 300 * 100) + '%';
-  }
-}
-
-function _setBlunderHighlight(on){
-  const label    = document.getElementById('blunder-limit-label');
-  const valEl    = document.getElementById('v-blunder');
-  const sliderEl = document.getElementById('r-blunder');
-  const hint     = document.getElementById('blunder-floor-hint');
-  if (on) {
-    if (label)    { label.style.color = '#f5a623'; label.style.fontWeight = '700'; }
-    if (valEl)    { valEl.style.color = '#f5a623'; valEl.style.fontWeight = '700'; }
-    if (sliderEl) sliderEl.style.accentColor = '#f5a623';
-    if (hint)     hint.textContent = '⚠ Raised to match Max CP Budget — hard floor cannot be lower than the budget.';
-  } else {
-    if (label)    { label.style.color = ''; label.style.fontWeight = ''; }
-    if (valEl)    { valEl.style.color = ''; valEl.style.fontWeight = ''; }
-    if (sliderEl) sliderEl.style.accentColor = '';
-    if (hint)     hint.textContent = 'Hard floor (▼ below the line): the bot never plays a single move costing more than this centipawn loss. The budget handle drags it right — it can never sit below the budget.';
-  }
 }
 
 function drawStyleGauge(val){
@@ -5885,7 +5805,6 @@ function getBotConfig(){
     timePressureMaxDrop: parseInt(document.getElementById('r-drop')?.value    || '300'),
     timePressureFloor:   parseInt(document.getElementById('r-floor')?.value   || '5'),
     minProbPct:          parseInt(document.getElementById('day-lower')?.value || '0'),
-    blunderLimitCp:      parseInt(document.getElementById('r-blunder')?.value || '150'),
     ctrlA:               ctrlA.map(p => ({x: p.x, y: p.y})),
     ctrlB:               ctrlB.map(p => ({x: p.x, y: p.y})),
     pressureOffA:        pressureOffA,
@@ -5955,12 +5874,9 @@ function applyBotConfig(cfg){
   });
   grp(() => { _setRange('r-drop',  cfg.timePressureMaxDrop); _setRange('r-floor', cfg.timePressureFloor); });
 
-  // Quality controls
+  // Quality controls (legacy cfg.blunderLimitCp is ignored — the CP budget is
+  // engine-verified per pick now, so there is no separate hard-floor control)
   grp(() => _setGaugeValue(cfg.cpBudget != null ? cfg.cpBudget : 100));
-  grp(() => {
-    const rb = document.getElementById('r-blunder');
-    if(rb && cfg.blunderLimitCp != null){ rb.value = cfg.blunderLimitCp; _onBlunderSlider(cfg.blunderLimitCp); }
-  });
   grp(() => {
     const lo = document.getElementById('day-lower'), hi = document.getElementById('day-upper');
     if(lo && cfg.dayLower != null) lo.value = cfg.dayLower;
@@ -6466,7 +6382,7 @@ const BOT_TOUR = [
     action: function(){ setTimeout(function(){ if(typeof drawTempChart==='function') drawTempChart(_currentTempValue); }, 620); } },
 
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#style-gauge', title:'2 · The Centipawmeter',
-    body:'The master dial: how far the bot’s personality may pull it away from the best engine move, in centipawns. Low = near-perfect play; high = a bot with strong opinions.' },
+    body:'The master dial: the most <b>real, engine-verified centipawns</b> the personality may sacrifice versus Maia’s most-popular move. A pick that costs more is rejected by a Stockfish check and the bot falls back down its preference list. Low = near-mainstream play; high = a bot with strong opinions.' },
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#move-quality-range', title:'Move quality range',
     body:'Set the probability band the bot draws from — from only its highest-probability moves to the low-probability tail for a believable "bad day". (Probability = how often players at that rating choose a move, not engine quality.)' },
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#radar-canvas', title:'Personality fingerprint',
