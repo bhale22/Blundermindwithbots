@@ -478,6 +478,8 @@ canvas{
 .replay-btn:hover{border-color:var(--accent);color:var(--text-primary);}
 #replayInfo{font-size:9px;color:var(--text-dim);flex:1;text-align:center;}
 .replay-exit{font-size:8px;color:#c06060;border-color:rgba(180,40,40,0.4);}
+.replay-play{font-size:10px;color:#5ad490;border-color:rgba(90,212,144,0.4);}
+.replay-play:hover{border-color:#5ad490;color:#5ad490;}
 
 /* ── Landing page overlay ─────────────────────────────────────────────────── */
 #landingOverlay {
@@ -1025,6 +1027,8 @@ body.pro-mode #proSide{
 .pro-card-title{ font-family:var(--pfu);font-size:9px;font-weight:500;letter-spacing:0.14em;text-transform:uppercase;color:var(--pa); }
 .pro-moves{ flex:1;overflow-y:auto;max-height:188px;padding:3px 0;min-height:60px; }
 .pro-moves-empty{ font-family:var(--pfm);font-size:8.5px;color:var(--ptd);text-align:center;padding:14px 0; }
+.pro-mclick{ cursor:pointer;border-radius:2px; }
+.pro-mclick:hover{ background:rgba(200,146,42,0.18); }
 .pro-moverow{ display:grid;grid-template-columns:30px 1fr 1fr;align-items:center;font-family:var(--pfm);font-size:11px; }
 .pro-moverow:nth-child(odd){ background:rgba(255,255,255,0.012); }
 .pro-mnum{ color:var(--ptd);font-size:9px;text-align:right;padding-right:9px; }
@@ -1238,7 +1242,9 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <span id="replayInfo">Move 0 / 0</span>
         <button class="replay-btn" onclick="replayStep(1)">▶</button>
         <button class="replay-btn" onclick="replayGo(-1)">⏭</button>
-        <button class="replay-btn replay-exit" onclick="exitReplay()">✕ Exit replay</button>
+        <button class="replay-btn replay-play" onclick="playFromHereBot()" title="Start a bot game from this position">🤖 Play from here</button>
+        <button class="replay-btn replay-play" onclick="playFromHereInvite()" title="Invite a friend to a private game starting from this position">🔗 Invite from here</button>
+        <button class="replay-btn replay-exit" onclick="exitReplay()">✕ Exit</button>
       </div>
     </div>
 
@@ -1524,6 +1530,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="ctrl-row">
         <button class="ctrl-btn util-btn" id="resignBtn" onclick="openHelp('howto')">🎯 Training Tips</button>
         <button class="ctrl-btn util-btn" id="exploreBtn" onclick="enterExploreMode()" style="display:none;border-color:rgba(74,159,212,0.45);color:#4a9fd4;">🔍 Explore</button>
+        <button class="ctrl-btn util-btn" id="reviewBtn" onclick="startReplayOfCurrentGame()" style="display:none;border-color:rgba(74,159,212,0.45);color:#4a9fd4;" title="Step through the finished game — and restart play from any position">⏪ Review</button>
         <button class="ctrl-btn util-btn" onclick="openBotModal()" style="border-color:rgba(90,212,144,0.4);color:#5ad490;" id="botSidebarBtn">🤖 vs Bot</button>
         <button class="ctrl-btn util-btn" onclick="openPanel('mpPanel')">⚔ 2-Player</button>
       </div>
@@ -1575,6 +1582,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <!-- Idle actions — shown when no game is live (start things, save/load) -->
     <div class="pro-actions pro-idle" id="proIdleActions" style="display:none;">
       <div class="pro-abtn accent" id="proRematchBtn" onclick="proRematch()" style="display:none;">↺ Rematch</div>
+      <div class="pro-abtn" id="proReviewBtn" onclick="startReplayOfCurrentGame()" style="display:none;" title="Step through the finished game — and restart play from any position">⏪ Review game</div>
       <div class="pro-abtn" onclick="openBotModal()">🤖 Play / Build Bot</div>
       <div class="pro-abtn" onclick="openPanel('mpPanel')">⚔ 2-Player</div>
       <div class="pro-abtn" onclick="savePgnAs()">💾 Save game</div>

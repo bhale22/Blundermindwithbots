@@ -880,6 +880,15 @@ async function botStart() {
   clockInit(botSelectedTC || 'untimed');
   resetGame();
 
+  // "Play from here": consume a pending custom start position (from replay or
+  // a loaded PGN). Restart Bot Game re-starts from the standard position.
+  var _customStart = false;
+  if (window._pendingStartPos && window._pendingStartPos.fen) {
+    const sp = window._pendingStartPos;
+    window._pendingStartPos = null;
+    _customStart = applyStartPosition(sp.fen, sp.sans);
+  }
+
   // Phase 1: reset move history and capture starting clock for fracRemaining
   botMoveHistory = [];
   botSanHistory  = [];
@@ -914,6 +923,10 @@ async function botStart() {
   } else {
     preferredOpeningActive = false;
   }
+  // Custom-position start: repertoire lines assume the standard opening — skip
+  // them. The Lichess explorer stays on: it queries by FEN, so for classic
+  // positions it supplies genuine human move frequencies.
+  if (_customStart) preferredOpeningActive = false;
   lichessExplorerActive = (botOpeningMode !== 'none');
   // clockTimeW/B are set by clockInit — capture now as the baseline
   try {

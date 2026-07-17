@@ -253,12 +253,22 @@ wss.on('connection', (ws) => {
       leaveCurrentRoom(ws); // creating again replaces any room this socket holds
       const code = generateRoomCode();
       const isLobby = !!msg.lobby;
+      // Optional custom start position ("play from here" invites, private only):
+      // sanitized, stored on the room, handed to the joiner. Clients validate
+      // the FEN themselves; the server just relays a bounded string.
+      const startFen = (!isLobby && typeof msg.startFen === 'string' &&
+                        msg.startFen.length <= 120 && /^[\w\/\- ]+$/.test(msg.startFen))
+        ? msg.startFen : null;
+      const startSans = (startFen && Array.isArray(msg.startSans))
+        ? msg.startSans.slice(0, 600).map(s => String(s).slice(0, 12))
+        : null;
       rooms[code] = {
         white: ws, black: null, created: Date.now(),
         lobby: isLobby,
         tc: msg.tc || 'untimed',
         tcBaseMin: msg.tcBaseMin || 0,
         tcIncSec:  msg.tcIncSec  || 0,
+        startFen, startSans,
       };
       ws.roomCode = code;
       ws.role = 'white';
@@ -292,10 +302,12 @@ wss.on('connection', (ws) => {
         broadcastLobbyList();
       }
       ws.send(JSON.stringify({ type: 'joined', code, role: 'black',
-        tc: room.tc, tcBaseMin: room.tcBaseMin, tcIncSec: room.tcIncSec }));
+        tc: room.tc, tcBaseMin: room.tcBaseMin, tcIncSec: room.tcIncSec,
+        startFen: room.startFen || undefined, startSans: room.startSans || undefined }));
       if (room.white && room.white.readyState === 1) {
         room.white.send(JSON.stringify({ type: 'opponent_joined',
-          tc: room.tc, tcBaseMin: room.tcBaseMin, tcIncSec: room.tcIncSec }));
+          tc: room.tc, tcBaseMin: room.tcBaseMin, tcIncSec: room.tcIncSec,
+          startFen: room.startFen || undefined, startSans: room.startSans || undefined }));
       }
 
     } else if (msg.type === 'lobby_list') {
