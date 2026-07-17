@@ -568,6 +568,24 @@ body.rs-highvis [style*="font-size:10px"]{font-size:14px !important;}
 .dual-range-wrap input[type=range]::-webkit-slider-thumb:hover{border-color:var(--amber-bright);box-shadow:0 0 13px rgba(232,170,64,0.4);}
 .dual-range-wrap input[type=range]::-webkit-slider-thumb:active{cursor:grabbing;}
 .dual-range-track{position:absolute;top:50%;left:0;right:0;height:3px;transform:translateY(-50%);background:rgba(128,140,160,0.55);border-radius:2px;pointer-events:none;}
+
+/* ── Budget + hard-floor shared line (tensometer style) ──
+   One 0–300 track, two thumbs: the amber budget handle rides ABOVE the line,
+   the red hard-floor disk hangs BELOW it — both grabbable even when equal.
+   The budget handle pushes the floor disk right (JS); the disk stays put
+   when the budget retreats. */
+.bf-vals{display:flex;justify-content:space-between;font-family:var(--font-m);font-size:9px;color:var(--text-secondary);margin-bottom:0;}
+.bf-wrap{position:relative;height:44px;}
+.bf-track{position:absolute;top:50%;left:7px;right:7px;height:3px;transform:translateY(-50%);background:rgba(128,140,160,0.55);border-radius:2px;pointer-events:none;}
+.bf-fill{position:absolute;top:0;bottom:0;left:0;background:var(--amber);border-radius:2px;}
+.bf-slack{position:absolute;top:0;bottom:0;background:rgba(200,48,48,0.4);border-radius:2px;}
+.bf-wrap input[type=range]{position:absolute;left:0;width:100%;height:3px;top:50%;transform:translateY(-50%);pointer-events:none;-webkit-appearance:none;appearance:none;background:transparent;}
+.bf-wrap input[type=range]::-webkit-slider-thumb{pointer-events:all;-webkit-appearance:none;width:14px;height:14px;border-radius:50%;cursor:grab;transition:border-color 0.15s,box-shadow 0.15s;}
+.bf-wrap input[type=range]::-webkit-slider-thumb:active{cursor:grabbing;}
+#r-style::-webkit-slider-thumb{background:var(--carbon-mid);border:1.5px solid var(--amber);box-shadow:0 0 6px var(--amber-glow-s);margin-top:-13px;}
+#r-style::-webkit-slider-thumb:hover{border-color:var(--amber-bright);box-shadow:0 0 12px rgba(232,170,64,0.4);}
+#r-blunder::-webkit-slider-thumb{background:#2a1212;border:1.5px solid #c83030;box-shadow:0 0 6px rgba(200,48,48,0.35);margin-top:13px;}
+#r-blunder::-webkit-slider-thumb:hover{border-color:#e05050;box-shadow:0 0 12px rgba(200,48,48,0.45);}
 .dual-range-fill{position:absolute;top:0;height:100%;background:var(--amber);border-radius:1px;transition:left 0.05s,right 0.05s;}
 .dual-range-labels{display:flex;justify-content:space-between;font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:2px;letter-spacing:0.06em;}
 .day-vals{display:flex;justify-content:space-between;font-family:var(--font-m);font-size:10px;color:var(--amber-bright);margin-bottom:4px;}
@@ -1378,25 +1396,22 @@ body.fj .picon{font-weight:500;}
                   <svg class="gauge-svg-interactive" id="style-gauge" viewBox="0 0 280 140" style="cursor:crosshair;touch-action:none;"></svg>
                   <div class="dial-zones" style="margin-top:-4px;width:100%;"><span class="dial-zone">Pure engine</span><span class="dial-zone">Subtle</span><span class="dial-zone">Moderate</span><span class="dial-zone">Bold</span><span class="dial-zone">Reckless</span></div>
                 </div>
-                <!-- Budget + blunder hard floor share one row — the floor can
-                     never sit below the budget, so pairing them makes the
-                     coupling visible -->
-                <div style="display:flex;gap:16px;margin-top:4px;flex-wrap:wrap;">
-                  <div class="ctrl" style="flex:1;min-width:170px;margin-bottom:0;">
-                    <span class="ctrl-lbl" style="min-width:0;">Budget</span>
-                    <input type="range" id="r-style" min="0" max="300" step="10" value="100"
-                      oninput="onGaugeSliderInput(+this.value)">
-                    <span class="ctrl-val" id="v-style">100 cp</span>
-                  </div>
-                  <div class="ctrl" style="flex:1;min-width:170px;margin-bottom:0;">
-                    <span class="ctrl-lbl" id="blunder-limit-label" style="min-width:0;white-space:nowrap;">Hard floor</span>
-                    <input type="range" id="r-blunder" min="10" max="400" step="10" value="150"
-                      oninput="_onBlunderSlider(+this.value)">
-                    <span class="ctrl-val" id="v-blunder">150 cp</span>
-                  </div>
+                <!-- Budget + blunder hard floor on ONE 0–300 line: moving the
+                     budget handle right pushes the floor disk along with it
+                     (the disk stays where it was pushed when budget retreats) -->
+                <div class="bf-vals" style="margin-top:8px;">
+                  <span style="color:var(--amber-bright);">▲ Budget <span id="v-style">100 cp</span></span>
+                  <span id="blunder-limit-label">▼ Hard floor <span id="v-blunder">150 cp</span></span>
                 </div>
-                <div class="ctrl-hint" style="margin-top:6px;">Budget = primary personality driver (0 cp pure engine, 300 cp strongly opinionated); attractor sliders below show each one's share.</div>
-                <div class="ctrl-hint" id="blunder-floor-hint">Hard floor: the bot never plays a single move costing more than this centipawn loss. Raised automatically if below Max CP Budget.</div>
+                <div class="bf-wrap">
+                  <div class="bf-track"><div class="bf-fill" id="bf-fill"></div><div class="bf-slack" id="bf-slack"></div></div>
+                  <input type="range" id="r-style" min="0" max="300" step="10" value="100"
+                    oninput="onGaugeSliderInput(+this.value)">
+                  <input type="range" id="r-blunder" min="0" max="300" step="10" value="150"
+                    oninput="_onBlunderSlider(+this.value)">
+                </div>
+                <div class="ctrl-hint">Budget (▲ above the line) = primary personality driver; attractor sliders below show each one's share.</div>
+                <div class="ctrl-hint" id="blunder-floor-hint">Hard floor (▼ below the line): the bot never plays a single move costing more than this centipawn loss. The budget handle drags it right — it can never sit below the budget.</div>
 
                 <!-- Move quality range — only shown for Maia/LC+Maia/Hybrid.
                      Lives inside the gauge box so it can't get lost below the fold -->
@@ -5230,6 +5245,7 @@ function initStyleGauge(){
   const svg = document.getElementById('style-gauge');
   if(!svg) return;
   drawStyleGauge(100);
+  _updateBfLine(); // initial paint of the shared budget/floor line
   svg.addEventListener('pointerdown', e => {
     e.preventDefault();
     _gaugeDragging = true;
@@ -5284,13 +5300,17 @@ function _onBlunderSlider(val){
   const blunderEl  = document.getElementById('r-blunder');
   const blunderVal = document.getElementById('v-blunder');
   const budget     = parseInt(document.getElementById('r-style')?.value || '0');
-  const forced     = val < budget;
+  // Shared 0–300 line with the budget; old saves may carry up to 400
+  val = Math.max(10, Math.min(300, val));
+  if (blunderEl) blunderEl.value = val;
+  const forced = val < budget;
   if (forced) {
     val = budget;
     if (blunderEl) blunderEl.value = val;
   }
   if (blunderVal) blunderVal.textContent = val + ' cp';
   _setBlunderHighlight(forced);
+  _updateBfLine();
 }
 
 function _syncBlunderFloorToBudget(budget){
@@ -5304,6 +5324,21 @@ function _syncBlunderFloorToBudget(budget){
     _setBlunderHighlight(true);
   } else {
     _setBlunderHighlight(false);
+  }
+  _updateBfLine();
+}
+
+// Repaint the shared budget/floor line: amber fill 0→budget, red slack
+// segment budget→floor (the single-move loss headroom the floor still allows)
+function _updateBfLine(){
+  const b = +(document.getElementById('r-style')?.value || 0);
+  const f = +(document.getElementById('r-blunder')?.value || 0);
+  const fill  = document.getElementById('bf-fill');
+  const slack = document.getElementById('bf-slack');
+  if (fill)  fill.style.width = (b / 300 * 100) + '%';
+  if (slack) {
+    slack.style.left  = (b / 300 * 100) + '%';
+    slack.style.width = (Math.max(0, f - b) / 300 * 100) + '%';
   }
 }
 
@@ -5321,7 +5356,7 @@ function _setBlunderHighlight(on){
     if (label)    { label.style.color = ''; label.style.fontWeight = ''; }
     if (valEl)    { valEl.style.color = ''; valEl.style.fontWeight = ''; }
     if (sliderEl) sliderEl.style.accentColor = '';
-    if (hint)     hint.textContent = 'Hard floor: the bot never plays a single move costing more than this centipawn loss. Raised automatically if below Max CP Budget.';
+    if (hint)     hint.textContent = 'Hard floor (▼ below the line): the bot never plays a single move costing more than this centipawn loss. The budget handle drags it right — it can never sit below the budget.';
   }
 }
 
