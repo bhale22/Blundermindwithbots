@@ -1406,7 +1406,7 @@ body.fj .picon{font-weight:500;}
                 <input type="range" id="day-upper" min="0" max="100" value="100" step="1" oninput="onDaySlider()">
               </div>
               <div class="dual-range-labels"><span>← Bad Day, lowest probability moves</span><span>Good Day, Highest Probability moves →</span></div>
-              <div class="ctrl-hint" style="margin-top:6px;">Sets the Maia3 probability band. Good Day = best moves; Bad Day = lower-probability alternatives.</div>
+              <div class="ctrl-hint" style="margin-top:6px;">Sets the Maia3 probability band. Good Day = highest-probability moves; Bad Day = low-probability alternatives. Probability means "how often players at this rating choose it" — not engine quality; a hard-to-see strong move can sit low in the distribution.</div>
               </div><!-- /move-quality-range -->
 
             </div>
@@ -1760,7 +1760,7 @@ body.fj .picon{font-weight:500;}
               </div>
               <div style="padding:0 0 12px 8px;">
                 <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">QUALITY WINDOW — rank filter keyed on think time (curve B)</div>
-                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Moves are sorted best→worst by Maia probability. The Day Lower / Upper sliders define a percentile band; only moves inside the band remain eligible. Curve B narrows the upper bound using the same think time from step 1 — short think → smaller window → only instinctive first-pass moves remain. <span style="color:var(--amber);">Luck</span> shifts the entire window toward better or worse moves without changing its width.</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Moves are sorted highest→lowest by Maia probability (how often players at the selected rating choose them — not engine quality). The Day Lower / Upper sliders define a percentile band; only moves inside the band remain eligible. Curve B narrows the upper bound using the same think time from step 1 — short think → smaller window → only instinctive first-pass moves remain. <span style="color:var(--amber);">Luck</span> shifts the entire window toward higher- or lower-probability moves without changing its width.</div>
               </div>
             </div>
 
@@ -1772,7 +1772,7 @@ body.fj .picon{font-weight:500;}
               </div>
               <div style="padding:0 0 12px 8px;">
                 <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">BLUNDER GATE — hard eligibility floor</div>
-                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Any move below an absolute minimum probability, or more than the Blunder Limit below the best move in Maia probability, is discarded. Prevents attractor reweighting from ever surfacing a catastrophic blunder.</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Any move below an absolute minimum probability, or more than the Blunder Limit below the top-probability move, is discarded. Prevents attractor reweighting from ever surfacing a catastrophic blunder.</div>
               </div>
             </div>
 
@@ -6427,7 +6427,7 @@ const BOT_TOUR = [
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#style-gauge', title:'2 · The Centipawmeter',
     body:'The master dial: how far the bot’s personality may pull it away from the best engine move, in centipawns. Low = near-perfect play; high = a bot with strong opinions.' },
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#move-quality-range', title:'Move quality range',
-    body:'Set the band of move quality the bot stays within — from only its best moves to deliberately weaker ones for a believable "bad day".' },
+    body:'Set the probability band the bot draws from — from only its highest-probability moves to the low-probability tail for a believable "bad day". (Probability = how often players at that rating choose a move, not engine quality.)' },
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#radar-canvas', title:'Personality fingerprint',
     body:'Drag the radar nodes (or the sliders) to sculpt the bot’s style — the fingerprint updates live as you go.' },
   { stage:'Personality', open:'attract', tab:['attract','pieces'], sel:'#attractor-rows', title:'Strategic preferences',
@@ -7811,7 +7811,7 @@ function _applyPersonality(id){
     setElo(2400);
     const lo = document.getElementById('day-lower'), hi = document.getElementById('day-upper');
     if(lo) lo.value = 4;    // minProbPct=4: keep only moves with individual prob ≥ 4%
-    if(hi) hi.value = 100;  // dayUpper=100: engine then selects the worst acceptable move
+    if(hi) hi.value = 100;  // dayUpper=100: engine then selects the lowest-probability acceptable move
     onDaySlider();
   }
   // Drunken Master: Maia 3 with a per-move 50/50 ELO coin flip (2400 / 1000).
@@ -8004,8 +8004,8 @@ document.addEventListener('click', e=>{
 });
 
 /* ── Good Day / Bad Day dual-range slider ──────────────────────────────────── */
-// dayLower: 0–100 (% probability lower bound, 0=worst moves)
-// dayUpper: 0–100 (% probability upper bound, 100=best moves)
+// dayLower: 0–100 (% probability lower bound, 0=lowest-probability moves)
+// dayUpper: 0–100 (% probability upper bound, 100=highest-probability moves)
 // Both sliders share the same track; fill highlights the selected band.
 let dayLower = 0, dayUpper = 100;
 

@@ -93,15 +93,15 @@ let botBehavReconsider  = true;    // human behaviour: reconsideration pauses
 let botBehavBlink       = true;    // human behaviour: instant play on forced moves
 let botBehavClockMirror = true;    // human behaviour: speed up when opponent is low
 let botCanFlag   = true;           // whether bot is allowed to flag (run clock to 0)
-let botDayLower  = 0;              // move quality range: lower percentile (0 = top/best)
-let botDayUpper  = 100;            // move quality range: upper percentile (100 = all)
+let botDayLower  = 0;              // probability-band range: lower percentile (0 = highest-probability end)
+let botDayUpper  = 100;            // probability-band range: upper percentile (100 = all)
 let botSfTempLevel = 2;            // temperature tier 0-4 (legacy; superseded by botSfVar1/2)
 let botSfVar1 = 0;                 // % of SF calls at ±1 level (0–50)
 let botSfVar2 = 0;                 // % of SF calls at ±2 level (0–20)
 let botTimePressureMaxDrop = null; // max ELO drop from r-drop; null = use DOM slider
 let botMinProbPct       = 0;      // min absolute probability % — 0 = off (default); set by panel
 let botBlunderLimitCp   = 400;    // max cp loss — 400 = off (default); set by panel
-let botBadDayMode       = false;  // Grandmaster Bad Day: pick worst plausible move above minProbPct threshold
+let botBadDayMode       = false;  // Grandmaster Bad Day: pick lowest-probability move above minProbPct threshold
 let botPressureCurveA   = null;   // ctrlA points [{x,y}] — ELO degradation vs think-time (s)
 let botPressureCurveB   = null;   // ctrlB points [{x,y}] — confidence floor % vs think-time (s)
 let botWeaponizerEnabled = false; // weaponizer: instant play when ahead on clock

@@ -704,9 +704,11 @@ function applyMoveAttractors(moveProbs) {
     }
   }
 
-  // ── Bad Day mode: pick worst plausible move ───────────────────────────────
+  // ── Bad Day mode: pick lowest-probability plausible move ─────────────────
   // Grandmaster Bad Day: sort by probability ascending, return the first move
   // that meets the minProbPct threshold (lowest prob still considered plausible).
+  // Note: probability = how often players at this rating choose the move, not
+  // engine quality — occasionally this lands on a strong move few players see.
   if (botBadDayMode) {
     const _floor = botMinProbPct > 0 ? botMinProbPct / 100 : 0.04;
     const _asc = Object.entries(filtered).sort((a, b) => a[1] - b[1]);
