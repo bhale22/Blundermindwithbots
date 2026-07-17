@@ -5835,7 +5835,6 @@ function getBotConfig(){
     tempPresetId:      selectedTempPresetId,
     personalityId:     selectedPersonality,
     badDayMode:        selectedPersonality === 'badday',
-    eloMix:            selectedPersonality === 'drunken' ? { high:2400, low:1000, highPct:50 } : null,
     calmPanickyValue:  attractorValues['pressure'] || 0,
     hybridSlots:     hybridSlots.map(s=>({...s})),
     lcsfElo:         parseInt(document.getElementById('lcsf-lc-elo')?.value || '2000'),
@@ -7765,8 +7764,8 @@ const PERS_CONFIRMS = {
     'Eval-checked: if that move accidentally beats Maia’s top choice, the top choice is played instead',
   ]},
   drunken: { title:'🍺 Drunken Master', items:[
-    'Engine → Maia 3',
-    'Each move: 50% chance Maia 2400, 50% chance Maia 1000',
+    'Engine → Hybrid: 50% Maia 2400 + 50% Maia 1000',
+    'Each move rolls which of the two it plays',
     'Aggressive attacking attractors',
   ]},
 };
@@ -7815,13 +7814,17 @@ function _applyPersonality(id){
     if(hi) hi.value = 100;  // dayUpper=100: engine then selects the lowest-probability acceptable move
     onDaySlider();
   }
-  // Drunken Master: Maia 3 with a per-move 50/50 ELO coin flip (2400 / 1000).
-  // Elometer shows the 1700 midpoint — it anchors the pressure curves and the
-  // header label; the actual per-move ELO comes from the eloMix roll in-game.
+  // Drunken Master: a Hybrid bot with two Maia slots — 50% at 2400, 50% at
+  // 1000 (each move picks one slot). Plain hybrid config, so the user can
+  // retune the slots afterwards (2600/600 if they find it amusing).
   if(id === 'drunken'){
-    const card = document.querySelector('#engine-mode-grid .mcard[data-engine="maia3"]');
+    const card = document.querySelector('#engine-mode-grid .mcard[data-engine="hybrid"]');
     if(card) selEngineMode(card);
-    setElo(1700);
+    hybridSlots = [
+      { type:'maia', elo:2400, pct:50 },
+      { type:'maia', elo:1000, pct:50 },
+    ];
+    renderHybridSlots();
   }
   // Select card
   document.querySelectorAll('.pcard').forEach(c=>c.classList.remove('sel'));

@@ -1509,12 +1509,6 @@ window.addEventListener('message', function(e) {
   botBlunderLimitCp = (cfg.blunderLimitCp != null) ? cfg.blunderLimitCp : 150;
   botBadDayMode     = !!cfg.badDayMode;
 
-  // Drunken Master: per-move ELO coin flip {high, low, highPct}
-  botEloMix = (cfg.eloMix && cfg.eloMix.high > 0 && cfg.eloMix.low > 0)
-    ? { high: +cfg.eloMix.high, low: +cfg.eloMix.low,
-        highPct: (cfg.eloMix.highPct != null) ? +cfg.eloMix.highPct : 50 }
-    : null;
-
   // Time pressure curves (cvA = ELO degradation, cvB = distribution cutoff).
   // Each mechanism has its own off flag (pressureOffA / pressureOffB); older
   // configs only carry the master pressureOff flag, which disables both.
