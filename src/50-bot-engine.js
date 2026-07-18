@@ -298,13 +298,21 @@ function _maybeStaleSeek(moveProbs) {
 // between the two is weak (popular trap-falls, unseen strong moves), so the
 // centipawn budget is enforced with REAL Stockfish evals, not a probability
 // heuristic. When the personality reweighting produced a pick that differs
-// from the most-popular move, the pick, the most-popular move, and the next
-// few personality favourites are evaluated in one shallow searchmoves probe.
-// The pick is accepted only if it loses ≤ budget cp versus the most-popular
-// move; otherwise we walk down the personality's preference order and, if
-// nothing fits, fall back to the most-popular move itself (0 cp by
-// definition of the reference).
+// from the most-popular move, the pick, the most-popular move, and a wide
+// slice of the personality's preference order are evaluated together in one
+// shallow searchmoves probe (single MultiPV search, not one call per move —
+// this is what lets a large candidate set stay cheap). The pick is accepted
+// only if it loses ≤ budget cp versus the most-popular move; otherwise we
+// walk down the personality's preference order and, if nothing fits, fall
+// back to the most-popular move itself (0 cp by definition of the reference).
 let _attrReweightApplied = false; // set by applyMoveAttractors each call
+
+// How many of the personality's next-favourite moves ride along in the probe
+// beyond the chosen pick and the most-popular move. Wider = more of Maia's
+// tail gets a real shot at passing the budget instead of being silently
+// skipped just because it wasn't in a short shortlist. MultiPV cost scales
+// with this number, so it's a probe-depth/latency tradeoff, not free.
+const CP_BUDGET_WALK_SIZE = 15;
 
 async function applyCpBudgetAcceptance(fen, chosenUci, rawProbs, shapedProbs) {
   try {
@@ -318,7 +326,8 @@ async function applyCpBudgetAcceptance(fen, chosenUci, rawProbs, shapedProbs) {
     if (!topMove || topMove === chosenUci) return chosenUci;
     // Personality preference order = reweighted probability, descending
     const order = Object.entries(shapedProbs || {}).sort((a, b) => b[1] - a[1]).map(([m]) => m);
-    const walk = [chosenUci, ...order.filter(m => m !== chosenUci && m !== topMove)].slice(0, 5);
+    const walk = [chosenUci, ...order.filter(m => m !== chosenUci && m !== topMove)]
+      .slice(0, CP_BUDGET_WALK_SIZE);
     if (!sfReady) { try { await sfInit(); } catch (e) { return chosenUci; } }
     const evals = await sfEvalMoves(fen, [topMove, ...walk], 10);
     if (!evals || evals[topMove] == null) return chosenUci; // fail-open on probe failure
@@ -985,11 +994,14 @@ function applyMoveAttractors(moveProbs) {
   // ── Bad Day mode: pick lowest-probability plausible move ─────────────────
   // Grandmaster Bad Day: sort by probability ascending, return the first move
   // that meets the minProbPct threshold (lowest prob still considered plausible).
-  // Note: probability = how often players at this rating choose the move, not
-  // engine quality — this can land on a strong move few players see; the
-  // post-pick applyDegradationEvalGuard swaps those back to the top choice.
+  // No implicit floor beyond the user's own min-probability slider (default 0)
+  // — the whole point of this mode is the tail, so it shouldn't be fenced off
+  // by a hardcoded guard the user never asked for. Note: probability = how
+  // often players at this rating choose the move, not engine quality — this
+  // can land on a strong move few players see; the post-pick
+  // applyDegradationEvalGuard swaps those back to the top choice.
   if (botBadDayMode) {
-    const _floor = botMinProbPct > 0 ? botMinProbPct / 100 : 0.04;
+    const _floor = botMinProbPct / 100;
     const _asc = Object.entries(filtered).sort((a, b) => a[1] - b[1]);
     const _worst = _asc.find(([, p]) => p >= _floor);
     if (_worst) filtered = { [_worst[0]]: _worst[1] };

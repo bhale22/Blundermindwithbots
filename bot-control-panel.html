@@ -1367,7 +1367,7 @@ body.fj .picon{font-weight:500;}
         <!-- TAB 1: Move Quality & Strategy -->
         <div class="itab-pane active" id="itab-attract-quality">
           <div class="panel-2col">
-            <!-- LEFT: cp budget gauge (top) then move quality range -->
+            <!-- LEFT: cp budget gauge (top) then move popularity range -->
             <div>
               <!-- MAX CP BUDGET — primary personality driver -->
               <div class="gauge-section">
@@ -1387,10 +1387,10 @@ body.fj .picon{font-weight:500;}
                 </div>
                 <div class="ctrl-hint">Real centipawns, engine-verified: when the personality's pick differs from Maia's most-popular move, Stockfish evaluates both. A pick losing more than the budget is rejected and the bot walks down its preference list until a move fits (worst case: the most-popular move itself). Attractor sliders below show each one's share of the push.</div>
 
-                <!-- Move quality range — only shown for Maia/LC+Maia/Hybrid.
+                <!-- Move popularity range — only shown for Maia/LC+Maia/Hybrid.
                      Lives inside the gauge box so it can't get lost below the fold -->
                 <div id="move-quality-range" style="margin-top:12px;">
-                <div class="dlbl"><span>Move quality range</span></div>
+                <div class="dlbl"><span>Move popularity range</span></div>
                 <div class="day-vals">
                   <span>Exclude lowest: <span id="day-lower-val">0</span>%</span>
                   <span>Exclude moves above: <span id="day-upper-val">100</span>%</span>
@@ -1400,8 +1400,8 @@ body.fj .picon{font-weight:500;}
                   <input type="range" id="day-lower" min="0" max="100" value="0" step="1" oninput="onDaySlider()">
                   <input type="range" id="day-upper" min="0" max="100" value="100" step="1" oninput="onDaySlider()">
                 </div>
-                <div class="dual-range-labels"><span>← Bad Day, lowest probability moves</span><span>Good Day, Highest Probability moves →</span></div>
-                <div class="ctrl-hint" style="margin-top:6px;">Sets the Maia3 probability band. Good Day = highest-probability moves; Bad Day = low-probability alternatives. Probability means "how often players at this rating choose it" — not engine quality; a hard-to-see strong move can sit low in the distribution.</div>
+                <div class="dual-range-labels"><span>← Rare, less-expected moves</span><span>Mainstream, most-expected moves →</span></div>
+                <div class="ctrl-hint" style="margin-top:6px;">Sets the Maia3 probability band the bot samples from. Probability means "how often players at this rating choose it" — not engine quality. The rare end isn't a defect zone: sharp tactics and unconventional ideas often live in the low-popularity tail. Restrict the band only if you want more predictable, book-standard play.</div>
                 </div><!-- /move-quality-range -->
               </div>
 
@@ -6452,8 +6452,8 @@ const BOT_TOUR = [
 
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#style-gauge', title:'2 · The Centipawmeter',
     body:'The master dial: the most <b>real, engine-verified centipawns</b> the personality may sacrifice versus Maia’s most-popular move. A pick that costs more is rejected by a Stockfish check and the bot falls back down its preference list. Low = near-mainstream play; high = a bot with strong opinions.' },
-  { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#move-quality-range', title:'Move quality range',
-    body:'Set the probability band the bot draws from — from only its highest-probability moves to the low-probability tail for a believable "bad day". (Probability = how often players at that rating choose a move, not engine quality.)' },
+  { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#move-quality-range', title:'Move popularity range',
+    body:'Set the probability band the bot draws from — from only its most-expected, mainstream moves down into the rare, low-popularity tail. That tail isn\'t "bad" moves — it\'s where sharp tactics and unconventional ideas tend to hide. (Probability = how often players at that rating choose a move, not engine quality.)' },
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#radar-canvas', title:'Personality fingerprint',
     body:'Drag the radar nodes (or the sliders) to sculpt the bot’s style — the fingerprint updates live as you go.' },
   { stage:'Personality', open:'attract', tab:['attract','pieces'], sel:'#attractor-rows', title:'Strategic preferences',
