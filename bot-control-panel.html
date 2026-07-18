@@ -1396,7 +1396,7 @@ body.fj .picon{font-weight:500;}
                     oninput="onHardFloorSliderInput(+this.value)">
                   <span class="ctrl-val" id="v-hardfloor">100 cp</span>
                 </div>
-                <div class="ctrl-hint">Budget sets how hard the personality pushes to find an alternative to Maia's most-popular move. <strong>Hard Floor</strong> is the real, engine-verified ceiling on how many centipawns that alternative may actually lose — Stockfish checks the pick against Maia's top move, and anything over the floor is rejected, walking down the preference list until one fits (worst case: the most-popular move itself). Hard Floor can never exceed Budget — drag Budget past it and Floor rides along (flashing) until you pull Floor down separately.</div>
+                <div class="ctrl-hint">Budget sets how hard the personality pushes to find an alternative to Maia's most-popular move. <strong>Hard Floor</strong> is the real, engine-verified ceiling on how many centipawns that alternative may actually lose — Stockfish checks the pick against Maia's top move, and anything over the <em>lower</em> of Budget and Floor is rejected, walking down the preference list until one fits (worst case: the most-popular move itself). Drag Budget past Floor and Floor rides along (flashing) — but dragging Budget back down below Floor leaves Floor exactly where it was; Budget itself just becomes the tighter limit until raised past Floor again.</div>
 
                 <!-- Move popularity range — only shown for Maia/LC+Maia/Hybrid.
                      Lives inside the gauge box so it can't get lost below the fold -->
@@ -5329,15 +5329,15 @@ function _setGaugeValue(val){
   drawStyleGauge(val);
   updateAttrCpDisplays();
   updateQsCpBudget();
-  // Hard Floor can never exceed Budget. While it's pinned to Budget (equal —
-  // the default, and wherever the user hasn't pulled it away) it rides along
-  // as Budget moves. If Budget drops below a Floor the user *had* separated,
-  // Floor is reclamped down to the new ceiling either way.
+  // Hard Floor is a one-way ratchet: Budget can push it UP by dragging past
+  // its current position, but Budget dropping below Floor never pulls Floor
+  // down with it — Floor stays exactly where the user left it, and simply
+  // stops being the binding constraint (Budget itself becomes the tighter,
+  // lower ceiling) until Budget rises past it again. No pinning either way —
+  // this fires the same whether Floor was at the default (equal to Budget)
+  // or already separated by the user.
   const fl = document.getElementById('r-hardfloor');
-  if(fl){
-    const curFloor = +fl.value;
-    if(curFloor >= oldVal || curFloor > val) _setHardFloorValue(val, true);
-  }
+  if(fl && val > +fl.value) _setHardFloorValue(val, true);
 }
 
 function onGaugeSliderInput(val){
@@ -5345,13 +5345,14 @@ function onGaugeSliderInput(val){
   maybePersHybridAlert();
 }
 
-// Hard Floor — the real acceptance ceiling (§ CP-Budget Acceptance). Always
-// clamped to ≤ Budget. `linked` flashes the row when the move was driven by
-// Budget dragging past it, rather than a direct user edit.
+// Hard Floor — the real acceptance ceiling (§ CP-Budget Acceptance). Free to
+// sit above OR below Budget; the engine always enforces min(Budget, Floor),
+// so a Floor left above Budget after Budget drops is harmless — Budget just
+// becomes the binding constraint until it's raised past Floor again.
+// `linked` flashes the row when the move was driven by Budget's own slider
+// dragging past it, rather than a direct edit to Floor itself.
 function _setHardFloorValue(val, linked){
-  const budgetSl = document.getElementById('r-style');
-  const budget = budgetSl ? +budgetSl.value : 300;
-  val = Math.max(0, Math.min(300, Math.min(val, budget)));
+  val = Math.max(0, Math.min(300, val));
   const fl = document.getElementById('r-hardfloor');
   if(fl) fl.value = val;
   const disp = document.getElementById('v-hardfloor');

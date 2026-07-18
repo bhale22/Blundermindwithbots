@@ -302,17 +302,19 @@ function _maybeStaleSeek(moveProbs) {
 // slice of the personality's preference order are evaluated together in one
 // shallow searchmoves probe (single MultiPV search, not one call per move —
 // this is what lets a large candidate set stay cheap). The pick is accepted
-// only if it loses ≤ Hard Floor cp versus the most-popular move; otherwise we
-// walk down the personality's preference order and, if nothing fits, fall
-// back to the most-popular move itself (0 cp by definition of the reference).
+// only if it loses ≤ the effective ceiling versus the most-popular move;
+// otherwise we walk down the personality's preference order and, if nothing
+// fits, fall back to the most-popular move itself (0 cp by definition).
 //
-// Budget vs. Hard Floor: Budget (window._bcpCpBudget) only scales how hard the
+// Budget vs. Hard Floor: Budget (window._bcpCpBudget) scales how hard the
 // attractors PUSH toward an alternative (the reweighting `scale` factor in
-// applyMoveAttractors). Hard Floor (window._bcpCpHardFloor) is the actual,
-// separately-dialable ceiling enforced here — it lets a bot push aggressively
-// for flavour while still guaranteeing real move quality never crosses a
-// stricter line than Budget alone would imply. Hard Floor is UI-clamped to
-// never exceed Budget, so it's always the tighter (or equal) of the two.
+// applyMoveAttractors). Hard Floor (window._bcpCpHardFloor) is a separately-
+// dialable ceiling on top of that. The UI lets Floor sit above Budget after
+// Budget is lowered past it (a one-way ratchet — Floor only ever gets pushed
+// up by Budget, never pulled down), so the two can legitimately disagree.
+// The effective ceiling actually enforced is always min(Budget, Floor) —
+// computed here rather than trusted from slider state, so correctness never
+// depends on the UI's drag choreography.
 let _attrReweightApplied = false; // set by applyMoveAttractors each call
 
 // How many of the personality's next-favourite moves ride along in the probe
@@ -327,8 +329,9 @@ async function applyCpBudgetAcceptance(fen, chosenUci, rawProbs, shapedProbs) {
     if (!chosenUci || !rawProbs || !_attrReweightApplied) return chosenUci;
     // Stalemate-seeking moves deliberately throw material — exempt from the floor
     if (_staleSeekThisMove) return chosenUci;
-    const budget = window._bcpCpHardFloor != null ? +window._bcpCpHardFloor
-                 : window._bcpCpBudget    != null ? +window._bcpCpBudget : 0;
+    const rawBudget = window._bcpCpBudget    != null ? +window._bcpCpBudget    : 0;
+    const rawFloor  = window._bcpCpHardFloor != null ? +window._bcpCpHardFloor : rawBudget;
+    const budget = Math.min(rawBudget, rawFloor);
     if (!(budget >= 0)) return chosenUci;
     let topMove = null, topP = -1;
     for (const m in rawProbs) { if (rawProbs[m] > topP) { topP = rawProbs[m]; topMove = m; } }
