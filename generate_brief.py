@@ -27,7 +27,9 @@ C_HEAD_BG  = colors.HexColor('#0f3460')
 C_ROW_ALT  = colors.HexColor('#1e1e3a')
 C_CODE_BG  = colors.HexColor('#0d1117')
 
-OUT = 'Blundermind_Bot_Controls_Brief.pdf'
+# Written to the filename the server actually serves (see server.js
+# /Bot_Controls_Technical_Brief.pdf and the panel's download button).
+OUT = 'Bot_Controls_Technical_Brief.pdf'
 
 doc = SimpleDocTemplate(
     OUT,
@@ -69,6 +71,26 @@ sBullet  = S('Normal',  fontName='Helvetica',      fontSize=8.5,textColor=C_TEXT
              leftIndent=12, spaceAfter=2, leading=12)
 sNote    = S('Normal',  fontName='Helvetica-Oblique',fontSize=7.5,textColor=C_DIM,
              spaceAfter=2, leading=11, leftIndent=8)
+# Table-cell paragraph styles — wrapping cells must be Paragraphs, not bare
+# strings (bare strings overflow the column instead of wrapping).
+sCell     = S('Normal',  fontName='Helvetica',      fontSize=7.5,textColor=C_TEXT,
+             leading=9.5, spaceAfter=0, alignment=TA_LEFT)
+sCellHead = S('Normal',  fontName='Helvetica-Bold', fontSize=8,  textColor=C_AMBER,
+             leading=10, spaceAfter=0, alignment=TA_LEFT)
+
+def _cellify(val, style):
+    """Wrap a table-cell string in a Paragraph so it wraps within its column.
+    Newlines become <br/>; existing Paragraph/flowable cells pass through."""
+    if isinstance(val, str):
+        return Paragraph(val.replace('\n', '<br/>'), style)
+    return val
+
+def _wrap_rows(rows, header):
+    out = []
+    for r, row in enumerate(rows):
+        st = sCellHead if (header and r == 0) else sCell
+        out.append([_cellify(c, st) for c in row])
+    return out
 
 def HR():
     return HRFlowable(width='100%', thickness=0.5, color=C_RULE, spaceAfter=6, spaceBefore=2)
@@ -89,7 +111,8 @@ def bodyL(txt):
     return Paragraph(txt, sBodyL)
 
 def code(txt):
-    return Paragraph(txt, sCode)
+    # Preserve intended line breaks (Paragraphs otherwise collapse \n to a space)
+    return Paragraph(txt.replace('\n', '<br/>'), sCode)
 
 def note(txt):
     return Paragraph(txt, sNote)
@@ -107,7 +130,7 @@ def attractor_table(rows, col_widths=None):
     """rows: list of lists of strings/Paragraphs"""
     if col_widths is None:
         col_widths = [1.4*inch, 1.4*inch, 1.1*inch, 1.1*inch, 2.8*inch]
-    t = Table(rows, colWidths=col_widths)
+    t = Table(_wrap_rows(rows, header=True), colWidths=col_widths)
     ts = TableStyle([
         ('BACKGROUND',  (0,0), (-1,0),  C_HEAD_BG),
         ('TEXTCOLOR',   (0,0), (-1,0),  C_AMBER),
@@ -130,7 +153,7 @@ def attractor_table(rows, col_widths=None):
     return t
 
 def simple_table(rows, col_widths, header=True):
-    t = Table(rows, colWidths=col_widths)
+    t = Table(_wrap_rows(rows, header=header), colWidths=col_widths)
     ts = TableStyle([
         ('FONTNAME',    (0,0), (-1,-1), 'Helvetica'),
         ('FONTSIZE',    (0,0), (-1,-1), 7.5),
@@ -169,7 +192,7 @@ story += [
     spacer(4),
     dim('All controls described are available in the bot-control-panel.html sidebar. '
         'Formulas reference src/50-bot-engine.js and src/60-bot-ui.js. '
-        'This brief reflects the state of the dev branch as of June 2026.'),
+        'This brief reflects the state of the dev branch as of July 2026.'),
     spacer(20),
 ]
 
@@ -179,14 +202,17 @@ toc_rows = [
     ['1', 'Architecture Overview — Move Selection Pipeline'],
     ['2', 'Move Source Layer (Opening Book / Maia3 / Stockfish / LCSF)'],
     ['3', 'Think Time Calculation'],
-    ['4', 'Time Pressure Play Degradation (Curves A &amp; B)'],
+    ['4', 'Time Pressure Play Degradation (Independent Curves A &amp; B)'],
     ['5', 'Temperature &amp; Move Sampling'],
-    ['6', 'Strategic Attractors (Style Gauge)'],
+    ['6', 'Strategic Attractors (Centipawmeter)'],
     ['7', 'Piece-Type Attractors'],
-    ['8', 'Move Quality Range &amp; Luck'],
-    ['9', 'Preset Personalities'],
-    ['10', 'Time Controls'],
-    ['11', 'Human Behaviour Flags'],
+    ['8', 'Move Distribution Filter &amp; Luck'],
+    ['9', 'CP-Budget Acceptance &amp; Degradation Guard (Engine-Verified)'],
+    ['10', 'Draw &amp; Desperation Behaviours'],
+    ['11', 'Preset Personalities'],
+    ['12', 'Time Controls'],
+    ['13', 'Human Behaviour Flags'],
+    ['14', 'Appendix — Play From Any Position (Replay / Loaded Games / Invites)'],
 ]
 story.append(simple_table(toc_rows, [0.5*inch, 6.8*inch]))
 story.append(PageBreak())
@@ -196,10 +222,11 @@ story.append(PageBreak())
 # ═══════════════════════════════════════════════════════════════════════════════
 story += section('1. Architecture Overview — Move Selection Pipeline')
 story += [
-    body('Every bot move passes through six sequential stages. Each stage can veto, '
+    body('Every bot move passes through the sequential stages below. Each stage can veto, '
          'modify, or short-circuit to skip later stages. The stages run in strict order '
-         'so that think time — computed in Stage 2 — feeds into every downstream '
-         'degradation calculation.'),
+         'so that think time — computed in Stage 2 — feeds every downstream degradation '
+         'calculation, and so the final engine-verification stages (8–9) see the move the '
+         'personality actually chose.'),
     spacer(6),
 ]
 
@@ -211,25 +238,46 @@ pipeline = [
     ['2', 'Think Time', 'Actual think time for this move computed from timing mode + '
                         'Hustle attractor + clock pressure. Result fed as thinkSec into '
                         'all downstream degradation curves.'],
-    ['3', 'Engine Query', 'Rough thinkSec estimate used to pick Maia ELO (curve A). '
-                          'Maia3 or LCSF queried for candidate move probabilities.'],
-    ['4', 'Distribution Cut', 'Curve B sets upper percentile cutoff of candidate list. '
-                               'Luck attractor shifts the sampling window up or down.'],
+    ['3', 'Engine Query', 'Rough thinkSec estimate used to pick Maia ELO (curve A, if the '
+                          'ELO-degradation toggle is on). Maia3 or LCSF queried for candidate '
+                          'move probabilities.'],
+    ['4', 'Distribution Filter', 'Absolute min-probability floor removes near-zero candidates. '
+                                 'Curve B (if the distribution toggle is on) narrows the upper '
+                                 'percentile; the Luck attractor shifts the window (§8).'],
     ['5', 'Attractor Reweighting', 'Each candidate move\'s probability is multiplied by '
                                     'exp(logBoost) where logBoost is the sum of all active '
-                                    'strategic attractor signals.'],
-    ['6', 'Temperature Sampling', 'Final temperature applied (base T × phase/pressure '
-                                   'modifiers). One move sampled from reweighted distribution.'],
+                                    'strategic attractor signals. Sets an "applied" flag read '
+                                    'by Stage 8.'],
+    ['6', 'Desperation (opt.)', 'If "seek stalemate when losing" is armed and the engine eval '
+                                'confirms a lost position, candidate weights are re-shaped '
+                                'toward low-own-mobility and material-dumping moves (§10).'],
+    ['7', 'Temperature Sampling', 'Final temperature applied (base T × phase/pressure '
+                                   'modifiers). One move sampled from the reweighted distribution.'],
+    ['8', 'CP-Budget Acceptance', 'Personality bots only: if the sampled pick differs from '
+                                   'Maia\'s most-popular move, a shallow Stockfish probe checks '
+                                   'that the pick loses ≤ CP budget vs the popular move; '
+                                   'otherwise it walks down the preference order (§9).'],
+    ['9', 'Degradation Guard', 'Bad-Day / distribution-restricted picks are re-checked so a '
+                                'degraded choice can never out-perform Maia\'s top move — '
+                                'popularity is not quality (§9).'],
 ]
-story.append(simple_table(pipeline, [0.4*inch, 1.2*inch, 5.7*inch]))
+story.append(simple_table(pipeline, [0.4*inch, 1.25*inch, 5.65*inch]))
 story.append(spacer(8))
 
 story += [
-    body('<b>Key architectural principle:</b> Think time is computed first (Stage 2), and '
-         'the resulting thinkSec value drives Stages 3, 4, and 5 via the degradation curves. '
-         'This means a Coffeehouse Hustler thinking 0.3 s on a move sees heavy ELO and '
-         'distribution degradation on that specific move — not an average derived from the '
-         'remaining clock.'),
+    body('<b>Key architectural principle #1 — think time drives degradation:</b> Think time '
+         'is computed first (Stage 2), and the resulting thinkSec value drives Stages 3–4 via '
+         'the degradation curves. A Coffeehouse Hustler thinking 0.3 s on a move sees heavy '
+         'ELO and distribution degradation on that specific move — not an average derived from '
+         'the remaining clock.'),
+    spacer(4),
+    body('<b>Key architectural principle #2 — real centipawns, not probability:</b> Maia '
+         'probability measures how <i>popular</i> a move is at a rating, which is not the same '
+         'as how <i>good</i> it is — at low ratings the two can even anticorrelate. Therefore '
+         'the CP budget and all quality guarantees are enforced with actual Stockfish '
+         'evaluations at Stages 8–9, never by treating a probability ratio as a centipawn '
+         'value. These probes run only for personality bots and are fail-open (any probe '
+         'timeout leaves the sampled move untouched).'),
 ]
 story.append(PageBreak())
 
@@ -273,9 +321,12 @@ story += [
     body('Used when the bot engine mode is set to Stockfish. Skill level 1–20 controlled '
          'by sfEffectiveLevel(). The engine is queried via WebWorker; MultiPV probes '
          'provide complexity scores used by the Chaos attractor.'),
-    code('sfEffectiveLevel: floor = max(blunderFloor, pressureFloor)\n'
-         'blunderFloor = max(1, round(startLevel × (1 − blunderLimitCp / 400)))\n'
-         'pressureFloor = max(1, startLevel − round(timePressureMaxDrop / 50))'),
+    code('sfEffectiveLevel: floor = pressureFloor\n'
+         'pressureFloor = max(1, startLevel − round(timePressureMaxDrop / 50))\n'
+         '  (or the sfPressureLevel slider when no max-drop is set)'),
+    note('The old blunder-limit-derived quality floor was removed together with the '
+         'hard-floor control — single-move quality is now guaranteed by the engine-verified '
+         'CP budget (§9), not by a Stockfish skill floor.'),
     body('Time degradation path (highest priority wins):'),
     bullet('Weaponizer active AND bot is ahead → return floor immediately'),
     bullet('Curve A present → spline interpolation in log-time space → lerp level to floor'),
@@ -369,6 +420,14 @@ story += [
          'degrades as think time per move decreases. Both curves use log-scale interpolation '
          'on the X axis (think time in seconds) so that the visually equal spacing on the '
          'panel matches the mathematical interpolation.'),
+    spacer(4),
+    body('<b>Each curve has its own ON/OFF toggle</b> beside its chart, so the two mechanisms '
+         'are fully independent: ELO degradation (curve A) reduces the Maia ELO the engine is '
+         'queried at, while distribution restriction (curve B) keeps the ELO fixed but narrows '
+         'which slice of Maia\'s move distribution is available. You can run either alone, both '
+         'together, or switch both off for constant strength. When a curve is off it is flat at '
+         'its reference value (curve A at the configured ELO, curve B at 100%), and its slider '
+         'no longer re-anchors the other curve.'),
     spacer(4),
     code('Curve interpolation (log-x space):\n'
          '  pts sorted by x. For xSec in [pts[i].x, pts[i+1].x]:\n'
@@ -480,7 +539,7 @@ story.append(PageBreak())
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 6 — STRATEGIC ATTRACTORS
 # ═══════════════════════════════════════════════════════════════════════════════
-story += section('6. Strategic Attractors (Style Gauge)')
+story += section('6. Strategic Attractors (Centipawmeter)')
 story += [
     body('Strategic attractors reweight each candidate move\'s probability by multiplying '
          'it by exp(logBoost). The total logBoost for a move is the sum of all active '
@@ -491,9 +550,12 @@ story += [
 
 story += subsection('6a. CP Budget and Scale Factor')
 story += [
-    body('The CP (centipawn) budget (0–300) is a single master gain knob for all attractors. '
-         'It controls how strongly attractors push the distribution, regardless of the '
-         'individual slider positions.'),
+    body('The CP (centipawn) budget (0–300), shown on the Centipawmeter dial, is a single '
+         'master gain knob for all attractors. It controls how strongly attractors push the '
+         'distribution, regardless of the individual slider positions. The budget also names '
+         'a <b>real, engine-verified centipawn ceiling</b> on how far a move may fall below '
+         'Maia\'s most-popular choice — that guarantee is enforced at Stage 8 (§9), not by the '
+         'internal 150-cp-per-log-unit scale factor below, which only sets the push strength.'),
     code('totalAbs = Σ |v| for all attractor and piece sliders\n'
          'scale    = cpBudget / (totalAbs × 150)   if cpBudget > 0 and totalAbs > 0\n'
          '         = 0                              otherwise\n\n'
@@ -601,11 +663,14 @@ story.append(PageBreak())
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 8 — MOVE QUALITY RANGE & LUCK
 # ═══════════════════════════════════════════════════════════════════════════════
-story += section('8. Move Quality Range & Luck')
+story += section('8. Move Distribution Filter & Luck')
 story += [
     body('The Move Quality Range dual slider selects which segment of the Maia probability-'
          'ranked candidate list the bot samples from. Candidates outside the [lower, upper] '
          'percentile window are excluded before temperature sampling and attractor reweighting.'),
+    note('"Quality" here means popularity rank, not engine quality — Maia probability is how '
+         'often players at the selected rating choose a move. A strong move few players see can '
+         'sit low in the distribution; real move-quality enforcement is the engine check in §9.'),
     spacer(4),
 ]
 
@@ -630,28 +695,149 @@ story += [
          'with time pressure effects.'),
 ]
 
-story += subsection('8c. Blunder Limit and Min-Probability Filter')
+story += subsection('8c. Min-Probability Filter')
 story += [
-    body('Two additional filters prune the candidate list before the quality range is applied:'),
-    code('relFloor = bestProb × exp(−blunderLimitCp / 100)\n'
-         'absFloor = minProbPct / 100\n'
-         'threshold = max(absFloor, relFloor)\n'
-         'keep only moves with prob ≥ threshold'),
-    bullet('blunderLimitCp (0–400 cp): sets how far below the best move a candidate can fall. '
-           '50 cp → tight; 400 cp → everything allowed.'),
-    bullet('minProbPct (0–10%): absolute probability floor; removes near-zero candidates.'),
+    body('A single absolute-popularity filter prunes the candidate list before the quality '
+         'range is applied. (The former relative "blunder-limit" cutoff — which pretended a '
+         'probability ratio was a centipawn value — has been removed; centipawn enforcement is '
+         'now the engine-verified check in §9.)'),
+    code('absFloor = minProbPct / 100\n'
+         'keep only moves with prob ≥ absFloor\n'
+         '(if that empties the list, keep the single most-popular move)'),
+    bullet('minProbPct (the "Exclude lowest %" slider): absolute probability floor; removes '
+           'near-zero candidates. This is an honest distribution control, expressed as a '
+           'percentage, with no pretence of measuring quality.'),
+]
+story.append(PageBreak())
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 9 — CP-BUDGET ACCEPTANCE & DEGRADATION GUARD
+# ═══════════════════════════════════════════════════════════════════════════════
+story += section('9. CP-Budget Acceptance & Degradation Guard (Engine-Verified)')
+story += [
+    body('Maia probability is popularity, not quality. Two post-sampling stages use a shallow '
+         'Stockfish probe to hold the personality to a real centipawn standard. Both run only '
+         'for personality bots (they need the Stage-5 reweighting flag), only when the sampled '
+         'pick differs from Maia\'s most-popular move, and both are fail-open — any probe '
+         'failure or timeout leaves the sampled move unchanged. The probe reuses the '
+         'MultiPV complexity machinery with a searchmoves restriction so only the handful of '
+         'relevant moves are evaluated (depth ~10, ≤ 6 moves).'),
+    spacer(6),
+]
+
+story += subsection('9a. CP-Budget Acceptance — applyCpBudgetAcceptance()')
+story += [
+    body('Turns the Centipawmeter into a real centipawn ceiling. When personality reweighting '
+         'produced a pick different from the most-popular move, the pick, the popular move, and '
+         'the next few personality favourites are evaluated together. The pick is accepted only '
+         'if it loses no more than the CP budget versus the popular move; otherwise the bot '
+         'walks down its own preference order until one fits, falling back to the popular move '
+         'itself (0 cp by definition).'),
+    code('topMove   = argmax Maia probability\n'
+         'if pick == topMove or reweighting not applied → keep pick\n'
+         'evals = SF probe over [topMove, pick, next favourites]\n'
+         'for m in [pick, ...favourites]:\n'
+         '    if evals[topMove] − evals[m] ≤ cpBudget → play m\n'
+         'else → play topMove'),
+    note('Stalemate-seeking picks (§10) are deliberately exempt — throwing material is the '
+         'whole point, so the budget must not veto them.'),
+]
+
+story += subsection('9b. Degradation Guard — applyDegradationEvalGuard()')
+story += [
+    body('Guarantees that a deliberately degraded choice never accidentally out-performs '
+         'Maia\'s top move. It is active when Grandmaster Bad Day is on, or when the '
+         'time-pressure distribution restriction (curve B) is actively narrowing the window. '
+         'The chosen move and the most-popular move are evaluated, and whichever scores '
+         '<i>worse</i> is played.'),
+    code('active if botBadDayMode OR curve-B is narrowing now\n'
+         'if pick == topMove → keep\n'
+         'evals = SF probe over [pick, topMove]\n'
+         'play the move with the LOWER eval'),
+    note('Consequence: Grandmaster Bad Day picks the lowest-probability move above its 4% '
+         'floor, but if that move happens to be strong (a shot few players see), the guard '
+         'swaps it back to the mainstream move — the bot is never accidentally brilliant.'),
+]
+story.append(PageBreak())
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 10 — DRAW & DESPERATION BEHAVIOURS
+# ═══════════════════════════════════════════════════════════════════════════════
+story += section('10. Draw & Desperation Behaviours')
+story += [
+    body('Four opt-in behaviours (in the Move Timing section\'s "Draws & desperation" group) '
+         'let a bot handle draw offers, offer draws, and swindle when lost — all judged the way '
+         'a human of the bot\'s strength would, not at raw engine accuracy.'),
+    spacer(6),
+]
+
+story += subsection('10a. Perceived Evaluation — botPerceivedAdvantageCp()')
+story += [
+    body('Every draw decision uses the bot\'s <b>perceived</b> advantage, not Stockfish\'s. '
+         'A shallow eval probe gives the true centipawn advantage from the bot\'s side; that '
+         'value is then blurred by rating-scaled Gaussian noise plus a mild self-optimism bias. '
+         'A novice genuinely misjudges; a master barely does.'),
+    code('sigma(elo) = 15 + 700 × exp(−elo / 500)\n'
+         '   ≈ 225 cp at 600 ELO,  ≈ 50 cp at 1500,  ≈ 19 cp at 2600\n'
+         'perceived = trueAdv + gauss()×sigma + 0.25×sigma'),
+    note('So a 700-rated bot can believe a lost position is fine (and decline your draw, or '
+         'offer one from a losing position it thinks is level); a 2400 is almost never fooled.'),
+]
+
+story += subsection('10b. Accepting & Offering Draws')
+draw_rows = [
+    ['Behaviour', 'Control', 'Rule'],
+    ['Accepts draw offers', 'toggle + accept-margin (0–300 cp)',
+     'On your ½ offer the bot accepts iff its <i>perceived</i> advantage ≤ margin. '
+     'Declines are wordless (a human just plays on — no eval is announced), and a bot that '
+     'knows it is worse may still decline, hoping for a blunder.'],
+    ['Offers draws', 'toggle + level-band (±cp) + from-move',
+     'After its move, in a position that <i>feels</i> level (|perceived| ≤ band) and past the '
+     'move threshold, it occasionally offers — never twice within 12 plies.'],
+]
+story.append(simple_table(draw_rows, [1.4*inch, 1.9*inch, 4.0*inch]))
+
+story += [spacer(6)]
+story += subsection('10c. Clock Awareness')
+story += [
+    body('Draw decisions read the clock (only when the increment is under 10 s, since nobody '
+         'flags with a healthy increment):'),
+    bullet('<b>Opponent about to flag</b> (under 20 s, bot comfortably ahead on time): the bot '
+           'declines instantly with no eval probe and never offers — it is playing for the win '
+           'on time.'),
+    bullet('<b>Bot itself about to flag</b> while the opponent is comfortable: it becomes far '
+           'more agreeable — accept margin widens by 200 cp and its offer band by 150 cp, '
+           'grabbing the half point even from better positions.'),
+    note('Untimed games and games with a ≥ 10 s increment ignore the clock entirely.'),
+]
+
+story += [spacer(6)]
+story += subsection('10d. Seek Stalemate When Losing — _maybeStaleSeek()')
+story += [
+    body('A desperation swindle mode. Once the engine eval says the bot is worse than the '
+         'threshold and the game has passed the configured move number, candidate weights are '
+         're-shaped toward the classic stalemate-trap recipe:'),
+    bullet('Moves that reduce the bot\'s own future mobility (fewer legal replies afterwards → '
+           'closer to a stalemate shape) are boosted.'),
+    bullet('Desperado moves — offering the moved piece for capture — are boosted in proportion '
+           'to the piece value, most of all when the piece is undefended (dumping the queen is '
+           'the point).'),
+    code('active if staleSeek AND fullmove ≥ fromMove AND eval ≤ −thresholdCp\n'
+         'weight ×= exp( mobilityBoost + desperadoBoost )'),
+    note('These picks are exempt from the §9 CP-budget check. Arming this behaviour also '
+         'forces the complexity/eval probe every move so the trigger stays current.'),
 ]
 story.append(PageBreak())
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 9 — PRESET PERSONALITIES
 # ═══════════════════════════════════════════════════════════════════════════════
-story += section('9. Preset Personalities')
+story += section('11. Preset Personalities')
 story += [
-    body('Each preset personality is a named collection of attractor values. Loading a '
-         'personality sets all attractor sliders to the preset values. The values use the '
-         'same −5 to +5 scale as manual sliders. The table below shows each personality\'s '
-         'non-zero attractor settings.'),
+    body('Each preset personality is a named collection of attractor values; loading one sets '
+         'all sliders to those values (−5 to +5 scale). Some presets also reconfigure the '
+         'engine, opening repertoire, or draw behaviour and confirm first via a dialog. The '
+         'table below shows each personality\'s notable settings.'),
     spacer(6),
 ]
 
@@ -690,10 +876,20 @@ pers_rows = [
      'compwin:−2, trade:−1, pressure:−3',
      'Conservative when ahead on time, reckless when behind. Calm under pressure (pressure −3).'],
     ['Grandmaster Bad Day 👑', 'Human',
-     'luck:+5, pressure:+2',
-     'Maia 2400 ELO but samples deep in the distribution — strong player having an off day.'],
+     'luck:+5, pressure:+2\n(Maia 3 @ 2400, picks lowest\nprob move above 4%)',
+     'Strong player having an off day. The §9 degradation guard prevents it from ever '
+     'accidentally choosing a strong move — never brilliant by mistake.'],
+    ['Drunken Master 🍺', 'Human',
+     'attacker:+4, chaos:+3, gambito:+3\n(Hybrid: 50% Maia 2400 +\n50% Maia 1000 per move)',
+     'Each move rolls one of two Maia strengths — brilliant one move, blundering the next. '
+     'Plain hybrid config, so the two slots are freely re-tunable.'],
+    ['The Drawmeister ½', 'Human',
+     'trade:+4, fortkx:+3, structure:+2\nchaos:−4, gambito:−3, attacker:−3\n(accepts + offers draws)',
+     'Plays for the half point: simplifies, fortresses up, offers/accepts draws (§10), and '
+     'installs solid drawish repertoires for both colours (London / Exchange Slav / Four '
+     'Knights; Petroff / Berlin / Slav).'],
 ]
-story.append(simple_table(pers_rows, [1.3*inch, 0.7*inch, 2.1*inch, 3.2*inch]))
+story.append(simple_table(pers_rows, [1.3*inch, 0.7*inch, 2.15*inch, 3.15*inch]))
 story.append(spacer(4))
 story.append(note('Hustle attractor sign convention: +5 = Coffeehouse Hustler (fast, thinkMs ×0.25). '
                   '−5 = Overthinker (slow, thinkMs ×1.75).'))
@@ -702,7 +898,7 @@ story.append(PageBreak())
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 10 — TIME CONTROLS
 # ═══════════════════════════════════════════════════════════════════════════════
-story += section('10. Time Controls')
+story += section('12. Time Controls')
 story += [
     body('Time controls are defined in TIME_CONTROLS and selected from the bot panel grid. '
          'The grid is divided into Blitz (≤5 min), Rapid (10–30 min), Classical/Correspondence '
@@ -750,7 +946,7 @@ story.append(PageBreak())
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 11 — HUMAN BEHAVIOUR FLAGS
 # ═══════════════════════════════════════════════════════════════════════════════
-story += section('11. Human Behaviour Flags')
+story += section('13. Human Behaviour Flags')
 story += [
     body('Human behaviour flags add realistic timing irregularities and clock-pressure '
          'responses. Each flag is independently toggleable. They modify think time or '
@@ -769,7 +965,7 @@ flag_rows = [
      'Multiplies computed think time by 1.5–2.5×. Simulates the human hesitation '
      'of starting to play a move then reconsidering.'],
     ['Clock Mirror\n(botBehavClockMirror)',
-     'Opponent clock <\nbot clock × 0.6',
+     'Opponent clock &lt;\nbot clock × 0.6',
      'Halves think time when the opponent is significantly lower on time. '
      'Simulates a human speeding up to maintain clock advantage.'],
     ['Clock Weaponizer\n(botWeaponizerEnabled)',
@@ -783,14 +979,59 @@ flag_rows = [
      'Prevents the bot from flagging itself. When ON: no such safeguard.'],
 ]
 story.append(simple_table(flag_rows, [1.2*inch, 1.5*inch, 4.6*inch]))
+story.append(PageBreak())
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 14 — APPENDIX: PLAY FROM ANY POSITION
+# ═══════════════════════════════════════════════════════════════════════════════
+story += section('14. Appendix — Play From Any Position')
+story += [
+    body('Beyond bot configuration, games are no longer locked to the standard start. Any '
+         'finished game, or any loaded PGN, can be reviewed move-by-move and resumed as a new '
+         'game — against a bot or a friend — from any position along the way.'),
+    spacer(6),
+]
+
+story += subsection('14a. Review & Replay')
+story += [
+    bullet('After any game a <b>Review</b> button enters replay of the moves just played; step '
+           'to any position. The last move is highlighted exactly as in live play.'),
+    bullet('On the Expert board, notation moves are <b>clickable</b> whenever no game is live — '
+           'clicking one jumps the board to that position.'),
+    bullet('Loaded PGNs support a [FEN] set-up header; a position-only PGN opens directly at '
+           'that position, ready to play.'),
+]
+
+story += subsection('14b. Resume Play From Here')
+story += [
+    bullet('<b>Play from here</b> starts a bot game from the shown position (the Bot Builder '
+           'opens; the configured bot then plays on from that point). Repertoire book moves are '
+           'skipped, but the Lichess explorer stays active — it queries by position, so a '
+           'classic position still draws real human move frequencies.'),
+    bullet('<b>Invite from here</b> stages the position in the 2-player panel (a banner shows '
+           'what is staged) so the initiator can first pick their colour — White, Black, or '
+           'Random, regardless of whose move it is — then Start Private Game creates the room '
+           '(invite link/code only; never posted to the open-challenge board). The server '
+           'assigns colours and relays a sanitised start position so both boards agree; '
+           'rematches restart from the same position with colours swapped.'),
+    bullet('The "Play as" choice applies to every game you create, and the same freedom exists '
+           'for bot continuations via the Bot Builder\'s colour picker — replay a position '
+           'several times from either side.'),
+    bullet('Any control that would end a game in progress (starting a new bot or online game, '
+           'loading a PGN) asks for confirmation first, and every game start fully clears the '
+           'previous game\'s replay state.'),
+    bullet('Saving a from-a-position game writes SetUp/FEN tags (or a complete move list when '
+           'the prefix is known), so a game can be saved and continued days — or years — later.'),
+]
 
 story += [
     spacer(8),
     HR(),
     spacer(6),
     dim('End of brief. For implementation details see src/50-bot-engine.js (engine), '
-        'src/60-bot-ui.js (config application), and bot-control-panel.html (UI and presets).'),
-    dim('Generated June 2026 — Blundermind Bot Controls v1.0'),
+        'src/60-bot-ui.js (config application), src/10-app-shell.js (replay / draws / '
+        'multiplayer), server.js (private rooms), and bot-control-panel.html (UI and presets).'),
+    dim('Generated July 2026 — Blundermind Bot Controls, dev branch.'),
 ]
 
 # ── Render ────────────────────────────────────────────────────────────────────

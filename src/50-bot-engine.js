@@ -74,6 +74,304 @@ function timePressureTempByThink(baseTemp, thinkSec) {
   return baseTemp + fraction * boost;
 }
 
+// ── Draw behaviour ────────────────────────────────────────────────────────────
+// Current position's engine eval from the BOT's perspective (cp), or null.
+// One shallow probe via the complexity machinery (cached per FEN).
+async function botEvalAdvantageCp() {
+  if (!sfReady) { try { await sfInit(); } catch (e) { return null; } }
+  const fullmove = Math.floor(gameMovesAlgebraic.length / 2) + 1;
+  const fen = boardToFen(board, turn, castling, epSq, halfmoveClock, fullmove);
+  const res = await sfGetComplexity(fen);
+  if (!res || res.eval == null) return null;
+  // res.eval is from the side-to-move's perspective; bot plays the color the
+  // human doesn't (botPlayerColor is the HUMAN's color)
+  const botColor = (botPlayerColor === 'white') ? 'b' : 'w';
+  return turn === botColor ? res.eval : -res.eval;
+}
+
+// ── ELO-scaled position judgment ─────────────────────────────────────────────
+// Humans don't assess positions at Stockfish accuracy. The bot's PERCEPTION
+// of its advantage = true eval + rating-scaled noise (σ ≈ 225 cp at 600 ELO
+// shrinking to ~20 cp at 2600) plus a mild self-optimism bias — so a novice
+// can genuinely believe a lost position is fine, and vice versa. Draw
+// decisions use the perception, not the raw eval.
+function _eloEvalNoiseSigma(elo) {
+  return 15 + 700 * Math.exp(-(elo || 1500) / 500);
+}
+function _gaussRand() {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+async function botPerceivedAdvantageCp() {
+  const adv = await botEvalAdvantageCp();
+  if (adv === null) return null;
+  const elo = Math.max(600, Math.min(2600,
+    (typeof botEffectiveElo === 'function') ? botEffectiveElo() : 1500));
+  const sigma = _eloEvalNoiseSigma(elo);
+  return Math.round(adv + _gaussRand() * sigma + 0.25 * sigma);
+}
+
+// Small transient toast for bot draw messages (Accept/Decline when offering)
+function _botDrawToast(html, buttons) {
+  const old = document.getElementById('bm-bot-draw'); if (old) old.remove();
+  const d = document.createElement('div');
+  d.id = 'bm-bot-draw';
+  d.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);' +
+    'background:#14161a;border:0.5px solid rgba(200,146,42,0.5);border-radius:6px;' +
+    'color:#e8e6e0;font-family:system-ui,sans-serif;font-size:12px;padding:10px 14px;' +
+    'z-index:9999;display:flex;align-items:center;gap:12px;box-shadow:0 8px 30px rgba(0,0,0,0.6);';
+  d.innerHTML = '<span>' + html + '</span>';
+  (buttons || []).forEach(b => {
+    const btn = document.createElement('button');
+    btn.textContent = b.label;
+    btn.style.cssText = 'background:rgba(200,146,42,0.15);border:0.5px solid rgba(200,146,42,0.5);' +
+      'border-radius:4px;color:#e8aa40;font-family:inherit;font-size:11px;padding:4px 10px;cursor:pointer;';
+    btn.onclick = () => { d.remove(); b.fn(); };
+    d.appendChild(btn);
+  });
+  document.body.appendChild(d);
+  setTimeout(() => { if (d.parentNode) d.remove(); }, buttons && buttons.length ? 25000 : 6000);
+  return d;
+}
+
+function _botAgreeDraw() {
+  gameOver = true;
+  gameOverMsg = 'Draw by agreement ½-½';
+  if (typeof clockStop === 'function') clockStop();
+  updatePlayerBoxes(); render(); showRematchBtn(true);
+}
+
+// ── Clock context for draw decisions ─────────────────────────────────────────
+// With a healthy increment nobody flags, so time pressure is a non-factor.
+function _botDrawClockState() {
+  if (typeof clockControl === 'undefined' || clockControl === 'untimed') return null;
+  if (typeof clockTimeW !== 'number' || typeof clockTimeB !== 'number') return null;
+  const humanSecs = (botPlayerColor === 'white') ? clockTimeW : clockTimeB;
+  const botSecs   = (botPlayerColor === 'white') ? clockTimeB : clockTimeW;
+  const inc = (typeof clockInc === 'number') ? clockInc : 0;
+  return { humanSecs, botSecs, flaggable: inc < 10 };
+}
+// Opponent about to flag while the bot is comfortable → play for the clock,
+// never agree to a draw (a full point is coming on time).
+function _botExpectsToFlagOpponent() {
+  const cs = _botDrawClockState();
+  return !!(cs && cs.flaggable && cs.humanSecs < 20 &&
+            cs.botSecs > Math.max(45, cs.humanSecs * 2.5));
+}
+// Bot itself about to flag while the human is comfortable → a human in that
+// spot grabs the half point even from a better position.
+function _botDesperateForDraw() {
+  const cs = _botDrawClockState();
+  return !!(cs && cs.flaggable && cs.botSecs < 20 &&
+            cs.humanSecs > Math.max(45, cs.botSecs * 2.5));
+}
+
+// Human offered a draw (½ button during a bot game): the bot judges the
+// position AT ITS OWN STRENGTH (perceived eval, not raw Stockfish) and
+// accepts if its perceived advantage is at most the configured margin.
+// Clock-aware: it never accepts when the human is about to flag, and gets
+// far more agreeable when it is the one about to flag.
+// Declines are human: no eval talk — a person just shakes their head,
+// even when they know they're worse and are only hoping for a blunder.
+const _BOT_DECLINE_LINES = [
+  '🤖 The bot declines and plays on.',
+  '🤖 No thanks — the bot wants to keep playing.',
+  '🤖 The bot shakes its head. Play on.',
+];
+let _botDrawConsidering = false;
+async function botConsiderDrawOffer() {
+  if (_botDrawConsidering || gameOver || !botActive) return;
+  const decline = () => _botDrawToast(
+    _BOT_DECLINE_LINES[Math.floor(Math.random() * _BOT_DECLINE_LINES.length)]);
+  if (!botAcceptDraws) { decline(); return; }
+  // Opponent is about to flag: instant decline, no thought required — the
+  // bot is playing for the win on time.
+  if (_botExpectsToFlagOpponent()) { decline(); return; }
+  // Mid-think: try again once the bot's move (and its probes) are done
+  if (botThinking) { setTimeout(botConsiderDrawOffer, 1500); return; }
+  _botDrawConsidering = true;
+  try {
+    _botDrawToast('🤖 The bot is considering your draw offer…');
+    const adv = await botPerceivedAdvantageCp();
+    if (gameOver || !botActive) return;
+    // About to flag itself → takes the half point from far better positions
+    const margin = botDrawAcceptMargin + (_botDesperateForDraw() ? 200 : 0);
+    if (adv !== null && adv <= margin) {
+      _botDrawToast('🤖 Draw accepted. ½-½');
+      _botAgreeDraw();
+    } else {
+      decline();
+    }
+  } finally {
+    _botDrawConsidering = false;
+  }
+}
+
+// After its move, a draw-offering bot checks whether the position FEELS level
+// (perceived eval at its own strength — a novice may offer from a lost
+// position it believes is fine) and occasionally offers — from the configured
+// move number, never twice within a dozen plies, with human-ish irregularity.
+async function botMaybeOfferDraw() {
+  if (!botOfferDraws || gameOver || !botActive || botThinking) return;
+  // Never offer while the opponent is about to flag — the point is coming
+  if (_botExpectsToFlagOpponent()) return;
+  const ply = gameMovesAlgebraic.length;
+  if (Math.floor(ply / 2) + 1 < botOfferDrawMove) return;
+  if (ply - _botLastDrawOfferPly < 12) return;
+  if (Math.random() > 0.5) return;
+  const adv = await botPerceivedAdvantageCp();
+  if (adv === null || gameOver || !botActive) return;
+  // About to flag itself → offers from a much wider band, hoping you take it
+  const band = botOfferDrawThresh + (_botDesperateForDraw() ? 150 : 0);
+  if (Math.abs(adv) > band) return;
+  _botLastDrawOfferPly = ply;
+  _botDrawToast('🤖 The bot offers a draw.', [
+    { label: 'Accept ½-½', fn: _botAgreeDraw },
+    { label: 'Decline', fn: () => {} },
+  ]);
+}
+
+// ── Stalemate seeking (desperation mode) ─────────────────────────────────────
+// When hopelessly lost (from move X, eval worse than −Y cp), a stalemate
+// seeker boosts moves that reduce its OWN future mobility and moves that dump
+// material (desperado offers) — the classic human swindle recipe. Heuristic:
+// it steers toward stalemate-shaped positions rather than calculating one.
+let _staleSeekThisMove = false; // set per move; exempts the pick from the CP budget
+
+function _staleSeekActiveNow() {
+  // typeof guards: this file also runs in the unit-test VM without app-shell globals
+  if (typeof botStaleSeek === 'undefined' || !botStaleSeek) return false;
+  const fromMove = (typeof botStaleSeekMove !== 'undefined') ? botStaleSeekMove : 30;
+  const threshCp = (typeof botStaleSeekCp   !== 'undefined') ? botStaleSeekCp   : 500;
+  if (Math.floor(gameMovesAlgebraic.length / 2) + 1 < fromMove) return false;
+  // sfCplxEval = this move's probe eval from the bot's (side-to-move) view
+  return typeof sfCplxEval === 'number' && sfCplxEval !== null &&
+         sfCplxEval <= -threshCp;
+}
+
+function _maybeStaleSeek(moveProbs) {
+  _staleSeekThisMove = false;
+  if (!_staleSeekActiveNow() || !moveProbs) return moveProbs;
+  const keys = Object.keys(moveProbs);
+  if (keys.length < 2) return moveProbs;
+  _staleSeekThisMove = true;
+  const botIsBlack  = (botPlayerColor === 'white');
+  const botColorStr = botIsBlack ? 'b' : 'w';
+  const oppColorStr = botIsBlack ? 'w' : 'b';
+  const _E = new Set();
+  const out = {};
+  for (const uci of keys) {
+    const from = fileRankToSq(uci.slice(0, 2));
+    const to   = fileRankToSq(uci.slice(2, 4));
+    let boost = 0;
+    try {
+      const moved = board[from];
+      const nb = applyMove(from, to, board, epSq, 'Q');
+      // (a) fewer own legal replies afterwards → closer to stalemate shape
+      let mob = 0;
+      for (let sq = 0; sq < 64 && mob < 24; sq++) {
+        const pc = nb[sq];
+        if (pc && pc.color === botColorStr) mob += legalMovesFor(sq, nb, -1, castling).length;
+      }
+      boost += Math.max(0, 24 - mob) * 0.05;
+      // (b) desperado: the arrived piece (not the king) is offered — boost by
+      // its value, more when undefended. Dumping the queen is the point.
+      if (moved && moved.piece !== 'K') {
+        const nAtk = buildDirectAtk(nb, _E, _E, _E, _E);
+        const attackers = nAtk[to] ? (nAtk[to][oppColorStr] || []).length : 0;
+        if (attackers > 0) {
+          const val = { P:1, N:3, B:3, R:5, Q:9 }[moved.piece] || 1;
+          const defenders = nAtk[to] ? (nAtk[to][botColorStr] || []).length : 0;
+          boost += Math.min(1.3, (defenders === 0 ? 0.25 : 0.08) * val);
+        }
+      }
+    } catch (e) { /* keep original weight */ }
+    out[uci] = moveProbs[uci] * Math.exp(boost);
+  }
+  return out;
+}
+
+// ── CP-budget acceptance (engine-verified centipawmeter) ─────────────────────
+// Maia probability is popularity, not quality — at low ratings the correlation
+// between the two is weak (popular trap-falls, unseen strong moves), so the
+// centipawn budget is enforced with REAL Stockfish evals, not a probability
+// heuristic. When the personality reweighting produced a pick that differs
+// from the most-popular move, the pick, the most-popular move, and the next
+// few personality favourites are evaluated in one shallow searchmoves probe.
+// The pick is accepted only if it loses ≤ budget cp versus the most-popular
+// move; otherwise we walk down the personality's preference order and, if
+// nothing fits, fall back to the most-popular move itself (0 cp by
+// definition of the reference).
+let _attrReweightApplied = false; // set by applyMoveAttractors each call
+
+async function applyCpBudgetAcceptance(fen, chosenUci, rawProbs, shapedProbs) {
+  try {
+    if (!chosenUci || !rawProbs || !_attrReweightApplied) return chosenUci;
+    // Stalemate-seeking moves deliberately throw material — exempt from budget
+    if (_staleSeekThisMove) return chosenUci;
+    const budget = window._bcpCpBudget != null ? +window._bcpCpBudget : 0;
+    if (!(budget >= 0)) return chosenUci;
+    let topMove = null, topP = -1;
+    for (const m in rawProbs) { if (rawProbs[m] > topP) { topP = rawProbs[m]; topMove = m; } }
+    if (!topMove || topMove === chosenUci) return chosenUci;
+    // Personality preference order = reweighted probability, descending
+    const order = Object.entries(shapedProbs || {}).sort((a, b) => b[1] - a[1]).map(([m]) => m);
+    const walk = [chosenUci, ...order.filter(m => m !== chosenUci && m !== topMove)].slice(0, 5);
+    if (!sfReady) { try { await sfInit(); } catch (e) { return chosenUci; } }
+    const evals = await sfEvalMoves(fen, [topMove, ...walk], 10);
+    if (!evals || evals[topMove] == null) return chosenUci; // fail-open on probe failure
+    let accepted = topMove;
+    for (const m of walk) {
+      if (evals[m] == null) continue;
+      if (evals[topMove] - evals[m] <= budget) { accepted = m; break; }
+    }
+    if (accepted !== chosenUci) {
+      const loss = evals[chosenUci] != null ? Math.round(evals[topMove] - evals[chosenUci]) : '?';
+      console.log('[CpBudget] pick', chosenUci, '(' + loss + 'cp vs most-popular) exceeds budget',
+        budget, '— playing', accepted, 'instead');
+    }
+    return accepted;
+  } catch (e) {
+    return chosenUci;
+  }
+}
+
+// ── Degradation eval guard ────────────────────────────────────────────────────
+// Bad Day and the time-pressure distribution restriction steer the bot's pick
+// by PROBABILITY, which is popularity at the rating, not quality — so the
+// steered pick is occasionally an objectively strong move few players see.
+// Degradation must never upgrade play: when a degradation mechanism is active
+// and the pick differs from the top-probability move, evaluate both with one
+// shallow searchmoves probe and play whichever scores WORSE.
+async function applyDegradationEvalGuard(fen, chosenUci, rawProbs) {
+  try {
+    if (!chosenUci || !rawProbs) return chosenUci;
+    let topMove = null, topP = -1;
+    for (const m in rawProbs) { if (rawProbs[m] > topP) { topP = rawProbs[m]; topMove = m; } }
+    if (!topMove || topMove === chosenUci) return chosenUci;
+    // Is the TP distribution restriction actually narrowing the window right
+    // now? 1-point tolerance so a near-flat curve doesn't probe every move.
+    const tpRestricting = botPressureCurveB && botPressureCurveB.length >= 2 &&
+      (_botMoveThinkSec !== null
+        ? pressureEffectiveDayUpperByThink(_botMoveThinkSec) < botDayUpper - 1
+        : _botMoveClockMs !== null && pressureEffectiveDayUpper(_botMoveClockMs) < botDayUpper - 1);
+    if (!botBadDayMode && !tpRestricting) return chosenUci;
+    if (!sfReady) { try { await sfInit(); } catch (e) { return chosenUci; } }
+    const evals = await sfEvalMoves(fen, [chosenUci, topMove]);
+    if (!evals || evals[chosenUci] == null || evals[topMove] == null) return chosenUci;
+    if (evals[chosenUci] > evals[topMove]) {
+      console.log('[DegradeGuard] pick', chosenUci, '(' + evals[chosenUci] + 'cp) beats top-prob',
+        topMove, '(' + evals[topMove] + 'cp) — playing the top-probability move instead');
+      return topMove;
+    }
+    return chosenUci;
+  } catch (e) {
+    return chosenUci;
+  }
+}
+
 // clock ms at the time of the current move — set before applyMoveAttractors
 let _botMoveClockMs = null;
 // actual think time in seconds for this move — drives pressure curve lookup
@@ -594,6 +892,7 @@ function _ccPressureMatch(cond, botClock, oppClock) {
 }
 
 function applyMoveAttractors(moveProbs) {
+  _attrReweightApplied = false;
   if (!moveProbs || !Object.keys(moveProbs).length) return moveProbs;
 
   const attrVals  = window._bcpAttractorValues || {};
@@ -632,17 +931,16 @@ function applyMoveAttractors(moveProbs) {
   const hasAttacker = attackerVal  !== 0;
   const hasStructure = structureVal !== 0;
 
-  // ── Min-probability + blunder-limit filter (Maia3 / LC modes) ────────────
-  if (botMinProbPct > 0 || botBlunderLimitCp < 400) {
+  // ── Min-probability filter (Maia3 / LC modes) ─────────────────────────────
+  // Absolute popularity floor — an honest distribution control. The old
+  // relative "blunder limit" cutoff (e^(−cp/100) of the top move) pretended
+  // probability ratios were centipawns; real centipawn enforcement now
+  // happens post-pick in applyCpBudgetAcceptance (Stockfish-verified).
+  if (botMinProbPct > 0) {
     const entries  = Object.entries(moveProbs).sort((a, b) => b[1] - a[1]);
-    const bestProb = entries.length ? entries[0][1] : 0;
-    if (bestProb > 0) {
-      const absFloor  = botMinProbPct / 100;
-      const relFloor  = bestProb * Math.exp(-botBlunderLimitCp / 100);
-      const threshold = Math.max(absFloor, relFloor);
-      const passed    = entries.filter(([, p]) => p >= threshold);
-      moveProbs = Object.fromEntries(passed.length ? passed : [entries[0]]);
-    }
+    const absFloor = botMinProbPct / 100;
+    const passed   = entries.filter(([, p]) => p >= absFloor);
+    moveProbs = Object.fromEntries(passed.length ? passed : (entries.length ? [entries[0]] : []));
   }
 
   // ── CP budget → per-unit scale ────────────────────────────────────────────
@@ -684,9 +982,12 @@ function applyMoveAttractors(moveProbs) {
     }
   }
 
-  // ── Bad Day mode: pick worst plausible move ───────────────────────────────
+  // ── Bad Day mode: pick lowest-probability plausible move ─────────────────
   // Grandmaster Bad Day: sort by probability ascending, return the first move
   // that meets the minProbPct threshold (lowest prob still considered plausible).
+  // Note: probability = how often players at this rating choose the move, not
+  // engine quality — this can land on a strong move few players see; the
+  // post-pick applyDegradationEvalGuard swaps those back to the top choice.
   if (botBadDayMode) {
     const _floor = botMinProbPct > 0 ? botMinProbPct / 100 : 0.04;
     const _asc = Object.entries(filtered).sort((a, b) => a[1] - b[1]);
@@ -697,7 +998,7 @@ function applyMoveAttractors(moveProbs) {
   // ── Per-move reweighting ──────────────────────────────────────────────────
   const needsPerMove = scale > 0 &&
     (hasPiece || hasTrade || hasPawnS || hasSpace || hasFortkx || hasGambito || hasAttacker || hasStructure || hasCustom);
-  if (!needsPerMove) return filtered;
+  if (!needsPerMove) return _maybeStaleSeek(filtered);
 
   const PIECE_MAP   = { p:'pawn', n:'knight', b:'bishop', r:'rook', q:'queen', k:'king' };
   const botIsBlack  = (botPlayerColor === 'white'); // bot is black when human plays white
@@ -945,9 +1246,11 @@ function applyMoveAttractors(moveProbs) {
 
     result[uciMove] = logBoost !== 0 ? prob * Math.exp(logBoost) : prob;
   }
-  return Object.keys(result).length ? result
-       : Object.keys(filtered).length ? filtered
-       : moveProbs;
+  _attrReweightApplied = true; // personality actually reshaped the distribution
+  return _maybeStaleSeek(
+    Object.keys(result).length ? result
+      : Object.keys(filtered).length ? filtered
+      : moveProbs);
 }
 
 // ── Pawn-structure penalty: islands + doubled + isolated (lower = tighter) ──
@@ -1036,10 +1339,9 @@ function sfPickLevel(targetLevel) {
 }
 
 // ── Effective Stockfish level (degrades under time pressure) ─────────────────
-// Priority order for floor calculation:
-//   1. blunderLimitCp  → quality guarantee (lower limit = higher floor)
-//   2. botTimePressureMaxDrop / sfPressureLevel → time-pressure floor
-//   The effective floor is max(blunderFloor, pressureFloor) — most conservative wins.
+// Floor = time-pressure floor (botTimePressureMaxDrop / sfPressureLevel).
+// (The old blunderLimitCp-derived quality floor is gone — the blunder-limit
+// control was removed in favour of the engine-verified CP budget.)
 // Time degradation sources (highest priority first):
 //   1. Weaponizer active (ahead on clock) → use floor immediately
 //   2. cvA pressure curve → spline interpolation in log-time space
@@ -1047,20 +1349,13 @@ function sfPickLevel(targetLevel) {
 function sfEffectiveLevel(clockMs) {
   const startLevel = parseInt(document.getElementById('sfLevel').value) || 8;
 
-  // ── Blunder limit floor (quality guarantee) ───────────────────────────────
-  // botBlunderLimitCp 50 → floor ≈ startLevel-1; 400 → floor → 1
-  const blunderFloor = Math.max(1, Math.round(startLevel * (1 - botBlunderLimitCp / 400)));
-
   // ── Time-pressure floor (from r-drop or DOM slider) ───────────────────────
-  let pressureFloor;
+  let floorLevel;
   if (botTimePressureMaxDrop !== null) {
-    pressureFloor = Math.max(1, startLevel - Math.round(botTimePressureMaxDrop / 50));
+    floorLevel = Math.max(1, startLevel - Math.round(botTimePressureMaxDrop / 50));
   } else {
-    pressureFloor = parseInt(document.getElementById('sfPressureLevel').value) || 4;
+    floorLevel = parseInt(document.getElementById('sfPressureLevel').value) || 4;
   }
-
-  // Effective floor: more conservative (higher) of the two
-  const floorLevel = Math.max(blunderFloor, pressureFloor);
 
   if (clockMs === null) return startLevel;
 
@@ -1547,7 +1842,10 @@ async function botMakeMove() {
         if (delay > 0) await new Promise(r => setTimeout(r, delay));
         _botMoveClockMs = clockMs; // for applyMoveAttractors distribution cutoff (ctrlB)
         const adjTemp = complexityAdjustedTemp(m3EffTemp);
-        uciMove = sampleFromProbs(applyMoveAttractors(m3Probs), adjTemp);
+        const m3Shaped = applyMoveAttractors(m3Probs);
+        uciMove = sampleFromProbs(m3Shaped, adjTemp);
+        uciMove = await applyCpBudgetAcceptance(fen, uciMove, m3Probs, m3Shaped);
+        uciMove = await applyDegradationEvalGuard(fen, uciMove, m3Probs);
         console.log('[Maia3 FULL] chose:', uciMove, '| temp:', adjTemp.toFixed(2), '(base:', m3EffTemp.toFixed(2), ')| inf:', inferenceMs, 'ms | extra wait:', delay, 'ms');
       } else {
         // Maia3 not downloaded — fall back to SF
@@ -1611,7 +1909,10 @@ async function botMakeMove() {
         if (delay > 0) await new Promise(r => setTimeout(r, delay));
         _botMoveClockMs = clockMs;
         _botMoveThinkSec = preciseThinkSec;
-        uciMove = sampleFromProbs(applyMoveAttractors(probs), complexityAdjustedTemp(effectiveTemp));
+        const maiaShaped = applyMoveAttractors(probs);
+        uciMove = sampleFromProbs(maiaShaped, complexityAdjustedTemp(effectiveTemp));
+        uciMove = await applyCpBudgetAcceptance(fen, uciMove, probs, maiaShaped);
+        uciMove = await applyDegradationEvalGuard(fen, uciMove, probs);
         _botMoveThinkSec = null;
       } else {
         await sfInit();
@@ -1651,7 +1952,10 @@ async function botMakeMove() {
         if (delay > 0) await new Promise(r => setTimeout(r, delay));
         _botMoveClockMs = clockMs;
         _botMoveThinkSec = preciseThinkSecLcsf;
-        uciMove = sampleFromProbs(applyMoveAttractors(lcsfProbs), lcsfEffTemp);
+        const lcsfShaped = applyMoveAttractors(lcsfProbs);
+        uciMove = sampleFromProbs(lcsfShaped, lcsfEffTemp);
+        uciMove = await applyCpBudgetAcceptance(fen, uciMove, lcsfProbs, lcsfShaped);
+        uciMove = await applyDegradationEvalGuard(fen, uciMove, lcsfProbs);
         _botMoveThinkSec = null;
       } else {
         await sfInit();
@@ -1688,7 +1992,10 @@ async function botMakeMove() {
             const delay = Math.max(0, targetDelay - inferenceMs);
             if (delay > 0) await new Promise(res => setTimeout(res, delay));
             _botMoveClockMs = clockMs;
-            uciMove = sampleFromProbs(applyMoveAttractors(probs), effectiveTemp);
+            const hybShaped = applyMoveAttractors(probs);
+            uciMove = sampleFromProbs(hybShaped, effectiveTemp);
+            uciMove = await applyCpBudgetAcceptance(fen, uciMove, probs, hybShaped);
+            uciMove = await applyDegradationEvalGuard(fen, uciMove, probs);
           } else {
             // Maia3 not downloaded/failed — SF at a level matching the slot ELO
             const fbLevel = Math.max(1, Math.min(20, Math.round(slotElo / 200)));
@@ -1730,6 +2037,9 @@ async function botMakeMove() {
           }
           gameOver = true;
           updatePlayerBoxes(); render();
+        } else if (botOfferDraws) {
+          // A draw-offering personality checks the position after its move
+          setTimeout(botMaybeOfferDraw, 700);
         }
       }
     }

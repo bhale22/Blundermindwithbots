@@ -832,14 +832,17 @@ function _checkEngineReady(tab) {
 }
 
 async function botStart() {
-  // Guard: if in a live multiplayer game, confirm before abandoning it
-  if (typeof mpRoomId !== 'undefined' && mpRoomId &&
-      typeof gameOver !== 'undefined' && !gameOver) {
-    if (!confirm('Start a bot game? You will forfeit your current online game.')) return;
-    if (typeof mpWs !== 'undefined' && mpWs && mpWs.readyState === WebSocket.OPEN) {
-      try { mpWs.send(JSON.stringify({ type: 'resign' })); } catch(e) {}
+  // Guard: starting (or restarting) a game while one is in progress forfeits
+  // it — online game OR an active bot game with moves already played.
+  if (typeof _isLiveGame === 'function' && _isLiveGame()) {
+    if (!confirmAbandonLiveGame('Start a new bot game')) return;
+    // Tear down an online game; an active bot game is replaced below anyway
+    if (typeof mpRoomId !== 'undefined' && mpRoomId) {
+      if (typeof mpWs !== 'undefined' && mpWs && mpWs.readyState === WebSocket.OPEN) {
+        try { mpWs.send(JSON.stringify({ type: 'resign' })); } catch(e) {}
+      }
+      if (typeof mpLeave === 'function') mpLeave();
     }
-    if (typeof mpLeave === 'function') mpLeave();
   }
 
   botActive = false;
@@ -880,6 +883,15 @@ async function botStart() {
   clockInit(botSelectedTC || 'untimed');
   resetGame();
 
+  // "Play from here": consume a pending custom start position (from replay or
+  // a loaded PGN). Restart Bot Game re-starts from the standard position.
+  var _customStart = false;
+  if (window._pendingStartPos && window._pendingStartPos.fen) {
+    const sp = window._pendingStartPos;
+    window._pendingStartPos = null;
+    _customStart = applyStartPosition(sp.fen, sp.sans);
+  }
+
   // Phase 1: reset move history and capture starting clock for fracRemaining
   botMoveHistory = [];
   botSanHistory  = [];
@@ -914,6 +926,10 @@ async function botStart() {
   } else {
     preferredOpeningActive = false;
   }
+  // Custom-position start: repertoire lines assume the standard opening — skip
+  // them. The Lichess explorer stays on: it queries by FEN, so for classic
+  // positions it supplies genuine human move frequencies.
+  if (_customStart) preferredOpeningActive = false;
   lichessExplorerActive = (botOpeningMode !== 'none');
   // clockTimeW/B are set by clockInit — capture now as the baseline
   try {
@@ -925,6 +941,11 @@ async function botStart() {
   } catch(e) { botStartClockMs = null; }
 
   botActive = true;
+  _botLastDrawOfferPly = -99;
+
+  // Show the Resign/Draw row in the beginner shell so draw offers work vs bots
+  var _gaEl = document.getElementById('gameActions');
+  if (_gaEl) _gaEl.style.display = 'flex';
 
   // Update player name displays
   botUpdatePlayerNames(pc);
@@ -988,6 +1009,9 @@ function botStop() {
   if (stopBtn)  stopBtn.style.display = 'none';
   if (sideBtn)  { sideBtn.textContent = '🤖 vs Bot'; sideBtn.style.borderColor = 'rgba(90,212,144,0.4)'; }
   document.getElementById('botStatus').textContent = '';
+  // Hide the Resign/Draw row shown for bot games (MP manages it separately)
+  var _gaEl2 = document.getElementById('gameActions');
+  if (_gaEl2 && (typeof mpRoomId === 'undefined' || !mpRoomId)) _gaEl2.style.display = 'none';
 }
 
 // ── Save / Load bot config ───────────────────────────────────────────────────
@@ -1173,10 +1197,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // Check for ?join= invite link in URL
     mpCheckInviteUrl();
   } else {
-    // Running locally — dim the multiplayer landing card
+    // Running locally — dim the multiplayer landing card and say why (the
+    // deployed site never hits this branch)
     if (mpCard) {
       mpCard.style.opacity = '0.55';
       mpCard.title = 'Multiplayer requires the deployed server';
+      var mpLocalNote = document.createElement('div');
+      mpLocalNote.className = 'landing-card-desc';
+      mpLocalNote.style.cssText = 'color:#c06060;font-style:italic;';
+      mpLocalNote.textContent = 'Unavailable locally — requires the deployed server';
+      mpCard.appendChild(mpLocalNote);
     }
   }
   const cv3 = document.getElementById('cv');
@@ -1498,20 +1528,28 @@ window.addEventListener('message', function(e) {
   // Time pressure max drop → drives sfEffectiveLevel floor
   botTimePressureMaxDrop = (cfg.timePressureMaxDrop != null) ? cfg.timePressureMaxDrop : null;
 
-  // Candidate filter + blunder limit
+  // Candidate filter (absolute popularity floor; legacy cfg.blunderLimitCp is
+  // ignored — the CP budget is now engine-verified per pick instead)
   botMinProbPct     = (cfg.minProbPct     != null) ? cfg.minProbPct     : 5;
-  botBlunderLimitCp = (cfg.blunderLimitCp != null) ? cfg.blunderLimitCp : 150;
   botBadDayMode     = !!cfg.badDayMode;
 
-  // Time pressure curves (cvA = ELO degradation, cvB = distribution cutoff)
-  // pressureOff disables both curves (flat ELO, 100% distribution at all times)
-  if (cfg.pressureOff) {
-    botPressureCurveA = null;
-    botPressureCurveB = null;
-  } else {
-    botPressureCurveA = (cfg.ctrlA && cfg.ctrlA.length >= 2) ? cfg.ctrlA : null;
-    botPressureCurveB = (cfg.ctrlB && cfg.ctrlB.length >= 2) ? cfg.ctrlB : null;
-  }
+  // Draw behaviour + stalemate seeking (desperation)
+  botAcceptDraws      = !!cfg.acceptDraws;
+  botDrawAcceptMargin = (cfg.drawAcceptMarginCp != null) ? +cfg.drawAcceptMarginCp : 50;
+  botOfferDraws       = !!cfg.offerDraws;
+  botOfferDrawThresh  = (cfg.offerDrawThreshCp  != null) ? +cfg.offerDrawThreshCp  : 50;
+  botOfferDrawMove    = (cfg.offerDrawFromMove  != null) ? +cfg.offerDrawFromMove  : 20;
+  botStaleSeek        = !!cfg.staleSeek;
+  botStaleSeekMove    = (cfg.staleSeekFromMove  != null) ? +cfg.staleSeekFromMove  : 30;
+  botStaleSeekCp      = (cfg.staleSeekCp        != null) ? +cfg.staleSeekCp        : 500;
+
+  // Time pressure curves (cvA = ELO degradation, cvB = distribution cutoff).
+  // Each mechanism has its own off flag (pressureOffA / pressureOffB); older
+  // configs only carry the master pressureOff flag, which disables both.
+  var _tpOffA = (cfg.pressureOffA != null) ? !!cfg.pressureOffA : !!cfg.pressureOff;
+  var _tpOffB = (cfg.pressureOffB != null) ? !!cfg.pressureOffB : !!cfg.pressureOff;
+  botPressureCurveA = (!_tpOffA && cfg.ctrlA && cfg.ctrlA.length >= 2) ? cfg.ctrlA : null;
+  botPressureCurveB = (!_tpOffB && cfg.ctrlB && cfg.ctrlB.length >= 2) ? cfg.ctrlB : null;
 
   // Weaponizer
   botWeaponizerEnabled = !!cfg.weaponizerEnabled;

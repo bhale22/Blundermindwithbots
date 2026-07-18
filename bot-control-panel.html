@@ -342,7 +342,9 @@ table.tg td.tg-inc-lbl{
 .ctrl-val{font-family:var(--font-m);font-size:11px;color:var(--amber-bright);min-width:46px;text-align:right;}
 .ctrl-hint{font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);margin-top:2px;line-height:1.4;}
 
-input[type=range]{-webkit-appearance:none;appearance:none;flex:1;height:2px;background:var(--carbon-raise);border-radius:1px;outline:none;cursor:pointer;}
+/* Track: fixed mid-gray alpha, not a theme surface var — stays visible on
+   dark/slate and light/paper palettes alike */
+input[type=range]{-webkit-appearance:none;appearance:none;flex:1;height:3px;background:rgba(128,140,160,0.55);border-radius:2px;outline:none;cursor:pointer;}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--carbon-mid);border:1.5px solid var(--amber);box-shadow:0 0 6px var(--amber-glow-s);cursor:grab;transition:border-color 0.15s,box-shadow 0.15s,transform 0.15s;}
 input[type=range]::-webkit-slider-thumb:hover{border-color:var(--amber-bright);box-shadow:0 0 12px rgba(232,170,64,0.4);transform:scale(1.2);}
 input[type=range]::-webkit-slider-thumb:active{cursor:grabbing;}
@@ -565,7 +567,8 @@ body.rs-highvis [style*="font-size:10px"]{font-size:14px !important;}
 .dual-range-wrap input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--carbon-mid);border:1.5px solid var(--amber);box-shadow:0 0 7px var(--amber-glow-s);cursor:grab;pointer-events:all;transition:border-color 0.15s,box-shadow 0.15s;}
 .dual-range-wrap input[type=range]::-webkit-slider-thumb:hover{border-color:var(--amber-bright);box-shadow:0 0 13px rgba(232,170,64,0.4);}
 .dual-range-wrap input[type=range]::-webkit-slider-thumb:active{cursor:grabbing;}
-.dual-range-track{position:absolute;top:50%;left:0;right:0;height:2px;transform:translateY(-50%);background:var(--carbon-raise);border-radius:1px;pointer-events:none;}
+.dual-range-track{position:absolute;top:50%;left:0;right:0;height:3px;transform:translateY(-50%);background:rgba(128,140,160,0.55);border-radius:2px;pointer-events:none;}
+
 .dual-range-fill{position:absolute;top:0;height:100%;background:var(--amber);border-radius:1px;transition:left 0.05s,right 0.05s;}
 .dual-range-labels{display:flex;justify-content:space-between;font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:2px;letter-spacing:0.06em;}
 .day-vals{display:flex;justify-content:space-between;font-family:var(--font-m);font-size:10px;color:var(--amber-bright);margin-bottom:4px;}
@@ -708,7 +711,9 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 }
 #bdconfirm-overlay.show{ display:flex; }
 #bdconfirm-box{
-  background:var(--carbon-1);border:1px solid var(--border-amber);border-radius:4px;
+  /* --carbon-mid is the theme-pushed panel surface (var(--carbon-1) was
+     never defined → transparent box, unreadable on light palettes) */
+  background:var(--carbon-mid,#14161a);border:1px solid var(--border-amber);border-radius:4px;
   padding:22px 24px;max-width:320px;width:90%;
   box-shadow:0 8px 32px rgba(0,0,0,0.6);
 }
@@ -832,7 +837,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 .gauge-title{font-family:var(--font-m);font-size:9.5px;letter-spacing:0.14em;text-transform:uppercase;color:var(--amber-dim);}
 .gauge-val-badge{font-family:var(--font-m);font-size:16px;font-weight:500;color:var(--amber-bright);letter-spacing:0.02em;}
 .gauge-wrap-interactive{display:flex;flex-direction:column;align-items:center;}
-.gauge-svg-interactive{width:100%;max-width:240px;}
+.gauge-svg-interactive{width:100%;max-width:320px;}
 
 
 /* ══ ATTRACTOR HOVER DESCRIPTIONS ══ */
@@ -1374,40 +1379,31 @@ body.fj .picon{font-weight:500;}
                   <svg class="gauge-svg-interactive" id="style-gauge" viewBox="0 0 280 140" style="cursor:crosshair;touch-action:none;"></svg>
                   <div class="dial-zones" style="margin-top:-4px;width:100%;"><span class="dial-zone">Pure engine</span><span class="dial-zone">Subtle</span><span class="dial-zone">Moderate</span><span class="dial-zone">Bold</span><span class="dial-zone">Reckless</span></div>
                 </div>
-                <div class="ctrl" style="margin-top:4px;">
+                <div class="ctrl" style="margin-top:8px;">
                   <span class="ctrl-lbl" style="min-width:80px;">Budget</span>
                   <input type="range" id="r-style" min="0" max="300" step="10" value="100"
                     oninput="onGaugeSliderInput(+this.value)">
                   <span class="ctrl-val" id="v-style">100 cp</span>
                 </div>
-                <div class="ctrl-hint">Primary personality driver. Sliders below show each attractor's share. 0 cp = pure engine; 300 cp = strongly opinionated bot.</div>
+                <div class="ctrl-hint">Real centipawns, engine-verified: when the personality's pick differs from Maia's most-popular move, Stockfish evaluates both. A pick losing more than the budget is rejected and the bot walks down its preference list until a move fits (worst case: the most-popular move itself). Attractor sliders below show each one's share of the push.</div>
 
-                <!-- HARD FLOOR — lives directly below CP Budget -->
-                <div class="dlbl" style="margin-top:10px;"><span id="blunder-limit-label">Blunder limit — hard floor</span></div>
-                <div class="ctrl">
-                  <span class="ctrl-lbl">Hard floor</span>
-                  <input type="range" id="r-blunder" min="10" max="400" step="10" value="150"
-                    oninput="_onBlunderSlider(+this.value)">
-                  <span class="ctrl-val" id="v-blunder">150 cp</span>
+                <!-- Move quality range — only shown for Maia/LC+Maia/Hybrid.
+                     Lives inside the gauge box so it can't get lost below the fold -->
+                <div id="move-quality-range" style="margin-top:12px;">
+                <div class="dlbl"><span>Move quality range</span></div>
+                <div class="day-vals">
+                  <span>Exclude lowest: <span id="day-lower-val">0</span>%</span>
+                  <span>Exclude moves above: <span id="day-upper-val">100</span>%</span>
                 </div>
-                <div class="ctrl-hint" id="blunder-floor-hint">Bot will not play any single move costing more than this centipawn loss. Raised automatically if below Max CP Budget.</div>
+                <div class="dual-range-wrap">
+                  <div class="dual-range-track"><div class="dual-range-fill" id="day-fill"></div></div>
+                  <input type="range" id="day-lower" min="0" max="100" value="0" step="1" oninput="onDaySlider()">
+                  <input type="range" id="day-upper" min="0" max="100" value="100" step="1" oninput="onDaySlider()">
+                </div>
+                <div class="dual-range-labels"><span>← Bad Day, lowest probability moves</span><span>Good Day, Highest Probability moves →</span></div>
+                <div class="ctrl-hint" style="margin-top:6px;">Sets the Maia3 probability band. Good Day = highest-probability moves; Bad Day = low-probability alternatives. Probability means "how often players at this rating choose it" — not engine quality; a hard-to-see strong move can sit low in the distribution.</div>
+                </div><!-- /move-quality-range -->
               </div>
-
-              <!-- Move quality range — only shown for Maia/LC+Maia/Hybrid -->
-              <div id="move-quality-range" style="margin-top:14px;">
-              <div class="dlbl"><span>Move quality range</span></div>
-              <div class="day-vals">
-                <span>Exclude lowest: <span id="day-lower-val">0</span>%</span>
-                <span>Exclude moves above: <span id="day-upper-val">100</span>%</span>
-              </div>
-              <div class="dual-range-wrap">
-                <div class="dual-range-track"><div class="dual-range-fill" id="day-fill"></div></div>
-                <input type="range" id="day-lower" min="0" max="100" value="0" step="1" oninput="onDaySlider()">
-                <input type="range" id="day-upper" min="0" max="100" value="100" step="1" oninput="onDaySlider()">
-              </div>
-              <div class="dual-range-labels"><span>← Bad Day, lowest probability moves</span><span>Good Day, Highest Probability moves →</span></div>
-              <div class="ctrl-hint" style="margin-top:6px;">Sets the Maia3 probability band. Good Day = best moves; Bad Day = lower-probability alternatives.</div>
-              </div><!-- /move-quality-range -->
 
             </div>
             <!-- RIGHT: personality fingerprint (top) + custom-control entry -->
@@ -1598,6 +1594,35 @@ body.fj .picon{font-weight:500;}
               </div>
             </div>
           </div>
+
+          <!-- Draw behaviour + desperation -->
+          <div class="dlbl" style="margin-top:10px;"><span>Draws &amp; desperation</span></div>
+          <div class="tog-row">
+            <div><div class="tog-lbl">Accepts draw offers</div><div class="tog-desc">Accepts your ½ offer unless it thinks it's clearly ahead — judged at its own rating</div></div>
+            <label class="tog"><input type="checkbox" id="cb-draw-accept" onchange="showDrawAccept(this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label>
+          </div>
+          <div id="draw-accept-sub" style="display:none;">
+            <div class="ctrl"><span class="ctrl-lbl">Accept margin</span><input type="range" id="r-draw-margin" min="0" max="300" step="10" value="50" oninput="sv(this,'v-draw-margin',v=>v+' cp')"><span class="ctrl-val" id="v-draw-margin">50 cp</span></div>
+            <div class="ctrl-hint">Accepts when its <em>perceived</em> advantage is at most this many centipawns. Perception = engine eval blurred to the bot's rating — a 700 misjudges by ±200 cp, a 2400 barely at all. Clock-aware: never accepts while you're about to flag (it's playing for the win on time), and gets far more agreeable when it's the one about to flag. Declines are wordless, like a human's.</div>
+          </div>
+          <div class="tog-row">
+            <div><div class="tog-lbl">Offers draws</div><div class="tog-desc">Occasionally offers a draw in level positions — playing for the half point</div></div>
+            <label class="tog"><input type="checkbox" id="cb-draw-offer" onchange="showDrawOffer(this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label>
+          </div>
+          <div id="draw-offer-sub" style="display:none;">
+            <div class="ctrl"><span class="ctrl-lbl">Level within</span><input type="range" id="r-draw-offer-thresh" min="10" max="200" step="10" value="50" oninput="sv(this,'v-draw-offer-thresh',v=>'±'+v+' cp')"><span class="ctrl-val" id="v-draw-offer-thresh">±50 cp</span></div>
+            <div class="ctrl"><span class="ctrl-lbl">From move</span><input type="range" id="r-draw-offer-move" min="10" max="60" step="2" value="20" oninput="sv(this,'v-draw-offer-move')"><span class="ctrl-val" id="v-draw-offer-move">20</span></div>
+            <div class="ctrl-hint">Offers when the position <em>feels</em> level to the bot (rating-blurred eval — a novice may offer from a lost position it believes is fine), never before the move number, and never twice in quick succession.</div>
+          </div>
+          <div class="tog-row">
+            <div><div class="tog-lbl">Seeks stalemate when losing</div><div class="tog-desc">Desperation: locks its own pieces and dumps material hoping for stalemate</div></div>
+            <label class="tog"><input type="checkbox" id="cb-stale-seek" onchange="showStaleSeek(this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label>
+          </div>
+          <div id="stale-seek-sub" style="display:none;">
+            <div class="ctrl"><span class="ctrl-lbl">From move</span><input type="range" id="r-stale-move" min="10" max="60" step="2" value="30" oninput="sv(this,'v-stale-move')"><span class="ctrl-val" id="v-stale-move">30</span></div>
+            <div class="ctrl"><span class="ctrl-lbl">When behind</span><input type="range" id="r-stale-cp" min="200" max="900" step="50" value="500" oninput="sv(this,'v-stale-cp',v=>'−'+v+' cp')"><span class="ctrl-val" id="v-stale-cp">−500 cp</span></div>
+            <div class="ctrl-hint">Kicks in when the engine eval says the bot is worse than the threshold. The CP budget does not veto these moves — throwing material is the point.</div>
+          </div>
         </div>
       </div><!-- /panel-2col -->
     </div>
@@ -1619,19 +1644,18 @@ body.fj .picon{font-weight:500;}
     <div class="panel">
       <div class="pr" style="margin-top:0;">
 
-        <!-- OFF toggle + ELO info row -->
+        <!-- Status + ELO info row -->
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-          <button id="pressure-off-btn" class="preset-btn active" onclick="togglePressureOff()" style="min-width:44px;">ON</button>
-          <span id="pressure-off-lbl" style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);">Curves active — bot degrades with clock</span>
+          <span id="pressure-off-lbl" style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);">Both curves active — bot degrades with clock</span>
           <span style="margin-left:auto;font-family:var(--font-m);font-size:8px;color:var(--text-dim);">Base ELO: <span id="tp-elo-display" style="color:var(--amber);">1500</span></span>
         </div>
 
         <!-- 2-col chart area -->
         <div class="panel-2col">
           <!-- LEFT: ELO degradation curve -->
-          <div>
-            <div class="dlbl"><span>ELO degradation — drag points</span></div>
-            <div class="ctrl"><span class="ctrl-lbl">Max ELO drop</span><input type="range" id="r-drop" min="0" max="600" step="25" value="300" oninput="sv(this,'v-drop',v=>v+' ELO');initPts();drawA()"><span class="ctrl-val" id="v-drop">300 ELO</span></div>
+          <div id="tp-col-a">
+            <div class="dlbl"><span>ELO degradation — drag points</span><button class="xsbtn active" id="pressure-off-a" onclick="togglePressureOffA()" style="min-width:36px;" title="Toggle ELO degradation under time pressure">ON</button></div>
+            <div class="ctrl"><span class="ctrl-lbl">Max ELO drop</span><input type="range" id="r-drop" min="0" max="600" step="25" value="300" oninput="sv(this,'v-drop',v=>v+' ELO');initPtsA();drawA()"><span class="ctrl-val" id="v-drop">300 ELO</span></div>
             <div class="chart-box">
               <div class="chart-title-row">
                 <div class="chart-title" style="flex:1;margin:0;">Effective ELO vs think time — curve passes through Selected ELO at game start</div>
@@ -1648,9 +1672,9 @@ body.fj .picon{font-weight:500;}
             </div>
           </div>
           <!-- RIGHT: Distribution curve -->
-          <div>
-            <div class="dlbl"><span>Move quality (distribution) — drag points</span></div>
-            <div class="ctrl"><span class="ctrl-lbl">Min floor</span><input type="range" id="r-floor" min="1" max="100" step="1" value="5" oninput="sv(this,'v-floor',v=>v+'%');initPts();drawB()"><span class="ctrl-val" id="v-floor">5%</span></div>
+          <div id="tp-col-b">
+            <div class="dlbl"><span>Move quality (distribution) — drag points</span><button class="xsbtn active" id="pressure-off-b" onclick="togglePressureOffB()" style="min-width:36px;" title="Toggle move-distribution restriction under time pressure">ON</button></div>
+            <div class="ctrl"><span class="ctrl-lbl">Min floor</span><input type="range" id="r-floor" min="1" max="100" step="1" value="5" oninput="sv(this,'v-floor',v=>v+'%');initPtsB();drawB()"><span class="ctrl-val" id="v-floor">5%</span></div>
             <div class="chart-box">
               <div class="chart-title-row">
                 <div class="chart-title" style="flex:1;margin:0;">Available move distribution (%) vs think time — 100% at game start</div>
@@ -1699,8 +1723,8 @@ body.fj .picon{font-weight:500;}
           <div class="formula-body" style="text-align:left;line-height:1.75;">
             The bot simulates a rated player under time pressure using two complementary mechanisms:<br>
             <span style="color:var(--amber);">▸ ELO reduction</span> — Maia is called at a lower ELO as the clock runs down, playing like a lower-rated player under time scramble.<br>
-            <span style="color:#5dade2;">▸ Distribution restriction</span> — ELO stays fixed but only the top portion of Maia's move distribution is available (instinctive, less creative play — typical of a strong player with no time to calculate).<br>
-            Both curves apply simultaneously. Switch the toggle to <strong>OFF</strong> to disable all time-pressure effects and play at constant strength.
+            <span style="color:#5dade2;">▸ Distribution restriction</span> — ELO stays fixed but only the top portion of Maia's move distribution is available (instinctive, less creative play — typical of a strong player with no time to calculate). A quick engine check ensures a degraded pick never improves on Maia's top choice.<br>
+            Each curve has its own <strong>ON/OFF</strong> toggle next to its title, so you can run either mechanism alone, both together, or switch both off for constant strength regardless of clock.
           </div>
         </div>
 
@@ -1761,7 +1785,7 @@ body.fj .picon{font-weight:500;}
               </div>
               <div style="padding:0 0 12px 8px;">
                 <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">QUALITY WINDOW — rank filter keyed on think time (curve B)</div>
-                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Moves are sorted best→worst by Maia probability. The Day Lower / Upper sliders define a percentile band; only moves inside the band remain eligible. Curve B narrows the upper bound using the same think time from step 1 — short think → smaller window → only instinctive first-pass moves remain. <span style="color:var(--amber);">Luck</span> shifts the entire window toward better or worse moves without changing its width.</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Moves are sorted highest→lowest by Maia probability (how often players at the selected rating choose them — not engine quality). The Day Lower / Upper sliders define a percentile band; only moves inside the band remain eligible. Curve B narrows the upper bound using the same think time from step 1 — short think → smaller window → only instinctive first-pass moves remain. <span style="color:var(--amber);">Luck</span> shifts the entire window toward higher- or lower-probability moves without changing its width.</div>
               </div>
             </div>
 
@@ -1772,8 +1796,8 @@ body.fj .picon{font-weight:500;}
                 <div style="width:1px;flex:1;background:rgba(235,140,0,0.25);margin:2px 0;"></div>
               </div>
               <div style="padding:0 0 12px 8px;">
-                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">BLUNDER GATE — hard eligibility floor</div>
-                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Any move below an absolute minimum probability, or more than the Blunder Limit below the best move in Maia probability, is discarded. Prevents attractor reweighting from ever surfacing a catastrophic blunder.</div>
+                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">MIN-PROBABILITY FILTER — absolute popularity floor</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Any move below the absolute minimum probability (the "Exclude lowest %" slider) is discarded. This is a pure distribution control — real centipawn protection happens at step 7, with actual engine evals rather than probability as a stand-in.</div>
               </div>
             </div>
 
@@ -1803,10 +1827,22 @@ body.fj .picon{font-weight:500;}
             <div style="display:flex;align-items:stretch;gap:0;">
               <div style="display:flex;flex-direction:column;align-items:center;width:28px;flex-shrink:0;">
                 <div style="width:20px;height:20px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-family:var(--font-u);font-size:8px;font-weight:600;color:var(--carbon);flex-shrink:0;">6</div>
+                <div style="width:1px;flex:1;background:rgba(235,140,0,0.25);margin:2px 0;"></div>
               </div>
-              <div style="padding:0 0 0 8px;">
+              <div style="padding:0 0 12px 8px;">
                 <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">TEMPERATURE SAMPLING — weighted random draw</div>
                 <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Each reweighted probability is raised to <span style="color:var(--amber-bright);">p^(1/T)</span>, then one move is drawn proportionally. T&nbsp;&lt;&nbsp;0.15 → always picks the top move; T&nbsp;=&nbsp;1.0 → unmodified Maia distribution; T&nbsp;&gt;&nbsp;1 → flattened toward uniform. Temperature can also be boosted by the Panicky pressure setting, scaled by how much of the quality window has been lost to curve B — short think time tightens the window <em>and</em> raises T simultaneously. The Coffeehouse Hustler personality overrides T with a phase curve: T&nbsp;=&nbsp;5.0 in the opening (many pieces), fading to T&nbsp;=&nbsp;0.6 in the endgame.</div>
+              </div>
+            </div>
+
+            <!-- Step 7 -->
+            <div style="display:flex;align-items:stretch;gap:0;">
+              <div style="display:flex;flex-direction:column;align-items:center;width:28px;flex-shrink:0;">
+                <div style="width:20px;height:20px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-family:var(--font-u);font-size:8px;font-weight:600;color:var(--carbon);flex-shrink:0;">7</div>
+              </div>
+              <div style="padding:0 0 0 8px;">
+                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">CP BUDGET ACCEPTANCE — real engine check</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Runs only when attractors reshaped the distribution and the sampled pick differs from Maia's most-popular move. One shallow Stockfish probe evaluates the pick, the most-popular move, and the next few personality favourites. The pick is played only if it loses ≤ CP Budget versus the most-popular move; otherwise the bot walks down its preference order, falling back to the most-popular move itself. This is what makes the Centipawmeter <em>real</em> centipawns — probability is never used as a stand-in for move quality.</div>
               </div>
             </div>
 
@@ -2003,8 +2039,12 @@ const PERSONALITIES = [
     attractors:{chaos:3,compwin:2,spacecadet:1,fortkx:-2,gambito:0,trade:2,structure:-2,hustle:-2,luck:1,pressure:1,attacker:3} },
   { id:'clock',      name:'Clock Watcher',      icon:'⧗', tag:'Clock',      desc:'Conservative when ahead on time, reckless when behind.',
     attractors:{chaos:0,compwin:-2,spacecadet:0,fortkx:0,gambito:0,trade:-1,structure:0,hustle:0,luck:0,pressure:-3,attacker:0} },
-  { id:'badday',     name:'Grandmaster Bad Day', icon:'👑',tag:'Human',      desc:'Maia 2400 but picks first move above 4% threshold.',
+  { id:'badday',     name:'Grandmaster Bad Day', icon:'👑',tag:'Human',      desc:'Maia 2400 but picks the lowest-probability move above 4% — never accidentally brilliant.',
     attractors:{chaos:0,compwin:0,spacecadet:0,fortkx:0,gambito:0,trade:0,structure:0,hustle:0,luck:5,pressure:2,attacker:0} },
+  { id:'drunken',    name:'Drunken Master',      icon:'🍺', tag:'Human',      desc:'Was that a brilliant tactical move — or was it thinking about kittens? Each move: 50% Maia 2400, 50% Maia 1000.',
+    attractors:{chaos:3,compwin:2,spacecadet:1,fortkx:-3,gambito:3,trade:1,structure:-2,hustle:2,luck:2,pressure:1,attacker:4} },
+  { id:'drawmeister',name:'The Drawmeister',     icon:'½', tag:'Human',      desc:'Plays for the draw: solid drawish openings, simplifies everything, and offers a draw whenever things look level.',
+    attractors:{chaos:-4,compwin:-3,spacecadet:0,fortkx:3,gambito:-3,trade:4,structure:2,hustle:0,luck:-1,pressure:-2,attacker:-3} },
 ];
 
 /* ══════════════════════════════════════════════════════════════
@@ -5238,7 +5278,8 @@ function initStyleGauge(){
 
 function _applyGaugePointer(svg, e){
   const rect = svg.getBoundingClientRect();
-  const sx = 280 / rect.width, sy = 130 / rect.height;
+  // Scale factors must match the viewBox (280 × 140)
+  const sx = 280 / rect.width, sy = 140 / rect.height;
   const mx = (e.clientX - rect.left) * sx;
   const my = (e.clientY - rect.top) * sy;
   const { CX, CY, startDeg, sweepDeg, max, step } = GAUGE_CFG;
@@ -5262,58 +5303,12 @@ function _setGaugeValue(val){
   if(badge) badge.textContent = val + ' cp';
   drawStyleGauge(val);
   updateAttrCpDisplays();
-  _syncBlunderFloorToBudget(val);
   updateQsCpBudget();
 }
 
 function onGaugeSliderInput(val){
   _setGaugeValue(val);
   maybePersHybridAlert();
-}
-
-function _onBlunderSlider(val){
-  const blunderEl  = document.getElementById('r-blunder');
-  const blunderVal = document.getElementById('v-blunder');
-  const budget     = parseInt(document.getElementById('r-style')?.value || '0');
-  const forced     = val < budget;
-  if (forced) {
-    val = budget;
-    if (blunderEl) blunderEl.value = val;
-  }
-  if (blunderVal) blunderVal.textContent = val + ' cp';
-  _setBlunderHighlight(forced);
-}
-
-function _syncBlunderFloorToBudget(budget){
-  const blunderEl  = document.getElementById('r-blunder');
-  const blunderVal = document.getElementById('v-blunder');
-  if (!blunderEl) return;
-  const current = parseInt(blunderEl.value);
-  if (current < budget) {
-    blunderEl.value = budget;
-    if (blunderVal) blunderVal.textContent = budget + ' cp';
-    _setBlunderHighlight(true);
-  } else {
-    _setBlunderHighlight(false);
-  }
-}
-
-function _setBlunderHighlight(on){
-  const label    = document.getElementById('blunder-limit-label');
-  const valEl    = document.getElementById('v-blunder');
-  const sliderEl = document.getElementById('r-blunder');
-  const hint     = document.getElementById('blunder-floor-hint');
-  if (on) {
-    if (label)    { label.style.color = '#f5a623'; label.style.fontWeight = '700'; }
-    if (valEl)    { valEl.style.color = '#f5a623'; valEl.style.fontWeight = '700'; }
-    if (sliderEl) sliderEl.style.accentColor = '#f5a623';
-    if (hint)     hint.textContent = '⚠ Raised to match Max CP Budget — hard floor cannot be lower than the budget.';
-  } else {
-    if (label)    { label.style.color = ''; label.style.fontWeight = ''; }
-    if (valEl)    { valEl.style.color = ''; valEl.style.fontWeight = ''; }
-    if (sliderEl) sliderEl.style.accentColor = '';
-    if (hint)     hint.textContent = 'Bot will not play any single move costing more than this centipawn loss. Raised automatically if below Max CP Budget.';
-  }
 }
 
 function drawStyleGauge(val){
@@ -5360,12 +5355,13 @@ function drawStyleGauge(val){
     fillColor = '#c83030'; qualityLabel = 'Blunder range'; qualityColor = '#c83030';
   }
 
-  // Needle
+  // Needle — tip stops at the arc's inner edge; drag handle sits ON the arc
+  // (r 5 + stroke 2 ≈ the 12-unit arc width, so it no longer overflows it)
   const needleAng = (startDeg + frac * sweepDeg) * DEG;
-  const nx = (CX + (R - 16) * Math.cos(needleAng)).toFixed(1);
-  const ny = (CY + (R - 16) * Math.sin(needleAng)).toFixed(1);
-  const hx = (CX + (R + 4) * Math.cos(needleAng)).toFixed(1);
-  const hy = (CY + (R + 4) * Math.sin(needleAng)).toFixed(1);
+  const nx = (CX + (R - 7) * Math.cos(needleAng)).toFixed(1);
+  const ny = (CY + (R - 7) * Math.sin(needleAng)).toFixed(1);
+  const hx = (CX + R * Math.cos(needleAng)).toFixed(1);
+  const hy = (CY + R * Math.sin(needleAng)).toFixed(1);
 
   // Threshold tick marks — only at key chess-quality boundaries
   // Place labels INSIDE the arc (toward center) to avoid viewBox overflow
@@ -5404,15 +5400,15 @@ function drawStyleGauge(val){
     if(m.outside){
       const tx1 = (CX+(R-6)*mc).toFixed(1), ty1 = (CY+(R-6)*ms).toFixed(1);
       const tx2 = (CX+(R+6)*mc).toFixed(1), ty2 = (CY+(R+6)*ms).toFixed(1);
-      const lx  = (CX+(R+14)*mc).toFixed(1);
-      const ly  = Math.max(5, CY+(R+14)*ms).toFixed(1);
+      const lx  = (CX+(R+16)*mc).toFixed(1);
+      const ly  = Math.max(5, CY+(R+16)*ms).toFixed(1);
       return `<line x1="${tx1}" y1="${ty1}" x2="${tx2}" y2="${ty2}" stroke="${m.color}" stroke-width="1.5" opacity="0.65"/>
               <text x="${lx}" y="${ly}" text-anchor="middle" dominant-baseline="middle"
-                font-family="Arial,sans-serif" font-size="11" fill="${m.color}" opacity="0.85">${m.glyph}</text>`;
+                font-family="Arial,sans-serif" font-size="16" fill="${m.color}" opacity="0.95">${m.glyph}</text>`;
     } else {
-      const lx = (CX+(R-14)*mc).toFixed(1), ly = (CY+(R-14)*ms).toFixed(1);
+      const lx = (CX+(R-18)*mc).toFixed(1), ly = (CY+(R-18)*ms).toFixed(1);
       return `<text x="${lx}" y="${ly}" text-anchor="middle" dominant-baseline="middle"
-        font-family="Arial,sans-serif" font-size="11" fill="${m.color}" opacity="0.85">${m.glyph}</text>`;
+        font-family="Arial,sans-serif" font-size="16" fill="${m.color}" opacity="0.95">${m.glyph}</text>`;
     }
   }).join('');
 
@@ -5450,7 +5446,7 @@ function drawStyleGauge(val){
     <!-- Hub -->
     <circle cx="${CX}" cy="${CY}" r="5" fill="#14161a" stroke="#c8922a" stroke-width="1.5"/>
     <!-- Drag handle -->
-    <circle cx="${hx}" cy="${hy}" r="9" fill="#1c1f24" stroke="${fillColor}" stroke-width="2.5"
+    <circle cx="${hx}" cy="${hy}" r="5" fill="#1c1f24" stroke="${fillColor}" stroke-width="2"
       style="cursor:grab;"/>
     <!-- Current value -->
     <text x="${CX}" y="${CY - 12}" text-anchor="middle"
@@ -5756,6 +5752,24 @@ function showWeaponizer(on){
   const sub = document.getElementById('weaponizer-sub');
   if(sub) sub.style.display = on ? 'block' : 'none';
 }
+function showDrawAccept(on){
+  const sub = document.getElementById('draw-accept-sub');
+  if(sub) sub.style.display = on ? 'block' : 'none';
+}
+function showDrawOffer(on){
+  const sub = document.getElementById('draw-offer-sub');
+  if(sub) sub.style.display = on ? 'block' : 'none';
+}
+function showStaleSeek(on){
+  const sub = document.getElementById('stale-seek-sub');
+  if(sub) sub.style.display = on ? 'block' : 'none';
+}
+// Set a draw/desperation toggle + reveal its sub-panel (personality presets)
+function _setTog(id, on, showFn){
+  const el = document.getElementById(id);
+  if(el){ el.checked = !!on; }
+  showFn(!!on);
+}
 
 function openEngineSection(){
   const sec = document.getElementById('sec-engine');
@@ -5840,12 +5854,21 @@ function getBotConfig(){
     timePressureMaxDrop: parseInt(document.getElementById('r-drop')?.value    || '300'),
     timePressureFloor:   parseInt(document.getElementById('r-floor')?.value   || '5'),
     minProbPct:          parseInt(document.getElementById('day-lower')?.value || '0'),
-    blunderLimitCp:      parseInt(document.getElementById('r-blunder')?.value || '150'),
     ctrlA:               ctrlA.map(p => ({x: p.x, y: p.y})),
     ctrlB:               ctrlB.map(p => ({x: p.x, y: p.y})),
-    pressureOff:         pressureOff,
+    pressureOffA:        pressureOffA,
+    pressureOffB:        pressureOffB,
+    pressureOff:         pressureOffA && pressureOffB, // legacy master flag (older readers)
     weaponizerEnabled:   document.getElementById('weaponizer-toggle')?.checked || false,
     weaponizerLeadSec:   parseInt(document.getElementById('r-wlead')?.value    || '30'),
+    acceptDraws:         document.getElementById('cb-draw-accept')?.checked || false,
+    drawAcceptMarginCp:  parseInt(document.getElementById('r-draw-margin')?.value || '50'),
+    offerDraws:          document.getElementById('cb-draw-offer')?.checked  || false,
+    offerDrawThreshCp:   parseInt(document.getElementById('r-draw-offer-thresh')?.value || '50'),
+    offerDrawFromMove:   parseInt(document.getElementById('r-draw-offer-move')?.value   || '20'),
+    staleSeek:           document.getElementById('cb-stale-seek')?.checked || false,
+    staleSeekFromMove:   parseInt(document.getElementById('r-stale-move')?.value || '30'),
+    staleSeekCp:         parseInt(document.getElementById('r-stale-cp')?.value   || '500'),
   };
 }
 
@@ -5900,16 +5923,17 @@ function applyBotConfig(cfg){
     document.querySelectorAll('.tg-cell').forEach(c => c.classList.remove('selected'));
   });
 
-  // Pressure controls BEFORE curve restore — their handlers reset the curves
-  grp(() => { if(!!cfg.pressureOff !== pressureOff) togglePressureOff(); });
+  // Pressure controls BEFORE curve restore — their handlers reset the curves.
+  // Older configs only carry the master pressureOff flag → applies to both.
+  grp(() => {
+    _setPressureOffA(cfg.pressureOffA != null ? !!cfg.pressureOffA : !!cfg.pressureOff);
+    _setPressureOffB(cfg.pressureOffB != null ? !!cfg.pressureOffB : !!cfg.pressureOff);
+  });
   grp(() => { _setRange('r-drop',  cfg.timePressureMaxDrop); _setRange('r-floor', cfg.timePressureFloor); });
 
-  // Quality controls
+  // Quality controls (legacy cfg.blunderLimitCp is ignored — the CP budget is
+  // engine-verified per pick now, so there is no separate hard-floor control)
   grp(() => _setGaugeValue(cfg.cpBudget != null ? cfg.cpBudget : 100));
-  grp(() => {
-    const rb = document.getElementById('r-blunder');
-    if(rb && cfg.blunderLimitCp != null){ rb.value = cfg.blunderLimitCp; _onBlunderSlider(cfg.blunderLimitCp); }
-  });
   grp(() => {
     const lo = document.getElementById('day-lower'), hi = document.getElementById('day-upper');
     if(lo && cfg.dayLower != null) lo.value = cfg.dayLower;
@@ -6001,6 +6025,18 @@ function applyBotConfig(cfg){
     _setRange('r-wlead', cfg.weaponizerLeadSec);
   });
 
+  // Draw behaviour + desperation
+  grp(() => {
+    _setTog('cb-draw-accept', cfg.acceptDraws, showDrawAccept);
+    _setTog('cb-draw-offer',  cfg.offerDraws,  showDrawOffer);
+    _setTog('cb-stale-seek',  cfg.staleSeek,   showStaleSeek);
+    _setRange('r-draw-margin',       cfg.drawAcceptMarginCp);
+    _setRange('r-draw-offer-thresh', cfg.offerDrawThreshCp);
+    _setRange('r-draw-offer-move',   cfg.offerDrawFromMove);
+    _setRange('r-stale-move',        cfg.staleSeekFromMove);
+    _setRange('r-stale-cp',          cfg.staleSeekCp);
+  });
+
   // Opening behaviour — per-colour modes (back-compat: old global openingMode)
   grp(() => {
     bookSource = cfg.openingSource || 'masters';
@@ -6024,11 +6060,12 @@ function applyBotConfig(cfg){
     }
   });
 
-  // Pressure curves LAST — everything above may have re-anchored them
+  // Pressure curves LAST — everything above may have re-anchored them.
+  // A switched-off mechanism keeps its flat baseline instead of saved points.
   grp(() => {
     initPts();
-    if(cfg.ctrlA && cfg.ctrlA.length >= 2) ctrlA = cfg.ctrlA.map(p => ({x: +p.x, y: +p.y}));
-    if(cfg.ctrlB && cfg.ctrlB.length >= 2) ctrlB = cfg.ctrlB.map(p => ({x: +p.x, y: +p.y}));
+    if(!pressureOffA && cfg.ctrlA && cfg.ctrlA.length >= 2) ctrlA = cfg.ctrlA.map(p => ({x: +p.x, y: +p.y}));
+    if(!pressureOffB && cfg.ctrlB && cfg.ctrlB.length >= 2) ctrlB = cfg.ctrlB.map(p => ({x: +p.x, y: +p.y}));
     drawA(); drawB(); updatePressureStats();
   });
 
@@ -6414,9 +6451,9 @@ const BOT_TOUR = [
     action: function(){ setTimeout(function(){ if(typeof drawTempChart==='function') drawTempChart(_currentTempValue); }, 620); } },
 
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#style-gauge', title:'2 · The Centipawmeter',
-    body:'The master dial: how far the bot’s personality may pull it away from the best engine move, in centipawns. Low = near-perfect play; high = a bot with strong opinions.' },
+    body:'The master dial: the most <b>real, engine-verified centipawns</b> the personality may sacrifice versus Maia’s most-popular move. A pick that costs more is rejected by a Stockfish check and the bot falls back down its preference list. Low = near-mainstream play; high = a bot with strong opinions.' },
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#move-quality-range', title:'Move quality range',
-    body:'Set the band of move quality the bot stays within — from only its best moves to deliberately weaker ones for a believable "bad day".' },
+    body:'Set the probability band the bot draws from — from only its highest-probability moves to the low-probability tail for a believable "bad day". (Probability = how often players at that rating choose a move, not engine quality.)' },
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#radar-canvas', title:'Personality fingerprint',
     body:'Drag the radar nodes (or the sliders) to sculpt the bot’s style — the fingerprint updates live as you go.' },
   { stage:'Personality', open:'attract', tab:['attract','pieces'], sel:'#attractor-rows', title:'Strategic preferences',
@@ -7744,10 +7781,36 @@ function renderPersonalities(){
   `).join('');
 }
 
-/* ── Grandmaster Bad Day: custom modal (replaces window.confirm) ── */
+/* ── Personality confirm modal (replaces window.confirm) ──
+   Personalities that reconfigure the engine confirm first; content per id. */
+const PERS_CONFIRMS = {
+  badday: { title:'👑 Grandmaster Bad Day', items:[
+    'Engine → Maia 3',
+    'ELO → 2400',
+    'Plays lowest probability move that is greater than 4%',
+    'Eval-checked: if that move accidentally beats Maia’s top choice, the top choice is played instead',
+  ]},
+  drunken: { title:'🍺 Drunken Master', items:[
+    'Engine → Hybrid: 50% Maia 2400 + 50% Maia 1000',
+    'Each move rolls which of the two it plays',
+    'Aggressive attacking attractors',
+  ]},
+  drawmeister: { title:'½ The Drawmeister', items:[
+    'Drawish attractors: simplify, trade down, fortress up',
+    'Offers draws in level positions (from move 20, within ±50 cp)',
+    'Accepts your draw offers unless clearly ahead (50 cp margin)',
+    'Opening repertoire → solid lines (London, Exchange Slav, Four Knights; Petroff, Berlin, Slav)',
+  ]},
+};
 let _bdPendingId = null;
 function _showBadDayConfirm(id){
   _bdPendingId = id;
+  const c = PERS_CONFIRMS[id];
+  if(c){
+    document.getElementById('bdconfirm-title').textContent = c.title;
+    document.getElementById('bdconfirm-list').innerHTML =
+      c.items.map(t => '<li>' + t + '</li>').join('');
+  }
   document.getElementById('bdconfirm-overlay').classList.add('show');
 }
 function _bdCancel(){
@@ -7764,7 +7827,7 @@ function _bdApply(){
 function selPersonality(id){
   const p = PERSONALITIES.find(x=>x.id===id);
   if(!p) return;
-  if(id === 'badday'){
+  if(PERS_CONFIRMS[id]){
     _showBadDayConfirm(id);
     return; // waits for _bdApply → _applyPersonality
   }
@@ -7781,8 +7844,43 @@ function _applyPersonality(id){
     setElo(2400);
     const lo = document.getElementById('day-lower'), hi = document.getElementById('day-upper');
     if(lo) lo.value = 4;    // minProbPct=4: keep only moves with individual prob ≥ 4%
-    if(hi) hi.value = 100;  // dayUpper=100: engine then selects the worst acceptable move
+    if(hi) hi.value = 100;  // dayUpper=100: engine then selects the lowest-probability acceptable move
     onDaySlider();
+  }
+  // Drunken Master: a Hybrid bot with two Maia slots — 50% at 2400, 50% at
+  // 1000 (each move picks one slot). Plain hybrid config, so the user can
+  // retune the slots afterwards (2600/600 if they find it amusing).
+  if(id === 'drunken'){
+    const card = document.querySelector('#engine-mode-grid .mcard[data-engine="hybrid"]');
+    if(card) selEngineMode(card);
+    hybridSlots = [
+      { type:'maia', elo:2400, pct:50 },
+      { type:'maia', elo:1000, pct:50 },
+    ];
+    renderHybridSlots();
+  }
+  // Drawmeister: draw behaviours + a solid, drawish opening repertoire.
+  // Attractors (trade/fortress/anti-chaos) come from the catalog entry below.
+  if(id === 'drawmeister'){
+    _setTog('cb-draw-accept', true, showDrawAccept);
+    _setTog('cb-draw-offer',  true, showDrawOffer);
+    _setRange('r-draw-margin', 50);
+    _setRange('r-draw-offer-thresh', 50);
+    _setRange('r-draw-offer-move', 20);
+    repSlots.white = [
+      { code:'D02', name:'London System',   pct:40 },
+      { code:'D10', name:'Exchange Slav',   pct:30 },
+      { code:'C47', name:'Four Knights',    pct:30 },
+    ];
+    repSlots.black = [
+      { code:'C42', name:'Petroff Defence', pct:40 },
+      { code:'C65', name:'Berlin Defence',  pct:30 },
+      { code:'D10', name:'Slav Defence',    pct:30 },
+    ];
+    setOpColorMode('white','repertoire');
+    setOpColorMode('black','repertoire');
+    renderRepSlots('white'); renderRepSlots('black');
+    updateRepTotal('white'); updateRepTotal('black');
   }
   // Select card
   document.querySelectorAll('.pcard').forEach(c=>c.classList.remove('sel'));
@@ -7966,8 +8064,8 @@ document.addEventListener('click', e=>{
 });
 
 /* ── Good Day / Bad Day dual-range slider ──────────────────────────────────── */
-// dayLower: 0–100 (% probability lower bound, 0=worst moves)
-// dayUpper: 0–100 (% probability upper bound, 100=best moves)
+// dayLower: 0–100 (% probability lower bound, 0=lowest-probability moves)
+// dayUpper: 0–100 (% probability upper bound, 100=highest-probability moves)
 // Both sliders share the same track; fill highlights the selected band.
 let dayLower = 0, dayUpper = 100;
 
@@ -8023,12 +8121,18 @@ let scaleA = 'log', scaleB = 'log';
 // startX: estimated think time per move at game start using current QS time selection.
 // Falls back to 5 min + 0s if time pill is not parseable.
 // x domain: 1–1000s (requires parent element to have non-zero width before draw)
-function _getQsTcSecs(){
+function _getQsTc(){
   const v = document.getElementById('qs-time-value')?.textContent || '5 min + 0s';
   const m = v.match(/(\d+)\s*min/); const s = v.match(/\+\s*(\d+)s/);
-  return ((m ? +m[1] : 5) * 60) + (s ? +s[1] : 0);
+  return { base: (m ? +m[1] : 5) * 60, inc: s ? +s[1] : 0 };
 }
-function startX(){ const t = _getQsTcSecs(); return +(t > 0 ? (t + 40*0)/40 : 7.5).toFixed(2); }
+// Per-move think budget over a nominal 40-move game: share of base time plus
+// one full increment (each move earns its increment back).
+function startX(){
+  const tc = _getQsTc();
+  if(tc.base <= 0 && tc.inc <= 0) return 7.5;
+  return +Math.max(1, tc.base / 40 + tc.inc).toFixed(2);
+}
 function flrX(){   const v = document.getElementById('qs-time-value')?.textContent || ''; const s = v.match(/\+\s*(\d+)s/); return Math.max(1, (s ? +s[1] : 0)*0.9); }
 
 // ── Dense log-spaced sample array (for drawing the smooth baseline) ───────────
@@ -8047,15 +8151,17 @@ function buildXs(){
 // reference point: sigA(startX) = currentElo, sigB(startX) = 100%.
 // Raw sigmoid: 1/(1+e^(8*(frac−0.33))) where frac = log(t) in [0,1].
 // Shifted + scaled so raw(startX) → 0, raw(X_MIN) → 1.
-// pressureOff = true → both curves are flat at their reference values.
-let pressureOff = false;
+// Each mechanism can be switched off independently:
+//   pressureOffA = true → ELO curve flat at base ELO (no ELO degradation)
+//   pressureOffB = true → distribution curve flat at 100% (no restriction)
+let pressureOffA = false;
+let pressureOffB = false;
 function _rawSig(t){
   const logMax = Math.log10(X_MAX), logMin = Math.log10(X_MIN);
   const frac = (Math.log10(Math.max(t, 0.01)) - logMin) / (logMax - logMin);
   return 1 / (1 + Math.exp(8 * (frac - 0.33)));
 }
 function _sigmoid(t){
-  if(pressureOff) return 0;
   const sx  = Math.max(X_MIN + 0.1, Math.min(X_MAX - 1, startX()));
   const ref = _rawSig(sx);
   const lo  = _rawSig(X_MIN);
@@ -8064,8 +8170,14 @@ function _sigmoid(t){
 }
 // Clamped at 600: the engine clamps the ELO it actually calls Maia with to
 // [600, 2600] (pressureEffectiveMaiaElo), so the curve shows the real value.
-function sigA(t){ return Math.max(600, Math.round(currentElo - gv('r-drop') * _sigmoid(t))); }
-function sigB(t){ const mf = gv('r-floor'); return Math.round(100 - (100-mf) * _sigmoid(t)); }
+function sigA(t){
+  if(pressureOffA) return Math.max(600, Math.round(currentElo));
+  return Math.max(600, Math.round(currentElo - gv('r-drop') * _sigmoid(t)));
+}
+function sigB(t){
+  if(pressureOffB) return 100;
+  const mf = gv('r-floor'); return Math.round(100 - (100-mf) * _sigmoid(t));
+}
 
 // ── Scale-aware coordinate transforms ────────────────────────────────────────
 // makeXp: data-time → canvas-pixel-x  (X_MAX maps to PAD.l, X_MIN to w-PAD.r)
@@ -8104,12 +8216,17 @@ function setScaleB(s){
 // ── Control-point initialisation ──────────────────────────────────────────────
 // 8 control points placed log-uniformly across the domain, on the sigmoid curve.
 // User can then drag them freely; reDraw() resets them to the current sigmoid.
-function initPts(){
-  const xs  = buildXs();                              // 121 pts, descending
-  const idx = [0, 17, 34, 51, 68, 85, 100, 120];     // evenly-spaced indices
-  ctrlA = idx.map(i => ({ x: xs[Math.min(i, xs.length-1)], y: sigA(xs[Math.min(i, xs.length-1)]) }));
-  ctrlB = idx.map(i => ({ x: xs[Math.min(i, xs.length-1)], y: sigB(xs[Math.min(i, xs.length-1)]) }));
+// Split per curve so re-anchoring one chart never wipes drags on the other.
+const _PT_IDX = [0, 17, 34, 51, 68, 85, 100, 120];   // evenly-spaced indices
+function initPtsA(){
+  const xs = buildXs();                               // 121 pts, descending
+  ctrlA = _PT_IDX.map(i => ({ x: xs[Math.min(i, xs.length-1)], y: sigA(xs[Math.min(i, xs.length-1)]) }));
 }
+function initPtsB(){
+  const xs = buildXs();
+  ctrlB = _PT_IDX.map(i => ({ x: xs[Math.min(i, xs.length-1)], y: sigB(xs[Math.min(i, xs.length-1)]) }));
+}
+function initPts(){ initPtsA(); initPtsB(); }
 
 // ── Canvas width helper ───────────────────────────────────────────────────────
 function getW(id){
@@ -8309,19 +8426,52 @@ function drawB(){
 }
 function reDraw(){ initPts(); drawA(); drawB(); }
 
-function togglePressureOff(){
-  pressureOff = !pressureOff;
-  const btn = document.getElementById('pressure-off-btn');
+// ── Per-curve ON/OFF ──────────────────────────────────────────────────────────
+// Each mechanism toggles independently. Toggling re-anchors only its own
+// control points (flat when off, sigmoid when back on).
+function _syncPressureOffUi(){
+  const states = [
+    { btn:'pressure-off-a', col:'tp-col-a', off:pressureOffA },
+    { btn:'pressure-off-b', col:'tp-col-b', off:pressureOffB },
+  ];
+  states.forEach(s => {
+    const btn = document.getElementById(s.btn);
+    if(btn){
+      btn.classList.toggle('active', !s.off); // highlighted when mechanism is ON
+      btn.textContent = s.off ? 'OFF' : 'ON';
+    }
+    // Dim the chart + slider while off; the dlbl row (with the button) stays live
+    const col = document.getElementById(s.col);
+    if(col) col.querySelectorAll('.chart-box,.ctrl').forEach(el => {
+      el.style.opacity = s.off ? '0.45' : '';
+      el.style.pointerEvents = s.off ? 'none' : '';
+    });
+  });
   const lbl = document.getElementById('pressure-off-lbl');
-  if(btn){
-    btn.classList.toggle('active', !pressureOff); // highlighted when simulation is ON
-    btn.textContent = pressureOff ? 'OFF' : 'ON';
-  }
-  if(lbl) lbl.textContent = pressureOff
-    ? 'OFF — bot plays at constant ELO regardless of clock'
-    : 'Curves active — bot degrades with clock';
-  initPts(); drawA(); drawB();
+  if(lbl) lbl.textContent =
+    pressureOffA && pressureOffB ? 'OFF — bot plays at constant strength regardless of clock'
+    : pressureOffA ? 'Distribution restriction only — ELO stays constant'
+    : pressureOffB ? 'ELO degradation only — full move distribution available'
+    : 'Both curves active — bot degrades with clock';
+  const st = document.getElementById('st-pressure');
+  if(st) st.textContent =
+    pressureOffA && pressureOffB ? 'Off'
+    : pressureOffA ? 'Dist only'
+    : pressureOffB ? 'ELO only'
+    : 'Dual curve';
 }
+function _setPressureOffA(off){
+  pressureOffA = !!off;
+  _syncPressureOffUi();
+  initPtsA(); drawA();
+}
+function _setPressureOffB(off){
+  pressureOffB = !!off;
+  _syncPressureOffUi();
+  initPtsB(); drawB();
+}
+function togglePressureOffA(){ _setPressureOffA(!pressureOffA); }
+function togglePressureOffB(){ _setPressureOffB(!pressureOffB); }
 
 // ── Drag handlers ─────────────────────────────────────────────────────────────
 // getCtrl: closure returning the live ctrl array
@@ -8468,13 +8618,13 @@ document.addEventListener('DOMContentLoaded', ()=>{
 });
 </script>
 
-<!-- Grandmaster Bad Day custom confirm modal -->
+<!-- Personality confirm modal (Grandmaster Bad Day, Drunken Master, …) -->
 <div id="bdconfirm-overlay">
   <div id="bdconfirm-box">
-    <div class="bdtitle">👑 Grandmaster Bad Day</div>
+    <div class="bdtitle" id="bdconfirm-title">👑 Grandmaster Bad Day</div>
     <div class="bdmsg">
       <p>This personality will set:</p>
-      <ul>
+      <ul id="bdconfirm-list">
         <li>Engine → Maia 3</li>
         <li>ELO → 2400</li>
         <li>Plays lowest probability move that is greater than 4%</li>

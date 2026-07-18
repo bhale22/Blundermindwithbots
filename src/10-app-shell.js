@@ -1,6 +1,13 @@
 // ── Last-move tracking — declared early to avoid TDZ ────────────────────────
 let lastMoveFrom = -1; // square the last-moved piece came FROM
 let lastMoveTo   = -1; // square the last-moved piece went TO
+// ── Custom start positions (replay "play from here" / loaded PGN with FEN) ──
+let replayBaseFen   = null; // FEN the current replay starts from (null = standard start)
+let _replayHalfmove = 0;    // halfmove clock reconstructed at the current replay position
+let _gameStartFen   = null; // custom starting FEN of the live game (null = standard)
+let _gameStartSans  = [];   // SAN move prefix that led to _gameStartFen (for full-PGN saves)
+let mpStartFen      = null; // agreed custom start position for the current MP room
+let mpStartSans     = [];
 
 // ── Bot & SF state — declared first to avoid TDZ errors ─────────────────────
 // These let variables must be declared before loadPos()/render() runs at startup.
@@ -93,19 +100,29 @@ let botBehavReconsider  = true;    // human behaviour: reconsideration pauses
 let botBehavBlink       = true;    // human behaviour: instant play on forced moves
 let botBehavClockMirror = true;    // human behaviour: speed up when opponent is low
 let botCanFlag   = true;           // whether bot is allowed to flag (run clock to 0)
-let botDayLower  = 0;              // move quality range: lower percentile (0 = top/best)
-let botDayUpper  = 100;            // move quality range: upper percentile (100 = all)
+let botDayLower  = 0;              // probability-band range: lower percentile (0 = highest-probability end)
+let botDayUpper  = 100;            // probability-band range: upper percentile (100 = all)
 let botSfTempLevel = 2;            // temperature tier 0-4 (legacy; superseded by botSfVar1/2)
 let botSfVar1 = 0;                 // % of SF calls at ±1 level (0–50)
 let botSfVar2 = 0;                 // % of SF calls at ±2 level (0–20)
 let botTimePressureMaxDrop = null; // max ELO drop from r-drop; null = use DOM slider
 let botMinProbPct       = 0;      // min absolute probability % — 0 = off (default); set by panel
-let botBlunderLimitCp   = 400;    // max cp loss — 400 = off (default); set by panel
-let botBadDayMode       = false;  // Grandmaster Bad Day: pick worst plausible move above minProbPct threshold
+let botBadDayMode       = false;  // Grandmaster Bad Day: pick lowest-probability move above minProbPct threshold
 let botPressureCurveA   = null;   // ctrlA points [{x,y}] — ELO degradation vs think-time (s)
 let botPressureCurveB   = null;   // ctrlB points [{x,y}] — confidence floor % vs think-time (s)
 let botWeaponizerEnabled = false; // weaponizer: instant play when ahead on clock
 let botWeaponizerLeadMs  = 30000; // clock lead (ms) required to activate weaponizer
+// ── Draw behaviour ───────────────────────────────────────────────────────────
+let botAcceptDraws      = false;  // bot accepts draw offers when not clearly ahead
+let botDrawAcceptMargin = 50;     // accept if bot's advantage ≤ this many cp (engine eval)
+let botOfferDraws       = false;  // bot proactively offers draws in level positions
+let botOfferDrawThresh  = 50;     // |advantage| ≤ this cp → position counts as level
+let botOfferDrawMove    = 20;     // no offers before this full-move number
+let _botLastDrawOfferPly = -99;   // ply of the bot's last draw offer (anti-spam)
+// ── Stalemate seeking (desperation) ──────────────────────────────────────────
+let botStaleSeek     = false;     // seek stalemate when losing badly
+let botStaleSeekMove = 30;        // active from this full-move number
+let botStaleSeekCp   = 500;       // and only when the bot is worse than −this cp
 
 // Rolling window of the human player's move durations (ms), capped at N=6.
 // x domain: 0–∞ ms (practically 200–30000 ms for most games)
@@ -457,6 +474,7 @@ function openPanel(id) {
   if (id === 'mpPanel') {
     mpLoadInfo();           // restore last-entered handle / rating / range / TC
     mpHideAnonPrompt();
+    if (typeof _mpRefreshStartPosBanner === 'function') _mpRefreshStartPosBanner();
     if (!mpRoomId) mpSetMode('idle');  // default view unless mid-game / waiting
     mpBuildTimeGrid();      // prebuild the matrix (reflects current selection)
     if (typeof mpQsCloseAll === 'function') mpQsCloseAll();  // pills closed, values fresh
@@ -864,6 +882,9 @@ function proRenderNotation(){
   // During replay, highlight the move at the current replay position.
   const hiIdx = (typeof inReplay !== 'undefined' && inReplay && typeof replayIdx !== 'undefined')
     ? replayIdx - 1 : -1;
+  // Outside live play, moves are clickable — jump the board to that position
+  const clickable = typeof _isLiveGame === 'function' && !_isLiveGame();
+  const attrs = i => clickable ? ' pro-mclick" onclick="proMoveClick(' + i + ')"' : '"';
   let html = '';
   for(let i=0;i<gameMovesAlgebraic.length;i+=2){
     const n = i/2 + 1;
@@ -872,10 +893,15 @@ function proRenderNotation(){
     const wHi = i === hiIdx ? ' pro-mhi' : '';
     const bHi = i+1 === hiIdx ? ' pro-mhi' : '';
     html += '<div class="pro-moverow"><span class="pro-mnum">' + n + '.</span>' +
-            '<span class="pro-mw' + wHi + '">' + w + '</span><span class="pro-mb' + bHi + '">' + b + '</span></div>';
+            '<span class="pro-mw' + wHi + attrs(i) + '>' + w + '</span>' +
+            (b ? '<span class="pro-mb' + bHi + attrs(i+1) + '>' + b + '</span>'
+               : '<span class="pro-mb"></span>') + '</div>';
   }
   el.innerHTML = html;
-  el.scrollTop = el.scrollHeight;
+  // Keep the highlighted move in view during replay; otherwise stick to the end
+  const hi = el.querySelector('.pro-mhi');
+  if(hi && typeof hi.scrollIntoView === 'function') hi.scrollIntoView({ block:'nearest' });
+  else el.scrollTop = el.scrollHeight;
 }
 
 // Mirror live game state into the pro side column (clocks, names, turn, moves)
@@ -940,6 +966,12 @@ function proSync(){
   if(idleRow) idleRow.style.display = liveGame ? 'none' : 'flex';
   const rematchBtn = document.getElementById('proRematchBtn');
   if(rematchBtn) rematchBtn.style.display = over ? '' : 'none';
+  // Review is available whenever there are moves and no live game (finished
+  // games, but also explore mode after the fact)
+  const reviewBtn = document.getElementById('proReviewBtn');
+  if(reviewBtn) reviewBtn.style.display =
+    (!liveGame && !inReplay && typeof gameMovesAlgebraic !== 'undefined' &&
+     gameMovesAlgebraic.length > 0) ? '' : 'none';
   const saveBotBtn = document.getElementById('proSaveBotBtn');
   if(saveBotBtn) saveBotBtn.style.display = window._lastAppliedBotConfig ? '' : 'none';
 }
@@ -1470,7 +1502,7 @@ function mpSetMode(mode) {
    (bot-panel quickstart pattern). The action buttons act immediately using
    whatever the pills show — no confirm/review step.
 ──────────────────────────────────────────────────────────────────────────────*/
-const MP_QS_KEYS = ['handle', 'rating', 'range', 'time'];
+const MP_QS_KEYS = ['handle', 'rating', 'range', 'time', 'color'];
 
 function mpQsToggle(key) {
   const opening = !document.getElementById('mpQsEd-' + key).classList.contains('open');
@@ -1505,12 +1537,25 @@ function mpQsRefresh() {
   if (hv) hv.textContent = name || 'Anonymous';
   if (rv) rv.textContent = rating ? rating + ' ' + mpRatingType : '—';
   if (gv) gv.textContent = mpRatingRange >= 9999 ? 'Any' : '±' + mpRatingRange;
+  const cv = document.getElementById('mpQsColorVal');
+  if (cv) cv.textContent = mpHostColor === 'white' ? 'White ♔'
+                         : mpHostColor === 'black' ? 'Black ♚' : 'Random';
   mpUpdateTCDisplay();   // time pill (#mpTCDisplay)
 }
 
-// Action buttons act immediately with the current pill settings
-function mpStartPost()        { mpQsCloseAll(); mpPostChallenge(); }
-function mpStartPrivateGame() { mpQsCloseAll(); mpCreatePrivate(); }
+// Action buttons act immediately with the current pill settings.
+// Each confirms first if a game is in progress — starting a new online game
+// forfeits whatever is being played.
+function mpStartPost() {
+  if (!confirmAbandonLiveGame('Post an open challenge')) return;
+  abandonLiveGameContexts();
+  mpQsCloseAll(); mpPostChallenge();
+}
+function mpStartPrivateGame() {
+  if (!confirmAbandonLiveGame('Start a private game')) return;
+  abandonLiveGameContexts();
+  mpQsCloseAll(); mpCreatePrivate();
+}
 
 function mpStartJoinFlow() {
   mpQsCloseAll();
@@ -1580,8 +1625,11 @@ function mpHandleMessage(msg) {
         mpIncSec  = msg.tcIncSec || 0;
         mpUpdateTCDisplay();   // updates mpSelectedTC and TIME_CONTROLS.custom
       }
+      // Custom start position from the host (a "play from here" invite)
+      mpStartFen  = (typeof msg.startFen === 'string' && msg.startFen) ? msg.startFen : null;
+      mpStartSans = Array.isArray(msg.startSans) ? msg.startSans : [];
       mpSetMode('ingame');
-      mpShowStatus('✓ Joined as Black. Starting…');
+      mpShowStatus('✓ Joined as ' + (msg.role === 'white' ? 'White ♔' : 'Black ♚') + '. Starting…');
       mpStartGame(mpSelectedTC);
       break;
 
@@ -1594,8 +1642,13 @@ function mpHandleMessage(msg) {
         mpIncSec  = msg.tcIncSec || 0;
         mpUpdateTCDisplay();
       }
+      // Server echo of the start position is authoritative for both sides
+      if (typeof msg.startFen === 'string' && msg.startFen) {
+        mpStartFen  = msg.startFen;
+        mpStartSans = Array.isArray(msg.startSans) ? msg.startSans : [];
+      }
       mpSetMode('ingame');
-      mpShowStatus('✓ Opponent joined! You are White ♔');
+      mpShowStatus('✓ Opponent joined! You are ' + (mpRole === 'white' ? 'White ♔' : 'Black ♚'));
       mpStartGame(mpSelectedTC);
       break;
 
@@ -1716,7 +1769,8 @@ function mpPostChallenge() {
         tcBaseMin: mpBaseMin, tcIncSec: mpIncSec,
         name, rating,
         ratingType: rating != null ? mpRatingType : null,
-        ratingRange: mpRatingRange
+        ratingRange: mpRatingRange,
+        hostColor: mpHostColor
       }));
     } else {
       mpShowStatus('Connection failed — try again', true);
@@ -1773,6 +1827,8 @@ function mpAcceptLobbyChallenge(code) {
 }
 
 function mpDoAcceptLobby(code) {
+  if (!confirmAbandonLiveGame('Join this game')) return;
+  abandonLiveGameContexts();
   mpConnect(() => {
     if (mpWs && mpWs.readyState === WebSocket.OPEN)
       mpWs.send(JSON.stringify({ type: 'join', code }));
@@ -1824,13 +1880,25 @@ function mpAnonSaveJoin() {
 // ── Private game ─────────────────────────────────────────────────────────────
 function mpCreatePrivate() {
   const tcLabel = mpBaseMin === 0 ? 'Untimed' : mpBaseMin + '+' + mpIncSec;
+  // "Play from here": a pending start position rides along on room creation.
+  // The server stores it and hands it to the joiner, so both clients start
+  // the game from the same position. Never posted to the open-challenge board.
+  const sp = window._pendingStartPos || null;
+  window._pendingStartPos = null;
+  if (typeof _mpRefreshStartPosBanner === 'function') _mpRefreshStartPosBanner();
+  mpStartFen  = sp && sp.fen ? sp.fen : null;
+  mpStartSans = sp && sp.sans ? sp.sans.slice() : [];
   mpConnect(() => {
-    if (mpWs && mpWs.readyState === WebSocket.OPEN)
-      mpWs.send(JSON.stringify({
+    if (mpWs && mpWs.readyState === WebSocket.OPEN) {
+      const payload = {
         type: 'create', lobby: false,
         tc: mpSelectedTC, tcLabel,
-        tcBaseMin: mpBaseMin, tcIncSec: mpIncSec
-      }));
+        tcBaseMin: mpBaseMin, tcIncSec: mpIncSec,
+        hostColor: mpHostColor
+      };
+      if (mpStartFen) { payload.startFen = mpStartFen; payload.startSans = mpStartSans; }
+      mpWs.send(JSON.stringify(payload));
+    }
     else mpShowStatus('Connection failed — try again', true);
   });
 }
@@ -1891,6 +1959,8 @@ function mpCheckInviteUrl() {
 function mpJoinRoom() {
   const code = document.getElementById('mpJoinCode').value.trim().toUpperCase();
   if (!code) { mpShowStatus('Enter a room code', true); return; }
+  if (!confirmAbandonLiveGame('Join this game')) return;
+  abandonLiveGameContexts();
   mpConnect(() => {
     if (mpWs && mpWs.readyState === WebSocket.OPEN)
       mpWs.send(JSON.stringify({ type: 'join', code }));
@@ -1965,6 +2035,7 @@ function mpLeave() {
   if (mpWs) { mpWs.close(); mpWs = null; }
   mpRoomId = null; mpRole = null; mpConnected = false;
   mpOriginalRole = null; mpGameCount = 0;
+  mpStartFen = null; mpStartSans = [];   // don't leak a from-position start into the next room
   clearInterval(mpLobbyRefreshTimer);
   chatShow(false);
   const cm = document.getElementById('chatMessages'); if (cm) cm.innerHTML = '';
@@ -1997,6 +2068,9 @@ function mpStartGame(tcKey) {
   // Use tc key if provided (for Black who receives it from server)
   const tc = tcKey || mpSelectedTC || 'untimed';
   clockInit(tc);
+  // From-position room: both clients set up the agreed position (rematches
+  // restart from the same position too, with colors swapped as usual)
+  if (mpStartFen) applyStartPosition(mpStartFen, mpStartSans);
   chatShow(true);
   boardFlipped = (mpRole === 'black');
   const _bcEl = document.getElementById('board-col');
@@ -2225,6 +2299,20 @@ function mpSetRatingType(t) {
   if (typeof mpQsRefresh === 'function') mpQsRefresh();
 }
 
+// ── Host colour: the game creator picks White / Black / Random ───────────────
+// The server resolves 'random' and assigns roles authoritatively. Matters most
+// for from-position games, where you may want to replay a position as either
+// side — but applies to any private game or open challenge you create.
+let mpHostColor = 'random';
+function mpSetHostColor(c) {
+  if (!['white', 'black', 'random'].includes(c)) c = 'random';
+  mpHostColor = c;
+  document.querySelectorAll('[data-mpcolor]').forEach(b =>
+    b.classList.toggle('tc-active', b.dataset.mpcolor === c));
+  try { localStorage.setItem('bm_mpHostColor', c); } catch (e) {}
+  if (typeof mpQsRefresh === 'function') mpQsRefresh();
+}
+
 // ── Persist "Your Info" (handle / rating / range) across sessions ────────────
 function mpSaveInfo() {
   const nameEl   = document.getElementById('mpLobbyName');
@@ -2245,6 +2333,8 @@ function mpLoadInfo() {
     if (!isNaN(rng)) mpSetRatingRange(rng);
     const rt = localStorage.getItem('bm_mpRatingType');
     if (rt) mpSetRatingType(rt);
+    const hc = localStorage.getItem('bm_mpHostColor');
+    if (hc) mpSetHostColor(hc);
     // Last-used time control ("Untimed" the very first time)
     const tb = parseInt(localStorage.getItem('bm_mpTcBase'));
     const ti = parseInt(localStorage.getItem('bm_mpTcInc'));
@@ -2458,6 +2548,11 @@ function resign() {
 }
 
 function offerDraw() {
+  // Vs a bot: the bot decides based on its draw-behaviour settings
+  if (typeof botActive !== 'undefined' && botActive && !gameOver) {
+    if (typeof botConsiderDrawOffer === 'function') botConsiderDrawOffer();
+    return;
+  }
   if (!mpRoomId || !mpWs || mpWs.readyState !== WebSocket.OPEN) return;
   mpWs.send(JSON.stringify({ type: 'draw_offer' }));
   mpShowStatus('Draw offered — waiting for response…');
@@ -2566,7 +2661,14 @@ function buildPgnText(){
   const date    = isoDate.replace(/-/g, '.');
   const result  = _pgnResultToken();
   let pgn = '[Event "Blundermind Game"]\n[Site "Blundermindchess.com"]\n[Date "' + date +
-            '"]\n[White "White"]\n[Black "Black"]\n[Result "' + result + '"]\n\n';
+            '"]\n[White "White"]\n[Black "Black"]\n[Result "' + result + '"]\n';
+  // Games started from a bare position (no SAN prefix) need SetUp/FEN tags so
+  // the PGN reloads correctly; games with a SAN prefix are complete from move 1.
+  if(typeof _gameStartFen!=='undefined' && _gameStartFen &&
+     (!_gameStartSans || !_gameStartSans.length)){
+    pgn += '[SetUp "1"]\n[FEN "' + _gameStartFen + '"]\n';
+  }
+  pgn += '\n';
   if(gameMovesAlgebraic.length === 0){ pgn += result + '\n'; }
   else{
     let line = '';
@@ -2655,12 +2757,19 @@ function showSaveGameToast(){
 // ── PGN Import & Replay ───────────────────────────────────────────────
 function loadPgnFile(event){
   const file=event.target.files[0];if(!file)return;
+  // Loading a game ends whatever is being played — confirm first
+  if(!confirmAbandonLiveGame('Load this game')){ event.target.value=''; return; }
   const reader=new FileReader();
   reader.onload=e=>parsePgnAndStartReplay(e.target.result);
   reader.readAsText(file);
   event.target.value='';
 }
 function parsePgnAndStartReplay(pgnText){
+  // Safety net: never run a replay on top of a live game (the bot would keep
+  // moving on the replay board). Normal entry paths confirm before this.
+  if(typeof _isLiveGame==='function'&&_isLiveGame()) abandonLiveGameContexts();
+  // A [FEN "..."] header means the game starts from a set-up position
+  const fenTag=pgnText.match(/\[FEN\s+"([^"]+)"\]/);
   // Strip header tags ([...]) and comments ({...}) line by line
   let moves=pgnText.split('\n')
     .filter(l=>!l.trim().startsWith('['))
@@ -2671,18 +2780,16 @@ function parsePgnAndStartReplay(pgnText){
   moves=moves.replace(/\d+\.{1,3}/g,'');
   moves=moves.replace(/1-0|0-1|1\/2-1\/2|\*/g,'');
   const tokens=moves.trim().split(/\s+/).filter(t=>t&&t.length>0&&!t.match(/^\d+\.?$/));
-  if(!tokens.length){alert('No moves found in PGN.');return;}
-  // Reset to start position without clearing the file
-  board=parseFen(FENS[0]);turn='w';
-  castling={wK:true,wQ:true,bK:true,bQ:true};epSq=-1;
+  if(!tokens.length&&!fenTag){alert('No moves found in PGN.');return;}
+  replayBaseFen=fenTag?fenTag[1]:null;
   gameMovesAlgebraic=[];gameOverMsg='';gameOver=false;
   selSq=-1;legalMoves=[];clearPreview();
-  atkMap=buildAtk(board);
-  const rp=computePins(board);pinnedWSquares=rp.w;pinnedBSquares=rp.b;
-  replayMoves=tokens;replayIdx=0;inReplay=true;
+  replayMoves=tokens;inReplay=true;
   const rc=document.getElementById('replayControls');
   if(rc) rc.style.display='block';
-  updateReplayInfo();updatePlayerBoxes();indApply();
+  // Position-only PGNs open at the position itself; games open at move 0
+  rebuildToReplayIdx(tokens.length?0:0);
+  updatePlayerBoxes();
 }
 function replayStep(delta){
   if(!inReplay)return;
@@ -2693,37 +2800,214 @@ function replayGo(idx){
   rebuildToReplayIdx(idx<0?replayMoves.length:idx);
 }
 function rebuildToReplayIdx(targetIdx){
-  board=parseFen(FENS[0]);turn='w';
-  castling={wK:true,wQ:true,bK:true,bQ:true};epSq=-1;
   // Show all moves in the notation panel; highlight the current position.
   gameMovesAlgebraic=replayMoves.slice();
-  // Apply only moves up to targetIdx to reconstruct the board at that point.
-  let _bd=parseFen(FENS[0]),_turn='w',_cst={wK:true,wQ:true,bK:true,bQ:true},_ep=-1;
+  // Reconstruct from the replay's base position (custom FEN or standard start).
+  // parseFen sets turn/castling/epSq globals as side effects — capture them.
+  const baseFen=replayBaseFen||FENS[0];
+  let _bd=parseFen(baseFen);
+  let _turn=turn,_cst={...castling},_ep=epSq;
+  let _hm=parseInt(baseFen.split(' ')[4])||0;
+  let _lastFrom=-1,_lastTo=-1;
   for(let i=0;i<targetIdx&&i<replayMoves.length;i++){
     const mv=algebraicToMove(replayMoves[i],_bd,_turn,_ep,_cst);
     if(!mv){break;}
     const prevBoard=_bd;
     _bd=applyMove(mv.from,mv.to,_bd,_ep,mv.promo||'Q');
     const movedPiece=prevBoard[mv.from];
+    // Halfmove clock: reset on pawn moves and captures, else increment
+    _hm=(movedPiece&&movedPiece.piece==='P')||prevBoard[mv.to]?0:_hm+1;
     _cst=updateCastling(mv.from,mv.to,movedPiece,_cst);
     _ep=computeEP(mv.from,mv.to,prevBoard);
     _turn=_turn==='w'?'b':'w';
+    _lastFrom=mv.from;_lastTo=mv.to;
   }
   board=_bd;turn=_turn;castling=_cst;epSq=_ep;
+  _replayHalfmove=_hm;
+  lastMoveFrom=_lastFrom;lastMoveTo=_lastTo; // last-move highlight, as in live play
   replayIdx=targetIdx;
   atkMap=buildAtk(board);
   const pins=computePins(board);
   pinnedWSquares=pins.w;pinnedBSquares=pins.b;
   updateReplayInfo();indApply();
+  if(typeof render==='function') render();
   if(typeof proSync==='function') proSync();
 }
 function updateReplayInfo(){
   document.getElementById('replayInfo').textContent='Move '+replayIdx+' / '+replayMoves.length;
 }
 function exitReplay(){
-  inReplay=false;replayMoves=[];replayIdx=0;
+  inReplay=false;replayMoves=[];replayIdx=0;replayBaseFen=null;
   document.getElementById('replayControls').style.display='none';
   resetGame();
+}
+
+// Leave replay mode without touching the board (used by "play from here")
+function _exitReplayKeepBoard(){
+  inReplay=false;replayMoves=[];replayIdx=0;replayBaseFen=null;
+  const rc=document.getElementById('replayControls');
+  if(rc) rc.style.display='none';
+}
+
+// ── Live-game abandonment guard ──────────────────────────────────────────────
+// Any control that would end a game in progress must confirm first. Returns
+// true when it is safe to proceed (no live game, or the user confirmed).
+function confirmAbandonLiveGame(actionLabel){
+  if(typeof _isLiveGame!=='function'||!_isLiveGame()) return true;
+  const isMp=typeof mpRoomId!=='undefined'&&mpRoomId;
+  if(!isMp){
+    // A bot game with nothing actually played yet (beyond a continuation
+    // prefix) loses nothing — don't nag while the user is still configuring.
+    const played=(typeof gameMovesAlgebraic!=='undefined'?gameMovesAlgebraic.length:0)
+      -(typeof _gameStartSans!=='undefined'&&_gameStartSans?_gameStartSans.length:0);
+    if(played<=0) return true;
+  }
+  const what=isMp?'your online game':'your bot game';
+  return confirm((actionLabel||'Continue')+'? This will forfeit '+what+' in progress.');
+}
+
+// Tear down whatever live game is running (resign online / stop the bot) so a
+// new game, replay, or loaded PGN starts from a clean slate. Call only after
+// confirmAbandonLiveGame() returned true.
+function abandonLiveGameContexts(){
+  if(typeof mpRoomId!=='undefined'&&mpRoomId){
+    if(typeof gameOver!=='undefined'&&!gameOver&&
+       typeof mpWs!=='undefined'&&mpWs&&mpWs.readyState===WebSocket.OPEN){
+      try{ mpWs.send(JSON.stringify({type:'resign'})); }catch(e){}
+    }
+    if(typeof mpLeave==='function') mpLeave();
+  }
+  if(typeof botActive!=='undefined'&&botActive&&typeof botStop==='function') botStop();
+}
+
+// ── Review the game that just ended ──────────────────────────────────────────
+// Drops the bot/2-player context (like explore mode) but keeps the move list,
+// entering replay at the final position so the user can step back anywhere and
+// restart play from there.
+function startReplayOfCurrentGame(){
+  if(typeof gameMovesAlgebraic==='undefined'||!gameMovesAlgebraic.length) return;
+  const liveBot=(typeof botActive!=='undefined'&&botActive&&!gameOver);
+  const liveMp=(typeof mpRoomId!=='undefined'&&mpRoomId&&typeof mpMode!=='undefined'&&mpMode==='ingame'&&!gameOver);
+  if(liveBot||liveMp) return;              // only once the game is over
+  const moves=gameMovesAlgebraic.slice();
+  const baseFen=_gameStartFen||null;       // from-position games replay from their FEN
+  if(typeof botActive!=='undefined'&&botActive&&typeof botStop==='function') botStop();
+  if(typeof mpRoomId!=='undefined'&&mpRoomId){
+    if(mpWs){try{mpWs.close();}catch(e){} mpWs=null;}
+    mpRoomId=null;mpRole=null;mpConnected=false;
+    mpOriginalRole=null;mpGameCount=0;
+    const rc=document.getElementById('mpRoomCode');if(rc)rc.textContent='';
+    if(typeof chatShow==='function')chatShow(false);
+    const cm=document.getElementById('chatMessages');if(cm)cm.innerHTML='';
+    const ga=document.getElementById('gameActions');if(ga)ga.style.display='none';
+    if(typeof mpSetMode==='function')mpSetMode('idle');
+  }
+  if(typeof clockStop==='function') clockStop();
+  gameOver=false;gameOverMsg='';
+  selSq=-1;legalMoves=[];clearPreview();
+  replayBaseFen=baseFen;
+  replayMoves=moves;inReplay=true;
+  const rc=document.getElementById('replayControls');
+  if(rc) rc.style.display='block';
+  rebuildToReplayIdx(moves.length);
+  updatePlayerBoxes();
+}
+
+// ── Apply a custom starting position to the live game ────────────────────────
+// Shared by bot games and MP games started "from here". Sets the board, the
+// SAN prefix (so notation shows the loaded game so far), and records the
+// start FEN for PGN saves and post-game review.
+function applyStartPosition(fen, sans){
+  try{
+    board=parseFen(fen);                 // sets turn/castling/epSq globals
+    halfmoveClock=parseInt(fen.split(' ')[4])||0;
+    gameMovesAlgebraic=(sans||[]).slice();
+    _gameStartFen=fen;
+    _gameStartSans=gameMovesAlgebraic.slice();
+    lastMoveFrom=-1;lastMoveTo=-1;
+    selSq=-1;legalMoves=[];clearPreview();
+    atkMap=buildAtk(board);
+    const _p=computePins(board);pinnedWSquares=_p.w;pinnedBSquares=_p.b;
+    if(typeof render==='function') render();
+    if(typeof updatePlayerBoxes==='function') updatePlayerBoxes();
+    return true;
+  }catch(e){
+    console.warn('applyStartPosition failed:',e);
+    return false;
+  }
+}
+
+// ── Play from the current replay position ────────────────────────────────────
+function _replayCurrentPos(){
+  const fullmove=Math.floor(replayIdx/2)+1;
+  return {
+    fen: boardToFen(board,turn,castling,epSq,_replayHalfmove,fullmove),
+    sans: replayMoves.slice(0,replayIdx)
+  };
+}
+
+// Start a bot game from the current replay position: stash the position and
+// open the Bot Builder — botStart() consumes the pending position.
+function playFromHereBot(){
+  if(!inReplay) return;
+  window._pendingStartPos=_replayCurrentPos();
+  _exitReplayKeepBoard();
+  if(typeof openBotModal==='function') openBotModal();
+}
+
+// Invite a friend to play from the current replay position. Opens the
+// 2-player panel with the position staged (banner shown) rather than creating
+// the room immediately — so the initiator can pick their colour (White /
+// Black / Random) first, regardless of whose move it is or how the board is
+// oriented. From-position games are private-invite only, never posted to the
+// open-challenge board.
+function playFromHereInvite(){
+  if(!inReplay) return;
+  window._pendingStartPos=_replayCurrentPos();
+  _exitReplayKeepBoard();
+  openPanel('mpPanel');
+  _mpRefreshStartPosBanner();
+  mpShowStatus('Pick your colour, then Start Private Game — it will begin from the selected position.');
+}
+
+// Banner above the 2-player action buttons while a start position is staged
+function _mpRefreshStartPosBanner(){
+  const b=document.getElementById('mpStartPosBanner');
+  if(!b) return;
+  const sp=window._pendingStartPos;
+  if(sp&&sp.fen){
+    const t=document.getElementById('mpStartPosText');
+    const n=(sp.sans||[]).length;
+    if(t) t.textContent='♟ Start Private Game will begin from the selected position'+
+      (n?' (after move '+Math.ceil(n/2)+')':'');
+    b.style.display='flex';
+  } else {
+    b.style.display='none';
+  }
+}
+function mpClearStartPos(){
+  window._pendingStartPos=null;
+  _mpRefreshStartPosBanner();
+}
+
+// Expert-board notation click → jump the replay to that position. Enters
+// review mode first if the (finished) game isn't in replay yet.
+function proMoveClick(i){
+  if(_isLiveGame()) return;
+  if(!inReplay){
+    startReplayOfCurrentGame();
+    if(!inReplay) return; // still live or no moves
+  }
+  rebuildToReplayIdx(i+1);
+}
+
+// Shared "a game is actually being played right now" test
+function _isLiveGame(){
+  const over=(typeof gameOver!=='undefined')&&gameOver;
+  return !over&&(
+    (typeof botActive!=='undefined'&&botActive)||
+    (typeof mpRoomId!=='undefined'&&mpRoomId&&
+     typeof mpMode!=='undefined'&&mpMode==='ingame'));
 }
 
 // Simple SAN parser

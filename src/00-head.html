@@ -478,6 +478,8 @@ canvas{
 .replay-btn:hover{border-color:var(--accent);color:var(--text-primary);}
 #replayInfo{font-size:9px;color:var(--text-dim);flex:1;text-align:center;}
 .replay-exit{font-size:8px;color:#c06060;border-color:rgba(180,40,40,0.4);}
+.replay-play{font-size:10px;color:#5ad490;border-color:rgba(90,212,144,0.4);}
+.replay-play:hover{border-color:#5ad490;color:#5ad490;}
 
 /* ── Landing page overlay ─────────────────────────────────────────────────── */
 #landingOverlay {
@@ -485,33 +487,33 @@ canvas{
   background:var(--bg-page);
   z-index:5000;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
-  padding:20px;
+  padding:20px;overflow-y:auto;
   transition:opacity 0.4s ease, background 0.3s ease;
 }
 #landingOverlay.fade-out { opacity:0;pointer-events:none; }
 .landing-title {
-  font-size:32px;font-weight:700;color:var(--text-primary);
-  letter-spacing:-0.03em;margin-bottom:4px;
+  font-size:40px;font-weight:700;color:var(--text-primary);
+  letter-spacing:-0.03em;margin-bottom:5px;
 }
 .landing-title span { color:#4a9fd4; }
 .landing-tagline {
-  font-size:13px;color:var(--text-dim);font-style:italic;
-  margin-bottom:24px;letter-spacing:0.02em;
+  font-size:15px;color:var(--text-dim);font-style:italic;
+  margin-bottom:28px;letter-spacing:0.02em;
 }
 .landing-shell-pick {
-  display:flex;gap:12px;margin-bottom:28px;flex-wrap:wrap;justify-content:center;
+  display:flex;gap:14px;margin-bottom:30px;flex-wrap:wrap;justify-content:center;
 }
 .landing-shell-btn {
-  display:flex;flex-direction:column;gap:4px;align-items:flex-start;text-align:left;
-  width:240px;padding:11px 14px;background:var(--bg-panel);
+  display:flex;flex-direction:column;gap:5px;align-items:flex-start;text-align:left;
+  width:280px;padding:13px 16px;background:var(--bg-panel);
   border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all 0.15s;
 }
 .landing-shell-btn:hover { border-color:var(--accent); }
 .landing-shell-btn.sel {
   border-color:var(--accent);box-shadow:0 0 0 2px rgba(74,159,212,0.18);
 }
-.landing-shell-btn .ls-name { font-size:12px;font-weight:700;color:var(--text-primary); }
-.landing-shell-btn .ls-desc { font-size:9px;color:var(--text-dim);line-height:1.45; }
+.landing-shell-btn .ls-name { font-size:14px;font-weight:700;color:var(--text-primary); }
+.landing-shell-btn .ls-desc { font-size:10.5px;color:var(--text-dim);line-height:1.45; }
 
 /* ── Expert landing theme — carbon/amber palette + panel fonts (matches the
       Expert board & bot control panels). Applied when Expert Board is chosen. ── */
@@ -532,15 +534,15 @@ canvas{
 .landing-expert .landing-card-desc { color:#717a8a; }
 .landing-expert .landing-footer { color:#717a8a; }
 .landing-cards {
-  display:flex;flex-wrap:wrap;gap:14px;justify-content:center;
-  max-width:720px;margin-bottom:28px;
+  display:flex;flex-wrap:wrap;gap:16px;justify-content:center;
+  max-width:880px;margin-bottom:30px;
 }
 .landing-card {
-  width:160px;padding:20px 14px 18px;
+  width:195px;padding:24px 16px 20px;
   background:var(--bg-panel);border:1px solid var(--border);
   border-radius:10px;cursor:pointer;text-align:center;
   transition:border-color 0.2s,box-shadow 0.15s,transform 0.12s,background 0.25s,color 0.25s;
-  display:flex;flex-direction:column;align-items:center;gap:8px;
+  display:flex;flex-direction:column;align-items:center;gap:10px;
 }
 .landing-card:hover {
   border-color:var(--accent);
@@ -555,27 +557,27 @@ canvas{
   border-color:#c8a000;
   box-shadow:0 0 0 2px rgba(200,160,0,0.18);
 }
-.landing-card-icon { font-size:36px;line-height:1; }
+.landing-card-icon { font-size:42px;line-height:1; }
 .landing-card-title {
-  font-size:12px;font-weight:700;color:var(--text-primary);
+  font-size:14px;font-weight:700;color:var(--text-primary);
   line-height:1.3;transition:color 0.25s ease;
 }
 .landing-card-desc {
-  font-size:9.5px;color:var(--text-dim);line-height:1.5;transition:color 0.25s ease;
+  font-size:11px;color:var(--text-dim);line-height:1.5;transition:color 0.25s ease;
 }
 .landing-upload-row {
   display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center;
   margin-bottom:16px;
 }
 .landing-upload-btn {
-  font-size:9.5px;padding:6px 14px;
+  font-size:11px;padding:7px 16px;
   border:0.5px solid var(--border);border-radius:20px;
   background:transparent;color:var(--text-dim);cursor:pointer;
   transition:all 0.12s;
 }
 .landing-upload-btn:hover { border-color:var(--accent);color:var(--accent); }
 .landing-footer {
-  font-size:8.5px;color:var(--text-dim);text-align:center;
+  font-size:10px;color:var(--text-dim);text-align:center;
   margin-top:8px;
 }
 
@@ -949,7 +951,7 @@ canvas{
 body.journal .landing-title{ font-family:'Fraunces',serif;font-style:italic;font-weight:500; }
 body.journal .landing-tagline{ font-family:'Spectral',serif;font-style:normal; }
 body.journal .landing-card-title{ font-family:'Fraunces',serif;font-style:italic;font-weight:500; }
-body.journal .landing-card-desc{ font-family:'Spectral',serif;font-size:11px;line-height:1.5; }
+body.journal .landing-card-desc{ font-family:'Spectral',serif;font-size:12.5px;line-height:1.5; }
 body.journal .landing-shell-btn .ls-name{ font-family:'Fraunces',serif;font-style:italic; }
 body.journal .landing-shell-btn .ls-desc{ font-family:'Spectral',serif; }
 body.journal #site-name{ font-family:'Fraunces',serif;font-style:italic; }
@@ -1025,6 +1027,8 @@ body.pro-mode #proSide{
 .pro-card-title{ font-family:var(--pfu);font-size:9px;font-weight:500;letter-spacing:0.14em;text-transform:uppercase;color:var(--pa); }
 .pro-moves{ flex:1;overflow-y:auto;max-height:188px;padding:3px 0;min-height:60px; }
 .pro-moves-empty{ font-family:var(--pfm);font-size:8.5px;color:var(--ptd);text-align:center;padding:14px 0; }
+.pro-mclick{ cursor:pointer;border-radius:2px; }
+.pro-mclick:hover{ background:rgba(200,146,42,0.18); }
 .pro-moverow{ display:grid;grid-template-columns:30px 1fr 1fr;align-items:center;font-family:var(--pfm);font-size:11px; }
 .pro-moverow:nth-child(odd){ background:rgba(255,255,255,0.012); }
 .pro-mnum{ color:var(--ptd);font-size:9px;text-align:right;padding-right:9px; }
@@ -1238,7 +1242,9 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <span id="replayInfo">Move 0 / 0</span>
         <button class="replay-btn" onclick="replayStep(1)">▶</button>
         <button class="replay-btn" onclick="replayGo(-1)">⏭</button>
-        <button class="replay-btn replay-exit" onclick="exitReplay()">✕ Exit replay</button>
+        <button class="replay-btn replay-play" onclick="playFromHereBot()" title="Start a bot game from this position">🤖 Play from here</button>
+        <button class="replay-btn replay-play" onclick="playFromHereInvite()" title="Invite a friend to a private game starting from this position">🔗 Invite from here</button>
+        <button class="replay-btn replay-exit" onclick="exitReplay()">✕ Exit</button>
       </div>
     </div>
 
@@ -1524,6 +1530,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="ctrl-row">
         <button class="ctrl-btn util-btn" id="resignBtn" onclick="openHelp('howto')">🎯 Training Tips</button>
         <button class="ctrl-btn util-btn" id="exploreBtn" onclick="enterExploreMode()" style="display:none;border-color:rgba(74,159,212,0.45);color:#4a9fd4;">🔍 Explore</button>
+        <button class="ctrl-btn util-btn" id="reviewBtn" onclick="startReplayOfCurrentGame()" style="display:none;border-color:rgba(74,159,212,0.45);color:#4a9fd4;" title="Step through the finished game — and restart play from any position">⏪ Review</button>
         <button class="ctrl-btn util-btn" onclick="openBotModal()" style="border-color:rgba(90,212,144,0.4);color:#5ad490;" id="botSidebarBtn">🤖 vs Bot</button>
         <button class="ctrl-btn util-btn" onclick="openPanel('mpPanel')">⚔ 2-Player</button>
       </div>
@@ -1575,6 +1582,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <!-- Idle actions — shown when no game is live (start things, save/load) -->
     <div class="pro-actions pro-idle" id="proIdleActions" style="display:none;">
       <div class="pro-abtn accent" id="proRematchBtn" onclick="proRematch()" style="display:none;">↺ Rematch</div>
+      <div class="pro-abtn" id="proReviewBtn" onclick="startReplayOfCurrentGame()" style="display:none;" title="Step through the finished game — and restart play from any position">⏪ Review game</div>
       <div class="pro-abtn" onclick="openBotModal()">🤖 Play / Build Bot</div>
       <div class="pro-abtn" onclick="openPanel('mpPanel')">⚔ 2-Player</div>
       <div class="pro-abtn" onclick="savePgnAs()">💾 Save game</div>
@@ -2183,6 +2191,10 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
             <span class="mp-qs-lbl">Time</span>
             <span class="mp-qs-val" id="mpTCDisplay">Untimed</span>
           </button>
+          <button class="mp-qs-pill" id="mpQsPill-color" onclick="mpQsToggle('color')">
+            <span class="mp-qs-lbl">Play as</span>
+            <span class="mp-qs-val" id="mpQsColorVal">Random</span>
+          </button>
         </div>
 
         <!-- Editors — one open at a time, below the stationary pill rows -->
@@ -2215,6 +2227,22 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <div class="mp-qs-editor" id="mpQsEd-time">
           <div class="mp-tg-panel" id="mpTgPanel"></div>
         </div>
+        <div class="mp-qs-editor" id="mpQsEd-color">
+          <div class="mp-micro-lbl" style="margin-bottom:6px;">Your colour in games you create <span style="font-weight:400;font-style:italic;">(the joiner gets the other)</span></div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;">
+            <button onclick="mpSetHostColor('white')"  class="tc-btn" data-mpcolor="white">♔ White</button>
+            <button onclick="mpSetHostColor('random')" class="tc-btn tc-active" data-mpcolor="random">⚄ Random</button>
+            <button onclick="mpSetHostColor('black')"  class="tc-btn" data-mpcolor="black">♚ Black</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Staged start position ("Invite from here") — shown while a custom
+           position is pending; applies to Start Private Game only -->
+      <div id="mpStartPosBanner" style="display:none;align-items:center;gap:8px;margin:2px 0 4px;padding:7px 10px;background:rgba(90,212,144,0.08);border:0.5px solid rgba(90,212,144,0.4);border-radius:4px;">
+        <span id="mpStartPosText" style="flex:1;font-size:10px;color:#5ad490;line-height:1.4;">♟ Start Private Game will begin from the selected position</span>
+        <button onclick="mpClearStartPos()" title="Discard the position — start from the standard opening position instead"
+          style="background:none;border:0.5px solid rgba(255,255,255,0.25);border-radius:3px;color:#9aa3b2;font-size:9px;padding:3px 8px;cursor:pointer;flex-shrink:0;">✕ Standard start</button>
       </div>
 
       <!-- ══ ACTION BUTTONS — friends first: private games, then the open lobby ══ -->
