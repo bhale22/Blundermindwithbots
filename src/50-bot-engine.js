@@ -306,18 +306,27 @@ function _maybeStaleSeek(moveProbs) {
 // otherwise we walk down the personality's preference order and, if nothing
 // fits, fall back to the most-popular move itself (0 cp by definition).
 //
-// Budget vs. Hard Floor: Budget (window._bcpCpBudget) ONLY scales how hard
-// the attractors PUSH toward an alternative (the reweighting `scale` factor
-// in applyMoveAttractors) — it is not a quality promise. Hard Floor
-// (window._bcpCpHardFloor) is the single enforced cap on real cp loss vs.
-// Maia's most-popular move, and it may sit above OR below Budget (a 700-ELO
-// bot might have Budget 100 with a Floor of 750). A Floor at or above
-// HARD_FLOOR_OFF_CP means "no floor": the check is skipped entirely and the
-// personality may play anything it likes — hung queens included.
+// Budget vs. Hard Floor: the Budget (window._bcpCpBudget) is the
+// personality's allowance — it scales how hard the attractors push (the
+// reweighting `scale` factor in applyMoveAttractors) AND is enforced here as
+// the real, engine-verified cp ceiling on the personality's pick. One dial,
+// one honest claim: "willing to lose up to Budget cp to express its style."
+// The Hard Floor (window._bcpCpHardFloor, always ≥ Budget; slider top = Off)
+// is a separate, looser backstop applied in applyHardFloorBackstop to picks
+// from ANY mechanism — temperature, Luck, Bad Day, curve-B, plain sampling
+// variance — bounding how bad any played move can be vs the popular move.
 let _attrReweightApplied = false; // set by applyMoveAttractors each call
 
 // Floor values at/above this mean "Off" (the panel slider's top position).
 const HARD_FLOOR_OFF_CP = 1000;
+
+// Set when the budget probe verified this move's pick (≤ Budget ≤ Floor, so
+// the backstop can skip its own probe). Reset at the top of each acceptance
+// call — acceptance always runs before the backstop in the move flow.
+let _cpBudgetVerifiedThisMove = false;
+// Last shallow probe result ({fen, evals}) — lets the backstop reuse the
+// degradation guard's probe instead of paying for a second one.
+let _lastEvalProbe = null;
 
 // How many of the personality's next-favourite moves ride along in the probe
 // beyond the chosen pick and the most-popular move. Wider = more of Maia's
@@ -327,16 +336,15 @@ const HARD_FLOOR_OFF_CP = 1000;
 const CP_BUDGET_WALK_SIZE = 15;
 
 async function applyCpBudgetAcceptance(fen, chosenUci, rawProbs, shapedProbs) {
+  _cpBudgetVerifiedThisMove = false; // reset per move, before any early return
   try {
     if (!chosenUci || !rawProbs || !_attrReweightApplied) return chosenUci;
-    // Stalemate-seeking moves deliberately throw material — exempt from the floor
+    // Stalemate-seeking moves deliberately throw material — exempt from budget
     if (_staleSeekThisMove) return chosenUci;
-    // The Floor alone is the cap; Budget is push strength, not a limit.
-    // Legacy configs without hardFloorCp fall back to their cpBudget value.
-    const rawBudget = window._bcpCpBudget    != null ? +window._bcpCpBudget    : 0;
-    const budget    = window._bcpCpHardFloor != null ? +window._bcpCpHardFloor : rawBudget;
+    // The Budget is the personality's engine-verified allowance: its pick may
+    // lose at most this many cp vs the most-popular move.
+    const budget = window._bcpCpBudget != null ? +window._bcpCpBudget : 0;
     if (!(budget >= 0)) return chosenUci;
-    if (budget >= HARD_FLOOR_OFF_CP) return chosenUci; // Floor is Off — no check
     let topMove = null, topP = -1;
     for (const m in rawProbs) { if (rawProbs[m] > topP) { topP = rawProbs[m]; topMove = m; } }
     if (!topMove || topMove === chosenUci) return chosenUci;
@@ -347,6 +355,7 @@ async function applyCpBudgetAcceptance(fen, chosenUci, rawProbs, shapedProbs) {
     if (!sfReady) { try { await sfInit(); } catch (e) { return chosenUci; } }
     const evals = await sfEvalMoves(fen, [topMove, ...walk], 10);
     if (!evals || evals[topMove] == null) return chosenUci; // fail-open on probe failure
+    _lastEvalProbe = { fen: fen, evals: evals };
     let accepted = topMove;
     for (const m of walk) {
       if (evals[m] == null) continue;
@@ -357,6 +366,7 @@ async function applyCpBudgetAcceptance(fen, chosenUci, rawProbs, shapedProbs) {
       console.log('[CpBudget] pick', chosenUci, '(' + loss + 'cp vs most-popular) exceeds budget',
         budget, '— playing', accepted, 'instead');
     }
+    _cpBudgetVerifiedThisMove = true; // accepted move is ≤ Budget (≤ Floor)
     return accepted;
   } catch (e) {
     return chosenUci;
@@ -386,9 +396,52 @@ async function applyDegradationEvalGuard(fen, chosenUci, rawProbs) {
     if (!sfReady) { try { await sfInit(); } catch (e) { return chosenUci; } }
     const evals = await sfEvalMoves(fen, [chosenUci, topMove]);
     if (!evals || evals[chosenUci] == null || evals[topMove] == null) return chosenUci;
+    _lastEvalProbe = { fen: fen, evals: evals };
     if (evals[chosenUci] > evals[topMove]) {
       console.log('[DegradeGuard] pick', chosenUci, '(' + evals[chosenUci] + 'cp) beats top-prob',
         topMove, '(' + evals[topMove] + 'cp) — playing the top-probability move instead');
+      return topMove;
+    }
+    return chosenUci;
+  } catch (e) {
+    return chosenUci;
+  }
+}
+
+// ── Hard Floor backstop (absolute quality bound) ─────────────────────────────
+// Bounds how far below Maia's most-popular move ANY final pick may fall —
+// whatever produced it: temperature sampling, the Luck window shift, Bad Day,
+// curve-B time-pressure restriction, or plain sampling variance. Runs last in
+// the pick flow. Skips: picks already engine-verified within the Budget
+// (Budget ≤ Floor by invariant), stalemate-seeking picks (throwing material
+// is the point), and Floor = Off. Reuses the degradation guard's probe when
+// one was taken for the same position; otherwise pays for one shallow probe.
+// Fail-open like every other probe — a timeout never stalls the bot's move.
+async function applyHardFloorBackstop(fen, chosenUci, rawProbs) {
+  try {
+    if (!chosenUci || !rawProbs) return chosenUci;
+    if (_staleSeekThisMove) return chosenUci;
+    if (_cpBudgetVerifiedThisMove) return chosenUci; // already ≤ Budget ≤ Floor
+    const floor = window._bcpCpHardFloor != null ? +window._bcpCpHardFloor
+                : window._bcpCpBudget    != null ? +window._bcpCpBudget : null;
+    if (floor === null || !(floor >= 0) || floor >= HARD_FLOOR_OFF_CP) return chosenUci;
+    let topMove = null, topP = -1;
+    for (const m in rawProbs) { if (rawProbs[m] > topP) { topP = rawProbs[m]; topMove = m; } }
+    if (!topMove || topMove === chosenUci) return chosenUci;
+    // Reuse the guard's probe if it covered this position and both moves
+    let evals = null;
+    if (_lastEvalProbe && _lastEvalProbe.fen === fen &&
+        _lastEvalProbe.evals[chosenUci] != null && _lastEvalProbe.evals[topMove] != null) {
+      evals = _lastEvalProbe.evals;
+    } else {
+      if (!sfReady) { try { await sfInit(); } catch (e) { return chosenUci; } }
+      evals = await sfEvalMoves(fen, [chosenUci, topMove]);
+      if (!evals || evals[chosenUci] == null || evals[topMove] == null) return chosenUci;
+    }
+    if (evals[topMove] - evals[chosenUci] > floor) {
+      console.log('[HardFloor] pick', chosenUci, 'loses',
+        Math.round(evals[topMove] - evals[chosenUci]), 'cp vs most-popular — over the',
+        floor, 'cp floor; playing', topMove, 'instead');
       return topMove;
     }
     return chosenUci;
@@ -1315,6 +1368,24 @@ function sampleFromProbs(moveProbs, temperature) {
   return scaled[scaled.length - 1][0];
 }
 
+// ── Conviction pick: 30% argmax / 70% temperature sample ─────────────────────
+// A bot with strong opinions shouldn't be a pure dice-roll, but pure argmax
+// is exploitably deterministic. Middle ground: 30% of moves it simply plays
+// the move its personality ranked highest (argmax over the reweighted
+// distribution); the other 70% it temperature-samples for human variety.
+// Whichever pick emerges, the Budget acceptance then verifies its real price.
+const ARGMAX_PICK_RATE = 0.30;
+function pickFromProbs(moveProbs, temperature) {
+  const entries = Object.entries(moveProbs);
+  if (!entries.length) return null;
+  if (Math.random() < ARGMAX_PICK_RATE) {
+    let best = entries[0][0], bp = -Infinity;
+    for (const [m, p] of entries) { if (p > bp) { bp = p; best = m; } }
+    return best;
+  }
+  return sampleFromProbs(moveProbs, temperature);
+}
+
 // ── Position entropy (complexity) ────────────────────────────────────────────
 function positionEntropy(moveProbs) {
   let e = 0;
@@ -1871,9 +1942,10 @@ async function botMakeMove() {
         _botMoveClockMs = clockMs; // for applyMoveAttractors distribution cutoff (ctrlB)
         const adjTemp = complexityAdjustedTemp(m3EffTemp);
         const m3Shaped = applyMoveAttractors(m3Probs);
-        uciMove = sampleFromProbs(m3Shaped, adjTemp);
+        uciMove = pickFromProbs(m3Shaped, adjTemp);
         uciMove = await applyCpBudgetAcceptance(fen, uciMove, m3Probs, m3Shaped);
         uciMove = await applyDegradationEvalGuard(fen, uciMove, m3Probs);
+        uciMove = await applyHardFloorBackstop(fen, uciMove, m3Probs);
         console.log('[Maia3 FULL] chose:', uciMove, '| temp:', adjTemp.toFixed(2), '(base:', m3EffTemp.toFixed(2), ')| inf:', inferenceMs, 'ms | extra wait:', delay, 'ms');
       } else {
         // Maia3 not downloaded — fall back to SF
@@ -1938,9 +2010,10 @@ async function botMakeMove() {
         _botMoveClockMs = clockMs;
         _botMoveThinkSec = preciseThinkSec;
         const maiaShaped = applyMoveAttractors(probs);
-        uciMove = sampleFromProbs(maiaShaped, complexityAdjustedTemp(effectiveTemp));
+        uciMove = pickFromProbs(maiaShaped, complexityAdjustedTemp(effectiveTemp));
         uciMove = await applyCpBudgetAcceptance(fen, uciMove, probs, maiaShaped);
         uciMove = await applyDegradationEvalGuard(fen, uciMove, probs);
+        uciMove = await applyHardFloorBackstop(fen, uciMove, probs);
         _botMoveThinkSec = null;
       } else {
         await sfInit();
@@ -1981,9 +2054,10 @@ async function botMakeMove() {
         _botMoveClockMs = clockMs;
         _botMoveThinkSec = preciseThinkSecLcsf;
         const lcsfShaped = applyMoveAttractors(lcsfProbs);
-        uciMove = sampleFromProbs(lcsfShaped, lcsfEffTemp);
+        uciMove = pickFromProbs(lcsfShaped, lcsfEffTemp);
         uciMove = await applyCpBudgetAcceptance(fen, uciMove, lcsfProbs, lcsfShaped);
         uciMove = await applyDegradationEvalGuard(fen, uciMove, lcsfProbs);
+        uciMove = await applyHardFloorBackstop(fen, uciMove, lcsfProbs);
         _botMoveThinkSec = null;
       } else {
         await sfInit();
@@ -2021,9 +2095,10 @@ async function botMakeMove() {
             if (delay > 0) await new Promise(res => setTimeout(res, delay));
             _botMoveClockMs = clockMs;
             const hybShaped = applyMoveAttractors(probs);
-            uciMove = sampleFromProbs(hybShaped, effectiveTemp);
+            uciMove = pickFromProbs(hybShaped, effectiveTemp);
             uciMove = await applyCpBudgetAcceptance(fen, uciMove, probs, hybShaped);
             uciMove = await applyDegradationEvalGuard(fen, uciMove, probs);
+            uciMove = await applyHardFloorBackstop(fen, uciMove, probs);
           } else {
             // Maia3 not downloaded/failed — SF at a level matching the slot ELO
             const fbLevel = Math.max(1, Math.min(20, Math.round(slotElo / 200)));

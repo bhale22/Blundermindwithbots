@@ -1329,8 +1329,18 @@ body.fj .picon{font-weight:500;}
           <!-- Formula + description line (updates live) -->
           <div id="temp-formula-line"></div>
 
-          <!-- Live distribution chart — Maia reference vs adjusted -->
+          <!-- Live distribution chart — Maia reference → temperature → personality -->
           <canvas id="temp-dist-chart"></canvas>
+
+          <!-- CP Budget — the same dial as the Personality section's Centipawmeter,
+               mirrored here so its effect on the distribution is visible live -->
+          <div class="ctrl" style="margin-top:6px;">
+            <span class="ctrl-lbl" style="min-width:80px;">CP Budget</span>
+            <input type="range" id="r-style-mirror" min="0" max="300" step="10" value="100"
+              oninput="onGaugeSliderInput(+this.value)">
+            <span class="ctrl-val" id="v-style-mirror">100 cp</span>
+          </div>
+          <div class="ctrl-hint">Same dial as the Personality section's Centipawmeter — move either one. The third (blue) bar shows an <em>illustrative</em> personality (loves c4, dislikes d4) pushing the temperature-shaped distribution: the push grows with Budget, and in play a Stockfish check caps the real cost of any personality pick at the Budget.</div>
 
         </div><!-- /right col -->
 
@@ -1396,8 +1406,8 @@ body.fj .picon{font-weight:500;}
                     oninput="onHardFloorSliderInput(+this.value)">
                   <span class="ctrl-val" id="v-hardfloor">100 cp</span>
                 </div>
-                <div class="ctrl-hint"><strong>Budget</strong> sets how hard the personality pushes toward its preferred moves — it scales the attractor sliders' influence, nothing more. <strong>Hard Floor</strong> is the engine-verified quality cap: when the personality's pick differs from Maia's most-popular move, Stockfish checks it and rejects anything losing more than the Floor, walking down the preference list until a move fits (worst case: the most-popular move itself). The Floor can sit above or below Budget. Raising Budget past the Floor drags the Floor up with it (it flashes); lowering Budget never moves it. Slide the Floor to the top (<strong>Off</strong>) to remove the check entirely — the bot may then play anything its personality likes, hung queens included.</div>
-                <div class="ctrl-hint" id="hf-rec-hint" style="cursor:pointer;color:var(--amber);" onclick="applyHardFloorRec()" title="Click to apply this suggestion"></div>
+                <div class="ctrl-hint"><strong>Budget</strong> is the personality's allowance, engine-verified: it sets how hard the attractors push toward preferred moves AND is the real centipawn ceiling on the personality's pick — Stockfish checks any pick that differs from Maia's most-popular move and rejects one losing more than the Budget, walking down the preference list until a move fits (at Budget 300 the bot can genuinely sacrifice a knight for its style). 30% of moves it plays its top-ranked choice outright; 70% it samples with temperature. <strong>Hard Floor</strong> (always ≥ Budget) is the absolute backstop on <em>everything else</em> — temperature, Luck, Bad Day, time-pressure — bounding how bad any played move can be vs the popular move. It auto-follows the bot's ELO until you drag it; slide it to the top (<strong>Off</strong>) and nothing is capped — hung queens included.</div>
+                <div class="ctrl-hint" id="hf-rec-hint" style="cursor:pointer;color:var(--amber);" onclick="applyHardFloorRec()" title="Click to resume auto-follow"></div>
 
                 <!-- Move popularity range — only shown for Maia/LC+Maia/Hybrid.
                      Lives inside the gauge box so it can't get lost below the fold -->
@@ -5324,24 +5334,24 @@ function _applyGaugePointer(svg, e){
 function _setGaugeValue(val){
   val = Math.max(0, Math.min(300, val));
   const sl = document.getElementById('r-style');
-  const oldVal = sl ? +sl.value : val;
   if(sl) sl.value = val;
   const disp = document.getElementById('v-style');
   if(disp) disp.textContent = val + ' cp';
   const badge = document.getElementById('v-style-badge');
   if(badge) badge.textContent = val + ' cp';
+  // Engine-panel mirror slider (below the distribution chart) stays in sync
+  const msl = document.getElementById('r-style-mirror');
+  if(msl) msl.value = val;
+  const mdisp = document.getElementById('v-style-mirror');
+  if(mdisp) mdisp.textContent = val + ' cp';
   drawStyleGauge(val);
   updateAttrCpDisplays();
   updateQsCpBudget();
-  // Hard Floor drag: only when the Budget knob sweeps UP *through* the Floor's
-  // position (old ≤ floor < new) does it push the Floor along — like one knob
-  // physically shoving the other. Any other Budget movement (lowering it, or
-  // raising it while the Floor already sits below the old Budget) leaves the
-  // Floor exactly where the user put it.
-  const fl = document.getElementById('r-hardfloor');
-  if(fl){
-    const curFloor = +fl.value;
-    if(oldVal <= curFloor && val > curFloor) _setHardFloorValue(val, true);
+  // Keep the Floor ≥ Budget invariant (and auto-follow if not manual)
+  if(typeof _hfEnforce === 'function') _hfEnforce(true);
+  // Budget drives the third bar of the engine-panel distribution chart
+  if(typeof drawTempChart === 'function' && typeof _currentTempValue !== 'undefined'){
+    try{ drawTempChart(_currentTempValue); }catch(e){}
   }
 }
 
@@ -5350,13 +5360,19 @@ function onGaugeSliderInput(val){
   maybePersHybridAlert();
 }
 
-// Hard Floor — the sole engine-enforced quality cap (§ CP-Budget Acceptance).
-// Free to sit above OR below Budget: Budget is push strength, the Floor is
-// the limit. 1000 (slider top) = Off — the engine check is skipped entirely.
-// `linked` flashes the row when the move was driven by Budget's own slider
-// shoving it upward, rather than a direct edit to Floor itself.
+// Hard Floor — the absolute backstop on move quality, always ≥ Budget
+// (Budget = the personality's verified allowance; Floor = the worst any move
+// from ANY mechanism may be vs the popular move). 1000 (slider top) = Off.
+// Auto mode (default): the Floor follows max(Budget, ELO suggestion) as the
+// user tunes Budget or ELO. Dragging the Floor slider takes manual control;
+// clicking the suggestion hint hands control back to auto.
+let _hfManual = false;
+
 function _setHardFloorValue(val, linked){
-  val = Math.max(0, Math.min(1000, val));
+  const bsl = document.getElementById('r-style');
+  const budget = bsl ? +bsl.value : 0;
+  // Clamp: never below Budget, never above Off (1000)
+  val = Math.max(budget, Math.min(1000, val));
   const fl = document.getElementById('r-hardfloor');
   if(fl) fl.value = val;
   const disp = document.getElementById('v-hardfloor');
@@ -5365,7 +5381,9 @@ function _setHardFloorValue(val, linked){
 }
 
 function onHardFloorSliderInput(val){
+  _hfManual = true; // user grabbed the knob — stop auto-following
   _setHardFloorValue(val, false);
+  updateHardFloorRec();
 }
 
 // ── ELO-scaled Hard Floor recommendation ─────────────────────────────────────
@@ -5375,21 +5393,52 @@ function onHardFloorSliderInput(val){
 function recommendedHardFloor(elo){
   return Math.max(100, Math.min(900, Math.round((2600 - elo) * 0.4 / 50) * 50));
 }
+// Where the Floor should sit in auto mode: the ELO suggestion, but never
+// below the Budget (the invariant the engine relies on).
+function _hfAutoTarget(){
+  const bsl = document.getElementById('r-style');
+  const budget = bsl ? +bsl.value : 100;
+  const elo = (typeof currentElo === 'number' && currentElo) ? currentElo : 1500;
+  return Math.max(budget, recommendedHardFloor(elo));
+}
+// Called after any Budget or ELO change: maintain the invariant, and in auto
+// mode re-follow the target. The slider's min tracks Budget so the thumb
+// physically can't go below it.
+function _hfEnforce(flash){
+  const fl = document.getElementById('r-hardfloor');
+  if(!fl) return;
+  const bsl = document.getElementById('r-style');
+  const budget = bsl ? +bsl.value : 0;
+  fl.min = budget;
+  const cur = +fl.value;
+  if(!_hfManual){
+    const tgt = _hfAutoTarget();
+    if(cur !== tgt) _setHardFloorValue(tgt, flash);
+  } else if(cur < budget){
+    _setHardFloorValue(budget, flash); // Budget pushed the Floor up
+  }
+  updateHardFloorRec();
+}
 function updateHardFloorRec(){
   const hint = document.getElementById('hf-rec-hint');
   if(!hint) return;
   const elo = (typeof currentElo === 'number' && currentElo) ? currentElo : 1500;
-  const rec = recommendedHardFloor(elo);
-  hint.innerHTML = 'Suggested for ELO ' + elo + ': ≈' + rec + ' cp — click to apply. ' +
-    (elo <= 800 ? '(Or slide to <strong>Off</strong> so it can hang pieces like a real beginner.)'
-                : '(Raise it if you want a stronger player that still blunders occasionally.)');
+  const tgt = _hfAutoTarget();
+  if(!_hfManual){
+    hint.innerHTML = 'Auto: following ELO ' + elo + ' → ' + tgt +
+      ' cp. Drag the Floor slider to take manual control.';
+  } else {
+    hint.innerHTML = 'Manual. Suggested for ELO ' + elo + ': ' + tgt +
+      ' cp — click here to resume auto-follow.' +
+      (elo <= 800 ? ' Or slide to <strong>Off</strong> so it can hang pieces like a real beginner.' : '');
+  }
 }
 function applyHardFloorRec(){
-  const elo = (typeof currentElo === 'number' && currentElo) ? currentElo : 1500;
-  _setHardFloorValue(recommendedHardFloor(elo), true);
+  _hfManual = false; // hand control back to auto-follow
+  _hfEnforce(true);
 }
-// Populate the suggestion once on load (setElo refreshes it thereafter)
-setTimeout(function(){ if(typeof updateHardFloorRec === 'function') updateHardFloorRec(); }, 0);
+// Populate the suggestion + snap the Floor to its auto target once on load
+setTimeout(function(){ if(typeof _hfEnforce === 'function') _hfEnforce(false); }, 0);
 
 let _hfFlashTimer = null;
 function _flashHardFloor(){
@@ -5926,6 +5975,7 @@ function getBotConfig(){
     maia3Temp:       maia3Temp,
     cpBudget:        cpBudget,
     hardFloorCp:     parseInt(document.getElementById('r-hardfloor')?.value || String(cpBudget)),
+    hardFloorAuto:   !_hfManual,
     color:           color,
     tcTime:          tcTime,
     tcInc:           tcInc,
@@ -6046,7 +6096,17 @@ function applyBotConfig(cfg){
   // first; Hard Floor defaults to matching Budget for configs saved before
   // the floor existed, then is clamped/restored on top.
   grp(() => _setGaugeValue(cfg.cpBudget != null ? cfg.cpBudget : 100));
-  grp(() => _setHardFloorValue(cfg.hardFloorCp != null ? cfg.hardFloorCp : (cfg.cpBudget != null ? cfg.cpBudget : 100), false));
+  grp(() => {
+    // Auto/manual: explicit flag wins; floor-bearing configs without the flag
+    // stay manual (preserve their saved value); pre-floor configs get auto.
+    _hfManual = (cfg.hardFloorAuto != null) ? !cfg.hardFloorAuto : (cfg.hardFloorCp != null);
+    if(_hfManual){
+      _setHardFloorValue(cfg.hardFloorCp != null ? cfg.hardFloorCp : (cfg.cpBudget != null ? cfg.cpBudget : 100), false);
+      updateHardFloorRec();
+    } else {
+      _hfEnforce(false);
+    }
+  });
   grp(() => {
     const lo = document.getElementById('day-lower'), hi = document.getElementById('day-upper');
     if(lo && cfg.dayLower != null) lo.value = cfg.dayLower;
@@ -6565,7 +6625,7 @@ const BOT_TOUR = [
     action: function(){ setTimeout(function(){ if(typeof drawTempChart==='function') drawTempChart(_currentTempValue); }, 620); } },
 
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#style-gauge', title:'2 · The Centipawmeter',
-    body:'Two dials working together. <b>Budget</b> is push strength — how hard the personality leans toward its preferred moves. <b>Hard Floor</b> is the <b>real, engine-verified centipawn cap</b>: a pick losing more than the Floor versus Maia’s most-popular move is rejected by a Stockfish check and the bot falls back down its preference list. Slide the Floor to <b>Off</b> and nothing is rejected — beginner bots can genuinely hang a queen. A suggestion under the sliders tracks the bot’s ELO.' },
+    body:'<b>Budget</b> = the personality’s allowance, in <b>real, engine-verified centipawns</b>: it sets both how hard the attractors push and the most a personality pick may lose versus Maia’s most-popular move (Stockfish checks; too expensive → the bot walks down its preference list). Budget 300 = willing to sacrifice a knight for its style. <b>Hard Floor</b> (always ≥ Budget) is the backstop on everything else — temperature, luck, bad-day mechanics — and auto-follows the bot’s ELO until you take manual control. Slide it to <b>Off</b> and beginner bots can genuinely hang a queen.' },
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#move-quality-range', title:'Move popularity range',
     body:'Set the probability band the bot draws from — from only its most-expected, mainstream moves down into the rare, low-popularity tail. That tail isn\'t "bad" moves — it\'s where sharp tactics and unconventional ideas tend to hide. (Probability = how often players at that rating choose a move, not engine quality.)' },
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#radar-canvas', title:'Personality fingerprint',
@@ -7130,8 +7190,8 @@ function setElo(elo){
   _updateEnginePanelHeader();
   // Re-anchor pressure curves to new ELO
   initPts(); drawA(); drawB();
-  // Refresh the Hard Floor suggestion for the new strength
-  if(typeof updateHardFloorRec === 'function') updateHardFloorRec();
+  // Hard Floor auto-follows the new strength (until the user takes manual control)
+  if(typeof _hfEnforce === 'function') _hfEnforce(true);
 }
 
 function onEloInputChange(val){
@@ -7229,6 +7289,22 @@ function _tempAdjusted(moves, T){
   return scaled.map(v=> v/sum);
 }
 
+// Illustrative personality signal per chart move (e4, d4, c4, e3, h3):
+// this demo personality loves c4, likes e3, dislikes d4. In play the real
+// signals come from the board; here they just make the mechanism visible.
+const PERS_CHART_PREF = [0, -0.6, 1.0, 0.4, 0];
+
+// Apply the personality reweighting on top of the temperature-adjusted
+// distribution, scaled by the CP Budget exactly like the engine does:
+// prob × exp((budget/150) × signal) — the same 150cp-per-log-unit gain.
+function _persAdjusted(adjProbs, budgetCp){
+  if(!budgetCp) return adjProbs.slice();
+  const g = budgetCp / 150;
+  const w = adjProbs.map((p,i)=> p * Math.exp(g * (PERS_CHART_PREF[i] || 0)));
+  const s = w.reduce((a,b)=>a+b, 0) || 1;
+  return w.map(v=> v/s);
+}
+
 function drawTempChart(T){
   const canvas = document.getElementById('temp-dist-chart');
   if(!canvas || !canvas.getContext) return;
@@ -7254,33 +7330,38 @@ function drawTempChart(T){
 
   const moves = TEMP_CHART_MOVES;
   const adj   = _tempAdjusted(moves, T);
+  const budgetNow = +(document.getElementById('r-style')?.value || 0);
+  const pers  = _persAdjusted(adj, budgetNow);
   const nM    = moves.length;
   const colW  = chartW / nM;
-  const barW  = colW * 0.30;
-  const sep   = colW * 0.05;
+  const barW  = colW * 0.21;
+  const sep   = colW * 0.035;
 
   // Palette
   const C_MAIA   = 'rgba(235,140,0,0.25)'; // dim amber — Maia reference bar
-  const C_ADJ    = 'rgba(235,160,0,0.88)'; // bright amber — adjusted at or below Maia
+  const C_ADJ    = 'rgba(235,160,0,0.88)'; // bright amber — temperature-adjusted
   const C_GAIN   = 'rgba(74,185,124,0.88)'; // teal — probability gained above Maia
   const C_LOST   = 'rgba(210,80,55,0.18)';  // subtle red fill for probability lost
+  const C_PERS   = 'rgba(96,150,224,0.88)'; // blue — after personality × CP budget
 
   moves.forEach((mv, i)=>{
     const maiaP = mv.p;
     const adjP  = adj[i];
+    const perP  = pers[i];
     const cx = padL + i*colW + colW/2;
 
     // Pixel heights (scale: 1.0 = chartH)
     const mH = maiaP * chartH;
     const aH = adjP  * chartH;
+    const pH = perP  * chartH;
 
-    // Left sub-bar: Maia (fixed reference)
-    const mX = cx - sep/2 - barW;
+    // Bar 1 (left): Maia (fixed reference)
+    const mX = cx - 1.5*barW - sep;
     ctx.fillStyle = C_MAIA;
     ctx.fillRect(mX, padT + chartH - mH, barW, mH);
 
-    // Right sub-bar: Adjusted
-    const aX = cx + sep/2;
+    // Bar 2 (middle): temperature-adjusted
+    const aX = cx - barW/2;
     if(adjP >= maiaP - 5e-4){
       // Same or higher: amber base up to Maia height, teal gain above
       ctx.fillStyle = C_ADJ;
@@ -7297,6 +7378,11 @@ function drawTempChart(T){
       ctx.fillRect(aX, padT + chartH - aH, barW, aH);
     }
 
+    // Bar 3 (right): personality-reweighted (illustrative, scaled by CP budget)
+    const pX = cx + barW/2 + sep;
+    ctx.fillStyle = C_PERS;
+    ctx.fillRect(pX, padT + chartH - pH, barW, pH);
+
     // Row 1: move label
     ctx.fillStyle = _tLabel;
     ctx.font = '9px "DM Mono", monospace';
@@ -7305,10 +7391,10 @@ function drawTempChart(T){
 
     // Row 2: Maia % (left column, dim)
     ctx.fillStyle = 'rgba(235,140,0,0.60)';
-    ctx.font = '7.5px "DM Mono", monospace';
+    ctx.font = '7px "DM Mono", monospace';
     ctx.fillText(Math.round(maiaP*100)+'%', mX + barW/2, H - padB + 21);
 
-    // Row 2: Adjusted % (right column)
+    // Row 2: temperature % (middle column)
     const adjPct = Math.round(adjP*100);
     const adjColor = adjP > maiaP + 0.005 ? 'rgba(74,185,124,0.9)'
                    : adjP < maiaP - 0.005 ? 'rgba(235,160,0,0.88)'
@@ -7316,25 +7402,34 @@ function drawTempChart(T){
     ctx.fillStyle = adjColor;
     ctx.fillText(adjP < 0.005 ? '~0' : adjPct+'%', aX + barW/2, H - padB + 21);
 
-    // Row 3: column label (M / A)
+    // Row 2: personality % (right column, blue)
+    ctx.fillStyle = C_PERS;
+    ctx.fillText(perP < 0.005 ? '~0' : Math.round(perP*100)+'%', pX + barW/2, H - padB + 21);
+
+    // Row 3: column labels (M / T / P)
     ctx.fillStyle = _tDim;
     ctx.font = '6.5px "DM Mono", monospace';
     ctx.fillText('M', mX + barW/2, H - padB + 29);
-    ctx.fillText('A', aX + barW/2, H - padB + 29);
+    ctx.fillText('T', aX + barW/2, H - padB + 29);
+    ctx.fillText('P', pX + barW/2, H - padB + 29);
   });
 
-  // Legend (bottom-right)
+  // Legend (bottom-right): Maia → Temperature → Personality
   const legY = H - 5;
   ctx.font = '7px "DM Mono", monospace';
   ctx.textAlign = 'right';
   ctx.fillStyle = 'rgba(235,140,0,0.3)';
-  ctx.fillRect(W - padR - 68, legY - 8, 7, 7);
+  ctx.fillRect(W - padR - 128, legY - 8, 7, 7);
   ctx.fillStyle = _tDim;
-  ctx.fillText('Maia', W - padR - 57, legY);
+  ctx.fillText('Maia', W - padR - 117, legY);
   ctx.fillStyle = 'rgba(235,160,0,0.88)';
-  ctx.fillRect(W - padR - 30, legY - 8, 7, 7);
+  ctx.fillRect(W - padR - 90, legY - 8, 7, 7);
   ctx.fillStyle = _tDim;
-  ctx.fillText('Adj.', W - padR, legY);
+  ctx.fillText('Temp', W - padR - 74, legY);
+  ctx.fillStyle = C_PERS;
+  ctx.fillRect(W - padR - 46, legY - 8, 7, 7);
+  ctx.fillStyle = _tDim;
+  ctx.fillText('Pers.', W - padR, legY);
 }
 
 function onTempSlider(T){
