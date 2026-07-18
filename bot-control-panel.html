@@ -1208,6 +1208,16 @@ body.fj .picon{font-weight:500;}
             <div style="display:flex;flex-direction:column;align-items:center;gap:5px;flex:0 0 auto;">
               <span style="font-family:var(--font-m);font-size:8px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-dim);">ELO</span>
               <input class="elo-input" id="elo-input" type="number" min="600" max="2600" step="25" value="1500" oninput="onEloInputChange(this.value)">
+              <!-- Current CP Budget · Hard Floor readout + ELO recommendation -->
+              <span style="margin-top:6px;font-family:var(--font-m);font-size:7px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-dim);">Budget · Floor</span>
+              <span id="ind-cp-current" style="font-family:var(--font-m);font-size:10px;color:var(--amber-bright);">100 · 100</span>
+              <span style="margin-top:4px;font-family:var(--font-m);font-size:7px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-dim);">Rec. for this ELO</span>
+              <button id="cp-rec-btn" onclick="applyRecommendedCp()"
+                title="Set CP Budget and Hard Floor to the value recommended for this ELO"
+                style="padding:3px 8px;font-family:var(--font-m);font-size:9px;letter-spacing:0.06em;
+                background:rgba(232,170,64,0.10);border:0.5px solid rgba(232,170,64,0.45);
+                border-radius:3px;color:var(--amber-bright);cursor:pointer;">Set both: 450 cp</button>
+              <span style="font-family:var(--font-m);font-size:6.5px;color:var(--text-dim);max-width:90px;text-align:center;line-height:1.5;">Fine-tune both in the Personality panel</span>
             </div>
             </div><!-- /speedo flex row -->
             <div style="text-align:center;margin-top:4px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);">Click arc · drag needle · or type ELO · snaps to ±25</div>
@@ -1406,8 +1416,7 @@ body.fj .picon{font-weight:500;}
                     oninput="onHardFloorSliderInput(+this.value)">
                   <span class="ctrl-val" id="v-hardfloor">100 cp</span>
                 </div>
-                <div class="ctrl-hint"><strong>Budget</strong> is the personality's allowance, engine-verified: it sets how hard the attractors push toward preferred moves AND is the real centipawn ceiling on the personality's pick — Stockfish checks any pick that differs from Maia's most-popular move and rejects one losing more than the Budget, walking down the preference list until a move fits (at Budget 300 the bot can genuinely sacrifice a knight for its style). 30% of moves it plays its top-ranked choice outright; 70% it samples with temperature. <strong>Hard Floor</strong> (always ≥ Budget) is the absolute backstop on <em>everything else</em> — temperature, Luck, Bad Day, time-pressure — bounding how bad any played move can be vs the popular move. It auto-follows the bot's ELO until you drag it; slide it to the top (<strong>Off</strong>) and nothing is capped — hung queens included.</div>
-                <div class="ctrl-hint" id="hf-rec-hint" style="cursor:pointer;color:var(--amber);" onclick="applyHardFloorRec()" title="Click to resume auto-follow"></div>
+                <div class="ctrl-hint"><strong>Budget</strong> is the personality's allowance, engine-verified: it sets how hard the attractors push toward preferred moves AND is the real centipawn ceiling on the personality's pick — Stockfish checks any pick that differs from Maia's most-popular move and rejects one losing more than the Budget, walking down the preference list until a move fits (at Budget 300 the bot can genuinely sacrifice a knight for its style). 30% of moves it plays its top-ranked choice outright; 70% it samples with temperature. <strong>Hard Floor</strong> (always ≥ Budget) is the absolute backstop on <em>everything else</em> — temperature, Luck, Bad Day, time-pressure — bounding how bad any played move can be vs the popular move. Slide it to the top (<strong>Off</strong>) and nothing is capped — hung queens included. The Engine panel shows both values beside the Elometer, with a one-click ELO-based recommendation.</div>
 
                 <!-- Move popularity range — only shown for Maia/LC+Maia/Hybrid.
                      Lives inside the gauge box so it can't get lost below the fold -->
@@ -5347,8 +5356,9 @@ function _setGaugeValue(val){
   drawStyleGauge(val);
   updateAttrCpDisplays();
   updateQsCpBudget();
-  // Keep the Floor ≥ Budget invariant (and auto-follow if not manual)
-  if(typeof _hfEnforce === 'function') _hfEnforce(true);
+  // Keep the Floor ≥ Budget invariant (no auto-following — user-driven only)
+  if(typeof _hfClamp === 'function') _hfClamp(true);
+  if(typeof updateCpIndicators === 'function') updateCpIndicators();
   // Budget drives the third bar of the engine-panel distribution chart
   if(typeof drawTempChart === 'function' && typeof _currentTempValue !== 'undefined'){
     try{ drawTempChart(_currentTempValue); }catch(e){}
@@ -5363,10 +5373,8 @@ function onGaugeSliderInput(val){
 // Hard Floor — the absolute backstop on move quality, always ≥ Budget
 // (Budget = the personality's verified allowance; Floor = the worst any move
 // from ANY mechanism may be vs the popular move). 1000 (slider top) = Off.
-// Auto mode (default): the Floor follows max(Budget, ELO suggestion) as the
-// user tunes Budget or ELO. Dragging the Floor slider takes manual control;
-// clicking the suggestion hint hands control back to auto.
-let _hfManual = false;
+// Budget and Floor move ONLY by user action — no auto-following. The one
+// linkage: raising Budget above the Floor drags the Floor up (invariant).
 
 function _setHardFloorValue(val, linked){
   const bsl = document.getElementById('r-style');
@@ -5378,67 +5386,58 @@ function _setHardFloorValue(val, linked){
   const disp = document.getElementById('v-hardfloor');
   if(disp) disp.textContent = (val >= 1000) ? 'Off' : val + ' cp';
   if(linked) _flashHardFloor();
+  if(typeof updateCpIndicators === 'function') updateCpIndicators();
 }
 
 function onHardFloorSliderInput(val){
-  _hfManual = true; // user grabbed the knob — stop auto-following
   _setHardFloorValue(val, false);
-  updateHardFloorRec();
 }
 
-// ── ELO-scaled Hard Floor recommendation ─────────────────────────────────────
+// Keep the Floor ≥ Budget invariant after a Budget change: the slider's min
+// tracks Budget, and a Budget raised above the Floor drags it up (flash).
+function _hfClamp(flash){
+  const fl = document.getElementById('r-hardfloor');
+  if(!fl) return;
+  const bsl = document.getElementById('r-style');
+  const budget = bsl ? +bsl.value : 0;
+  fl.min = budget;
+  if(+fl.value < budget) _setHardFloorValue(budget, flash);
+}
+
+// ── ELO-scaled recommendation (Engine panel readout + button) ────────────────
 // A 2500-elo bot deviating 400cp from best is out of character; a 700-elo bot
 // capped at 100cp can never make the mistakes a real 700 makes. Heuristic:
 // ~100cp at master level rising to ~800cp at 600 ELO, rounded to 50s.
 function recommendedHardFloor(elo){
   return Math.max(100, Math.min(900, Math.round((2600 - elo) * 0.4 / 50) * 50));
 }
-// Where the Floor should sit in auto mode: the ELO suggestion, but never
-// below the Budget (the invariant the engine relies on).
-function _hfAutoTarget(){
-  const bsl = document.getElementById('r-style');
-  const budget = bsl ? +bsl.value : 100;
-  const elo = (typeof currentElo === 'number' && currentElo) ? currentElo : 1500;
-  return Math.max(budget, recommendedHardFloor(elo));
-}
-// Called after any Budget or ELO change: maintain the invariant, and in auto
-// mode re-follow the target. The slider's min tracks Budget so the thumb
-// physically can't go below it.
-function _hfEnforce(flash){
-  const fl = document.getElementById('r-hardfloor');
-  if(!fl) return;
-  const bsl = document.getElementById('r-style');
-  const budget = bsl ? +bsl.value : 0;
-  fl.min = budget;
-  const cur = +fl.value;
-  if(!_hfManual){
-    const tgt = _hfAutoTarget();
-    if(cur !== tgt) _setHardFloorValue(tgt, flash);
-  } else if(cur < budget){
-    _setHardFloorValue(budget, flash); // Budget pushed the Floor up
-  }
-  updateHardFloorRec();
-}
-function updateHardFloorRec(){
-  const hint = document.getElementById('hf-rec-hint');
-  if(!hint) return;
-  const elo = (typeof currentElo === 'number' && currentElo) ? currentElo : 1500;
-  const tgt = _hfAutoTarget();
-  if(!_hfManual){
-    hint.innerHTML = 'Auto: following ELO ' + elo + ' → ' + tgt +
-      ' cp. Drag the Floor slider to take manual control.';
-  } else {
-    hint.innerHTML = 'Manual. Suggested for ELO ' + elo + ': ' + tgt +
-      ' cp — click here to resume auto-follow.' +
-      (elo <= 800 ? ' Or slide to <strong>Off</strong> so it can hang pieces like a real beginner.' : '');
+// Refresh the Engine-panel indicators: current Budget · Floor, and the
+// recommendation button for the current ELO. Budget is capped at 300, so
+// when the recommendation exceeds it the button shows both values it will set.
+function updateCpIndicators(){
+  const cur = document.getElementById('ind-cp-current');
+  const btn = document.getElementById('cp-rec-btn');
+  if(!cur && !btn) return;
+  const b = +(document.getElementById('r-style')?.value || 0);
+  const f = +(document.getElementById('r-hardfloor')?.value || 0);
+  if(cur) cur.textContent = b + ' · ' + (f >= 1000 ? 'Off' : f);
+  if(btn){
+    const elo = (typeof currentElo === 'number' && currentElo) ? currentElo : 1500;
+    const rec = recommendedHardFloor(elo);
+    const recB = Math.min(300, rec);
+    btn.textContent = (recB === rec) ? 'Set both: ' + rec + ' cp' : 'Set ' + recB + ' · ' + rec;
   }
 }
-function applyHardFloorRec(){
-  _hfManual = false; // hand control back to auto-follow
-  _hfEnforce(true);
+// The button: one click sets Budget AND Floor to the ELO recommendation
+// (Budget clamped to its 0–300 range when the recommendation is higher).
+function applyRecommendedCp(){
+  const elo = (typeof currentElo === 'number' && currentElo) ? currentElo : 1500;
+  const rec = recommendedHardFloor(elo);
+  _setGaugeValue(Math.min(300, rec));
+  _setHardFloorValue(rec, true);
 }
-// Populate the suggestion + snap the Floor to its auto target once on load
-setTimeout(function(){ if(typeof _hfEnforce === 'function') _hfEnforce(false); }, 0);
+// Populate the indicators once on load
+setTimeout(function(){ if(typeof updateCpIndicators === 'function') updateCpIndicators(); }, 0);
 
 let _hfFlashTimer = null;
 function _flashHardFloor(){
@@ -5975,7 +5974,6 @@ function getBotConfig(){
     maia3Temp:       maia3Temp,
     cpBudget:        cpBudget,
     hardFloorCp:     parseInt(document.getElementById('r-hardfloor')?.value || String(cpBudget)),
-    hardFloorAuto:   !_hfManual,
     color:           color,
     tcTime:          tcTime,
     tcInc:           tcInc,
@@ -6096,17 +6094,9 @@ function applyBotConfig(cfg){
   // first; Hard Floor defaults to matching Budget for configs saved before
   // the floor existed, then is clamped/restored on top.
   grp(() => _setGaugeValue(cfg.cpBudget != null ? cfg.cpBudget : 100));
-  grp(() => {
-    // Auto/manual: explicit flag wins; floor-bearing configs without the flag
-    // stay manual (preserve their saved value); pre-floor configs get auto.
-    _hfManual = (cfg.hardFloorAuto != null) ? !cfg.hardFloorAuto : (cfg.hardFloorCp != null);
-    if(_hfManual){
-      _setHardFloorValue(cfg.hardFloorCp != null ? cfg.hardFloorCp : (cfg.cpBudget != null ? cfg.cpBudget : 100), false);
-      updateHardFloorRec();
-    } else {
-      _hfEnforce(false);
-    }
-  });
+  // Hard Floor: saved value, else legacy fallback to the budget (equal = the
+  // old single-dial behaviour). _setHardFloorValue clamps ≥ budget itself.
+  grp(() => _setHardFloorValue(cfg.hardFloorCp != null ? cfg.hardFloorCp : (cfg.cpBudget != null ? cfg.cpBudget : 100), false));
   grp(() => {
     const lo = document.getElementById('day-lower'), hi = document.getElementById('day-upper');
     if(lo && cfg.dayLower != null) lo.value = cfg.dayLower;
@@ -6625,7 +6615,7 @@ const BOT_TOUR = [
     action: function(){ setTimeout(function(){ if(typeof drawTempChart==='function') drawTempChart(_currentTempValue); }, 620); } },
 
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#style-gauge', title:'2 · The Centipawmeter',
-    body:'<b>Budget</b> = the personality’s allowance, in <b>real, engine-verified centipawns</b>: it sets both how hard the attractors push and the most a personality pick may lose versus Maia’s most-popular move (Stockfish checks; too expensive → the bot walks down its preference list). Budget 300 = willing to sacrifice a knight for its style. <b>Hard Floor</b> (always ≥ Budget) is the backstop on everything else — temperature, luck, bad-day mechanics — and auto-follows the bot’s ELO until you take manual control. Slide it to <b>Off</b> and beginner bots can genuinely hang a queen.' },
+    body:'<b>Budget</b> = the personality’s allowance, in <b>real, engine-verified centipawns</b>: it sets both how hard the attractors push and the most a personality pick may lose versus Maia’s most-popular move (Stockfish checks; too expensive → the bot walks down its preference list). Budget 300 = willing to sacrifice a knight for its style. <b>Hard Floor</b> (always ≥ Budget) is the backstop on everything else — temperature, luck, bad-day mechanics. Slide it to <b>Off</b> and beginner bots can genuinely hang a queen. The Engine panel shows both values beside the Elometer with a one-click ELO recommendation.' },
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#move-quality-range', title:'Move popularity range',
     body:'Set the probability band the bot draws from — from only its most-expected, mainstream moves down into the rare, low-popularity tail. That tail isn\'t "bad" moves — it\'s where sharp tactics and unconventional ideas tend to hide. (Probability = how often players at that rating choose a move, not engine quality.)' },
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#radar-canvas', title:'Personality fingerprint',
@@ -7190,8 +7180,9 @@ function setElo(elo){
   _updateEnginePanelHeader();
   // Re-anchor pressure curves to new ELO
   initPts(); drawA(); drawB();
-  // Hard Floor auto-follows the new strength (until the user takes manual control)
-  if(typeof _hfEnforce === 'function') _hfEnforce(true);
+  // Refresh the Engine-panel recommendation readout (display only — the
+  // Budget/Floor themselves never move unless the user acts)
+  if(typeof updateCpIndicators === 'function') updateCpIndicators();
 }
 
 function onEloInputChange(val){
