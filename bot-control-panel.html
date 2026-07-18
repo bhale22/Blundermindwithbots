@@ -1392,11 +1392,12 @@ body.fj .picon{font-weight:500;}
                 </div>
                 <div class="ctrl" id="hard-floor-row" style="margin-top:8px;">
                   <span class="ctrl-lbl" id="hard-floor-lbl" style="min-width:80px;">Hard Floor</span>
-                  <input type="range" id="r-hardfloor" min="0" max="300" step="10" value="100"
+                  <input type="range" id="r-hardfloor" min="0" max="1000" step="10" value="100"
                     oninput="onHardFloorSliderInput(+this.value)">
                   <span class="ctrl-val" id="v-hardfloor">100 cp</span>
                 </div>
-                <div class="ctrl-hint">Budget sets how hard the personality pushes to find an alternative to Maia's most-popular move. <strong>Hard Floor</strong> is the real, engine-verified ceiling on how many centipawns that alternative may actually lose — Stockfish checks the pick against Maia's top move, and anything over the <em>lower</em> of Budget and Floor is rejected, walking down the preference list until one fits (worst case: the most-popular move itself). Drag Budget past Floor and Floor rides along (flashing) — but dragging Budget back down below Floor leaves Floor exactly where it was; Budget itself just becomes the tighter limit until raised past Floor again.</div>
+                <div class="ctrl-hint"><strong>Budget</strong> sets how hard the personality pushes toward its preferred moves — it scales the attractor sliders' influence, nothing more. <strong>Hard Floor</strong> is the engine-verified quality cap: when the personality's pick differs from Maia's most-popular move, Stockfish checks it and rejects anything losing more than the Floor, walking down the preference list until a move fits (worst case: the most-popular move itself). The Floor can sit above or below Budget. Raising Budget past the Floor drags the Floor up with it (it flashes); lowering Budget never moves it. Slide the Floor to the top (<strong>Off</strong>) to remove the check entirely — the bot may then play anything its personality likes, hung queens included.</div>
+                <div class="ctrl-hint" id="hf-rec-hint" style="cursor:pointer;color:var(--amber);" onclick="applyHardFloorRec()" title="Click to apply this suggestion"></div>
 
                 <!-- Move popularity range — only shown for Maia/LC+Maia/Hybrid.
                      Lives inside the gauge box so it can't get lost below the fold -->
@@ -1426,10 +1427,23 @@ body.fj .picon{font-weight:500;}
                 <div class="radar-hint">drag nodes or click axis to set value</div>
               </div>
 
+              <!-- Clock tactics — synced with the same switches in Move Timing -->
+              <div class="dlbl" style="margin-top:14px;"><span>Clock tactics</span></div>
+              <div class="tog-row">
+                <div><div class="tog-lbl">Time Weaponizer</div><div class="tog-desc">When ahead on clock, plays instantly + drops ELO to pressure flagging. Fine-tune in Move Timing.</div></div>
+                <label class="tog"><input type="checkbox" id="weaponizer-toggle-2" onchange="showWeaponizer(this.checked,'weaponizer-toggle-2')"><div class="tog-track"><div class="tog-thumb"></div></div></label>
+              </div>
+              <div class="tog-row">
+                <div><div class="tog-lbl">Clock-pressure mirroring</div><div class="tog-desc">Bot speeds up when your clock runs low</div></div>
+                <label class="tog"><input type="checkbox" id="cb-clock-mirror-2" checked onchange="syncClockMirror(this.checked,'cb-clock-mirror-2')"><div class="tog-track"><div class="tog-thumb"></div></div></label>
+              </div>
+
               <!-- Custom-control entry — the full builder lives on its own tab -->
               <div class="dlbl" style="margin-top:14px;"><span>Custom controls</span></div>
-              <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-bottom:8px;">Build your own attractor — pick a board feature, a phase, and a direction. Opens the Custom Controls tab.</div>
-              <button type="button" class="cc-add-btn" onclick="addCustomControlAndGo()">+ Add custom control</button>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <button type="button" class="cc-add-btn" style="flex-shrink:0;" onclick="addCustomControlAndGo()">+ Add custom control</button>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);">Build your own attractor — pick a board feature, a phase, and a direction. Opens the Custom Controls tab.</div>
+              </div>
             </div>
           </div>
         </div>
@@ -1469,18 +1483,8 @@ body.fj .picon{font-weight:500;}
 
         <!-- TAB 5: Draws & Desperation -->
         <div class="itab-pane" id="itab-attract-draws">
-          <!-- Time Weaponizer — mirrors the toggle in Move Timing; both stay in sync -->
-          <div class="dlbl"><span>Time Weaponizer</span></div>
-          <div class="tog-row">
-            <div>
-              <div class="tog-lbl">Enable Time Weaponizer</div>
-              <div class="tog-desc">When ahead on clock, plays instantly + drops ELO to pressure flagging. Opt-in. Same switch as the one in Move Timing.</div>
-            </div>
-            <label class="tog"><input type="checkbox" id="weaponizer-toggle-2" onchange="showWeaponizer(this.checked,'weaponizer-toggle-2')"><div class="tog-track"><div class="tog-thumb"></div></div></label>
-          </div>
-
           <!-- Draw behaviour + desperation -->
-          <div class="dlbl" style="margin-top:14px;"><span>Draws &amp; desperation</span></div>
+          <div class="dlbl"><span>Draws &amp; desperation</span></div>
           <div class="tog-row">
             <div><div class="tog-lbl">Accepts draw offers</div><div class="tog-desc">Accepts your ½ offer unless it thinks it's clearly ahead — judged at its own rating</div></div>
             <label class="tog"><input type="checkbox" id="cb-draw-accept" onchange="showDrawAccept(this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label>
@@ -1623,7 +1627,7 @@ body.fj .picon{font-weight:500;}
           <div class="dlbl"><span>Human behaviour modifiers</span></div>
           <div class="tog-row"><div><div class="tog-lbl">Reconsideration pauses</div><div class="tog-desc">Occasionally hesitates then takes longer — as if changing its mind</div></div><label class="tog"><input type="checkbox" id="cb-reconsidered" checked><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
           <div class="tog-row"><div><div class="tog-lbl">Move blink on forced moves</div><div class="tog-desc">Plays obvious recaptures and forced replies instantly</div></div><label class="tog"><input type="checkbox" id="cb-blink" checked><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
-          <div class="tog-row"><div><div class="tog-lbl">Clock-pressure mirroring</div><div class="tog-desc">Bot speeds up when your clock runs low</div></div><label class="tog"><input type="checkbox" id="cb-clock-mirror" checked><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
+          <div class="tog-row"><div><div class="tog-lbl">Clock-pressure mirroring</div><div class="tog-desc">Bot speeds up when your clock runs low</div></div><label class="tog"><input type="checkbox" id="cb-clock-mirror" checked onchange="syncClockMirror(this.checked,'cb-clock-mirror')"><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
 
           <!-- Time Weaponizer — adjacent to clock-pressure mirroring -->
           <div class="dlbl" style="margin-top:10px;"><span>Time Weaponizer</span></div>
@@ -5329,15 +5333,16 @@ function _setGaugeValue(val){
   drawStyleGauge(val);
   updateAttrCpDisplays();
   updateQsCpBudget();
-  // Hard Floor is a one-way ratchet: Budget can push it UP by dragging past
-  // its current position, but Budget dropping below Floor never pulls Floor
-  // down with it — Floor stays exactly where the user left it, and simply
-  // stops being the binding constraint (Budget itself becomes the tighter,
-  // lower ceiling) until Budget rises past it again. No pinning either way —
-  // this fires the same whether Floor was at the default (equal to Budget)
-  // or already separated by the user.
+  // Hard Floor drag: only when the Budget knob sweeps UP *through* the Floor's
+  // position (old ≤ floor < new) does it push the Floor along — like one knob
+  // physically shoving the other. Any other Budget movement (lowering it, or
+  // raising it while the Floor already sits below the old Budget) leaves the
+  // Floor exactly where the user put it.
   const fl = document.getElementById('r-hardfloor');
-  if(fl && val > +fl.value) _setHardFloorValue(val, true);
+  if(fl){
+    const curFloor = +fl.value;
+    if(oldVal <= curFloor && val > curFloor) _setHardFloorValue(val, true);
+  }
 }
 
 function onGaugeSliderInput(val){
@@ -5345,24 +5350,46 @@ function onGaugeSliderInput(val){
   maybePersHybridAlert();
 }
 
-// Hard Floor — the real acceptance ceiling (§ CP-Budget Acceptance). Free to
-// sit above OR below Budget; the engine always enforces min(Budget, Floor),
-// so a Floor left above Budget after Budget drops is harmless — Budget just
-// becomes the binding constraint until it's raised past Floor again.
+// Hard Floor — the sole engine-enforced quality cap (§ CP-Budget Acceptance).
+// Free to sit above OR below Budget: Budget is push strength, the Floor is
+// the limit. 1000 (slider top) = Off — the engine check is skipped entirely.
 // `linked` flashes the row when the move was driven by Budget's own slider
-// dragging past it, rather than a direct edit to Floor itself.
+// shoving it upward, rather than a direct edit to Floor itself.
 function _setHardFloorValue(val, linked){
-  val = Math.max(0, Math.min(300, val));
+  val = Math.max(0, Math.min(1000, val));
   const fl = document.getElementById('r-hardfloor');
   if(fl) fl.value = val;
   const disp = document.getElementById('v-hardfloor');
-  if(disp) disp.textContent = val + ' cp';
+  if(disp) disp.textContent = (val >= 1000) ? 'Off' : val + ' cp';
   if(linked) _flashHardFloor();
 }
 
 function onHardFloorSliderInput(val){
   _setHardFloorValue(val, false);
 }
+
+// ── ELO-scaled Hard Floor recommendation ─────────────────────────────────────
+// A 2500-elo bot deviating 400cp from best is out of character; a 700-elo bot
+// capped at 100cp can never make the mistakes a real 700 makes. Heuristic:
+// ~100cp at master level rising to ~800cp at 600 ELO, rounded to 50s.
+function recommendedHardFloor(elo){
+  return Math.max(100, Math.min(900, Math.round((2600 - elo) * 0.4 / 50) * 50));
+}
+function updateHardFloorRec(){
+  const hint = document.getElementById('hf-rec-hint');
+  if(!hint) return;
+  const elo = (typeof currentElo === 'number' && currentElo) ? currentElo : 1500;
+  const rec = recommendedHardFloor(elo);
+  hint.innerHTML = 'Suggested for ELO ' + elo + ': ≈' + rec + ' cp — click to apply. ' +
+    (elo <= 800 ? '(Or slide to <strong>Off</strong> so it can hang pieces like a real beginner.)'
+                : '(Raise it if you want a stronger player that still blunders occasionally.)');
+}
+function applyHardFloorRec(){
+  const elo = (typeof currentElo === 'number' && currentElo) ? currentElo : 1500;
+  _setHardFloorValue(recommendedHardFloor(elo), true);
+}
+// Populate the suggestion once on load (setElo refreshes it thereafter)
+setTimeout(function(){ if(typeof updateHardFloorRec === 'function') updateHardFloorRec(); }, 0);
 
 let _hfFlashTimer = null;
 function _flashHardFloor(){
@@ -5826,6 +5853,15 @@ function showWeaponizer(on, sourceId){
     if(el && el.checked !== on) el.checked = on;
   });
 }
+// Same two-way sync for the Clock-pressure mirroring pair (Move Timing +
+// Personality tab). getBotConfig reads only the primary (cb-clock-mirror).
+function syncClockMirror(on, sourceId){
+  ['cb-clock-mirror', 'cb-clock-mirror-2'].forEach(id => {
+    if(id === sourceId) return;
+    const el = document.getElementById(id);
+    if(el && el.checked !== on) el.checked = on;
+  });
+}
 function showDrawAccept(on){
   const sub = document.getElementById('draw-accept-sub');
   if(sub) sub.style.display = on ? 'block' : 'none';
@@ -6096,6 +6132,7 @@ function applyBotConfig(cfg){
     setCb('cb-reconsidered', cfg.behavReconsider);
     setCb('cb-blink',        cfg.behavBlink);
     setCb('cb-clock-mirror', cfg.behavClockMirror);
+    syncClockMirror(cfg.behavClockMirror !== false, 'cb-clock-mirror');
     setCb('cb-flag',         cfg.canFlag);
     const wz = document.getElementById('weaponizer-toggle');
     if(wz){ wz.checked = !!cfg.weaponizerEnabled; showWeaponizer(wz.checked, 'weaponizer-toggle'); }
@@ -6528,7 +6565,7 @@ const BOT_TOUR = [
     action: function(){ setTimeout(function(){ if(typeof drawTempChart==='function') drawTempChart(_currentTempValue); }, 620); } },
 
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#style-gauge', title:'2 · The Centipawmeter',
-    body:'The master dial: the most <b>real, engine-verified centipawns</b> the personality may sacrifice versus Maia’s most-popular move. A pick that costs more is rejected by a Stockfish check and the bot falls back down its preference list. Low = near-mainstream play; high = a bot with strong opinions.' },
+    body:'Two dials working together. <b>Budget</b> is push strength — how hard the personality leans toward its preferred moves. <b>Hard Floor</b> is the <b>real, engine-verified centipawn cap</b>: a pick losing more than the Floor versus Maia’s most-popular move is rejected by a Stockfish check and the bot falls back down its preference list. Slide the Floor to <b>Off</b> and nothing is rejected — beginner bots can genuinely hang a queen. A suggestion under the sliders tracks the bot’s ELO.' },
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#move-quality-range', title:'Move popularity range',
     body:'Set the probability band the bot draws from — from only its most-expected, mainstream moves down into the rare, low-popularity tail. That tail isn\'t "bad" moves — it\'s where sharp tactics and unconventional ideas tend to hide. (Probability = how often players at that rating choose a move, not engine quality.)' },
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#radar-canvas', title:'Personality fingerprint',
@@ -6579,6 +6616,9 @@ function endTour(){
     try { removeCustomControl(_btDemoId); } catch(e){}
     _btDemoId = null;
   }
+  // Leave the Personality section on its landing tab, not whatever sub-tab the
+  // tour happened to end on — first-time users expect Centipawmeter + radar.
+  try { switchItab('attract', 'quality'); } catch(e){}
   try { localStorage.setItem('bm_bottour','1'); } catch(e){}
 }
 function tourNext(){ if(_btIdx < _bt.length - 1){ _btIdx++; _btRender(); } else endTour(); }
@@ -6617,6 +6657,11 @@ function _btRender(){
   if(step.open){
     const sec = document.getElementById('sec-' + step.open);
     if(sec && !sec.classList.contains('open') && typeof toggleSec === 'function'){ toggleSec(step.open); opened = true; }
+  }
+  // Leaving the Personality section for another stage: restore its landing tab
+  // (Move Quality & Strategy) so re-opening it later shows the expected view.
+  if(step.open && step.open !== 'attract' && typeof switchItab === 'function'){
+    try{ switchItab('attract', 'quality'); }catch(e){}
   }
   if(step.tab && typeof switchItab === 'function'){ try{ switchItab(step.tab[0], step.tab[1]); }catch(e){} }
   if(step.action){ try{ step.action(); }catch(e){} }
@@ -7085,6 +7130,8 @@ function setElo(elo){
   _updateEnginePanelHeader();
   // Re-anchor pressure curves to new ELO
   initPts(); drawA(); drawB();
+  // Refresh the Hard Floor suggestion for the new strength
+  if(typeof updateHardFloorRec === 'function') updateHardFloorRec();
 }
 
 function onEloInputChange(val){

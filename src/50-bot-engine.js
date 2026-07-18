@@ -306,16 +306,18 @@ function _maybeStaleSeek(moveProbs) {
 // otherwise we walk down the personality's preference order and, if nothing
 // fits, fall back to the most-popular move itself (0 cp by definition).
 //
-// Budget vs. Hard Floor: Budget (window._bcpCpBudget) scales how hard the
-// attractors PUSH toward an alternative (the reweighting `scale` factor in
-// applyMoveAttractors). Hard Floor (window._bcpCpHardFloor) is a separately-
-// dialable ceiling on top of that. The UI lets Floor sit above Budget after
-// Budget is lowered past it (a one-way ratchet — Floor only ever gets pushed
-// up by Budget, never pulled down), so the two can legitimately disagree.
-// The effective ceiling actually enforced is always min(Budget, Floor) —
-// computed here rather than trusted from slider state, so correctness never
-// depends on the UI's drag choreography.
+// Budget vs. Hard Floor: Budget (window._bcpCpBudget) ONLY scales how hard
+// the attractors PUSH toward an alternative (the reweighting `scale` factor
+// in applyMoveAttractors) — it is not a quality promise. Hard Floor
+// (window._bcpCpHardFloor) is the single enforced cap on real cp loss vs.
+// Maia's most-popular move, and it may sit above OR below Budget (a 700-ELO
+// bot might have Budget 100 with a Floor of 750). A Floor at or above
+// HARD_FLOOR_OFF_CP means "no floor": the check is skipped entirely and the
+// personality may play anything it likes — hung queens included.
 let _attrReweightApplied = false; // set by applyMoveAttractors each call
+
+// Floor values at/above this mean "Off" (the panel slider's top position).
+const HARD_FLOOR_OFF_CP = 1000;
 
 // How many of the personality's next-favourite moves ride along in the probe
 // beyond the chosen pick and the most-popular move. Wider = more of Maia's
@@ -329,10 +331,12 @@ async function applyCpBudgetAcceptance(fen, chosenUci, rawProbs, shapedProbs) {
     if (!chosenUci || !rawProbs || !_attrReweightApplied) return chosenUci;
     // Stalemate-seeking moves deliberately throw material — exempt from the floor
     if (_staleSeekThisMove) return chosenUci;
+    // The Floor alone is the cap; Budget is push strength, not a limit.
+    // Legacy configs without hardFloorCp fall back to their cpBudget value.
     const rawBudget = window._bcpCpBudget    != null ? +window._bcpCpBudget    : 0;
-    const rawFloor  = window._bcpCpHardFloor != null ? +window._bcpCpHardFloor : rawBudget;
-    const budget = Math.min(rawBudget, rawFloor);
+    const budget    = window._bcpCpHardFloor != null ? +window._bcpCpHardFloor : rawBudget;
     if (!(budget >= 0)) return chosenUci;
+    if (budget >= HARD_FLOOR_OFF_CP) return chosenUci; // Floor is Off — no check
     let topMove = null, topP = -1;
     for (const m in rawProbs) { if (rawProbs[m] > topP) { topP = rawProbs[m]; topMove = m; } }
     if (!topMove || topMove === chosenUci) return chosenUci;
