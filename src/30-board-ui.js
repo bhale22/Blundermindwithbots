@@ -1423,7 +1423,19 @@ function enterExploreMode() {
   render();
 }
 
-function resetGame(){cancelResign();showRematchBtn(false);clockStop();clockInit(clockControl);lastMoveFrom=-1;lastMoveTo=-1;_gameStartFen=null;_gameStartSans=[];const sg=document.getElementById("saveGameBtn");if(sg)sg.remove();loadPos(0);if(typeof distReset==='function')distReset();}
+function resetGame(){
+  cancelResign();showRematchBtn(false);clockStop();clockInit(clockControl);
+  lastMoveFrom=-1;lastMoveTo=-1;_gameStartFen=null;_gameStartSans=[];
+  // Every game start funnels through here: kill any lingering replay/review
+  // state so the old game's move selector can't hijack the new game's board.
+  // (Continuations re-apply their FEN + SAN prefix AFTER this reset.)
+  if(typeof _exitReplayKeepBoard==='function') _exitReplayKeepBoard();
+  // Clear a stale bot draw-offer toast from the previous game
+  const _dt=document.getElementById('bm-bot-draw');if(_dt)_dt.remove();
+  const sg=document.getElementById("saveGameBtn");if(sg)sg.remove();
+  loadPos(0);
+  if(typeof distReset==='function')distReset();
+}
 function setPalette(name){currentPalette=PALETTES[name]||PALETTES.default;render();}
 
 let _savedMarkings=null;

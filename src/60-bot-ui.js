@@ -832,14 +832,17 @@ function _checkEngineReady(tab) {
 }
 
 async function botStart() {
-  // Guard: if in a live multiplayer game, confirm before abandoning it
-  if (typeof mpRoomId !== 'undefined' && mpRoomId &&
-      typeof gameOver !== 'undefined' && !gameOver) {
-    if (!confirm('Start a bot game? You will forfeit your current online game.')) return;
-    if (typeof mpWs !== 'undefined' && mpWs && mpWs.readyState === WebSocket.OPEN) {
-      try { mpWs.send(JSON.stringify({ type: 'resign' })); } catch(e) {}
+  // Guard: starting (or restarting) a game while one is in progress forfeits
+  // it — online game OR an active bot game with moves already played.
+  if (typeof _isLiveGame === 'function' && _isLiveGame()) {
+    if (!confirmAbandonLiveGame('Start a new bot game')) return;
+    // Tear down an online game; an active bot game is replaced below anyway
+    if (typeof mpRoomId !== 'undefined' && mpRoomId) {
+      if (typeof mpWs !== 'undefined' && mpWs && mpWs.readyState === WebSocket.OPEN) {
+        try { mpWs.send(JSON.stringify({ type: 'resign' })); } catch(e) {}
+      }
+      if (typeof mpLeave === 'function') mpLeave();
     }
-    if (typeof mpLeave === 'function') mpLeave();
   }
 
   botActive = false;

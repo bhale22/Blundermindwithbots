@@ -1008,10 +1008,18 @@ story += [
            'opens; the configured bot then plays on from that point). Repertoire book moves are '
            'skipped, but the Lichess explorer stays active — it queries by position, so a '
            'classic position still draws real human move frequencies.'),
-    bullet('<b>Invite from here</b> creates a <i>private</i> 2-player room whose game begins at '
-           'the position (invite link/code only — never posted to the open-challenge board). '
-           'The server relays a sanitised start position so both boards agree; rematches restart '
-           'from the same position with colours swapped.'),
+    bullet('<b>Invite from here</b> stages the position in the 2-player panel (a banner shows '
+           'what is staged) so the initiator can first pick their colour — White, Black, or '
+           'Random, regardless of whose move it is — then Start Private Game creates the room '
+           '(invite link/code only; never posted to the open-challenge board). The server '
+           'assigns colours and relays a sanitised start position so both boards agree; '
+           'rematches restart from the same position with colours swapped.'),
+    bullet('The "Play as" choice applies to every game you create, and the same freedom exists '
+           'for bot continuations via the Bot Builder\'s colour picker — replay a position '
+           'several times from either side.'),
+    bullet('Any control that would end a game in progress (starting a new bot or online game, '
+           'loading a PGN) asks for confirmation first, and every game start fully clears the '
+           'previous game\'s replay state.'),
     bullet('Saving a from-a-position game writes SetUp/FEN tags (or a complete move list when '
            'the prefix is known), so a game can be saved and continued days — or years — later.'),
 ]

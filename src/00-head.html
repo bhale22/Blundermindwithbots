@@ -2191,6 +2191,10 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
             <span class="mp-qs-lbl">Time</span>
             <span class="mp-qs-val" id="mpTCDisplay">Untimed</span>
           </button>
+          <button class="mp-qs-pill" id="mpQsPill-color" onclick="mpQsToggle('color')">
+            <span class="mp-qs-lbl">Play as</span>
+            <span class="mp-qs-val" id="mpQsColorVal">Random</span>
+          </button>
         </div>
 
         <!-- Editors — one open at a time, below the stationary pill rows -->
@@ -2223,6 +2227,22 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <div class="mp-qs-editor" id="mpQsEd-time">
           <div class="mp-tg-panel" id="mpTgPanel"></div>
         </div>
+        <div class="mp-qs-editor" id="mpQsEd-color">
+          <div class="mp-micro-lbl" style="margin-bottom:6px;">Your colour in games you create <span style="font-weight:400;font-style:italic;">(the joiner gets the other)</span></div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;">
+            <button onclick="mpSetHostColor('white')"  class="tc-btn" data-mpcolor="white">♔ White</button>
+            <button onclick="mpSetHostColor('random')" class="tc-btn tc-active" data-mpcolor="random">⚄ Random</button>
+            <button onclick="mpSetHostColor('black')"  class="tc-btn" data-mpcolor="black">♚ Black</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Staged start position ("Invite from here") — shown while a custom
+           position is pending; applies to Start Private Game only -->
+      <div id="mpStartPosBanner" style="display:none;align-items:center;gap:8px;margin:2px 0 4px;padding:7px 10px;background:rgba(90,212,144,0.08);border:0.5px solid rgba(90,212,144,0.4);border-radius:4px;">
+        <span id="mpStartPosText" style="flex:1;font-size:10px;color:#5ad490;line-height:1.4;">♟ Start Private Game will begin from the selected position</span>
+        <button onclick="mpClearStartPos()" title="Discard the position — start from the standard opening position instead"
+          style="background:none;border:0.5px solid rgba(255,255,255,0.25);border-radius:3px;color:#9aa3b2;font-size:9px;padding:3px 8px;cursor:pointer;flex-shrink:0;">✕ Standard start</button>
       </div>
 
       <!-- ══ ACTION BUTTONS — friends first: private games, then the open lobby ══ -->

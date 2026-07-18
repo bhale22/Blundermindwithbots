@@ -474,6 +474,7 @@ function openPanel(id) {
   if (id === 'mpPanel') {
     mpLoadInfo();           // restore last-entered handle / rating / range / TC
     mpHideAnonPrompt();
+    if (typeof _mpRefreshStartPosBanner === 'function') _mpRefreshStartPosBanner();
     if (!mpRoomId) mpSetMode('idle');  // default view unless mid-game / waiting
     mpBuildTimeGrid();      // prebuild the matrix (reflects current selection)
     if (typeof mpQsCloseAll === 'function') mpQsCloseAll();  // pills closed, values fresh
@@ -1501,7 +1502,7 @@ function mpSetMode(mode) {
    (bot-panel quickstart pattern). The action buttons act immediately using
    whatever the pills show — no confirm/review step.
 ──────────────────────────────────────────────────────────────────────────────*/
-const MP_QS_KEYS = ['handle', 'rating', 'range', 'time'];
+const MP_QS_KEYS = ['handle', 'rating', 'range', 'time', 'color'];
 
 function mpQsToggle(key) {
   const opening = !document.getElementById('mpQsEd-' + key).classList.contains('open');
@@ -1536,12 +1537,25 @@ function mpQsRefresh() {
   if (hv) hv.textContent = name || 'Anonymous';
   if (rv) rv.textContent = rating ? rating + ' ' + mpRatingType : '—';
   if (gv) gv.textContent = mpRatingRange >= 9999 ? 'Any' : '±' + mpRatingRange;
+  const cv = document.getElementById('mpQsColorVal');
+  if (cv) cv.textContent = mpHostColor === 'white' ? 'White ♔'
+                         : mpHostColor === 'black' ? 'Black ♚' : 'Random';
   mpUpdateTCDisplay();   // time pill (#mpTCDisplay)
 }
 
-// Action buttons act immediately with the current pill settings
-function mpStartPost()        { mpQsCloseAll(); mpPostChallenge(); }
-function mpStartPrivateGame() { mpQsCloseAll(); mpCreatePrivate(); }
+// Action buttons act immediately with the current pill settings.
+// Each confirms first if a game is in progress — starting a new online game
+// forfeits whatever is being played.
+function mpStartPost() {
+  if (!confirmAbandonLiveGame('Post an open challenge')) return;
+  abandonLiveGameContexts();
+  mpQsCloseAll(); mpPostChallenge();
+}
+function mpStartPrivateGame() {
+  if (!confirmAbandonLiveGame('Start a private game')) return;
+  abandonLiveGameContexts();
+  mpQsCloseAll(); mpCreatePrivate();
+}
 
 function mpStartJoinFlow() {
   mpQsCloseAll();
@@ -1615,7 +1629,7 @@ function mpHandleMessage(msg) {
       mpStartFen  = (typeof msg.startFen === 'string' && msg.startFen) ? msg.startFen : null;
       mpStartSans = Array.isArray(msg.startSans) ? msg.startSans : [];
       mpSetMode('ingame');
-      mpShowStatus('✓ Joined as Black. Starting…');
+      mpShowStatus('✓ Joined as ' + (msg.role === 'white' ? 'White ♔' : 'Black ♚') + '. Starting…');
       mpStartGame(mpSelectedTC);
       break;
 
@@ -1634,7 +1648,7 @@ function mpHandleMessage(msg) {
         mpStartSans = Array.isArray(msg.startSans) ? msg.startSans : [];
       }
       mpSetMode('ingame');
-      mpShowStatus('✓ Opponent joined! You are White ♔');
+      mpShowStatus('✓ Opponent joined! You are ' + (mpRole === 'white' ? 'White ♔' : 'Black ♚'));
       mpStartGame(mpSelectedTC);
       break;
 
@@ -1755,7 +1769,8 @@ function mpPostChallenge() {
         tcBaseMin: mpBaseMin, tcIncSec: mpIncSec,
         name, rating,
         ratingType: rating != null ? mpRatingType : null,
-        ratingRange: mpRatingRange
+        ratingRange: mpRatingRange,
+        hostColor: mpHostColor
       }));
     } else {
       mpShowStatus('Connection failed — try again', true);
@@ -1812,6 +1827,8 @@ function mpAcceptLobbyChallenge(code) {
 }
 
 function mpDoAcceptLobby(code) {
+  if (!confirmAbandonLiveGame('Join this game')) return;
+  abandonLiveGameContexts();
   mpConnect(() => {
     if (mpWs && mpWs.readyState === WebSocket.OPEN)
       mpWs.send(JSON.stringify({ type: 'join', code }));
@@ -1868,6 +1885,7 @@ function mpCreatePrivate() {
   // the game from the same position. Never posted to the open-challenge board.
   const sp = window._pendingStartPos || null;
   window._pendingStartPos = null;
+  if (typeof _mpRefreshStartPosBanner === 'function') _mpRefreshStartPosBanner();
   mpStartFen  = sp && sp.fen ? sp.fen : null;
   mpStartSans = sp && sp.sans ? sp.sans.slice() : [];
   mpConnect(() => {
@@ -1875,7 +1893,8 @@ function mpCreatePrivate() {
       const payload = {
         type: 'create', lobby: false,
         tc: mpSelectedTC, tcLabel,
-        tcBaseMin: mpBaseMin, tcIncSec: mpIncSec
+        tcBaseMin: mpBaseMin, tcIncSec: mpIncSec,
+        hostColor: mpHostColor
       };
       if (mpStartFen) { payload.startFen = mpStartFen; payload.startSans = mpStartSans; }
       mpWs.send(JSON.stringify(payload));
@@ -1940,6 +1959,8 @@ function mpCheckInviteUrl() {
 function mpJoinRoom() {
   const code = document.getElementById('mpJoinCode').value.trim().toUpperCase();
   if (!code) { mpShowStatus('Enter a room code', true); return; }
+  if (!confirmAbandonLiveGame('Join this game')) return;
+  abandonLiveGameContexts();
   mpConnect(() => {
     if (mpWs && mpWs.readyState === WebSocket.OPEN)
       mpWs.send(JSON.stringify({ type: 'join', code }));
@@ -2278,6 +2299,20 @@ function mpSetRatingType(t) {
   if (typeof mpQsRefresh === 'function') mpQsRefresh();
 }
 
+// ── Host colour: the game creator picks White / Black / Random ───────────────
+// The server resolves 'random' and assigns roles authoritatively. Matters most
+// for from-position games, where you may want to replay a position as either
+// side — but applies to any private game or open challenge you create.
+let mpHostColor = 'random';
+function mpSetHostColor(c) {
+  if (!['white', 'black', 'random'].includes(c)) c = 'random';
+  mpHostColor = c;
+  document.querySelectorAll('[data-mpcolor]').forEach(b =>
+    b.classList.toggle('tc-active', b.dataset.mpcolor === c));
+  try { localStorage.setItem('bm_mpHostColor', c); } catch (e) {}
+  if (typeof mpQsRefresh === 'function') mpQsRefresh();
+}
+
 // ── Persist "Your Info" (handle / rating / range) across sessions ────────────
 function mpSaveInfo() {
   const nameEl   = document.getElementById('mpLobbyName');
@@ -2298,6 +2333,8 @@ function mpLoadInfo() {
     if (!isNaN(rng)) mpSetRatingRange(rng);
     const rt = localStorage.getItem('bm_mpRatingType');
     if (rt) mpSetRatingType(rt);
+    const hc = localStorage.getItem('bm_mpHostColor');
+    if (hc) mpSetHostColor(hc);
     // Last-used time control ("Untimed" the very first time)
     const tb = parseInt(localStorage.getItem('bm_mpTcBase'));
     const ti = parseInt(localStorage.getItem('bm_mpTcInc'));
@@ -2720,12 +2757,17 @@ function showSaveGameToast(){
 // ── PGN Import & Replay ───────────────────────────────────────────────
 function loadPgnFile(event){
   const file=event.target.files[0];if(!file)return;
+  // Loading a game ends whatever is being played — confirm first
+  if(!confirmAbandonLiveGame('Load this game')){ event.target.value=''; return; }
   const reader=new FileReader();
   reader.onload=e=>parsePgnAndStartReplay(e.target.result);
   reader.readAsText(file);
   event.target.value='';
 }
 function parsePgnAndStartReplay(pgnText){
+  // Safety net: never run a replay on top of a live game (the bot would keep
+  // moving on the replay board). Normal entry paths confirm before this.
+  if(typeof _isLiveGame==='function'&&_isLiveGame()) abandonLiveGameContexts();
   // A [FEN "..."] header means the game starts from a set-up position
   const fenTag=pgnText.match(/\[FEN\s+"([^"]+)"\]/);
   // Strip header tags ([...]) and comments ({...}) line by line
@@ -2807,6 +2849,37 @@ function _exitReplayKeepBoard(){
   if(rc) rc.style.display='none';
 }
 
+// ── Live-game abandonment guard ──────────────────────────────────────────────
+// Any control that would end a game in progress must confirm first. Returns
+// true when it is safe to proceed (no live game, or the user confirmed).
+function confirmAbandonLiveGame(actionLabel){
+  if(typeof _isLiveGame!=='function'||!_isLiveGame()) return true;
+  const isMp=typeof mpRoomId!=='undefined'&&mpRoomId;
+  if(!isMp){
+    // A bot game with nothing actually played yet (beyond a continuation
+    // prefix) loses nothing — don't nag while the user is still configuring.
+    const played=(typeof gameMovesAlgebraic!=='undefined'?gameMovesAlgebraic.length:0)
+      -(typeof _gameStartSans!=='undefined'&&_gameStartSans?_gameStartSans.length:0);
+    if(played<=0) return true;
+  }
+  const what=isMp?'your online game':'your bot game';
+  return confirm((actionLabel||'Continue')+'? This will forfeit '+what+' in progress.');
+}
+
+// Tear down whatever live game is running (resign online / stop the bot) so a
+// new game, replay, or loaded PGN starts from a clean slate. Call only after
+// confirmAbandonLiveGame() returned true.
+function abandonLiveGameContexts(){
+  if(typeof mpRoomId!=='undefined'&&mpRoomId){
+    if(typeof gameOver!=='undefined'&&!gameOver&&
+       typeof mpWs!=='undefined'&&mpWs&&mpWs.readyState===WebSocket.OPEN){
+      try{ mpWs.send(JSON.stringify({type:'resign'})); }catch(e){}
+    }
+    if(typeof mpLeave==='function') mpLeave();
+  }
+  if(typeof botActive!=='undefined'&&botActive&&typeof botStop==='function') botStop();
+}
+
 // ── Review the game that just ended ──────────────────────────────────────────
 // Drops the bot/2-player context (like explore mode) but keeps the move list,
 // entering replay at the final position so the user can step back anywhere and
@@ -2882,15 +2955,39 @@ function playFromHereBot(){
   if(typeof openBotModal==='function') openBotModal();
 }
 
-// Create a private 2-player room whose game starts at the current replay
-// position (invite link only — from-position games are never posted to the
-// open-challenge board).
+// Invite a friend to play from the current replay position. Opens the
+// 2-player panel with the position staged (banner shown) rather than creating
+// the room immediately — so the initiator can pick their colour (White /
+// Black / Random) first, regardless of whose move it is or how the board is
+// oriented. From-position games are private-invite only, never posted to the
+// open-challenge board.
 function playFromHereInvite(){
   if(!inReplay) return;
   window._pendingStartPos=_replayCurrentPos();
   _exitReplayKeepBoard();
   openPanel('mpPanel');
-  mpCreatePrivate();
+  _mpRefreshStartPosBanner();
+  mpShowStatus('Pick your colour, then Start Private Game — it will begin from the selected position.');
+}
+
+// Banner above the 2-player action buttons while a start position is staged
+function _mpRefreshStartPosBanner(){
+  const b=document.getElementById('mpStartPosBanner');
+  if(!b) return;
+  const sp=window._pendingStartPos;
+  if(sp&&sp.fen){
+    const t=document.getElementById('mpStartPosText');
+    const n=(sp.sans||[]).length;
+    if(t) t.textContent='♟ Start Private Game will begin from the selected position'+
+      (n?' (after move '+Math.ceil(n/2)+')':'');
+    b.style.display='flex';
+  } else {
+    b.style.display='none';
+  }
+}
+function mpClearStartPos(){
+  window._pendingStartPos=null;
+  _mpRefreshStartPosBanner();
 }
 
 // Expert-board notation click → jump the replay to that position. Enters
