@@ -71,6 +71,26 @@ sBullet  = S('Normal',  fontName='Helvetica',      fontSize=8.5,textColor=C_TEXT
              leftIndent=12, spaceAfter=2, leading=12)
 sNote    = S('Normal',  fontName='Helvetica-Oblique',fontSize=7.5,textColor=C_DIM,
              spaceAfter=2, leading=11, leftIndent=8)
+# Table-cell paragraph styles — wrapping cells must be Paragraphs, not bare
+# strings (bare strings overflow the column instead of wrapping).
+sCell     = S('Normal',  fontName='Helvetica',      fontSize=7.5,textColor=C_TEXT,
+             leading=9.5, spaceAfter=0, alignment=TA_LEFT)
+sCellHead = S('Normal',  fontName='Helvetica-Bold', fontSize=8,  textColor=C_AMBER,
+             leading=10, spaceAfter=0, alignment=TA_LEFT)
+
+def _cellify(val, style):
+    """Wrap a table-cell string in a Paragraph so it wraps within its column.
+    Newlines become <br/>; existing Paragraph/flowable cells pass through."""
+    if isinstance(val, str):
+        return Paragraph(val.replace('\n', '<br/>'), style)
+    return val
+
+def _wrap_rows(rows, header):
+    out = []
+    for r, row in enumerate(rows):
+        st = sCellHead if (header and r == 0) else sCell
+        out.append([_cellify(c, st) for c in row])
+    return out
 
 def HR():
     return HRFlowable(width='100%', thickness=0.5, color=C_RULE, spaceAfter=6, spaceBefore=2)
@@ -91,7 +111,8 @@ def bodyL(txt):
     return Paragraph(txt, sBodyL)
 
 def code(txt):
-    return Paragraph(txt, sCode)
+    # Preserve intended line breaks (Paragraphs otherwise collapse \n to a space)
+    return Paragraph(txt.replace('\n', '<br/>'), sCode)
 
 def note(txt):
     return Paragraph(txt, sNote)
@@ -109,7 +130,7 @@ def attractor_table(rows, col_widths=None):
     """rows: list of lists of strings/Paragraphs"""
     if col_widths is None:
         col_widths = [1.4*inch, 1.4*inch, 1.1*inch, 1.1*inch, 2.8*inch]
-    t = Table(rows, colWidths=col_widths)
+    t = Table(_wrap_rows(rows, header=True), colWidths=col_widths)
     ts = TableStyle([
         ('BACKGROUND',  (0,0), (-1,0),  C_HEAD_BG),
         ('TEXTCOLOR',   (0,0), (-1,0),  C_AMBER),
@@ -132,7 +153,7 @@ def attractor_table(rows, col_widths=None):
     return t
 
 def simple_table(rows, col_widths, header=True):
-    t = Table(rows, colWidths=col_widths)
+    t = Table(_wrap_rows(rows, header=header), colWidths=col_widths)
     ts = TableStyle([
         ('FONTNAME',    (0,0), (-1,-1), 'Helvetica'),
         ('FONTSIZE',    (0,0), (-1,-1), 7.5),
@@ -944,7 +965,7 @@ flag_rows = [
      'Multiplies computed think time by 1.5–2.5×. Simulates the human hesitation '
      'of starting to play a move then reconsidering.'],
     ['Clock Mirror\n(botBehavClockMirror)',
-     'Opponent clock <\nbot clock × 0.6',
+     'Opponent clock &lt;\nbot clock × 0.6',
      'Halves think time when the opponent is significantly lower on time. '
      'Simulates a human speeding up to maintain clock advantage.'],
     ['Clock Weaponizer\n(botWeaponizerEnabled)',
