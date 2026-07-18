@@ -296,20 +296,28 @@ function _maybeStaleSeek(moveProbs) {
 // ── CP-budget acceptance (engine-verified centipawmeter) ─────────────────────
 // Maia probability is popularity, not quality — at low ratings the correlation
 // between the two is weak (popular trap-falls, unseen strong moves), so the
-// centipawn budget is enforced with REAL Stockfish evals, not a probability
+// centipawn ceiling is enforced with REAL Stockfish evals, not a probability
 // heuristic. When the personality reweighting produced a pick that differs
 // from the most-popular move, the pick, the most-popular move, and a wide
 // slice of the personality's preference order are evaluated together in one
 // shallow searchmoves probe (single MultiPV search, not one call per move —
 // this is what lets a large candidate set stay cheap). The pick is accepted
-// only if it loses ≤ budget cp versus the most-popular move; otherwise we
+// only if it loses ≤ Hard Floor cp versus the most-popular move; otherwise we
 // walk down the personality's preference order and, if nothing fits, fall
 // back to the most-popular move itself (0 cp by definition of the reference).
+//
+// Budget vs. Hard Floor: Budget (window._bcpCpBudget) only scales how hard the
+// attractors PUSH toward an alternative (the reweighting `scale` factor in
+// applyMoveAttractors). Hard Floor (window._bcpCpHardFloor) is the actual,
+// separately-dialable ceiling enforced here — it lets a bot push aggressively
+// for flavour while still guaranteeing real move quality never crosses a
+// stricter line than Budget alone would imply. Hard Floor is UI-clamped to
+// never exceed Budget, so it's always the tighter (or equal) of the two.
 let _attrReweightApplied = false; // set by applyMoveAttractors each call
 
 // How many of the personality's next-favourite moves ride along in the probe
 // beyond the chosen pick and the most-popular move. Wider = more of Maia's
-// tail gets a real shot at passing the budget instead of being silently
+// tail gets a real shot at passing the floor instead of being silently
 // skipped just because it wasn't in a short shortlist. MultiPV cost scales
 // with this number, so it's a probe-depth/latency tradeoff, not free.
 const CP_BUDGET_WALK_SIZE = 15;
@@ -317,9 +325,10 @@ const CP_BUDGET_WALK_SIZE = 15;
 async function applyCpBudgetAcceptance(fen, chosenUci, rawProbs, shapedProbs) {
   try {
     if (!chosenUci || !rawProbs || !_attrReweightApplied) return chosenUci;
-    // Stalemate-seeking moves deliberately throw material — exempt from budget
+    // Stalemate-seeking moves deliberately throw material — exempt from the floor
     if (_staleSeekThisMove) return chosenUci;
-    const budget = window._bcpCpBudget != null ? +window._bcpCpBudget : 0;
+    const budget = window._bcpCpHardFloor != null ? +window._bcpCpHardFloor
+                 : window._bcpCpBudget    != null ? +window._bcpCpBudget : 0;
     if (!(budget >= 0)) return chosenUci;
     let topMove = null, topP = -1;
     for (const m in rawProbs) { if (rawProbs[m] > topP) { topP = rawProbs[m]; topMove = m; } }
