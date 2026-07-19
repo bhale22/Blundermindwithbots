@@ -84,7 +84,7 @@
       <li><a href="#attractors">Strategic Attractors (Centipawmeter)</a></li>
       <li><a href="#pieces">Piece-Type Attractors</a></li>
       <li><a href="#filter">Move Distribution Filter &amp; Luck</a></li>
-      <li><a href="#cpbudget">CP-Budget Acceptance &amp; Degradation Guard</a></li>
+      <li><a href="#cpbudget">CP-Budget Acceptance, Degradation Guard &amp; Hard Floor</a></li>
       <li><a href="#draws">Draw &amp; Desperation Behaviours</a></li>
       <li><a href="#presets">Preset Personalities</a></li>
       <li><a href="#timecontrols">Time Controls</a></li>
@@ -108,9 +108,10 @@
       <tr><td>4</td><td>Distribution Filter</td><td>An absolute min-probability floor removes near-zero candidates. Curve B (if the distribution toggle is on) narrows the upper percentile; the Luck attractor shifts the window (§8).</td></tr>
       <tr><td>5</td><td>Attractor Reweighting</td><td>Each candidate move's probability is multiplied by exp(logBoost), where logBoost is the sum of all active strategic attractor signals. Sets an "applied" flag read by Stage 8.</td></tr>
       <tr><td>6</td><td>Desperation (opt.)</td><td>If "seek stalemate when losing" is armed and the engine eval confirms a lost position, candidate weights are re-shaped toward low-own-mobility and material-dumping moves (§10).</td></tr>
-      <tr><td>7</td><td>Temperature Sampling</td><td>Final temperature applied (base T × phase/pressure modifiers). One move is sampled from the reweighted distribution.</td></tr>
-      <tr><td>8</td><td>CP-Budget Acceptance</td><td>Personality bots only: if the sampled pick differs from Maia's most-popular move, a shallow Stockfish probe checks that the pick loses ≤ CP budget vs. the popular move; otherwise it walks down the preference order (§9).</td></tr>
+      <tr><td>7</td><td>Conviction Pick</td><td>30% of moves: the top-ranked move of the reweighted distribution is played outright (argmax). The other 70%: final temperature applied (base T × phase/pressure modifiers) and one move is sampled.</td></tr>
+      <tr><td>8</td><td>CP-Budget Acceptance</td><td>Personality bots only: if the pick differs from Maia's most-popular move, a shallow Stockfish probe checks that the pick loses ≤ CP Budget vs. the popular move; otherwise it walks down the preference order, up to 15 candidates deep (§9).</td></tr>
       <tr><td>9</td><td>Degradation Guard</td><td>Bad-Day / distribution-restricted picks are re-checked so a degraded choice can never out-perform Maia's top move — popularity is not quality (§9).</td></tr>
+      <tr><td>10</td><td>Hard Floor Backstop</td><td>Any final pick that differs from the most-popular move — whatever produced it — is capped at the Hard Floor (≥ Budget): if it loses more than Floor cp, the popular move is played instead. Skipped when the Floor is Off (§9c).</td></tr>
     </tbody>
   </table>
   </div>
@@ -122,9 +123,9 @@
 
   <div class="principle"><strong>Principle #2 — real centipawns, not probability:</strong> Maia probability measures how
   <em>popular</em> a move is at a given rating, which is not the same as how <em>good</em> it is — at low ratings the two
-  can even anticorrelate. So the CP budget and all quality guarantees are enforced with actual Stockfish evaluations at
-  Stages 8–9. These probes run only for personality bots and are fail-open: any probe timeout leaves the sampled move
-  untouched.</div>
+  can even anticorrelate. So the CP Budget, the Hard Floor, and all quality guarantees are enforced with actual Stockfish
+  evaluations at Stages 8–10. The probes are fail-open: any timeout leaves the pick untouched, and results are reused
+  between stages so a move never pays for the same evaluation twice.</div>
 
   <!-- 2 -->
   <h2 id="source">2 · Move Source Layer</h2>
@@ -269,12 +270,16 @@ effectiveTemp = baseTemp + fraction × boost</div>
 
   <!-- 5 -->
   <h2 id="temperature">5 · Temperature &amp; Move Sampling</h2>
-  <p>After attractor reweighting, one move is sampled from the distribution using temperature-scaled probabilities.
-  Temperature T controls how peaked or flat the distribution is before sampling.</p>
-  <div class="code">scaled[m] = prob[m] ^ (1/T)
-total     = Σ scaled[m]
-sample r ~ Uniform(0, total)
-return first m where cumulative sum ≥ r</div>
+  <p>After attractor reweighting, the <strong>conviction pick</strong> decides how the move is chosen: 30% of the time
+  the bot plays the top-ranked move of the reweighted distribution outright (argmax — its personality's honest first
+  choice), and 70% of the time one move is sampled using temperature-scaled probabilities. This keeps personalities
+  assertive without making them perfectly predictable.</p>
+  <div class="code">if rand() &lt; 0.30 → play argmax of reweighted distribution
+else:
+  scaled[m] = prob[m] ^ (1/T)
+  total     = Σ scaled[m]
+  sample r ~ Uniform(0, total)
+  return first m where cumulative sum ≥ r</div>
   <p>At T = 1.0 the original Maia probabilities are used directly. T &lt; 1 sharpens the distribution (top move more
   likely); T &gt; 1 flattens it (unlikely moves become relatively more likely). T is clamped to ≥ 0.1 to prevent division
   issues.</p>
@@ -316,11 +321,16 @@ return baseT × cplxFactor</div>
   logBoost for a move is the sum of all active attractor contributions. Attractors are zero at centre and scale linearly
   with slider value (−5 to +5).</p>
 
-  <h3>6a · CP Budget and Scale Factor</h3>
-  <p>The CP (centipawn) budget (0–300), shown on the Centipawmeter dial, is a single master gain knob for all attractors.
-  It controls how strongly attractors push the distribution, regardless of the individual slider positions. The budget
-  also sets a real, engine-verified centipawn ceiling on how far a move may fall below Maia's most-popular choice — that
-  guarantee is enforced at Stage 8 (§9). The internal 150-cp-per-log-unit scale factor below only sets the push strength.</p>
+  <h3>6a · CP Budget, Hard Floor and Scale Factor</h3>
+  <p>The CP (centipawn) budget (0–300), shown on the Centipawmeter dial, is the personality's allowance and does double
+  duty. First, it is a master gain knob: it controls how strongly attractors push the distribution, regardless of the
+  individual slider positions (the 150-cp-per-log-unit scale below). Second, it is a real, engine-verified centipawn
+  ceiling on how far a personality pick may fall below Maia's most-popular choice — enforced at Stage 8 (§9a).</p>
+  <p>The <strong>Hard Floor</strong> (Budget–1000 cp, or Off) is a separate slider directly beneath the Budget, always
+  ≥ Budget: it is the absolute backstop on every <em>other</em> selection mechanism — temperature sampling, the Luck
+  window shift, Bad Day, curve-B time-pressure restriction — enforced at Stage 10 (§9c). At Off, nothing is capped.
+  The Engine panel shows both values beside the Elometer with a one-click ELO-based recommendation
+  (≈100 cp at master level rising to ≈800 cp at 600 ELO).</p>
   <div class="code">totalAbs = Σ |v| for all attractor and piece sliders
 scale = cpBudget / (totalAbs × 150)   if cpBudget > 0 and totalAbs > 0
       = 0                              otherwise
@@ -379,12 +389,12 @@ At cpBudget = 150 with one slider at 1 and all others at 0:
 
   <!-- 8 -->
   <h2 id="filter">8 · Move Distribution Filter &amp; Luck</h2>
-  <p>The Move Quality Range dual slider selects which segment of the Maia probability-ranked candidate list the bot
+  <p>The Move Popularity Range dual slider selects which segment of the Maia probability-ranked candidate list the bot
   samples from. Candidates outside the [lower, upper] percentile window are excluded before temperature sampling and
   attractor reweighting.</p>
-  <p class="note">"Quality" here means popularity rank, not engine quality — Maia probability is how often players at the
-  selected rating choose a move. A strong move few players see can sit low in the distribution; real move-quality
-  enforcement is the engine check in §9.</p>
+  <p class="note">Popularity is not engine quality — Maia probability is how often players at the selected rating choose
+  a move. A strong move few players see can sit low in the distribution, which is why the rare tail is where creative,
+  unconventional play lives; real move-quality enforcement is the engine checking in §9.</p>
 
   <h3>8a · Percentile Band Filtering</h3>
   <div class="code">sorted candidates by probability (highest first)
@@ -413,18 +423,20 @@ keep only moves with prob ≥ absFloor
 (if that empties the list, keep the single most-popular move)</div>
 
   <!-- 9 -->
-  <h2 id="cpbudget">9 · CP-Budget Acceptance &amp; Degradation Guard</h2>
-  <p>Maia probability is popularity, not quality. Two post-sampling stages use a shallow Stockfish probe to hold the
-  personality to a real centipawn standard. Both run only for personality bots (they need the Stage-5 reweighting flag),
-  only when the sampled pick differs from Maia's most-popular move, and both are fail-open — any probe failure or timeout
-  leaves the sampled move unchanged. The probe reuses the MultiPV complexity machinery with a searchmoves restriction, so
-  only the handful of relevant moves are evaluated (depth ~10, ≤ 6 moves).</p>
+  <h2 id="cpbudget">9 · CP-Budget Acceptance, Degradation Guard &amp; Hard Floor</h2>
+  <p>Maia probability is popularity, not quality. Three post-pick stages use a shallow Stockfish probe to hold move
+  selection to a real centipawn standard. All are fail-open — any probe failure or timeout leaves the pick unchanged —
+  and probe results are shared between stages so no move pays for the same evaluation twice. The probe reuses the
+  MultiPV complexity machinery with a searchmoves restriction (depth ~10), evaluating one wide batch in a single
+  search rather than one call per move.</p>
 
   <h3>9a · CP-Budget Acceptance</h3>
   <p>Turns the Centipawmeter into a real centipawn ceiling. When personality reweighting produced a pick different from
-  the most-popular move, the pick, the popular move, and the next few personality favourites are evaluated together. The
-  pick is accepted only if it loses no more than the CP budget versus the popular move; otherwise the bot walks down its
-  own preference order until one fits, falling back to the popular move itself (0 cp by definition).</p>
+  the most-popular move, the pick, the popular move, and up to 15 of the personality's next favourites are evaluated
+  together in one probe. The pick is accepted only if it loses no more than the CP Budget versus the popular move;
+  otherwise the bot walks down its own preference order until one fits, falling back to the popular move itself
+  (0 cp by definition). The wide walk means a rare move from deep in Maia's tail still gets a genuine chance to be
+  played — it just has to prove it can afford it.</p>
   <div class="code">topMove = argmax Maia probability
 if pick == topMove or reweighting not applied → keep pick
 evals = SF probe over [topMove, pick, next favourites]
@@ -442,13 +454,24 @@ for m in [pick, ...favourites]:
 if pick == topMove → keep
 evals = SF probe over [pick, topMove]
 play the move with the LOWER eval</div>
-  <p class="note">Consequence: Grandmaster Bad Day picks the lowest-probability move above its 4% floor, but if that move
-  happens to be strong (a shot few players see), the guard swaps it back to the mainstream move — the bot is never
-  accidentally brilliant.</p>
+  <p class="note">Consequence: Grandmaster Bad Day picks the lowest-probability move above its configured floor, but if
+  that move happens to be strong (a shot few players see), the guard swaps it back to the mainstream move — the bot is
+  never accidentally brilliant.</p>
+
+  <h3>9c · Hard Floor Backstop</h3>
+  <p>The last stage in the pick flow. Whatever produced the final pick — temperature sampling, the Luck shift, Bad Day,
+  curve-B restriction, or plain sampling variance — if it differs from the most-popular move, it must not lose more
+  than the Hard Floor's centipawns against it; otherwise the popular move is played instead. Picks already verified
+  within the Budget skip this check (Budget ≤ Floor by construction), stalemate-seeking picks are exempt, and a Floor
+  set to Off disables the stage entirely — the honest setting for beginner bots that should be able to hang pieces.</p>
+  <div class="code">active if Floor &lt; Off AND pick ≠ topMove AND not budget-verified AND not stale-seek
+evals = reuse guard's probe if available, else SF probe over [pick, topMove]
+if evals[topMove] − evals[pick] &gt; floor → play topMove
+else → keep pick</div>
 
   <!-- 10 -->
   <h2 id="draws">10 · Draw &amp; Desperation Behaviours</h2>
-  <p>Four opt-in behaviours (in the Move Timing section's "Draws &amp; desperation" group) let a bot handle draw offers,
+  <p>Four opt-in behaviours (Personality section → "Draws &amp; Desperation" tab) let a bot handle draw offers,
   offer draws, and swindle when lost — all judged the way a human of the bot's strength would, not at raw engine accuracy.</p>
 
   <h3>10a · Perceived Evaluation</h3>

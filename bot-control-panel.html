@@ -345,6 +345,21 @@ table.tg td.tg-inc-lbl{
 #hard-floor-row.hf-linked .ctrl-val{color:var(--accent,#4a9fd4);transition:color 0.15s ease;}
 #hard-floor-lbl.hf-linked{color:var(--accent,#4a9fd4);transition:color 0.15s ease;}
 #hard-floor-row.hf-linked input[type="range"]{accent-color:var(--accent,#4a9fd4);}
+/* Engine-panel strength guardrails — Budget / Floor readout + ELO recommendation.
+   Reads like a car-cluster stat strip under the Elometer. */
+.cp-guardrails{display:flex;align-items:stretch;gap:8px;margin-top:10px;}
+.cpg-cell{flex:1;min-width:0;background:rgba(232,170,64,0.05);border:0.5px solid rgba(232,170,64,0.22);
+  border-radius:4px;padding:7px 6px 6px;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:3px;}
+.cpg-link{cursor:pointer;transition:border-color 0.15s, background 0.15s;}
+.cpg-link:hover{border-color:rgba(232,170,64,0.55);background:rgba(232,170,64,0.10);}
+.cpg-lbl{font-family:var(--font-m);font-size:7px;letter-spacing:0.1em;text-transform:uppercase;
+  color:var(--text-dim);white-space:nowrap;}
+.cpg-val{font-family:var(--font-m);font-size:13px;color:var(--amber-bright);}
+.cpg-btn{padding:3px 10px;font-family:var(--font-m);font-size:9px;letter-spacing:0.06em;white-space:nowrap;
+  background:rgba(232,170,64,0.10);border:0.5px solid rgba(232,170,64,0.45);border-radius:3px;
+  color:var(--amber-bright);cursor:pointer;transition:background 0.15s;}
+.cpg-btn:hover{background:rgba(232,170,64,0.20);}
 
 /* Track: fixed mid-gray alpha, not a theme surface var — stays visible on
    dark/slate and light/paper palettes alike */
@@ -1208,19 +1223,27 @@ body.fj .picon{font-weight:500;}
             <div style="display:flex;flex-direction:column;align-items:center;gap:5px;flex:0 0 auto;">
               <span style="font-family:var(--font-m);font-size:8px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-dim);">ELO</span>
               <input class="elo-input" id="elo-input" type="number" min="600" max="2600" step="25" value="1500" oninput="onEloInputChange(this.value)">
-              <!-- Current CP Budget · Hard Floor readout + ELO recommendation -->
-              <span style="margin-top:6px;font-family:var(--font-m);font-size:7px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-dim);">Budget · Floor</span>
-              <span id="ind-cp-current" style="font-family:var(--font-m);font-size:10px;color:var(--amber-bright);">100 · 100</span>
-              <span style="margin-top:4px;font-family:var(--font-m);font-size:7px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-dim);">Rec. for this ELO</span>
-              <button id="cp-rec-btn" onclick="applyRecommendedCp()"
-                title="Set CP Budget and Hard Floor to the value recommended for this ELO"
-                style="padding:3px 8px;font-family:var(--font-m);font-size:9px;letter-spacing:0.06em;
-                background:rgba(232,170,64,0.10);border:0.5px solid rgba(232,170,64,0.45);
-                border-radius:3px;color:var(--amber-bright);cursor:pointer;">Set both: 450 cp</button>
-              <span style="font-family:var(--font-m);font-size:6.5px;color:var(--text-dim);max-width:90px;text-align:center;line-height:1.5;">Fine-tune both in the Personality panel</span>
             </div>
             </div><!-- /speedo flex row -->
             <div style="text-align:center;margin-top:4px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);">Click arc · drag needle · or type ELO · snaps to ±25</div>
+
+            <!-- Strength guardrails — current Budget / Floor + one-click ELO recommendation -->
+            <div class="cp-guardrails">
+              <div class="cpg-cell cpg-link" onclick="openPersonalityQuality()" title="Adjust in the Personality panel">
+                <span class="cpg-lbl">CP Budget</span>
+                <span class="cpg-val" id="ind-cp-budget">100 cp</span>
+              </div>
+              <div class="cpg-cell cpg-link" onclick="openPersonalityQuality()" title="Adjust in the Personality panel">
+                <span class="cpg-lbl">Hard Floor</span>
+                <span class="cpg-val" id="ind-cp-floor">100 cp</span>
+              </div>
+              <div class="cpg-cell">
+                <span class="cpg-lbl">Rec. for ELO <span id="cpg-rec-elo">1500</span></span>
+                <button id="cp-rec-btn" class="cpg-btn" onclick="applyRecommendedCp()"
+                  title="Set CP Budget and Hard Floor to the value recommended for this ELO">Set both: 450 cp</button>
+              </div>
+            </div>
+            <div class="ctrl-hint" style="margin-top:4px;text-align:center;">Budget = the personality's engine-verified spend · Floor = worst-move backstop · click a tile to fine-tune in the Personality panel</div>
             <div style="margin-top:10px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);line-height:1.6;">
               Maia is a human-like neural net with its own free web app — analysis tools, puzzles, and play against Maia bots:
               <a href="https://maiachess.com" target="_blank" rel="noopener" style="color:var(--amber);text-decoration:none;">maiachess.com</a>
@@ -5411,22 +5434,36 @@ function _hfClamp(flash){
 function recommendedHardFloor(elo){
   return Math.max(100, Math.min(900, Math.round((2600 - elo) * 0.4 / 50) * 50));
 }
-// Refresh the Engine-panel indicators: current Budget · Floor, and the
-// recommendation button for the current ELO. Budget is capped at 300, so
-// when the recommendation exceeds it the button shows both values it will set.
+// Refresh the Engine-panel guardrail tiles: current Budget, current Floor,
+// and the recommendation button for the current ELO. Budget is capped at 300,
+// so when the recommendation exceeds it the button shows both values it sets.
 function updateCpIndicators(){
-  const cur = document.getElementById('ind-cp-current');
+  const bEl = document.getElementById('ind-cp-budget');
+  const fEl = document.getElementById('ind-cp-floor');
   const btn = document.getElementById('cp-rec-btn');
-  if(!cur && !btn) return;
+  if(!bEl && !fEl && !btn) return;
   const b = +(document.getElementById('r-style')?.value || 0);
   const f = +(document.getElementById('r-hardfloor')?.value || 0);
-  if(cur) cur.textContent = b + ' · ' + (f >= 1000 ? 'Off' : f);
+  if(bEl) bEl.textContent = b + ' cp';
+  if(fEl) fEl.textContent = (f >= 1000) ? 'Off' : f + ' cp';
+  const elo = (typeof currentElo === 'number' && currentElo) ? currentElo : 1500;
+  const recEloEl = document.getElementById('cpg-rec-elo');
+  if(recEloEl) recEloEl.textContent = elo;
   if(btn){
-    const elo = (typeof currentElo === 'number' && currentElo) ? currentElo : 1500;
     const rec = recommendedHardFloor(elo);
     const recB = Math.min(300, rec);
     btn.textContent = (recB === rec) ? 'Set both: ' + rec + ' cp' : 'Set ' + recB + ' · ' + rec;
   }
+}
+// Guardrail tiles deep-link to where the sliders live: the Personality
+// section's Move Quality & Strategy tab, scrolled to the Centipawmeter.
+function openPersonalityQuality(){
+  const sec = document.getElementById('sec-attract');
+  if(sec && !sec.classList.contains('open')) toggleSec('attract');
+  if(typeof switchItab === 'function'){ try{ switchItab('attract','quality'); }catch(e){} }
+  setTimeout(function(){
+    try{ document.getElementById('style-gauge').scrollIntoView({behavior:'smooth', block:'center'}); }catch(e){}
+  }, 380);
 }
 // The button: one click sets Budget AND Floor to the ELO recommendation
 // (Budget clamped to its 0–300 range when the recommendation is higher).
@@ -5715,6 +5752,15 @@ function toggleSec(id){
       // Radar now lives on the (default) Move Quality tab — draw it whenever the
       // section opens so it isn't blank until the user hovers over it.
       setTimeout(drawRadar, 80);
+    }
+    if(id==='engine'){
+      // The distribution chart canvas has zero width until the section lays
+      // out — draw once mid-animation and once after it settles so the chart
+      // is never blank on first open. Refresh the guardrail tiles too.
+      const _dtc = function(){ try{ drawTempChart(_currentTempValue); }catch(e){} };
+      setTimeout(_dtc, 180);
+      setTimeout(_dtc, 600);
+      if(typeof updateCpIndicators === 'function') setTimeout(updateCpIndicators, 60);
     }
     // Scroll the opened section fully into view once its expand animation settles.
     const shell = target.querySelector('.panel-shell');
@@ -6611,8 +6657,11 @@ const BOT_TOUR = [
     body:'Pick the brain — <b>Maia</b> (a neural net trained on millions of human games), <b>Stockfish</b>, or blends that pull openings from the <b>Lichess explorer</b> and fall back to an engine. You can build a <b>Hybrid</b> bot that mixes engines by weight, and set the exact playing strength.' },
 
   { stage:'Engine', open:'engine', sel:'#engine-temp-col', title:'Move sampling — temperature',
-    body:"How adventurously the bot samples from Maia’s move probabilities. <b>Focused</b> = almost always the top move; <b>Wild</b> = it’ll reach for lower-probability tries. The live chart shows the reshaped distribution.",
+    body:"How adventurously the bot samples from Maia’s move probabilities. <b>Focused</b> = almost always the top move; <b>Wild</b> = it’ll reach for lower-probability tries. The live chart shows the whole pipeline per move: <b>Maia’s</b> raw odds → after <b>temperature</b> → after the <b>personality × CP Budget</b> (blue bar, illustrative) — with a Budget slider right below it.",
     action: function(){ setTimeout(function(){ if(typeof drawTempChart==='function') drawTempChart(_currentTempValue); }, 620); } },
+
+  { stage:'Engine', open:'engine', sel:'.cp-guardrails', title:'Strength guardrails',
+    body:'Live readout of the two quality dials: <b>CP Budget</b> (what the personality may spend, engine-verified) and <b>Hard Floor</b> (the worst any move can be — <b>Off</b> = even hung queens are possible). The <b>Set both</b> button applies the recommendation for the chosen ELO in one click; click either tile to fine-tune in the Personality panel.' },
 
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#style-gauge', title:'2 · The Centipawmeter',
     body:'<b>Budget</b> = the personality’s allowance, in <b>real, engine-verified centipawns</b>: it sets both how hard the attractors push and the most a personality pick may lose versus Maia’s most-popular move (Stockfish checks; too expensive → the bot walks down its preference list). Budget 300 = willing to sacrifice a knight for its style. <b>Hard Floor</b> (always ≥ Budget) is the backstop on everything else — temperature, luck, bad-day mechanics. Slide it to <b>Off</b> and beginner bots can genuinely hang a queen. The Engine panel shows both values beside the Elometer with a one-click ELO recommendation.' },
@@ -6626,6 +6675,8 @@ const BOT_TOUR = [
     body:'Build a rule from <b>30+ board features</b> (passed pawns, king safety, outposts, mobility, hanging pieces…), then <b>restrict when it fires</b>: by <b>game phase</b> (opening / middlegame / endgame), by <b>advantage</b> (only when winning or losing), or by <b>time pressure</b> (yours or the opponent’s). Stack several and the bot follows them all at once.' },
   { stage:'Personality', open:'attract', tab:['attract','presets'], sel:'#persona-grid', title:'One-click personalities',
     body:'In a hurry? Start from a ready-made character — then tweak any of the dials above.' },
+  { stage:'Personality', open:'attract', tab:['attract','draws'], sel:'#itab-attract-draws', title:'Draws & desperation',
+    body:'Make the endgame human too: the bot can <b>accept</b> and <b>offer draws</b> — judged at its <i>own</i> rating’s blurred eval, so a novice may misjudge a lost position as fine — and, when hopelessly behind, <b>hunt for stalemate swindles</b> by locking its pieces and dumping material. All clock-aware: it never agrees to a draw while you’re about to flag.' },
 
   { stage:'Opening', open:'opening', sel:'#op-mode-white', title:'3 · Per-colour openings',
     body:'Give White and Black <i>separate</i> opening behaviour: <b>Off</b>, <b>Main Line</b> (the most popular book moves), or a <b>Repertoire</b> of several openings you weight by percentage.' },

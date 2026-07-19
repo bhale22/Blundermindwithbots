@@ -155,23 +155,37 @@ argmax (Top move): always picks the single highest-probability move (determinist
     </tbody>
   </table>
   </div>
-  <p class="note">The slider accepts any value from 0.1 to 4.0 in 0.1 increments. The live histogram shows the actual
-  probability distribution that will be sampled from.</p>
+  <p class="note">The slider accepts any value from 0.1 to 4.0. The live chart shows the full per-move pipeline on a
+  reference position: Maia's raw distribution → after temperature → after the personality reweighting scaled by the CP
+  Budget. Note that temperature governs only the sampled 70% of moves — 30% of the time the bot plays its top-ranked
+  choice outright.</p>
 
   <!-- 3 -->
   <h2 id="personality">3 · Personality — The Centipawmeter &amp; Attractors</h2>
   <p class="lead">The personality layer operates on the ranked list of candidate moves produced by the Maia engine.</p>
 
   <h3>Centipawn Budget</h3>
-  <p>The Centipawmeter sets the maximum centipawn distance from the engine's best move that the personality is allowed to reach. At 0 cp,
-  personality traits are effectively disabled. At 200 cp it may choose any move within 200 cp of the highest-probability move— giving the
-  personality wide latitude. The Move Quality Range dual-slider refines which part of that band is sampled.</p>
+  <p>The Centipawmeter sets the personality's allowance: the most real, <strong>engine-verified</strong> centipawns a
+  personality-driven pick may lose versus Maia's most-popular move. It does double duty — it scales how hard the
+  attractor sliders push, and it is enforced literally: when the personality's pick differs from the popular move,
+  Stockfish evaluates both, and a pick over budget is rejected (the bot walks down its preference list until a move
+  fits). At 0 cp personality traits are effectively disabled; at 300 cp the bot can genuinely sacrifice a knight to
+  satisfy its style. On each move the bot plays its top-ranked choice outright 30% of the time and temperature-samples
+  the other 70% — opinionated, but never perfectly predictable.</p>
 
-  <h3>Move Quality Range</h3>
-  <p>A dual-thumb slider that selects a percentile band within the legal move list (sorted by engine score). The left
-  thumb is the "floor" — how far down in quality the bot will reach. The right thumb is the "ceiling" — moves better
-  than this are also excluded (useful for deliberately imprecise play). Default: 0–100% (all legal moves within the
-  cp budget).</p>
+  <h3>Hard Floor</h3>
+  <p>A separate slider (always ≥ Budget) that is the absolute backstop on <em>everything else</em> — temperature
+  sampling, Luck, Bad Day, and time-pressure mechanics. No played move may be more than the Floor's centipawns worse
+  than the most-popular move, engine-checked. Slide it to the top (<strong>Off</strong>) and nothing is capped — a
+  beginner-level bot can genuinely hang its queen, which keeps games winnable and fun for novices. The Engine panel
+  shows both values beside the Elometer, with a one-click recommendation matched to the chosen ELO.</p>
+
+  <h3>Move Popularity Range</h3>
+  <p>A dual-thumb slider that selects a band within the candidate list ranked by Maia <em>probability</em> — how often
+  players at the chosen rating play each move, which is not the same as engine quality. The right thumb excludes the
+  most-expected mainstream moves; the left thumb excludes the rare tail. The tail isn't a defect zone: sharp tactics
+  and unconventional ideas often live there, so restrict it only if you want predictable, book-standard play.
+  Default: 0–100% (the full distribution).</p>
 
   <h3>Personality Fingerprint (Radar)</h3>
   <p>The 11-spoke radar summarises the active attractor profile. Drag any spoke node directly, or use the sliders below
@@ -179,9 +193,10 @@ argmax (Top move): always picks the single highest-probability move (determinist
 
   <!-- 4 -->
   <h2 id="attractors">4 · Strategic Attractors</h2>
-  <p>Each attractor adds a continuous bias score to candidate moves. Scores are summed across all active attractors;
-  the candidate with the highest total within the cp budget is chosen. Sliders run −5 (left label) to +5 (right label);
-  0 = neutral (no effect).</p>
+  <p>Each attractor adds a continuous bias score to candidate moves. Scores are summed across all active attractors and
+  re-rank the whole candidate list; the bot then plays its top-ranked choice 30% of the time and temperature-samples the
+  re-ranked list the other 70%, with the CP Budget verifying the final pick's real cost. Sliders run −5 (left label) to
+  +5 (right label); 0 = neutral (no effect).</p>
   <div class="wide">
   <table>
     <thead><tr><th>Attractor</th><th>Left (−)</th><th>Right (+)</th><th>Mechanism</th></tr></thead>
@@ -374,8 +389,9 @@ argmax (Top move): always picks the single highest-probability move (determinist
     <div class="card">
       <h4>During the game</h4>
       <p><strong>Resign</strong> — ends the game immediately; prompts for confirmation.<br>
-      <strong>Draw offer</strong> — handled by the bot's draw behaviour, which can be configured (accept margin, offer
-      band, and swindle-when-losing) or left off for a bot that always plays on.<br>
+      <strong>Draw offer</strong> — handled by the bot's draw behaviour (Personality → Draws &amp; Desperation): it can
+      accept and offer draws judged at its <em>own</em> rating's blurred evaluation, and seek stalemate swindles when
+      lost — or leave it all off for a bot that always plays on.<br>
       <strong>Save game</strong> — download the game as PGN at any point.<br>
       <strong>Rematch</strong> — immediately restarts with the same bot settings and swaps colours.<br>
       In Expert (pro) mode: the result is displayed in the notation column; Resign and Draw buttons disable after game over.</p>
