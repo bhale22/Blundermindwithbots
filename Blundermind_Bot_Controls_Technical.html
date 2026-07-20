@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blundermind — Bot Controls Technical Brief</title>
+<style>
+  :root{
+    --bg:#0e1526; --panel:#141d33; --panel2:#101a2e; --ink:#dfe6f2; --muted:#93a1bd;
+    --amber:#e0a53c; --amber-soft:#f0c274; --line:#25324f; --accent:#5b9bd5;
+    --chip-bg:#1b273f; --chip-ink:#cdd8ee; --code-bg:#0b1120; --code-ink:#8fd3a0;
+    --maxw:1000px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:40px 22px 90px}
+  h1{font-size:2rem; color:var(--amber); letter-spacing:.5px; margin:.2em 0 .1em; font-weight:800}
+  .sub{color:var(--muted); text-transform:uppercase; letter-spacing:2px; font-size:.72rem; margin-bottom:8px}
+  .sub2{color:var(--muted); font-size:.9rem; margin-bottom:26px}
+  h2{
+    color:var(--amber); font-size:1.2rem; letter-spacing:.4px;
+    border-bottom:1px solid var(--line); padding-bottom:8px; margin:54px 0 16px; scroll-margin-top:20px;
+  }
+  h3{color:var(--accent); font-size:1.02rem; margin:26px 0 8px}
+  p{margin:0 0 12px}
+  a{color:var(--accent); text-decoration:none}
+  a:hover{text-decoration:underline}
+  .lead{
+    background:var(--panel2); border:1px solid var(--line); border-left:3px solid var(--amber);
+    border-radius:8px; padding:14px 18px; color:#c7d2e6; margin:0 0 20px;
+  }
+  .principle{
+    background:rgba(224,165,60,.06); border:1px solid rgba(224,165,60,.28);
+    border-radius:8px; padding:14px 18px; margin:16px 0;
+  }
+  .principle strong{color:var(--amber-soft)}
+  code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .code{background:var(--code-bg); border:1px solid var(--line); border-radius:8px;
+    padding:12px 14px; color:var(--code-ink); font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:.84rem; overflow-x:auto; margin:0 0 16px; white-space:pre}
+  table{width:100%; border-collapse:collapse; margin:0 0 18px; font-size:.9rem}
+  th,td{text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:top}
+  th{color:var(--amber-soft); text-transform:uppercase; font-size:.72rem; letter-spacing:.6px; background:rgba(255,255,255,.02)}
+  tbody tr:nth-child(even){background:rgba(255,255,255,.015)}
+  .wide{overflow-x:auto}
+  .note{color:var(--muted); font-size:.86rem}
+  ul{margin:0 0 14px; padding-left:1.25em}
+  li{margin:4px 0}
+  .toc{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px 22px; margin:8px 0 12px}
+  .toc h2{border:0; margin:0 0 12px; padding:0; font-size:1.05rem}
+  .toc ol{margin:0; padding-left:1.4em; columns:2; column-gap:34px}
+  .toc li{margin:5px 0; break-inside:avoid}
+  @media (max-width:720px){
+    .toc ol{columns:1}
+    h1{font-size:1.5rem}
+  }
+</style>
+</head>
+<body>
+<a id="top"></a>
+<div class="wrap">
+
+  <h1>Blundermind — Bot Controls</h1>
+  <div class="sub">Technical Brief</div>
+  <div class="sub2">Move-selection mechanics, formulas &amp; architecture</div>
+
+  <p class="lead">This brief explains what happens under the hood every time a Blundermind bot chooses a move: the
+  pipeline it runs, the formulas each control uses, and how the pieces fit together. Everything described here maps to
+  a control you can see and set in the Bot Controls panel.</p>
+
+  <nav class="toc" aria-label="Contents">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#pipeline">Architecture — Move Selection Pipeline</a></li>
+      <li><a href="#source">Move Source Layer</a></li>
+      <li><a href="#thinktime">Think Time Calculation</a></li>
+      <li><a href="#degradation">Time-Pressure Play Degradation</a></li>
+      <li><a href="#temperature">Temperature &amp; Move Sampling</a></li>
+      <li><a href="#attractors">Strategic Attractors (Centipawmeter)</a></li>
+      <li><a href="#pieces">Piece-Type Attractors</a></li>
+      <li><a href="#filter">Move Distribution Filter &amp; Luck</a></li>
+      <li><a href="#cpbudget">CP-Budget Acceptance, Degradation Guard &amp; Hard Floor</a></li>
+      <li><a href="#draws">Draw &amp; Desperation Behaviours</a></li>
+      <li><a href="#presets">Preset Personalities</a></li>
+      <li><a href="#timecontrols">Time Controls</a></li>
+      <li><a href="#flags">Human Behaviour Flags</a></li>
+      <li><a href="#appendix">Appendix — Play From Any Position</a></li>
+    </ol>
+  </nav>
+
+  <!-- 1 -->
+  <h2 id="pipeline">1 · Architecture — Move Selection Pipeline</h2>
+  <p>Every bot move passes through the sequential stages below. Each stage can veto, modify, or short-circuit to skip
+  later stages. The stages run in strict order so that think time — computed in Stage 2 — feeds every downstream
+  degradation calculation, and so the final engine-verification stages (8–9) see the move the personality actually chose.</p>
+  <div class="wide">
+  <table>
+    <thead><tr><th>Stage</th><th>Name</th><th>What happens</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Opening Book</td><td>ECO table lookup (preferred) or Lichess Masters (mainline). If a matching move is found, it is played immediately after a brief book delay (400–1200 ms). Skipped once the game leaves known lines.</td></tr>
+      <tr><td>2</td><td>Think Time</td><td>Actual think time for this move is computed from the timing mode, the Hustle attractor, and clock pressure. The result feeds all downstream degradation curves.</td></tr>
+      <tr><td>3</td><td>Engine Query</td><td>A rough think-time estimate picks the Maia ELO (via curve A, if ELO degradation is on). Maia or LCSF is queried for candidate-move probabilities.</td></tr>
+      <tr><td>4</td><td>Distribution Filter</td><td>An absolute min-probability floor removes near-zero candidates. Curve B (if the distribution toggle is on) narrows the upper percentile; the Luck attractor shifts the window (§8).</td></tr>
+      <tr><td>5</td><td>Attractor Reweighting</td><td>Each candidate move's probability is multiplied by exp(logBoost), where logBoost is the sum of all active strategic attractor signals. Sets an "applied" flag read by Stage 8.</td></tr>
+      <tr><td>6</td><td>Desperation (opt.)</td><td>If "seek stalemate when losing" is armed and the engine eval confirms a lost position, candidate weights are re-shaped toward low-own-mobility and material-dumping moves (§10).</td></tr>
+      <tr><td>7</td><td>Conviction Pick</td><td>30% of moves: the top-ranked move of the reweighted distribution is played outright (argmax). The other 70%: final temperature applied (base T × phase/pressure modifiers) and one move is sampled.</td></tr>
+      <tr><td>8</td><td>CP-Budget Acceptance</td><td>Personality bots only: if the pick differs from Maia's most-popular move, a shallow Stockfish probe checks that the pick loses ≤ CP Budget vs. the popular move; otherwise it walks down the preference order, up to 15 candidates deep (§9).</td></tr>
+      <tr><td>9</td><td>Degradation Guard</td><td>Bad-Day / distribution-restricted picks are re-checked so a degraded choice can never out-perform Maia's top move — popularity is not quality (§9).</td></tr>
+      <tr><td>10</td><td>Hard Floor Backstop</td><td>Any final pick that differs from the most-popular move — whatever produced it — is capped at the Hard Floor (≥ Budget): if it loses more than Floor cp, the popular move is played instead. Skipped when the Floor is Off (§9c).</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="principle"><strong>Principle #1 — think time drives degradation:</strong> Think time is computed first
+  (Stage 2), and the resulting value drives Stages 3–4 through the degradation curves. A Coffeehouse Hustler thinking
+  0.3 s on a move sees heavy ELO and distribution degradation on that specific move — not an average derived from the
+  remaining clock.</div>
+
+  <div class="principle"><strong>Principle #2 — real centipawns, not probability:</strong> Maia probability measures how
+  <em>popular</em> a move is at a given rating, which is not the same as how <em>good</em> it is — at low ratings the two
+  can even anticorrelate. So the CP Budget, the Hard Floor, and all quality guarantees are enforced with actual Stockfish
+  evaluations at Stages 8–10. The probes are fail-open: any timeout leaves the pick untouched, and results are reused
+  between stages so a move never pays for the same evaluation twice.</div>
+
+  <!-- 2 -->
+  <h2 id="source">2 · Move Source Layer</h2>
+
+  <h3>2a · Opening Book</h3>
+  <p>Two independent book modes are available. Either can be active at once; each deactivates permanently the first time
+  it fails to find a candidate move.</p>
+  <div class="wide">
+  <table>
+    <thead><tr><th>Mode</th><th>Source</th><th>Behaviour</th></tr></thead>
+    <tbody>
+      <tr><td>Preferred</td><td>In-memory ECO table (~3,000 named openings)</td><td>Matches game history against ECO lines whose ECO code or family prefix is in the bot's slot list. Plays the next move from the highest-priority matching line. Exits the book at maxBookDepth (default 20 half-moves).</td></tr>
+      <tr><td>Mainline</td><td>Lichess Masters (live)</td><td>Queries the masters database for the most popular continuation from the current position; falls back to the Lichess community database if there is no masters result. Plays the top-weighted move. Deactivates after the first cache miss or API error.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="note">Book delay: 400–1200 ms random pause to simulate human reading time.</p>
+
+  <h3>2b · Maia Neural Network</h3>
+  <p>Maia is a series of neural networks (600–2600 ELO) trained to predict human moves at each rating level. The bot
+  queries the appropriate ELO model (determined by degradation curve A) and receives a probability distribution over all
+  legal moves.</p>
+  <ul>
+    <li>Model selection: effective ELO is chosen from the per-move think time.</li>
+    <li>ELO clamped to [600, 2600].</li>
+    <li>Probability distribution filtered by the quality range (§8), then reweighted by attractors (§6).</li>
+  </ul>
+
+  <h3>2c · Stockfish (SF) Engine</h3>
+  <p>Used when the bot engine mode is set to Stockfish. Skill level runs 1–20. The engine is queried via a Web Worker;
+  MultiPV probes provide the complexity scores used by the Chaos attractor. Single-move quality is guaranteed by the
+  engine-calculated CP budget (§9).</p>
+  <div class="code">effective level: floor = pressureFloor
+pressureFloor = max(1, startLevel − round(timePressureMaxDrop / 50))
+(or the pressure-level slider when no max-drop is set)</div>
+  <p>Time-degradation path (highest priority wins):</p>
+  <ul>
+    <li>Weaponizer active AND bot is ahead → return the floor level immediately.</li>
+    <li>Curve A present → spline interpolation in log-time space → lerp level toward the floor.</li>
+    <li>Fallback: linear ramp from startLevel at 30 s → floor at 0 s.</li>
+  </ul>
+
+  <h3>2d · Level-Controlled Stockfish (LCSF)</h3>
+  <p>LCSF uses Stockfish with controlled skill variation rather than Maia probability distributions. Each call's skill
+  level is drawn from a distribution around the target level:</p>
+  <div class="code">p(offset) distribution:
+  −2: var2/2   (e.g. 10% at ±2 → 5% chance)
+  −1: var1/2   (e.g. 30% at ±1 → 15% chance)
+   0: 1 − var1 − var2   (remaining probability)
+  +1: var1/2
+  +2: var2/2
+Level clamped to [1, 20]</div>
+  <p class="note">var1 (±1 spread): 0–50%. var2 (±2 spread): 0–20%. Setting both to 0 uses the exact target level every move.</p>
+
+  <!-- 3 -->
+  <h2 id="thinktime">3 · Think Time Calculation</h2>
+  <p>Think time is calculated before the engine is queried. The result drives all downstream degradation curves, so
+  attractors that shorten think time (the Hustler) directly increase move-quality degradation for that specific move.</p>
+
+  <h3>3a · Timing Modes</h3>
+  <div class="wide">
+  <table>
+    <thead><tr><th>Mode</th><th>Formula / behaviour</th></tr></thead>
+    <tbody>
+      <tr><td>Instant</td><td>Returns 0 ms. No delay whatsoever.</td></tr>
+      <tr><td>Fixed</td><td>thinkMs = fixed delay. Capped at min(fixed, clockMs × 0.08) when the clock is under 30 s. Capped at clockMs − 3 s when flagging is disabled.</td></tr>
+      <tr><td>Pace (default)</td><td>baseSec = (5 × 60) / pace. complexity = min(1 + entropy × 0.35, 2.5). thinkMs = baseSec × complexity × 1000. Pace slider: 5–120 (moves per 5-minute equivalent).</td></tr>
+      <tr><td>Complexity</td><td>cplx = SF complexity score if available, else min(1, entropy / 4). mult = cplxMin + cplx × (cplxMax − cplxMin). thinkMs = cplxBase × mult × 1000. Explicit base / min-mult / max-mult sliders in the panel.</td></tr>
+      <tr><td>Mirror</td><td>avg = rolling average of human move times. thinkMs = avg × jitter(0.8–1.2) × (1 + mirrorOffset%/100). Falls through to Complexity/Pace when no human moves are recorded yet.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>3b · Think-Time Modifiers (applied in order)</h3>
+  <div class="wide">
+  <table>
+    <thead><tr><th>Modifier</th><th>Condition</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td>Weaponizer shortcut</td><td>Enabled AND bot clock &gt; opp clock + leadMs</td><td>Return 0 ms immediately (skip all delays)</td></tr>
+      <tr><td>Move blink</td><td>Blink flag AND entropy &lt; 0.5 (forced/obvious positions)</td><td>200–500 ms random; skips further calculation</td></tr>
+      <tr><td>Clock-pressure mirroring</td><td>Clock-mirror flag AND oppClock &lt; botClock × 0.6</td><td>thinkMs ×= 0.5</td></tr>
+      <tr><td>Hustle attractor</td><td>value v ∈ [−5, +5]</td><td>thinkMs ×= (1 − v × 0.15). At +5: ×0.25 (very fast). At −5: ×1.75 (very slow).</td></tr>
+      <tr><td>Reconsideration</td><td>Reconsider flag, 15% random chance</td><td>thinkMs ×= 1.5 to 2.5 (hesitation pause)</td></tr>
+      <tr><td>Base jitter</td><td>Always applied</td><td>thinkMs ×= uniform(0.8, 1.2)</td></tr>
+      <tr><td>Clock cap (low clock)</td><td>clockMs &lt; 30,000 ms</td><td>thinkMs = min(thinkMs, clockMs × 0.08)</td></tr>
+      <tr><td>Flagging guard</td><td>Can-flag = false</td><td>thinkMs = min(thinkMs, max(200, clockMs − 3000))</td></tr>
+      <tr><td>Global cap</td><td>Always applied</td><td>thinkMs = max(200, min(cap, thinkMs)). Cap = max(6 s, min(45 s, startClock × 0.02)) — scales with time control.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="note">Position entropy is the Shannon entropy over Maia move probabilities: H = −Σ p·log(p). Higher entropy
+  = more complex / branching position.</p>
+
+  <!-- 4 -->
+  <h2 id="degradation">4 · Time-Pressure Play Degradation</h2>
+  <p>Two independent, user-editable spline curves control how the bot's play quality degrades as think time per move
+  decreases. Both curves use log-scale interpolation on the X axis (think time in seconds), so visually equal spacing on
+  the panel matches the mathematical interpolation.</p>
+  <p>Each curve has its own ON/OFF toggle beside its chart, so the two mechanisms are fully independent: ELO degradation
+  (curve A) reduces the Maia ELO the engine is queried at, while distribution restriction (curve B) keeps the ELO fixed
+  but narrows which slice of Maia's move distribution is available. You can run either alone, both together, or switch
+  both off for constant strength. When a curve is off it is flat at its reference value (curve A at the configured ELO,
+  curve B at 100%), and its slider no longer re-anchors the other curve.</p>
+  <div class="code">Curve interpolation (log-x space):
+pts sorted by x. For xSec in [pts[i].x, pts[i+1].x]:
+  t = (ln(xSec) − ln(pts[i].x)) / (ln(pts[i+1].x) − ln(pts[i].x))
+  y = pts[i].y + t × (pts[i+1].y − pts[i].y)</div>
+
+  <h3>Curve A — ELO Degradation</h3>
+  <p>Maps think time (s) → effective Maia ELO. At full think time the bot queries its configured ELO tier. As think time
+  shrinks, the ELO drops, producing weaker move distributions.</p>
+  <div class="code">effectiveELO = evalPressureCurve(curveA, thinkSec) clamped to [600, 2600]</div>
+  <ul>
+    <li>X axis: think time per move in seconds (log scale, typically 0.1 s – 30 s)</li>
+    <li>Y axis: Maia ELO (600 – 2600)</li>
+    <li>Default: flat at the configured ELO (no degradation) unless the curve is set</li>
+  </ul>
+  <p class="note">The rough think-time estimate (computed before the Maia query) is used for ELO selection. The precise
+  think time (after the engine responds) is used for curve B and temperature.</p>
+  <p class="note">Hybrid Maia slots carry their own ratings, so the curve's absolute ELO (anchored to the main Elometer)
+  doesn't apply directly. Instead each slot takes the curve's <em>relative</em> drop — the curve's relaxed top minus its
+  value at this think time — subtracted from the slot's own ELO. Relaxed think = no drop; under pressure both slots
+  degrade by the same amount, preserving their identity gap.</p>
+
+  <h3>Curve B — Distribution Cutoff</h3>
+  <p>Maps think time (s) → upper-percentile cutoff of the candidate list. 100% = full distribution (top candidate down
+  to last). As think time falls the cutoff drops, forcing the bot to pick from a narrower top slice of the distribution
+  (higher-probability, safer-looking moves).</p>
+  <div class="code">effectiveUpperPct = min(botDayUpper, evalPressureCurve(curveB, thinkSec))</div>
+  <ul>
+    <li>X axis: think time per move in seconds (log scale)</li>
+    <li>Y axis: upper percentile 0–100%</li>
+    <li>Combined with the Move Quality Range lower bound and Luck shift (§8)</li>
+  </ul>
+
+  <h3>Time-Pressure Temperature Boost</h3>
+  <p>In addition to the ELO and distribution effects, low think time raises the sampling temperature, making move
+  selection more random under pressure:</p>
+  <div class="code">boost = { steady: 0.0, normal: 1.0, panicky: 2.5 }[timePressureMode]
+if curveB present:
+  fraction = 1 − evalPressureCurve(curveB, thinkSec) / 100
+else:
+  fraction = max(0, 1 − thinkSec / 30)   # linear fallback
+effectiveTemp = baseTemp + fraction × boost</div>
+  <p class="note">Time-pressure modes: "steady" (no boost), "normal" (+1.0 max), "panicky" (+2.5 max).</p>
+
+  <!-- 5 -->
+  <h2 id="temperature">5 · Temperature &amp; Move Sampling</h2>
+  <p>After attractor reweighting, the <strong>conviction pick</strong> decides how the move is chosen: 30% of the time
+  the bot plays the top-ranked move of the reweighted distribution outright (argmax — its personality's honest first
+  choice), and 70% of the time one move is sampled using temperature-scaled probabilities. This keeps personalities
+  assertive without making them perfectly predictable.</p>
+  <div class="code">if rand() &lt; 0.30 → play argmax of reweighted distribution
+else:
+  scaled[m] = prob[m] ^ (1/T)
+  total     = Σ scaled[m]
+  sample r ~ Uniform(0, total)
+  return first m where cumulative sum ≥ r</div>
+  <p>At T = 1.0 the original Maia probabilities are used directly. T &lt; 1 sharpens the distribution (top move more
+  likely); T &gt; 1 flattens it (unlikely moves become relatively more likely). T is clamped to ≥ 0.1 to prevent division
+  issues.</p>
+
+  <h3>5a · Base Temperature Presets</h3>
+  <div class="wide">
+  <table>
+    <thead><tr><th>Preset</th><th>T value</th><th>Behaviour</th></tr></thead>
+    <tbody>
+      <tr><td>Focused</td><td class="mono">0.4</td><td>Strongly favours the top 1–2 Maia moves</td></tr>
+      <tr><td>Neutral</td><td class="mono">1.0</td><td>Samples Maia's full distribution as-is</td></tr>
+      <tr><td>Varied</td><td class="mono">1.8</td><td>Wider sample — more surprise choices</td></tr>
+      <tr><td>Wild</td><td class="mono">3.0</td><td>Even low-probability moves get meaningful weight</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>5b · Hustler Phase Temperature</h3>
+  <p>When the Coffeehouse Hustler personality is active, the base temperature is replaced by a phase-sensitive curve:</p>
+  <div class="code">piecesLeft = count of non-pawn, non-king pieces on board
+fraction   = clamp(1 − (piecesLeft − 4) / 10, 0, 1)
+             # 0 at 14 pieces (opening), 1 at ≤4 pieces (endgame)
+T = 5.0 + fraction × (0.6 − 5.0)
+  = 5.0 in opening → 0.6 in endgame</div>
+  <p class="note">14 non-pawn/non-king pieces = full material. At 4 or fewer such pieces, the endgame temperature floor of
+  0.6 is reached.</p>
+
+  <h3>5c · Complexity-Adjusted Temperature</h3>
+  <p>For Maia mode, the base temperature can optionally be scaled by position complexity (MultiPV evaluation spread):</p>
+  <div class="code">if complexityScore is null → return baseT
+cplxFactor = 0.8 + complexityScore × 0.4   # 0.8 at simple, 1.2 at complex
+return baseT × cplxFactor</div>
+  <p class="note">The complexity score is the normalized standard deviation of the top-N Stockfish evaluations, ranging
+  0 (all moves equal) to 1 (widely spread evaluations).</p>
+
+  <!-- 6 -->
+  <h2 id="attractors">6 · Strategic Attractors (Centipawmeter)</h2>
+  <p>Strategic attractors reweight each candidate move's probability by multiplying it by exp(logBoost). The total
+  logBoost for a move is the sum of all active attractor contributions. Attractors are zero at centre and scale linearly
+  with slider value (−5 to +5).</p>
+
+  <h3>6a · CP Budget, Hard Floor and Scale Factor</h3>
+  <p>The CP (centipawn) budget (0–300), shown on the Centipawmeter dial, is the personality's allowance and does double
+  duty. First, it is a master gain knob: it controls how strongly attractors push the distribution, regardless of the
+  individual slider positions (the 150-cp-per-log-unit scale below). Second, it is a real, engine-calculated centipawn
+  ceiling on how far a personality pick may fall below Maia's most-popular choice — enforced at Stage 8 (§9a).</p>
+  <p>The <strong>Hard Floor</strong> (Budget–1000 cp, or Off) is a separate slider directly beneath the Budget, always
+  ≥ Budget: it is the absolute backstop on every <em>other</em> selection mechanism — temperature sampling, the Luck
+  window shift, Bad Day, curve-B time-pressure restriction — enforced at Stage 10 (§9c). At Off, nothing is capped.
+  The Engine panel shows both values beside the Elometer with a one-click ELO-based recommendation. Budget and Floor
+  have separate curves: Budget ≈ (2700 − ELO)/15 clamped to 10–120 cp (persistent style spend — a fraction of the
+  rating's typical centipawn loss), Floor ≈ (2900 − ELO)/4.5 clamped to 80–520 cp (the worst single move still in
+  character for the rating).</p>
+  <div class="code">totalAbs = Σ |v| for all attractor and piece sliders
+scale = cpBudget / (totalAbs × 150)   if cpBudget > 0 and totalAbs > 0
+      = 0                              otherwise
+
+For each move: prob_new = prob × exp(logBoost)
+where logBoost = Σ (attractor_v × scale × signal)
+
+At cpBudget = 150 with one slider at 1 and all others at 0:
+  scale = 1/150, signal = 1 → logBoost = 1 → exp(1) ≈ 2.7× boost</div>
+  <p class="note">Allocating 150 cp of budget on a single maximally-set attractor produces roughly a 2.7× probability
+  boost on moves that fully satisfy that attractor.</p>
+
+  <h3>6b · Attractor Formulas</h3>
+  <div class="wide">
+  <table>
+    <thead><tr><th>Attractor</th><th>Left (−) / Right (+)</th><th>Signal formula</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>Chaos Agent / Simplifier</td><td>− Simplifier → low-σ moves<br>+ Chaos Agent → high-σ moves</td><td>logBoost += chaosVal × scale × signal (signal from MultiPV σ)</td><td>Requires a MultiPV Stockfish probe. σ = std. dev. of top-N eval scores.</td></tr>
+      <tr><td>Complicate / Simplify winning</td><td>− Simplify when winning<br>+ Complicate when winning</td><td>Active when eval ≥ +100 cp. Boosts moves that increase or decrease MultiPV variance.</td><td>Only fires in clearly winning positions. Combines with Chaos Agent for full effect.</td></tr>
+      <tr><td>Space Cadet / Space Waster</td><td>− Space Waster → cede space<br>+ Space Cadet → reduce weak sq.</td><td>delta = currentWeakSq − simWeakSq<br>logBoost += v × scale × tanh(delta/5)</td><td>Full-board attack map on the simulated position. Captures discovered attacks and blocking moves. delta &gt; 0 = fewer weak squares after the move.</td></tr>
+      <tr><td>Fort Knox / Glass Cannon</td><td>− Glass Cannon → exposed pieces<br>+ Fort Knox → more defenders</td><td>delta = simTotalDefs − currentDefs<br>logBoost += v × scale × tanh(delta/3)</td><td>Sum of defensive coverage across all bot pieces, computed on the simulated position.</td></tr>
+      <tr><td>Gambito / Gambit Shy</td><td>− Gambit Shy → avoid sacrifices<br>+ Gambito → follow gambit lines</td><td>Opening only (&lt; 20 half-moves). ECO: logBoost += v × scale if the move is an ECO gambit continuation. Fallback: pawn to an attacked, undefended square.</td><td>ECO gambit-line match takes priority; structural fallback if ECO data is not yet loaded.</td></tr>
+      <tr><td>Trade Seeker / Trade Avoider</td><td>− Trade Avoider → no captures<br>+ Trade Seeker → captures</td><td>Capture: logBoost += v × scale<br>Threat: logBoost += v × scale × tanh(newThreats / 2)</td><td>Non-captures scored by the number of new opponent-piece threats created from the destination square.</td></tr>
+      <tr><td>Rigid / Loose Pawn Structure</td><td>− Loose → open mobile structure<br>+ Rigid → tighter structure</td><td>Own pawn moves only. delta = currentPenalty − simPenalty<br>logBoost += v × scale × tanh(delta)</td><td>Penalty = pawn islands + doubled pawns + isolated pawns. delta &gt; 0 = move tightens structure.</td></tr>
+      <tr><td>Coffeehouse Hustler / Overthinker</td><td>− Overthinker → longer think time<br>+ Hustler → shorter think time</td><td>Applied to think time (not prob): thinkMs ×= (1 − v × 0.15)</td><td>At +5: ×0.25 (4× faster). At −5: ×1.75 (75% slower). Feeds into the pressure curves as actual think time.</td></tr>
+      <tr><td>Luck / Bad Day</td><td>− Good day → top of distribution<br>+ Bad day → bottom of distribution</td><td>Shifts the quality-range window:<br>lo = botDayLower − v × 4<br>hi = pressureUpper − v × 4</td><td>See §8 Move Quality Range for the full description.</td></tr>
+      <tr><td>Panicky / Calm under pressure</td><td>− Calm → no temperature boost<br>+ Panicky → larger T boost under pressure</td><td>Modifies the time-pressure boost mode (steady / normal / panicky).</td><td>See §4 Pressure Temperature Boost.</td></tr>
+      <tr><td>Attacker / Peacemaker</td><td>− Peacemaker → quiet positions<br>+ Attacker → maximize threats</td><td>totalThreats = Σ attacks on each opp. piece<br>logBoost += v × scale × tanh(threats/6)</td><td>Full-board attack map on the simulated position. Counts attack coverage across all opponent pieces.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="note">All attractor signals that use tanh map their input to a smooth −1..+1 range, preventing any single
+  move from receiving an unbounded boost.</p>
+
+  <!-- 7 -->
+  <h2 id="pieces">7 · Piece-Type Attractors</h2>
+  <p>Six independent sliders (−5 to +5) bias the bot toward or away from moving each piece type. The formula is the same
+  for all six:</p>
+  <div class="code">logBoost += pieceVals[pieceType] × scale</div>
+  <p>The piece type is determined from the moving piece before the move. The signal is 1 (or 0 for no boost) — there is
+  no continuous signal function as with most strategic attractors. Scale is shared with the strategic attractors, so the
+  CP budget controls piece-attractor strength alongside everything else.</p>
+  <div class="wide">
+  <table>
+    <thead><tr><th>Piece</th><th>Left (−) behaviour</th><th>Right (+) behaviour</th><th>Best combined with</th></tr></thead>
+    <tbody>
+      <tr><td>♙ Pawn</td><td>Suppress pawn moves</td><td>Prioritise pawn advances</td><td>Rigid structure (connected chains)</td></tr>
+      <tr><td>♘ Knight</td><td>De-prioritise knight hops</td><td>Knight manoeuvres first</td><td>Rigid structure (closed positions)</td></tr>
+      <tr><td>♗ Bishop</td><td>Keep bishops passive</td><td>Diagonal play, bishop pair</td><td>Loose structure (open diagonals)</td></tr>
+      <tr><td>♖ Rook</td><td>Passive rooks, avoid early trades</td><td>File seizure, rook lifts</td><td>Open files, trade-seeker</td></tr>
+      <tr><td>♕ Queen</td><td>Conservative queen, avoid exposure</td><td>Active queen, queen-led attacks</td><td>Chaos Agent (keeps complications)</td></tr>
+      <tr><td>♔ King</td><td>King safety, stay castled</td><td>King activity, endgame aggression</td><td>Endgame positions, low piece count</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- 8 -->
+  <h2 id="filter">8 · Move Distribution Filter &amp; Luck</h2>
+  <p>The Move Distribution Range dual slider selects which segment of the Maia probability-ranked candidate list the bot
+  samples from. Candidates outside the [lower, upper] percentile window are excluded before temperature sampling and
+  attractor reweighting.</p>
+  <p class="note">Popularity is not engine quality — Maia probability is how often players at the selected rating choose
+  a move. A strong move few players see can sit low in the distribution, which is why the rare tail is where creative,
+  unconventional play lives; real move-quality enforcement is the engine checking in §9.</p>
+
+  <h3>8a · Percentile Band Filtering</h3>
+  <div class="code">sorted candidates by probability (highest first)
+cumulative probability sum = total
+band.lo = (lo/100) × total
+band.hi = (hi/100) × total
+Include move m if: cumulative_end(m) > band.lo AND cumulative_start(m) < band.hi</div>
+  <p>Default: lo = 0%, hi = 100% (full distribution). Setting lo = 20%, hi = 60% samples only the middle tier — avoiding
+  the top moves (too accurate) and the worst moves (random blunders).</p>
+
+  <h3>8b · Luck Attractor Shift</h3>
+  <p>The Luck attractor shifts both bounds of the quality window simultaneously:</p>
+  <div class="code">lo_effective = botDayLower  − luckVal × 4
+hi_effective = pressureUpper − luckVal × 4
+
+luckVal > 0 (Bad day):  window shifts down → samples lower-ranked moves → worse play
+luckVal < 0 (Good day): window shifts up   → samples top-ranked moves   → sharper play</div>
+  <p class="note">pressureUpper is the curve-B degraded upper bound, so the luck shift compounds with time-pressure effects.</p>
+
+  <h3>8c · Min-Probability Filter</h3>
+  <p>A single absolute-popularity filter prunes the candidate list before the quality range is applied. It is an honest
+  distribution control expressed as a percentage — it removes near-zero candidates and makes no claim about move quality
+  (centipawn enforcement is the engine-calculated check in §9).</p>
+  <div class="code">absFloor = minProbPct / 100
+keep only moves with prob ≥ absFloor
+(if that empties the list, keep the single most-popular move)</div>
+
+  <!-- 9 -->
+  <h2 id="cpbudget">9 · CP-Budget Acceptance, Degradation Guard &amp; Hard Floor</h2>
+  <p>Maia probability is popularity, not quality. Three post-pick stages use a shallow Stockfish probe to hold move
+  selection to a real centipawn standard. All are fail-open — any probe failure or timeout leaves the pick unchanged —
+  and probe results are shared between stages so no move pays for the same evaluation twice. The probe reuses the
+  MultiPV complexity machinery with a searchmoves restriction (depth ~10), evaluating one wide batch in a single
+  search rather than one call per move.</p>
+
+  <h3>9a · CP-Budget Acceptance</h3>
+  <p>Turns the Centipawmeter into a real centipawn ceiling. When personality reweighting produced a pick different from
+  the most-popular move, the pick, the popular move, and up to 15 of the personality's next favourites are evaluated
+  together in one probe. The pick is accepted only if it loses no more than the CP Budget versus the popular move;
+  otherwise the bot walks down its own preference order until one fits, falling back to the popular move itself
+  (0 cp by definition). The wide walk means a rare move from deep in Maia's tail still gets a genuine chance to be
+  played — it just has to prove it can afford it.</p>
+  <div class="code">topMove = argmax Maia probability
+if pick == topMove or reweighting not applied → keep pick
+evals = SF probe over [topMove, pick, next favourites]
+for m in [pick, ...favourites]:
+  if evals[topMove] − evals[m] ≤ cpBudget → play m
+  else → play topMove</div>
+  <p class="note">Stalemate-seeking picks (§10) are deliberately exempt — throwing material is the whole point, so the
+  budget must not veto them.</p>
+
+  <h3>9b · Degradation Guard</h3>
+  <p>Guarantees that a deliberately degraded choice never accidentally out-performs Maia's top move. It is active when
+  Grandmaster Bad Day is on, or when the time-pressure distribution restriction (curve B) is actively narrowing the
+  window. The chosen move and the most-popular move are evaluated, and whichever scores worse is played.</p>
+  <div class="code">active if botBadDayMode OR curve-B is narrowing now
+if pick == topMove → keep
+evals = SF probe over [pick, topMove]
+play the move with the LOWER eval</div>
+  <p class="note">Consequence: Grandmaster Bad Day picks the lowest-probability move above its configured floor, but if
+  that move happens to be strong (a shot few players see), the guard swaps it back to the mainstream move — the bot is
+  never accidentally brilliant.</p>
+
+  <h3>9c · Hard Floor Backstop</h3>
+  <p>The last stage in the pick flow. Whatever produced the final pick — temperature sampling, the Luck shift, Bad Day,
+  curve-B restriction, or plain sampling variance — if it differs from the most-popular move, it must not lose more
+  than the Hard Floor's centipawns against it; otherwise the popular move is played instead. Picks already verified
+  within the Budget skip this check (Budget ≤ Floor by construction), stalemate-seeking picks are exempt, and a Floor
+  set to Off disables the stage entirely — the honest setting for beginner bots that should be able to hang pieces.</p>
+  <div class="code">active if Floor &lt; Off AND pick ≠ topMove AND not budget-verified AND not stale-seek
+evals = reuse guard's probe if available, else SF probe over [pick, topMove]
+if evals[topMove] − evals[pick] &gt; floor → play topMove
+else → keep pick</div>
+
+  <!-- 10 -->
+  <h2 id="draws">10 · Draw &amp; Desperation Behaviours</h2>
+  <p>Four opt-in behaviours (Personality section → "Draws &amp; Desperation" tab) let a bot handle draw offers,
+  offer draws, and swindle when lost — all judged the way a human of the bot's strength would, not at raw engine accuracy.</p>
+
+  <h3>10a · Perceived Evaluation</h3>
+  <p>Every draw decision uses the bot's perceived advantage, not Stockfish's. A shallow eval probe gives the true
+  centipawn advantage from the bot's side; that value is then blurred by rating-scaled Gaussian noise plus a mild
+  self-optimism bias. A novice genuinely misjudges; a master barely does.</p>
+  <div class="code">sigma(elo) = 15 + 700 × exp(−elo / 500)
+           ≈ 225 cp at 600 ELO, ≈ 50 cp at 1500, ≈ 19 cp at 2600
+perceived = trueAdv + gauss() × sigma + 0.25 × sigma</div>
+  <p class="note">So a 700-rated bot can believe a lost position is fine (and decline your draw, or offer one from a
+  losing position it thinks is level); a 2400 is almost never fooled.</p>
+
+  <h3>10b · Accepting &amp; Offering Draws</h3>
+  <div class="wide">
+  <table>
+    <thead><tr><th>Behaviour</th><th>Control</th><th>Rule</th></tr></thead>
+    <tbody>
+      <tr><td>Accepts draw offers</td><td>toggle + accept-margin (0–300 cp)</td><td>On your ½ offer the bot accepts iff its perceived advantage ≤ margin. Declines are wordless (a human just plays on — no eval is announced), and a bot that knows it is worse may still decline, hoping for a blunder.</td></tr>
+      <tr><td>Offers draws</td><td>toggle + level-band (±cp) + from-move</td><td>After its move, in a position that feels level (|perceived| ≤ band) and past the move threshold, it occasionally offers — never twice within 12 plies.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>10c · Clock Awareness</h3>
+  <p>Draw decisions read the clock (only when the increment is under 10 s, since nobody flags with a healthy increment):</p>
+  <ul>
+    <li><strong>Opponent about to flag</strong> (under 20 s, bot comfortably ahead on time): the bot declines instantly with no eval probe and never offers — it is playing for the win on time.</li>
+    <li><strong>Bot itself about to flag</strong> while the opponent is comfortable: it becomes far more agreeable — the accept margin widens by 200 cp and its offer band by 150 cp, grabbing the half point even from better positions.</li>
+  </ul>
+  <p class="note">Untimed games and games with a ≥ 10 s increment ignore the clock entirely.</p>
+
+  <h3>10d · Seek Stalemate When Losing</h3>
+  <p>A desperation swindle mode. Once the engine eval says the bot is worse than the threshold and the game has passed
+  the configured move number, candidate weights are re-shaped toward the classic stalemate-trap recipe:</p>
+  <ul>
+    <li>Moves that reduce the bot's own future mobility (fewer legal replies afterwards → closer to a stalemate shape) are boosted.</li>
+    <li>Desperado moves — offering the moved piece for capture — are boosted in proportion to the piece value, most of all when the piece is undefended (dumping the queen is the point).</li>
+  </ul>
+  <div class="code">active if staleSeek AND fullmove ≥ fromMove AND eval ≤ −thresholdCp
+weight ×= exp( mobilityBoost + desperadoBoost )</div>
+  <p class="note">These picks are exempt from the §9 CP-budget check. Arming this behaviour also forces the
+  complexity/eval probe every move so the trigger stays current.</p>
+
+  <!-- 11 -->
+  <h2 id="presets">11 · Preset Personalities</h2>
+  <p>Each preset personality is a named collection of attractor values; loading one sets all sliders to those values
+  (−5 to +5 scale). Some presets also reconfigure the engine, opening repertoire, or draw behaviour and confirm first
+  via a dialog. The table below shows each personality's notable settings.</p>
+  <div class="wide">
+  <table>
+    <thead><tr><th>Personality</th><th>Tag</th><th>Notable attractor values</th><th>Character</th></tr></thead>
+    <tbody>
+      <tr><td>Captain Entropy</td><td>Chaos</td><td>chaos +4, compwin +4, gambito +3, trade +2, spacecadet +2, hustle −3, structure −3</td><td>Seeks complications, gambit lines, and tactical chaos. Thinks longer per move (hustle −3).</td></tr>
+      <tr><td>Norm</td><td>Order</td><td>structure +4, fortkx +3, spacecadet 0, chaos −4, compwin −4, gambito −2, hustle +2</td><td>Closes positions, defends solidly. Simplifies when winning. Slightly faster pace.</td></tr>
+      <tr><td>Attacky McTackerson</td><td>Captures</td><td>trade +4, attacker +3, chaos +2, hustle −2, structure −1</td><td>Favours captures and threats. Slightly deliberate (hustle −2).</td></tr>
+      <tr><td>Overthinker</td><td>Methodical</td><td>structure +3, spacecadet +3, fortkx +2, hustle −4, pressure −3, chaos −3, compwin −2</td><td>Maximises board control and structure. Thinks long on every move (hustle −4). Likely to accumulate time pressure in classical games.</td></tr>
+      <tr><td>Coffeehouse Hustler</td><td>Fast</td><td>hustle +5, pressure +2, luck +2, gambito +2, structure −2</td><td>Plays fast and loose. Phase temperature: T = 5 opening → T = 0.6 endgame. At hustle +5: think time ×0.25 of baseline.</td></tr>
+      <tr><td>The Blunderer</td><td>Human</td><td>luck +3, pressure +5</td><td>Plays normally but cracks unpredictably under pressure. Luck shifts toward lower-ranked moves.</td></tr>
+      <tr><td>The Hoarder</td><td>Material</td><td>gambito −3, trade −3, fortkx +2, chaos −2, hustle +2, luck −2</td><td>Never sacrifices material. Avoids trades and gambits. Slightly faster pace.</td></tr>
+      <tr><td>Pawn Chain Gang</td><td>Pawns</td><td>structure +5, fortkx +1, hustle +1, chaos −1, compwin −2, gambito −1</td><td>Maximises pawn structure. Slightly faster pace.</td></tr>
+      <tr><td>Spite Check</td><td>Checks</td><td>chaos +3, compwin +2, attacker +3, trade +2, hustle −2</td><td>Always prefers checking moves. Builds up attacks. Slower, deliberate pace (hustle −2).</td></tr>
+      <tr><td>Clock Watcher</td><td>Clock</td><td>compwin −2, trade −1, pressure −3</td><td>Conservative when ahead on time, reckless when behind. Calm under pressure (pressure −3).</td></tr>
+      <tr><td>Grandmaster Bad Day</td><td>Human</td><td>luck +5, pressure +2 (Maia @ 2400, picks lowest-prob move above 4%)</td><td>A strong player having an off day. The §9 degradation guard prevents it from ever accidentally choosing a strong move — never brilliant by mistake.</td></tr>
+      <tr><td>Drunken Master</td><td>Human</td><td>attacker +4, chaos +3, gambito +3 (Hybrid: 50% Maia 2400 + 50% Maia 1000 per move)</td><td>Each move rolls one of two Maia strengths — brilliant one move, blundering the next. A plain hybrid config, so the two slots are freely re-tunable.</td></tr>
+      <tr><td>The Drawmeister</td><td>Human</td><td>trade +4, fortkx +3, structure +2, chaos −4, gambito −3, attacker −3 (accepts + offers draws)</td><td>Plays for the half point: simplifies, fortresses up, offers/accepts draws (§10), and installs solid drawish repertoires for both colours (London / Exchange Slav / Four Knights; Petroff / Berlin / Slav).</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="note">Hustle attractor sign convention: +5 = Coffeehouse Hustler (fast, think time ×0.25). −5 = Overthinker
+  (slow, think time ×1.75).</p>
+
+  <!-- 12 -->
+  <h2 id="timecontrols">12 · Time Controls</h2>
+  <p>Time controls are selected from the bot panel grid, divided into Blitz (≤ 5 min), Rapid (10–30 min),
+  Classical/Correspondence (60 min+), Infinite (untimed), and a special 90+30 column for the FIDE/Candidates format.</p>
+  <div class="wide">
+  <table>
+    <thead><tr><th>Format</th><th>Base time</th><th>Increment</th><th>Bonus</th><th>Bonus at</th><th>Inc from</th></tr></thead>
+    <tbody>
+      <tr><td>Bullet 1+0</td><td>1 min</td><td>0 s</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>Blitz 3+2</td><td>3 min</td><td>2 s</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>Blitz 5+0</td><td>5 min</td><td>0 s</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>Rapid 10+0</td><td>10 min</td><td>0 s</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>Rapid 15+10</td><td>15 min</td><td>10 s</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>Classical 30+0</td><td>30 min</td><td>0 s</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>Classical 60+0</td><td>60 min</td><td>0 s</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>Classical 90+0</td><td>90 min</td><td>0 s</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>FIDE 90+30 *</td><td>90 min</td><td>30 s</td><td>+30 min</td><td>Move 40</td><td>Move 41</td></tr>
+      <tr><td>Untimed ∞</td><td>∞</td><td>0 s</td><td>—</td><td>—</td><td>—</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="note">* 90+30 (FIDE / Candidates): 90 minutes for the first 40 moves, then +30 minutes added to both clocks at
+  move 40. A 30-second increment applies from move 41 onward. A guard flag prevents the bonus from being awarded twice.</p>
+
+  <h3>Bonus Time Implementation</h3>
+  <div class="code">fullMoveNum = ceil(gameMovesAlgebraic.length / 2)
+if tc.bonusSecs AND fullMoveNum ≥ tc.bonusAtMove AND NOT bonusApplied:
+  clockTimeW += bonusSecs   (capped at 59940 s)
+  clockTimeB += bonusSecs
+  bonusApplied = true
+if clockInc > 0 AND fullMoveNum ≥ tc.incFromMove:
+  add increment to the side that just moved</div>
+
+  <!-- 13 -->
+  <h2 id="flags">13 · Human Behaviour Flags</h2>
+  <p>Human behaviour flags add realistic timing irregularities and clock-pressure responses. Each flag is independently
+  toggleable, and they modify think time or move selection in specific situations.</p>
+  <div class="wide">
+  <table>
+    <thead><tr><th>Flag</th><th>When active</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td>Move Blink</td><td>Maia mode only. Position entropy &lt; 0.5 (forced or obvious move)</td><td>Returns a 200–500 ms random pause immediately, skipping the full think-time calculation. Simulates a human instantly playing the obvious recapture or forced reply.</td></tr>
+      <tr><td>Reconsider</td><td>15% random chance per move</td><td>Multiplies computed think time by 1.5–2.5×. Simulates the human hesitation of starting to play a move then reconsidering.</td></tr>
+      <tr><td>Clock Mirror</td><td>Opponent clock &lt; bot clock × 0.6</td><td>Halves think time when the opponent is significantly lower on time. Simulates a human speeding up to maintain a clock advantage.</td></tr>
+      <tr><td>Clock Weaponizer</td><td>Bot clock ahead of opp by more than leadMs</td><td>Returns 0 ms think time AND drops Stockfish to the floor level. Maximises time pressure on the opponent by playing instantly when already ahead on clock. leadMs is set by the Weaponizer Lead Time slider.</td></tr>
+      <tr><td>Can Flag</td><td>Always on or off</td><td>When OFF: think time capped at max(200 ms, clockMs − 3000 ms) to stop the bot flagging itself. When ON: no such safeguard.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- 14 -->
+  <h2 id="appendix">14 · Appendix — Play From Any Position</h2>
+  <p>Beyond bot configuration, games are not locked to the standard start. Any finished game, or any loaded PGN, can be
+  reviewed move-by-move and resumed as a new game — against a bot or a friend — from any position along the way.</p>
+
+  <h3>14a · Review &amp; Replay</h3>
+  <ul>
+    <li>After any game, a <strong>Review</strong> button enters replay of the moves just played; step to any position. The last move is highlighted exactly as in live play.</li>
+    <li>On the Expert board, notation moves are clickable whenever no game is live — clicking one jumps the board to that position.</li>
+    <li>Loaded PGNs support a [FEN] set-up header; a position-only PGN opens directly at that position, ready to play.</li>
+  </ul>
+
+  <h3>14b · Resume Play From Here</h3>
+  <ul>
+    <li><strong>Play from here</strong> starts a bot game from the shown position (the Bot Builder opens; the configured bot then plays on from that point). Repertoire book moves are skipped, but the Lichess explorer stays active — it queries by position, so a classic position still draws real human move frequencies.</li>
+    <li><strong>Invite from here</strong> stages the position in the 2-player panel (a banner shows what is staged) so the initiator can first pick their colour — White, Black, or Random, regardless of whose move it is — then Start Private Game creates the room (invite link/code only; never posted to the open-challenge board). The server assigns colours and relays a sanitised start position so both boards agree; rematches restart from the same position with colours swapped.</li>
+    <li>The "Play as" choice applies to every game you create, and the same freedom exists for bot continuations via the Bot Builder's colour picker — replay a position several times from either side.</li>
+    <li>Any control that would end a game in progress (starting a new bot or online game, loading a PGN) asks for confirmation first, and every game start fully clears the previous game's replay state.</li>
+    <li>Saving a from-a-position game writes SetUp/FEN tags (or a complete move list when the prefix is known), so a game can be saved and continued days — or years — later.</li>
+  </ul>
+
+  <p class="note" style="margin-top:36px; border-top:1px solid var(--line); padding-top:16px">
+  All ELO values are relative playing strengths within the Blundermind engine; they are not official FIDE ratings.
+  &nbsp;·&nbsp; <a href="#top">Back to top ↑</a></p>
+
+</div>
+</body>
+</html>

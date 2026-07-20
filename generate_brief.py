@@ -207,7 +207,7 @@ toc_rows = [
     ['6', 'Strategic Attractors (Centipawmeter)'],
     ['7', 'Piece-Type Attractors'],
     ['8', 'Move Distribution Filter &amp; Luck'],
-    ['9', 'CP-Budget Acceptance &amp; Degradation Guard (Engine-Verified)'],
+    ['9', 'CP-Budget Acceptance, Degradation Guard &amp; Hard Floor (Engine-Calculated)'],
     ['10', 'Draw &amp; Desperation Behaviours'],
     ['11', 'Preset Personalities'],
     ['12', 'Time Controls'],
@@ -225,7 +225,7 @@ story += [
     body('Every bot move passes through the sequential stages below. Each stage can veto, '
          'modify, or short-circuit to skip later stages. The stages run in strict order '
          'so that think time — computed in Stage 2 — feeds every downstream degradation '
-         'calculation, and so the final engine-verification stages (8–9) see the move the '
+         'calculation, and so the final engine-calculation stages (8–10) see the move the '
          'personality actually chose.'),
     spacer(6),
 ]
@@ -251,15 +251,20 @@ pipeline = [
     ['6', 'Desperation (opt.)', 'If "seek stalemate when losing" is armed and the engine eval '
                                 'confirms a lost position, candidate weights are re-shaped '
                                 'toward low-own-mobility and material-dumping moves (§10).'],
-    ['7', 'Temperature Sampling', 'Final temperature applied (base T × phase/pressure '
-                                   'modifiers). One move sampled from the reweighted distribution.'],
-    ['8', 'CP-Budget Acceptance', 'Personality bots only: if the sampled pick differs from '
+    ['7', 'Conviction Pick', '30% of moves: the top-ranked move of the reweighted distribution '
+                             'is played outright (argmax). The other 70%: final temperature '
+                             'applied (base T × phase/pressure modifiers) and one move is '
+                             'sampled (§5).'],
+    ['8', 'CP-Budget Acceptance', 'Personality bots only: if the pick differs from '
                                    'Maia\'s most-popular move, a shallow Stockfish probe checks '
                                    'that the pick loses ≤ CP budget vs the popular move; '
-                                   'otherwise it walks down the preference order (§9).'],
+                                   'otherwise it walks down the preference order (§9a).'],
     ['9', 'Degradation Guard', 'Bad-Day / distribution-restricted picks are re-checked so a '
                                 'degraded choice can never out-perform Maia\'s top move — '
-                                'popularity is not quality (§9).'],
+                                'popularity is not quality (§9b).'],
+    ['10', 'Hard Floor Backstop', 'Whatever mechanism produced the final pick, it may not lose '
+                                  'more than the Hard Floor vs the popular move (unless the '
+                                  'Floor is Off). Budget-cleared picks skip the check (§9c).'],
 ]
 story.append(simple_table(pipeline, [0.4*inch, 1.25*inch, 5.65*inch]))
 story.append(spacer(8))
@@ -275,9 +280,9 @@ story += [
          'probability measures how <i>popular</i> a move is at a rating, which is not the same '
          'as how <i>good</i> it is — at low ratings the two can even anticorrelate. Therefore '
          'the CP budget and all quality guarantees are enforced with actual Stockfish '
-         'evaluations at Stages 8–9, never by treating a probability ratio as a centipawn '
-         'value. These probes run only for personality bots and are fail-open (any probe '
-         'timeout leaves the sampled move untouched).'),
+         'evaluations at Stages 8–10, never by treating a probability ratio as a centipawn '
+         'value. Stages 8–9 run only for personality bots; the Hard Floor backstop covers '
+         'every bot. All are fail-open (any probe timeout leaves the pick untouched).'),
 ]
 story.append(PageBreak())
 
@@ -313,7 +318,7 @@ story += [
          'by degradation curve A) and receives a probability distribution over all legal moves.'),
     bullet('Model selection: effective ELO = pressureEffectiveMaiaEloByThink(thinkSec)'),
     bullet('ELO clamped to [600, 2600].'),
-    bullet('Probability distribution filtered by quality range (§8), then reweighted by attractors (§6).'),
+    bullet('Probability distribution filtered by the distribution range (§8), then reweighted by attractors (§6).'),
 ]
 
 story += subsection('2c. Stockfish (SF) Engine')
@@ -324,9 +329,9 @@ story += [
     code('sfEffectiveLevel: floor = pressureFloor\n'
          'pressureFloor = max(1, startLevel − round(timePressureMaxDrop / 50))\n'
          '  (or the sfPressureLevel slider when no max-drop is set)'),
-    note('The old blunder-limit-derived quality floor was removed together with the '
-         'hard-floor control — single-move quality is now guaranteed by the engine-verified '
-         'CP budget (§9), not by a Stockfish skill floor.'),
+    note('The old blunder-limit-derived quality floor was removed — single-move quality is '
+         'now guaranteed by the engine-calculated CP budget and the Hard Floor backstop '
+         '(§9), not by a Stockfish skill floor.'),
     body('Time degradation path (highest priority wins):'),
     bullet('Weaponizer active AND bot is ahead → return floor immediately'),
     bullet('Curve A present → spline interpolation in log-time space → lerp level to floor'),
@@ -448,6 +453,10 @@ story += [
     bullet('Default: flat at configured ELO (no degradation) unless curve is set'),
     note('The rough thinkSec estimate (computed before the Maia query) is used for ELO selection. '
          'The precise thinkSec (after the engine responds) is used for curve B and temperature.'),
+    note('Hybrid Maia slots carry their own ratings, so they take the curve\'s RELATIVE drop '
+         'instead: (curve\'s relaxed top) − (curve at this thinkSec), subtracted from the '
+         'slot\'s own ELO (pressureSlotEloByThink). Relaxed think = no drop; under pressure '
+         'both slots degrade by the same amount, preserving their identity gap.'),
 ]
 
 story += subsection('Curve B — Distribution Cutoff')
@@ -460,7 +469,7 @@ story += [
          '                  = min(botDayUpper, evalPressureCurve(curveB, thinkSec))'),
     bullet('X axis: think time per move in seconds (log scale)'),
     bullet('Y axis: upper percentile 0–100%'),
-    bullet('Combined with the Move Quality Range lower bound and Luck shift (§8)'),
+    bullet('Combined with the Move Distribution Range lower bound and Luck shift (§8)'),
 ]
 
 story += subsection('Time Pressure Temperature Boost')
@@ -483,14 +492,18 @@ story.append(PageBreak())
 # ═══════════════════════════════════════════════════════════════════════════════
 story += section('5. Temperature & Move Sampling')
 story += [
-    body('After attractor reweighting, one move is sampled from the distribution using '
-         'temperature-scaled probabilities. Temperature T controls how peaked or flat '
-         'the distribution is before sampling.'),
-    code('sampleFromProbs(moveProbs, T):\n'
-         '  scaled[m] = prob[m] ^ (1/T)\n'
-         '  total = Σ scaled[m]\n'
-         '  sample r ~ Uniform(0, total)\n'
-         '  return first m where cumulative sum ≥ r'),
+    body('After attractor reweighting, the <b>conviction pick</b> decides how the move is '
+         'chosen: 30% of the time the bot plays the top-ranked move of the reweighted '
+         'distribution outright (argmax — its personality\'s honest first choice); the other '
+         '70% of the time one move is sampled using temperature-scaled probabilities. '
+         'Temperature T controls how peaked or flat the distribution is before sampling.'),
+    code('pickFromProbs(moveProbs, T):\n'
+         '  if rand() < 0.30 → return argmax of reweighted distribution\n'
+         '  else sampleFromProbs(moveProbs, T):\n'
+         '    scaled[m] = prob[m] ^ (1/T)\n'
+         '    total = Σ scaled[m]\n'
+         '    sample r ~ Uniform(0, total)\n'
+         '    return first m where cumulative sum ≥ r'),
     body('At T=1.0 the original Maia probabilities are used directly. '
          'T < 1 sharpens the distribution (top move more likely). '
          'T > 1 flattens it (unlikely moves become relatively more likely). '
@@ -548,14 +561,25 @@ story += [
     spacer(4),
 ]
 
-story += subsection('6a. CP Budget and Scale Factor')
+story += subsection('6a. CP Budget, Hard Floor and Scale Factor')
 story += [
     body('The CP (centipawn) budget (0–300), shown on the Centipawmeter dial, is a single '
          'master gain knob for all attractors. It controls how strongly attractors push the '
          'distribution, regardless of the individual slider positions. The budget also names '
-         'a <b>real, engine-verified centipawn ceiling</b> on how far a move may fall below '
+         'a <b>real, engine-calculated centipawn ceiling</b> on how far a move may fall below '
          'Maia\'s most-popular choice — that guarantee is enforced at Stage 8 (§9), not by the '
          'internal 150-cp-per-log-unit scale factor below, which only sets the push strength.'),
+    body('The <b>Hard Floor</b> (Budget–1000 cp, or Off at the top of the slider) sits '
+         'directly beneath the Budget and is always ≥ Budget. It is the absolute backstop on '
+         'every <i>other</i> selection mechanism — temperature sampling, the Luck window '
+         'shift, Bad Day, curve-B time-pressure restriction — enforced by '
+         'applyHardFloorBackstop (§9c). At Off, nothing is capped: a beginner bot can '
+         'genuinely hang its queen.'),
+    body('The Engine panel shows both values beside the Elometer with a one-click ELO-scaled '
+         'recommendation. Budget and Floor have separate curves: Budget ≈ (2700 − ELO)/15 '
+         'clamped to 10–120 cp (the persistent per-move style spend, a fraction of the '
+         'rating\'s typical centipawn loss), Floor ≈ (2900 − ELO)/4.5 clamped to 80–520 cp '
+         '(the worst single move still in character for the rating).'),
     code('totalAbs = Σ |v| for all attractor and piece sliders\n'
          'scale    = cpBudget / (totalAbs × 150)   if cpBudget > 0 and totalAbs > 0\n'
          '         = 0                              otherwise\n\n'
@@ -614,8 +638,8 @@ attr_rows = [
      'Feeds into pressure curves as actual thinkSec.'],
     ['Luck /\nBad Day',
      '− Good day → top of distribution\n+ Bad day → bottom of distribution',
-     'Shifts quality range window:\nlo = botDayLower − v × 4\nhi = _pressureUpper − v × 4',
-     'See §8 Move Quality Range for full description.'],
+     'Shifts distribution window:\nlo = botDayLower − v × 4\nhi = _pressureUpper − v × 4',
+     'See §8 Move Distribution Range for full description.'],
     ['Panicky /\nCalm under pressure',
      '− Calm → no temperature boost\n+ Panicky → larger T boost under pressure',
      'Modifies timePressure boost mode.\n(steady / normal / panicky)',
@@ -661,14 +685,14 @@ story.append(simple_table(piece_rows, [0.7*inch, 1.5*inch, 1.5*inch, 2.6*inch]))
 story.append(PageBreak())
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 8 — MOVE QUALITY RANGE & LUCK
+# SECTION 8 — MOVE DISTRIBUTION RANGE & LUCK
 # ═══════════════════════════════════════════════════════════════════════════════
 story += section('8. Move Distribution Filter & Luck')
 story += [
-    body('The Move Quality Range dual slider selects which segment of the Maia probability-'
+    body('The Move Distribution Range dual slider selects which segment of the Maia probability-'
          'ranked candidate list the bot samples from. Candidates outside the [lower, upper] '
          'percentile window are excluded before temperature sampling and attractor reweighting.'),
-    note('"Quality" here means popularity rank, not engine quality — Maia probability is how '
+    note('The ranking is popularity, not engine quality — Maia probability is how '
          'often players at the selected rating choose a move. A strong move few players see can '
          'sit low in the distribution; real move-quality enforcement is the engine check in §9.'),
     spacer(4),
@@ -697,10 +721,10 @@ story += [
 
 story += subsection('8c. Min-Probability Filter')
 story += [
-    body('A single absolute-popularity filter prunes the candidate list before the quality '
+    body('A single absolute-popularity filter prunes the candidate list before the distribution '
          'range is applied. (The former relative "blunder-limit" cutoff — which pretended a '
          'probability ratio was a centipawn value — has been removed; centipawn enforcement is '
-         'now the engine-verified check in §9.)'),
+         'now the engine-calculated check in §9.)'),
     code('absFloor = minProbPct / 100\n'
          'keep only moves with prob ≥ absFloor\n'
          '(if that empties the list, keep the single most-popular move)'),
@@ -713,15 +737,16 @@ story.append(PageBreak())
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 9 — CP-BUDGET ACCEPTANCE & DEGRADATION GUARD
 # ═══════════════════════════════════════════════════════════════════════════════
-story += section('9. CP-Budget Acceptance & Degradation Guard (Engine-Verified)')
+story += section('9. CP-Budget Acceptance, Degradation Guard & Hard Floor (Engine-Calculated)')
 story += [
-    body('Maia probability is popularity, not quality. Two post-sampling stages use a shallow '
-         'Stockfish probe to hold the personality to a real centipawn standard. Both run only '
-         'for personality bots (they need the Stage-5 reweighting flag), only when the sampled '
-         'pick differs from Maia\'s most-popular move, and both are fail-open — any probe '
-         'failure or timeout leaves the sampled move unchanged. The probe reuses the '
-         'MultiPV complexity machinery with a searchmoves restriction so only the handful of '
-         'relevant moves are evaluated (depth ~10, ≤ 6 moves).'),
+    body('Maia probability is popularity, not quality. Three post-sampling stages use a '
+         'shallow Stockfish probe to hold the played move to a real centipawn standard. '
+         'The first two run only for personality bots (they need the Stage-5 reweighting '
+         'flag); the Hard Floor backstop (§9c) covers picks from <i>any</i> mechanism. All '
+         'run only when the pick differs from Maia\'s most-popular move, and all are '
+         'fail-open — any probe failure or timeout leaves the pick unchanged. The probe '
+         'reuses the MultiPV complexity machinery with a searchmoves restriction (depth ~10; '
+         'the timeout scales with candidate count, capped at 4.5 s).'),
     spacer(6),
 ]
 
@@ -729,7 +754,8 @@ story += subsection('9a. CP-Budget Acceptance — applyCpBudgetAcceptance()')
 story += [
     body('Turns the Centipawmeter into a real centipawn ceiling. When personality reweighting '
          'produced a pick different from the most-popular move, the pick, the popular move, and '
-         'the next few personality favourites are evaluated together. The pick is accepted only '
+         'a wide slice of the personality\'s preference order (up to 15 moves, one combined '
+         'MultiPV probe) are evaluated together. The pick is accepted only '
          'if it loses no more than the CP budget versus the popular move; otherwise the bot '
          'walks down its own preference order until one fits, falling back to the popular move '
          'itself (0 cp by definition).'),
@@ -754,9 +780,26 @@ story += [
          'if pick == topMove → keep\n'
          'evals = SF probe over [pick, topMove]\n'
          'play the move with the LOWER eval'),
-    note('Consequence: Grandmaster Bad Day picks the lowest-probability move above its 4% '
-         'floor, but if that move happens to be strong (a shot few players see), the guard '
-         'swaps it back to the mainstream move — the bot is never accidentally brilliant.'),
+    note('Consequence: Grandmaster Bad Day picks the lowest-probability move above the '
+         'min-probability slider\'s floor (the preset sets 4%), but if that move happens to be '
+         'strong (a shot few players see), the guard swaps it back to the mainstream move — '
+         'the bot is never accidentally brilliant.'),
+]
+
+story += subsection('9c. Hard Floor Backstop — applyHardFloorBackstop()')
+story += [
+    body('Runs last in the pick flow and bounds how far below Maia\'s most-popular move ANY '
+         'final pick may fall — whatever produced it: temperature sampling, the Luck window '
+         'shift, Bad Day, curve-B time-pressure restriction, or plain sampling variance. '
+         'Skipped when the pick was already engine-calculated within the Budget (Budget ≤ '
+         'Floor by invariant), when the Floor slider is at Off (≥ 1000 cp), and for '
+         'stalemate-seeking desperation picks. Reuses the degradation guard\'s probe when one '
+         'was taken for the same position; otherwise pays for one shallow probe of its own.'),
+    code('floor = hardFloorCp (panel slider, Budget–1000; ≥ 1000 → Off)\n'
+         'if budget-verified this move, or floor Off, or pick == topMove → keep\n'
+         'evals = SF probe over [pick, topMove] (or reuse guard probe)\n'
+         'if evals[topMove] − evals[pick] > floor → play topMove\n'
+         'else → keep pick'),
 ]
 story.append(PageBreak())
 

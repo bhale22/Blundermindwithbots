@@ -264,7 +264,11 @@ function sfEvalMoves(fen, moves, depth) {
     sfWorker.postMessage('setoption name MultiPV value ' + moves.length);
     sfWorker.postMessage('position fen ' + fen);
     sfWorker.postMessage('go depth ' + (depth || 10) + ' searchmoves ' + moves.join(' '));
-    // 2.5 s safety timeout — the guard must not stall the bot's move
+    // Safety timeout — the guard must not stall the bot's move. Scales with
+    // candidate count since a wider MultiPV probe (CP-budget acceptance can
+    // send well over a dozen moves) genuinely takes longer than the 2-move
+    // degradation-guard probe; capped so a large list still fails open promptly.
+    const timeoutMs = Math.min(4500, 2000 + moves.length * 150);
     setTimeout(() => {
       if (sfCplxPending === resolve) {
         sfCplxActive  = false;
@@ -275,7 +279,7 @@ function sfEvalMoves(fen, moves, depth) {
         sfCurrentSkillLevel = -1;
         resolve(null);
       }
-    }, 2500);
+    }, timeoutMs);
   });
 }
 

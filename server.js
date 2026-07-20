@@ -95,6 +95,27 @@ app.get('/data/:file', (req, res) => {
 // so there's no Origin header. Responses are cached in-process for 24h.
 const _mastersCache = new Map();
 const MASTERS_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+const MASTERS_CACHE_MAX = 5000; // ~a few MB; Map keeps insertion order → drop oldest
+
+// Light per-IP rate limit so one client can't use us as an open Lichess proxy
+// (and get our server IP throttled upstream, breaking openings for everyone).
+// 60 upstream-bound requests/min is far above real gameplay; cache hits are free.
+const _mastersRate = new Map(); // ip → { count, windowStart }
+const MASTERS_RATE_LIMIT = 60, MASTERS_RATE_WINDOW = 60 * 1000;
+function mastersRateOk(ip) {
+  const now = Date.now();
+  let r = _mastersRate.get(ip);
+  if (!r || now - r.windowStart > MASTERS_RATE_WINDOW) {
+    r = { count: 0, windowStart: now };
+    _mastersRate.set(ip, r);
+  }
+  if (_mastersRate.size > 10000) { // prune stale windows
+    for (const [k, v] of _mastersRate) {
+      if (now - v.windowStart > MASTERS_RATE_WINDOW) _mastersRate.delete(k);
+    }
+  }
+  return ++r.count <= MASTERS_RATE_LIMIT;
+}
 
 app.get('/api/masters', (req, res) => {
   const play  = (req.query.play  || '').replace(/[^a-zA-Z0-9,]/g, '');
@@ -109,6 +130,12 @@ app.get('/api/masters', (req, res) => {
     return res.send(cached.body);
   }
 
+  // Only misses (which hit the upstream) count against the rate limit
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || '?';
+  if (!mastersRateOk(ip)) {
+    return res.status(429).json({ error: 'Rate limited — try again in a minute' });
+  }
+
   const upstream = 'https://explorer.lichess.ovh/masters' +
     '?play=' + encodeURIComponent(play) +
     '&moves=' + moves +
@@ -120,6 +147,9 @@ app.get('/api/masters', (req, res) => {
     upstream_res.on('end', () => {
       const body = Buffer.concat(chunks);
       if (upstream_res.statusCode === 200) {
+        if (_mastersCache.size >= MASTERS_CACHE_MAX) {
+          _mastersCache.delete(_mastersCache.keys().next().value); // evict oldest
+        }
         _mastersCache.set(cacheKey, { body, ts: Date.now() });
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Cache-Control', 'public, max-age=86400');
@@ -232,7 +262,10 @@ function leaveCurrentRoom(ws) {
   if (opponent && opponent.readyState === 1) {
     opponent.send(JSON.stringify({ type: 'opponent_disconnected' }));
   }
-  if (ws.role === 'white' && lobbyChallenges[ws.roomCode]) {
+  // Any socket in a room that still has a lobby entry IS the host (a join
+  // deletes the entry immediately) — hosts can be black since host-colour
+  // choice, so don't gate this on role or the challenge ghosts for 10 min.
+  if (lobbyChallenges[ws.roomCode]) {
     delete lobbyChallenges[ws.roomCode];
     broadcastLobbyList();
   }
@@ -391,8 +424,10 @@ wss.on('connection', (ws) => {
     if (opponent && opponent.readyState === 1) {
       opponent.send(JSON.stringify({ type: 'opponent_disconnected' }));
     }
-    // If lobby host disconnects, remove the open challenge
-    if (ws.role === 'white' && lobbyChallenges[ws.roomCode]) {
+    // If the lobby host disconnects, remove the open challenge. The host can
+    // be either colour (host-colour choice), so no role check — any occupant
+    // of a room that still has a lobby entry is its host.
+    if (lobbyChallenges[ws.roomCode]) {
       delete lobbyChallenges[ws.roomCode];
       broadcastLobbyList();
     }
