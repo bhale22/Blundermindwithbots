@@ -51,6 +51,23 @@ function pressureEffectiveMaiaEloByThink(thinkSec) {
   if (curveElo === null) return maia3SelectedRating;
   return Math.max(600, Math.min(2600, Math.round(curveElo)));
 }
+// Curve A for hybrid Maia slots. The curve's absolute ELO is anchored to the
+// panel's main Elometer, which a hybrid bot doesn't use — each slot has its
+// own rating. So the slot takes the curve's RELATIVE drop: (curve's relaxed
+// top) − (curve at this think time), subtracted from the slot's own ELO.
+// Relaxed think → drop ≈ 0 → the slot plays at exactly its configured rating;
+// under pressure every slot degrades by the same amount, preserving the
+// slots' identity gap (e.g. Drunken Master stays "sharp half / wobbly half").
+function pressureSlotEloByThink(slotElo, thinkSec) {
+  const clamped = Math.max(600, Math.min(2600, slotElo));
+  if (!botPressureCurveA || botPressureCurveA.length < 2) return clamped;
+  const atThink = evalPressureCurve(botPressureCurveA, thinkSec);
+  if (atThink === null) return clamped;
+  let top = -Infinity;
+  for (const p of botPressureCurveA) { if (p.y > top) top = p.y; }
+  const drop = Math.max(0, top - atThink);
+  return Math.max(600, Math.min(2600, Math.round(clamped - drop)));
+}
 
 function pressureEffectiveDayUpperByThink(thinkSec) {
   if (!botPressureCurveB || botPressureCurveB.length < 2) return botDayUpper;
@@ -994,7 +1011,6 @@ function applyMoveAttractors(moveProbs) {
 
   const luckVal       = attrVals['luck']       || 0;
   const tradeVal      = attrVals['trade']      || 0;
-  const pawnStrat     = attrVals['pawn']       || 0;
   const spaceCadetVal = attrVals['spacecadet'] || 0;
   const fortKxVal     = attrVals['fortkx']     || 0;
   const gambitoVal    = attrVals['gambito']    || 0;
@@ -1002,7 +1018,6 @@ function applyMoveAttractors(moveProbs) {
   const structureVal  = attrVals['structure']  || 0;
   const hasPiece   = Object.values(pieceVals).some(v => v !== 0);
   const hasTrade   = tradeVal      !== 0;
-  const hasPawnS   = pawnStrat     !== 0;
   const hasSpace   = spaceCadetVal !== 0;
   const hasFortkx  = fortKxVal     !== 0;
   const hasGambito = gambitoVal    !== 0;
@@ -1078,7 +1093,7 @@ function applyMoveAttractors(moveProbs) {
 
   // ── Per-move reweighting ──────────────────────────────────────────────────
   const needsPerMove = scale > 0 &&
-    (hasPiece || hasTrade || hasPawnS || hasSpace || hasFortkx || hasGambito || hasAttacker || hasStructure || hasCustom);
+    (hasPiece || hasTrade || hasSpace || hasFortkx || hasGambito || hasAttacker || hasStructure || hasCustom);
   if (!needsPerMove) return _maybeStaleSeek(filtered);
 
   const PIECE_MAP   = { p:'pawn', n:'knight', b:'bishop', r:'rook', q:'queen', k:'king' };
@@ -1211,10 +1226,6 @@ function applyMoveAttractors(moveProbs) {
     // ── Piece attractors ──────────────────────────────────────────────────────
     // Positive value (right) = boost moves by that piece type.
     if (hasPiece && pieceType) logBoost += (pieceVals[pieceType] || 0) * scale;
-
-    // ── Pawn strategic ────────────────────────────────────────────────────────
-    // Positive (right, Pawn pusher) boosts pawn advances.
-    if (hasPawnS && pieceLetter === 'p') logBoost += pawnStrat * scale;
 
     // ── Trade: captures + threat creation ────────────────────────────────────
     // Right (positive) = Trade seeker → boosts captures and threats.
@@ -1918,14 +1929,17 @@ async function botMakeMove() {
         : (typeof botMaiaTempValue !== 'undefined' && botMaiaTempValue > 0)
           ? botMaiaTempValue
           : parseFloat(document.getElementById('maia3Temp')?.value || '1.0');
-      const m3EffTemp = timePressureTemp(m3Temp, clockMs);
+      // Rough think estimate BEFORE inference so the ELO degradation curve
+      // uses actual move pace (weaponizer/hustle/fixed included), not the
+      // clock/remaining-moves average — same plumbing as the LC paths.
+      const m3RoughThinkSec = botThinkTime(null, clockMs) / 1000;
       let m3Probs = null;
       // Kick off SF complexity probe in parallel with Maia inference (separate workers)
       if (_needsComplexity() && !sfReady) sfInit().catch(() => {}); // warm up SF for next move
       const cplxPromise = (_needsComplexity() && sfReady) ? sfGetComplexity(fen) : null;
       if (_maiaReady) {
         const savedRating = lcSelectedRating;
-        lcSelectedRating = String(pressureEffectiveMaiaElo(clockMs)); // ELO degradation via ctrlA curve
+        lcSelectedRating = String(pressureEffectiveMaiaEloByThink(m3RoughThinkSec)); // ELO degradation via ctrlA curve
         m3Probs = await maia3GetMoveProbs(fen);
         lcSelectedRating = savedRating;
         if (m3Probs) lastBotMoveSource = 'Maia3';
@@ -1939,21 +1953,25 @@ async function botMakeMove() {
         sfCplxScore = sfCplxEval = null;
       }
       if (m3Probs && Object.keys(m3Probs).length) {
-        const effElo = pressureEffectiveMaiaElo(clockMs);
+        const effElo = pressureEffectiveMaiaEloByThink(m3RoughThinkSec);
         const allMoves = Object.entries(m3Probs).sort((a,b)=>b[1]-a[1]);
         console.log('[Maia3 FULL] elo:', effElo, 'fen:', fen, 'cplx:', sfCplxScore);
         console.log('[Maia3 FULL] all probs:', allMoves.map(([m,p])=>m+'='+p.toFixed(4)).join(' '));
         const targetDelay = botThinkTime(m3Probs, clockMs);
+        const preciseThinkSecM3 = targetDelay / 1000;
+        const m3EffTemp = timePressureTempByThink(m3Temp, preciseThinkSecM3);
         const inferenceMs = Date.now() - _botMoveStartMs;
         const delay = Math.max(0, targetDelay - inferenceMs);
         if (delay > 0) await new Promise(r => setTimeout(r, delay));
-        _botMoveClockMs = clockMs; // for applyMoveAttractors distribution cutoff (ctrlB)
+        _botMoveClockMs = clockMs; // clock fallback for the ctrlB cutoff
+        _botMoveThinkSec = preciseThinkSecM3; // actual think drives curve B
         const adjTemp = complexityAdjustedTemp(m3EffTemp);
         const m3Shaped = applyMoveAttractors(m3Probs);
         uciMove = pickFromProbs(m3Shaped, adjTemp);
         uciMove = await applyCpBudgetAcceptance(fen, uciMove, m3Probs, m3Shaped);
         uciMove = await applyDegradationEvalGuard(fen, uciMove, m3Probs);
         uciMove = await applyHardFloorBackstop(fen, uciMove, m3Probs);
+        _botMoveThinkSec = null;
         console.log('[Maia3 FULL] chose:', uciMove, '| temp:', adjTemp.toFixed(2), '(base:', m3EffTemp.toFixed(2), ')| inf:', inferenceMs, 'ms | extra wait:', delay, 'ms');
       } else {
         // Maia3 not downloaded — fall back to SF
@@ -2038,6 +2056,11 @@ async function botMakeMove() {
           ? botMaiaTempValue
           : (parseFloat(document.getElementById('maiaTemp')?.value) || 1.0);
       const roughThinkSecLcsf = botThinkTime(null, clockMs) / 1000;
+      // SF probe in parallel with the explorer fetch — needed here for
+      // stalemate-seek and complexity-scaled timing (both live outside the
+      // personality section, which is greyed for LC+SF).
+      if (_needsComplexity() && !sfReady) sfInit().catch(() => {});
+      const cplxPromiseLcsf = (_needsComplexity() && sfReady) ? sfGetComplexity(fen) : null;
       let lcsfProbs = null;
       if (lichessExplorerActive) {
         const savedRating = lcSelectedRating;
@@ -2051,6 +2074,13 @@ async function botMakeMove() {
           _explorerConfidence = 0;
           lcsfProbs = null;
         }
+      }
+      if (cplxPromiseLcsf) {
+        const cr = await cplxPromiseLcsf;
+        sfCplxScore = cr ? cr.cplx : null;
+        sfCplxEval  = cr ? cr.eval  : null;
+      } else if (!_needsComplexity()) {
+        sfCplxScore = sfCplxEval = null;
       }
       if (lcsfProbs && Object.keys(lcsfProbs).length) {
         const targetDelay = botThinkTime(lcsfProbs, clockMs);
@@ -2092,27 +2122,44 @@ async function botMakeMove() {
             : (typeof botMaiaTempValue !== 'undefined' && botMaiaTempValue > 0)
               ? botMaiaTempValue
               : parseFloat(document.getElementById('maia3Temp')?.value || '1.0');
-          const effectiveTemp = timePressureTemp(m3Temp, clockMs);
           const slotElo = chosen.elo || (chosen.level ? chosen.level * 200 : maia3SelectedRating);
+          // Same think-time plumbing as the other Maia paths: rough estimate
+          // drives the slot's curve-A drop; the SF probe (chaos/compwin temp,
+          // stalemate-seek, result-gated custom controls, complexity timing)
+          // runs in parallel with the inference. sfInit() ran just above.
+          const hybRoughThinkSec = botThinkTime(null, clockMs) / 1000;
+          const cplxPromiseHyb = (_needsComplexity() && sfReady) ? sfGetComplexity(fen) : null;
           let probs = null;
           if (_maiaReady) {
             const savedRating = lcSelectedRating;
-            lcSelectedRating = String(Math.max(600, Math.min(2600, slotElo)));
+            lcSelectedRating = String(pressureSlotEloByThink(slotElo, hybRoughThinkSec));
             try { probs = await maia3GetMoveProbs(fen); } catch(e) {}
             lcSelectedRating = savedRating;
             if (probs && Object.keys(probs).length) lastBotMoveSource = 'Maia3';
           }
+          if (cplxPromiseHyb) {
+            const cr = await cplxPromiseHyb;
+            sfCplxScore = cr ? cr.cplx : null;
+            sfCplxEval  = cr ? cr.eval  : null;
+          } else if (!_needsComplexity()) {
+            sfCplxScore = sfCplxEval = null;
+          }
           if (probs && Object.keys(probs).length) {
             const targetDelay = botThinkTime(probs, clockMs);
+            const preciseThinkSecHyb = targetDelay / 1000;
+            const effectiveTemp = complexityAdjustedTemp(
+              timePressureTempByThink(m3Temp, preciseThinkSecHyb));
             const inferenceMs = Date.now() - _botMoveStartMs;
             const delay = Math.max(0, targetDelay - inferenceMs);
             if (delay > 0) await new Promise(res => setTimeout(res, delay));
             _botMoveClockMs = clockMs;
+            _botMoveThinkSec = preciseThinkSecHyb;
             const hybShaped = applyMoveAttractors(probs);
             uciMove = pickFromProbs(hybShaped, effectiveTemp);
             uciMove = await applyCpBudgetAcceptance(fen, uciMove, probs, hybShaped);
             uciMove = await applyDegradationEvalGuard(fen, uciMove, probs);
             uciMove = await applyHardFloorBackstop(fen, uciMove, probs);
+            _botMoveThinkSec = null;
           } else {
             // Maia3 not downloaded/failed — SF at a level matching the slot ELO
             const fbLevel = Math.max(1, Math.min(20, Math.round(slotElo / 200)));

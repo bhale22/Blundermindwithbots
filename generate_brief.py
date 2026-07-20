@@ -453,6 +453,10 @@ story += [
     bullet('Default: flat at configured ELO (no degradation) unless curve is set'),
     note('The rough thinkSec estimate (computed before the Maia query) is used for ELO selection. '
          'The precise thinkSec (after the engine responds) is used for curve B and temperature.'),
+    note('Hybrid Maia slots carry their own ratings, so they take the curve\'s RELATIVE drop '
+         'instead: (curve\'s relaxed top) − (curve at this thinkSec), subtracted from the '
+         'slot\'s own ELO (pressureSlotEloByThink). Relaxed think = no drop; under pressure '
+         'both slots degrade by the same amount, preserving their identity gap.'),
 ]
 
 story += subsection('Curve B — Distribution Cutoff')

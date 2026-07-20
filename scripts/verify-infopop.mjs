@@ -75,6 +75,48 @@ ok(cfg.maia3Temp === 3.0, 'maia3Temp clamped to 3.0 (got ' + cfg.maia3Temp + ')'
 const hint = await page.locator('#move-quality-range .ctrl-hint').textContent();
 ok(hint.length < 200 && hint.includes('ⓘ'), 'distribution-range hint is short + points at ⓘ');
 
+// 9b. Slider endpoint scales: budget 0/300, floor 0/1,000 (→ Off at max)
+const scales = await page.evaluate(() => ({
+  budget: [...document.querySelectorAll('#r-style ~ .slider-scale span')].map(s => s.textContent),
+  floorMax: document.getElementById('hf-scale-max')?.textContent,
+  floorMin: document.getElementById('r-hardfloor')?.min,
+}));
+ok(scales.budget.join('/') === '0/300', 'budget scale labels 0/300 (got ' + scales.budget.join('/') + ')');
+ok(scales.floorMin === '0', 'floor slider min stays 0 (got ' + scales.floorMin + ')');
+// min must STAY 0 after a budget change (old bug: min tracked budget)
+await page.evaluate(() => _setGaugeValue(200));
+const minAfter = await page.evaluate(() => document.getElementById('r-hardfloor').min);
+ok(minAfter === '0', 'floor slider min still 0 after budget change (got ' + minAfter + ')');
+// value clamp still enforced: floor request below budget snaps to budget
+await page.evaluate(() => _setHardFloorValue(100, false));
+const clamped = await page.evaluate(() => +document.getElementById('r-hardfloor').value);
+ok(clamped === 200, 'floor value clamps to budget 200 (got ' + clamped + ')');
+// Off at max: value label + right endpoint label both flip
+await page.evaluate(() => _setHardFloorValue(1000, false));
+const offState = await page.evaluate(() => ({
+  val: document.getElementById('v-hardfloor').textContent,
+  scale: document.getElementById('hf-scale-max').textContent,
+}));
+ok(offState.val === 'Off' && offState.scale === 'Off', 'floor at 1000 shows Off/Off (got ' + offState.val + '/' + offState.scale + ')');
+await page.evaluate(() => _setHardFloorValue(400, false));
+const backState = await page.evaluate(() => document.getElementById('hf-scale-max').textContent);
+ok(backState === '1,000', 'right endpoint back to 1,000 below max (got ' + backState + ')');
+
+// 9c. Clickable hint links open the popups (open the Personality section
+// first — collapsed sections cover the link, exactly as for a real user)
+const linkCount = await page.locator('.hint-link').count();
+ok(linkCount === 2, 'two .hint-link spans (got ' + linkCount + ')');
+await page.evaluate(() => {
+  const sec = document.getElementById('sec-attract');
+  if (sec && !sec.classList.contains('open')) toggleSec('attract');
+  switchItab('attract', 'quality');
+});
+await page.waitForTimeout(600);
+await page.locator('.hint-link').first().click();
+const linkTitle = await page.locator('#infopop-title').textContent();
+ok(linkTitle === 'Centipawn Budget & Hard Floor', 'hint link opens budget popup (got "' + linkTitle + '")');
+await page.evaluate(() => closeInfoPop());
+
 // 10. Main app page loads clean (assembled src incl. engine changes)
 const page2 = await browser.newPage();
 const errors2 = [];
@@ -88,10 +130,33 @@ const src = await page2.evaluate(() => {
   return {
     m3Cascade: s.includes("botTab === 'maia3'") && /maia3'[\s\S]{0,900}_bcpHustlerTempMode/.test(s),
     hybCascade: /hybrid Maia[\s\S]{0,600}_bcpHustlerTempMode/.test(s) || /every other Maia path[\s\S]{0,300}_bcpHustlerTempMode/.test(s),
+    m3ByThink: s.includes('pressureEffectiveMaiaEloByThink(m3RoughThinkSec)'),
+    hybProbe: s.includes('cplxPromiseHyb'),
+    lcsfProbe: s.includes('cplxPromiseLcsf'),
+    slotDrop: s.includes('function pressureSlotEloByThink'),
+    pawnGone: !s.includes('pawnStrat'),
   };
 });
 ok(src.m3Cascade, 'maia3 path has hustler/temp cascade in served build');
 ok(src.hybCascade, 'hybrid maia slot has temp cascade in served build');
+ok(src.m3ByThink, 'maia3 ELO uses think-time curve lookup');
+ok(src.hybProbe, 'hybrid path kicks off complexity probe');
+ok(src.lcsfProbe, 'lcsf path kicks off complexity probe');
+ok(src.slotDrop, 'pressureSlotEloByThink present');
+ok(src.pawnGone, 'dead pawnStrat attractor removed');
+
+// functional: slot ELO relative drop (curve top 2000 → drop 800 at 0.1s think)
+const slotVals = await page2.evaluate(() => {
+  botPressureCurveA = [{ x: 0.1, y: 1200 }, { x: 10, y: 2000 }];
+  const relaxed = pressureSlotEloByThink(2400, 10);
+  const pressured = pressureSlotEloByThink(2400, 0.1);
+  const floor = pressureSlotEloByThink(700, 0.1); // clamps at 600
+  botPressureCurveA = null;
+  return { relaxed, pressured, floor };
+});
+ok(slotVals.relaxed === 2400, 'slot ELO unchanged at relaxed think (got ' + slotVals.relaxed + ')');
+ok(slotVals.pressured === 1600, 'slot ELO drops by curve delta under pressure (got ' + slotVals.pressured + ')');
+ok(slotVals.floor === 600, 'slot ELO clamps at 600 (got ' + slotVals.floor + ')');
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 await browser.close();

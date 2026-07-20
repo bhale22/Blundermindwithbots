@@ -245,6 +245,10 @@ pts sorted by x. For xSec in [pts[i].x, pts[i+1].x]:
   </ul>
   <p class="note">The rough think-time estimate (computed before the Maia query) is used for ELO selection. The precise
   think time (after the engine responds) is used for curve B and temperature.</p>
+  <p class="note">Hybrid Maia slots carry their own ratings, so the curve's absolute ELO (anchored to the main Elometer)
+  doesn't apply directly. Instead each slot takes the curve's <em>relative</em> drop — the curve's relaxed top minus its
+  value at this think time — subtracted from the slot's own ELO. Relaxed think = no drop; under pressure both slots
+  degrade by the same amount, preserving their identity gap.</p>
 
   <h3>Curve B — Distribution Cutoff</h3>
   <p>Maps think time (s) → upper-percentile cutoff of the candidate list. 100% = full distribution (top candidate down
