@@ -1908,8 +1908,16 @@ async function botMakeMove() {
       await new Promise(r => setTimeout(r, delay));
 
     } else if (botTab === 'maia3') {
-      // Pure Maia3 — no LC fallback, SF only if model not downloaded
-      const m3Temp = parseFloat(document.getElementById('maia3Temp')?.value || '1.0');
+      // Pure Maia3 — no LC fallback, SF only if model not downloaded.
+      // Temperature cascade matches the LC paths, so the panel's Temperature
+      // control (and the Hustler phase override) governs every Maia path —
+      // previously this read only #maia3Temp, which the old panel derived
+      // from the CP Budget, leaving the visible Temperature slider dead here.
+      const m3Temp = window._bcpHustlerTempMode
+        ? hustlerPhaseTemp()
+        : (typeof botMaiaTempValue !== 'undefined' && botMaiaTempValue > 0)
+          ? botMaiaTempValue
+          : parseFloat(document.getElementById('maia3Temp')?.value || '1.0');
       const m3EffTemp = timePressureTemp(m3Temp, clockMs);
       let m3Probs = null;
       // Kick off SF complexity probe in parallel with Maia inference (separate workers)
@@ -2077,7 +2085,13 @@ async function botMakeMove() {
           // Maia slot = the Maia3 neural model at the slot's own ELO.
           // (Previously this called the Lichess explorer and fell back to
           // Stockfish, so "hybrid Maia" never actually used Maia3.)
-          const m3Temp = parseFloat(document.getElementById('maia3Temp')?.value || '1.0');
+          // Same temperature cascade as every other Maia path — the panel
+          // promises "the Temperature setting applies to every Maia slot".
+          const m3Temp = window._bcpHustlerTempMode
+            ? hustlerPhaseTemp()
+            : (typeof botMaiaTempValue !== 'undefined' && botMaiaTempValue > 0)
+              ? botMaiaTempValue
+              : parseFloat(document.getElementById('maia3Temp')?.value || '1.0');
           const effectiveTemp = timePressureTemp(m3Temp, clockMs);
           const slotElo = chosen.elo || (chosen.level ? chosen.level * 200 : maia3SelectedRating);
           let probs = null;

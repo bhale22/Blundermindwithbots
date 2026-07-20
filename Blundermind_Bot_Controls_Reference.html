@@ -165,7 +165,7 @@ argmax (Top move): always picks the single highest-probability move (determinist
   <p class="lead">The personality layer operates on the ranked list of candidate moves produced by the Maia engine.</p>
 
   <h3>Centipawn Budget</h3>
-  <p>The Centipawmeter sets the personality's allowance: the most real, <strong>engine-verified</strong> centipawns a
+  <p>The Centipawmeter sets the personality's allowance: the most real, <strong>engine-calculated</strong> centipawns a
   personality-driven pick may lose versus Maia's most-popular move. It does double duty — it scales how hard the
   attractor sliders push, and it is enforced literally: when the personality's pick differs from the popular move,
   Stockfish evaluates both, and a pick over budget is rejected (the bot walks down its preference list until a move
@@ -178,9 +178,11 @@ argmax (Top move): always picks the single highest-probability move (determinist
   sampling, Luck, Bad Day, and time-pressure mechanics. No played move may be more than the Floor's centipawns worse
   than the most-popular move, engine-checked. Slide it to the top (<strong>Off</strong>) and nothing is capped — a
   beginner-level bot can genuinely hang its queen, which keeps games winnable and fun for novices. The Engine panel
-  shows both values beside the Elometer, with a one-click recommendation matched to the chosen ELO.</p>
+  shows both values beside the Elometer, with a one-click recommendation matched to the chosen ELO. Budget and Floor
+  get separate ELO-scaled recommendations: Budget is the persistent per-move style spend (10&nbsp;cp at master level
+  up to ~120&nbsp;cp for novices), while the Floor bounds the worst single move (80&nbsp;cp up to ~520&nbsp;cp).</p>
 
-  <h3>Move Popularity Range</h3>
+  <h3>Move Distribution Range</h3>
   <p>A dual-thumb slider that selects a band within the candidate list ranked by Maia <em>probability</em> — how often
   players at the chosen rating play each move, which is not the same as engine quality. The right thumb excludes the
   most-expected mainstream moves; the left thumb excludes the rare tail. The tail isn't a defect zone: sharp tactics

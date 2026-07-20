@@ -1608,9 +1608,10 @@ window.addEventListener('message', function(e) {
   window._bcpAttractorValues  = cfg.attractorValues || {};
   window._bcpPieceValues      = cfg.pieceValues     || {};
   window._bcpCpBudget         = cfg.cpBudget;
-  // Hard Floor: the real acceptance ceiling (applyCpBudgetAcceptance). Budget
-  // itself now only scales attractor push strength. Defaults to Budget for
-  // configs saved before Hard Floor existed.
+  // Hard Floor: the absolute backstop on picks from ANY mechanism
+  // (applyHardFloorBackstop). Budget remains the personality's own ceiling,
+  // enforced in applyCpBudgetAcceptance, and also scales attractor push.
+  // Defaults to Budget for configs saved before Hard Floor existed.
   window._bcpCpHardFloor      = (cfg.hardFloorCp != null) ? cfg.hardFloorCp : cfg.cpBudget;
   // User-defined custom controls: [{ id, name, metric, phase, value }]
   window._bcpCustomControls   = Array.isArray(cfg.customControls) ? cfg.customControls : [];

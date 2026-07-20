@@ -1,0 +1,4 @@
+# PDFs are binary — never apply text/CRLF normalization (a normalized PDF is corrupt)
+*.pdf binary
+*.onnx binary
+*.wasm binary

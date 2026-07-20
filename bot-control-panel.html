@@ -750,6 +750,28 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 .bdbtns{ display:flex;gap:8px;justify-content:flex-end; }
 .bdbtns .preset-btn.primary{ border-color:var(--border-amber);color:var(--amber); }
 
+/* ── Info popups (ⓘ buttons) — same chrome as the confirm modal ── */
+#infopop-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:9000;
+  display:none;align-items:center;justify-content:center;
+}
+#infopop-overlay.show{ display:flex; }
+#infopop-box{
+  background:var(--carbon-mid,#14161a);border:1px solid var(--border-amber);border-radius:4px;
+  padding:22px 24px;max-width:420px;width:92%;max-height:82vh;overflow-y:auto;
+  box-shadow:0 8px 32px rgba(0,0,0,0.6);
+}
+.info-btn{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:15px;height:15px;margin-left:6px;padding:0;flex:0 0 auto;
+  font-family:var(--font-m);font-size:9px;line-height:1;font-style:italic;
+  color:var(--text-dim);background:transparent;
+  border:1px solid var(--border);border-radius:50%;
+  cursor:pointer;transition:color 0.15s,border-color 0.15s;
+  vertical-align:middle;
+}
+.info-btn:hover{ color:var(--amber);border-color:var(--border-amber); }
+
 /* ══════════════════════════════════════════════
    SECTION 3: OPENING
 ══════════════════════════════════════════════ */
@@ -1240,10 +1262,10 @@ body.fj .picon{font-weight:500;}
               <div class="cpg-cell">
                 <span class="cpg-lbl">Rec. for ELO <span id="cpg-rec-elo">1500</span></span>
                 <button id="cp-rec-btn" class="cpg-btn" onclick="applyRecommendedCp()"
-                  title="Set CP Budget and Hard Floor to the value recommended for this ELO">Set both: 450 cp</button>
+                  title="Set CP Budget and Hard Floor to the values recommended for this ELO (Budget / Floor)">Set: 80 / 310 cp</button>
               </div>
             </div>
-            <div class="ctrl-hint" style="margin-top:4px;text-align:center;">Budget = the personality's engine-verified spend · Floor = worst-move backstop · click a tile to fine-tune in the Personality panel</div>
+            <div class="ctrl-hint" style="margin-top:4px;text-align:center;">Budget = the personality's engine-calculated spend · Floor = worst-move backstop · click a tile to fine-tune in the Personality panel</div>
             <div style="margin-top:10px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);line-height:1.6;">
               Maia is a human-like neural net with its own free web app — analysis tools, puzzles, and play against Maia bots:
               <a href="https://maiachess.com" target="_blank" rel="noopener" style="color:var(--amber);text-decoration:none;">maiachess.com</a>
@@ -1415,12 +1437,12 @@ body.fj .picon{font-weight:500;}
         <!-- TAB 1: Move Quality & Strategy -->
         <div class="itab-pane active" id="itab-attract-quality">
           <div class="panel-2col">
-            <!-- LEFT: cp budget gauge (top) then move popularity range -->
+            <!-- LEFT: cp budget gauge (top) then Move Distribution Range -->
             <div>
               <!-- MAX CP BUDGET — primary personality driver -->
               <div class="gauge-section">
                 <div class="gauge-header">
-                  <span class="gauge-title">Max Centipawn Budget</span>
+                  <span class="gauge-title">Max Centipawn Budget<button class="info-btn" onclick="openInfoPop('cpbudget')" title="How Budget &amp; Hard Floor work">i</button></span>
                   <span class="gauge-val-badge" id="v-style-badge">100 cp</span>
                 </div>
                 <div class="gauge-wrap-interactive">
@@ -1439,12 +1461,12 @@ body.fj .picon{font-weight:500;}
                     oninput="onHardFloorSliderInput(+this.value)">
                   <span class="ctrl-val" id="v-hardfloor">100 cp</span>
                 </div>
-                <div class="ctrl-hint"><strong>Budget</strong> is the personality's allowance, engine-verified: it sets how hard the attractors push toward preferred moves AND is the real centipawn ceiling on the personality's pick — Stockfish checks any pick that differs from Maia's most-popular move and rejects one losing more than the Budget, walking down the preference list until a move fits (at Budget 300 the bot can genuinely sacrifice a knight for its style). 30% of moves it plays its top-ranked choice outright; 70% it samples with temperature. <strong>Hard Floor</strong> (always ≥ Budget) is the absolute backstop on <em>everything else</em> — temperature, Luck, Bad Day, time-pressure — bounding how bad any played move can be vs the popular move. Slide it to the top (<strong>Off</strong>) and nothing is capped — hung queens included. The Engine panel shows both values beside the Elometer, with a one-click ELO-based recommendation.</div>
+                <div class="ctrl-hint"><strong>Budget</strong> = the personality's style allowance, engine-calculated. <strong>Hard Floor</strong> = the cap on everything else (top = Off). Click ⓘ for how they work together.</div>
 
-                <!-- Move popularity range — only shown for Maia/LC+Maia/Hybrid.
+                <!-- Move Distribution Range — only shown for Maia/LC+Maia/Hybrid.
                      Lives inside the gauge box so it can't get lost below the fold -->
                 <div id="move-quality-range" style="margin-top:12px;">
-                <div class="dlbl"><span>Move popularity range</span></div>
+                <div class="dlbl"><span>Move Distribution Range<button class="info-btn" onclick="openInfoPop('distrange')" title="How the distribution range works">i</button></span></div>
                 <div class="day-vals">
                   <span>Exclude lowest: <span id="day-lower-val">0</span>%</span>
                   <span>Exclude moves above: <span id="day-upper-val">100</span>%</span>
@@ -1455,7 +1477,7 @@ body.fj .picon{font-weight:500;}
                   <input type="range" id="day-upper" min="0" max="100" value="100" step="1" oninput="onDaySlider()">
                 </div>
                 <div class="dual-range-labels"><span>← Rare, less-expected moves</span><span>Mainstream, most-expected moves →</span></div>
-                <div class="ctrl-hint" style="margin-top:6px;">Sets the Maia3 probability band the bot samples from. Probability means "how often players at this rating choose it" — not engine quality. The rare end isn't a defect zone: sharp tactics and unconventional ideas often live in the low-popularity tail. Restrict the band only if you want more predictable, book-standard play.</div>
+                <div class="ctrl-hint" style="margin-top:6px;">The slice of Maia's move distribution the bot may pick from — popularity at this rating, not move quality. Click ⓘ for details.</div>
                 </div><!-- /move-quality-range -->
               </div>
 
@@ -5427,16 +5449,26 @@ function _hfClamp(flash){
   if(+fl.value < budget) _setHardFloorValue(budget, flash);
 }
 
-// ── ELO-scaled recommendation (Engine panel readout + button) ────────────────
-// A 2500-elo bot deviating 400cp from best is out of character; a 700-elo bot
-// capped at 100cp can never make the mistakes a real 700 makes. Heuristic:
-// ~100cp at master level rising to ~800cp at 600 ELO, rounded to 50s.
+// ── ELO-scaled recommendations (Engine panel readout + button) ───────────────
+// Budget and Floor measure DIFFERENT things, so each has its own curve:
+// • Budget = the personality's persistent per-move style spend versus the
+//   rating-typical popular move. Sized as a fraction of the average centipawn
+//   loss typical for the rating: masters express style in 10–20cp nudges; a
+//   beginner can plausibly give up around a pawn's worth for an obsession.
+//   Never "a knight every move" — that was the old single-curve bug, which
+//   recommended Budget 300 at 1500 ELO.
+// • Floor = the worst SINGLE move (vs the popular move) still in character
+//   for the rating — mistake-sized for masters, piece-hang-sized for novices.
+// Floor curve sits above the Budget curve across the whole 600–2600 range,
+// so the Floor ≥ Budget invariant always holds.
+function recommendedBudget(elo){
+  return Math.max(10, Math.min(120, Math.round((2700 - elo) / 15 / 10) * 10));
+}
 function recommendedHardFloor(elo){
-  return Math.max(100, Math.min(900, Math.round((2600 - elo) * 0.4 / 50) * 50));
+  return Math.max(80, Math.min(520, Math.round((2900 - elo) / 4.5 / 10) * 10));
 }
 // Refresh the Engine-panel guardrail tiles: current Budget, current Floor,
-// and the recommendation button for the current ELO. Budget is capped at 300,
-// so when the recommendation exceeds it the button shows both values it sets.
+// and the recommendation button showing both ELO-scaled values it would set.
 function updateCpIndicators(){
   const bEl = document.getElementById('ind-cp-budget');
   const fEl = document.getElementById('ind-cp-floor');
@@ -5450,9 +5482,7 @@ function updateCpIndicators(){
   const recEloEl = document.getElementById('cpg-rec-elo');
   if(recEloEl) recEloEl.textContent = elo;
   if(btn){
-    const rec = recommendedHardFloor(elo);
-    const recB = Math.min(300, rec);
-    btn.textContent = (recB === rec) ? 'Set both: ' + rec + ' cp' : 'Set ' + recB + ' · ' + rec;
+    btn.textContent = 'Set: ' + recommendedBudget(elo) + ' / ' + recommendedHardFloor(elo) + ' cp';
   }
 }
 // Guardrail tiles deep-link to where the sliders live: the Personality
@@ -5465,13 +5495,12 @@ function openPersonalityQuality(){
     try{ document.getElementById('style-gauge').scrollIntoView({behavior:'smooth', block:'center'}); }catch(e){}
   }, 380);
 }
-// The button: one click sets Budget AND Floor to the ELO recommendation
-// (Budget clamped to its 0–300 range when the recommendation is higher).
+// The button: one click sets Budget AND Floor, each to its own ELO curve.
+// Budget is set first so the Floor ≥ Budget clamp can't fight the values.
 function applyRecommendedCp(){
   const elo = (typeof currentElo === 'number' && currentElo) ? currentElo : 1500;
-  const rec = recommendedHardFloor(elo);
-  _setGaugeValue(Math.min(300, rec));
-  _setHardFloorValue(rec, true);
+  _setGaugeValue(recommendedBudget(elo));
+  _setHardFloorValue(recommendedHardFloor(elo), true);
 }
 // Populate the indicators once on load
 setTimeout(function(){ if(typeof updateCpIndicators === 'function') updateCpIndicators(); }, 0);
@@ -6009,7 +6038,11 @@ function getBotConfig(){
   const colorBtn = document.querySelector('.pa-btn.sel');
   const color    = colorBtn ? colorBtn.dataset.color : 'random';
   const cpBudget = parseInt(document.getElementById('r-style')?.value || '100');
-  const maia3Temp = Math.max(0.3, Math.min(3.0, +(0.3 + (cpBudget / 300) * 2.7).toFixed(2)));
+  // maia3Temp mirrors the Temperature control (clamped to the legacy element's
+  // 0.3–3.0 range). It used to be derived from the CP Budget — which made the
+  // visible Temperature slider dead on the Maia3/Hybrid paths and silently
+  // coupled Budget to variety. One control, one meaning.
+  const maia3Temp = Math.max(0.3, Math.min(3.0, +(+_currentTempValue || 1.0).toFixed(2)));
   return {
     type:            'botConfig',
     engine:          currentEngine,
@@ -6661,11 +6694,11 @@ const BOT_TOUR = [
     action: function(){ setTimeout(function(){ if(typeof drawTempChart==='function') drawTempChart(_currentTempValue); }, 620); } },
 
   { stage:'Engine', open:'engine', sel:'.cp-guardrails', title:'Strength guardrails',
-    body:'Live readout of the two quality dials: <b>CP Budget</b> (what the personality may spend, engine-verified) and <b>Hard Floor</b> (the worst any move can be — <b>Off</b> = even hung queens are possible). The <b>Set both</b> button applies the recommendation for the chosen ELO in one click; click either tile to fine-tune in the Personality panel.' },
+    body:'Live readout of the two quality dials: <b>CP Budget</b> (what the personality may spend, engine-calculated) and <b>Hard Floor</b> (the worst any move can be — <b>Off</b> = even hung queens are possible). The <b>Set</b> button applies both ELO-scaled recommendations in one click; click either tile to fine-tune in the Personality panel.' },
 
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#style-gauge', title:'2 · The Centipawmeter',
-    body:'<b>Budget</b> = the personality’s allowance, in <b>real, engine-verified centipawns</b>: it sets both how hard the attractors push and the most a personality pick may lose versus Maia’s most-popular move (Stockfish checks; too expensive → the bot walks down its preference list). Budget 300 = willing to sacrifice a knight for its style. <b>Hard Floor</b> (always ≥ Budget) is the backstop on everything else — temperature, luck, bad-day mechanics. Slide it to <b>Off</b> and beginner bots can genuinely hang a queen. The Engine panel shows both values beside the Elometer with a one-click ELO recommendation.' },
-  { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#move-quality-range', title:'Move popularity range',
+    body:'<b>Budget</b> = the personality’s allowance, in <b>real, engine-calculated centipawns</b>: it sets both how hard the attractors push and the most a personality pick may lose versus Maia’s most-popular move (Stockfish checks; too expensive → the bot walks down its preference list). Budget 300 = willing to sacrifice a knight for its style. <b>Hard Floor</b> (always ≥ Budget) is the backstop on everything else — temperature, luck, bad-day mechanics. Slide it to <b>Off</b> and beginner bots can genuinely hang a queen. The Engine panel shows both values beside the Elometer with a one-click ELO recommendation.' },
+  { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#move-quality-range', title:'Move Distribution Range',
     body:'Set the probability band the bot draws from — from only its most-expected, mainstream moves down into the rare, low-popularity tail. That tail isn\'t "bad" moves — it\'s where sharp tactics and unconventional ideas tend to hide. (Probability = how often players at that rating choose a move, not engine quality.)' },
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#radar-canvas', title:'Personality fingerprint',
     body:'Drag the radar nodes (or the sliders) to sculpt the bot’s style — the fingerprint updates live as you go.' },
@@ -8085,6 +8118,67 @@ function _bdApply(){
   if(id) _applyPersonality(id);
 }
 
+/* ── Info popups (ⓘ) — click-to-open explanations for dense controls ──
+   The long-form copy lives here so the controls themselves keep one-line
+   hints. Click-triggered (not hover): works on touch, and these are
+   read-once-or-twice explanations, not tooltips. */
+const INFO_POPS = {
+  cpbudget: {
+    title: 'Centipawn Budget & Hard Floor',
+    body:
+      '<p><b>Centipawn Budget</b> sets the strength of the personality — what it is ' +
+      'willing to sacrifice to play the move its traits prefer. It acts twice: it scales ' +
+      'how hard your sliders push on Maia’s move distribution, and it is the ' +
+      'engine-calculated price cap on the result. Whenever the personality shifts the ' +
+      'pick away from Maia’s most-popular move, Stockfish evaluates both; if the ' +
+      'pick loses more than the Budget versus the popular move, the bot walks down its ' +
+      'preference list until a move fits — or simply plays the popular move.</p>' +
+      '<p>The Budget is measured against the most-popular move <em>at the bot’s ' +
+      'rating</em>, not against perfect play. If the Budget is 20 and the popular move ' +
+      'for a 2400 already loses 30&nbsp;cp to the engine’s best, picks up to ' +
+      '50&nbsp;cp are acceptable. If a weaker rating’s popular move loses ' +
+      '300&nbsp;cp, the bot may accept up to 320. The bot is “human-typical plus ' +
+      'style”, not “engine plus style”.</p>' +
+      '<p>How each move is chosen: Maia proposes the move distribution for the bot’s ' +
+      'rating; the personality reweights it; then 70% of the time a move is sampled ' +
+      'with Temperature, and 30% of the time the bot plays its top-ranked choice ' +
+      'outright. Only picks moved by the personality answer to the Budget — ' +
+      'everything else answers to the Hard Floor.</p>' +
+      '<p><b>Hard Floor</b> (always ≥ Budget) is the absolute backstop on everything ' +
+      'else — Temperature, Luck, Bad Day, time-pressure — bounding how bad any ' +
+      'played move can be versus the popular move. Picks already within the Budget skip ' +
+      'the check. Desperation moves from stalemate-seeking are exempt — throwing ' +
+      'material is the point. Slide it to the top (<b>Off</b>) and nothing is capped ' +
+      '— hung queens included. The Engine panel shows both values beside the ' +
+      'Elometer, with a one-click ELO-based recommendation.</p>'
+  },
+  distrange: {
+    title: 'Move Distribution Range',
+    body:
+      '<p>Restricts which slice of Maia’s move distribution the bot may pick from. ' +
+      'Moves are ranked by probability — how often players at this rating choose ' +
+      'them, <em>not</em> engine quality. Excluding the low end doesn’t remove ' +
+      'blunders; it removes rare choices, and sharp tactics often live in that ' +
+      'unexpected tail. Excluding the top end forces the bot off the mainstream picks.</p>' +
+      '<p>Under time pressure, curve&nbsp;B can narrow this window further; the Luck ' +
+      'slider shifts it move to move. Restrict the band only if you want more ' +
+      'predictable, book-standard play.</p>'
+  },
+};
+function openInfoPop(id){
+  const info = INFO_POPS[id];
+  if(!info) return;
+  document.getElementById('infopop-title').textContent = info.title;
+  document.getElementById('infopop-body').innerHTML = info.body;
+  document.getElementById('infopop-overlay').classList.add('show');
+}
+function closeInfoPop(){
+  document.getElementById('infopop-overlay').classList.remove('show');
+}
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape') closeInfoPop();
+});
+
 function selPersonality(id){
   const p = PERSONALITIES.find(x=>x.id===id);
   if(!p) return;
@@ -8895,6 +8989,17 @@ document.addEventListener('DOMContentLoaded', ()=>{
     <div class="bdbtns">
       <button class="preset-btn" onclick="_bdCancel()">Cancel</button>
       <button class="preset-btn primary" onclick="_bdApply()">Apply</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Info popup (ⓘ) — click-triggered explanations for dense controls ── -->
+<div id="infopop-overlay" onclick="if(event.target===this)closeInfoPop()">
+  <div id="infopop-box">
+    <div class="bdtitle" id="infopop-title"></div>
+    <div class="bdmsg" id="infopop-body" style="margin-bottom:0;"></div>
+    <div class="bdbtns" style="margin-top:16px;">
+      <button class="preset-btn primary" onclick="closeInfoPop()">Close</button>
     </div>
   </div>
 </div>

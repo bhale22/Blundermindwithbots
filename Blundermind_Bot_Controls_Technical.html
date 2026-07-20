@@ -157,7 +157,7 @@
   <h3>2c · Stockfish (SF) Engine</h3>
   <p>Used when the bot engine mode is set to Stockfish. Skill level runs 1–20. The engine is queried via a Web Worker;
   MultiPV probes provide the complexity scores used by the Chaos attractor. Single-move quality is guaranteed by the
-  engine-verified CP budget (§9).</p>
+  engine-calculated CP budget (§9).</p>
   <div class="code">effective level: floor = pressureFloor
 pressureFloor = max(1, startLevel − round(timePressureMaxDrop / 50))
 (or the pressure-level slider when no max-drop is set)</div>
@@ -324,13 +324,15 @@ return baseT × cplxFactor</div>
   <h3>6a · CP Budget, Hard Floor and Scale Factor</h3>
   <p>The CP (centipawn) budget (0–300), shown on the Centipawmeter dial, is the personality's allowance and does double
   duty. First, it is a master gain knob: it controls how strongly attractors push the distribution, regardless of the
-  individual slider positions (the 150-cp-per-log-unit scale below). Second, it is a real, engine-verified centipawn
+  individual slider positions (the 150-cp-per-log-unit scale below). Second, it is a real, engine-calculated centipawn
   ceiling on how far a personality pick may fall below Maia's most-popular choice — enforced at Stage 8 (§9a).</p>
   <p>The <strong>Hard Floor</strong> (Budget–1000 cp, or Off) is a separate slider directly beneath the Budget, always
   ≥ Budget: it is the absolute backstop on every <em>other</em> selection mechanism — temperature sampling, the Luck
   window shift, Bad Day, curve-B time-pressure restriction — enforced at Stage 10 (§9c). At Off, nothing is capped.
-  The Engine panel shows both values beside the Elometer with a one-click ELO-based recommendation
-  (≈100 cp at master level rising to ≈800 cp at 600 ELO).</p>
+  The Engine panel shows both values beside the Elometer with a one-click ELO-based recommendation. Budget and Floor
+  have separate curves: Budget ≈ (2700 − ELO)/15 clamped to 10–120 cp (persistent style spend — a fraction of the
+  rating's typical centipawn loss), Floor ≈ (2900 − ELO)/4.5 clamped to 80–520 cp (the worst single move still in
+  character for the rating).</p>
   <div class="code">totalAbs = Σ |v| for all attractor and piece sliders
 scale = cpBudget / (totalAbs × 150)   if cpBudget > 0 and totalAbs > 0
       = 0                              otherwise
@@ -389,7 +391,7 @@ At cpBudget = 150 with one slider at 1 and all others at 0:
 
   <!-- 8 -->
   <h2 id="filter">8 · Move Distribution Filter &amp; Luck</h2>
-  <p>The Move Popularity Range dual slider selects which segment of the Maia probability-ranked candidate list the bot
+  <p>The Move Distribution Range dual slider selects which segment of the Maia probability-ranked candidate list the bot
   samples from. Candidates outside the [lower, upper] percentile window are excluded before temperature sampling and
   attractor reweighting.</p>
   <p class="note">Popularity is not engine quality — Maia probability is how often players at the selected rating choose
@@ -417,7 +419,7 @@ luckVal < 0 (Good day): window shifts up   → samples top-ranked moves   → sh
   <h3>8c · Min-Probability Filter</h3>
   <p>A single absolute-popularity filter prunes the candidate list before the quality range is applied. It is an honest
   distribution control expressed as a percentage — it removes near-zero candidates and makes no claim about move quality
-  (centipawn enforcement is the engine-verified check in §9).</p>
+  (centipawn enforcement is the engine-calculated check in §9).</p>
   <div class="code">absFloor = minProbPct / 100
 keep only moves with prob ≥ absFloor
 (if that empties the list, keep the single most-popular move)</div>
