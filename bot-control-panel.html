@@ -1821,7 +1821,7 @@ body.fj .picon{font-weight:500;}
                 Halving think time ≈ −100 ELO at rapid pace, steeper in blitz
               </div>
               <div style="margin-top:7px;font-family:var(--font-m);font-size:8px;line-height:1.6;color:var(--text-dim);">
-                Power-law fit of IM <a href="https://cse.buffalo.edu/~regan/" target="_blank" rel="noopener" style="color:var(--amber);">Kenneth Regan</a>&rsquo;s
+                Power-law fit described by IM <a href="https://cse.buffalo.edu/~regan/" target="_blank" rel="noopener" style="color:var(--amber);">Kenneth Regan</a>&rsquo;s
                 rating-loss vs time-control data, from his
                 <a href="https://www.youtube.com/watch?v=UsEIBzm5msU" target="_blank" rel="noopener" style="color:var(--amber);">Perpetual Chess Podcast</a>
                 interview with Ben Johnson.
@@ -1835,7 +1835,7 @@ body.fj .picon{font-weight:500;}
           <div class="formula-title">How time pressure simulation works</div>
           <div class="formula-body" style="text-align:left;line-height:1.75;">
             The bot simulates a rated player under time pressure using two complementary mechanisms:<br>
-            <span style="color:var(--amber);">▸ ELO reduction</span> — Maia is called at a lower ELO as think time shrinks. The curve starts on Regan&rsquo;s power-law fit — full ELO at the time control&rsquo;s nominal pace (base/60 + increment seconds per move), degrading below it — and every point is draggable if you want a different shape.<br>
+            <span style="color:var(--amber);">▸ ELO reduction</span> — Maia is called at a lower ELO as think time shrinks. The curve starts on variation of Regan&rsquo;s power-law fit (note that the correlation described by Regan correlates ELO performance as a function of time control for an entire game, not a function of time taken for an individual move) — full ELO at the time control&rsquo;s nominal pace (base/60 + increment seconds per move), degrading below it — and every point is draggable if you want a different shape.<br>
             <span style="color:#5dade2;">▸ Distribution restriction</span> — ELO stays fixed but only the top portion of Maia's move distribution is available (instinctive, less creative play — typical of a strong player with no time to calculate). A quick engine check ensures a degraded pick never improves on Maia's top choice.<br>
             Each curve has its own <strong>ON/OFF</strong> toggle next to its title, so you can run either mechanism alone, both together, or switch both off for constant strength regardless of clock.
           </div>
