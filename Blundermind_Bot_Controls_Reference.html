@@ -341,14 +341,14 @@ argmax (Top move): always picks the single highest-probability move (determinist
   <div class="grid g2">
     <div class="card">
       <h4>ELO Degradation</h4>
-      <p>As think time per move shrinks, the bot's effective ELO is reduced. The default <strong>Regan</strong> curve is
-      a power-law time–rating model: D(s) = 339 − 1442·s<sup>−0.283</sup>, shifted so the bot plays its full configured
-      ELO at the nominal pace of the chosen time control (base/60 + increment seconds per move) and degrades from there
-      — halving think time costs roughly 100 ELO at rapid pace, more in blitz. It is a fit of IM
+      <p>As think time per move shrinks, the bot's effective ELO is reduced. The curve starts on a power-law
+      time–rating model: D(s) = 339 − 1442·s<sup>−0.283</sup>, shifted so the bot plays its full configured ELO at the
+      nominal pace of the chosen time control (base/60 + increment seconds per move) and degrades from there — halving
+      think time costs roughly 100 ELO at rapid pace, more in blitz. It is a fit of IM
       <a href="https://cse.buffalo.edu/~regan/" target="_blank" rel="noopener">Kenneth Regan</a>'s rating-loss vs
       time-control data, from his <a href="https://www.youtube.com/watch?v=UsEIBzm5msU" target="_blank"
-      rel="noopener">Perpetual Chess Podcast</a> interview with Ben Johnson. A <strong>Custom</strong> mode swaps in a
-      hand-draggable spline if you want your own shape.</p>
+      rel="noopener">Perpetual Chess Podcast</a> interview with Ben Johnson. Every control point stays draggable, so
+      you can reshape the curve directly on the chart.</p>
       <p>A bot configured at ELO 2400 in time trouble does not suddenly play like a calm 1900 — it plays like a stressed
       2300: still strong, but more likely to pick from the wrong part of the distribution.</p>
     </div>

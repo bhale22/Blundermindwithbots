@@ -18,46 +18,14 @@ function evalPressureCurve(ctrlPts, xSec) {
   return pts[pts.length - 1].y;
 }
 
-// ── Closed-form Curve A: Regan time–rating model ─────────────────────────────
-// D(s) = c − k·s^(−alpha): rating loss vs think seconds/move (≈0 at 165 s).
-// Power-law fit of IM Kenneth Regan's rating-loss vs time-control data, from
-// his Perpetual Chess Podcast interview. The curve is shifted so the bot plays
-// its configured ELO exactly at the time control's nominal pace (anchorSec =
-// baseSec/60 + increment) and only ever degrades from there — banking time
-// never pushes it above the configured rating. Input is floored at 0.05 s
-// (s^−alpha diverges as s → 0).
-function _reganParams() {   // typeof-guarded: this file also runs in the test VM
-  return (typeof botPressureReganA !== 'undefined' && botPressureReganA) ? botPressureReganA : null;
-}
-function reganDegradation(s, p) {
-  return p.c - p.k * Math.pow(Math.max(0.05, s), -p.alpha);
-}
-function reganEffectiveElo(baseElo, thinkSec, p) {
-  const e0 = Math.max(600, Math.min(+baseElo || 1500, 2600));
-  const raw = e0 + reganDegradation(thinkSec, p) - reganDegradation(p.anchorSec, p);
-  return Math.max(600, Math.min(e0, Math.round(raw)));
-}
-// Relative drop for hybrid slots: D(anchor) − D(think) subtracted from the
-// slot's own ELO — identical at equal think time across slots, preserving the
-// slots' identity gap (same convention as the spline path below).
-function reganSlotElo(slotElo, thinkSec, p) {
-  const clamped = Math.max(600, Math.min(2600, slotElo));
-  const drop = Math.max(0, reganDegradation(p.anchorSec, p) - reganDegradation(thinkSec, p));
-  return Math.max(600, Math.round(clamped - drop));
-}
-
 // ── Pressure-adjusted Maia ELO ────────────────────────────────────────────────
-// Reads the Regan closed form (preferred) or the ctrlA spline and returns the
-// effective Maia ELO for the current clock. Falls back to maia3SelectedRating
-// when neither is set or clockMs is null.
+// Reads ctrlA curve and returns the effective Maia ELO for the current clock.
+// The panel seeds ctrlA on the Regan time–rating model (D(s) = 339 −
+// 1442·s^−0.283, anchored at the time control's pace) and the user may drag it
+// — the spline through the points is always what runs here.
+// Falls back to maia3SelectedRating when no curve is set or clockMs is null.
 function pressureEffectiveMaiaElo(clockMs) {
-  if (clockMs === null) return maia3SelectedRating;
-  const regan = _reganParams();
-  if (regan) {
-    const thinkSec = (clockMs / 1000) / botRemainingMovesEstimate();
-    return reganEffectiveElo(maia3SelectedRating, thinkSec, regan);
-  }
-  if (!botPressureCurveA || botPressureCurveA.length < 2) return maia3SelectedRating;
+  if (!botPressureCurveA || botPressureCurveA.length < 2 || clockMs === null) return maia3SelectedRating;
   const thinkSec = (clockMs / 1000) / botRemainingMovesEstimate();
   const curveElo = evalPressureCurve(botPressureCurveA, thinkSec);
   if (curveElo === null) return maia3SelectedRating;
@@ -81,8 +49,6 @@ function pressureEffectiveDayUpper(clockMs) {
 // a clock/remaining-moves average.  A hustler taking 0.3 s sees heavy curve
 // degradation; a grinder taking 15 s sees little.
 function pressureEffectiveMaiaEloByThink(thinkSec) {
-  const regan = _reganParams();
-  if (regan) return reganEffectiveElo(maia3SelectedRating, thinkSec, regan);
   if (!botPressureCurveA || botPressureCurveA.length < 2) return maia3SelectedRating;
   const curveElo = evalPressureCurve(botPressureCurveA, thinkSec);
   if (curveElo === null) return maia3SelectedRating;
@@ -97,8 +63,6 @@ function pressureEffectiveMaiaEloByThink(thinkSec) {
 // slots' identity gap (e.g. Drunken Master stays "sharp half / wobbly half").
 function pressureSlotEloByThink(slotElo, thinkSec) {
   const clamped = Math.max(600, Math.min(2600, slotElo));
-  const regan = _reganParams();
-  if (regan) return reganSlotElo(slotElo, thinkSec, regan);
   if (!botPressureCurveA || botPressureCurveA.length < 2) return clamped;
   const atThink = evalPressureCurve(botPressureCurveA, thinkSec);
   if (atThink === null) return clamped;
@@ -1498,15 +1462,11 @@ function sfPickLevel(targetLevel) {
 function sfEffectiveLevel(clockMs) {
   const startLevel = parseInt(document.getElementById('sfLevel').value) || 8;
 
-  // ── Time-pressure floor (Regan model / r-drop / DOM slider) ───────────────
+  // ── Time-pressure floor (from the curve-implied max drop, or DOM slider) ──
+  // The panel derives timePressureMaxDrop from Curve A itself (base ELO −
+  // curve minimum), so the SF floor always mirrors the visible curve.
   let floorLevel;
-  const _sfRegan = _reganParams();
-  if (_sfRegan) {
-    // Regan model bottoms out at Maia's 600 floor; map the same ELO span onto
-    // SF levels (≈50 ELO per level step, same scale as the maxDrop mapping).
-    const baseElo = Math.max(600, Math.min(+maia3SelectedRating || 1500, 2600));
-    floorLevel = Math.max(1, startLevel - Math.round((baseElo - 600) / 50));
-  } else if (botTimePressureMaxDrop !== null) {
+  if (botTimePressureMaxDrop !== null) {
     floorLevel = Math.max(1, startLevel - Math.round(botTimePressureMaxDrop / 50));
   } else {
     floorLevel = parseInt(document.getElementById('sfPressureLevel').value) || 4;
@@ -1518,18 +1478,6 @@ function sfEffectiveLevel(clockMs) {
   if (botWeaponizerEnabled && botOppClockMs !== null &&
       (clockMs - botOppClockMs) > botWeaponizerLeadMs) {
     return floorLevel;
-  }
-
-  // ── Regan closed form: ELO degradation mapped onto SF levels ──────────────
-  if (_sfRegan) {
-    const thinkSec = (clockMs / 1000) / botRemainingMovesEstimate();
-    const baseElo  = Math.max(600, Math.min(+maia3SelectedRating || 1500, 2600));
-    const curveElo = reganEffectiveElo(baseElo, thinkSec, _sfRegan);
-    const t = (baseElo - 600) > 0
-      ? Math.max(0, Math.min(1, (curveElo - 600) / (baseElo - 600)))
-      : 1;
-    return Math.max(floorLevel, Math.min(startLevel,
-      Math.round(floorLevel + (startLevel - floorLevel) * t)));
   }
 
   // ── cvA curve: spline-based ELO degradation ───────────────────────────────

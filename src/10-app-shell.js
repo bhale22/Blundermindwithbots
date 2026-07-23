@@ -108,8 +108,7 @@ let botSfVar2 = 0;                 // % of SF calls at ±2 level (0–20)
 let botTimePressureMaxDrop = null; // max ELO drop from r-drop; null = use DOM slider
 let botMinProbPct       = 0;      // min absolute probability % — 0 = off (default); set by panel
 let botBadDayMode       = false;  // Grandmaster Bad Day: pick lowest-probability move above minProbPct threshold
-let botPressureCurveA   = null;   // ctrlA points [{x,y}] — ELO degradation vs think-time (s)
-let botPressureReganA   = null;   // {c,k,alpha,anchorSec} — closed-form Curve A (Regan time–rating model); takes precedence over ctrlA
+let botPressureCurveA   = null;   // ctrlA points [{x,y}] — ELO degradation vs think-time (s); seeded on the Regan model by the panel
 let _botGameGen         = 0;      // bumped by botStart/botStop — in-flight botMakeMove awaits compare against it and discard stale engine replies
 let botPressureCurveB   = null;   // ctrlB points [{x,y}] — confidence floor % vs think-time (s)
 let botWeaponizerEnabled = false; // weaponizer: instant play when ahead on clock
