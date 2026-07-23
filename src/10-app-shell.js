@@ -109,6 +109,8 @@ let botTimePressureMaxDrop = null; // max ELO drop from r-drop; null = use DOM s
 let botMinProbPct       = 0;      // min absolute probability % — 0 = off (default); set by panel
 let botBadDayMode       = false;  // Grandmaster Bad Day: pick lowest-probability move above minProbPct threshold
 let botPressureCurveA   = null;   // ctrlA points [{x,y}] — ELO degradation vs think-time (s)
+let botPressureReganA   = null;   // {c,k,alpha,anchorSec} — closed-form Curve A (Regan time–rating model); takes precedence over ctrlA
+let _botGameGen         = 0;      // bumped by botStart/botStop — in-flight botMakeMove awaits compare against it and discard stale engine replies
 let botPressureCurveB   = null;   // ctrlB points [{x,y}] — confidence floor % vs think-time (s)
 let botWeaponizerEnabled = false; // weaponizer: instant play when ahead on clock
 let botWeaponizerLeadMs  = 30000; // clock lead (ms) required to activate weaponizer
@@ -608,16 +610,16 @@ function indActive(key) {
   }
   if(ind.pressing) return true;
   if(ind.on) return true;
-  if(ind.pre&&(!!previewBoard||currentlyPreviewing)){
-    // In preview-only mode (not explicitly "always on"), suppress during active
-    // drag — circles jumping onto the carried piece feel like a bug to users.
-    if(!ind.on){
-      const _dragging = typeof dragFrom !== 'undefined' && dragFrom >= 0 &&
-                        typeof dragMoved !== 'undefined' && dragMoved;
-      if(_dragging) return false;
-    }
-    return true;
-  }
+  // "Show During Exploration" (pre) indicators stay active for the whole
+  // exploration, INCLUDING while the piece is dragged off its origin square.
+  // That is the point of beginner/visualization mode: the overlays are
+  // computed on previewBoard (piece placed on its destination), so a threat
+  // circle appears on the destination square — e.g. a queen dragged to a
+  // square where it hangs shows the threat ring BEFORE the move is committed.
+  // The dragged piece itself is drawn as a separate translucent glyph
+  // following the cursor, so the circle sits on the board, not on the
+  // carried piece.
+  if(ind.pre&&(!!previewBoard||currentlyPreviewing)) return true;
   return false;
 }
 
