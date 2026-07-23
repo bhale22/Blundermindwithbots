@@ -246,13 +246,16 @@ pts sorted by x. For xSec in [pts[i].x, pts[i+1].x]:
   game) is numerically identical to seconds per move, so the anchor uses EXPECTED_MOVES = 60:</p>
   <div class="code">D(s) = 339 − 1442 · s^(−0.283)          // rating loss, ≈0 at 165 s/move
 anchorSec = baseSec / 60 + incrementSec  // 15+0 → 15, 5+3 → 8; untimed → flat curve
-seed(s)   = clamp(E₀ + D(s) − D(anchorSec), 600, min(E₀, 2600))</div>
+floor     = max(600, E₀ − maxDrop)       // Max ELO drop slider caps the fall
+seed(s)   = clamp(E₀ + D(s) − D(anchorSec), floor, min(E₀, 2600))</div>
   <ul>
     <li>Degradation-only: the min(E₀, …) cap means banking time never plays above the configured ELO.</li>
+    <li>The <strong>Max ELO drop</strong> slider (0–600, default 300) caps how far the curve may fall — it bottoms out
+      at max(600, E₀ − maxDrop) instead of running all the way to Maia's 600 floor, and re-seeds the knots to match.</li>
     <li>The 8 draggable knots are seeded on this curve — one exactly at the anchor (the curve's corner), the rest
       log-spaced down the dive, where the power law bends hardest. Drag any point to reshape.</li>
     <li>The engine always runs the spline: effectiveELO = evalPressureCurve(curveA, thinkSec) clamped to [600, 2600];
-      below the 1 s chart edge it holds its 1 s value. Re-seeding happens on ELO or time-control changes.</li>
+      below the 1 s chart edge it holds its 1 s value. Re-seeding happens on ELO, time-control, or Max-drop changes.</li>
   </ul>
   <p class="note">The rough think-time estimate (computed before the Maia query) is used for ELO selection. The precise
   think time (after the engine responds) is used for curve B and temperature.</p>

@@ -11,9 +11,11 @@ const ok = (cond, name) => {
   else { fail++; console.log('  ✘', name); }
 };
 
-// Reference model for cross-checking seeded values
+// Reference model for cross-checking seeded values. maxDrop caps the floor at
+// max(600, e0 − maxDrop), matching the panel's Max ELO drop slider.
 const D = (s) => 339 - 1442 * Math.pow(Math.max(0.05, s), -0.283);
-const model = (e0, anchor, t) => Math.max(600, Math.min(e0, Math.round(e0 + D(t) - D(anchor))));
+const model = (e0, anchor, t, maxDrop = 600) =>
+  Math.max(Math.max(600, e0 - maxDrop), Math.min(e0, Math.round(e0 + D(t) - D(anchor))));
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
@@ -27,25 +29,33 @@ console.log('panel:');
 await page.goto(BASE + '/bot-control-panel.html', { waitUntil: 'networkidle' });
 await page.waitForTimeout(400);
 
-ok(await page.evaluate(() => document.getElementById('cvA-mode-regan') === null &&
-  document.getElementById('r-drop') === null), 'mode buttons and Max ELO drop slider are gone');
+ok(await page.evaluate(() => document.getElementById('cvA-mode-regan') === null),
+  'Regan/Custom mode buttons are gone');
+ok(await page.evaluate(() => { const s = document.getElementById('r-drop'); return s && s.type === 'range'; }),
+  'Max ELO drop slider is present');
 ok(await page.evaluate(() => {
   const a = document.getElementById('pressure-off-a'), b = document.getElementById('pressure-off-b');
   return a && b && a.type === 'checkbox' && b.type === 'checkbox' && a.checked && b.checked &&
     a.closest('label')?.classList.contains('tog') && b.closest('label')?.classList.contains('tog');
 }), 'on/off controls are .tog switches, both ON by default');
 
-// Seeding: default TC 30+0 → anchor 30; knot exactly at the anchor, all on model
+// Seeding: default TC 30+0 → anchor 30, slider default 300 → floor 1200
 const seed = await page.evaluate(() => ({ anchor: reganAnchorSec(), elo: currentElo,
-  pts: ctrlA.map(p => ({ x: p.x, y: p.y })) }));
+  drop: +document.getElementById('r-drop').value, pts: ctrlA.map(p => ({ x: p.x, y: p.y })) }));
 ok(seed.anchor === 30, 'anchorSec = 30 for default 30+0');
+ok(seed.drop === 300, 'Max ELO drop slider defaults to 300');
 ok(seed.pts.length === 8, '8 draggable knots');
 ok(seed.pts.some(p => Math.abs(p.x - 30) < 0.01), 'one knot sits exactly at the anchor');
-ok(seed.pts.every(p => Math.abs(p.y - model(seed.elo, seed.anchor, p.x)) <= 1), 'every knot lies on the Regan curve');
+ok(seed.pts.every(p => Math.abs(p.y - model(seed.elo, seed.anchor, p.x, seed.drop)) <= 1),
+  'every knot lies on the slider-capped Regan curve');
 ok(seed.pts.filter(p => p.x >= seed.anchor).every(p => p.y === seed.elo), 'flat at E0 above the anchor');
-// Fastest knot is the 1 s chart edge; with a 30 s anchor the model there is ~609
-// (the 600 floor is only reached below the chart's right edge — expected).
-ok(seed.pts.some(p => p.x === 1 && p.y < 650), 'curve dives toward the floor at the fast (1 s) edge');
+ok(Math.min(...seed.pts.map(p => p.y)) >= seed.elo - seed.drop, 'curve floor respects the Max ELO drop cap');
+
+// Slider caps the floor: at drop 200, no knot falls below E0−200
+await page.evaluate(() => { const s = document.getElementById('r-drop'); s.value = 200; s.oninput(); });
+const capped = await page.evaluate(() => ({ elo: currentElo, min: Math.min(...ctrlA.map(p => p.y)) }));
+ok(capped.min >= capped.elo - 200, 'lowering Max ELO drop raises the curve floor');
+await page.evaluate(() => { const s = document.getElementById('r-drop'); s.value = 300; s.oninput(); });
 
 // TC re-anchor: 5+3 → 8 s
 await page.evaluate(() => { tcTime = 5; tcInc = 3; initPtsA(); });
@@ -75,7 +85,7 @@ ok(offState.dim, 'off → chart dimmed');
 ok(offState.chip === 'Dist only', 'status chip: Dist only');
 await page.evaluate(() => { const cb = document.getElementById('pressure-off-a'); cb.checked = true; cb.onchange(); });
 await page.waitForTimeout(150);
-ok(await page.evaluate(() => !pressureOffA && ctrlA.some(p => p.x === 1 && p.y < 650)), 'switch on → Regan seed restored');
+ok(await page.evaluate(() => !pressureOffA && ctrlA.some(p => p.y < currentElo - 100)), 'switch on → Regan seed restored');
 
 // Real mouse drag on cvA (no lock anymore): drag a mid-dive knot downward.
 // Pick a knot below the anchor so it has headroom to move (the anchor knot is
@@ -88,11 +98,15 @@ const dragged = await page.evaluate(() => {
   const r = cv.getBoundingClientRect();
   const w = cv.clientWidth;
   const xp = makeXp(scaleA, w);
-  const i = ctrlA.findIndex(p => p.x > 3 && p.x < 12); // a knot in the dive
-  const mn = 540, mx = currentElo + 50;
+  // Pick the knot with the most vertical headroom above the floor (deepest in
+  // the dive but not pinned at E0), so a downward drag has somewhere to go.
+  const mn = Math.max(600, Math.min(currentElo,2600) - (+document.getElementById('r-drop').value)) - 60;
+  const mx = currentElo + 50;
+  let i = 1;
+  for (let k = 2; k < ctrlA.length; k++) if (ctrlA[k].y > mn + 40 && ctrlA[k].y < ctrlA[i].y) i = k;
   const PAD_T = 14, CH = 150, PAD_B = 44;
   const py = PAD_T + (mx - ctrlA[i].y) / (mx - mn) * (CH - PAD_T - PAD_B);
-  return { idx: i, sx: r.left + xp(ctrlA[i].x), sy: r.top + py, yBefore: ctrlA[i].y };
+  return { idx: i, sx: r.left + xp(ctrlA[i].x), sy: r.top + py, yBefore: ctrlA[i].y, mn };
 });
 await page.mouse.move(dragged.sx, dragged.sy);
 await page.mouse.down();

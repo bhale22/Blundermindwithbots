@@ -455,13 +455,16 @@ story += [
          'move, so the anchor uses EXPECTED_MOVES = 60:'),
     code('D(s) = 339 − 1442 · s^(−0.283)           // rating loss, ≈0 at 165 s/move\n'
          'anchorSec = baseSec / 60 + incrementSec  // 15+0 → 15, 5+3 → 8; untimed → flat curve\n'
-         'seed(s)   = clamp(E0 + D(s) − D(anchorSec), 600, min(E0, 2600))'),
+         'floor     = max(600, E0 − maxDrop)       // Max ELO drop slider caps the fall\n'
+         'seed(s)   = clamp(E0 + D(s) − D(anchorSec), floor, min(E0, 2600))'),
     bullet('Degradation-only: the min(E0, …) cap means banking time never plays above the configured ELO'),
+    bullet('Max ELO drop slider (0–600, default 300) caps how far the curve falls — it bottoms out at '
+           'max(600, E0 − maxDrop) instead of running to Maia\'s 600 floor, and re-seeds the knots to match'),
     bullet('8 draggable knots seeded on this curve — one exactly at the anchor (the curve\'s corner), '
            'the rest log-spaced down the dive where the power law bends hardest; drag any point to reshape'),
     bullet('The engine always runs the spline: effectiveELO = evalPressureCurve(curveA, thinkSec) '
            'clamped to [600, 2600]; below the 1 s chart edge it holds its 1 s value. '
-           'Re-seeds on ELO or time-control changes.'),
+           'Re-seeds on ELO, time-control, or Max-drop changes.'),
     note('The rough thinkSec estimate (computed before the Maia query) is used for ELO selection. '
          'The precise thinkSec (after the engine responds) is used for curve B and temperature.'),
     note('Hybrid Maia slots carry their own ratings, so they take the curve\'s RELATIVE drop '

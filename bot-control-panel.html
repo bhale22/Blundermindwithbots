@@ -1760,6 +1760,7 @@ body.fj .picon{font-weight:500;}
           <!-- LEFT: ELO degradation curve -->
           <div id="tp-col-a">
             <div class="dlbl"><span>ELO degradation — drag points</span><label class="tog" title="ELO degradation under time pressure — on/off"><input type="checkbox" id="pressure-off-a" checked onchange="_setPressureOffA(!this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
+            <div class="ctrl" id="ctrl-drop"><span class="ctrl-lbl">Max ELO drop</span><input type="range" id="r-drop" min="0" max="600" step="25" value="300" oninput="sv(this,'v-drop',v=>v+' ELO');initPtsA();drawA()"><span class="ctrl-val" id="v-drop">300 ELO</span></div>
             <div class="chart-box">
               <div class="chart-title-row">
                 <div class="chart-title" style="flex:1;margin:0;">Effective ELO vs think time — full ELO at the time control&rsquo;s pace</div>
@@ -6193,6 +6194,9 @@ function applyBotConfig(cfg){
     _setPressureOffA(cfg.pressureOffA != null ? !!cfg.pressureOffA : !!cfg.pressureOff);
     _setPressureOffB(cfg.pressureOffB != null ? !!cfg.pressureOffB : !!cfg.pressureOff);
   });
+  // Max ELO drop caps Curve A's floor + reseeds; the saved ctrlA spline is
+  // reapplied in the curve-restore step below, so this only sets the framing.
+  grp(() => { if(cfg.timePressureMaxDrop != null) _setRange('r-drop', Math.max(0, Math.min(600, cfg.timePressureMaxDrop))); });
   grp(() => _setRange('r-floor', cfg.timePressureFloor));
 
   // Quality controls (legacy cfg.blunderLimitCp is ignored). Budget restores
@@ -8515,17 +8519,20 @@ function reganAnchorSec(){
   return Math.max(0.5, baseSec / REGAN.EXPECTED_MOVES + inc);
 }
 // Effective ELO under the model: the whole curve is shifted to pass through
-// (anchor, ELO₀); degradation-only (never above the configured ELO), clamped
-// to Maia's callable [600, 2600]. This is Curve A's dashed baseline and the
-// shape the draggable control points are seeded on — the spline through the
-// points is what actually runs (same setup as Curve B).
+// (anchor, ELO₀); degradation-only (never above the configured ELO). The Max
+// ELO drop slider caps how far it may fall — the curve bottoms out at
+// max(600, E0 − maxDrop) instead of running all the way to Maia's 600 floor.
+// This is Curve A's dashed baseline and the shape the draggable control points
+// are seeded on — the spline through the points is what actually runs (same
+// setup as Curve B).
 function reganEloA(t){
   const e0 = Math.max(600, Math.min(currentElo, 2600));
   if(pressureOffA) return Math.round(e0);
   const anchor = reganAnchorSec();
   if(anchor <= 0) return Math.round(e0);           // untimed → flat
+  const floor = Math.max(600, e0 - gv('r-drop'));  // slider-capped bottom
   const raw = currentElo + reganD(t) - reganD(anchor);
-  return Math.max(600, Math.min(e0, Math.round(raw)));
+  return Math.max(floor, Math.min(e0, Math.round(raw)));
 }
 
 // ── Game-time helpers (used for the "start" marker line) ─────────────────────
@@ -8831,9 +8838,10 @@ function updatePressureStats(){
 
 function drawA(){
   if(!document.getElementById('cvA')) return;
-  // Y range covers the whole runtime-reachable span: base ELO down to Maia's
-  // 600 floor (the Regan baseline bottoms out there; drags clamp there too).
-  drawCurve('cvA', ctrlA, reganEloA, 540, currentElo + 50,
+  // Y range spans base ELO down to the slider-capped floor (min 600), so the
+  // chart frames whatever range the Max ELO drop currently allows.
+  const yMin = Math.max(600, Math.min(currentElo, 2600) - gv('r-drop')) - 60;
+  drawCurve('cvA', ctrlA, reganEloA, yMin, currentElo + 50,
     v=>v, '#c8922a', 'rgba(200,146,42,0.08)', 'tipA', scaleA);
 }
 function drawB(){
@@ -8903,9 +8911,10 @@ function setupDrag(canvasId, getCtrl, getSigFn, isElo, tipId, getScale){
              cy:(e.touches?e.touches[0].clientY:e.clientY)-r.top };
   }
   function getRng(){
-    // ELO range mirrors drawA's y-range (600 floor − 60 padding); the drag
-    // value itself is clamped to ≥600 in doMove.
-    return isElo ? { mn:540, mx:currentElo+50 }
+    // ELO range mirrors drawA's y-range: base ELO down to the slider-capped
+    // floor (min 600) minus 60 px padding.
+    const eloFloor = Math.max(600, Math.min(currentElo,2600) - gv('r-drop'));
+    return isElo ? { mn:eloFloor-60, mx:currentElo+50 }
                  : { mn:gv('r-floor')-1, mx:105 };
   }
   function pxToV(py,mn,mx){ return mx - (py-PAD.t)/(CH-PAD.t-PAD.b)*(mx-mn); }
