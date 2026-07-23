@@ -1647,52 +1647,52 @@ function stopCheckThreats(){showingCheckThreats=false;checkThreatSquaresW=new Se
 // ── Static Exchange Evaluation for fork landing squares ─────────────────────
 // Returns net material score for `color` if their piece of type `pieceType`
 // moves to `toSq` on board `bd`. Positive = profitable, negative = losing.
+// Static Exchange Evaluation for landing a piece of `pieceType`/`color` on
+// `toSq`. Returns the net material the mover comes out ahead (positive = good
+// for the mover) assuming both sides capture optimally with the cheapest piece
+// available at each step. Standard swap-off algorithm with negamax fold-back:
+// each side may "stand pat" rather than recapture if capturing would lose.
+//
+// This is the gate the next-move fork filter uses to decide whether a forking
+// landing square is safe. It MUST account for defended recaptures — e.g. a
+// knight jumping to a square guarded by the enemy queen but defended by our
+// bishop is perfectly safe (they never take, and if they did we win the queen),
+// so the SEE there is >= 0, not "-knight".
 function seeLandingScore(toSq, pieceType, color, bd) {
   const opp = color === 'w' ? 'b' : 'w';
-  const pieceVal = PIECE_VAL[pieceType] || 0;
+  // Piece currently standing on toSq (if any) is the first thing we win.
+  const gains = [ bd[toSq] ? (PIECE_VAL[bd[toSq].piece] || 0) : 0 ];
 
-  // Build a hypothetical board with the piece on toSq
-  // (we don't know which square it came from in this context,
-  //  but for SEE we only need to know what's on toSq and who attacks it)
-  const capturedVal = bd[toSq] ? (PIECE_VAL[bd[toSq].piece] || 0) : 0;
+  // Working board: our piece now sits on toSq (whatever it captured is gone).
+  let b2 = {...bd};
+  b2[toSq] = { piece: pieceType, color };
 
-  // Get all attackers of toSq by opponent (sorted cheapest first)
-  const oppAtks = currentAttackersOf(toSq, opp, bd);
-  if (oppAtks.length === 0) return capturedVal; // undefended — free capture
+  let side = opp;                 // opponent moves next (the recapture)
+  let onSquareVal = PIECE_VAL[pieceType] || 0; // value of the piece now on toSq
+  let depth = 0;
 
-  // Simulate: we land on toSq, opponent captures with cheapest piece,
-  // we recapture with cheapest remaining, etc.
-  // Track cumulative gain/loss
-  let gain = capturedVal; // we captured whatever was on toSq
-  let lastMovedVal = pieceVal; // the piece we just moved
-  let b = {...bd};
-  // Simulate opponent's cheapest recapture
-  const {sq: oppSq, val: oppVal} = oppAtks[0];
-  // After opponent captures our piece on toSq:
-  gain -= lastMovedVal; // we lose our piece
-  // Continue exchange from opponent's perspective
-  // (simplified: if gain is already positive after first recapture,
-  //  and we have defenders, it may still be profitable)
-  // Full iterative exchange:
-  let side = opp;
-  let tSq = toSq;
-  let bd2 = {...bd};
-  bd2[toSq] = {piece: pieceType, color}; // place our piece
-  let netGain = capturedVal;
-  let lastVal = pieceVal;
-  for (let i = 0; i < 16; i++) {
-    const atks = currentAttackersOf(tSq, side, bd2);
+  // Build the raw gain sequence: at each ply the side-to-move captures the
+  // piece on toSq with its cheapest attacker; that attacker now sits on toSq.
+  while (true) {
+    const atks = currentAttackersOf(toSq, side, b2);
     if (!atks.length) break;
-    const {sq: aSq} = atks[0];
-    netGain = (side === opp ? -1 : 1) * (PIECE_VAL[bd2[tSq]?.piece] || lastVal) + netGain;
-    const nb = {...bd2};
-    nb[tSq] = nb[aSq]; delete nb[aSq];
-    bd2 = nb;
-    lastVal = PIECE_VAL[atks[0]] || 0;
+    const { sq: aSq, val: aVal } = atks[0]; // cheapest attacker (val from core)
+    // This side gains the value of the piece it captures off toSq.
+    gains[++depth] = onSquareVal - gains[depth - 1];
+    onSquareVal = aVal;           // the capturing piece now occupies toSq
+    const nb = {...b2};
+    nb[toSq] = nb[aSq]; delete nb[aSq];
+    b2 = nb;
     side = side === 'w' ? 'b' : 'w';
-    if (i % 2 === 0 && netGain < 0) break; // cut off — losing regardless
+    if (depth > 31) break;        // safety
   }
-  return netGain;
+
+  // Negamax fold-back: from the deepest capture upward, the side to move takes
+  // the better of "don't recapture" (keep prior gain) vs "recapture" (this gain).
+  for (let i = depth - 1; i >= 0; i--) {
+    gains[i] = -Math.max(-gains[i], gains[i + 1]);
+  }
+  return gains[0];
 }
 
 // ── Fork & Skewer detection ──────────────────────────────────────────────────
