@@ -217,6 +217,29 @@ function serveHtml(req, res) {
 app.get('/', serveHtml);
 app.get('/blundermind.html', serveHtml);
 
+// Serve beautifulblundermind.html with same caching strategy
+let prettyHtmlCache = null, prettyHtmlEtag = null, prettyHtmlMtime = null;
+function loadPrettyHtml() {
+  const filePath = path.join(__dirname, 'beautifulblundermind.html');
+  if (!fs.existsSync(filePath)) return;
+  const stat = fs.statSync(filePath);
+  if (prettyHtmlMtime && stat.mtimeMs === prettyHtmlMtime) return;
+  prettyHtmlCache = fs.readFileSync(filePath);
+  prettyHtmlMtime = stat.mtimeMs;
+  prettyHtmlEtag  = '"' + crypto.createHash('md5').update(prettyHtmlCache).digest('hex') + '"';
+  console.log('Beautiful HTML cached', (prettyHtmlCache.length/1024).toFixed(0), 'KB');
+}
+loadPrettyHtml();
+app.get('/beautifulblundermind.html', (req, res) => {
+  loadPrettyHtml();
+  if (!prettyHtmlCache) { res.status(404).send('Not found'); return; }
+  if (req.headers['if-none-match'] === prettyHtmlEtag) { res.status(304).end(); return; }
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('ETag', prettyHtmlEtag);
+  res.send(prettyHtmlCache);
+});
+
 // ── Multiplayer room system ───────────────────────────────────────────────────
 const rooms = {};
 // Open lobby challenges: code → { code, name, rating, ratingRange, tc, tcLabel, tcBaseMin, tcIncSec }
