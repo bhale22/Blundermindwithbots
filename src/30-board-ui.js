@@ -1882,7 +1882,12 @@ function computeForkData(bd, color, pinnedSqs) {
     // Filter: only show if profitable
     // Either: any target is undefended, OR combined value > forking piece value
     const myVal = PIECE_VAL[p.piece] || 0;
-    const anyUndefended = targets.some(t => directAtk[t][color].length === 0);
+    // "Undefended" = no defender of the target's OWN colour (the opponent).
+    // Must be [opp], not [color]: directAtk[t][color] lists the forker's own
+    // attackers of t (and always includes the forking piece itself), so it is
+    // never empty — using it here silently suppressed every fork whose targets'
+    // combined value didn't exceed the forker (e.g. a knight forking two pawns).
+    const anyUndefended = targets.some(t => directAtk[t][opp].length === 0);
     const combinedVal = targets.reduce((sum,t) => sum + (PIECE_VAL[bd[t].piece]||0), 0);
     if (anyUndefended || combinedVal > myVal) {
       result.current.push({ sq, targets });
@@ -1905,8 +1910,10 @@ function computeForkData(bd, color, pinnedSqs) {
       const targets = attacks2.filter(t => bd2[t] && bd2[t].color === opp);
       if (targets.length < 2) continue;
 
-      // Profitable fork filter
-      const anyUndefended = targets.some(t => atk2[t][color].length === 0);
+      // Profitable fork filter. "Undefended" = no defender of the target's own
+      // colour ([opp]); [color] would count the forker's own attackers (never
+      // empty) and wrongly suppress low-combined-value forks.
+      const anyUndefended = targets.some(t => atk2[t][opp].length === 0);
       const combinedVal = targets.reduce((sum,t) => sum + (PIECE_VAL[bd2[t].piece]||0), 0);
       if (!anyUndefended && combinedVal <= myVal) continue;
 
