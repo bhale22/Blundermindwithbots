@@ -608,16 +608,16 @@ function indActive(key) {
   }
   if(ind.pressing) return true;
   if(ind.on) return true;
-  if(ind.pre&&(!!previewBoard||currentlyPreviewing)){
-    // In preview-only mode (not explicitly "always on"), suppress during active
-    // drag — circles jumping onto the carried piece feel like a bug to users.
-    if(!ind.on){
-      const _dragging = typeof dragFrom !== 'undefined' && dragFrom >= 0 &&
-                        typeof dragMoved !== 'undefined' && dragMoved;
-      if(_dragging) return false;
-    }
-    return true;
-  }
+  // "Show During Exploration" (pre) indicators stay active for the whole
+  // exploration, INCLUDING while the piece is dragged off its origin square.
+  // That is the point of beginner/visualization mode: the overlays are
+  // computed on previewBoard (piece placed on its destination), so a threat
+  // circle appears on the destination square — e.g. a queen dragged to a
+  // square where it hangs shows the threat ring BEFORE the move is committed.
+  // The dragged piece itself is drawn as a separate translucent glyph
+  // following the cursor, so the circle sits on the board, not on the
+  // carried piece.
+  if(ind.pre&&(!!previewBoard||currentlyPreviewing)) return true;
   return false;
 }
 
