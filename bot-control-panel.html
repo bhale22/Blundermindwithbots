@@ -1759,18 +1759,18 @@ body.fj .picon{font-weight:500;}
         <div class="panel-2col">
           <!-- LEFT: ELO degradation curve -->
           <div id="tp-col-a">
-            <div class="dlbl"><span>ELO degradation — drag points</span><button class="xsbtn active" id="pressure-off-a" onclick="togglePressureOffA()" style="min-width:36px;" title="Toggle ELO degradation under time pressure">ON</button></div>
-            <div class="ctrl"><span class="ctrl-lbl">Max ELO drop</span><input type="range" id="r-drop" min="0" max="600" step="25" value="300" oninput="sv(this,'v-drop',v=>v+' ELO');initPtsA();drawA()"><span class="ctrl-val" id="v-drop">300 ELO</span></div>
+            <div class="dlbl"><span id="cvA-dlbl-label">ELO degradation — Regan model</span><button class="xsbtn active" id="cvA-mode-regan" onclick="setCurveAMode('regan')" title="Closed-form time–rating curve fit after IM Kenneth Regan's data (default)">Regan</button><button class="xsbtn" id="cvA-mode-custom" onclick="setCurveAMode('custom')" title="Hand-draggable spline with sigmoid baseline">Custom</button><button class="xsbtn active" id="pressure-off-a" onclick="togglePressureOffA()" style="min-width:36px;" title="Toggle ELO degradation under time pressure">ON</button></div>
+            <div class="ctrl" id="ctrl-drop"><span class="ctrl-lbl">Max ELO drop</span><input type="range" id="r-drop" min="0" max="600" step="25" value="300" oninput="sv(this,'v-drop',v=>v+' ELO');initPtsA();drawA()"><span class="ctrl-val" id="v-drop">300 ELO</span></div>
             <div class="chart-box">
               <div class="chart-title-row">
-                <div class="chart-title" style="flex:1;margin:0;">Effective ELO vs think time — curve passes through Selected ELO at game start</div>
+                <div class="chart-title" id="chart-title-a" style="flex:1;margin:0;">Effective ELO vs think time — full ELO at the time control&rsquo;s pace, degrading as think time shrinks</div>
                 <button class="xsbtn" id="xsA-lin" onclick="setScaleA('lin')">Linear</button>
                 <button class="xsbtn active" id="xsA-log" onclick="setScaleA('log')">Log</button>
               </div>
               <div class="leg-row">
-                <span class="leg-item"><span class="leg-dash"></span>Sigmoid baseline</span>
-                <span class="leg-item"><span class="leg-line"></span>Your curve</span>
-                <span class="leg-item"><span class="leg-dot"></span>Drag handle</span>
+                <span class="leg-item" id="legA-baseItem" style="display:none;"><span class="leg-dash"></span><span id="legA-base">Sigmoid baseline</span></span>
+                <span class="leg-item"><span class="leg-line"></span><span id="legA-line">Regan model curve</span></span>
+                <span class="leg-item" id="legA-dragItem" style="display:none;"><span class="leg-dot"></span>Drag handle</span>
               </div>
               <canvas id="cvA" style="width:100%;cursor:ns-resize;"></canvas>
               <div class="ctip" id="tipA"></div>
@@ -1805,7 +1805,7 @@ body.fj .picon{font-weight:500;}
           <div class="stat"><div class="stat-l">Dist @ min</div><div class="stat-v" id="pSF">5%</div></div>
         </div>
 
-        <!-- Bottom row: Can Flag (left) + Regan Power Rule (right) -->
+        <!-- Bottom row: Can Flag (left) + time–rating model credit (right) -->
         <div class="panel-2col" style="margin-top:12px;padding-top:12px;border-top:0.5px solid var(--border);align-items:start;">
           <div>
             <div class="dlbl"><span>Options</span></div>
@@ -1813,10 +1813,18 @@ body.fj .picon{font-weight:500;}
           </div>
           <div>
             <div class="formula-box" style="margin-top:0;">
-              <div class="formula-title">Regan power rule</div>
+              <div class="formula-title">Time–rating model</div>
               <div class="formula-body">
-                Doubling think time ≈ <span class="formula-hl">+50–70 ELO</span><br>
-                <span class="formula-hl">ELO(t) = E₀ − Δ · σ(log(t) anchored at game start)</span>
+                <span class="formula-hl">ELO(s) = ELO₀ + D(s) − D(anchor)</span><br>
+                <span class="formula-hl">D(s) = 339 − 1442·s<sup>−0.283</sup></span><br>
+                s = think seconds per move · anchor = base/60 + increment<br>
+                Halving think time ≈ −100 ELO at rapid pace, steeper in blitz
+              </div>
+              <div style="margin-top:7px;font-family:var(--font-m);font-size:8px;line-height:1.6;color:var(--text-dim);">
+                Power-law fit of IM <a href="https://cse.buffalo.edu/~regan/" target="_blank" rel="noopener" style="color:var(--amber);">Kenneth Regan</a>&rsquo;s
+                rating-loss vs time-control data, from his
+                <a href="https://www.youtube.com/watch?v=UsEIBzm5msU" target="_blank" rel="noopener" style="color:var(--amber);">Perpetual Chess Podcast</a>
+                interview with Ben Johnson.
               </div>
             </div>
           </div>
@@ -1827,7 +1835,7 @@ body.fj .picon{font-weight:500;}
           <div class="formula-title">How time pressure simulation works</div>
           <div class="formula-body" style="text-align:left;line-height:1.75;">
             The bot simulates a rated player under time pressure using two complementary mechanisms:<br>
-            <span style="color:var(--amber);">▸ ELO reduction</span> — Maia is called at a lower ELO as the clock runs down, playing like a lower-rated player under time scramble.<br>
+            <span style="color:var(--amber);">▸ ELO reduction</span> — Maia is called at a lower ELO as think time shrinks. The default <strong>Regan</strong> curve plays full ELO at the time control&rsquo;s nominal pace (base/60 + increment seconds per move) and degrades along Regan&rsquo;s power-law fit below it; <strong>Custom</strong> lets you drag your own curve instead.<br>
             <span style="color:#5dade2;">▸ Distribution restriction</span> — ELO stays fixed but only the top portion of Maia's move distribution is available (instinctive, less creative play — typical of a strong player with no time to calculate). A quick engine check ensures a degraded pick never improves on Maia's top choice.<br>
             Each curve has its own <strong>ON/OFF</strong> toggle next to its title, so you can run either mechanism alone, both together, or switch both off for constant strength regardless of clock.
           </div>
@@ -6109,6 +6117,13 @@ function getBotConfig(){
     timePressureMaxDrop: parseInt(document.getElementById('r-drop')?.value    || '300'),
     timePressureFloor:   parseInt(document.getElementById('r-floor')?.value   || '5'),
     minProbPct:          parseInt(document.getElementById('day-lower')?.value || '0'),
+    // Curve A model: 'regan' = closed form (params below; ctrlA is a dense
+    // sample of the same curve, kept as a fallback for legacy readers);
+    // 'custom' = the hand-draggable ctrlA spline is authoritative.
+    curveAMode:          curveAMode,
+    reganA:              curveAMode === 'regan'
+                           ? { c: REGAN.C, k: REGAN.K, alpha: REGAN.ALPHA, anchorSec: reganAnchorSec() }
+                           : null,
     ctrlA:               ctrlA.map(p => ({x: p.x, y: p.y})),
     ctrlB:               ctrlB.map(p => ({x: p.x, y: p.y})),
     pressureOffA:        pressureOffA,
@@ -6177,6 +6192,12 @@ function applyBotConfig(cfg){
     document.getElementById('qs-time-cat').textContent   = tcCategory(tcTime, tcInc, tcBonus).n;
     document.querySelectorAll('.tg-cell').forEach(c => c.classList.remove('selected'));
   });
+
+  // Curve A model: explicit mode wins; legacy configs (hand-drawn spline, no
+  // curveAMode field) load as custom so their saved curve keeps running.
+  grp(() => setCurveAMode(cfg.curveAMode
+    ? cfg.curveAMode
+    : (cfg.ctrlA && cfg.ctrlA.length >= 2 ? 'custom' : 'regan')));
 
   // Pressure controls BEFORE curve restore — their handlers reset the curves.
   // Older configs only carry the master pressureOff flag → applies to both.
@@ -6322,9 +6343,11 @@ function applyBotConfig(cfg){
 
   // Pressure curves LAST — everything above may have re-anchored them.
   // A switched-off mechanism keeps its flat baseline instead of saved points.
+  // In Regan mode ctrlA is re-derived from the closed form (correct ELO + time
+  // control), never restored from saved samples.
   grp(() => {
     initPts();
-    if(!pressureOffA && cfg.ctrlA && cfg.ctrlA.length >= 2) ctrlA = cfg.ctrlA.map(p => ({x: +p.x, y: +p.y}));
+    if(curveAMode !== 'regan' && !pressureOffA && cfg.ctrlA && cfg.ctrlA.length >= 2) ctrlA = cfg.ctrlA.map(p => ({x: +p.x, y: +p.y}));
     if(!pressureOffB && cfg.ctrlB && cfg.ctrlB.length >= 2) ctrlB = cfg.ctrlB.map(p => ({x: +p.x, y: +p.y}));
     drawA(); drawB(); updatePressureStats();
   });
@@ -8473,12 +8496,13 @@ function showTimingCtrl(mode){
    ─────────────────────────────────────────────────────────────
    X domain: 1s (right/scarce) → 1000s (left/abundant), global.
    Game time sets the "start" marker, not the axis bounds.
-   X scale: logarithmic by default (matching the Regan power rule
-     that underlies the sigmoid), toggleable to linear.
-   Y domain A: ELO (currentElo down to currentElo − max_drop)
+   X scale: logarithmic by default (the Regan fit is a power law,
+     near-linear in log-time), toggleable to linear.
+   Y domain A: ELO (currentElo down to the 600 floor / max_drop)
    Y domain B: confidence floor % (50 down to min_floor)
-   Baseline: sigmoid in log-time space, anchored to empirical data.
-   User curve: Catmull-Rom spline through 8 draggable control pts.
+   Curve A default = closed-form Regan time–rating model (below);
+     'Custom' mode = sigmoid baseline + 8 draggable control pts.
+   Curve B: sigmoid baseline + draggable control points.
 ══════════════════════════════════════════════════════════════ */
 
 const X_MIN = 1;     // rightmost canvas edge = least think time (s)
@@ -8488,6 +8512,34 @@ const CH    = 150;   // canvas height px (reduced for 2-col layout)
 
 let ctrlA = [], ctrlB = [];
 let scaleA = 'log', scaleB = 'log';
+let curveAMode = 'regan';   // 'regan' (closed-form default) | 'custom' (draggable spline)
+
+// ── Regan time–rating model (Curve A default) ────────────────────────────────
+// D(s) = C − K·s^(−ALPHA): relative rating loss at s seconds/move, ≈0 at 165 s.
+// Power-law fit of IM Kenneth Regan's rating-loss vs time-control data, from
+// his Perpetual Chess Podcast interview with Ben Johnson. Regan's x-axis —
+// total minutes for a 60-move game — is numerically identical to seconds per
+// move, hence EXPECTED_MOVES = 60 in the anchor.
+const REGAN = { C: 339, K: 1442, ALPHA: 0.283, SMIN: 0.05, EXPECTED_MOVES: 60 };
+function reganD(s){ return REGAN.C - REGAN.K * Math.pow(Math.max(REGAN.SMIN, s), -REGAN.ALPHA); }
+// Anchor: nominal think time of the selected time control (baseSec/60 + inc).
+// Returns 0 for untimed — no clock means no time-pressure ELO degradation.
+function reganAnchorSec(){
+  const baseSec = (+tcTime || 0) * 60, inc = +tcInc || 0;
+  if(baseSec <= 0 && inc <= 0) return 0;
+  return Math.max(0.5, baseSec / REGAN.EXPECTED_MOVES + inc);
+}
+// Effective ELO under the model: the whole curve is shifted to pass through
+// (anchor, ELO₀); degradation-only (never above the configured ELO), clamped
+// to Maia's callable [600, 2600].
+function reganEloA(t){
+  const e0 = Math.max(600, Math.min(currentElo, 2600));
+  if(pressureOffA) return Math.round(e0);
+  const anchor = reganAnchorSec();
+  if(anchor <= 0) return Math.round(e0);           // untimed → flat
+  const raw = currentElo + reganD(t) - reganD(anchor);
+  return Math.max(600, Math.min(e0, Math.round(raw)));
+}
 
 // ── Game-time helpers (used for the "start" marker line) ─────────────────────
 // startX: estimated think time per move at game start using current QS time selection.
@@ -8550,6 +8602,28 @@ function sigB(t){
   if(pressureOffB) return 100;
   const mf = gv('r-floor'); return Math.round(100 - (100-mf) * _sigmoid(t));
 }
+// Active Curve A baseline: closed-form Regan model or the legacy sigmoid.
+function baseA(t){ return curveAMode === 'regan' ? reganEloA(t) : sigA(t); }
+
+// ── Curve A mode switch (Regan closed form ⇄ custom draggable spline) ────────
+function setCurveAMode(m){
+  curveAMode = (m === 'custom') ? 'custom' : 'regan';
+  const regan = curveAMode === 'regan';
+  const cls = (id, on) => { const el = document.getElementById(id); if(el) el.classList.toggle('active', on); };
+  cls('cvA-mode-regan', regan); cls('cvA-mode-custom', !regan);
+  const txt = (id, t) => { const el = document.getElementById(id); if(el) el.textContent = t; };
+  txt('cvA-dlbl-label', regan ? 'ELO degradation — Regan model' : 'ELO degradation — drag points');
+  txt('legA-line',      regan ? 'Regan model curve' : 'Your curve');
+  txt('chart-title-a',  regan
+    ? 'Effective ELO vs think time — full ELO at the time control’s pace, degrading as think time shrinks'
+    : 'Effective ELO vs think time — curve passes through Selected ELO at game start');
+  const show = (id, on) => { const el = document.getElementById(id); if(el) el.style.display = on ? '' : 'none'; };
+  show('legA-baseItem', !regan);   // dashed sigmoid baseline only exists in custom mode
+  show('legA-dragItem', !regan);
+  const dr = document.getElementById('ctrl-drop');   // Max ELO drop drives the sigmoid only
+  if(dr){ dr.style.opacity = regan ? '0.45' : ''; dr.style.pointerEvents = regan ? 'none' : ''; }
+  initPtsA(); drawA();
+}
 
 // ── Scale-aware coordinate transforms ────────────────────────────────────────
 // makeXp: data-time → canvas-pixel-x  (X_MAX maps to PAD.l, X_MIN to w-PAD.r)
@@ -8592,6 +8666,15 @@ function setScaleB(s){
 const _PT_IDX = [0, 17, 34, 51, 68, 85, 100, 120];   // evenly-spaced indices
 function initPtsA(){
   const xs = buildXs();                               // 121 pts, descending
+  if(curveAMode === 'regan'){
+    // Dense log-spaced samples of the closed form (~31 pts). These are for
+    // display and as a spline fallback for legacy readers of the config; the
+    // engine evaluates the closed form itself from cfg.reganA (exact below
+    // 1 s/move too, where the chart domain ends).
+    ctrlA = xs.filter((x, i) => i % 4 === 0 || i === xs.length-1)
+              .map(x => ({ x: x, y: reganEloA(x) }));
+    return;
+  }
   ctrlA = _PT_IDX.map(i => ({ x: xs[Math.min(i, xs.length-1)], y: sigA(xs[Math.min(i, xs.length-1)]) }));
 }
 function initPtsB(){
@@ -8711,7 +8794,7 @@ function drawCurve(canvasId, ctrl, sigFn, yMin, yMax, yFmt, lineColor, fillColor
   ctx.fillStyle=_curveDimColor; ctx.font='8px "DM Mono",monospace'; ctx.textAlign='center';
   ctx.fillText('think time per move — more time \u2192 left', w/2, CH-2);
   ctx.save(); ctx.translate(11, CH/2); ctx.rotate(-Math.PI/2);
-  ctx.fillText(sigFn===sigA?'Effective ELO':'Available distribution %', 0, 0);
+  ctx.fillText(canvasId==='cvA'?'Effective ELO':'Available distribution %', 0, 0);
   ctx.restore();
 
   // ── Flag zone (ELO chart only, when can-flag is checked)
@@ -8756,8 +8839,8 @@ function drawCurve(canvasId, ctrl, sigFn, yMin, yMax, yFmt, lineColor, fillColor
   ctx.strokeStyle=lineColor; ctx.lineWidth=2; ctx.setLineDash([]);
   ctx.stroke();
 
-  // ── Draggable control point dots
-  ctrl.forEach(p => {
+  // ── Draggable control point dots (hidden in Regan mode — closed form, not editable)
+  if(!(canvasId==='cvA' && curveAMode==='regan')) ctrl.forEach(p => {
     const px = xp(p.x), py = yp(p.y);
     ctx.beginPath(); ctx.arc(px,py,5.5,0,Math.PI*2);
     ctx.fillStyle='#0e0f11'; ctx.fill();
@@ -8783,12 +8866,13 @@ function updatePressureStats(){
 
 function drawA(){
   if(!document.getElementById('cvA')) return;
-  const drop = gv('r-drop');
+  // Regan mode has no drop slider — the model bottoms out at Maia's 600 floor.
+  const drop = curveAMode === 'regan' ? Math.max(50, currentElo - 600) : gv('r-drop');
   // Y range always covers the ELO actually reachable at runtime (clamped at
   // Maia's 600 floor) — the old Math.max(700,…) floor pushed low-ELO bots'
   // curves below the visible plot.
   const minCalled = Math.max(600, currentElo - drop);
-  drawCurve('cvA', ctrlA, sigA, minCalled - 60, currentElo + 50,
+  drawCurve('cvA', ctrlA, baseA, minCalled - 60, currentElo + 50,
     v=>v, '#c8922a', 'rgba(200,146,42,0.08)', 'tipA', scaleA);
 }
 function drawB(){
@@ -8849,10 +8933,11 @@ function togglePressureOffB(){ _setPressureOffB(!pressureOffB); }
 // getCtrl: closure returning the live ctrl array
 // getSigFn: closure returning the baseline function (for potential reset)
 // getScale: closure returning current scale string
-function setupDrag(canvasId, getCtrl, getSigFn, isElo, tipId, getScale){
+function setupDrag(canvasId, getCtrl, getSigFn, isElo, tipId, getScale, getLocked){
   const cv = document.getElementById(canvasId);
   if(!cv) return;
   let drag = null;
+  const locked = () => !!(getLocked && getLocked());   // Regan mode: closed form, not editable
 
   function pt(e){
     const r = cv.getBoundingClientRect();
@@ -8896,9 +8981,11 @@ function setupDrag(canvasId, getCtrl, getSigFn, isElo, tipId, getScale){
   }
 
   cv.addEventListener('mousedown', e=>{
+    if(locked()) return;
     const {cx,cy}=pt(e); drag=nearest(cx,cy); if(drag!==null) e.preventDefault();
   });
   cv.addEventListener('mousemove', e=>{
+    if(locked()){ cv.style.cursor='default'; return; }
     const {cx,cy}=pt(e);
     if(drag!==null){ e.preventDefault(); doMove(cx,cy); }
     else { cv.style.cursor = nearest(cx,cy)!==null ? 'ns-resize' : 'crosshair'; }
@@ -8906,7 +8993,7 @@ function setupDrag(canvasId, getCtrl, getSigFn, isElo, tipId, getScale){
   function up(){ drag=null; const tip=document.getElementById(tipId); if(tip) tip.style.display='none'; }
   cv.addEventListener('mouseup', up);
   cv.addEventListener('mouseleave', up);
-  cv.addEventListener('touchstart', e=>{ const {cx,cy}=pt(e); drag=nearest(cx,cy); if(drag!==null) e.preventDefault(); },{passive:false});
+  cv.addEventListener('touchstart', e=>{ if(locked()) return; const {cx,cy}=pt(e); drag=nearest(cx,cy); if(drag!==null) e.preventDefault(); },{passive:false});
   cv.addEventListener('touchmove',  e=>{ if(drag===null)return; e.preventDefault(); const {cx,cy}=pt(e); doMove(cx,cy); },{passive:false});
   cv.addEventListener('touchend', up);
 }
@@ -8963,9 +9050,10 @@ document.addEventListener('DOMContentLoaded', ()=>{
   onDaySlider(); // init dual-range fill
   _updateEnginePanelHeader();
   updatePersonalityGating(); // reflect the initial engine in the personality section
+  setCurveAMode(curveAMode);   // sync Regan/Custom UI state (labels, dimmed drop slider)
   initPts();
-  setupDrag('cvA', ()=>ctrlA, sigA, true,  'tipA', ()=>scaleA);
-  setupDrag('cvB', ()=>ctrlB, sigB, false, 'tipB', ()=>scaleB);
+  setupDrag('cvA', ()=>ctrlA, baseA, true,  'tipA', ()=>scaleA, ()=>curveAMode==='regan');
+  setupDrag('cvB', ()=>ctrlB, sigB,  false, 'tipB', ()=>scaleB);
   renderSavedBots();           // populate the My Bots dropdown from localStorage
   updateQsPersonality();
   updateQsCpBudget();

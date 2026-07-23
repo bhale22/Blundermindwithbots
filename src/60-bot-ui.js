@@ -847,6 +847,7 @@ async function botStart() {
 
   botActive = false;
   botThinking = false;
+  _botGameGen++;   // invalidate any in-flight botMakeMove from the previous game
   clearGhostPieces();
   botGhostResponses = {};
   botLastHoverSq = -1;
@@ -979,6 +980,7 @@ async function botStart() {
 function botStop() {
   botActive = false;
   botThinking = false;
+  _botGameGen++;   // invalidate any in-flight botMakeMove
   clearGhostPieces();
   botGhostResponses = {};
   boardFlipped = false;
@@ -1550,6 +1552,14 @@ window.addEventListener('message', function(e) {
   var _tpOffB = (cfg.pressureOffB != null) ? !!cfg.pressureOffB : !!cfg.pressureOff;
   botPressureCurveA = (!_tpOffA && cfg.ctrlA && cfg.ctrlA.length >= 2) ? cfg.ctrlA : null;
   botPressureCurveB = (!_tpOffB && cfg.ctrlB && cfg.ctrlB.length >= 2) ? cfg.ctrlB : null;
+  // Closed-form Curve A (Regan time–rating model). When the panel is in Regan
+  // mode it sends the formula parameters + the time control's anchor; the
+  // ctrlA samples it also sends are for legacy readers and must not shadow the
+  // closed form. anchorSec 0 = untimed → no time-pressure ELO degradation.
+  botPressureReganA = (!_tpOffA && cfg.curveAMode === 'regan' && cfg.reganA && +cfg.reganA.anchorSec > 0)
+    ? { c: +cfg.reganA.c, k: +cfg.reganA.k, alpha: +cfg.reganA.alpha, anchorSec: +cfg.reganA.anchorSec }
+    : null;
+  if (cfg.curveAMode === 'regan') botPressureCurveA = null;
 
   // Weaponizer
   botWeaponizerEnabled = !!cfg.weaponizerEnabled;

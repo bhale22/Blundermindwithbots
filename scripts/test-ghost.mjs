@@ -48,6 +48,9 @@ async function hoverMove(page, fromSq, toSq, settleMs) {
 const browser = await chromium.launch();
 const page = await browser.newPage();
 page.on('pageerror', e => console.log('[pageerror]', e.message));
+// Accept the "abandon live game?" confirm — Playwright dismisses dialogs by
+// default, which silently aborts the botStart() restarts below.
+page.on('dialog', d => d.accept());
 
 await page.goto(BASE);
 await page.waitForTimeout(1000);
@@ -77,6 +80,10 @@ const maiaReady = await page.evaluate(() => _maiaReady);
 check('Maia model becomes ready', maiaReady);
 
 if (maiaReady) {
+  // Warm the inference path first: the very first ONNX run after download
+  // (session creation) can take longer than the hover settle window.
+  await page.evaluate(() =>
+    ghostMaiaProbs('rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1', 2600));
   // Restart the bot game — the earlier hover committed 1.e4 and the bot
   // replied, so the position has moved on. Fresh board, human white.
   await page.evaluate(() => {
@@ -113,7 +120,9 @@ const rows = await page.evaluate(() => {
   return out;
 });
 console.log('Button rows:', JSON.stringify(rows));
-check('Row 1 = action/Explore/vs Bot/2-Player', rows[0] && rows[0].length === 4 && /Bot/.test(rows[0][2]) && /2-Player/.test(rows[0][3]));
+// Row 1 gained the ⏪ Review button (post-game review, July 17)
+check('Row 1 = action/Explore/Review/vs Bot/2-Player', rows[0] && rows[0].length === 5 &&
+  /Review/.test(rows[0][2]) && /Bot/.test(rows[0][3]) && /2-Player/.test(rows[0][4]));
 check('Row 2 = Theme/Load/Save', rows[1] && /Theme/.test(rows[1][0]) && /Load/.test(rows[1][1]) && /Save/.test(rows[1][2]));
 const exploreHiddenMidGame = await page.evaluate(() =>
   document.getElementById('exploreBtn').style.display === 'none');
