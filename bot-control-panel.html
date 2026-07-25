@@ -1528,7 +1528,7 @@ body.fj .picon{font-weight:500;}
         <!-- TAB: Custom Controls (user-built attractors) -->
         <div class="itab-pane" id="itab-attract-custom">
           <div class="dlbl"><span>Custom controls</span></div>
-          <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-bottom:8px;max-width:440px;">Build your own attractor: pick a board feature, the phase it applies in, and a direction. Each one only re-ranks moves the engine already considers plausible. The centipawn budget is shared only among the controls active at the same time — so a control that's the only one active in its phase uses the full budget.</div>
+          <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-bottom:8px;max-width:440px;">Build your own attractor: pick a board feature, the game phase it applies in, and a direction. Each attactor re-ranks the engine's candidate moves. The centipawn budget is shared only among controls currently active — so full cp budget is available for every move.</div>
           <div class="cc-wrap">
             <div id="custom-control-rows"></div>
             <button type="button" class="cc-add-btn" onclick="addCustomControl()">+ Add custom control</button>
@@ -6729,7 +6729,7 @@ const BOT_TOUR = [
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#style-gauge', title:'2 · The Centipawmeter',
     body:'<b>Budget</b> = the personality’s allowance, in <b>real, engine-calculated centipawns</b>: it sets both how hard the attractors push and the most a personality pick may lose versus Maia’s most-popular move (Stockfish checks; too expensive → the bot walks down its preference list). Budget 300 = willing to sacrifice a knight for its style. <b>Hard Floor</b> (always ≥ Budget) is the backstop on everything else — temperature, luck, bad-day mechanics. Slide it to <b>Off</b> and beginner bots can genuinely hang a queen. The Engine panel shows both values beside the Elometer with a one-click ELO recommendation.' },
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#move-quality-range', title:'Move Distribution Range',
-    body:'Set the probability band the bot draws from — from only its most-expected, mainstream moves down into the rare, low-popularity tail. That tail isn\'t "bad" moves — it\'s where sharp tactics and unconventional ideas tend to hide. (Probability = how often players at that rating choose a move, not engine quality.)' },
+    body:'Set the probability band the bot draws from — from only its most-expected, mainstream moves (think top crowd-sourced move) down into the rare, low-popularity tail. That tail isn\'t "bad" moves — sharp tactics and unconventional ideas likely hide here along with errors and blunders. (Probability = how often players at that rating choose a move, not engine quality.)' },
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#radar-canvas', title:'Personality fingerprint',
     body:'Drag the radar nodes (or the sliders) to sculpt the bot’s style — the fingerprint updates live as you go.' },
   { stage:'Personality', open:'attract', tab:['attract','pieces'], sel:'#attractor-rows', title:'Strategic preferences',
@@ -7048,7 +7048,7 @@ function updatePersonalityGating(){
     note.className = 'attract-engine-note inactive';
     note.style.display = '';
     note.innerHTML =
-      '<span style="flex:1;min-width:200px;">These controls are inactive — personality only works with the Maia 3 engine (it shapes Maia’s move choices; Stockfish ignores it).</span>' +
+      '<span style="flex:1;min-width:200px;">Personality only active with Maia 3 engine (it shapes Maia’s move choices; Stockfish ignores it).</span>' +
       '<button type="button" class="attract-engine-jump" onclick="jumpToEngineForMaia()">Switch engine to Maia ▸</button>';
   } else if(state === 'partial'){
     note.className = 'attract-engine-note partial';
