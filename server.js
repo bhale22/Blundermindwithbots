@@ -304,6 +304,7 @@ wss.on('connection', (ws) => {
   ws.on('message', (data) => {
     let msg;
     try { msg = JSON.parse(data); } catch { return; }
+    if (!msg || typeof msg !== 'object' || Array.isArray(msg)) return;
 
     if (msg.type === 'create') {
       leaveCurrentRoom(ws); // creating again replaces any room this socket holds
@@ -323,12 +324,21 @@ wss.on('connection', (ws) => {
       const hostRole = msg.hostColor === 'black' ? 'black'
                      : msg.hostColor === 'white' ? 'white'
                      : (Math.random() < 0.5 ? 'white' : 'black');
+      // Bounded numeric/string helpers — these values get broadcast to every
+      // connected client via the lobby list, so clamp them to sane ranges
+      // rather than trusting the client (garbage in would otherwise fan out
+      // site-wide as-is).
+      const boundedNum = (v, def, min, max) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? Math.min(Math.max(n, min), max) : def;
+      };
+      const tcBaseMin = boundedNum(msg.tcBaseMin, 0, 0, 180);
+      const tcIncSec  = boundedNum(msg.tcIncSec, 0, 0, 60);
       rooms[code] = {
         white: null, black: null, created: Date.now(),
         lobby: isLobby,
         tc: msg.tc || 'untimed',
-        tcBaseMin: msg.tcBaseMin || 0,
-        tcIncSec:  msg.tcIncSec  || 0,
+        tcBaseMin, tcIncSec,
         startFen, startSans,
       };
       rooms[code][hostRole] = ws;
@@ -339,13 +349,12 @@ wss.on('connection', (ws) => {
         lobbyChallenges[code] = {
           code,
           name:        String(msg.name || 'Anonymous').slice(0, 40),
-          rating:      msg.rating || null,
+          rating:      boundedNum(msg.rating, null, 0, 4000),
           ratingType:  ['Lichess', 'Chess.com', 'FIDE'].includes(msg.ratingType) ? msg.ratingType : null,
-          ratingRange: msg.ratingRange || 9999,
-          tc:          msg.tc || 'untimed',
-          tcLabel:     msg.tcLabel || 'Untimed',
-          tcBaseMin:   msg.tcBaseMin || 0,
-          tcIncSec:    msg.tcIncSec  || 0,
+          ratingRange: boundedNum(msg.ratingRange, 9999, 0, 9999),
+          tc:          String(msg.tc || 'untimed').slice(0, 20),
+          tcLabel:     String(msg.tcLabel || 'Untimed').slice(0, 20),
+          tcBaseMin, tcIncSec,
         };
         broadcastLobbyList();
       }
@@ -435,6 +444,17 @@ wss.on('connection', (ws) => {
     else room.black = null;
     if (!room.white && !room.black) delete rooms[ws.roomCode];
   });
+});
+
+// Defense-in-depth: this is a single process serving every concurrent game,
+// so an unexpected error in any handler should never take the whole server
+// down. Individual handlers should still catch what they can; these are a
+// last-resort backstop.
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception (server kept alive):', err);
+});
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled rejection (server kept alive):', err);
 });
 
 const PORT = process.env.PORT || 3000;
