@@ -159,14 +159,13 @@
   MultiPV probes provide the complexity scores used by the Chaos attractor. Single-move quality is guaranteed by the
   engine-calculated CP budget (§9).</p>
   <div class="code">effective level: floor = pressureFloor
-Regan mode:  pressureFloor = max(1, startLevel − round((E₀ − 600) / 50))
-Custom mode: pressureFloor = max(1, startLevel − round(timePressureMaxDrop / 50))
+pressureFloor = max(1, startLevel − round(timePressureMaxDrop / 50))
+timePressureMaxDrop = base ELO − curve A minimum  (derived from the visible curve)
 (or the pressure-level slider when no max-drop is set)</div>
   <p>Time-degradation path (highest priority wins):</p>
   <ul>
     <li>Weaponizer active AND bot is ahead → return the floor level immediately.</li>
-    <li>Regan model active → closed-form effective ELO, mapped from [600, E₀] onto [floor, startLevel].</li>
-    <li>Curve A spline present → spline interpolation in log-time space → lerp level toward the floor.</li>
+    <li>Curve A present → spline interpolation in log-time space → lerp level toward the floor.</li>
     <li>Fallback: linear ramp from startLevel at 30 s → floor at 0 s.</li>
   </ul>
 
@@ -223,10 +222,10 @@ Level clamped to [1, 20]</div>
 
   <!-- 4 -->
   <h2 id="degradation">4 · Time-Pressure Play Degradation</h2>
-  <p>Two independent curves control how the bot's play quality degrades as think time per move decreases. Curve A
-  defaults to a closed-form time–rating model (below) with a user-editable spline as its Custom mode; curve B is a
-  user-editable spline. Spline curves use log-scale interpolation on the X axis (think time in seconds), so visually
-  equal spacing on the panel matches the mathematical interpolation.</p>
+  <p>Two independent, user-editable spline curves control how the bot's play quality degrades as think time per move
+  decreases. Curve A's control points are seeded on a closed-form time–rating model (below); curve B's on a sigmoid.
+  Both use log-scale interpolation on the X axis (think time in seconds), so visually equal spacing on the panel
+  matches the mathematical interpolation.</p>
   <p>Each curve has its own ON/OFF toggle beside its chart, so the two mechanisms are fully independent: ELO degradation
   (curve A) reduces the Maia ELO the engine is queried at, while distribution restriction (curve B) keeps the ELO fixed
   but narrows which slice of Maia's move distribution is available. You can run either alone, both together, or switch
@@ -245,22 +244,25 @@ pts sorted by x. For xSec in [pts[i].x, pts[i+1].x]:
   time-control data, from his <a href="https://www.youtube.com/watch?v=UsEIBzm5msU" target="_blank"
   rel="noopener">Perpetual Chess Podcast</a> interview with Ben Johnson. Regan's x-axis (total minutes for a 60-move
   game) is numerically identical to seconds per move, so the anchor uses EXPECTED_MOVES = 60:</p>
-  <div class="code">D(s) = 339 − 1442 · s^(−0.283)          // rating loss, ≈0 at 165 s/move; s floored at 0.05
-anchorSec = baseSec / 60 + incrementSec  // 15+0 → 15, 5+3 → 8; untimed → curve inactive
-effectiveELO(s) = clamp(E₀ + D(s) − D(anchorSec), 600, min(E₀, 2600))</div>
+  <div class="code">D(s) = 339 − 1442 · s^(−0.283)          // rating loss, ≈0 at 165 s/move
+anchorSec = baseSec / 60 + incrementSec  // 15+0 → 15, 5+3 → 8; untimed → flat curve
+floor     = max(600, E₀ − maxDrop)       // Max ELO drop slider caps the fall
+seed(s)   = clamp(E₀ + D(s) − D(anchorSec), floor, min(E₀, 2600))</div>
   <ul>
     <li>Degradation-only: the min(E₀, …) cap means banking time never plays above the configured ELO.</li>
-    <li>Evaluated in closed form by the engine (reganEffectiveElo) — exact below 1 s/move, where the chart domain ends.</li>
-    <li><strong>Custom mode</strong>: the hand-draggable spline replaces the model —
-      effectiveELO = evalPressureCurve(curveA, thinkSec) clamped to [600, 2600]. Legacy saved bots load as Custom.</li>
+    <li>The <strong>Max ELO drop</strong> slider (0–600, default 300) caps how far the curve may fall — it bottoms out
+      at max(600, E₀ − maxDrop) instead of running all the way to Maia's 600 floor, and re-seeds the knots to match.</li>
+    <li>The 8 draggable knots are seeded on this curve — one exactly at the anchor (the curve's corner), the rest
+      log-spaced down the dive, where the power law bends hardest. Drag any point to reshape.</li>
+    <li>The engine always runs the spline: effectiveELO = evalPressureCurve(curveA, thinkSec) clamped to [600, 2600];
+      below the 1 s chart edge it holds its 1 s value. Re-seeding happens on ELO, time-control, or Max-drop changes.</li>
   </ul>
   <p class="note">The rough think-time estimate (computed before the Maia query) is used for ELO selection. The precise
   think time (after the engine responds) is used for curve B and temperature.</p>
   <p class="note">Hybrid Maia slots carry their own ratings, so the curve's absolute ELO (anchored to the main Elometer)
-  doesn't apply directly. Instead each slot takes the curve's <em>relative</em> drop — D(anchorSec) − D(thinkSec) in
-  Regan mode, or the spline's relaxed top minus its value at this think time in Custom mode — subtracted from the
-  slot's own ELO. Relaxed think = no drop; under pressure all slots degrade by the same amount, preserving their
-  identity gap.</p>
+  doesn't apply directly. Instead each slot takes the curve's <em>relative</em> drop — the spline's relaxed top minus
+  its value at this think time — subtracted from the slot's own ELO. Relaxed think = no drop; under pressure all slots
+  degrade by the same amount, preserving their identity gap.</p>
 
   <h3>Curve B — Distribution Cutoff</h3>
   <p>Maps think time (s) → upper-percentile cutoff of the candidate list. 100% = full distribution (top candidate down

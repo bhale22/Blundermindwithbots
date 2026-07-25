@@ -1,4 +1,5 @@
-// Headless verification of the Regan closed-form Curve A (elo-degradation-brief.md).
+// Headless verification of Curve A: draggable spline seeded on the Regan
+// time–rating model, with Android-style on/off toggles (no mode buttons).
 // Needs the server running on :3100 (PORT=3100 node server.js). Run from repo root:
 //   node scripts/verify-regan.mjs
 import { chromium } from 'playwright';
@@ -10,110 +11,161 @@ const ok = (cond, name) => {
   else { fail++; console.log('  ✘', name); }
 };
 
-// Reference D(s) for cross-checking page math
+// Reference model for cross-checking seeded values. maxDrop caps the floor at
+// max(600, e0 − maxDrop), matching the panel's Max ELO drop slider.
 const D = (s) => 339 - 1442 * Math.pow(Math.max(0.05, s), -0.283);
+const model = (e0, anchor, t, maxDrop = 600) =>
+  Math.max(Math.max(600, e0 - maxDrop), Math.min(e0, Math.round(e0 + D(t) - D(anchor))));
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+page.on('dialog', (d) => d.accept());
 
 // ── Panel ────────────────────────────────────────────────────────────────────
 console.log('panel:');
 await page.goto(BASE + '/bot-control-panel.html', { waitUntil: 'networkidle' });
 await page.waitForTimeout(400);
 
-ok(await page.evaluate(() => curveAMode) === 'regan', 'default Curve A mode is regan');
-ok(await page.evaluate(() => document.getElementById('cvA-mode-regan').classList.contains('active')), 'Regan button active');
-ok(await page.evaluate(() => document.getElementById('ctrl-drop').style.pointerEvents) === 'none', 'Max ELO drop slider inert in Regan mode');
-ok(await page.evaluate(() => document.getElementById('legA-dragItem').style.display) === 'none', 'drag-handle legend hidden in Regan mode');
+ok(await page.evaluate(() => document.getElementById('cvA-mode-regan') === null),
+  'Regan/Custom mode buttons are gone');
+ok(await page.evaluate(() => { const s = document.getElementById('r-drop'); return s && s.type === 'range'; }),
+  'Max ELO drop slider is present');
+ok(await page.evaluate(() => {
+  const a = document.getElementById('pressure-off-a'), b = document.getElementById('pressure-off-b');
+  return a && b && a.type === 'checkbox' && b.type === 'checkbox' && a.checked && b.checked &&
+    a.closest('label')?.classList.contains('tog') && b.closest('label')?.classList.contains('tog');
+}), 'on/off controls are .tog switches, both ON by default');
 
-// Default TC is 30+0 → anchor 30
-ok(await page.evaluate(() => reganAnchorSec()) === 30, 'anchorSec = 30 for default 30+0');
-const cfg0 = await page.evaluate(() => getBotConfig());
-ok(cfg0.curveAMode === 'regan', 'config exports curveAMode regan');
-ok(cfg0.reganA && cfg0.reganA.c === 339 && cfg0.reganA.k === 1442 && cfg0.reganA.alpha === 0.283 && cfg0.reganA.anchorSec === 30,
-  'config exports reganA params + anchor');
-ok(Array.isArray(cfg0.ctrlA) && cfg0.ctrlA.length >= 25, `ctrlA dense fallback sample (${cfg0.ctrlA.length} pts)`);
+// Seeding: default TC 30+0 → anchor 30, slider default 300 → floor 1200
+const seed = await page.evaluate(() => ({ anchor: reganAnchorSec(), elo: currentElo,
+  drop: +document.getElementById('r-drop').value, pts: ctrlA.map(p => ({ x: p.x, y: p.y })) }));
+ok(seed.anchor === 30, 'anchorSec = 30 for default 30+0');
+ok(seed.drop === 300, 'Max ELO drop slider defaults to 300');
+ok(seed.pts.length === 8, '8 draggable knots');
+ok(seed.pts.some(p => Math.abs(p.x - 30) < 0.01), 'one knot sits exactly at the anchor');
+ok(seed.pts.every(p => Math.abs(p.y - model(seed.elo, seed.anchor, p.x, seed.drop)) <= 1),
+  'every knot lies on the slider-capped Regan curve');
+ok(seed.pts.filter(p => p.x >= seed.anchor).every(p => p.y === seed.elo), 'flat at E0 above the anchor');
+ok(Math.min(...seed.pts.map(p => p.y)) >= seed.elo - seed.drop, 'curve floor respects the Max ELO drop cap');
 
-// Page math matches the reference formula (anchor 30, ELO 1500 default)
-const elo1500 = await page.evaluate(() => [currentElo, reganEloA(30), reganEloA(5), reganEloA(1)]);
-ok(elo1500[0] === 1500 && elo1500[1] === 1500, 'curve passes through E0 at anchor');
-ok(elo1500[2] === Math.round(1500 + D(5) - D(30)), 'reganEloA(5) matches formula');
-ok(elo1500[3] === Math.max(600, Math.round(1500 + D(1) - D(30))), 'reganEloA(1) matches formula');
+// Slider caps the floor: at drop 200, no knot falls below E0−200
+await page.evaluate(() => { const s = document.getElementById('r-drop'); s.value = 200; s.oninput(); });
+const capped = await page.evaluate(() => ({ elo: currentElo, min: Math.min(...ctrlA.map(p => p.y)) }));
+ok(capped.min >= capped.elo - 200, 'lowering Max ELO drop raises the curve floor');
+await page.evaluate(() => { const s = document.getElementById('r-drop'); s.value = 300; s.oninput(); });
 
-// Time-control re-anchor
-await page.evaluate(() => { tcTime = 15; tcInc = 0; initPtsA(); });
-ok(await page.evaluate(() => reganAnchorSec()) === 15, 're-anchor: 15+0 → 15 s');
-ok((await page.evaluate(() => getBotConfig())).reganA.anchorSec === 15, 'config anchor follows TC');
-await page.evaluate(() => { tcTime = 5; tcInc = 3; });
-ok(await page.evaluate(() => reganAnchorSec()) === 8, 're-anchor: 5+3 → 8 s (increment included)');
-await page.evaluate(() => { tcTime = 0; tcInc = 0; });
-ok(await page.evaluate(() => reganAnchorSec()) === 0, 'untimed → anchor 0');
-ok((await page.evaluate(() => getBotConfig())).reganA.anchorSec === 0, 'untimed config anchor 0');
-ok(await page.evaluate(() => reganEloA(1)) === 1500, 'untimed → flat at E0');
+// TC re-anchor: 5+3 → 8 s
+await page.evaluate(() => { tcTime = 5; tcInc = 3; initPtsA(); });
+ok(await page.evaluate(() => ctrlA.some(p => Math.abs(p.x - 8) < 0.01)), 're-anchor: 5+3 puts a knot at 8 s');
+await page.evaluate(() => { tcTime = 0; tcInc = 0; initPtsA(); });
+ok(await page.evaluate(() => ctrlA.every(p => p.y === Math.min(currentElo, 2600))), 'untimed → flat at E0');
 await page.evaluate(() => { tcTime = 30; tcInc = 0; initPtsA(); drawA(); });
 
-// Custom mode restores the legacy spline
-await page.evaluate(() => setCurveAMode('custom'));
-ok(await page.evaluate(() => ctrlA.length) === 8, 'custom mode: 8 draggable points');
-ok(await page.evaluate(() => document.getElementById('ctrl-drop').style.pointerEvents) === '', 'drop slider live in custom mode');
-const cfgC = await page.evaluate(() => getBotConfig());
-ok(cfgC.curveAMode === 'custom' && cfgC.reganA === null, 'custom config: no reganA');
+// Toggle behaviour: the .tog switch drives _setPressureOffA (its onchange).
+// Switching A off flattens + dims; back on re-seeds. Also confirm the visible
+// track/thumb reflect the checkbox state (Android-style switch).
+await page.evaluate(() => toggleSec('pressure'));
+await page.waitForTimeout(700);
+await page.evaluate(() => { const cb = document.getElementById('pressure-off-a'); cb.checked = false; cb.onchange(); });
+await page.waitForTimeout(150);
+const offState = await page.evaluate(() => ({
+  off: pressureOffA, checked: document.getElementById('pressure-off-a').checked,
+  flat: ctrlA.every(p => p.y === Math.min(currentElo, 2600)),
+  dim: document.querySelector('#tp-col-a .chart-box').style.opacity === '0.45',
+  chip: document.getElementById('st-pressure').textContent,
+  // In CSS the track goes amber and the thumb slides right only when :checked
+  trackChecked: getComputedStyle(document.querySelector('#pressure-off-a ~ .tog-track')).borderColor,
+}));
+ok(offState.off && !offState.checked, 'switch off → pressureOffA true, thumb left');
+ok(offState.flat, 'off → curve flat at E0');
+ok(offState.dim, 'off → chart dimmed');
+ok(offState.chip === 'Dist only', 'status chip: Dist only');
+await page.evaluate(() => { const cb = document.getElementById('pressure-off-a'); cb.checked = true; cb.onchange(); });
+await page.waitForTimeout(150);
+ok(await page.evaluate(() => !pressureOffA && ctrlA.some(p => p.y < currentElo - 100)), 'switch on → Regan seed restored');
 
-// Round-trip: regan config restores regan mode; legacy config (ctrlA only) loads custom
-await page.evaluate((c) => applyBotConfig(c), cfg0);
-ok(await page.evaluate(() => curveAMode) === 'regan', 'round-trip restores regan mode');
-ok(await page.evaluate(() => reganAnchorSec()) === 30, 'round-trip restores TC anchor');
-await page.evaluate(() => applyBotConfig({ ctrlA: [{ x: 1, y: 900 }, { x: 1000, y: 1500 }], ctrlB: [] }));
-ok(await page.evaluate(() => curveAMode) === 'custom', 'legacy config (spline, no mode field) loads as custom');
-ok(await page.evaluate(() => ctrlA.length === 2 && ctrlA[0].y === 900), 'legacy spline points restored');
+// Real mouse drag on cvA (no lock anymore): drag a mid-dive knot downward.
+// Pick a knot below the anchor so it has headroom to move (the anchor knot is
+// pinned at E0's top). Compute pixel coords the same way setupDrag's nearest()
+// does, so the hit test lands on the knot.
+await page.evaluate(() => document.getElementById('cvA').scrollIntoView({ block: 'center' }));
+await page.waitForTimeout(150);
+const dragged = await page.evaluate(() => {
+  const cv = document.getElementById('cvA');
+  const r = cv.getBoundingClientRect();
+  const w = cv.clientWidth;
+  const xp = makeXp(scaleA, w);
+  // Pick the knot with the most vertical headroom above the floor (deepest in
+  // the dive but not pinned at E0), so a downward drag has somewhere to go.
+  const mn = Math.max(600, Math.min(currentElo,2600) - (+document.getElementById('r-drop').value)) - 60;
+  const mx = currentElo + 50;
+  let i = 1;
+  for (let k = 2; k < ctrlA.length; k++) if (ctrlA[k].y > mn + 40 && ctrlA[k].y < ctrlA[i].y) i = k;
+  const PAD_T = 14, CH = 150, PAD_B = 44;
+  const py = PAD_T + (mx - ctrlA[i].y) / (mx - mn) * (CH - PAD_T - PAD_B);
+  return { idx: i, sx: r.left + xp(ctrlA[i].x), sy: r.top + py, yBefore: ctrlA[i].y, mn };
+});
+await page.mouse.move(dragged.sx, dragged.sy);
+await page.mouse.down();
+await page.mouse.move(dragged.sx, dragged.sy + 20, { steps: 5 });
+await page.mouse.up();
+const yAfter = await page.evaluate((i) => ctrlA[i].y, dragged.idx);
+ok(yAfter < dragged.yBefore, `knots are draggable (y ${dragged.yBefore} → ${yAfter})`);
 
-// ── Main app engine wiring ───────────────────────────────────────────────────
+// Config: ctrlA + curve-implied max drop; no closed-form fields
+const cfg = await page.evaluate(() => getBotConfig());
+ok(cfg.curveAMode === undefined && cfg.reganA === undefined, 'closed-form config fields removed');
+ok(cfg.ctrlA.length === 8, 'config carries the 8 spline points');
+const minY = Math.min(...cfg.ctrlA.map(p => p.y));
+ok(cfg.timePressureMaxDrop === Math.max(0, Math.round(cfg.elo - minY)), 'timePressureMaxDrop = E0 − curve minimum');
+
+// Round-trip: dragged curve survives save/load
+await page.evaluate((c) => applyBotConfig(c), cfg);
+const rt = await page.evaluate((i) => ctrlA[i].y, dragged.idx);
+ok(rt === yAfter, 'round-trip restores the dragged curve');
+
+// ── Main app engine wiring (spline authoritative) ────────────────────────────
 console.log('app:');
 await page.goto(BASE + '/', { waitUntil: 'networkidle' });
 await page.waitForTimeout(600);
 
-const eng = await page.evaluate(() => {
-  const out = {};
-  botPressureReganA = { c: 339, k: 1442, alpha: 0.283, anchorSec: 15 };
-  botPressureCurveA = [{ x: 0.1, y: 1500 }, { x: 1000, y: 1500 }]; // decoy — must be ignored
-  const savedRating = maia3SelectedRating;
-  maia3SelectedRating = 1500;
-  out.atAnchor = pressureEffectiveMaiaEloByThink(15);
-  out.at5 = pressureEffectiveMaiaEloByThink(5);
-  out.at01 = pressureEffectiveMaiaEloByThink(0.1);
-  out.slotHi = pressureSlotEloByThink(2400, 5);
-  out.slotLo = pressureSlotEloByThink(1800, 5);
-  botPressureReganA = null; botPressureCurveA = null;
-  maia3SelectedRating = savedRating;
-  return out;
-});
-ok(eng.atAnchor === 1500, 'engine: E0 at anchor');
-ok(eng.at5 === 1256, 'engine: 1256 at 5 s (§4 vector)');
-ok(eng.at01 === 600, 'engine: clamps to 600 floor at 0.1 s');
-ok((2400 - eng.slotHi) === (1800 - eng.slotLo) && eng.slotHi < 2400, 'engine: identical slot drops');
-
-// The app consumes configs via its window 'message' handler (type: 'botConfig')
 const postCfg = async (extra) => {
   await page.evaluate((x) => {
-    window.postMessage(Object.assign({ type: 'botConfig', engine: 'maia3', elo: 1500,
-      ctrlA: [{ x: 1, y: 900 }, { x: 1000, y: 1500 }] }, x), location.origin);
+    window.postMessage(Object.assign({ type: 'botConfig', engine: 'maia3', elo: 1500 }, x), location.origin);
   }, extra);
   await page.waitForTimeout(150);
-  return page.evaluate(() => ({ regan: !!botPressureReganA, spline: !!botPressureCurveA }));
 };
-const r1 = await postCfg({ curveAMode: 'regan', reganA: { c: 339, k: 1442, alpha: 0.283, anchorSec: 15 }, pressureOffA: false });
-const r2 = await postCfg({ curveAMode: 'regan', reganA: { c: 339, k: 1442, alpha: 0.283, anchorSec: 0 }, pressureOffA: false });
-const r3 = await postCfg({ curveAMode: 'regan', reganA: { c: 339, k: 1442, alpha: 0.283, anchorSec: 15 }, pressureOffA: true });
-const r4 = await postCfg({ pressureOffA: false });   // legacy config: spline only
-await page.evaluate(() => { botPressureReganA = null; botPressureCurveA = null; });
-const applied = { r1, r2, r3, r4 };
-ok(applied.r1.regan === true && applied.r1.spline === false, 'botConfig msg: regan set, ctrlA fallback not shadowing');
-ok(applied.r2.regan === false && applied.r2.spline === false, 'botConfig msg: untimed regan → no ELO degradation');
-ok(applied.r3.regan === false, 'botConfig msg: pressureOffA disables regan');
-ok(applied.r4.regan === false && applied.r4.spline === true, 'botConfig msg: legacy spline config still honoured');
+const seedPts = [];
+{ // mirror the panel seeding for 1500 @ 15+0
+  const anchor = 15, steps = 5, r = Math.pow(1 / anchor, 1 / (steps + 1));
+  const xs = [1000, anchor];
+  for (let k = 1; k <= steps; k++) xs.push(anchor * Math.pow(r, k));
+  xs.push(1);
+  for (const x of xs) seedPts.push({ x: +x.toFixed(3), y: model(1500, 15, x) });
+}
+await postCfg({ ctrlA: seedPts, pressureOffA: false });
+const eng = await page.evaluate(() => {
+  const saved = maia3SelectedRating; maia3SelectedRating = 1500;
+  const out = {
+    atAnchor: pressureEffectiveMaiaEloByThink(15),
+    at5: pressureEffectiveMaiaEloByThink(5),
+    at1: pressureEffectiveMaiaEloByThink(1),
+    slotHi: pressureSlotEloByThink(2400, 5),
+    slotLo: pressureSlotEloByThink(1800, 5),
+  };
+  maia3SelectedRating = saved;
+  return out;
+});
+ok(eng.atAnchor === 1500, 'engine: E0 at the anchor knot');
+ok(Math.abs(eng.at5 - model(1500, 15, 5)) <= 6, `engine: ≈model at 5 s (${eng.at5})`);
+ok(Math.abs(eng.at1 - model(1500, 15, 1)) <= 6, `engine: ≈model at 1 s (${eng.at1})`);
+ok((2400 - eng.slotHi) === (1800 - eng.slotLo) && eng.slotHi < 2400, 'engine: identical slot drops');
+
+await postCfg({ ctrlA: seedPts, pressureOffA: true });
+ok(await page.evaluate(() => botPressureCurveA === null), 'pressureOffA → no ELO degradation curve');
 
 ok(errors.length === 0, 'no console/page errors' + (errors.length ? ' — ' + errors.join(' | ') : ''));
 

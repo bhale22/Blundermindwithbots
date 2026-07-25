@@ -327,16 +327,15 @@ story += [
          'by sfEffectiveLevel(). The engine is queried via WebWorker; MultiPV probes '
          'provide complexity scores used by the Chaos attractor.'),
     code('sfEffectiveLevel: floor = pressureFloor\n'
-         'Regan mode:  pressureFloor = max(1, startLevel − round((E0 − 600) / 50))\n'
-         'Custom mode: pressureFloor = max(1, startLevel − round(timePressureMaxDrop / 50))\n'
+         'pressureFloor = max(1, startLevel − round(timePressureMaxDrop / 50))\n'
+         'timePressureMaxDrop = base ELO − curve A minimum (from the visible curve)\n'
          '  (or the sfPressureLevel slider when no max-drop is set)'),
     note('The old blunder-limit-derived quality floor was removed — single-move quality is '
          'now guaranteed by the engine-calculated CP budget and the Hard Floor backstop '
          '(§9), not by a Stockfish skill floor.'),
     body('Time degradation path (highest priority wins):'),
     bullet('Weaponizer active AND bot is ahead → return floor immediately'),
-    bullet('Regan model active → closed-form effective ELO mapped from [600, E0] onto [floor, startLevel]'),
-    bullet('Curve A spline present → spline interpolation in log-time space → lerp level to floor'),
+    bullet('Curve A present → spline interpolation in log-time space → lerp level to floor'),
     bullet('Fallback: linear ramp from startLevel at 30 s → floor at 0 s'),
 ]
 
@@ -423,11 +422,11 @@ story.append(PageBreak())
 # ═══════════════════════════════════════════════════════════════════════════════
 story += section('4. Time Pressure Play Degradation')
 story += [
-    body('Two independent curves control how the bot\'s play quality degrades as think time '
-         'per move decreases. Curve A defaults to a closed-form time-rating model (below) '
-         'with a user-editable spline as its Custom mode; curve B is a user-editable spline. '
-         'Spline curves use log-scale interpolation on the X axis (think time in seconds) so '
-         'that the visually equal spacing on the panel matches the mathematical interpolation.'),
+    body('Two independent user-editable spline curves control how the bot\'s play quality '
+         'degrades as think time per move decreases. Curve A\'s control points are seeded on '
+         'a closed-form time-rating model (below); curve B\'s on a sigmoid. Both use '
+         'log-scale interpolation on the X axis (think time in seconds) so that the visually '
+         'equal spacing on the panel matches the mathematical interpolation.'),
     spacer(4),
     body('<b>Each curve has its own ON/OFF toggle</b> beside its chart, so the two mechanisms '
          'are fully independent: ELO degradation (curve A) reduces the Maia ELO the engine is '
@@ -449,25 +448,29 @@ story += [
     body('Maps think time (s) → effective Maia ELO. At the time control\'s nominal pace the '
          'bot queries its configured ELO; as think time shrinks the ELO drops, producing '
          'weaker move distributions.'),
-    body('<b>Default: the Regan time-rating model</b> — a power-law fit of IM Kenneth Regan\'s '
+    body('<b>Seeded on the Regan time-rating model</b> — a power-law fit of IM Kenneth Regan\'s '
          'rating-loss vs time-control data (cse.buffalo.edu/~regan), from his Perpetual Chess '
          'Podcast interview with Ben Johnson (youtube.com/watch?v=UsEIBzm5msU). Regan\'s '
          'x-axis (total minutes for a 60-move game) is numerically identical to seconds per '
          'move, so the anchor uses EXPECTED_MOVES = 60:'),
-    code('D(s) = 339 − 1442 · s^(−0.283)           // rating loss, ≈0 at 165 s/move; s floored at 0.05\n'
-         'anchorSec = baseSec / 60 + incrementSec  // 15+0 → 15, 5+3 → 8; untimed → curve inactive\n'
-         'effectiveELO(s) = clamp(E0 + D(s) − D(anchorSec), 600, min(E0, 2600))'),
+    code('D(s) = 339 − 1442 · s^(−0.283)           // rating loss, ≈0 at 165 s/move\n'
+         'anchorSec = baseSec / 60 + incrementSec  // 15+0 → 15, 5+3 → 8; untimed → flat curve\n'
+         'floor     = max(600, E0 − maxDrop)       // Max ELO drop slider caps the fall\n'
+         'seed(s)   = clamp(E0 + D(s) − D(anchorSec), floor, min(E0, 2600))'),
     bullet('Degradation-only: the min(E0, …) cap means banking time never plays above the configured ELO'),
-    bullet('Evaluated in closed form by the engine (reganEffectiveElo) — exact below 1 s/move too'),
-    bullet('Custom mode: hand-draggable spline replaces the model — effectiveELO = '
-           'evalPressureCurve(curveA, thinkSec) clamped to [600, 2600]; legacy saved bots load as Custom'),
+    bullet('Max ELO drop slider (0–600, default 300) caps how far the curve falls — it bottoms out at '
+           'max(600, E0 − maxDrop) instead of running to Maia\'s 600 floor, and re-seeds the knots to match'),
+    bullet('8 draggable knots seeded on this curve — one exactly at the anchor (the curve\'s corner), '
+           'the rest log-spaced down the dive where the power law bends hardest; drag any point to reshape'),
+    bullet('The engine always runs the spline: effectiveELO = evalPressureCurve(curveA, thinkSec) '
+           'clamped to [600, 2600]; below the 1 s chart edge it holds its 1 s value. '
+           'Re-seeds on ELO, time-control, or Max-drop changes.'),
     note('The rough thinkSec estimate (computed before the Maia query) is used for ELO selection. '
          'The precise thinkSec (after the engine responds) is used for curve B and temperature.'),
     note('Hybrid Maia slots carry their own ratings, so they take the curve\'s RELATIVE drop '
-         'instead: D(anchorSec) − D(thinkSec) in Regan mode (or the spline\'s relaxed top minus '
-         'its value at this thinkSec in Custom mode), subtracted from the slot\'s own ELO '
-         '(pressureSlotEloByThink). Relaxed think = no drop; under pressure all slots degrade '
-         'by the same amount, preserving their identity gap.'),
+         'instead: the spline\'s relaxed top minus its value at this thinkSec, subtracted from '
+         'the slot\'s own ELO (pressureSlotEloByThink). Relaxed think = no drop; under pressure '
+         'all slots degrade by the same amount, preserving their identity gap.'),
 ]
 
 story += subsection('Curve B — Distribution Cutoff')
