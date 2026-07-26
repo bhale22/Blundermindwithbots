@@ -32,17 +32,6 @@ function pressureEffectiveMaiaElo(clockMs) {
   return Math.max(600, Math.min(2600, Math.round(curveElo)));
 }
 
-// ── Pressure-adjusted distribution upper cutoff ───────────────────────────────
-// Reads ctrlB curve; returns effective day-upper % for the current clock.
-// Falls back to botDayUpper when no curve is set or clockMs is null.
-function pressureEffectiveDayUpper(clockMs) {
-  if (!botPressureCurveB || botPressureCurveB.length < 2 || clockMs === null) return botDayUpper;
-  const thinkSec = (clockMs / 1000) / botRemainingMovesEstimate();
-  const curvePct = evalPressureCurve(botPressureCurveB, thinkSec);
-  if (curvePct === null) return botDayUpper;
-  return Math.max(0, Math.min(botDayUpper, curvePct));
-}
-
 // ── Pressure functions keyed on actual think time (seconds) ──────────────────
 // These replace the clock-based variants in the move generation path so that
 // the degradation curves respond to how long the bot *actually* thinks, not to
@@ -72,26 +61,40 @@ function pressureSlotEloByThink(slotElo, thinkSec) {
   return Math.max(600, Math.min(2600, Math.round(clamped - drop)));
 }
 
-function pressureEffectiveDayUpperByThink(thinkSec) {
-  if (!botPressureCurveB || botPressureCurveB.length < 2) return botDayUpper;
-  const curvePct = evalPressureCurve(botPressureCurveB, thinkSec);
-  if (curvePct === null) return botDayUpper;
-  return Math.max(0, Math.min(botDayUpper, curvePct));
-}
-
+// ── Time-pressure temperature ramp ────────────────────────────────────────────
+// Curve B's y-axis is temperature (T), seeded from the user's own base
+// temperature at comfortable think time up to the panel's user-adjustable
+// "Max temp" slider ceiling (default 8) at minimal think time (initPtsB).
+// Raising T flattens Maia's probabilities (p^(1/T)) toward uniform WITHOUT
+// reordering them — a near-forced move (e.g. 99/1) stays dominant even at a
+// high T, while a close call (e.g. 41/40) flattens fast. This is deliberately
+// margin-aware in a way the old rank/percentile quality-window cutoff wasn't,
+// which is why it replaced that mechanism.
+// botTimePressure (steady/normal/panicky) scales how far along that 0–1 ramp
+// fraction the bot actually travels — steady barely raises T even at 0s left;
+// panicky (2.5x) reaches the curve's own ceiling well before think time
+// bottoms out. The ceiling itself is read off the curve's highest point
+// (whatever the user set the Max temp slider to when the config was saved),
+// not a hardcoded constant, since that slider is now adjustable.
+const TIME_PRESSURE_TEMP_CEILING_DEFAULT = 8;
 function timePressureTempByThink(baseTemp, thinkSec) {
-  const boost = { steady: 0.0, normal: 1.0, panicky: 2.5 }[botTimePressure] || 0;
-  if (boost === 0) return baseTemp;
+  const boostMult = { steady: 0.0, normal: 1.0, panicky: 2.5 }[botTimePressure] || 0;
+  if (boostMult === 0) return baseTemp;
+  let ceiling = baseTemp + TIME_PRESSURE_TEMP_CEILING_DEFAULT - 1; // fallback if no curve
+  let fraction;
   if (botPressureCurveB && botPressureCurveB.length >= 2) {
-    const distPct = evalPressureCurve(botPressureCurveB, thinkSec);
-    if (distPct !== null) {
-      const fraction = Math.max(0, Math.min(1, 1 - distPct / 100));
-      return baseTemp + fraction * boost;
-    }
+    let curveCeiling = -Infinity;
+    for (const p of botPressureCurveB) { if (p.y > curveCeiling) curveCeiling = p.y; }
+    ceiling = Math.max(baseTemp + 0.1, curveCeiling);
+    const curveTemp = evalPressureCurve(botPressureCurveB, thinkSec);
+    fraction = curveTemp === null ? null
+      : Math.max(0, Math.min(1, (curveTemp - baseTemp) / (ceiling - baseTemp)));
   }
-  // Linear fallback: full boost at 0 s, zero boost at 30 s
-  const fraction = Math.max(0, 1 - thinkSec / 30);
-  return baseTemp + fraction * boost;
+  if (fraction === null || fraction === undefined) {
+    // Linear fallback: full ramp at 0 s, none at 30 s
+    fraction = Math.max(0, 1 - thinkSec / 30);
+  }
+  return Math.min(ceiling, baseTemp + fraction * boostMult * (ceiling - baseTemp));
 }
 
 // ── Draw behaviour ────────────────────────────────────────────────────────────
@@ -394,25 +397,19 @@ async function applyCpBudgetAcceptance(fen, chosenUci, rawProbs, shapedProbs) {
 }
 
 // ── Degradation eval guard ────────────────────────────────────────────────────
-// Bad Day and the time-pressure distribution restriction steer the bot's pick
-// by PROBABILITY, which is popularity at the rating, not quality — so the
-// steered pick is occasionally an objectively strong move few players see.
-// Degradation must never upgrade play: when a degradation mechanism is active
-// and the pick differs from the top-probability move, evaluate both with one
-// shallow searchmoves probe and play whichever scores WORSE.
+// Bad Day and temperature-based sampling steer the bot's pick by PROBABILITY,
+// which is popularity at the rating, not quality — so the steered pick is
+// occasionally an objectively strong move few players see. Degradation must
+// never upgrade play: whenever the pick differs from the top-probability move,
+// evaluate both with one shallow searchmoves probe and play whichever scores
+// WORSE. (No need to gate on "is a mechanism currently active" — divergence
+// from the top move only happens when sampling actually picked something else.)
 async function applyDegradationEvalGuard(fen, chosenUci, rawProbs) {
   try {
     if (!chosenUci || !rawProbs) return chosenUci;
     let topMove = null, topP = -1;
     for (const m in rawProbs) { if (rawProbs[m] > topP) { topP = rawProbs[m]; topMove = m; } }
     if (!topMove || topMove === chosenUci) return chosenUci;
-    // Is the TP distribution restriction actually narrowing the window right
-    // now? 1-point tolerance so a near-flat curve doesn't probe every move.
-    const tpRestricting = botPressureCurveB && botPressureCurveB.length >= 2 &&
-      (_botMoveThinkSec !== null
-        ? pressureEffectiveDayUpperByThink(_botMoveThinkSec) < botDayUpper - 1
-        : _botMoveClockMs !== null && pressureEffectiveDayUpper(_botMoveClockMs) < botDayUpper - 1);
-    if (!botBadDayMode && !tpRestricting) return chosenUci;
     if (!sfReady) { try { await sfInit(); } catch (e) { return chosenUci; } }
     const evals = await sfEvalMoves(fen, [chosenUci, topMove]);
     if (!evals || evals[chosenUci] == null || evals[topMove] == null) return chosenUci;
@@ -1056,12 +1053,12 @@ function applyMoveAttractors(moveProbs) {
     : 0;
 
   // ── Quality range + luck shift ────────────────────────────────────────────
-  // Use actual think time for pressure if available; fall back to clock-based estimate.
-  const _pressureUpper = _botMoveThinkSec !== null
-    ? pressureEffectiveDayUpperByThink(_botMoveThinkSec)
-    : pressureEffectiveDayUpper(_botMoveClockMs);
+  // Static band set by the personality's own Day Lower/Upper sliders — time
+  // pressure no longer narrows this window; it acts on temperature instead
+  // (see timePressureTempByThink), which is margin-aware and doesn't destabilize
+  // near-forced top moves the way a rank/percentile cutoff does.
   let lo = Math.max(0, Math.min(95, botDayLower - luckVal * 4));
-  let hi = Math.max(lo + 5, Math.min(100, _pressureUpper - luckVal * 4));
+  let hi = Math.max(lo + 5, Math.min(100, botDayUpper - luckVal * 4));
   let filtered = moveProbs;
   if (lo > 0 || hi < 100) {
     const sorted = Object.entries(moveProbs).sort((a, b) => b[1] - a[1]);
@@ -1739,29 +1736,6 @@ function hustlerPhaseTemp() {
   // fraction 0=opening (14 pieces), 1=endgame (≤4 pieces)
   const fraction = Math.max(0, Math.min(1, 1 - (piecesLeft - 4) / 10));
   return 5.0 + fraction * (0.6 - 5.0); // 5.0 → 0.6
-}
-
-function timePressureTemp(baseTemp, clockMs) {
-  // null/undefined = untimed; 0 is a real (maximally pressured) clock value
-  if (clockMs === null || clockMs === undefined) return baseTemp;
-  const boost = { steady: 0.0, normal: 1.0, panicky: 2.5 }[botTimePressure] || 0;
-  if (boost === 0) return baseTemp;
-
-  // cvB curve: available distribution % (100% at game start → floor at 1s)
-  // fraction → 0 at 100% (no pressure), 1 at 0% (max pressure)
-  if (botPressureCurveB && botPressureCurveB.length >= 2) {
-    const thinkSec = (clockMs / 1000) / botRemainingMovesEstimate();
-    const distPct = evalPressureCurve(botPressureCurveB, thinkSec); // 0–100 %
-    if (distPct !== null) {
-      const fraction = Math.max(0, Math.min(1, 1 - distPct / 100));
-      return baseTemp + fraction * boost;
-    }
-  }
-
-  // Linear fallback: ramps from 0 at 30 s to full boost at 0 s
-  if (clockMs > 30000) return baseTemp;
-  const fraction = Math.max(0, 1 - clockMs / 30000);
-  return baseTemp + fraction * boost;
 }
 
 // ── Main bot move trigger ────────────────────────────────────────────────────
