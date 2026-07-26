@@ -468,18 +468,30 @@ canvas{display:block;background:transparent;}
    distribution to reweight (Maia 3 / LC+Maia). Grey them out for pure
    Stockfish / LC+Stockfish (and all-SF hybrids). */
 .pers-inactive{opacity:0.4;filter:grayscale(0.55);pointer-events:none;}
+/* Positioning context for the overlaid inactive-state note (below) */
+#attract-personality-body{position:relative;}
 .attract-engine-note{font-family:var(--font-m);font-size:9px;line-height:1.5;
   letter-spacing:0.02em;margin:-2px 0 12px;padding:7px 10px;border-radius:3px;}
-.attract-engine-note.inactive{color:var(--text-secondary);background:rgba(120,130,145,0.10);
-  border:0.5px solid var(--steel);display:flex;align-items:center;gap:10px;flex-wrap:wrap;
-  padding:10px 12px;}
+/* Inactive state: the note must read as a warning sitting ON TOP of the
+   (greyed) controls, not another muted box in the same stack — so it's
+   pulled out of flow and overlaid near the top of the personality body,
+   with an opaque background + shadow so the dimmed controls behind it
+   are legible as "covered", not blended in. Sized to its own content
+   (max-width cap, not left/right:0) rather than stretching full width. */
+.attract-engine-note.inactive{position:absolute;top:36px;left:8px;z-index:5;
+  max-width:min(320px,calc(100% - 16px));width:max-content;
+  color:var(--text-primary);background:var(--carbon-mid);
+  border:0.5px solid var(--border-amber);box-shadow:0 6px 24px rgba(0,0,0,0.55);
+  display:flex;flex-direction:column;align-items:flex-start;gap:8px;
+  padding:12px 14px;}
 .attract-engine-note.partial{color:var(--amber);background:var(--amber-glow);
   border:0.5px solid var(--border-amber);}
-.attract-engine-jump{flex-shrink:0;padding:6px 12px;font-family:var(--font-u);font-size:9px;
+.attract-engine-jump{flex-shrink:0;padding:8px 12px;font-family:var(--font-u);font-size:9px;
   font-weight:500;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;
   background:var(--amber-glow);border:0.5px solid var(--border-amber);border-radius:3px;
   color:var(--amber-bright);transition:all 0.15s;}
 .attract-engine-jump:hover{background:var(--amber-glow-s);border-color:var(--amber);}
+.attract-engine-note.inactive .attract-engine-jump{align-self:flex-start;}
 
 /* Opening panel — per-colour columns; greyed when that colour isn't on Repertoire */
 .op-col{min-width:0;}
@@ -870,6 +882,10 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 .mode-compact .mdesc{font-size:7.5px;line-height:1.35;color:var(--text-secondary);margin-top:2px;}
 .mode-compact .mname{font-size:8px;}
 .mode-compact .mcard{padding:8px 8px;}
+/* Carbon engine names (Maia 3 / Stockfish / Hybrid / ...) were too small at
+   the compact-grid 8px — Journal's body.fj .mname override already reads
+   well at 15px, so match that size here for Carbon too. */
+#engine-mode-grid.mode-compact .mname{font-size:15px;}
 
 /* ══ PERSONA GRID 4-COL ══ */
 .persona-grid-4col{grid-template-columns:repeat(4,1fr);}
@@ -1751,7 +1767,7 @@ body.fj .picon{font-weight:500;}
 
         <!-- Status + ELO info row -->
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-          <span id="pressure-off-lbl" style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);">Both curves active — bot degrades with clock</span>
+          <span id="pressure-off-lbl" style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);">Both curves active — bot degrades with clock- Note that ELO drop occurs BEFORE hard floor is anchored to most likely move</span>
           <span style="margin-left:auto;font-family:var(--font-m);font-size:8px;color:var(--text-dim);">Base ELO: <span id="tp-elo-display" style="color:var(--amber);">1500</span></span>
         </div>
 
@@ -1760,7 +1776,6 @@ body.fj .picon{font-weight:500;}
           <!-- LEFT: ELO degradation curve -->
           <div id="tp-col-a">
             <div class="dlbl"><span>ELO degradation — drag points</span><label class="tog" title="ELO degradation under time pressure — on/off"><input type="checkbox" id="pressure-off-a" checked onchange="_setPressureOffA(!this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
-            <div class="ctrl" id="ctrl-drop"><span class="ctrl-lbl">Max ELO drop</span><input type="range" id="r-drop" min="0" max="600" step="25" value="300" oninput="sv(this,'v-drop',v=>v+' ELO');initPtsA();drawA()"><span class="ctrl-val" id="v-drop">300 ELO</span></div>
             <div class="chart-box">
               <div class="chart-title-row">
                 <div class="chart-title" style="flex:1;margin:0;">Effective ELO vs think time — full ELO at the time control&rsquo;s pace</div>
@@ -1775,14 +1790,14 @@ body.fj .picon{font-weight:500;}
               <canvas id="cvA" style="width:100%;cursor:ns-resize;"></canvas>
               <div class="ctip" id="tipA"></div>
             </div>
+            <div class="ctrl" id="ctrl-drop" style="margin-top:12px;"><span class="ctrl-lbl">Max ELO drop</span><input type="range" id="r-drop" min="0" max="600" step="25" value="300" oninput="sv(this,'v-drop',v=>v+' ELO');initPtsA();drawA()"><span class="ctrl-val" id="v-drop">300 ELO</span></div>
           </div>
-          <!-- RIGHT: Distribution curve -->
+          <!-- RIGHT: Temperature curve -->
           <div id="tp-col-b">
-            <div class="dlbl"><span>Move quality (distribution) — drag points</span><label class="tog" title="Move-distribution restriction under time pressure — on/off"><input type="checkbox" id="pressure-off-b" checked onchange="_setPressureOffB(!this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
-            <div class="ctrl"><span class="ctrl-lbl">Min floor</span><input type="range" id="r-floor" min="1" max="100" step="1" value="5" oninput="sv(this,'v-floor',v=>v+'%');initPtsB();drawB()"><span class="ctrl-val" id="v-floor">5%</span></div>
+            <div class="dlbl"><span>Move sampling temperature — drag points</span><label class="tog" title="Temperature escalation under time pressure — on/off"><input type="checkbox" id="pressure-off-b" checked onchange="_setPressureOffB(!this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
             <div class="chart-box">
               <div class="chart-title-row">
-                <div class="chart-title" style="flex:1;margin:0;">Available move distribution (%) vs think time — 100% at game start</div>
+                <div class="chart-title" style="flex:1;margin:0;">Sampling temperature vs think time — base temp at the time control&rsquo;s pace</div>
                 <button class="xsbtn" id="xsB-lin" onclick="setScaleB('lin')">Linear</button>
                 <button class="xsbtn active" id="xsB-log" onclick="setScaleB('log')">Log</button>
               </div>
@@ -1794,6 +1809,7 @@ body.fj .picon{font-weight:500;}
               <canvas id="cvB" style="width:100%;cursor:ns-resize;"></canvas>
               <div class="ctip" id="tipB"></div>
             </div>
+            <div class="ctrl" id="ctrl-maxtemp" style="margin-top:12px;"><span class="ctrl-lbl">Max temp</span><input type="range" id="r-maxtemp" min="1" max="15" step="0.5" value="8" oninput="sv(this,'v-maxtemp',v=>'T '+(+v).toFixed(1));initPtsB();drawB()"><span class="ctrl-val" id="v-maxtemp">T 8.0</span></div>
           </div>
         </div>
 
@@ -1801,8 +1817,8 @@ body.fj .picon{font-weight:500;}
         <div class="stats" style="margin-top:10px;">
           <div class="stat"><div class="stat-l">Start ELO</div><div class="stat-v" id="pS0">1500</div></div>
           <div class="stat"><div class="stat-l">ELO @ 3s</div><div class="stat-v" id="pS3">—</div></div>
-          <div class="stat"><div class="stat-l">ELO @ min</div><div class="stat-v" id="pS1">—</div></div>
-          <div class="stat"><div class="stat-l">Dist @ min</div><div class="stat-v" id="pSF">5%</div></div>
+          <div class="stat"><div class="stat-l">Min ELO</div><div class="stat-v" id="pS1">—</div></div>
+          <div class="stat"><div class="stat-l">Max Temp</div><div class="stat-v" id="pSF">8.0</div></div>
         </div>
 
         <!-- Bottom row: Can Flag (left) + time–rating model credit (right) -->
@@ -1836,7 +1852,7 @@ body.fj .picon{font-weight:500;}
           <div class="formula-body" style="text-align:left;line-height:1.75;">
             The bot simulates a rated player under time pressure using two complementary mechanisms:<br>
             <span style="color:var(--amber);">▸ ELO reduction</span> — Maia is called at a lower ELO as think time shrinks. The curve starts on variation of Regan&rsquo;s power-law fit (note that the correlation described by Regan correlates ELO performance as a function of time control for an entire game, not a function of time taken for an individual move) — full ELO at the time control&rsquo;s nominal pace (base/60 + increment seconds per move), degrading below it — and every point is draggable if you want a different shape.<br>
-            <span style="color:#5dade2;">▸ Distribution restriction</span> — ELO stays fixed but only the top portion of Maia's move distribution is available (instinctive, less creative play — typical of a strong player with no time to calculate). A quick engine check ensures a degraded pick never improves on Maia's top choice.<br>
+            <span style="color:#5dade2;">▸ Temperature escalation</span> — ELO stays fixed but sampling temperature rises as think time shrinks, flattening Maia's move probabilities toward uniform without ever reordering them: a near-forced move stays the near-certain pick, while a genuine toss-up becomes far less predictable (instinctive, less creative play — typical of a strong player with no time to calculate). A quick engine check ensures a degraded pick never improves on Maia's top choice.<br>
             Each curve has its own <strong>ON/OFF</strong> toggle next to its title, so you can run either mechanism alone, both together, or switch both off for constant strength regardless of clock.
           </div>
         </div>
@@ -1897,8 +1913,8 @@ body.fj .picon{font-weight:500;}
                 <div style="width:1px;flex:1;background:rgba(235,140,0,0.25);margin:2px 0;"></div>
               </div>
               <div style="padding:0 0 12px 8px;">
-                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">QUALITY WINDOW — rank filter keyed on think time (curve B)</div>
-                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Moves are sorted highest→lowest by Maia probability (how often players at the selected rating choose them — not engine quality). The Day Lower / Upper sliders define a percentile band; only moves inside the band remain eligible. Curve B narrows the upper bound using the same think time from step 1 — short think → smaller window → only instinctive first-pass moves remain. <span style="color:var(--amber);">Luck</span> shifts the entire window toward higher- or lower-probability moves without changing its width.</div>
+                <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">SAMPLING TEMPERATURE — margin-aware softening keyed on think time (curve B)</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Curve B maps the same think time from step 1 to a sampling temperature T, ramping from the Engine panel's base Temperature (comfortable think time) up to the <strong>Max temp</strong> slider's ceiling (default 8, minimal think time). Raising T flattens Maia's probabilities toward uniform (p^(1/T)) WITHOUT reordering them — a near-forced move (e.g. 99% vs 1%) stays dominant even at the ceiling, while a close call (e.g. 41% vs 40%) flattens fast. This is why temperature replaced a rank/percentile cutoff: pressure now scales with how contested the position already is, not with an arbitrary window width. The Day Lower / Upper sliders still define a static percentile band (unaffected by think time); <span style="color:var(--amber);">Luck</span> shifts that band toward higher- or lower-probability moves without changing its width.</div>
               </div>
             </div>
 
@@ -1944,7 +1960,7 @@ body.fj .picon{font-weight:500;}
               </div>
               <div style="padding:0 0 12px 8px;">
                 <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">TEMPERATURE SAMPLING — weighted random draw</div>
-                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Each reweighted probability is raised to <span style="color:var(--amber-bright);">p^(1/T)</span>, then one move is drawn proportionally. T&nbsp;&lt;&nbsp;0.15 → always picks the top move; T&nbsp;=&nbsp;1.0 → unmodified Maia distribution; T&nbsp;&gt;&nbsp;1 → flattened toward uniform. Temperature can also be boosted by the Panicky pressure setting, scaled by how much of the quality window has been lost to curve B — short think time tightens the window <em>and</em> raises T simultaneously. The Coffeehouse Hustler personality overrides T with a phase curve: T&nbsp;=&nbsp;5.0 in the opening (many pieces), fading to T&nbsp;=&nbsp;0.6 in the endgame.</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Each reweighted probability is raised to <span style="color:var(--amber-bright);">p^(1/T)</span>, then one move is drawn proportionally. T&nbsp;&lt;&nbsp;0.15 → always picks the top move; T&nbsp;=&nbsp;1.0 → unmodified Maia distribution; T&nbsp;&gt;&nbsp;1 → flattened toward uniform. Curve B (step 3) ramps T from the base Temperature up toward the <strong>Max temp</strong> slider's ceiling (default 8) as think time shrinks, scaled by the Panicky pressure setting — a steady personality barely raises T even at 0s left, a panicky one reaches the ceiling well before then. The Coffeehouse Hustler personality overrides T with a phase curve instead: T&nbsp;=&nbsp;5.0 in the opening (many pieces), fading to T&nbsp;=&nbsp;0.6 in the endgame.</div>
               </div>
             </div>
 
@@ -6117,7 +6133,7 @@ function getBotConfig(){
     // Curve-implied max drop (base ELO − curve minimum): consumed by the SF
     // level-floor mapping and legacy readers. The ctrlA spline is what runs.
     timePressureMaxDrop: Math.max(0, Math.round(currentElo - ctrlA.reduce((m, p) => Math.min(m, +p.y), currentElo))),
-    timePressureFloor:   parseInt(document.getElementById('r-floor')?.value   || '5'),
+    timePressureMaxTemp: parseFloat(document.getElementById('r-maxtemp')?.value || '8'),
     minProbPct:          parseInt(document.getElementById('day-lower')?.value || '0'),
     ctrlA:               ctrlA.map(p => ({x: p.x, y: p.y})),
     ctrlB:               ctrlB.map(p => ({x: p.x, y: p.y})),
@@ -6197,7 +6213,8 @@ function applyBotConfig(cfg){
   // Max ELO drop caps Curve A's floor + reseeds; the saved ctrlA spline is
   // reapplied in the curve-restore step below, so this only sets the framing.
   grp(() => { if(cfg.timePressureMaxDrop != null) _setRange('r-drop', Math.max(0, Math.min(600, cfg.timePressureMaxDrop))); });
-  grp(() => _setRange('r-floor', cfg.timePressureFloor));
+  // Max temp caps Curve B's ceiling + reseeds, same pattern as r-drop above.
+  grp(() => { if(cfg.timePressureMaxTemp != null) _setRange('r-maxtemp', Math.max(1, Math.min(15, cfg.timePressureMaxTemp))); });
 
   // Quality controls (legacy cfg.blunderLimitCp is ignored). Budget restores
   // first; Hard Floor defaults to matching Budget for configs saved before
@@ -7048,7 +7065,7 @@ function updatePersonalityGating(){
     note.className = 'attract-engine-note inactive';
     note.style.display = '';
     note.innerHTML =
-      '<span style="flex:1;min-width:200px;">Personality only active with Maia 3 engine (it shapes Maia’s move choices; Stockfish ignores it).</span>' +
+      '<span>Personality only active with Maia 3 engine (it shapes Maia’s move choices; Stockfish ignores it).</span>' +
       '<button type="button" class="attract-engine-jump" onclick="jumpToEngineForMaia()">Switch engine to Maia ▸</button>';
   } else if(state === 'partial'){
     note.className = 'attract-engine-note partial';
@@ -8496,7 +8513,7 @@ function showTimingCtrl(mode){
 ══════════════════════════════════════════════════════════════ */
 
 const X_MIN = 1;     // rightmost canvas edge = least think time (s)
-const X_MAX = 1000;  // leftmost  canvas edge = most  think time (s)
+const X_MAX = 200;   // leftmost  canvas edge = most  think time (s)
 const PAD   = { l:54, r:16, t:14, b:44 };
 const CH    = 150;   // canvas height px (reduced for 2-col layout)
 
@@ -8518,21 +8535,17 @@ function reganAnchorSec(){
   if(baseSec <= 0 && inc <= 0) return 0;
   return Math.max(0.5, baseSec / REGAN.EXPECTED_MOVES + inc);
 }
-// Effective ELO under the model: the whole curve is shifted to pass through
-// (anchor, ELO₀); degradation-only (never above the configured ELO). The Max
-// ELO drop slider caps how far it may fall — the curve bottoms out at
-// max(600, E0 − maxDrop) instead of running all the way to Maia's 600 floor.
-// This is Curve A's dashed baseline and the shape the draggable control points
-// are seeded on — the spline through the points is what actually runs (same
-// setup as Curve B).
+// Effective ELO under the pure Regan model: fixed for a given ELO and anchor —
+// does NOT depend on the Max ELO drop slider. This is Curve A's dashed
+// baseline, a stable reference the user's dragged spline is compared against.
+// Degradation-only (never above the configured ELO); floored at Maia's 600.
 function reganEloA(t){
   const e0 = Math.max(600, Math.min(currentElo, 2600));
   if(pressureOffA) return Math.round(e0);
   const anchor = reganAnchorSec();
   if(anchor <= 0) return Math.round(e0);           // untimed → flat
-  const floor = Math.max(600, e0 - gv('r-drop'));  // slider-capped bottom
   const raw = currentElo + reganD(t) - reganD(anchor);
-  return Math.max(floor, Math.min(e0, Math.round(raw)));
+  return Math.max(600, Math.min(e0, Math.round(raw)));
 }
 
 // ── Game-time helpers (used for the "start" marker line) ─────────────────────
@@ -8566,12 +8579,12 @@ function buildXs(){
 
 // ── Sigmoid baselines ─────────────────────────────────────────────────────────
 // Anchored at startX (game-start think time) so curves pass through their
-// reference point: sigB(startX) = 100%. (Curve A's baseline is reganEloA.)
-// Raw sigmoid: 1/(1+e^(8*(frac−0.33))) where frac = log(t) in [0,1].
+// reference point: sigB(startX) = base temperature. (Curve A's baseline is
+// reganEloA.) Raw sigmoid: 1/(1+e^(8*(frac−0.33))) where frac = log(t) in [0,1].
 // Shifted + scaled so raw(startX) → 0, raw(X_MIN) → 1.
 // Each mechanism can be switched off independently:
 //   pressureOffA = true → ELO curve flat at base ELO (no ELO degradation)
-//   pressureOffB = true → distribution curve flat at 100% (no restriction)
+//   pressureOffB = true → temperature curve flat at base temp (no escalation)
 let pressureOffA = false;
 let pressureOffB = false;
 function _rawSig(t){
@@ -8586,9 +8599,22 @@ function _sigmoid(t){
   const range = Math.max(0.001, lo - ref);
   return Math.max(0, Math.min(1, (_rawSig(t) - ref) / range));
 }
+// Curve B's y-axis: temperature. Ramps from the user's own Temperature-slider
+// value (base T, comfortable think time) up to the user-adjustable "Max temp"
+// ceiling (r-maxtemp, default 8, minimal think time). Raising T flattens
+// Maia's move probabilities toward uniform without ever reordering them —
+// margin-aware degradation instead of a rank cutoff (see src/50-bot-engine.js
+// timePressureTempByThink for the runtime use).
+const TEMP_PRESSURE_CEILING_DEFAULT = 8;
+function maxTempCeiling(){
+  const el = document.getElementById('r-maxtemp');
+  return el ? +el.value : TEMP_PRESSURE_CEILING_DEFAULT;
+}
 function sigB(t){
-  if(pressureOffB) return 100;
-  const mf = gv('r-floor'); return Math.round(100 - (100-mf) * _sigmoid(t));
+  const t0 = Math.max(0.1, +_currentTempValue || 1.0);
+  if(pressureOffB) return t0;
+  const ceiling = Math.max(t0, maxTempCeiling());
+  return +(t0 + (ceiling - t0) * _sigmoid(t)).toFixed(2);
 }
 
 // ── Scale-aware coordinate transforms ────────────────────────────────────────
@@ -8635,11 +8661,17 @@ const _PT_IDX = [0, 17, 34, 51, 68, 85, 100, 120];   // evenly-spaced indices
 // dive below), and the rest log-spaced down the dive where the Regan curve
 // bends hardest. Keeps the seeded spline within a few ELO of the true model.
 function initPtsA(){
+  // Max ELO drop clamps the SEEDED points (and thus the live spline), not the
+  // reganEloA baseline itself — the dashed reference line stays fixed for a
+  // given ELO/anchor regardless of this slider.
+  const e0 = Math.max(600, Math.min(currentElo, 2600));
+  const floor = Math.max(600, e0 - gv('r-drop'));
+  const seedY = t => Math.max(floor, reganEloA(t));
   const anchorRaw = reganAnchorSec();
   if(anchorRaw <= 0){
     // Untimed → flat at E0; spread knots log-uniformly like Curve B
     const xs = buildXs();
-    ctrlA = _PT_IDX.map(i => ({ x: xs[Math.min(i, xs.length-1)], y: reganEloA(xs[Math.min(i, xs.length-1)]) }));
+    ctrlA = _PT_IDX.map(i => ({ x: xs[Math.min(i, xs.length-1)], y: seedY(xs[Math.min(i, xs.length-1)]) }));
     return;
   }
   const anchor = Math.max(1.001, Math.min(X_MAX/2, anchorRaw));
@@ -8647,7 +8679,7 @@ function initPtsA(){
   const steps = 5, r = Math.pow(X_MIN/anchor, 1/(steps+1));
   for(let k=1; k<=steps; k++) xsA.push(anchor*Math.pow(r,k));
   xsA.push(X_MIN);
-  ctrlA = xsA.map(x => ({ x:+x.toFixed(3), y: reganEloA(x) }));
+  ctrlA = xsA.map(x => ({ x:+x.toFixed(3), y: seedY(x) }));
 }
 function initPtsB(){
   const xs = buildXs();
@@ -8690,9 +8722,16 @@ function catmullRomPath(ctx, cpx){
   ctx.moveTo(cpx[0].x, cpx[0].y);
   for(let i = 0; i < cpx.length-1; i++){
     const p0=cpx[Math.max(0,i-1)], p1=cpx[i], p2=cpx[i+1], p3=cpx[Math.min(cpx.length-1,i+2)];
+    // Chordal tangent scaling: weight each neighbor's contribution by the
+    // segment's share of its span, so wildly uneven knot spacing (e.g. Curve
+    // A's anchor point) doesn't distort the tangent at p1/p2 into a visible kink.
+    const d01 = Math.hypot(p1.x-p0.x, p1.y-p0.y) || 1;
+    const d12 = Math.hypot(p2.x-p1.x, p2.y-p1.y) || 1;
+    const d23 = Math.hypot(p3.x-p2.x, p3.y-p2.y) || 1;
+    const t1 = d12/(d01+d12), t2 = d12/(d12+d23);
     ctx.bezierCurveTo(
-      p1.x+(p2.x-p0.x)/6, p1.y+(p2.y-p0.y)/6,
-      p2.x-(p3.x-p1.x)/6, p2.y-(p3.y-p1.y)/6,
+      p1.x+(p2.x-p0.x)*t1/3, p1.y+(p2.y-p0.y)*t1/3,
+      p2.x-(p3.x-p1.x)*t2/3, p2.y-(p3.y-p1.y)*t2/3,
       p2.x, p2.y
     );
   }
@@ -8739,7 +8778,7 @@ function drawCurve(canvasId, ctrl, sigFn, yMin, yMax, yFmt, lineColor, fillColor
   // ── X grid + labels (log: decade ticks; linear: even intervals)
   const xTicks = scale==='log'
     ? [1,2,5,10,20,50,100,200,500,1000]
-    : [100,200,300,400,500,600,700,800,900,1000];
+    : [20,40,60,80,100,120,140,160,180,200];
   xTicks.forEach(t => {
     if(t < X_MIN || t > X_MAX) return;
     const x = xp(t);
@@ -8833,7 +8872,7 @@ function updatePressureStats(){
   document.getElementById('pS0').textContent = Math.round(catmullRomAt(X_MAX, ascA));
   document.getElementById('pS3').textContent = Math.round(catmullRomAt(3,     ascA));
   document.getElementById('pS1').textContent = Math.round(catmullRomAt(X_MIN, ascA));
-  document.getElementById('pSF').textContent = Math.round(catmullRomAt(X_MIN, ascB))+'%';
+  document.getElementById('pSF').textContent = catmullRomAt(X_MIN, ascB).toFixed(1);
 }
 
 function drawA(){
@@ -8846,8 +8885,9 @@ function drawA(){
 }
 function drawB(){
   if(!document.getElementById('cvB')) return;
-  drawCurve('cvB', ctrlB, sigB, gv('r-floor')-1, 105,
-    v=>v+'%', '#5dade2', 'rgba(41,128,185,0.08)', 'tipB', scaleB);
+  const t0 = Math.max(0.1, +_currentTempValue || 1.0);
+  drawCurve('cvB', ctrlB, sigB, Math.max(0, t0-0.5), maxTempCeiling()+0.5,
+    v=>v.toFixed(1), '#5dade2', 'rgba(41,128,185,0.08)', 'tipB', scaleB);
 }
 function reDraw(){ initPts(); drawA(); drawB(); }
 
@@ -8873,13 +8913,13 @@ function _syncPressureOffUi(){
   const lbl = document.getElementById('pressure-off-lbl');
   if(lbl) lbl.textContent =
     pressureOffA && pressureOffB ? 'OFF — bot plays at constant strength regardless of clock'
-    : pressureOffA ? 'Distribution restriction only — ELO stays constant'
-    : pressureOffB ? 'ELO degradation only — full move distribution available'
+    : pressureOffA ? 'Temperature escalation only — ELO stays constant'
+    : pressureOffB ? 'ELO degradation only — sampling temperature stays at base'
     : 'Both curves active — bot degrades with clock';
   const st = document.getElementById('st-pressure');
   if(st) st.textContent =
     pressureOffA && pressureOffB ? 'Off'
-    : pressureOffA ? 'Dist only'
+    : pressureOffA ? 'Temp only'
     : pressureOffB ? 'ELO only'
     : 'Dual curve';
 }
@@ -8912,13 +8952,14 @@ function setupDrag(canvasId, getCtrl, getSigFn, isElo, tipId, getScale){
   }
   function getRng(){
     // ELO range mirrors drawA's y-range: base ELO down to the slider-capped
-    // floor (min 600) minus 60 px padding.
+    // floor (min 600) minus 60 px padding. Temp range mirrors drawB's.
     const eloFloor = Math.max(600, Math.min(currentElo,2600) - gv('r-drop'));
+    const t0 = Math.max(0.1, +_currentTempValue || 1.0);
     return isElo ? { mn:eloFloor-60, mx:currentElo+50 }
-                 : { mn:gv('r-floor')-1, mx:105 };
+                 : { mn:Math.max(0, t0-0.5), mx:maxTempCeiling()+0.5 };
   }
   function pxToV(py,mn,mx){ return mx - (py-PAD.t)/(CH-PAD.t-PAD.b)*(mx-mn); }
-  function snap(v){ return isElo ? Math.round(v/25)*25 : Math.round(v); }
+  function snap(v){ return isElo ? Math.round(v/25)*25 : Math.round(v*10)/10; }
 
   function nearest(cx, cy){
     const w = cv.clientWidth || getW(canvasId);
@@ -8938,14 +8979,18 @@ function setupDrag(canvasId, getCtrl, getSigFn, isElo, tipId, getScale){
     if(drag===null) return;
     const {mn,mx} = getRng();
     let v = snap(pxToV(cy, mn, mx));
-    v = Math.max(mn+1, Math.min(mx-1, v));
+    // Keep a small margin off the axis edges so a point can't hide behind the
+    // frame; scale it to the range so the ELO axis (hundreds of points) and
+    // the temperature axis (single digits) both get sensible headroom.
+    const pad = isElo ? 1 : Math.max(0.05, (mx-mn)*0.02);
+    v = Math.max(mn+pad, Math.min(mx-pad, v));
     if(isElo) v = Math.max(600, v); // engine never calls Maia below 600
     getCtrl()[drag].y = v;
     const tip = document.getElementById(tipId);
     tip.style.display = 'block';
     tip.style.left = (cx+10)+'px';
     tip.style.top  = Math.max(0,cy-20)+'px';
-    tip.textContent = getCtrl()[drag].x.toFixed(1)+'s → '+(isElo?'ELO '+v:v+'%');
+    tip.textContent = getCtrl()[drag].x.toFixed(1)+'s → '+(isElo?'ELO '+v:'T '+v.toFixed(1));
     isElo ? drawA() : drawB();
   }
 

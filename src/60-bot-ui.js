@@ -1551,7 +1551,14 @@ window.addEventListener('message', function(e) {
   var _tpOffA = (cfg.pressureOffA != null) ? !!cfg.pressureOffA : !!cfg.pressureOff;
   var _tpOffB = (cfg.pressureOffB != null) ? !!cfg.pressureOffB : !!cfg.pressureOff;
   botPressureCurveA = (!_tpOffA && cfg.ctrlA && cfg.ctrlA.length >= 2) ? cfg.ctrlA : null;
-  botPressureCurveB = (!_tpOffB && cfg.ctrlB && cfg.ctrlB.length >= 2) ? cfg.ctrlB : null;
+  // ctrlB's y-axis changed from a 0-100 distribution % to a sampling
+  // temperature (user-adjustable ceiling, panel slider caps at 15). A save
+  // from before that change carries percentage-scale points (routinely >15)
+  // that would misread as an absurd temperature and wreck move sampling —
+  // discard and let the panel reseed a fresh curve from the current base
+  // Temperature instead.
+  var _ctrlBLooksLegacy = cfg.ctrlB && cfg.ctrlB.some(function(p){ return +p.y > 15; });
+  botPressureCurveB = (!_tpOffB && cfg.ctrlB && cfg.ctrlB.length >= 2 && !_ctrlBLooksLegacy) ? cfg.ctrlB : null;
 
   // Weaponizer
   botWeaponizerEnabled = !!cfg.weaponizerEnabled;
