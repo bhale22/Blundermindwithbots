@@ -2346,10 +2346,20 @@ setTimeout(function() {
   if (!_maiaWorker) { maiaInit(); _maiaLoadMappings(); }
 }, 200);
 
-// Pause clock when tab is hidden, resume when visible
+// Keep the clock counting against real elapsed wall-clock time across tab
+// hide/show (including OS sleep) — setInterval is suspended while hidden,
+// so we stop the interval but must still charge the hidden player for the
+// time that actually passed, or resuming would silently refund it.
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
-    if (typeof clockActive !== 'undefined' && clockActive) clockStop();
+    if (typeof clockActive !== 'undefined' && clockActive) {
+      const elapsed   = Math.floor((Date.now() - _clockAnchorMs) / 1000);
+      const remaining = Math.max(0, _clockAnchorSec - elapsed);
+      if (turn === 'w') clockTimeW = remaining; else clockTimeB = remaining;
+      clockStop();
+      if (remaining === 0) clockTimeout(turn);
+      else clockUpdateDisplay();
+    }
   } else {
     if (typeof clockControl !== 'undefined' && clockControl !== 'untimed'
         && !gameOver && clockTimeW > 0 && clockTimeB > 0) {

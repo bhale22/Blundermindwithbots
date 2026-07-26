@@ -468,18 +468,28 @@ canvas{display:block;background:transparent;}
    distribution to reweight (Maia 3 / LC+Maia). Grey them out for pure
    Stockfish / LC+Stockfish (and all-SF hybrids). */
 .pers-inactive{opacity:0.4;filter:grayscale(0.55);pointer-events:none;}
+/* Positioning context for the overlaid inactive-state note (below) */
+#attract-personality-body{position:relative;}
 .attract-engine-note{font-family:var(--font-m);font-size:9px;line-height:1.5;
   letter-spacing:0.02em;margin:-2px 0 12px;padding:7px 10px;border-radius:3px;}
-.attract-engine-note.inactive{color:var(--text-secondary);background:rgba(120,130,145,0.10);
-  border:0.5px solid var(--steel);display:flex;align-items:center;gap:10px;flex-wrap:wrap;
-  padding:10px 12px;}
+/* Inactive state: the note must read as a warning sitting ON TOP of the
+   (greyed) controls, not another muted box in the same stack — so it's
+   pulled out of flow and overlaid near the top of the personality body,
+   with an opaque background + shadow so the dimmed controls behind it
+   are legible as "covered", not blended in. */
+.attract-engine-note.inactive{position:absolute;top:36px;left:8px;right:8px;z-index:5;
+  color:var(--text-primary);background:var(--carbon-mid);
+  border:0.5px solid var(--border-amber);box-shadow:0 6px 24px rgba(0,0,0,0.55);
+  display:flex;flex-direction:column;align-items:stretch;gap:8px;
+  padding:12px 14px;}
 .attract-engine-note.partial{color:var(--amber);background:var(--amber-glow);
   border:0.5px solid var(--border-amber);}
-.attract-engine-jump{flex-shrink:0;padding:6px 12px;font-family:var(--font-u);font-size:9px;
+.attract-engine-jump{flex-shrink:0;padding:8px 12px;font-family:var(--font-u);font-size:9px;
   font-weight:500;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;
   background:var(--amber-glow);border:0.5px solid var(--border-amber);border-radius:3px;
   color:var(--amber-bright);transition:all 0.15s;}
 .attract-engine-jump:hover{background:var(--amber-glow-s);border-color:var(--amber);}
+.attract-engine-note.inactive .attract-engine-jump{align-self:flex-start;}
 
 /* Opening panel — per-colour columns; greyed when that colour isn't on Repertoire */
 .op-col{min-width:0;}
