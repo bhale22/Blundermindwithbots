@@ -470,7 +470,7 @@ function drawThreatCircle(sq, color){
   } else if(color==='green'){
     ctx.strokeStyle='rgba(30,180,70,0.92)'; ctx.lineWidth=1.8;
   } else {
-    ctx.strokeStyle='rgba(140,140,160,0.80)'; ctx.lineWidth=2.8;
+    ctx.strokeStyle='rgba(140,140,160,0.80)'; ctx.lineWidth=1.8;
   }
   ctx.stroke();
   ctx.restore();
