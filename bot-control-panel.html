@@ -476,11 +476,13 @@ canvas{display:block;background:transparent;}
    (greyed) controls, not another muted box in the same stack — so it's
    pulled out of flow and overlaid near the top of the personality body,
    with an opaque background + shadow so the dimmed controls behind it
-   are legible as "covered", not blended in. */
-.attract-engine-note.inactive{position:absolute;top:36px;left:8px;right:8px;z-index:5;
+   are legible as "covered", not blended in. Sized to its own content
+   (max-width cap, not left/right:0) rather than stretching full width. */
+.attract-engine-note.inactive{position:absolute;top:36px;left:8px;z-index:5;
+  max-width:min(320px,calc(100% - 16px));width:max-content;
   color:var(--text-primary);background:var(--carbon-mid);
   border:0.5px solid var(--border-amber);box-shadow:0 6px 24px rgba(0,0,0,0.55);
-  display:flex;flex-direction:column;align-items:stretch;gap:8px;
+  display:flex;flex-direction:column;align-items:flex-start;gap:8px;
   padding:12px 14px;}
 .attract-engine-note.partial{color:var(--amber);background:var(--amber-glow);
   border:0.5px solid var(--border-amber);}
@@ -7058,7 +7060,7 @@ function updatePersonalityGating(){
     note.className = 'attract-engine-note inactive';
     note.style.display = '';
     note.innerHTML =
-      '<span style="flex:1;min-width:200px;">Personality only active with Maia 3 engine (it shapes Maia’s move choices; Stockfish ignores it).</span>' +
+      '<span>Personality only active with Maia 3 engine (it shapes Maia’s move choices; Stockfish ignores it).</span>' +
       '<button type="button" class="attract-engine-jump" onclick="jumpToEngineForMaia()">Switch engine to Maia ▸</button>';
   } else if(state === 'partial'){
     note.className = 'attract-engine-note partial';

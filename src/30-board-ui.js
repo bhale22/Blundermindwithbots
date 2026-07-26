@@ -1939,7 +1939,13 @@ function computeForkData(bd, color, pinnedSqs) {
 }
 
 // ── Skewer detection ─────────────────────────────────────────────────────────
-// A skewer: sliding piece attacks high-value piece, behind it on same ray is a less-valuable piece
+// A skewer: sliding piece attacks high-value piece, behind it on same ray is a
+// less-valuable piece (backVal < frontVal — otherwise it's not a skewer, just
+// two pieces stacked on a ray). Also excluded: skewers where the skewering
+// piece is itself currently attacked and undefended — these are static,
+// present-tense facts (who attacks/defends this square right now), not a
+// simulated exchange, consistent with forks/pins/threats elsewhere on this
+// board: overlays show relations, not resolutions.
 function computeSkewerData(bd, color) {
   const opp = color === 'w' ? 'b' : 'w';
   const skewers = []; // {attackerSq, frontSq, backSq}
@@ -1948,6 +1954,7 @@ function computeSkewerData(bd, color) {
     [-1,0],[1,0],[0,-1],[0,1],   // rook/queen
     [-1,-1],[-1,1],[1,-1],[1,1]  // bishop/queen
   ];
+  const directAtk = buildDirectAtk(bd);
 
   for (let sq = 0; sq < 64; sq++) {
     const p = bd[sq];
@@ -1974,6 +1981,17 @@ function computeSkewerData(bd, color) {
       }
       if (frontSq < 0) continue;
       if (!bd[frontSq]) continue;
+
+      // Skewering piece hanging to some OTHER piece (attacked, no defender of
+      // its own) — skip this ray rather than showing a "skewer" from a piece
+      // that's simply about to be captured for free. The front piece itself is
+      // excluded from the attacker check: it inherently attacks back down the
+      // same ray it's being skewered on, which is normal for the tactic, not
+      // a sign the attacker is hanging to a third party.
+      const otherAttackers = directAtk[sq][opp].filter(s => s !== frontSq);
+      const isHanging = otherAttackers.length > 0 && directAtk[sq][color].length === 0;
+      if (isHanging) continue;
+
       const frontVal = PIECE_VAL[bd[frontSq].piece] || 0;
       const myVal = PIECE_VAL[p.piece] || 0;
       // Front piece must be more valuable than attacker for it to be forced to move
@@ -1989,9 +2007,13 @@ function computeSkewerData(bd, color) {
         }
         r2+=dr; c2+=dc;
       }
-      if (backSq >= 0) {
-        skewers.push({ attackerSq:sq, frontSq, backSq });
-      }
+      if (backSq < 0) continue;
+      // Definitional: the back piece must be less valuable than the front
+      // piece, or this is just two stacked pieces, not a skewer.
+      const backVal = PIECE_VAL[bd[backSq].piece] || 0;
+      if (backVal >= frontVal) continue;
+
+      skewers.push({ attackerSq:sq, frontSq, backSq });
     }
   }
   return skewers;
