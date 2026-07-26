@@ -882,6 +882,10 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 .mode-compact .mdesc{font-size:7.5px;line-height:1.35;color:var(--text-secondary);margin-top:2px;}
 .mode-compact .mname{font-size:8px;}
 .mode-compact .mcard{padding:8px 8px;}
+/* Carbon engine names (Maia 3 / Stockfish / Hybrid / ...) were too small at
+   the compact-grid 8px — Journal's body.fj .mname override already reads
+   well at 15px, so match that size here for Carbon too. */
+#engine-mode-grid.mode-compact .mname{font-size:15px;}
 
 /* ══ PERSONA GRID 4-COL ══ */
 .persona-grid-4col{grid-template-columns:repeat(4,1fr);}
