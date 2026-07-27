@@ -1562,7 +1562,14 @@ window.addEventListener('message', function(e) {
 
   // Weaponizer
   botWeaponizerEnabled = !!cfg.weaponizerEnabled;
-  botWeaponizerLeadMs  = (cfg.weaponizerLeadSec || 30) * 1000;
+  // Trigger is the opponent's remaining clock, not the bot's lead over it — a
+  // 5-minute lead means nothing in a 90-minute game, but 15 s left is always
+  // flaggable. Bots saved before this change carry weaponizerLeadSec instead;
+  // that value was a lead, not a threshold, so it is ignored in favour of the
+  // 15 s default rather than silently reinterpreted.
+  botWeaponizerTriggerMs = (cfg.weaponizerTriggerSec != null)
+    ? Math.max(1, Math.min(120, +cfg.weaponizerTriggerSec)) * 1000
+    : 15000;
   botWeaponizerMinMs   = Math.max(0, Math.min(5, +cfg.weaponizerMinSec || 0)) * 1000;
 
   // Calm/panicky (-5..+5) → botTimePressure

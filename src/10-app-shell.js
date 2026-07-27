@@ -111,8 +111,8 @@ let botBadDayMode       = false;  // Grandmaster Bad Day: pick lowest-probabilit
 let botPressureCurveA   = null;   // ctrlA points [{x,y}] — ELO degradation vs think-time (s); seeded on the Regan model by the panel
 let _botGameGen         = 0;      // bumped by botStart/botStop — in-flight botMakeMove awaits compare against it and discard stale engine replies
 let botPressureCurveB   = null;   // ctrlB points [{x,y}] — confidence floor % vs think-time (s)
-let botWeaponizerEnabled = false; // weaponizer: instant play when ahead on clock
-let botWeaponizerLeadMs  = 30000; // clock lead (ms) required to activate weaponizer
+let botWeaponizerEnabled = false; // weaponizer: fast play when opponent is low on clock
+let botWeaponizerTriggerMs = 15000; // activate once the opponent's clock is at or below this (ms)
 let botWeaponizerMinMs   = 0;     // floor (ms) on weaponizer move time; 0 = instant, as if pre-moved
 // ── Draw behaviour ───────────────────────────────────────────────────────────
 let botAcceptDraws      = false;  // bot accepts draw offers when not clearly ahead

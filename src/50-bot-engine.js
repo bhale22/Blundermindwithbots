@@ -1453,7 +1453,7 @@ function sfPickLevel(targetLevel) {
 // (The old blunderLimitCp-derived quality floor is gone — the blunder-limit
 // control was removed in favour of the engine-verified CP budget.)
 // Time degradation sources (highest priority first):
-//   1. Weaponizer active (ahead on clock) → use floor immediately
+//   1. Weaponizer active (opponent low on clock) → use floor immediately
 //   2. cvA pressure curve → spline interpolation in log-time space
 //   3. Linear fallback    → original 0–30 s linear ramp
 function sfEffectiveLevel(clockMs) {
@@ -1471,9 +1471,10 @@ function sfEffectiveLevel(clockMs) {
 
   if (clockMs === null) return startLevel;
 
-  // ── Weaponizer: bot is ahead on clock → play at floor for flagging pressure ─
+  // ── Weaponizer: opponent low on clock → play at floor for flagging pressure ─
+  // botOppClockMs is null in untimed games, which keeps this inert there.
   if (botWeaponizerEnabled && botOppClockMs !== null &&
-      (clockMs - botOppClockMs) > botWeaponizerLeadMs) {
+      botOppClockMs <= botWeaponizerTriggerMs) {
     return floorLevel;
   }
 
@@ -1632,11 +1633,12 @@ function botThinkTime(moveProbs, clockMs) {
   // ── Instant ──────────────────────────────────────────────────────────────
   if (botTimeBehavior === 'instant') return 0;
 
-  // ── Weaponizer: ahead on clock → play at the minimum move time to maximise
-  // time pressure. 0 = instant (as if pre-moved); higher values simulate a
-  // human moving as fast as input controls allow.
-  if (botWeaponizerEnabled && botOppClockMs !== null && clockMs !== null &&
-      (clockMs - botOppClockMs) > botWeaponizerLeadMs) {
+  // ── Weaponizer: opponent low on clock → play at the minimum move time to
+  // maximise time pressure. 0 = instant (as if pre-moved); higher values
+  // simulate a human moving as fast as input controls allow.
+  // botOppClockMs is null in untimed games, which keeps this inert there.
+  if (botWeaponizerEnabled && botOppClockMs !== null &&
+      botOppClockMs <= botWeaponizerTriggerMs) {
     return botWeaponizerMinMs;
   }
 

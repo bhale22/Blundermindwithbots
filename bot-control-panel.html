@@ -1523,7 +1523,7 @@ body.fj .picon{font-weight:500;}
               <!-- Clock tactics — synced with the same switches in Move Timing -->
               <div class="dlbl" style="margin-top:14px;"><span>Clock tactics</span></div>
               <div class="tog-row">
-                <div><div class="tog-lbl">Time Weaponizer</div><div class="tog-desc">When ahead on clock, plays instantly + drops ELO to pressure flagging. Fine-tune in Move Timing.</div></div>
+                <div><div class="tog-lbl">Time Weaponizer</div><div class="tog-desc">When the opponent is low on clock, plays fast + drops ELO to pressure flagging. Fine-tune in Move Timing.</div></div>
                 <label class="tog"><input type="checkbox" id="weaponizer-toggle-2" onchange="showWeaponizer(this.checked,'weaponizer-toggle-2')"><div class="tog-track"><div class="tog-thumb"></div></div></label>
               </div>
               <div class="tog-row">
@@ -1727,23 +1727,17 @@ body.fj .picon{font-weight:500;}
           <div class="tog-row">
             <div>
               <div class="tog-lbl">Enable Time Weaponizer</div>
-              <div class="tog-desc">When ahead on clock, plays instantly + drops ELO to pressure flagging. Opt-in.</div>
+              <div class="tog-desc">When the opponent is low on clock, plays fast + drops ELO to pressure flagging. Opt-in.</div>
             </div>
             <label class="tog"><input type="checkbox" id="weaponizer-toggle" onchange="showWeaponizer(this.checked,'weaponizer-toggle')"><div class="tog-track"><div class="tog-thumb"></div></div></label>
           </div>
           <div id="weaponizer-sub" style="display:none;">
             <div class="sub-panel blue-accent" style="margin-top:8px;">
               <div class="sub-title blue">Weaponizer controls</div>
-              <div class="ctrl"><span class="ctrl-lbl">Clock lead</span><input type="range" id="r-wlead" min="10" max="120" step="5" value="30" oninput="sv(this,'v-wlead',v=>v+'s')"><span class="ctrl-val" id="v-wlead">30s</span></div>
-              <div class="ctrl-hint">Seconds ahead to activate.</div>
+              <div class="ctrl"><span class="ctrl-lbl">Opponent clock</span><input type="range" id="r-wtrig" min="1" max="120" step="1" value="15" oninput="syncWeaponizerTrigger(this.value,'r-wtrig')"><input type="number" id="n-wtrig" class="ctrl-val" min="1" max="120" step="1" value="15" style="width:52px;" oninput="syncWeaponizerTrigger(this.value,'n-wtrig')"></div>
+              <div class="ctrl-hint">Activates once the opponent has this many seconds or fewer left. Absolute time remaining, not a lead — <strong>15s</strong> is flaggable in any format.</div>
               <div class="ctrl" style="margin-top:6px;"><span class="ctrl-lbl">Min move time</span><input type="range" id="r-wmin" min="0" max="5" step="0.1" value="0" oninput="syncWeaponizerMin(this.value,'r-wmin')"><input type="number" id="n-wmin" class="ctrl-val" min="0" max="5" step="0.1" value="0" style="width:52px;" oninput="syncWeaponizerMin(this.value,'n-wmin')"></div>
               <div class="ctrl-hint"><strong>0s</strong> = instant, as if pre-moved. <strong>0.3s</strong>–<strong>2.5s</strong> simulates a human moving as fast as input controls allow.</div>
-              <div class="ctrl" style="margin-top:6px;"><span class="ctrl-lbl">Position gate</span><input type="range" min="0" max="300" step="25" value="100" oninput="sv(this,'v-wgate',v=>v==0?'Off':v+' cp')"><span class="ctrl-val" id="v-wgate">100 cp</span></div>
-              <div class="ctrl-hint">Won't activate if bot losing by more than this.</div>
-              <div class="tog-row" style="margin-top:6px;">
-                <div><div class="tog-lbl">Complexity injection</div><div class="tog-desc">Prefer moves that maximise opponent decision burden</div></div>
-                <label class="tog"><input type="checkbox"><div class="tog-track"><div class="tog-thumb"></div></div></label>
-              </div>
             </div>
           </div>
         </div>
@@ -6019,16 +6013,37 @@ function showWeaponizer(on, sourceId){
     if(el && el.checked !== on) el.checked = on;
   });
 }
-// Weaponizer minimum move time — slider and number box are two views of one
-// value. The number box accepts free typing, so clamp to 0–5s before mirroring;
-// the source input is left alone mid-keystroke so partial entries stay editable.
-function syncWeaponizerMin(raw, sourceId){
-  const v = Math.max(0, Math.min(5, Math.round((parseFloat(raw) || 0) * 10) / 10));
-  ['r-wmin', 'n-wmin'].forEach(id => {
+// Weaponizer slider/number pairs — each is two views of one value. The number
+// box accepts free typing, so clamp before mirroring; the source input is left
+// alone mid-keystroke so partial entries stay editable. Both settings persist
+// so the panel reopens on whatever the user last chose.
+function _syncPair(raw, sourceId, ids, min, max, round, storeKey){
+  const v = Math.max(min, Math.min(max, round(parseFloat(raw) || 0)));
+  ids.forEach(id => {
     if(id === sourceId) return;
     const el = document.getElementById(id);
     if(el) el.value = v;
   });
+  try { localStorage.setItem(storeKey, String(v)); } catch(e){}
+}
+function syncWeaponizerMin(raw, sourceId){
+  _syncPair(raw, sourceId, ['r-wmin','n-wmin'], 0, 5,
+    v => Math.round(v * 10) / 10, 'bm_wzMinSec');
+}
+function syncWeaponizerTrigger(raw, sourceId){
+  _syncPair(raw, sourceId, ['r-wtrig','n-wtrig'], 1, 120,
+    Math.round, 'bm_wzTriggerSec');
+}
+// Restore both weaponizer settings from the last session (defaults: 15 s
+// opponent clock, 0 s minimum move time = instant).
+function _initWeaponizerPrefs(){
+  let trig = null, min = null;
+  try {
+    trig = localStorage.getItem('bm_wzTriggerSec');
+    min  = localStorage.getItem('bm_wzMinSec');
+  } catch(e){}
+  if(trig !== null) syncWeaponizerTrigger(trig, null);
+  if(min  !== null) syncWeaponizerMin(min, null);
 }
 // Same two-way sync for the Clock-pressure mirroring pair (Move Timing +
 // Personality tab). getBotConfig reads only the primary (cb-clock-mirror).
@@ -6154,7 +6169,10 @@ function getBotConfig(){
     pressureOffB:        pressureOffB,
     pressureOff:         pressureOffA && pressureOffB, // legacy master flag (older readers)
     weaponizerEnabled:   document.getElementById('weaponizer-toggle')?.checked || false,
-    weaponizerLeadSec:   parseInt(document.getElementById('r-wlead')?.value    || '30'),
+    weaponizerTriggerSec: (() => {
+      const n = parseInt(document.getElementById('n-wtrig')?.value);
+      return Number.isNaN(n) ? 15 : Math.max(1, Math.min(120, n));
+    })(),
     weaponizerMinSec:    Math.max(0, Math.min(5, parseFloat(document.getElementById('n-wmin')?.value) || 0)),
     acceptDraws:         document.getElementById('cb-draw-accept')?.checked || false,
     drawAcceptMarginCp:  parseInt(document.getElementById('r-draw-margin')?.value || '50'),
@@ -6326,7 +6344,7 @@ function applyBotConfig(cfg){
     setCb('cb-flag',         cfg.canFlag);
     const wz = document.getElementById('weaponizer-toggle');
     if(wz){ wz.checked = !!cfg.weaponizerEnabled; showWeaponizer(wz.checked, 'weaponizer-toggle'); }
-    _setRange('r-wlead', cfg.weaponizerLeadSec);
+    _setRange('r-wtrig', cfg.weaponizerTriggerSec);
     _setRange('r-wmin', cfg.weaponizerMinSec);
   });
 
@@ -9060,6 +9078,7 @@ function _initReadability(){
 
 document.addEventListener('DOMContentLoaded', ()=>{
   _initReadability();
+  _initWeaponizerPrefs();
   buildTimeGrid();
   renderTempGrid();
   buildSFPips('sf-pips');
