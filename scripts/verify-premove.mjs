@@ -108,6 +108,59 @@ await page.waitForTimeout(150);
 const badge = await page.locator('#premove-stats').textContent();
 ok(/3 fired/.test(badge) && /1 busted/.test(badge), 'stats badge renders live counts: "' + badge + '"');
 
+// ── Premove trap illustration ────────────────────────────────────────────────
+console.log('trap illustration:');
+await page.evaluate(() => pmtOpen());
+await page.waitForTimeout(350);
+
+// Board geometry: every square must be identical. Rows holding no pieces used
+// to collapse because grid-template-rows was unset — guard against a repeat.
+const geo = await page.evaluate(() => {
+  const s = [...document.querySelectorAll('#pmt-board .pmt-sq')];
+  const h = [...new Set(s.map(x => Math.round(x.getBoundingClientRect().height)))];
+  const w = [...new Set(s.map(x => Math.round(x.getBoundingClientRect().width)))];
+  return { count: s.length, h, w };
+});
+ok(geo.count === 64, 'board renders 64 squares');
+ok(geo.h.length === 1, 'every row is the same height ' + JSON.stringify(geo.h));
+ok(geo.w.length === 1, 'every column is the same width ' + JSON.stringify(geo.w));
+ok(geo.h[0] === geo.w[0], 'squares are square (' + geo.h[0] + 'px)');
+
+// Both intentions must be visible before the user acts: the bot's committed
+// premove and the move they're being asked to play.
+const tabs = await page.locator('#pmt-tabs .pmt-tab').count();
+ok(tabs >= 3, 'scenario tabs render (' + tabs + ')');
+for (let i = 0; i < tabs; i++) {
+  await page.evaluate((j) => pmtSelect(j), i);
+  await page.waitForTimeout(220);
+  const lines = await page.locator('#pmt-arrows line').count();
+  const picks = await page.locator('#pmt-board .pmt-sq.pick').count();
+  ok(lines >= 2, 'scenario ' + i + ' shows both arrows up front (' + lines + ' lines)');
+  ok(picks === 1, 'scenario ' + i + ' offers exactly one clickable target');
+}
+ok(await page.locator('.pmt-legend').isVisible(), 'arrow legend is visible');
+
+// Play the firing scenario end to end
+await page.evaluate(() => pmtSelect(0));
+await page.waitForTimeout(220);
+await page.locator('#pmt-board .pmt-sq.pick').click();
+await page.waitForTimeout(3200);
+ok(/punish/i.test(await page.locator('#pmt-step').textContent()),
+   'firing scenario reaches the punishment');
+ok(await page.locator('#pmt-outcome').isVisible(), 'outcome panel shown');
+
+// And a busted one
+await page.evaluate(() => pmtSelect(1));
+await page.waitForTimeout(220);
+await page.locator('#pmt-board .pmt-sq.pick').click();
+await page.waitForTimeout(1600);
+ok(/busted/i.test(await page.locator('#pmt-step').textContent()),
+   'busted scenario reports the bust');
+await page.keyboard.press('Escape');
+await page.waitForTimeout(200);
+ok(!(await page.locator('#pmt-overlay').evaluate(e => e.classList.contains('open'))),
+   'Escape closes the illustration');
+
 // ── Main app: config bridge lands on the engine globals ──────────────────────
 console.log('app:');
 await page.goto(BASE + '/', { waitUntil: 'networkidle' });

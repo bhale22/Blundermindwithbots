@@ -1072,16 +1072,31 @@ body.fj .picon{font-weight:500;}
 .pmt-tab:hover{color:var(--text-secondary);border-color:var(--border-amber);}
 .pmt-tab.on{background:var(--amber-glow);border-color:var(--border-amber);color:var(--amber-bright);}
 .pmt-main{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;}
-.pmt-boardwrap{flex:0 0 auto;}
+.pmt-boardwrap{flex:0 0 auto;position:relative;}
+/* Arrow overlay — sits above the squares, never intercepts clicks */
+#pmt-arrows{position:absolute;inset:0;pointer-events:none;z-index:5;}
+/* Legend under the board keys the two arrow colours */
+.pmt-legend{
+  display:flex;gap:14px;margin-top:7px;font-size:9px;color:var(--text-dim);
+  font-family:var(--font-u);letter-spacing:0.03em;
+}
+.pmt-legend span{display:flex;align-items:center;gap:5px;}
+.pmt-legend i{width:13px;height:0;border-top:2px solid;display:inline-block;}
+.pmt-legend i.you{border-color:var(--amber-bright);}
+.pmt-legend i.bot{border-color:var(--blue);border-top-style:dashed;}
 /* Board */
 #pmt-board{
   display:grid;grid-template-columns:repeat(8,1fr);
+  /* Rows must be sized explicitly — without this, rows holding no pieces
+     collapse to their content height and the board stops being square. */
+  grid-template-rows:repeat(8,1fr);
   width:288px;height:288px;border:0.5px solid var(--border-amber);border-radius:2px;
   user-select:none;
 }
 .pmt-sq{
   position:relative;display:flex;align-items:center;justify-content:center;
   font-size:26px;line-height:1;cursor:default;
+  min-width:0;min-height:0; /* let grid tracks, not glyph metrics, set the size */
 }
 .pmt-sq.light{background:#d8c9a8;}
 .pmt-sq.dark{background:#9a8465;}
@@ -1093,7 +1108,7 @@ body.fj .picon{font-weight:500;}
 .pmt-p.w{color:#fffdf7;text-shadow:0 1px 1px rgba(0,0,0,0.5);}
 .pmt-p.b{color:#16181d;text-shadow:0 1px 1px rgba(255,255,255,0.18);}
 /* Move affordances */
-.pmt-sq.pick{cursor:pointer;}
+.pmt-sq.pick{cursor:pointer;z-index:6;}
 .pmt-sq.pick::after{
   content:'';position:absolute;inset:0;z-index:1;
   box-shadow:inset 0 0 0 2px var(--amber-bright);
@@ -2183,6 +2198,11 @@ body.fj .picon{font-weight:500;}
       <div class="pmt-main">
         <div class="pmt-boardwrap">
           <div id="pmt-board"></div>
+          <svg id="pmt-arrows" viewBox="0 0 288 288" preserveAspectRatio="none"></svg>
+          <div class="pmt-legend">
+            <span><i class="you"></i> Your move</span>
+            <span><i class="bot"></i> Bot's committed premove</span>
+          </div>
         </div>
         <div class="pmt-side">
           <div id="pmt-commit" class="pmt-commit"></div>
@@ -6390,6 +6410,49 @@ function pmtRender(marks){
     html += '<div class="' + cls.join(' ') + '"' + click + '>' + glyph + '</div>';
   }
   el.innerHTML = html;
+  pmtDrawArrows(marks.arrows || []);
+}
+
+// Arrows make the bot's intention visible: without them the committed premove
+// is just text, and the user cannot see what the board is about to do.
+// Each arrow: {from:'g4', to:'d4', kind:'you'|'bot', dead:bool}
+function pmtDrawArrows(arrows){
+  const svg = document.getElementById('pmt-arrows');
+  if (!svg) return;
+  const S = 36;                       // 288 / 8 — square size in viewBox units
+  const cx = (sq) => (sq % 8) * S + S/2;
+  const cy = (sq) => Math.floor(sq / 8) * S + S/2;
+
+  let defs = '', body = '';
+  arrows.forEach((a, i) => {
+    const col = a.dead ? '#e05a5a' : (a.kind === 'bot' ? '#5dade2' : '#e8aa40');
+    const id  = 'pmtarr' + i;
+    const f = pmtSq(a.from), t = pmtSq(a.to);
+    let x1 = cx(f), y1 = cy(f), x2 = cx(t), y2 = cy(t);
+    // Stop short of the destination centre so the arrowhead doesn't bury the piece
+    const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
+    const trim = 12;
+    x2 -= (dx / len) * trim; y2 -= (dy / len) * trim;
+    const x1t = x1 + (dx / len) * 9, y1t = y1 + (dy / len) * 9;
+
+    defs += '<marker id="' + id + '" viewBox="0 0 10 10" refX="8" refY="5" ' +
+            'markerWidth="4.5" markerHeight="4.5" orient="auto-start-reverse">' +
+            '<path d="M0,0 L10,5 L0,10 z" fill="' + col + '"/></marker>';
+    body += '<line x1="' + x1t + '" y1="' + y1t + '" x2="' + x2 + '" y2="' + y2 + '" ' +
+            'stroke="' + col + '" stroke-width="3.5" stroke-linecap="round" ' +
+            (a.kind === 'bot' && !a.dead ? 'stroke-dasharray="7 5" ' : '') +
+            (a.dead ? 'opacity="0.75" ' : '') +
+            'marker-end="url(#' + id + ')"/>';
+    // A busted premove gets struck through with an X at its origin
+    if (a.dead){
+      const r = 9;
+      body += '<line x1="' + (x1-r) + '" y1="' + (y1-r) + '" x2="' + (x1+r) + '" y2="' + (y1+r) + '" ' +
+              'stroke="#e05a5a" stroke-width="3" stroke-linecap="round"/>' +
+              '<line x1="' + (x1+r) + '" y1="' + (y1-r) + '" x2="' + (x1-r) + '" y2="' + (y1+r) + '" ' +
+              'stroke="#e05a5a" stroke-width="3" stroke-linecap="round"/>';
+    }
+  });
+  svg.innerHTML = '<defs>' + defs + '</defs>' + body;
 }
 
 function pmtApply(from, to){
@@ -6412,20 +6475,31 @@ function pmtSelect(i){
   pmtReplay();
 }
 
-// Reset to the "your move" state for the current scenario
+// Reset to the "your move" state for the current scenario.
+// Both intentions are on the board from the very start: the bot's committed
+// premove (blue, dashed — it hasn't happened yet) and the move you're being
+// asked to play (amber). Seeing them together is the whole lesson.
 function pmtReplay(){
   const s = PMT_SCENARIOS[pmtIdx];
   pmtBoard = pmtParseFen(s.fen);
   pmtPhase = 'await';
   document.getElementById('pmt-commit').innerHTML =
-    '<span style="color:var(--text-dim);">BOT HAS COMMITTED TO</span> ' + s.commit + '<br>' + s.commitWhy;
+    '<span style="color:var(--text-dim);">BOT HAS ALREADY COMMITTED TO</span> <b>' + s.commit + '</b>' +
+    ' <span style="color:var(--text-dim);">(blue dashed arrow)</span><br>' + s.commitWhy;
   document.getElementById('pmt-step').innerHTML =
     '<span class="pmt-badge think">Your move</span><br>' + s.userHint +
-    ' <b>Click the highlighted square.</b>';
+    ' <b>Click the highlighted square</b> to play <b>' + s.userMove.san + '</b>.';
   const oc = document.getElementById('pmt-outcome');
   oc.style.display = 'none';
   oc.className = 'pmt-outcome';
-  pmtRender({ pick: pmtSq(s.userMove.to), from: pmtSq(s.userMove.from) });
+  pmtRender({
+    pick: pmtSq(s.userMove.to),
+    from: pmtSq(s.userMove.from),
+    arrows: [
+      { from: s.premove.from,  to: s.premove.to,  kind: 'bot' },
+      { from: s.userMove.from, to: s.userMove.to, kind: 'you' }
+    ]
+  });
 }
 
 // User plays the trap move; then the bot's committed premove resolves
@@ -6434,35 +6508,53 @@ function pmtPlay(){
   if (pmtPhase !== 'await') return;
   pmtPhase = 'played';
 
+  // Step 1 — your move lands. The bot's premove arrow stays up: it is still
+  // committed, and has not yet resolved.
   pmtApply(s.userMove.from, s.userMove.to);
-  pmtRender({ from: pmtSq(s.userMove.from), to: pmtSq(s.userMove.to) });
+  pmtRender({
+    from: pmtSq(s.userMove.from), to: pmtSq(s.userMove.to),
+    arrows: [{ from: s.premove.from, to: s.premove.to, kind: 'bot' }]
+  });
   document.getElementById('pmt-step').innerHTML =
     '<span class="pmt-badge think">You played ' + s.userMove.san + '</span><br>' +
-    'The bot never saw it. Its premove is already committed…';
+    'The bot never saw it — its reply was locked in before you moved. Resolving…';
 
   setTimeout(() => {
     const oc = document.getElementById('pmt-outcome');
     if (s.fires){
-      // Premove was still legal — it fires, and walks into the punishment
+      // Step 2a — premove was still legal, so it fires into the changed position
       pmtApply(s.premove.from, s.premove.to);
-      pmtRender({ premove: [pmtSq(s.premove.from), pmtSq(s.premove.to)], doom: pmtSq(s.doomSq) });
+      pmtRender({
+        premove: [pmtSq(s.premove.from), pmtSq(s.premove.to)],
+        doom: pmtSq(s.doomSq)
+      });
       document.getElementById('pmt-step').innerHTML =
         '<span class="pmt-badge bust">Premove fired instantly: ' + s.premove.san + '</span><br>' +
-        'Played in zero seconds — the bot never evaluated your move.';
+        'Zero seconds on the clock — the bot never evaluated what you actually played.';
       setTimeout(() => {
         if (s.punish){
-          pmtApply(s.punish.from, s.punish.to);
-          pmtRender({ to: pmtSq(s.punish.to), doom: pmtSq(s.punish.to) });
-          document.getElementById('pmt-step').innerHTML =
-            '<span class="pmt-badge win">You punish: ' + s.punish.san + '</span><br>' + s.lesson;
+          // Step 3 — show the refutation as an arrow before playing it
+          pmtRender({
+            doom: pmtSq(s.premove.to),
+            arrows: [{ from: s.punish.from, to: s.punish.to, kind: 'you' }]
+          });
+          setTimeout(() => {
+            pmtApply(s.punish.from, s.punish.to);
+            pmtRender({ to: pmtSq(s.punish.to) });
+            document.getElementById('pmt-step').innerHTML =
+              '<span class="pmt-badge win">You punish: ' + s.punish.san + '</span><br>' + s.lesson;
+            oc.className = 'pmt-outcome';
+            oc.innerHTML = s.outcome;
+            oc.style.display = '';
+          }, 800);
         }
-        oc.className = 'pmt-outcome';
-        oc.innerHTML = s.outcome;
-        oc.style.display = '';
       }, 900);
     } else {
-      // Premove is now illegal — it never fires
-      pmtRender({ from: pmtSq(s.userMove.from), to: pmtSq(s.userMove.to), doom: pmtSq(s.doomSq) });
+      // Step 2b — premove is now illegal: strike it out where it stands
+      pmtRender({
+        from: pmtSq(s.userMove.from), to: pmtSq(s.userMove.to), doom: pmtSq(s.doomSq),
+        arrows: [{ from: s.premove.from, to: s.premove.to, kind: 'bot', dead: true }]
+      });
       document.getElementById('pmt-step').innerHTML =
         '<span class="pmt-badge win">Premove busted — ' + s.premove.san + ' is illegal</span><br>' +
         s.lesson;
@@ -6470,7 +6562,7 @@ function pmtPlay(){
       oc.innerHTML = s.outcome;
       oc.style.display = '';
     }
-  }, 700);
+  }, 900);
 }
 
 // Auto-play for users who'd rather watch than click
