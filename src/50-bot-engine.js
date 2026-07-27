@@ -2478,6 +2478,199 @@ function ghostOnMouseUp() {
 function ghostIsEnabled() { return ghostEnabled(); }
 function ghostSoloDepth() { return ghostDepth(); }
 
+// ── Bot premove ──────────────────────────────────────────────────────────────
+// Speed-chess premoving, and the reason to practice against it: a bot that
+// premoves has committed to a reply before seeing your move, so a move it did
+// not predict can walk its piece into a losing square. Users set traps against
+// this. The bot guesses your move with Maia (top move from the CURRENT
+// position), applies it hypothetically, then asks Maia what IT should play in
+// that predicted position — and locks that answer in. When you actually move,
+// the locked reply fires instantly whatever you played, exactly like a human
+// premove, and is abandoned only if it turned out illegal.
+//
+// Config (all from the bot panel — no hidden paths):
+//   botPremoveEnabled  master on/off
+//   botPremoveRatePct  % of eligible turns it premoves (0-100)
+//   botPremoveMinPct   only premove when Maia's prediction is at least this
+//                      confident — models a human premoving only on "obvious" replies
+//   botPremoveOnlyLowClock / botPremoveClockSecs
+//                      restrict premoving to time scrambles, as humans do
+var botPremoveEnabled       = false;
+var botPremoveRatePct       = 70;
+var botPremoveMinPct        = 45;
+var botPremoveOnlyLowClock  = false;
+var botPremoveClockSecs     = 30;
+
+// The locked-in premove: {uci, from, to, promo, predictedUci, confidence} | null
+var botActivePremove = null;
+// Generation guard — a premove computed for a superseded position must never fire
+var _botPremoveGen = 0;
+// Per-game telemetry so the user can see whether their traps are landing
+var botPremoveStats = { armed: 0, fired: 0, busted: 0 };
+
+function botPremoveReset() {
+  botActivePremove = null;
+  _botPremoveGen++;
+  botPremoveStats = { armed: 0, fired: 0, busted: 0 };
+  botPremoveUpdateBadge();
+}
+
+// Does the bot premove on this turn? Rolls the rate and checks clock gating.
+function botPremoveShouldArm() {
+  if (!botPremoveEnabled || !botActive || gameOver) return false;
+  // Maia is the predictor — without the model there is no premove.
+  if (typeof _maiaReady === 'undefined' || !_maiaReady) return false;
+  if (botPremoveOnlyLowClock) {
+    // botClockMs() returns null in untimed games — a low-clock trigger can
+    // never be satisfied there, so the bot simply doesn't premove.
+    var ms = botClockMs();
+    if (ms === null || !isFinite(ms)) return false;
+    if (ms / 1000 > botPremoveClockSecs) return false;
+  }
+  return Math.random() * 100 < botPremoveRatePct;
+}
+
+// Compute and arm a premove. Called right after the bot's own move completes,
+// while the human is on move. Never blocks the human: fully async, and the
+// human moving mid-computation just discards the result via the gen guard.
+async function botPremoveArm() {
+  if (!botPremoveShouldArm()) return;
+  var myGen = ++_botPremoveGen;
+  var myGameGen = _botGameGen;
+
+  try {
+    var humanColor = botPlayerColor === 'white' ? 'w' : 'b';
+    if (turn !== humanColor) return; // not the human's move — nothing to predict
+
+    var _fullmove = Math.floor((typeof gameMovesAlgebraic !== 'undefined' ? gameMovesAlgebraic.length : 0) / 2) + 1;
+    var curFen = boardToFen(board, turn, castling, epSq, halfmoveClock, _fullmove);
+
+    // Step 1 — predict the human's move. Maia conditioned on the human's own
+    // rating band would be ideal; the bot only knows its own, so it guesses
+    // with the same model it plays with (a human premoving guesses from their
+    // own understanding too).
+    var predProbs = await maia3GetMoveProbs(curFen);
+    if (myGen !== _botPremoveGen || myGameGen !== _botGameGen) return;
+    if (!predProbs) return;
+
+    var predSorted = Object.entries(predProbs).sort(function(a, b) { return b[1] - a[1]; });
+    if (!predSorted.length) return;
+    var predictedUci = predSorted[0][0];
+    var confidence   = predSorted[0][1];
+
+    // Not confident enough that the human is forced/obvious — don't commit.
+    if (confidence * 100 < botPremoveMinPct) return;
+
+    // Step 2 — apply the predicted move and ask Maia for the bot's reply in
+    // THAT position. This is the move the bot commits to sight-unseen.
+    var pm = uciToSq(predictedUci);
+    if (!pm || pm.from == null || pm.to == null) return;
+    var predPromo = predictedUci.length > 4 ? predictedUci[4].toUpperCase() : null;
+    var hypBoard  = applyMove(pm.from, pm.to, board, epSq, predPromo || 'Q');
+    var hypTurn   = turn === 'w' ? 'b' : 'w';
+    var hypEp     = computeEP(pm.from, pm.to, board);
+    var hypCastle = updateCastling(pm.from, pm.to, board[pm.from], castling);
+    var hypFen    = boardToFen(hypBoard, hypTurn, hypCastle, hypEp, halfmoveClock, _fullmove);
+
+    var replyProbs = await maia3GetMoveProbs(hypFen);
+    if (myGen !== _botPremoveGen || myGameGen !== _botGameGen) return;
+    if (!replyProbs) return;
+
+    var replySorted = Object.entries(replyProbs).sort(function(a, b) { return b[1] - a[1]; });
+    if (!replySorted.length) return;
+    var replyUci = replySorted[0][0];
+
+    var rm = uciToSq(replyUci);
+    if (!rm || rm.from == null || rm.to == null) return;
+
+    // Still the human's move? If they already played, this premove is stale.
+    if (turn !== humanColor || gameOver) return;
+
+    botActivePremove = {
+      uci: replyUci, from: rm.from, to: rm.to,
+      promo: replyUci.length > 4 ? replyUci[4].toUpperCase() : null,
+      predictedUci: predictedUci, confidence: confidence
+    };
+    botPremoveStats.armed++;
+    botPremoveUpdateBadge();
+  } catch (e) {
+    console.warn('Bot premove arming failed:', e);
+  }
+}
+
+// Fire the armed premove — called from botPostMoveHook when it becomes the
+// bot's turn. Returns true if the premove executed (caller then skips normal
+// thinking entirely, which is the whole point: it is instant).
+function botPremoveTryFire() {
+  if (!botActivePremove) return false;
+  var pre = botActivePremove;
+  botActivePremove = null;
+  _botPremoveGen++;
+
+  if (!botActive || gameOver) { botPremoveUpdateBadge(); return false; }
+  var botColor = botPlayerColor === 'white' ? 'b' : 'w';
+  if (turn !== botColor) { botPremoveUpdateBadge(); return false; }
+
+  // The trap check: is the committed move still legal after what the human
+  // actually played? If not, the premove is busted and the bot must think.
+  var p = board[pre.from];
+  if (!p || p.color !== botColor) {
+    botPremoveStats.busted++;
+    botPremoveNote(pre, false);
+    botPremoveUpdateBadge();
+    return false;
+  }
+  var legal = legalMovesFor(pre.from, board, epSq, castling);
+  if (!legal.includes(pre.to)) {
+    botPremoveStats.busted++;
+    botPremoveNote(pre, false);
+    botPremoveUpdateBadge();
+    return false;
+  }
+
+  var resolvedPromo = pre.promo ||
+    (p.piece === 'P' && (Math.floor(pre.to / 8) === 0 || Math.floor(pre.to / 8) === 7) ? 'Q' : null);
+
+  botPremoveStats.fired++;
+  lastBotMoveSource = 'PREMOVE';
+  botPremoveNote(pre, true);
+  botPremoveUpdateBadge();
+
+  // Record for the bot's own move history, same as any engine move
+  var san = null;
+  try { san = moveToSAN(pre.from, pre.to, resolvedPromo, board, epSq, castling); } catch (e) {}
+  botRecordMove(sqToUci(pre.from, pre.to, resolvedPromo ? resolvedPromo.toLowerCase() : null), san);
+
+  executeMove(pre.from, pre.to, resolvedPromo);
+  return true;
+}
+
+// Status line feedback — tells the user whether their trap worked.
+function botPremoveNote(pre, fired) {
+  var el = document.getElementById('botStatus');
+  if (!el) return;
+  el.textContent = fired
+    ? '⚡ Premove'
+    : '✗ Premove busted — thinking…';
+  if (fired) setTimeout(function() { if (el.textContent === '⚡ Premove') el.textContent = ''; }, 1200);
+}
+
+// Push live premove state to the bot panel iframe so the machinery is visible
+function botPremoveUpdateBadge() {
+  try {
+    var f = document.getElementById('botModalFrame');
+    if (f && f.contentWindow) {
+      f.contentWindow.postMessage({
+        type: 'premoveStats',
+        armed: botPremoveStats.armed,
+        fired: botPremoveStats.fired,
+        busted: botPremoveStats.busted,
+        pending: !!botActivePremove
+      }, location.origin);
+    }
+  } catch (e) {}
+}
+
 // // We register a callback rather than monkey-patching to avoid hoisting issues
 function botPostMoveHook() {
   clearGhostPieces();
@@ -2553,11 +2746,20 @@ function botPostMoveHook() {
   if (botActive && !botThinking && !gameOver) {
     const botColor = botPlayerColor === 'white' ? 'b' : 'w';
     if (turn === botColor) {
+      // A premove committed before the human moved fires instantly — no think
+      // time, no engine call. If the human's actual move made it illegal the
+      // trap landed, and the bot falls through to thinking normally.
+      if (botActivePremove) {
+        if (botPremoveTryFire()) return; // executeMove re-enters this hook
+      }
       setTimeout(botMakeMove, 100);
     } else {
       // Player's turn — fire queued premove if any; also arm mirror timer
       botUserTurnStartMs = Date.now(); // start timing the human's current turn
       if(activePremove) setTimeout(tryFirePremove, 50);
+      // Arm the bot's own premove for the reply it will make to this turn.
+      // Async and non-blocking — the human can move at any point.
+      if (typeof botPremoveArm === 'function') botPremoveArm();
     }
   }
 }

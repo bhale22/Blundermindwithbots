@@ -848,6 +848,7 @@ async function botStart() {
   botActive = false;
   botThinking = false;
   _botGameGen++;   // invalidate any in-flight botMakeMove from the previous game
+  if (typeof botPremoveReset === 'function') botPremoveReset(); // drop stale premove + stats
   clearGhostPieces();
   botGhostResponses = {};
   botLastHoverSq = -1;
@@ -981,6 +982,7 @@ function botStop() {
   botActive = false;
   botThinking = false;
   _botGameGen++;   // invalidate any in-flight botMakeMove
+  if (typeof botPremoveReset === 'function') botPremoveReset(); // drop stale premove + stats
   clearGhostPieces();
   botGhostResponses = {};
   boardFlipped = false;
@@ -1039,6 +1041,13 @@ function botSaveConfig() {
     pace: parseInt(document.getElementById('botPace').value),
     playerColor: botPlayerColor,
     ghostPieces: document.getElementById('cbGhostPieces').checked,
+    premove: {
+      enabled:      botPremoveEnabled,
+      ratePct:      botPremoveRatePct,
+      minPct:       botPremoveMinPct,
+      onlyLowClock: botPremoveOnlyLowClock,
+      clockSecs:    botPremoveClockSecs
+    },
     opening: {
       mode: botOpeningMode,
       config: botOpeningConfig,
@@ -1086,6 +1095,13 @@ function botLoadConfig(event) {
       if (cfg.pace) { document.getElementById('botPace').value = cfg.pace; document.getElementById('botPaceVal').textContent = cfg.pace; }
       if (cfg.playerColor) botSetPlayerColor(cfg.playerColor);
       if (cfg.ghostPieces !== undefined) document.getElementById('cbGhostPieces').checked = cfg.ghostPieces;
+      if (cfg.premove) {
+        botPremoveEnabled      = !!cfg.premove.enabled;
+        botPremoveRatePct      = (cfg.premove.ratePct   != null) ? +cfg.premove.ratePct   : 70;
+        botPremoveMinPct       = (cfg.premove.minPct    != null) ? +cfg.premove.minPct    : 45;
+        botPremoveOnlyLowClock = !!cfg.premove.onlyLowClock;
+        botPremoveClockSecs    = (cfg.premove.clockSecs != null) ? +cfg.premove.clockSecs : 30;
+      }
       if (cfg.opening) {
         botOpeningConfig = Object.assign(botOpeningConfig, cfg.opening.config || {});
         // Migrate old loyalty/repertoire modes to unified 'preferred'
@@ -1526,6 +1542,14 @@ window.addEventListener('message', function(e) {
   botBehavBlink       = cfg.behavBlink       !== false;
   botBehavClockMirror = cfg.behavClockMirror !== false;
   botCanFlag          = cfg.canFlag          !== false;
+
+  // Premove — the bot commits a reply before seeing the human's move, so the
+  // human can practice baiting a premove and punishing it.
+  botPremoveEnabled      = !!cfg.premoveEnabled;
+  botPremoveRatePct      = (cfg.premoveRatePct   != null) ? +cfg.premoveRatePct   : 70;
+  botPremoveMinPct       = (cfg.premoveMinPct    != null) ? +cfg.premoveMinPct    : 45;
+  botPremoveOnlyLowClock = !!cfg.premoveOnlyLowClock;
+  botPremoveClockSecs    = (cfg.premoveClockSecs != null) ? +cfg.premoveClockSecs : 30;
 
   // Time pressure max drop → drives sfEffectiveLevel floor
   botTimePressureMaxDrop = (cfg.timePressureMaxDrop != null) ? cfg.timePressureMaxDrop : null;
