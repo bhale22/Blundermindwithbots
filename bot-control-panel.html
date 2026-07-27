@@ -1027,21 +1027,59 @@ body.fj .sec-label{font-size:15px;}
 body.fj .header-title{font-weight:500;}
 body.fj .picon{font-weight:500;}
 
-/* ── Premove explainer ─────────────────────────────────────────────────────
-   Inline description of what a premove trap is, shown under the premove
-   controls. Prose only — no diagram. */
-.pmt-note{
-  margin-top:9px;padding:9px 11px;border-radius:var(--r);
-  background:rgba(93,173,226,0.05);border:0.5px solid var(--border-blue);
-  font-size:10px;line-height:1.65;color:var(--text-secondary);
+/* ── Premove explainer popup ───────────────────────────────────────────────
+   Prose-only description of premoves and premove traps, opened from the
+   "What's a premove trap?" button beside the Premove heading. */
+.pmt-help-btn{
+  margin-left:8px;background:transparent;border:0.5px solid var(--border-blue);
+  color:var(--blue);font-family:var(--font-u);font-size:8px;letter-spacing:0.04em;
+  text-transform:uppercase;padding:2px 7px;border-radius:var(--r);cursor:pointer;
+  transition:background 0.15s,color 0.15s;
 }
-.pmt-note h5{
-  margin:0 0 5px;font-family:var(--font-u);font-size:8.5px;letter-spacing:0.06em;
-  text-transform:uppercase;color:var(--blue);font-weight:600;
+.pmt-help-btn:hover{background:var(--blue-dim);color:#8fc9ee;}
+.pmt-overlay{
+  display:none;position:fixed;inset:0;z-index:9000;
+  background:rgba(8,10,14,0.82);backdrop-filter:blur(3px);
+  align-items:center;justify-content:center;padding:16px;
 }
-.pmt-note p{margin:0 0 7px;}
-.pmt-note p:last-child{margin-bottom:0;}
-.pmt-note strong{color:var(--amber-bright);font-weight:600;}
+.pmt-overlay.open{display:flex;}
+.pmt-modal{
+  background:var(--carbon-raise);border:0.5px solid var(--border-amber);
+  border-radius:5px;width:min(560px,96vw);max-height:92vh;overflow-y:auto;
+  box-shadow:0 18px 60px rgba(0,0,0,0.6);
+}
+.pmt-head{
+  display:flex;align-items:center;gap:10px;padding:12px 16px;
+  border-bottom:0.5px solid var(--border-amber);
+}
+.pmt-title{font-family:var(--font-d);font-size:19px;color:var(--amber-bright);flex:1;}
+.pmt-x{
+  background:transparent;border:none;color:var(--text-dim);font-size:19px;
+  cursor:pointer;line-height:1;padding:2px 6px;
+}
+.pmt-x:hover{color:var(--text-primary);}
+.pmt-body{padding:15px 18px 18px;}
+.pmt-body h5{
+  margin:0 0 6px;font-family:var(--font-d);font-size:15px;
+  color:var(--amber-bright);font-weight:600;letter-spacing:0.01em;
+}
+.pmt-body h5 + p{margin-top:0;}
+.pmt-body section{margin-bottom:15px;}
+.pmt-body section:last-of-type{margin-bottom:0;}
+.pmt-body p{
+  margin:0 0 9px;font-size:11px;line-height:1.7;color:var(--text-secondary);
+}
+.pmt-body p:last-child{margin-bottom:0;}
+.pmt-body strong{color:var(--amber-bright);font-weight:600;}
+.pmt-body em{color:var(--text-primary);font-style:italic;}
+.pmt-key{
+  color:var(--blue);font-weight:600;
+}
+.pmt-body .pmt-tip{
+  margin-top:14px;padding:9px 11px;border-radius:var(--r);
+  background:rgba(93,173,226,0.06);border-left:2px solid var(--blue);
+  font-size:10.5px;line-height:1.65;color:var(--text-secondary);
+}
 </style>
 </head>
 <body>
@@ -1757,7 +1795,7 @@ body.fj .picon{font-weight:500;}
           </div>
 
           <!-- Premove — bot commits a reply before seeing your move -->
-          <div class="dlbl" style="margin-top:10px;"><span>Premove</span></div>
+          <div class="dlbl" style="margin-top:10px;"><span>Premove</span><button type="button" class="pmt-help-btn" onclick="pmtOpen()">What's a premove trap?</button></div>
           <div class="tog-row">
             <div>
               <div class="tog-lbl">Enable premoving</div>
@@ -1786,24 +1824,6 @@ body.fj .picon{font-weight:500;}
                 <div class="ctrl-hint">Seconds remaining on the bot's clock before it starts premoving.</div>
               </div>
               <div class="ctrl-hint" style="margin-top:8px;">Requires the <strong>Maia 3</strong> model — the prediction runs on it. Live counts this game: <span id="premove-stats" style="color:var(--blue);">none yet</span>.</div>
-              <div class="pmt-note">
-                <h5>What's a premove trap?</h5>
-                <p>In fast chess, players <strong>premove</strong> — queueing a reply before the
-                opponent has moved, so it fires the instant their clock starts. It saves seconds,
-                but it commits you blind. A <strong>premove trap</strong> is the counter: guess
-                what your opponent has queued, then play the one move that turns their own
-                committed reply against them.</p>
-                <p>With premoving on, the bot asks Maia what you're most likely to play, applies
-                that move, and asks Maia for its own best reply in <em>that</em> position — then
-                commits to it. If your actual move differs, the committed reply <strong>still
-                fires</strong> as long as it's legal, which is exactly what you exploit: bait it
-                into a capture that hangs a piece, or into a square you've covered.</p>
-                <p>If your move makes the premove <em>illegal</em> — pinning the piece, capturing
-                it, or moving its target away — the premove is busted and the bot must think from
-                scratch, burning the extra delay set above.</p>
-                <p>Raise <strong>Premove rate</strong> toward 100% and lower <strong>Min
-                confidence</strong> to make the bot premove more often and more exploitably.</p>
-              </div>
             </div>
           </div>
         </div>
@@ -2072,6 +2092,39 @@ body.fj .picon{font-weight:500;}
 
 </div><!-- /sections -->
 </div><!-- /page -->
+
+<!-- ═══ Premove explainer ═══ -->
+<div class="pmt-overlay" id="pmt-overlay" onclick="if(event.target===this)pmtClose()">
+  <div class="pmt-modal" role="dialog" aria-modal="true" aria-labelledby="pmt-title">
+    <div class="pmt-head">
+      <div class="pmt-title" id="pmt-title">Premoves &amp; premove traps</div>
+      <button class="pmt-x" onclick="pmtClose()" aria-label="Close">&times;</button>
+    </div>
+    <div class="pmt-body">
+      <section>
+        <h5>What's a premove?</h5>
+        <p>In fast chess, players <strong>premove</strong> — queueing a reply before the opponent
+        has moved, so it fires the instant their clock starts. With premoving on, the bot asks
+        Maia what you're most likely to play, applies that move, and asks Maia for its own best
+        reply in <em>that</em> position — then commits to it.</p>
+      </section>
+
+      <section>
+        <h5>What's a premove trap?</h5>
+        <p>A premove saves seconds, but commits blindly. A <strong>premove trap</strong> is the
+        counter: guess what your opponent has queued, then play the one move that turns their own
+        committed reply against them.</p>
+        <p>If instead your move makes the premove <em>illegal</em> — pinning the piece, capturing
+        it, or moving its target away — the premove is busted and the bot must think from
+        scratch, burning the <span class="pmt-key">Busted-premove delay</span> on its own clock.</p>
+      </section>
+
+      <div class="pmt-tip">Raise <span class="pmt-key">Premove rate</span> toward 100% and lower
+      <span class="pmt-key">Min confidence</span> in the premove controls to make the bot premove
+      more often and more exploitably.</div>
+    </div>
+  </div>
+</div>
 
 <script>
 /* ══════════════════════════════════════════════════════════════
@@ -6137,6 +6190,20 @@ function syncPremoveBust(raw, sourceId){
   _syncPair(raw, sourceId, ['r-premove-bust','n-premove-bust'], 0, 5,
     v => Math.round(v * 10) / 10, 'bm_premoveBust');
 }
+// ── Premove explainer popup ─────────────────────────────────────────────────
+function pmtOpen(){
+  const ov = document.getElementById('pmt-overlay');
+  if (!ov) return;
+  ov.classList.add('open');
+  document.addEventListener('keydown', pmtEsc);
+}
+function pmtClose(){
+  const ov = document.getElementById('pmt-overlay');
+  if (ov) ov.classList.remove('open');
+  document.removeEventListener('keydown', pmtEsc);
+}
+function pmtEsc(e){ if (e.key === 'Escape') pmtClose(); }
+
 // Restore premove settings from the last session
 function _initPremovePrefs(){
   try {

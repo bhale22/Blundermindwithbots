@@ -122,12 +122,31 @@ await page.waitForTimeout(150);
 const badge = await page.locator('#premove-stats').textContent();
 ok(/3 fired/.test(badge) && /1 busted/.test(badge), 'stats badge renders live counts: "' + badge + '"');
 
-// The explainer prose stays even though the playable diagram was removed
-const note = await page.locator('.pmt-note').textContent();
-ok(/premove trap/i.test(note), 'premove-trap explainer text is present');
-ok(/still\s+fires/i.test(note), 'explainer covers the still-legal case');
-ok(await page.locator('#pmt-overlay').count() === 0, 'the illustration modal is gone');
-ok(await page.locator('#pmt-board').count() === 0, 'the diagram board is gone');
+// Explainer popup — prose only, no diagram
+ok(await page.locator('.pmt-help-btn').count() === 1, 'explainer button exists');
+ok(!(await page.locator('#pmt-overlay').evaluate(e => e.classList.contains('open'))),
+   'explainer starts closed');
+await page.evaluate(() => pmtOpen());
+await page.waitForTimeout(200);
+ok(await page.locator('#pmt-overlay').evaluate(e => e.classList.contains('open')),
+   'button opens the explainer');
+
+const note = await page.locator('.pmt-body').textContent();
+ok(/what's a premove\?/i.test(note),      'explains what a premove is first');
+ok(/what's a premove trap\?/i.test(note), 'then explains what a trap is');
+ok(note.search(/what's a premove\?/i) < note.search(/what's a premove trap\?/i),
+   'premove is defined before premove trap');
+ok(/still\s+fires/i.test(note),        'covers the still-legal case (the primary exploit)');
+ok(/illegal/i.test(note),              'covers the busted case');
+ok(/busted-premove delay/i.test(note), 'names the delay setting rather than saying "above"');
+ok(/premove rate/i.test(note) && /min confidence/i.test(note),
+   'points at the panel controls by name');
+ok(await page.locator('#pmt-board').count() === 0, 'no diagram board — prose only');
+
+await page.keyboard.press('Escape');
+await page.waitForTimeout(200);
+ok(!(await page.locator('#pmt-overlay').evaluate(e => e.classList.contains('open'))),
+   'Escape closes the explainer');
 
 // ── Main app: config bridge lands on the engine globals ──────────────────────
 console.log('app:');
