@@ -1232,7 +1232,7 @@ body.fj .picon{font-weight:500;}
     <div class="qs-pill-wrap" id="qs-bots-wrap">
       <button class="qs-pill-btn" id="qs-bots-btn" onclick="toggleQsDropdown('bots')" aria-label="Saved bots">
         <span class="qs-label">My Bots</span>
-        <span class="qs-pill-value" id="qs-bots-value">Save / Load</span>
+        <span class="qs-pill-value" id="qs-bots-value">Save / Load / Reset</span>
       </button>
       <div class="qs-inplace-drop" id="qs-drop-bots" style="min-width:250px;">
         <div id="saved-bots-list"></div>
@@ -6324,15 +6324,21 @@ function syncPremoveBust(raw, sourceId){
 // control — the panel's own init path then rebuilds the defaults exactly as a
 // first-time visitor sees them.
 //
-// Deliberately NOT cleared:
-//   bm_panelTheme / bm_panelStyle / bm_readability — display preferences, not
-//     bot settings; resetting a bot shouldn't change how the panel looks.
-//   bm_bottour  — the "seen the tour" flag; replaying it would be a nuisance.
-//   saved bots  — stored separately and never touched.
+// Only BOT settings are cleared. Everything about how the site LOOKS is left
+// alone — a user resetting a bot has not asked to lose their palette.
+//
+// Appearance keys deliberately preserved (most are owned by the parent app;
+// the panel only pushes changes to it via postMessage):
+//   bm_bgTheme / bm_boardTheme / bm_pieceSet — background, board, piece set
+//   bm_panelTheme / bm_format / bm_shell     — panel palette, Carbon vs
+//                                              Journal, Training vs Expert
+//   bm_readability                           — text-size / high-vis mode
+//   bm_bottour                               — "seen the tour" flag
+//   saved bots                               — stored separately, never touched
 const PANEL_SETTING_KEYS = [
   'bm_premoveOn','bm_premoveLowClock','bm_premoveRate','bm_premoveConf',
   'bm_premoveSecs','bm_premoveOppSecs','bm_premoveBust',
-  'bm_wzTriggerSec','bm_wzMinSec','bm_format'
+  'bm_wzTriggerSec','bm_wzMinSec'
 ];
 
 function resetPanelToDefaults(){
@@ -6993,7 +6999,19 @@ function setPanelStyle(s){ setPanelFormat(s); }
 // ── Appearance state + popover ───────────────────────────────────────────────
 // Current app selections, kept fresh by the parent's setTheme pushes so the
 // popover can highlight what's active.
+// Seeded from the parent app's stored choices so a panel reload (or a bot
+// reset, which reloads) keeps showing the palette that is actually applied
+// rather than falling back to "nothing selected".
 let _appAppearance = { bg:null, board:null, pieces:null, shell:null };
+(function(){
+  try {
+    const ls = (window.parent && window.parent !== window ? window.parent : window).localStorage;
+    _appAppearance.bg     = ls.getItem('bm_bgTheme')    || null;
+    _appAppearance.board  = ls.getItem('bm_boardTheme') || null;
+    _appAppearance.pieces = ls.getItem('bm_pieceSet')   || null;
+    _appAppearance.shell  = ls.getItem('bm_shell')      || null;
+  } catch(e){}
+})();
 
 // Compact catalogs — keep in sync with BG_THEMES / BOARD_THEMES / piece sets
 // in 10-app-shell.js (they change rarely; the popover is display-only chrome).

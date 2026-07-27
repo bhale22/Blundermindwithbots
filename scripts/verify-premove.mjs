@@ -103,6 +103,39 @@ for (const [v, id] of [['Complexity-scaled','tb-complexity'], ['Instantaneous','
 }
 
 ok(await page.locator('#btn-reset-panel').count() === 1, 'whole-panel reset button exists');
+ok(/save\s*\/\s*load\s*\/\s*reset/i.test(await page.locator('#qs-bots-value').textContent()),
+   'My Bots pill reads "Save / Load / Reset"');
+
+// Reset must clear bot settings ONLY — the palette is not a bot setting.
+const resetScope = await page.evaluate(() => {
+  const appearance = ['bm_bgTheme','bm_boardTheme','bm_pieceSet','bm_panelTheme',
+                      'bm_format','bm_shell','bm_readability','bm_bottour'];
+  return {
+    clears: PANEL_SETTING_KEYS.slice(),
+    touchesAppearance: appearance.filter((k) => PANEL_SETTING_KEYS.includes(k)),
+  };
+});
+ok(resetScope.touchesAppearance.length === 0,
+   'reset clears no appearance keys (would have cleared: ' +
+   (resetScope.touchesAppearance.join(',') || 'none') + ')');
+ok(resetScope.clears.every((k) => /^bm_(premove|wz)/.test(k)),
+   'reset only clears premove/weaponizer settings (' + resetScope.clears.length + ' keys)');
+
+// The popover's palette record is seeded from the parent, so a reload/reset
+// doesn't leave every swatch looking unselected.
+const seeded = await page.evaluate(() => {
+  const ls = localStorage;
+  return {
+    panel: { bg: _appAppearance.bg, board: _appAppearance.board, pieces: _appAppearance.pieces },
+    store: { bg: ls.getItem('bm_bgTheme'), board: ls.getItem('bm_boardTheme'),
+             pieces: ls.getItem('bm_pieceSet') },
+  };
+});
+const anyStored = Object.values(seeded.store).some((v) => v !== null);
+ok(!anyStored || (seeded.panel.bg === seeded.store.bg &&
+                  seeded.panel.board === seeded.store.board &&
+                  seeded.panel.pieces === seeded.store.pieces),
+   'appearance popover mirrors the stored palette rather than showing nothing');
 
 ok(await page.locator('#cb-premove').count() === 1, 'premove master toggle exists');
 ok(await page.evaluate(() => document.getElementById('premove-sub').style.display === 'none'),
