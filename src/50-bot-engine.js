@@ -2590,7 +2590,19 @@ async function botPremoveArm() {
     if (turn !== humanColor) return; // not the human's move — nothing to predict
 
     var _fullmove = Math.floor((typeof gameMovesAlgebraic !== 'undefined' ? gameMovesAlgebraic.length : 0) / 2) + 1;
-    var curFen = boardToFen(board, turn, castling, epSq, halfmoveClock, _fullmove);
+
+    // Snapshot the position we are arming FOR. Two Maia inferences run below,
+    // and the human can move at any point during them — after which the live
+    // globals describe a different position. Everything from here on must read
+    // this snapshot, never the globals, or the premove gets computed from a
+    // board the prediction was never based on.
+    var snapBoard    = Object.assign({}, board);   // board is an object, not an array
+    var snapCastling = { wK: castling.wK, wQ: castling.wQ, bK: castling.bK, bQ: castling.bQ };
+    var snapEp       = epSq;
+    var snapTurn     = turn;
+    var snapPly      = (typeof gameMovesAlgebraic !== 'undefined') ? gameMovesAlgebraic.length : 0;
+
+    var curFen = boardToFen(snapBoard, snapTurn, snapCastling, snapEp, halfmoveClock, _fullmove);
 
     // Step 1 — predict the human's move. Maia conditioned on the human's own
     // rating band would be ideal; the bot only knows its own, so it guesses
@@ -2613,10 +2625,10 @@ async function botPremoveArm() {
     var pm = uciToSq(predictedUci);
     if (!pm || pm.from == null || pm.to == null) return;
     var predPromo = predictedUci.length > 4 ? predictedUci[4].toUpperCase() : null;
-    var hypBoard  = applyMove(pm.from, pm.to, board, epSq, predPromo || 'Q');
-    var hypTurn   = turn === 'w' ? 'b' : 'w';
-    var hypEp     = computeEP(pm.from, pm.to, board);
-    var hypCastle = updateCastling(pm.from, pm.to, board[pm.from], castling);
+    var hypBoard  = applyMove(pm.from, pm.to, snapBoard, snapEp, predPromo || 'Q');
+    var hypTurn   = snapTurn === 'w' ? 'b' : 'w';
+    var hypEp     = computeEP(pm.from, pm.to, snapBoard);
+    var hypCastle = updateCastling(pm.from, pm.to, snapBoard[pm.from], snapCastling);
     var hypFen    = boardToFen(hypBoard, hypTurn, hypCastle, hypEp, halfmoveClock, _fullmove);
 
     var replyProbs = await maia3GetMoveProbs(hypFen);
@@ -2630,8 +2642,20 @@ async function botPremoveArm() {
     var rm = uciToSq(replyUci);
     if (!rm || rm.from == null || rm.to == null) return;
 
-    // Still the human's move? If they already played, this premove is stale.
-    if (turn !== humanColor || gameOver) return;
+    if (gameOver) return;
+
+    // The human may have moved while the two inferences ran — that is the
+    // normal case in fast games, not an error. The premove is still valid: it
+    // was computed for the position the human moved FROM, which is exactly what
+    // a premove is. Discarding here was making the bot skip premoves whenever
+    // the human moved faster than inference (~100-400 ms), which in a game full
+    // of quick recaptures is most of them.
+    //
+    // What must NOT happen is arming a premove that belongs to an older
+    // position. Allow at most the single ply the human just played; anything
+    // further behind means this computation has been overtaken by the game.
+    var pliesNow = (typeof gameMovesAlgebraic !== 'undefined') ? gameMovesAlgebraic.length : 0;
+    if (pliesNow > snapPly + 1) return; // stale by more than the awaited move
 
     botActivePremove = {
       uci: replyUci, from: rm.from, to: rm.to,
@@ -2640,10 +2664,52 @@ async function botPremoveArm() {
     };
     botPremoveStats.armed++;
     botPremoveUpdateBadge();
+
+    // If the human already moved, the bot's turn is here and nothing else will
+    // come along to fire this premove — botPostMoveHook already ran and fell
+    // through to scheduling a normal think. Fire it now, which is what
+    // "instant" means.
+    //
+    // botPostMoveHook schedules botMakeMove on a 100 ms timer, so this can land
+    // in the gap before that fires. Claim botThinking first: botMakeMove bails
+    // on it, so the two can't both play a move. It is released either way —
+    // botPremoveTryFire calls executeMove, whose hook re-enters and schedules
+    // the next action, and a failed fire must not leave the bot frozen.
+    if (turn !== humanColor && botActive && !botThinking && !gameOver) {
+      // Check legality against the CURRENT board before touching botThinking,
+      // so the lock is only held across the decision — not across executeMove,
+      // whose post-move hook needs botThinking clear to schedule what comes
+      // next (including arming the following premove).
+      var stillLegal = false;
+      var pp = board[botActivePremove.from];
+      var botCol = botPlayerColor === 'white' ? 'b' : 'w';
+      if (pp && pp.color === botCol) {
+        stillLegal = legalMovesFor(botActivePremove.from, board, epSq, castling)
+                       .includes(botActivePremove.to);
+      }
+      if (stillLegal) {
+        botPremoveTryFire();   // executeMove inside; hook re-enters cleanly
+        return;
+      }
+      // Busted on arrival — count it, take the re-evaluation tax, and let the
+      // normal think path play the move.
+      botActivePremove = null;
+      botPremoveStats.armed--;      // never really got to stand as armed
+      botPremoveStats.busted++;
+      _botPremoveBusted = true;
+      botPremoveUpdateBadge();
+      if (botActive && !gameOver && !botThinking) setTimeout(botMakeMove, 50);
+    }
   } catch (e) {
-    console.warn('Bot premove arming failed:', e);
+    // Loud on purpose: a silent catch here once hid a hard TypeError that made
+    // the bot quietly stop premoving in real games while every test passed.
+    console.error('[premove] arming threw — premove skipped this turn:', e);
+    botPremoveLastError = (e && e.message) || String(e);
   }
 }
+
+// Surfaced for diagnostics; null while arming is healthy.
+var botPremoveLastError = null;
 
 // Fire the armed premove — called from botPostMoveHook when it becomes the
 // bot's turn. Returns true if the premove executed (caller then skips normal

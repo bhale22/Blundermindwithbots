@@ -381,6 +381,84 @@ test('botPremoveReset clears a pending tax so it cannot leak into a new game', (
   assert.equal(ctx._botPremoveBusted, false);
 });
 
+// ── Arming races the human ───────────────────────────────────────────────────
+// Two Maia inferences run while the human is free to move. In fast games they
+// routinely move first (inference is ~100-400 ms), and the premove must still
+// arm: it was computed for the position they moved FROM, which is precisely
+// what a premove is. This was a real bug — the bot silently skipped premoves
+// for every quick recapture in a whole game.
+
+test('the position is snapshotted, so a mid-inference human move cannot corrupt it', async () => {
+  const ctx = makeCtx();
+  setPos(ctx, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+  ctx.botPlayerColor = 'white';
+  ctx.botPremoveEnabled = true;
+  ctx.botPremoveRatePct = 100;
+  ctx.gameMovesAlgebraic = [];
+
+  const seenFens = [];
+  let call = 0;
+  ctx.boardToFen = (bd, t) => {
+    // Record which board object each FEN was built from
+    const key = Object.keys(bd).sort().join(',');
+    return 'fen:' + t + ':' + key.length;
+  };
+  ctx.maia3GetMoveProbs = async (fen) => {
+    seenFens.push(fen);
+    call++;
+    if (call === 1) {
+      // Human moves while inference 1 is in flight: mutate the live globals
+      ctx.board = ctx.applyMove(sq(ctx, 'e2'), sq(ctx, 'e4'), ctx.board, -1, 'Q');
+      ctx.turn = 'b';
+      ctx.gameMovesAlgebraic.push('e4');
+      return { e2e4: 0.9 };
+    }
+    return { e7e5: 0.9 };
+  };
+
+  await ctx.botPremoveArm();
+  assert.ok(ctx.botActivePremove, 'premove must still arm after a mid-inference move');
+  assert.equal(ctx.botActivePremove.uci, 'e7e5');
+});
+
+test('a premove overtaken by more than one ply is discarded as stale', async () => {
+  const ctx = makeCtx();
+  setPos(ctx, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+  ctx.botPlayerColor = 'white';
+  ctx.botPremoveEnabled = true;
+  ctx.botPremoveRatePct = 100;
+  ctx.gameMovesAlgebraic = [];
+
+  let call = 0;
+  ctx.maia3GetMoveProbs = async () => {
+    call++;
+    if (call === 1) {
+      // Two further plies land while we were computing — the game has moved on
+      ctx.gameMovesAlgebraic.push('e4', 'e5');
+      return { e2e4: 0.9 };
+    }
+    return { e7e5: 0.9 };
+  };
+
+  await ctx.botPremoveArm();
+  assert.equal(ctx.botActivePremove, null,
+    'a premove more than one ply behind the game must not arm');
+});
+
+test('arming reports failures instead of swallowing them', async () => {
+  const ctx = makeCtx();
+  setPos(ctx, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+  ctx.botPlayerColor = 'white';
+  ctx.botPremoveEnabled = true;
+  ctx.botPremoveRatePct = 100;
+  ctx.maia3GetMoveProbs = async () => { throw new Error('inference exploded'); };
+
+  await ctx.botPremoveArm();
+  assert.equal(ctx.botActivePremove, null, 'a throw must not arm a bogus premove');
+  assert.match(ctx.botPremoveLastError || '', /inference exploded/,
+    'the failure must be recorded, not silently discarded');
+});
+
 // ── State hygiene ────────────────────────────────────────────────────────────
 
 test('a premove never fires on the wrong side\'s turn', async () => {
