@@ -266,6 +266,74 @@ test('TRAP: premove is busted when the human captures the piece it was going to 
   assert.equal(ctx.botPremoveStats.busted, 1);
 });
 
+// ── Busted-premove tax ───────────────────────────────────────────────────────
+// Busting a premove should cost the bot time: it committed, the commitment
+// failed, and it now has to think from scratch. That extra delay is the user's
+// reward for setting the trap.
+
+test('busting a premove arms the re-evaluation tax', async () => {
+  const ctx = makeCtx();
+  setPos(ctx, 'rnbqkbnr/pppp1ppp/8/4n3/2B5/4N3/PPPP1PPP/RNBQR1K1 w - - 0 1');
+  ctx.botPlayerColor = 'white';
+  ctx.botPremoveEnabled = true;
+  ctx.botPremoveRatePct = 100;
+  stubMaia(ctx, { d2d3: 0.9 }, { e5c4: 0.9 });
+  await ctx.botPremoveArm();
+
+  assert.equal(ctx._botPremoveBusted, false, 'no tax pending before the bust');
+  // Human springs the discovered-pin trap
+  ctx.executeMove(sq(ctx, 'e3'), sq(ctx, 'd5'), null);
+  assert.equal(ctx.botPremoveTryFire(), false, 'premove should be busted');
+  assert.equal(ctx._botPremoveBusted, true, 'the bust should arm the tax');
+});
+
+test('a premove that fires costs the bot nothing — it moved instantly', async () => {
+  const ctx = makeCtx();
+  setPos(ctx, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+  ctx.botPlayerColor = 'white';
+  ctx.botPremoveEnabled = true;
+  ctx.botPremoveRatePct = 100;
+  stubMaia(ctx, { e2e4: 0.9 }, { e7e5: 0.9 });
+  await ctx.botPremoveArm();
+
+  ctx.executeMove(sq(ctx, 'e2'), sq(ctx, 'e4'), null);
+  assert.equal(ctx.botPremoveTryFire(), true);
+  assert.equal(ctx._botPremoveBusted, false,
+    'a fired premove must not tax the bot — the move already happened');
+});
+
+test('the tax is one-shot: it applies to the next move only', () => {
+  const ctx = makeCtx();
+  ctx.botPremoveBustDelayMs = 2000;
+  ctx._botPremoveBusted = true;
+  assert.equal(ctx.botPremoveBustTaxMs(), 2000, 'first call collects the tax');
+  assert.equal(ctx.botPremoveBustTaxMs(), 0, 'second call collects nothing');
+  assert.equal(ctx._botPremoveBusted, false, 'flag is consumed');
+});
+
+test('the tax is configurable, including zero for no penalty', () => {
+  const ctx = makeCtx();
+  for (const ms of [0, 500, 2000, 5000]) {
+    ctx.botPremoveBustDelayMs = ms;
+    ctx._botPremoveBusted = true;
+    assert.equal(ctx.botPremoveBustTaxMs(), ms, 'tax of ' + ms + ' ms should be honoured');
+  }
+});
+
+test('a negative delay can never speed the bot up', () => {
+  const ctx = makeCtx();
+  ctx.botPremoveBustDelayMs = -3000;
+  ctx._botPremoveBusted = true;
+  assert.equal(ctx.botPremoveBustTaxMs(), 0, 'negative config must clamp to zero');
+});
+
+test('botPremoveReset clears a pending tax so it cannot leak into a new game', () => {
+  const ctx = makeCtx();
+  ctx._botPremoveBusted = true;
+  ctx.botPremoveReset();
+  assert.equal(ctx._botPremoveBusted, false);
+});
+
 // ── State hygiene ────────────────────────────────────────────────────────────
 
 test('a premove never fires on the wrong side\'s turn', async () => {

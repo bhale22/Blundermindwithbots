@@ -1046,7 +1046,8 @@ function botSaveConfig() {
       ratePct:      botPremoveRatePct,
       minPct:       botPremoveMinPct,
       onlyLowClock: botPremoveOnlyLowClock,
-      clockSecs:    botPremoveClockSecs
+      clockSecs:    botPremoveClockSecs,
+      bustDelayMs:  botPremoveBustDelayMs
     },
     opening: {
       mode: botOpeningMode,
@@ -1101,6 +1102,7 @@ function botLoadConfig(event) {
         botPremoveMinPct       = (cfg.premove.minPct    != null) ? +cfg.premove.minPct    : 45;
         botPremoveOnlyLowClock = !!cfg.premove.onlyLowClock;
         botPremoveClockSecs    = (cfg.premove.clockSecs != null) ? +cfg.premove.clockSecs : 30;
+        botPremoveBustDelayMs  = (cfg.premove.bustDelayMs != null) ? +cfg.premove.bustDelayMs : 2000;
       }
       if (cfg.opening) {
         botOpeningConfig = Object.assign(botOpeningConfig, cfg.opening.config || {});
@@ -1550,6 +1552,7 @@ window.addEventListener('message', function(e) {
   botPremoveMinPct       = (cfg.premoveMinPct    != null) ? +cfg.premoveMinPct    : 45;
   botPremoveOnlyLowClock = !!cfg.premoveOnlyLowClock;
   botPremoveClockSecs    = (cfg.premoveClockSecs != null) ? +cfg.premoveClockSecs : 30;
+  botPremoveBustDelayMs  = (cfg.premoveBustDelayMs != null) ? +cfg.premoveBustDelayMs : 2000;
 
   // Time pressure max drop → drives sfEffectiveLevel floor
   botTimePressureMaxDrop = (cfg.timePressureMaxDrop != null) ? cfg.timePressureMaxDrop : null;

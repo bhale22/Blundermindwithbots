@@ -1027,142 +1027,21 @@ body.fj .sec-label{font-size:15px;}
 body.fj .header-title{font-weight:500;}
 body.fj .picon{font-weight:500;}
 
-/* ── Premove trap illustration ─────────────────────────────────────────────
-   Playable teaching diagram: user plays the trap move on a real board and
-   watches the bot's committed premove fire into it. Self-contained — Unicode
-   glyphs, no piece assets, so it works inside the panel iframe. */
-.pmt-help-btn{
-  margin-left:8px;background:transparent;border:0.5px solid var(--border-blue);
-  color:var(--blue);font-family:var(--font-u);font-size:8px;letter-spacing:0.04em;
-  text-transform:uppercase;padding:2px 7px;border-radius:var(--r);cursor:pointer;
-  transition:background 0.15s,color 0.15s;
+/* ── Premove explainer ─────────────────────────────────────────────────────
+   Inline description of what a premove trap is, shown under the premove
+   controls. Prose only — no diagram. */
+.pmt-note{
+  margin-top:9px;padding:9px 11px;border-radius:var(--r);
+  background:rgba(93,173,226,0.05);border:0.5px solid var(--border-blue);
+  font-size:10px;line-height:1.65;color:var(--text-secondary);
 }
-.pmt-help-btn:hover{background:var(--blue-dim);color:#8fc9ee;}
-.pmt-overlay{
-  display:none;position:fixed;inset:0;z-index:9000;
-  background:rgba(8,10,14,0.82);backdrop-filter:blur(3px);
-  align-items:center;justify-content:center;padding:16px;
+.pmt-note h5{
+  margin:0 0 5px;font-family:var(--font-u);font-size:8.5px;letter-spacing:0.06em;
+  text-transform:uppercase;color:var(--blue);font-weight:600;
 }
-.pmt-overlay.open{display:flex;}
-.pmt-modal{
-  background:var(--carbon-raise);border:0.5px solid var(--border-amber);
-  border-radius:5px;width:min(760px,96vw);max-height:92vh;overflow-y:auto;
-  box-shadow:0 18px 60px rgba(0,0,0,0.6);
-}
-.pmt-head{
-  display:flex;align-items:center;gap:10px;padding:12px 16px;
-  border-bottom:0.5px solid var(--border-amber);
-}
-.pmt-title{font-family:var(--font-d);font-size:19px;color:var(--amber-bright);flex:1;}
-.pmt-x{
-  background:transparent;border:none;color:var(--text-dim);font-size:19px;
-  cursor:pointer;line-height:1;padding:2px 6px;
-}
-.pmt-x:hover{color:var(--text-primary);}
-.pmt-body{padding:14px 16px 18px;}
-.pmt-intro{font-size:11px;line-height:1.65;color:var(--text-secondary);margin-bottom:12px;}
-.pmt-intro strong{color:var(--amber-bright);font-weight:600;}
-/* Scenario tabs */
-.pmt-tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px;}
-.pmt-tab{
-  background:transparent;border:0.5px solid var(--border);color:var(--text-dim);
-  font-family:var(--font-u);font-size:8.5px;letter-spacing:0.04em;text-transform:uppercase;
-  padding:4px 9px;border-radius:var(--r);cursor:pointer;transition:all 0.15s;
-}
-.pmt-tab:hover{color:var(--text-secondary);border-color:var(--border-amber);}
-.pmt-tab.on{background:var(--amber-glow);border-color:var(--border-amber);color:var(--amber-bright);}
-.pmt-main{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;}
-.pmt-boardwrap{flex:0 0 auto;position:relative;}
-/* Arrow overlay — sits above the squares, never intercepts clicks */
-#pmt-arrows{position:absolute;inset:0;pointer-events:none;z-index:5;}
-/* Legend under the board keys the two arrow colours */
-.pmt-legend{
-  display:flex;gap:14px;margin-top:7px;font-size:9px;color:var(--text-dim);
-  font-family:var(--font-u);letter-spacing:0.03em;
-}
-.pmt-legend span{display:flex;align-items:center;gap:5px;}
-.pmt-legend i{width:13px;height:0;border-top:2px solid;display:inline-block;}
-.pmt-legend i.you{border-color:var(--amber-bright);}
-.pmt-legend i.bot{border-color:var(--blue);border-top-style:dashed;}
-/* Board */
-#pmt-board{
-  display:grid;grid-template-columns:repeat(8,1fr);
-  /* Rows must be sized explicitly — without this, rows holding no pieces
-     collapse to their content height and the board stops being square. */
-  grid-template-rows:repeat(8,1fr);
-  width:288px;height:288px;border:0.5px solid var(--border-amber);border-radius:2px;
-  user-select:none;
-}
-.pmt-sq{
-  position:relative;display:flex;align-items:center;justify-content:center;
-  font-size:26px;line-height:1;cursor:default;
-  min-width:0;min-height:0; /* let grid tracks, not glyph metrics, set the size */
-}
-.pmt-sq.light{background:#d8c9a8;}
-.pmt-sq.dark{background:#9a8465;}
-/* Unicode chess glyphs. White uses the OUTLINE forms (♔♕♘) and black the SOLID
-   forms (♚♛♞) — the standard diagram convention. Relying on fill colour alone
-   makes the two sides near-identical at this size, so the glyph shape carries
-   the distinction and colour only reinforces it. */
-.pmt-p{position:relative;z-index:2;}
-.pmt-p.w{color:#fffdf7;text-shadow:0 1px 1px rgba(0,0,0,0.5);}
-.pmt-p.b{color:#16181d;text-shadow:0 1px 1px rgba(255,255,255,0.18);}
-/* Move affordances */
-.pmt-sq.pick{cursor:pointer;z-index:6;}
-.pmt-sq.pick::after{
-  content:'';position:absolute;inset:0;z-index:1;
-  box-shadow:inset 0 0 0 2px var(--amber-bright);
-  animation:pmtPulse 1.5s ease-in-out infinite;
-}
-@keyframes pmtPulse{0%,100%{opacity:0.45;}50%{opacity:1;}}
-.pmt-sq.from::after{content:'';position:absolute;inset:0;background:rgba(200,146,42,0.35);z-index:1;}
-.pmt-sq.to::after{content:'';position:absolute;inset:0;background:rgba(200,146,42,0.45);z-index:1;}
-.pmt-sq.premove::after{content:'';position:absolute;inset:0;background:rgba(93,173,226,0.42);z-index:1;}
-.pmt-sq.doom::after{
-  content:'';position:absolute;inset:0;z-index:1;
-  box-shadow:inset 0 0 0 2px #e05a5a;background:rgba(224,90,90,0.28);
-}
-/* Side rail */
-.pmt-side{flex:1;min-width:250px;display:flex;flex-direction:column;gap:9px;}
-.pmt-step{font-size:10.5px;line-height:1.6;color:var(--text-secondary);}
-.pmt-step b{color:var(--amber-bright);font-weight:600;}
-.pmt-badge{
-  display:inline-block;font-family:var(--font-m);font-size:8px;letter-spacing:0.06em;
-  text-transform:uppercase;padding:2px 6px;border-radius:var(--r);margin-bottom:5px;
-}
-.pmt-badge.think{background:var(--blue-dim);color:var(--blue);border:0.5px solid var(--border-blue);}
-.pmt-badge.win{background:rgba(90,212,144,0.14);color:#5ad490;border:0.5px solid rgba(90,212,144,0.35);}
-.pmt-badge.bust{background:rgba(224,90,90,0.14);color:#e05a5a;border:0.5px solid rgba(224,90,90,0.35);}
-.pmt-commit{
-  font-family:var(--font-m);font-size:9.5px;color:var(--blue);
-  background:rgba(93,173,226,0.08);border-left:2px solid var(--blue);
-  padding:6px 9px;border-radius:0 var(--r) var(--r) 0;line-height:1.5;
-}
-.pmt-outcome{
-  font-size:10.5px;line-height:1.6;color:var(--text-secondary);
-  background:rgba(255,255,255,0.02);border:0.5px solid var(--border);
-  padding:8px 10px;border-radius:var(--r);
-}
-.pmt-outcome strong{color:#5ad490;}
-.pmt-outcome.bad strong{color:#e05a5a;}
-.pmt-btns{display:flex;gap:6px;margin-top:2px;}
-.pmt-btn{
-  background:transparent;border:0.5px solid var(--border-amber);color:var(--amber);
-  font-family:var(--font-u);font-size:8.5px;letter-spacing:0.04em;text-transform:uppercase;
-  padding:5px 11px;border-radius:var(--r);cursor:pointer;transition:all 0.15s;
-}
-.pmt-btn:hover{background:var(--amber-glow);color:var(--amber-bright);}
-.pmt-btn.ghost{border-color:var(--border);color:var(--text-dim);}
-.pmt-btn.ghost:hover{background:rgba(255,255,255,0.04);color:var(--text-secondary);}
-.pmt-foot{
-  margin-top:13px;padding-top:11px;border-top:0.5px solid var(--border);
-  font-size:10px;line-height:1.6;color:var(--text-dim);
-}
-.pmt-foot strong{color:var(--text-secondary);font-weight:600;}
-@media (max-width:640px){
-  #pmt-board{width:240px;height:240px;}
-  .pmt-sq{font-size:22px;}
-}
+.pmt-note p{margin:0 0 7px;}
+.pmt-note p:last-child{margin-bottom:0;}
+.pmt-note strong{color:var(--amber-bright);font-weight:600;}
 </style>
 </head>
 <body>
@@ -1878,7 +1757,7 @@ body.fj .picon{font-weight:500;}
           </div>
 
           <!-- Premove — bot commits a reply before seeing your move -->
-          <div class="dlbl" style="margin-top:10px;"><span>Premove</span><button type="button" class="pmt-help-btn" onclick="pmtOpen()">What's a premove trap?</button></div>
+          <div class="dlbl" style="margin-top:10px;"><span>Premove</span></div>
           <div class="tog-row">
             <div>
               <div class="tog-lbl">Enable premoving</div>
@@ -1893,6 +1772,8 @@ body.fj .picon{font-weight:500;}
               <div class="ctrl-hint">Percent of turns the bot premoves. <strong>100%</strong> = always premoves (most exploitable — best for drilling traps).</div>
               <div class="ctrl" style="margin-top:6px;"><span class="ctrl-lbl">Min confidence</span><input type="range" id="r-premove-conf" min="0" max="95" step="5" value="45" oninput="syncPremoveConf(this.value,'r-premove-conf')"><input type="number" id="n-premove-conf" class="ctrl-val" min="0" max="95" step="5" value="45" style="width:52px;" oninput="syncPremoveConf(this.value,'n-premove-conf')"></div>
               <div class="ctrl-hint">Only premoves when Maia is at least this sure of your reply — like a human premoving only on "obvious" recaptures. Lower = premoves more often in murky positions.</div>
+              <div class="ctrl" style="margin-top:6px;"><span class="ctrl-lbl">Busted-premove delay</span><input type="range" id="r-premove-bust" min="0" max="5" step="0.1" value="2" oninput="syncPremoveBust(this.value,'r-premove-bust')"><input type="number" id="n-premove-bust" class="ctrl-val" min="0" max="5" step="0.1" value="2" style="width:52px;" oninput="syncPremoveBust(this.value,'n-premove-bust')"></div>
+              <div class="ctrl-hint">Seconds of extra thinking when you bust a premove — the "didn't see that coming" stall. This is your reward for springing a trap: the bot burns its own clock. <strong>0</strong> = no penalty. Never allowed to flag the bot.</div>
               <div class="tog-row" style="margin-top:6px;">
                 <div>
                   <div class="tog-lbl">Only when low on clock</div>
@@ -1905,6 +1786,24 @@ body.fj .picon{font-weight:500;}
                 <div class="ctrl-hint">Seconds remaining on the bot's clock before it starts premoving.</div>
               </div>
               <div class="ctrl-hint" style="margin-top:8px;">Requires the <strong>Maia 3</strong> model — the prediction runs on it. Live counts this game: <span id="premove-stats" style="color:var(--blue);">none yet</span>.</div>
+              <div class="pmt-note">
+                <h5>What's a premove trap?</h5>
+                <p>In fast chess, players <strong>premove</strong> — queueing a reply before the
+                opponent has moved, so it fires the instant their clock starts. It saves seconds,
+                but it commits you blind. A <strong>premove trap</strong> is the counter: guess
+                what your opponent has queued, then play the one move that turns their own
+                committed reply against them.</p>
+                <p>With premoving on, the bot asks Maia what you're most likely to play, applies
+                that move, and asks Maia for its own best reply in <em>that</em> position — then
+                commits to it. If your actual move differs, the committed reply <strong>still
+                fires</strong> as long as it's legal, which is exactly what you exploit: bait it
+                into a capture that hangs a piece, or into a square you've covered.</p>
+                <p>If your move makes the premove <em>illegal</em> — pinning the piece, capturing
+                it, or moving its target away — the premove is busted and the bot must think from
+                scratch, burning the extra delay set above.</p>
+                <p>Raise <strong>Premove rate</strong> toward 100% and lower <strong>Min
+                confidence</strong> to make the bot premove more often and more exploitably.</p>
+              </div>
             </div>
           </div>
         </div>
@@ -2173,59 +2072,6 @@ body.fj .picon{font-weight:500;}
 
 </div><!-- /sections -->
 </div><!-- /page -->
-
-<!-- ═══ Premove trap illustration ═══ -->
-<div class="pmt-overlay" id="pmt-overlay" onclick="if(event.target===this)pmtClose()">
-  <div class="pmt-modal" role="dialog" aria-modal="true" aria-labelledby="pmt-title">
-    <div class="pmt-head">
-      <div class="pmt-title" id="pmt-title">What's a premove trap?</div>
-      <button class="pmt-x" onclick="pmtClose()" aria-label="Close">&times;</button>
-    </div>
-    <div class="pmt-body">
-      <div class="pmt-intro">
-        In fast chess, players <strong>premove</strong> — queueing a reply before the opponent
-        has moved, so it fires the instant their clock starts. It saves seconds, but it commits
-        you blind. A <strong>premove trap</strong> is the counter: guess what your opponent has
-        queued, then play the one move that turns their own committed reply against them.
-        <br><br>
-        You are <strong>White</strong>. The bot has already locked in its reply — it's shown to
-        you here, which a real opponent's never would be. Play the highlighted move and watch
-        what its premove does.
-      </div>
-
-      <div class="pmt-tabs" id="pmt-tabs"></div>
-
-      <div class="pmt-main">
-        <div class="pmt-boardwrap">
-          <div id="pmt-board"></div>
-          <svg id="pmt-arrows" viewBox="0 0 288 288" preserveAspectRatio="none"></svg>
-          <div class="pmt-legend">
-            <span><i class="you"></i> Your move</span>
-            <span><i class="bot"></i> Bot's committed premove</span>
-          </div>
-        </div>
-        <div class="pmt-side">
-          <div id="pmt-commit" class="pmt-commit"></div>
-          <div id="pmt-step" class="pmt-step"></div>
-          <div id="pmt-outcome" class="pmt-outcome" style="display:none;"></div>
-          <div class="pmt-btns">
-            <button class="pmt-btn" id="pmt-replay" onclick="pmtReplay()">Replay</button>
-            <button class="pmt-btn ghost" onclick="pmtShowMe()">Show me</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="pmt-foot">
-        <strong>Why this works against the bot:</strong> with premoving enabled, the bot asks Maia
-        what you're most likely to play, applies that move, and asks Maia for its own best reply in
-        <em>that</em> position — then commits to it. If your actual move differs, the committed
-        reply still fires as long as it's legal. Raise <strong>Premove rate</strong> to 100% and
-        lower <strong>Min confidence</strong> to make the bot premove more often and more
-        exploitably.
-      </div>
-    </div>
-  </div>
-</div>
 
 <script>
 /* ══════════════════════════════════════════════════════════════
@@ -6285,307 +6131,12 @@ function syncPremoveSecs(raw, sourceId){
   _syncPair(raw, sourceId, ['r-premove-secs','n-premove-secs'], 5, 120,
     Math.round, 'bm_premoveSecs');
 }
-// ── Premove trap illustration ───────────────────────────────────────────────
-// A playable teaching diagram. Each scenario is a real position whose legality
-// was verified against src/20-chess-core.js (see test/premove-trap.test.js —
-// that test re-derives every claim below from the engine, so a scenario that
-// stops being true fails the build rather than teaching a lie).
-//
-// Board model is deliberately tiny: an array of 64 squares, index 0 = a8, and
-// moves are applied by hand. This modal only ever replays scripted lines, so
-// it needs no move generator — the engine-backed test is what guarantees the
-// scripted lines are legal and that the outcomes are what we claim.
-// Outline glyphs for White, solid for Black — shape distinguishes the sides,
-// which colour alone cannot do reliably at diagram size.
-const PMT_GLYPH = {
-  w: { K:'♔', Q:'♕', R:'♖', B:'♗', N:'♘', P:'♙' },
-  b: { K:'♚', Q:'♛', R:'♜', B:'♝', N:'♞', P:'♟' }
-};
-
-const PMT_SCENARIOS = [
-  {
-    id: 'greed',
-    tab: 'Greedy premove',
-    // Black premoves ...Qxd4 to snatch a pawn. White ignores d4 entirely and
-    // plays Nxe5. The premove is STILL LEGAL, so it fires — and the queen
-    // lands on a square where Qd1 simply takes it.
-    fen: 'rnb1kbnr/pppp1ppp/8/4p3/3P2q1/5N2/PPP1PPPP/RNBQKB1R',
-    commit: '...Qxd4',
-    commitWhy: 'Maia expects you to defend the d4 pawn, so the bot has queued the grab.',
-    userMove: { from:'f3', to:'e5', san:'Nxe5' },
-    userHint: 'Ignore the threat. Take on e5 instead — and leave d4 hanging as bait.',
-    premove:  { from:'g4', to:'d4', san:'Qxd4' },
-    fires: true,
-    punish:  { from:'d1', to:'d4', san:'Qxd4' },
-    doomSq: 'd4',
-    outcome: 'The premove fired anyway — it was still legal. But <strong>Qxd4</strong> wins the queen for a pawn.',
-    lesson: 'The most valuable trap. A premove that stays legal <em>always</em> fires, even when the position has changed underneath it.',
-    good: true
-  },
-  {
-    id: 'pin',
-    tab: 'Discovered pin',
-    // Black's Ne5 premoves ...Nxc4. White's Nd5 discovers Re1 down the e-file,
-    // pinning the knight to its king — the premove becomes illegal.
-    fen: 'rnbqkbnr/pppp1ppp/8/4n3/2B5/4N3/PPPP1PPP/RNBQR1K1',
-    commit: '...Nxc4',
-    commitWhy: 'The bishop on c4 looks free, so the bot has queued the capture.',
-    userMove: { from:'e3', to:'d5', san:'Nd5' },
-    userHint: 'Move the knight off e3 — it unmasks your rook on the e-file.',
-    premove:  { from:'e5', to:'c4', san:'Nxc4' },
-    fires: false,
-    doomSq: 'e5',
-    outcome: 'The knight is <strong>pinned</strong> to its king by Re1, so the premove is illegal. It never fires — the bot has to stop and think.',
-    lesson: 'Busting a premove costs the opponent their time advantage: they must now think on their own clock.',
-    good: false
-  },
-  {
-    id: 'capture',
-    tab: 'Take the piece',
-    // Black's Nc6 premoves ...Nxd4; White plays Bxc6, removing the piece that
-    // was going to move.
-    fen: 'r1bqkb1r/pppp1ppp/2n2n2/1B2p3/3P4/5N2/PPP1PPPP/RNBQK2R',
-    commit: '...Nxd4',
-    commitWhy: 'The bot has queued a knight capture on d4.',
-    userMove: { from:'b5', to:'c6', san:'Bxc6' },
-    userHint: 'Capture the knight that was about to move.',
-    premove:  { from:'c6', to:'d4', san:'Nxd4' },
-    fires: false,
-    doomSq: 'c6',
-    outcome: 'The premoving piece is <strong>gone</strong>. A premove needs its piece — no piece, no move.',
-    lesson: 'The bluntest bust: capture the piece the premove depends on.',
-    good: false
-  },
-  {
-    id: 'vacate',
-    tab: 'Move the target',
-    // Black premoves the recapture ...exd4; White pushes d4-d5 so there is
-    // nothing on d4 to take and the pawn cannot reach it.
-    fen: 'rnbqkbnr/pppp1ppp/8/4p3/3P4/8/PPP1PPPP/RNBQKBNR',
-    commit: '...exd4',
-    commitWhy: 'A pawn recapture on d4 looks automatic, so the bot has queued it.',
-    userMove: { from:'d4', to:'d5', san:'d5' },
-    userHint: 'Push the pawn past it. A pawn captures diagonally — it can\'t follow.',
-    premove:  { from:'e5', to:'d4', san:'exd4' },
-    fires: false,
-    doomSq: 'd4',
-    outcome: 'Nothing on d4 to capture, and the e5 pawn can only take <em>diagonally</em> — so the premove is illegal.',
-    lesson: 'Premoved recaptures assume the target stays put. Moving it wastes their move entirely.',
-    good: false
-  }
-];
-
-let pmtIdx = 0, pmtBoard = null, pmtPhase = 'await';
-
-function pmtParseFen(fen){
-  const b = new Array(64).fill(null);
-  fen.split(' ')[0].split('/').forEach((row, r) => {
-    let c = 0;
-    for (const ch of row){
-      if (/\d/.test(ch)) { c += +ch; continue; }
-      b[r*8 + c] = { piece: ch.toUpperCase(), color: ch === ch.toUpperCase() ? 'w' : 'b' };
-      c++;
-    }
-  });
-  return b;
+// Busted-premove delay is in SECONDS in the UI (0–5, one decimal) and
+// milliseconds in the config — converted at the send/apply boundary.
+function syncPremoveBust(raw, sourceId){
+  _syncPair(raw, sourceId, ['r-premove-bust','n-premove-bust'], 0, 5,
+    v => Math.round(v * 10) / 10, 'bm_premoveBust');
 }
-const pmtSq = (name) => (8 - +name[1]) * 8 + (name.charCodeAt(0) - 97);
-
-function pmtRender(marks){
-  const el = document.getElementById('pmt-board');
-  if (!el) return;
-  marks = marks || {};
-  let html = '';
-  for (let i = 0; i < 64; i++){
-    const light = ((Math.floor(i/8) + i%8) % 2) === 0;
-    const p = pmtBoard[i];
-    const cls = ['pmt-sq', light ? 'light' : 'dark'];
-    if (marks.pick   === i) cls.push('pick');
-    if (marks.from   === i) cls.push('from');
-    if (marks.to     === i) cls.push('to');
-    if (marks.premove && marks.premove.indexOf(i) >= 0) cls.push('premove');
-    if (marks.doom   === i) cls.push('doom');
-    const glyph = p ? '<span class="pmt-p ' + p.color + '">' + PMT_GLYPH[p.color][p.piece] + '</span>' : '';
-    const click = marks.pick === i ? ' onclick="pmtPlay()"' : '';
-    html += '<div class="' + cls.join(' ') + '"' + click + '>' + glyph + '</div>';
-  }
-  el.innerHTML = html;
-  pmtDrawArrows(marks.arrows || []);
-}
-
-// Arrows make the bot's intention visible: without them the committed premove
-// is just text, and the user cannot see what the board is about to do.
-// Each arrow: {from:'g4', to:'d4', kind:'you'|'bot', dead:bool}
-function pmtDrawArrows(arrows){
-  const svg = document.getElementById('pmt-arrows');
-  if (!svg) return;
-  const S = 36;                       // 288 / 8 — square size in viewBox units
-  const cx = (sq) => (sq % 8) * S + S/2;
-  const cy = (sq) => Math.floor(sq / 8) * S + S/2;
-
-  let defs = '', body = '';
-  arrows.forEach((a, i) => {
-    const col = a.dead ? '#e05a5a' : (a.kind === 'bot' ? '#5dade2' : '#e8aa40');
-    const id  = 'pmtarr' + i;
-    const f = pmtSq(a.from), t = pmtSq(a.to);
-    let x1 = cx(f), y1 = cy(f), x2 = cx(t), y2 = cy(t);
-    // Stop short of the destination centre so the arrowhead doesn't bury the piece
-    const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
-    const trim = 12;
-    x2 -= (dx / len) * trim; y2 -= (dy / len) * trim;
-    const x1t = x1 + (dx / len) * 9, y1t = y1 + (dy / len) * 9;
-
-    defs += '<marker id="' + id + '" viewBox="0 0 10 10" refX="8" refY="5" ' +
-            'markerWidth="4.5" markerHeight="4.5" orient="auto-start-reverse">' +
-            '<path d="M0,0 L10,5 L0,10 z" fill="' + col + '"/></marker>';
-    body += '<line x1="' + x1t + '" y1="' + y1t + '" x2="' + x2 + '" y2="' + y2 + '" ' +
-            'stroke="' + col + '" stroke-width="3.5" stroke-linecap="round" ' +
-            (a.kind === 'bot' && !a.dead ? 'stroke-dasharray="7 5" ' : '') +
-            (a.dead ? 'opacity="0.75" ' : '') +
-            'marker-end="url(#' + id + ')"/>';
-    // A busted premove gets struck through with an X at its origin
-    if (a.dead){
-      const r = 9;
-      body += '<line x1="' + (x1-r) + '" y1="' + (y1-r) + '" x2="' + (x1+r) + '" y2="' + (y1+r) + '" ' +
-              'stroke="#e05a5a" stroke-width="3" stroke-linecap="round"/>' +
-              '<line x1="' + (x1+r) + '" y1="' + (y1-r) + '" x2="' + (x1-r) + '" y2="' + (y1+r) + '" ' +
-              'stroke="#e05a5a" stroke-width="3" stroke-linecap="round"/>';
-    }
-  });
-  svg.innerHTML = '<defs>' + defs + '</defs>' + body;
-}
-
-function pmtApply(from, to){
-  const f = pmtSq(from), t = pmtSq(to);
-  pmtBoard[t] = pmtBoard[f];
-  pmtBoard[f] = null;
-}
-
-function pmtRenderTabs(){
-  const el = document.getElementById('pmt-tabs');
-  if (!el) return;
-  el.innerHTML = PMT_SCENARIOS.map((s, i) =>
-    '<button class="pmt-tab' + (i === pmtIdx ? ' on' : '') + '" onclick="pmtSelect(' + i + ')">' +
-    s.tab + '</button>').join('');
-}
-
-function pmtSelect(i){
-  pmtIdx = i;
-  pmtRenderTabs();
-  pmtReplay();
-}
-
-// Reset to the "your move" state for the current scenario.
-// Both intentions are on the board from the very start: the bot's committed
-// premove (blue, dashed — it hasn't happened yet) and the move you're being
-// asked to play (amber). Seeing them together is the whole lesson.
-function pmtReplay(){
-  const s = PMT_SCENARIOS[pmtIdx];
-  pmtBoard = pmtParseFen(s.fen);
-  pmtPhase = 'await';
-  document.getElementById('pmt-commit').innerHTML =
-    '<span style="color:var(--text-dim);">BOT HAS ALREADY COMMITTED TO</span> <b>' + s.commit + '</b>' +
-    ' <span style="color:var(--text-dim);">(blue dashed arrow)</span><br>' + s.commitWhy;
-  document.getElementById('pmt-step').innerHTML =
-    '<span class="pmt-badge think">Your move</span><br>' + s.userHint +
-    ' <b>Click the highlighted square</b> to play <b>' + s.userMove.san + '</b>.';
-  const oc = document.getElementById('pmt-outcome');
-  oc.style.display = 'none';
-  oc.className = 'pmt-outcome';
-  pmtRender({
-    pick: pmtSq(s.userMove.to),
-    from: pmtSq(s.userMove.from),
-    arrows: [
-      { from: s.premove.from,  to: s.premove.to,  kind: 'bot' },
-      { from: s.userMove.from, to: s.userMove.to, kind: 'you' }
-    ]
-  });
-}
-
-// User plays the trap move; then the bot's committed premove resolves
-function pmtPlay(){
-  const s = PMT_SCENARIOS[pmtIdx];
-  if (pmtPhase !== 'await') return;
-  pmtPhase = 'played';
-
-  // Step 1 — your move lands. The bot's premove arrow stays up: it is still
-  // committed, and has not yet resolved.
-  pmtApply(s.userMove.from, s.userMove.to);
-  pmtRender({
-    from: pmtSq(s.userMove.from), to: pmtSq(s.userMove.to),
-    arrows: [{ from: s.premove.from, to: s.premove.to, kind: 'bot' }]
-  });
-  document.getElementById('pmt-step').innerHTML =
-    '<span class="pmt-badge think">You played ' + s.userMove.san + '</span><br>' +
-    'The bot never saw it — its reply was locked in before you moved. Resolving…';
-
-  setTimeout(() => {
-    const oc = document.getElementById('pmt-outcome');
-    if (s.fires){
-      // Step 2a — premove was still legal, so it fires into the changed position
-      pmtApply(s.premove.from, s.premove.to);
-      pmtRender({
-        premove: [pmtSq(s.premove.from), pmtSq(s.premove.to)],
-        doom: pmtSq(s.doomSq)
-      });
-      document.getElementById('pmt-step').innerHTML =
-        '<span class="pmt-badge bust">Premove fired instantly: ' + s.premove.san + '</span><br>' +
-        'Zero seconds on the clock — the bot never evaluated what you actually played.';
-      setTimeout(() => {
-        if (s.punish){
-          // Step 3 — show the refutation as an arrow before playing it
-          pmtRender({
-            doom: pmtSq(s.premove.to),
-            arrows: [{ from: s.punish.from, to: s.punish.to, kind: 'you' }]
-          });
-          setTimeout(() => {
-            pmtApply(s.punish.from, s.punish.to);
-            pmtRender({ to: pmtSq(s.punish.to) });
-            document.getElementById('pmt-step').innerHTML =
-              '<span class="pmt-badge win">You punish: ' + s.punish.san + '</span><br>' + s.lesson;
-            oc.className = 'pmt-outcome';
-            oc.innerHTML = s.outcome;
-            oc.style.display = '';
-          }, 800);
-        }
-      }, 900);
-    } else {
-      // Step 2b — premove is now illegal: strike it out where it stands
-      pmtRender({
-        from: pmtSq(s.userMove.from), to: pmtSq(s.userMove.to), doom: pmtSq(s.doomSq),
-        arrows: [{ from: s.premove.from, to: s.premove.to, kind: 'bot', dead: true }]
-      });
-      document.getElementById('pmt-step').innerHTML =
-        '<span class="pmt-badge win">Premove busted — ' + s.premove.san + ' is illegal</span><br>' +
-        s.lesson;
-      oc.className = 'pmt-outcome bad';
-      oc.innerHTML = s.outcome;
-      oc.style.display = '';
-    }
-  }, 900);
-}
-
-// Auto-play for users who'd rather watch than click
-function pmtShowMe(){
-  if (pmtPhase !== 'await') pmtReplay();
-  setTimeout(pmtPlay, 350);
-}
-
-function pmtOpen(){
-  const ov = document.getElementById('pmt-overlay');
-  if (!ov) return;
-  ov.classList.add('open');
-  pmtRenderTabs();
-  pmtReplay();
-  document.addEventListener('keydown', pmtEsc);
-}
-function pmtClose(){
-  const ov = document.getElementById('pmt-overlay');
-  if (ov) ov.classList.remove('open');
-  document.removeEventListener('keydown', pmtEsc);
-}
-function pmtEsc(e){ if (e.key === 'Escape') pmtClose(); }
-
 // Restore premove settings from the last session
 function _initPremovePrefs(){
   try {
@@ -6594,9 +6145,11 @@ function _initPremovePrefs(){
     const rate = localStorage.getItem('bm_premoveRate');
     const conf = localStorage.getItem('bm_premoveConf');
     const secs = localStorage.getItem('bm_premoveSecs');
+    const bust = localStorage.getItem('bm_premoveBust');
     if(rate !== null) syncPremoveRate(rate, null);
     if(conf !== null) syncPremoveConf(conf, null);
     if(secs !== null) syncPremoveSecs(secs, null);
+    if(bust !== null) syncPremoveBust(bust, null);
     if(on === '1'){
       const el = document.getElementById('cb-premove');
       if(el) el.checked = true;
@@ -6729,6 +6282,7 @@ function getBotConfig(){
     premoveMinPct:       parseInt(document.getElementById('r-premove-conf')?.value  || '45'),
     premoveOnlyLowClock: document.getElementById('cb-premove-clock')?.checked === true,
     premoveClockSecs:    parseInt(document.getElementById('r-premove-secs')?.value  || '30'),
+    premoveBustDelayMs:  Math.round(parseFloat(document.getElementById('r-premove-bust')?.value || '2') * 1000),
     tempValue:         _currentTempValue,
     tempPresetId:      selectedTempPresetId,
     personalityId:     selectedPersonality,
@@ -6930,6 +6484,8 @@ function applyBotConfig(cfg){
     _setRange('r-premove-rate', cfg.premoveRatePct);
     _setRange('r-premove-conf', cfg.premoveMinPct);
     _setRange('r-premove-secs', cfg.premoveClockSecs);
+    // Config stores ms; the slider is in seconds
+    if(cfg.premoveBustDelayMs != null) _setRange('r-premove-bust', cfg.premoveBustDelayMs / 1000);
     _setTog('cb-premove',       cfg.premoveEnabled,      on => showPremove(on, 'cb-premove'));
     _setTog('cb-premove-clock', cfg.premoveOnlyLowClock, on => showPremoveClock(on, 'cb-premove-clock'));
   });

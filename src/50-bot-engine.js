@@ -1723,11 +1723,28 @@ function botThinkTime(moveProbs, clockMs) {
   // ── Base ±20% jitter ─────────────────────────────────────────────────────
   thinkMs *= 0.8 + Math.random() * 0.4;
 
+  // ── Busted-premove tax ────────────────────────────────────────────────────
+  // The bot committed to a reply, the human's move made it illegal, and now it
+  // has to start over — the same stall a human shows when a premove doesn't
+  // take. Added BEFORE the clock caps below so it can never tax the bot into
+  // flagging. This is the payoff for setting a trap: the user gains real time
+  // on the clock, not just a better position.
+  thinkMs += botPremoveBustTaxMs();
+
   // ── Clock pressure caps ───────────────────────────────────────────────────
   if (clockMs !== null && clockMs < 30000) thinkMs = Math.min(thinkMs, clockMs * 0.08);
   if (!botCanFlag && clockMs !== null) thinkMs = Math.min(thinkMs, Math.max(200, clockMs - 3000));
 
   return Math.max(200, Math.min(botThinkCapMs(), thinkMs));
+}
+
+// Consumes the pending bust flag and returns the extra think time it earns.
+// One-shot: the tax applies to the move immediately after the bust, never to
+// the moves after that.
+function botPremoveBustTaxMs() {
+  if (!_botPremoveBusted) return 0;
+  _botPremoveBusted = false;
+  return Math.max(0, botPremoveBustDelayMs);
 }
 // Hustler personality: T=5 in the opening, fades to T=0.6 in the endgame.
 // Phase is tracked by counting non-pawn, non-king pieces still on the board:
@@ -2495,11 +2512,19 @@ function ghostSoloDepth() { return ghostDepth(); }
 //                      confident — models a human premoving only on "obvious" replies
 //   botPremoveOnlyLowClock / botPremoveClockSecs
 //                      restrict premoving to time scrambles, as humans do
+//   botPremoveBustDelayMs
+//                      extra think time after the human busts a premove — the
+//                      "didn't see that coming" stall, and the clock reward for
+//                      setting the trap
 var botPremoveEnabled       = false;
 var botPremoveRatePct       = 70;
 var botPremoveMinPct        = 45;
 var botPremoveOnlyLowClock  = false;
 var botPremoveClockSecs     = 30;
+var botPremoveBustDelayMs   = 2000;
+
+// Set when a premove is busted; consumed by the next botThinkTime() call
+var _botPremoveBusted = false;
 
 // The locked-in premove: {uci, from, to, promo, predictedUci, confidence} | null
 var botActivePremove = null;
@@ -2511,6 +2536,7 @@ var botPremoveStats = { armed: 0, fired: 0, busted: 0 };
 function botPremoveReset() {
   botActivePremove = null;
   _botPremoveGen++;
+  _botPremoveBusted = false;  // a pending tax must not carry into a new game
   botPremoveStats = { armed: 0, fired: 0, busted: 0 };
   botPremoveUpdateBadge();
 }
@@ -2616,6 +2642,7 @@ function botPremoveTryFire() {
   var p = board[pre.from];
   if (!p || p.color !== botColor) {
     botPremoveStats.busted++;
+    _botPremoveBusted = true;   // next think gets the re-evaluation tax
     botPremoveNote(pre, false);
     botPremoveUpdateBadge();
     return false;
@@ -2623,6 +2650,7 @@ function botPremoveTryFire() {
   var legal = legalMovesFor(pre.from, board, epSq, castling);
   if (!legal.includes(pre.to)) {
     botPremoveStats.busted++;
+    _botPremoveBusted = true;   // next think gets the re-evaluation tax
     botPremoveNote(pre, false);
     botPremoveUpdateBadge();
     return false;
