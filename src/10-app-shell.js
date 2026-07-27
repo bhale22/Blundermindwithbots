@@ -113,6 +113,7 @@ let _botGameGen         = 0;      // bumped by botStart/botStop — in-flight bo
 let botPressureCurveB   = null;   // ctrlB points [{x,y}] — confidence floor % vs think-time (s)
 let botWeaponizerEnabled = false; // weaponizer: instant play when ahead on clock
 let botWeaponizerLeadMs  = 30000; // clock lead (ms) required to activate weaponizer
+let botWeaponizerMinMs   = 0;     // floor (ms) on weaponizer move time; 0 = instant, as if pre-moved
 // ── Draw behaviour ───────────────────────────────────────────────────────────
 let botAcceptDraws      = false;  // bot accepts draw offers when not clearly ahead
 let botDrawAcceptMargin = 50;     // accept if bot's advantage ≤ this many cp (engine eval)

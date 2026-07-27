@@ -1563,6 +1563,7 @@ window.addEventListener('message', function(e) {
   // Weaponizer
   botWeaponizerEnabled = !!cfg.weaponizerEnabled;
   botWeaponizerLeadMs  = (cfg.weaponizerLeadSec || 30) * 1000;
+  botWeaponizerMinMs   = Math.max(0, Math.min(5, +cfg.weaponizerMinSec || 0)) * 1000;
 
   // Calm/panicky (-5..+5) → botTimePressure
   // Center (0) = steady (no boost); positive = panicky boost under pressure

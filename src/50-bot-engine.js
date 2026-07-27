@@ -1632,10 +1632,12 @@ function botThinkTime(moveProbs, clockMs) {
   // ── Instant ──────────────────────────────────────────────────────────────
   if (botTimeBehavior === 'instant') return 0;
 
-  // ── Weaponizer: ahead on clock → play instantly to maximise time pressure ─
+  // ── Weaponizer: ahead on clock → play at the minimum move time to maximise
+  // time pressure. 0 = instant (as if pre-moved); higher values simulate a
+  // human moving as fast as input controls allow.
   if (botWeaponizerEnabled && botOppClockMs !== null && clockMs !== null &&
       (clockMs - botOppClockMs) > botWeaponizerLeadMs) {
-    return 0;
+    return botWeaponizerMinMs;
   }
 
   // ── Move blink: near-instant for forced/obvious positions (Maia3 only) ───
