@@ -28,6 +28,15 @@ function makeCtx() {
     indActive: () => false,
     setTimeout: (fn) => fn(),
     Math: Object.create(Math),
+    // Declared in 10-app-shell.js, which these tests don't load. The premove
+    // reply now goes through applyMoveAttractors (the same scoring pipeline a
+    // normal move uses), and that reads these directly. Values mirror the real
+    // defaults so the shaping is a no-op unless a test opts in.
+    atkMap: {},
+    botMinProbPct: 0,      // 0 = no popularity floor
+    botDayLower: 0,        // full probability band
+    botDayUpper: 100,
+    botBadDayMode: false,
   };
   ctx.uciToSq = function (uci) {
     if (!uci || uci.length < 4) return null;
@@ -457,6 +466,105 @@ test('arming reports failures instead of swallowing them', async () => {
   assert.equal(ctx.botActivePremove, null, 'a throw must not arm a bogus premove');
   assert.match(ctx.botPremoveLastError || '', /inference exploded/,
     'the failure must be recorded, not silently discarded');
+});
+
+// ── The reply goes through the normal move pipeline ──────────────────────────
+// A premoved reply used to be a bare argmax while ordinary moves were sampled
+// at temperature and reweighted by personality — so the bot changed character
+// whenever it premoved, and near-ties (34.4% vs 32.4% in a real game) always
+// resolved the same way.
+
+test('the reply is temperature-sampled, not always the top move', async () => {
+  // Two near-equal candidates: argmax would return the same one every time.
+  const picks = new Set();
+  for (let i = 0; i < 60; i++) {
+    const ctx = makeCtx();
+    setPos(ctx, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+    ctx.botPlayerColor = 'white';
+    ctx.botPremoveEnabled = true;
+    ctx.botPremoveRatePct = 100;
+    ctx.botMaiaTempValue = 1.0;
+    stubMaia(ctx, { e2e4: 0.9 }, { e7e5: 0.344, c7c5: 0.324 });
+    await ctx.botPremoveArm();
+    if (ctx.botActivePremove) picks.add(ctx.botActivePremove.uci);
+  }
+  assert.ok(picks.size > 1,
+    'near-equal replies should vary across games, not always resolve to the top move — got ' +
+    [...picks].join(','));
+});
+
+test('the reply still respects a decisive distribution', async () => {
+  // When one move genuinely dominates, sampling should overwhelmingly pick it.
+  let dominant = 0, total = 0;
+  for (let i = 0; i < 40; i++) {
+    const ctx = makeCtx();
+    setPos(ctx, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+    ctx.botPlayerColor = 'white';
+    ctx.botPremoveEnabled = true;
+    ctx.botPremoveRatePct = 100;
+    ctx.botMaiaTempValue = 1.0;
+    stubMaia(ctx, { e2e4: 0.9 }, { e7e5: 0.97, c7c5: 0.01, g8f6: 0.02 });
+    await ctx.botPremoveArm();
+    if (ctx.botActivePremove) { total++; if (ctx.botActivePremove.uci === 'e7e5') dominant++; }
+  }
+  assert.ok(total > 0, 'premoves should arm');
+  assert.ok(dominant / total > 0.8,
+    'a 97% move should still be chosen most of the time (' + dominant + '/' + total + ')');
+});
+
+test('personality attractors reweight the premoved reply', async () => {
+  // A strong knight attractor should pull the pick toward the knight move even
+  // though Maia rates it lower. This proves applyMoveAttractors is in the path.
+  let knightPicks = 0;
+  for (let i = 0; i < 50; i++) {
+    const ctx = makeCtx();
+    setPos(ctx, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+    ctx.botPlayerColor = 'white';
+    ctx.botPremoveEnabled = true;
+    ctx.botPremoveRatePct = 100;
+    ctx.botMaiaTempValue = 1.0;
+    ctx.window._bcpPieceValues = { knight: 5 };   // strongly favour knight moves
+    stubMaia(ctx, { e2e4: 0.9 }, { e7e5: 0.7, g8f6: 0.3 });
+    await ctx.botPremoveArm();
+    if (ctx.botActivePremove && ctx.botActivePremove.uci === 'g8f6') knightPicks++;
+  }
+  assert.ok(knightPicks > 5,
+    'a knight attractor should lift the knight reply above its raw Maia share (' +
+    knightPicks + '/50)');
+});
+
+test('board globals are restored after shaping the hypothetical position', async () => {
+  const ctx = makeCtx();
+  const START = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+  setPos(ctx, START);
+  ctx.botPlayerColor = 'white';
+  ctx.botPremoveEnabled = true;
+  ctx.botPremoveRatePct = 100;
+  const boardBefore = Object.assign({}, ctx.board);
+  const turnBefore = ctx.turn, epBefore = ctx.epSq;
+  stubMaia(ctx, { e2e4: 0.9 }, { e7e5: 0.9 });
+
+  await ctx.botPremoveArm();
+
+  assert.equal(ctx.turn, turnBefore, 'turn must be restored');
+  assert.equal(ctx.epSq, epBefore, 'epSq must be restored');
+  assert.deepEqual(Object.keys(ctx.board).sort(), Object.keys(boardBefore).sort(),
+    'the live board must be exactly as it was — the hypothetical must not leak');
+  assert.ok(ctx.board[sq(ctx, 'e2')], 'the e2 pawn must still be on its real square');
+});
+
+test('globals are restored even when shaping throws', () => {
+  const ctx = makeCtx();
+  setPos(ctx, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+  const turnBefore = ctx.turn;
+  const hypBoard = ctx.applyMove(sq(ctx, 'e2'), sq(ctx, 'e4'), ctx.board, -1, 'Q');
+  assert.throws(() => {
+    ctx._botWithPosition(hypBoard, 'b', -1, ctx.castling, () => {
+      throw new Error('shaping blew up');
+    });
+  }, /shaping blew up/);
+  assert.equal(ctx.turn, turnBefore, 'turn restored despite the throw');
+  assert.ok(ctx.board[sq(ctx, 'e2')], 'board restored despite the throw');
 });
 
 // ── State hygiene ────────────────────────────────────────────────────────────

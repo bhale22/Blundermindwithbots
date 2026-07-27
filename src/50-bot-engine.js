@@ -1379,6 +1379,17 @@ function sampleFromProbs(moveProbs, temperature) {
   return scaled[scaled.length - 1][0];
 }
 
+// Base Maia temperature as the panel defines it: Hustler phase override, then
+// the panel's Temperature value, then the legacy #maia3Temp input. Extracted so
+// the premove path derives temperature from exactly the same source as a normal
+// move — a second copy of this cascade would silently drift out of sync.
+function botMaiaBaseTemp() {
+  if (window._bcpHustlerTempMode) return hustlerPhaseTemp();
+  if (typeof botMaiaTempValue !== 'undefined' && botMaiaTempValue > 0) return botMaiaTempValue;
+  var el = document.getElementById('maia3Temp');
+  return parseFloat((el && el.value) || '1.0') || 1.0;
+}
+
 // ── Conviction pick: 30% argmax / 70% temperature sample ─────────────────────
 // A bot with strong opinions shouldn't be a pure dice-roll, but pure argmax
 // is exploitably deterministic. Middle ground: 30% of moves it simply plays
@@ -1934,11 +1945,7 @@ async function botMakeMove() {
       // control (and the Hustler phase override) governs every Maia path —
       // previously this read only #maia3Temp, which the old panel derived
       // from the CP Budget, leaving the visible Temperature slider dead here.
-      const m3Temp = window._bcpHustlerTempMode
-        ? hustlerPhaseTemp()
-        : (typeof botMaiaTempValue !== 'undefined' && botMaiaTempValue > 0)
-          ? botMaiaTempValue
-          : parseFloat(document.getElementById('maia3Temp')?.value || '1.0');
+      const m3Temp = botMaiaBaseTemp();
       // Rough think estimate BEFORE inference so the ELO degradation curve
       // uses actual move pace (weaponizer/hustle/fixed included), not the
       // clock/remaining-moves average — same plumbing as the LC paths.
@@ -2635,9 +2642,30 @@ async function botPremoveArm() {
     if (myGen !== _botPremoveGen || myGameGen !== _botGameGen) return;
     if (!replyProbs) return;
 
-    var replySorted = Object.entries(replyProbs).sort(function(a, b) { return b[1] - a[1]; });
-    if (!replySorted.length) return;
-    var replyUci = replySorted[0][0];
+    if (!Object.keys(replyProbs).length) return;
+
+    // Pick the reply through the SAME pipeline a normal move uses — personality
+    // attractors reweight the distribution, then the conviction pick samples it
+    // at the panel's temperature. Taking a bare argmax here (the original
+    // implementation) made premoved moves strictly top-move while ordinary
+    // moves were sampled, so the bot visibly changed character whenever it
+    // premoved. It also made near-ties decisive: in one real game Maia rated
+    // Bxd5 34.4% and Nxd5 32.4%, and argmax always took the former.
+    //
+    // Think-time-driven effects (the curve-B temperature ramp, complexity
+    // scaling) are deliberately NOT applied: a premove is decided before the
+    // clock for that move starts, so there is no think time to derive them
+    // from. Base temperature is the honest input here.
+    // applyMoveAttractors scores each candidate by simulating it against the
+    // LIVE globals (board/turn/epSq/castling/atkMap). The reply's candidates
+    // belong to the hypothetical position, so the globals must point there for
+    // the duration of the call — otherwise every candidate is scored against a
+    // board where its piece isn't on the from-square. Swap, shape, restore.
+    var replyUci = _botWithPosition(hypBoard, hypTurn, hypEp, hypCastle, function() {
+      var shaped = applyMoveAttractors(replyProbs);
+      return pickFromProbs(shaped, botMaiaBaseTemp());
+    });
+    if (!replyUci) return;
 
     var rm = uciToSq(replyUci);
     if (!rm || rm.from == null || rm.to == null) return;
@@ -2710,6 +2738,26 @@ async function botPremoveArm() {
 
 // Surfaced for diagnostics; null while arming is healthy.
 var botPremoveLastError = null;
+
+// Run `fn` with the board globals pointed at a hypothetical position, then put
+// the real ones back. Needed because the scoring pipeline (applyMoveAttractors
+// and the metrics it calls) reads board/turn/epSq/castling/atkMap directly
+// rather than taking a position argument. Synchronous by design: nothing may
+// await inside, or the UI would observe the fake position mid-swap.
+function _botWithPosition(bd, t, ep, cst, fn) {
+  var oldBoard = board, oldTurn = turn, oldEp = epSq, oldCast = castling, oldAtk = atkMap;
+  board = bd; turn = t; epSq = ep; castling = cst;
+  try {
+    atkMap = buildAtk(bd);
+  } catch (e) {
+    atkMap = oldAtk;
+  }
+  try {
+    return fn();
+  } finally {
+    board = oldBoard; turn = oldTurn; epSq = oldEp; castling = oldCast; atkMap = oldAtk;
+  }
+}
 
 // Fire the armed premove — called from botPostMoveHook when it becomes the
 // bot's turn. Returns true if the premove executed (caller then skips normal
