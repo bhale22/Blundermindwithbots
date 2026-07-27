@@ -1046,6 +1046,7 @@ function botSaveConfig() {
       ratePct:      botPremoveRatePct,
       minPct:       botPremoveMinPct,
       onlyLowClock: botPremoveOnlyLowClock,
+      oppClockSecs: botPremoveOppClockSecs,
       clockSecs:    botPremoveClockSecs,
       bustDelayMs:  botPremoveBustDelayMs
     },
@@ -1101,6 +1102,7 @@ function botLoadConfig(event) {
         botPremoveRatePct      = (cfg.premove.ratePct   != null) ? +cfg.premove.ratePct   : 70;
         botPremoveMinPct       = (cfg.premove.minPct    != null) ? +cfg.premove.minPct    : 45;
         botPremoveOnlyLowClock = !!cfg.premove.onlyLowClock;
+        botPremoveOppClockSecs = (cfg.premove.oppClockSecs != null) ? +cfg.premove.oppClockSecs : 30;
         botPremoveClockSecs    = (cfg.premove.clockSecs != null) ? +cfg.premove.clockSecs : 30;
         botPremoveBustDelayMs  = (cfg.premove.bustDelayMs != null) ? +cfg.premove.bustDelayMs : 2000;
       }
@@ -1551,6 +1553,7 @@ window.addEventListener('message', function(e) {
   botPremoveRatePct      = (cfg.premoveRatePct   != null) ? +cfg.premoveRatePct   : 70;
   botPremoveMinPct       = (cfg.premoveMinPct    != null) ? +cfg.premoveMinPct    : 45;
   botPremoveOnlyLowClock = !!cfg.premoveOnlyLowClock;
+  botPremoveOppClockSecs = (cfg.premoveOppClockSecs != null) ? +cfg.premoveOppClockSecs : 30;
   botPremoveClockSecs    = (cfg.premoveClockSecs != null) ? +cfg.premoveClockSecs : 30;
   botPremoveBustDelayMs  = (cfg.premoveBustDelayMs != null) ? +cfg.premoveBustDelayMs : 2000;
 

@@ -2510,8 +2510,20 @@ function ghostSoloDepth() { return ghostDepth(); }
 //   botPremoveRatePct  % of eligible turns it premoves (0-100)
 //   botPremoveMinPct   only premove when Maia's prediction is at least this
 //                      confident — models a human premoving only on "obvious" replies
-//   botPremoveOnlyLowClock / botPremoveClockSecs
-//                      restrict premoving to time scrambles, as humans do
+//   botPremoveOnlyLowClock
+//                      master gate: only premove during a time scramble. Two
+//                      independent triggers sit under it, and EITHER one arms
+//                      the premove:
+//   botPremoveOppClockSecs
+//                      the OPPONENT is under this many seconds — premove to
+//                      keep the clock running on them and play for the flag.
+//                      This is the aggressive trigger: humans premove hardest
+//                      when the opponent is about to flag, because every
+//                      instant reply costs the opponent time they don't have.
+//                      0 = trigger off.
+//   botPremoveClockSecs
+//                      the BOT ITSELF is under this many seconds — premove out
+//                      of its own desperation. 0 = trigger off.
 //   botPremoveBustDelayMs
 //                      extra think time after the human busts a premove — the
 //                      "didn't see that coming" stall, and the clock reward for
@@ -2520,6 +2532,7 @@ var botPremoveEnabled       = false;
 var botPremoveRatePct       = 70;
 var botPremoveMinPct        = 45;
 var botPremoveOnlyLowClock  = false;
+var botPremoveOppClockSecs  = 30;
 var botPremoveClockSecs     = 30;
 var botPremoveBustDelayMs   = 2000;
 
@@ -2547,11 +2560,19 @@ function botPremoveShouldArm() {
   // Maia is the predictor — without the model there is no premove.
   if (typeof _maiaReady === 'undefined' || !_maiaReady) return false;
   if (botPremoveOnlyLowClock) {
-    // botClockMs() returns null in untimed games — a low-clock trigger can
-    // never be satisfied there, so the bot simply doesn't premove.
-    var ms = botClockMs();
-    if (ms === null || !isFinite(ms)) return false;
-    if (ms / 1000 > botPremoveClockSecs) return false;
+    // Two independent triggers; EITHER one arms the premove.
+    //   • opponent low  → premove to keep their clock burning and play for the
+    //                     flag (the aggressive reason humans premove)
+    //   • bot low       → premove out of its own time desperation
+    // Both clocks read null in untimed games, where neither can ever fire, so
+    // the bot simply doesn't premove there.
+    var oppMs = (typeof botOppClockMs !== 'undefined') ? botOppClockMs : null;
+    var ownMs = botClockMs();
+    var oppLow = botPremoveOppClockSecs > 0 && oppMs !== null && isFinite(oppMs) &&
+                 oppMs / 1000 <= botPremoveOppClockSecs;
+    var ownLow = botPremoveClockSecs > 0 && ownMs !== null && isFinite(ownMs) &&
+                 ownMs / 1000 <= botPremoveClockSecs;
+    if (!oppLow && !ownLow) return false;
   }
   return Math.random() * 100 < botPremoveRatePct;
 }

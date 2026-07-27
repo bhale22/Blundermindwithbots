@@ -150,29 +150,76 @@ test('low-clock gating: untimed games never premove when the gate is on', async 
   ctx.botPremoveEnabled = true;
   ctx.botPremoveRatePct = 100;
   ctx.botPremoveOnlyLowClock = true;
-  ctx.botClockMs = () => null;            // untimed
+  ctx.botPremoveOppClockSecs = 30;
+  ctx.botPremoveClockSecs = 30;
+  ctx.botClockMs = () => null;            // untimed — both clocks read null
+  ctx.botOppClockMs = null;
   stubMaia(ctx, { e2e4: 0.9 }, { e7e5: 0.9 });
 
   await ctx.botPremoveArm();
   assert.equal(ctx.botActivePremove, null);
 });
 
-test('low-clock gating: arms only once the bot clock drops under the threshold', async () => {
-  async function armWithClock(secs) {
-    const ctx = makeCtx();
-    setPos(ctx, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
-    ctx.botPlayerColor = 'white';
-    ctx.botPremoveEnabled = true;
-    ctx.botPremoveRatePct = 100;
-    ctx.botPremoveOnlyLowClock = true;
-    ctx.botPremoveClockSecs = 30;
-    ctx.botClockMs = () => secs * 1000;
-    stubMaia(ctx, { e2e4: 0.9 }, { e7e5: 0.9 });
-    await ctx.botPremoveArm();
-    return ctx.botActivePremove;
-  }
-  assert.equal(await armWithClock(60), null, '60s left is not a time scramble');
-  assert.ok(await armWithClock(10), '10s left should premove');
+// Two independent triggers live under the low-clock gate: the opponent being
+// low (play for the flag) and the bot itself being low (own desperation).
+// Either alone arms a premove; 0 switches a trigger off.
+async function armWithClocks(opts) {
+  const ctx = makeCtx();
+  setPos(ctx, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+  ctx.botPlayerColor = 'white';
+  ctx.botPremoveEnabled = true;
+  ctx.botPremoveRatePct = 100;
+  ctx.botPremoveOnlyLowClock = true;
+  ctx.botPremoveOppClockSecs = opts.oppThreshold != null ? opts.oppThreshold : 0;
+  ctx.botPremoveClockSecs    = opts.ownThreshold != null ? opts.ownThreshold : 0;
+  ctx.botOppClockMs = opts.oppSecs != null ? opts.oppSecs * 1000 : null;
+  ctx.botClockMs = () => (opts.ownSecs != null ? opts.ownSecs * 1000 : null);
+  stubMaia(ctx, { e2e4: 0.9 }, { e7e5: 0.9 });
+  await ctx.botPremoveArm();
+  return ctx.botActivePremove;
+}
+
+test('low-clock gating: arms once the BOT clock drops under its threshold', async () => {
+  assert.equal(await armWithClocks({ ownThreshold: 30, ownSecs: 60, oppSecs: 300 }), null,
+    '60s left is not a time scramble');
+  assert.ok(await armWithClocks({ ownThreshold: 30, ownSecs: 10, oppSecs: 300 }),
+    '10s left should premove');
+});
+
+test('low-clock gating: arms once the OPPONENT clock drops — playing for the flag', async () => {
+  assert.equal(await armWithClocks({ oppThreshold: 30, oppSecs: 90, ownSecs: 300 }), null,
+    'opponent at 90s is not flaggable yet');
+  assert.ok(await armWithClocks({ oppThreshold: 30, oppSecs: 8, ownSecs: 300 }),
+    'opponent at 8s should trigger flag-hunting premoves even with the bot on 300s');
+});
+
+test('either trigger alone is enough to arm a premove', async () => {
+  // Opponent low, bot comfortable
+  assert.ok(await armWithClocks({ oppThreshold: 30, ownThreshold: 30, oppSecs: 5, ownSecs: 600 }),
+    'opponent-low alone should arm');
+  // Bot low, opponent comfortable
+  assert.ok(await armWithClocks({ oppThreshold: 30, ownThreshold: 30, oppSecs: 600, ownSecs: 5 }),
+    'bot-low alone should arm');
+  // Neither low
+  assert.equal(await armWithClocks({ oppThreshold: 30, ownThreshold: 30, oppSecs: 600, ownSecs: 600 }), null,
+    'neither low should not arm');
+});
+
+test('a threshold of 0 switches that trigger off without disabling the other', async () => {
+  // Opponent trigger off; bot trigger still fires
+  assert.ok(await armWithClocks({ oppThreshold: 0, ownThreshold: 30, oppSecs: 1, ownSecs: 5 }),
+    'bot trigger should still work when the opponent trigger is off');
+  // Opponent at 1s but its trigger is off, and the bot is comfortable
+  assert.equal(await armWithClocks({ oppThreshold: 0, ownThreshold: 30, oppSecs: 1, ownSecs: 600 }), null,
+    'a disabled opponent trigger must not fire even at 1s');
+  // Both off
+  assert.equal(await armWithClocks({ oppThreshold: 0, ownThreshold: 0, oppSecs: 1, ownSecs: 1 }), null,
+    'both triggers off means no premoving');
+});
+
+test('untimed games never satisfy either trigger', async () => {
+  assert.equal(await armWithClocks({ oppThreshold: 30, ownThreshold: 30, oppSecs: null, ownSecs: null }), null,
+    'null clocks (untimed) cannot trigger a time scramble');
 });
 
 // ── Firing: the prediction was right ─────────────────────────────────────────

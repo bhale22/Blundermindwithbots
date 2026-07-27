@@ -67,12 +67,34 @@ await page.waitForTimeout(120);
 ok(await page.evaluate(() => document.getElementById('premove-clock-ctrl').style.display !== 'none'),
    'enabling low-clock reveals the threshold');
 
+// Both clock triggers exist, and the sub-panel is ordered:
+// low-clock toggle → opponent clock → bot clock → the remaining controls.
+ok(await page.locator('#r-premove-oppsecs').count() === 1, 'opponent-clock trigger exists');
+const order = await page.evaluate(() => {
+  const sub = document.getElementById('premove-sub');
+  const ids = ['cb-premove-clock','r-premove-oppsecs','r-premove-secs','r-premove-rate',
+               'r-premove-conf','r-premove-bust'];
+  const all = [...sub.querySelectorAll('*')];
+  return ids.map((id) => all.indexOf(document.getElementById(id)));
+});
+ok(order.every((v, i) => i === 0 || v > order[i - 1]),
+   'sub-panel order: low-clock toggle → opponent clock → bot clock → rate → confidence → bust');
+
+// Either threshold accepts 0 to switch that trigger off
+await setRange('r-premove-oppsecs', '0');
+await page.waitForTimeout(80);
+ok(await page.locator('#n-premove-oppsecs').inputValue() === '0',
+   'opponent-clock trigger can be set to 0 (off)');
+await setRange('r-premove-oppsecs', '25');
+await page.waitForTimeout(80);
+
 // Config emitted to the parent app
 const cfg = await page.evaluate(() => getBotConfig());
 ok(cfg.premoveEnabled === true, 'config carries premoveEnabled');
 ok(cfg.premoveRatePct === 35, 'config carries the rate (' + cfg.premoveRatePct + ')');
 ok(cfg.premoveMinPct === 70, 'config carries min confidence (' + cfg.premoveMinPct + ')');
 ok(cfg.premoveOnlyLowClock === true, 'config carries the low-clock gate');
+ok(cfg.premoveOppClockSecs === 25, 'config carries the opponent-clock threshold (' + cfg.premoveOppClockSecs + ')');
 
 // Busted-premove delay: seconds in the UI, milliseconds in the config
 await setRange('r-premove-bust', '3.5');
@@ -122,6 +144,32 @@ await page.waitForTimeout(150);
 const badge = await page.locator('#premove-stats').textContent();
 ok(/3 fired/.test(badge) && /1 busted/.test(badge), 'stats badge renders live counts: "' + badge + '"');
 
+// Number boxes must not render amber-on-white. .ctrl-val is shared with plain
+// <span> readouts, so applying it to an <input type=number> used to inherit the
+// browser's white field and drop contrast to ~1.7:1.
+const contrast = await page.evaluate(() => {
+  const lum = (c) => {
+    const [r, g, b] = c.match(/\d+/g).slice(0, 3).map(Number).map((v) => {
+      const s = v / 255;
+      return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const out = {};
+  document.querySelectorAll('input.ctrl-val[type=number]').forEach((el) => {
+    const cs = getComputedStyle(el);
+    const l1 = lum(cs.color), l2 = lum(cs.backgroundColor);
+    const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+    out[el.id] = Math.round(ratio * 100) / 100;
+  });
+  return out;
+});
+const ids = Object.keys(contrast);
+ok(ids.length > 0, 'found number inputs to check (' + ids.length + ')');
+const worst = ids.reduce((w, id) => (contrast[id] < contrast[w] ? id : w), ids[0]);
+ok(contrast[worst] >= 4.5,
+   'every number box meets 4.5:1 contrast — worst is ' + worst + ' at ' + contrast[worst] + ':1');
+
 // Explainer popup — prose only, no diagram
 ok(await page.locator('.pmt-help-btn').count() === 1, 'explainer button exists');
 ok(!(await page.locator('#pmt-overlay').evaluate(e => e.classList.contains('open'))),
@@ -136,12 +184,20 @@ ok(/what's a premove\?/i.test(note),      'explains what a premove is first');
 ok(/what's a premove trap\?/i.test(note), 'then explains what a trap is');
 ok(note.search(/what's a premove\?/i) < note.search(/what's a premove trap\?/i),
    'premove is defined before premove trap');
-ok(/still\s+fires/i.test(note),        'covers the still-legal case (the primary exploit)');
+ok(/free material|untouched/i.test(note), 'covers the still-legal case (bot plays on past free material)');
 ok(/illegal/i.test(note),              'covers the busted case');
 ok(/busted-premove delay/i.test(note), 'names the delay setting rather than saying "above"');
 ok(/premove rate/i.test(note) && /min confidence/i.test(note),
    'points at the panel controls by name');
 ok(await page.locator('#pmt-board').count() === 0, 'no diagram board — prose only');
+
+// Outbound reading links: must open in a new tab and carry noopener
+const links = await page.evaluate(() => [...document.querySelectorAll('.pmt-links a')]
+  .map((a) => ({ href: a.href, target: a.target, rel: a.rel })));
+ok(links.length >= 3, 'explainer links to further reading (' + links.length + ')');
+ok(links.every((l) => /^https:/.test(l.href)), 'all reading links are https');
+ok(links.every((l) => l.target === '_blank'), 'reading links open in a new tab');
+ok(links.every((l) => /noopener/.test(l.rel)), 'reading links carry rel=noopener');
 
 await page.keyboard.press('Escape');
 await page.waitForTimeout(200);
@@ -170,12 +226,13 @@ const applied = await page.evaluate(async () => {
     type: 'botConfig', engine: 'maia3', color: 'white',
     premoveEnabled: true, premoveRatePct: 42, premoveMinPct: 55,
     premoveOnlyLowClock: true, premoveClockSecs: 20, premoveBustDelayMs: 3500,
+    premoveOppClockSecs: 15,
   }, location.origin);
   await new Promise(r => setTimeout(r, 250));
   return {
     enabled: botPremoveEnabled, rate: botPremoveRatePct, min: botPremoveMinPct,
     lowClock: botPremoveOnlyLowClock, secs: botPremoveClockSecs,
-    bust: botPremoveBustDelayMs,
+    bust: botPremoveBustDelayMs, oppSecs: botPremoveOppClockSecs,
   };
 });
 ok(applied.enabled === true, 'bridge sets botPremoveEnabled');
@@ -184,6 +241,7 @@ ok(applied.min === 55,       'bridge sets min confidence (' + applied.min + ')')
 ok(applied.lowClock === true, 'bridge sets the low-clock gate');
 ok(applied.secs === 20,      'bridge sets the clock threshold (' + applied.secs + ')');
 ok(applied.bust === 3500,    'bridge sets the bust delay (' + applied.bust + ' ms)');
+ok(applied.oppSecs === 15,   'bridge sets the opponent-clock threshold (' + applied.oppSecs + ')');
 
 // Without the Maia model loaded, arming must be a safe no-op (not a crash)
 const safeNoop = await page.evaluate(async () => {
