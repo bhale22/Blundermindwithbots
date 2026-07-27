@@ -22,6 +22,10 @@ page.on('dialog', (d) => d.accept());
 // ── Control panel UI ─────────────────────────────────────────────────────────
 console.log('panel:');
 await page.goto(BASE + '/bot-control-panel.html', { waitUntil: 'networkidle' });
+// Persisted settings would mask the shipped defaults — clear them and reload so
+// the checks below see what a genuinely first-time visitor sees.
+await page.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
+await page.reload({ waitUntil: 'networkidle' });
 await page.waitForTimeout(400);
 
 // The real checkbox is visually replaced by a styled track, and it lives in a
@@ -34,6 +38,71 @@ const setTog = (id, on) => page.evaluate(([i, v]) => {
   el.dispatchEvent(new Event('change'));
   return true;
 }, [id, on]);
+
+// Shipped defaults a first-time visitor sees. Tuned to mirror human play:
+// people premove on near-forced replies, not coin flips.
+const defs = await page.evaluate(() => ({
+  rate:    document.getElementById('r-premove-rate').value,
+  conf:    document.getElementById('r-premove-conf').value,
+  bust:    document.getElementById('r-premove-bust').value,
+  opp:     document.getElementById('r-premove-oppsecs').value,
+  own:     document.getElementById('r-premove-secs').value,
+  enabled: document.getElementById('cb-premove').checked,
+  lowClk:  document.getElementById('cb-premove-clock').checked,
+}));
+ok(defs.rate === '80',    'default premove rate is 80% (' + defs.rate + ')');
+ok(defs.conf === '85',    'default min confidence is 85% (' + defs.conf + ')');
+ok(defs.bust === '2',     'default bust delay is 2s (' + defs.bust + ')');
+ok(defs.opp  === '30',    'default opponent-clock threshold is 30s');
+ok(defs.own  === '30',    'default bot-clock threshold is 30s');
+ok(defs.enabled === false, 'premoving is OFF by default (opt-in)');
+ok(defs.lowClk  === false, 'low-clock gate is OFF by default');
+
+// Collapsed Move Timing header always reports premove state
+const stOff = await page.locator('#st-timing').textContent();
+ok(/premoves off/i.test(stOff), 'collapsed header shows "Premoves off": "' + stOff + '"');
+await page.evaluate(() => {
+  const e = document.getElementById('cb-premove'); e.checked = true; e.dispatchEvent(new Event('change'));
+});
+await page.waitForTimeout(150);
+const stOn = await page.locator('#st-timing').textContent();
+ok(/premoves on/i.test(stOn), 'header updates to "Premoves on": "' + stOn + '"');
+ok(/fixed interval/i.test(stOn), 'header still names the timing mode');
+await page.evaluate(() => {
+  const e = document.getElementById('cb-premove'); e.checked = false; e.dispatchEvent(new Event('change'));
+});
+await page.waitForTimeout(150);
+
+// Move Timing two-column layout: modes stacked, each owning its control drawer
+const layout = await page.evaluate(() => {
+  const stack = document.querySelector('#timing-mode-grid');
+  const blocks = [...document.querySelectorAll('.mode-block')];
+  const cards = [...document.querySelectorAll('[data-g="timing"]')];
+  return {
+    isStack: !!stack && getComputedStyle(stack).flexDirection === 'column',
+    blocks: blocks.length,
+    order: cards.map(c => c.dataset.v),
+    drawers: blocks.filter(b => b.querySelector('.mode-ctrl')).length,
+  };
+});
+ok(layout.isStack, 'timing modes are stacked vertically');
+ok(layout.blocks === 4, 'four mode blocks (' + layout.blocks + ')');
+ok(layout.drawers === 4, 'every mode owns a control drawer (' + layout.drawers + ')');
+ok(layout.order.join('|') === 'Instantaneous|Fixed interval|Mirror user|Complexity-scaled',
+   'order is Instantaneous → Fixed → Mirror → Complexity: ' + layout.order.join(' → '));
+
+// Selecting a mode opens exactly one drawer
+for (const [v, id] of [['Complexity-scaled','tb-complexity'], ['Instantaneous','tb-instant'],
+                       ['Mirror user','tb-mirror'], ['Fixed interval','tb-fixed']]) {
+  await page.evaluate((val) => {
+    document.querySelector(`[data-v="${val}"]`).click();
+  }, v);
+  await page.waitForTimeout(120);
+  const open = await page.evaluate(() => [...document.querySelectorAll('.mode-block.open')].map(b => b.id));
+  ok(open.length === 1 && open[0] === id, v + ' opens only its own drawer (' + open.join(',') + ')');
+}
+
+ok(await page.locator('#btn-reset-panel').count() === 1, 'whole-panel reset button exists');
 
 ok(await page.locator('#cb-premove').count() === 1, 'premove master toggle exists');
 ok(await page.evaluate(() => document.getElementById('premove-sub').style.display === 'none'),

@@ -2529,8 +2529,8 @@ function ghostSoloDepth() { return ghostDepth(); }
 //                      "didn't see that coming" stall, and the clock reward for
 //                      setting the trap
 var botPremoveEnabled       = false;
-var botPremoveRatePct       = 70;
-var botPremoveMinPct        = 45;
+var botPremoveRatePct       = 80;
+var botPremoveMinPct        = 85;
 var botPremoveOnlyLowClock  = false;
 var botPremoveOppClockSecs  = 30;
 var botPremoveClockSecs     = 30;

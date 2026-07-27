@@ -903,6 +903,29 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 
 /* ══ 5-CARD ENGINE MODE ROW ══ */
 .mode-grid-5{grid-template-columns:repeat(5,1fr);}
+
+/* ── Move Timing: modes stacked in the left column ─────────────────────────
+   Each mode's controls open in a drawer joined to its own card, so the
+   settings are never orphaned from the mode they belong to. Ordered
+   Instantaneous → Fixed → Mirror → Complexity, with the slider-heavy
+   Complexity mode last so expanding it pushes nothing else down. */
+.mode-stack{display:flex;flex-direction:column;gap:6px;}
+.mode-block{display:flex;flex-direction:column;}
+.mode-block .mcard{border-radius:var(--r);}
+.mode-block.open .mcard{border-bottom-left-radius:0;border-bottom-right-radius:0;border-bottom-color:transparent;}
+.mode-ctrl{
+  display:none;padding:10px 12px 11px;
+  background:var(--carbon-raise);
+  border:0.5px solid var(--amber);border-top:none;
+  border-radius:0 0 var(--r) var(--r);
+}
+.mode-block.open .mode-ctrl{display:block;}
+.mode-ctrl .ctrl:first-child{margin-top:0;}
+.mode-ctrl .ctrl-hint:last-child{margin-bottom:0;}
+.mode-none{font-family:var(--font-m);font-size:8.5px;color:var(--text-dim);line-height:1.55;}
+/* Collapsed-header badge turns amber while premoving is on — the setting
+   changes play enough that it should read as a live state, not a footnote. */
+.sec-status.st-warn{color:var(--amber-bright);}
 .mode-compact .mdesc{font-size:7.5px;line-height:1.35;color:var(--text-secondary);margin-top:2px;}
 .mode-compact .mname{font-size:8px;}
 .mode-compact .mcard{padding:8px 8px;}
@@ -1232,6 +1255,16 @@ body.fj .picon{font-weight:500;}
           <div style="margin-left:auto;">
             <input type="file" id="bot-upload-input" accept=".json" style="display:none;" onchange="uploadBotFile(this)">
             <button class="preset-btn" onclick="document.getElementById('bot-upload-input').click()" title="Import bot from JSON file">⬆ Import</button>
+          </div>
+        </div>
+        <!-- Start clean: clears every tuned setting back to its shipped default.
+             Saved bots are untouched — this only resets the live panel. -->
+        <div style="padding:2px 6px 6px;border-top:0.5px solid var(--border);margin-top:2px;">
+          <button class="preset-btn" id="btn-reset-panel" onclick="resetPanelToDefaults()"
+            title="Reset every control to its default — saved bots are not affected"
+            style="width:100%;">↺ Reset all to defaults</button>
+          <div style="font-size:8px;color:var(--text-dim);line-height:1.5;margin-top:4px;">
+            Restores every control to its shipped default. Your saved bots are not affected.
           </div>
         </div>
       </div>
@@ -1759,48 +1792,64 @@ body.fj .picon{font-weight:500;}
   </div>
   <div class="panel-shell">
     <div class="panel">
-      <!-- Mode cards — full width -->
-      <div class="pr" style="margin-top:0;">
-        <div class="mode-grid mode-grid-4 mode-compact" id="timing-mode-grid">
-          <div class="mcard" data-g="timing" data-v="Complexity-scaled" onclick="selMode(this,'st-timing');showTimingCtrl('complexity')"><div class="mdot"></div><div class="mname">Complexity scaled</div><div class="mdesc">Think time scales with position complexity.</div></div>
-          <div class="mcard" data-g="timing" data-v="Instantaneous" onclick="selMode(this,'st-timing');showTimingCtrl('instant')"><div class="mdot"></div><div class="mname">Instantaneous</div><div class="mdesc">Moves at engine speed. No delay.</div></div>
-          <div class="mcard sel" data-g="timing" data-v="Fixed interval" onclick="selMode(this,'st-timing');showTimingCtrl('fixed')"><div class="mdot"></div><div class="mname">Fixed interval</div><div class="mdesc">Constant pause between all moves.</div></div>
-          <div class="mcard" data-g="timing" data-v="Mirror user" onclick="selMode(this,'st-timing');showTimingCtrl('mirror')"><div class="mdot"></div><div class="mname">Mirror user</div><div class="mdesc">Matches your move rhythm ± offset.</div></div>
-        </div>
-      </div>
-
-      <!-- 2-col: left = mode-specific controls, right = human behaviour -->
+      <!-- 2-col: left = timing modes stacked with their own controls,
+           right = human behaviour modifiers and below -->
       <div class="panel-2col">
-        <!-- LEFT: timing mode controls -->
+        <!-- LEFT: each mode card owns the drawer of settings beneath it -->
         <div>
-          <div id="timing-complexity-ctrl" style="display:none;">
-            <div class="dlbl"><span>Complexity — reference time</span></div>
-            <div class="ctrl">
-              <span class="ctrl-lbl">Base time</span>
-              <input type="range" id="r-cplx-base" min="0.5" max="15" value="3" step="0.5" oninput="sv(this,'v-cplx-base',v=>v+'s')">
-              <span class="ctrl-val" id="v-cplx-base">3s</span>
+          <div class="dlbl" style="margin-top:0;"><span>Timing mode</span></div>
+          <div class="mode-stack" id="timing-mode-grid">
+
+            <!-- Instantaneous — no settings of its own -->
+            <div class="mode-block" id="tb-instant">
+              <div class="mcard" data-g="timing" data-v="Instantaneous" onclick="selMode(this,'st-timing');showTimingCtrl('instant')"><div class="mdot"></div><div class="mname">Instantaneous</div><div class="mdesc">Moves at engine speed. No delay.</div></div>
+              <div class="mode-ctrl" id="timing-instant-ctrl">
+                <div class="mode-none">No settings — the bot replies the moment its engine returns a move.</div>
+              </div>
             </div>
-            <div class="ctrl-hint" style="margin-bottom:8px;">Average-complexity think time. Simple = faster; complex = slower.</div>
-            <div class="ctrl">
-              <span class="ctrl-lbl">Min multiplier</span>
-              <input type="range" id="r-cplx-min" min="0.1" max="1" value="0.4" step="0.1" oninput="sv(this,'v-cplx-min',v=>v+'×')">
-              <span class="ctrl-val" id="v-cplx-min">0.4×</span>
+
+            <!-- Fixed interval -->
+            <div class="mode-block open" id="tb-fixed">
+              <div class="mcard sel" data-g="timing" data-v="Fixed interval" onclick="selMode(this,'st-timing');showTimingCtrl('fixed')"><div class="mdot"></div><div class="mname">Fixed interval</div><div class="mdesc">Constant pause between all moves.</div></div>
+              <div class="mode-ctrl" id="timing-fixed-ctrl" style="display:block;">
+                <div class="ctrl"><span class="ctrl-lbl">Duration</span><input type="range" id="r-fixed" min="1" max="60" value="2" oninput="sv(this,'v-fixed',v=>v+'s'); updateQsThinkTime()"><span class="ctrl-val" id="v-fixed">2s</span></div>
+              </div>
             </div>
-            <div class="ctrl">
-              <span class="ctrl-lbl">Max multiplier</span>
-              <input type="range" id="r-cplx-max" min="1" max="6" value="2.5" step="0.5" oninput="sv(this,'v-cplx-max',v=>v+'×')">
-              <span class="ctrl-val" id="v-cplx-max">2.5×</span>
+
+            <!-- Mirror user -->
+            <div class="mode-block" id="tb-mirror">
+              <div class="mcard" data-g="timing" data-v="Mirror user" onclick="selMode(this,'st-timing');showTimingCtrl('mirror')"><div class="mdot"></div><div class="mname">Mirror user</div><div class="mdesc">Matches your move rhythm ± offset.</div></div>
+              <div class="mode-ctrl" id="timing-mirror-ctrl">
+                <div class="ctrl"><span class="ctrl-lbl">Speed offset</span><input type="range" id="r-mirror" min="-100" max="100" value="0" oninput="sv(this,'v-mirror',v=>v>0?'+'+v+'%':v+'%')"><span class="ctrl-val" id="v-mirror">0%</span></div>
+                <div class="ctrl-hint">Negative = bot faster. Positive = bot slower.</div>
+              </div>
             </div>
-            <div class="ctrl-hint">Range: <strong>0.4×</strong> (obvious moves) → <strong>2.5×</strong> (highly complex).</div>
-          </div>
-          <div id="timing-fixed-ctrl" style="display:block;">
-            <div class="dlbl"><span>Fixed interval</span></div>
-            <div class="ctrl"><span class="ctrl-lbl">Duration</span><input type="range" id="r-fixed" min="1" max="60" value="2" oninput="sv(this,'v-fixed',v=>v+'s'); updateQsThinkTime()"><span class="ctrl-val" id="v-fixed">2s</span></div>
-          </div>
-          <div id="timing-mirror-ctrl" style="display:none;">
-            <div class="dlbl"><span>Mirror user</span></div>
-            <div class="ctrl"><span class="ctrl-lbl">Speed offset</span><input type="range" id="r-mirror" min="-100" max="100" value="0" oninput="sv(this,'v-mirror',v=>v>0?'+'+v+'%':v+'%')"><span class="ctrl-val" id="v-mirror">0%</span></div>
-            <div class="ctrl-hint">Negative = bot faster. Positive = bot slower.</div>
+
+            <!-- Complexity scaled — most sliders, kept last so expanding it
+                 pushes nothing else down -->
+            <div class="mode-block" id="tb-complexity">
+              <div class="mcard" data-g="timing" data-v="Complexity-scaled" onclick="selMode(this,'st-timing');showTimingCtrl('complexity')"><div class="mdot"></div><div class="mname">Complexity scaled</div><div class="mdesc">Think time scales with position complexity.</div></div>
+              <div class="mode-ctrl" id="timing-complexity-ctrl">
+                <div class="ctrl">
+                  <span class="ctrl-lbl">Base time</span>
+                  <input type="range" id="r-cplx-base" min="0.5" max="15" value="3" step="0.5" oninput="sv(this,'v-cplx-base',v=>v+'s')">
+                  <span class="ctrl-val" id="v-cplx-base">3s</span>
+                </div>
+                <div class="ctrl-hint" style="margin-bottom:8px;">Average-complexity think time. Simple = faster; complex = slower.</div>
+                <div class="ctrl">
+                  <span class="ctrl-lbl">Min multiplier</span>
+                  <input type="range" id="r-cplx-min" min="0.1" max="1" value="0.4" step="0.1" oninput="sv(this,'v-cplx-min',v=>v+'×')">
+                  <span class="ctrl-val" id="v-cplx-min">0.4×</span>
+                </div>
+                <div class="ctrl">
+                  <span class="ctrl-lbl">Max multiplier</span>
+                  <input type="range" id="r-cplx-max" min="1" max="6" value="2.5" step="0.5" oninput="sv(this,'v-cplx-max',v=>v+'×')">
+                  <span class="ctrl-val" id="v-cplx-max">2.5×</span>
+                </div>
+                <div class="ctrl-hint">Range: <strong>0.4×</strong> (obvious moves) → <strong>2.5×</strong> (highly complex).</div>
+              </div>
+            </div>
+
           </div>
         </div>
 
@@ -1855,10 +1904,10 @@ body.fj .picon{font-weight:500;}
                 <div class="ctrl" style="margin-top:6px;"><span class="ctrl-lbl">Bot clock under</span><input type="range" id="r-premove-secs" min="0" max="120" step="5" value="30" oninput="syncPremoveSecs(this.value,'r-premove-secs')"><input type="number" id="n-premove-secs" class="ctrl-val" min="0" max="120" step="5" value="30" style="width:52px;" oninput="syncPremoveSecs(this.value,'n-premove-secs')"></div>
                 <div class="ctrl-hint">Premoves once the <em>bot</em> drops under this, out of its own time desperation. <strong>0</strong> = off. Either trigger alone is enough to start premoving.</div>
               </div>
-              <div class="ctrl" style="margin-top:6px;"><span class="ctrl-lbl">Premove rate</span><input type="range" id="r-premove-rate" min="0" max="100" step="5" value="70" oninput="syncPremoveRate(this.value,'r-premove-rate')"><input type="number" id="n-premove-rate" class="ctrl-val" min="0" max="100" step="5" value="70" style="width:52px;" oninput="syncPremoveRate(this.value,'n-premove-rate')"></div>
-              <div class="ctrl-hint">Percent of turns the bot premoves. <strong>100%</strong> = always premoves (most exploitable — best for drilling traps).</div>
-              <div class="ctrl" style="margin-top:6px;"><span class="ctrl-lbl">Min confidence</span><input type="range" id="r-premove-conf" min="0" max="95" step="5" value="45" oninput="syncPremoveConf(this.value,'r-premove-conf')"><input type="number" id="n-premove-conf" class="ctrl-val" min="0" max="95" step="5" value="45" style="width:52px;" oninput="syncPremoveConf(this.value,'n-premove-conf')"></div>
-              <div class="ctrl-hint">Only premoves when Maia is at least this sure of your reply — like a human premoving only on "obvious" recaptures. Lower = premoves more often in murky positions.</div>
+              <div class="ctrl" style="margin-top:6px;"><span class="ctrl-lbl">Premove rate</span><input type="range" id="r-premove-rate" min="0" max="100" step="5" value="80" oninput="syncPremoveRate(this.value,'r-premove-rate')"><input type="number" id="n-premove-rate" class="ctrl-val" min="0" max="100" step="5" value="80" style="width:52px;" oninput="syncPremoveRate(this.value,'n-premove-rate')"></div>
+              <div class="ctrl-hint">Of the moves that <em>clear the confidence bar below</em>, the percent the bot actually premoves — not a percent of all moves. <strong>100%</strong> = premoves every time it's confident.</div>
+              <div class="ctrl" style="margin-top:6px;"><span class="ctrl-lbl">Min confidence</span><input type="range" id="r-premove-conf" min="0" max="95" step="5" value="85" oninput="syncPremoveConf(this.value,'r-premove-conf')"><input type="number" id="n-premove-conf" class="ctrl-val" min="0" max="95" step="5" value="85" style="width:52px;" oninput="syncPremoveConf(this.value,'n-premove-conf')"></div>
+              <div class="ctrl-hint">Only premoves when Maia is at least this sure of your reply — humans premove on near-forced replies, not coin flips. <strong>85%</strong> mirrors real play; dropping it far below ~60% makes the bot premove into positions a human never would, and its play will look erratic.</div>
               <div class="ctrl" style="margin-top:6px;"><span class="ctrl-lbl">Busted-premove delay</span><input type="range" id="r-premove-bust" min="0" max="5" step="0.1" value="2" oninput="syncPremoveBust(this.value,'r-premove-bust')"><input type="number" id="n-premove-bust" class="ctrl-val" min="0" max="5" step="0.1" value="2" style="width:52px;" oninput="syncPremoveBust(this.value,'n-premove-bust')"></div>
               <div class="ctrl-hint">Seconds of extra thinking when you bust a premove — the "didn't see that coming" stall. This is your reward for springing a trap: the bot burns its own clock. <strong>0</strong> = no penalty. Never allowed to flag the bot.</div>
               <div class="ctrl-hint" style="margin-top:8px;">Requires the <strong>Maia 3</strong> model — the prediction runs on it. Live counts this game: <span id="premove-stats" style="color:var(--blue);">none yet</span>.</div>
@@ -6024,6 +6073,23 @@ function selMode(card, statusId){
   card.classList.add('sel');
   const st = document.getElementById(statusId);
   if(st) st.textContent = card.dataset.v;
+  // Move Timing's collapsed header also reports premove state — premoving
+  // changes play enough that it must be visible without expanding the section.
+  if(statusId === 'st-timing') updateTimingStatus();
+}
+
+// Collapsed Move Timing header: "<mode> · Premoves on|off".
+// Premoving makes the bot reply instantly regardless of what you played, which
+// looks like a malfunction if you don't know it's on — so the state is always
+// shown, never just when enabled.
+function updateTimingStatus(){
+  const st = document.getElementById('st-timing');
+  if(!st) return;
+  const sel = document.querySelector('[data-g="timing"].sel');
+  const mode = sel ? sel.dataset.v : 'Fixed interval';
+  const on = document.getElementById('cb-premove')?.checked === true;
+  st.textContent = mode + ' · Premoves ' + (on ? 'on' : 'off');
+  st.classList.toggle('st-warn', on);
 }
 
 function selSeg(btn, groupId){
@@ -6220,6 +6286,7 @@ function showPremove(on, sourceId){
     if(el && el.checked !== on) el.checked = on;
   });
   try { localStorage.setItem('bm_premoveOn', on ? '1' : '0'); } catch(e){}
+  if(typeof updateTimingStatus === 'function') updateTimingStatus();
 }
 function showPremoveClock(on, sourceId){
   const sub = document.getElementById('premove-clock-ctrl');
@@ -6250,6 +6317,35 @@ function syncPremoveBust(raw, sourceId){
   _syncPair(raw, sourceId, ['r-premove-bust','n-premove-bust'], 0, 5,
     v => Math.round(v * 10) / 10, 'bm_premoveBust');
 }
+// ── Reset the whole panel ───────────────────────────────────────────────────
+// Starting a fresh bot shouldn't mean hunting through collapsed sections for
+// the one slider left somewhere odd. This reloads the page with every stored
+// setting cleared, which is both simpler and safer than hand-resetting each
+// control — the panel's own init path then rebuilds the defaults exactly as a
+// first-time visitor sees them.
+//
+// Deliberately NOT cleared:
+//   bm_panelTheme / bm_panelStyle / bm_readability — display preferences, not
+//     bot settings; resetting a bot shouldn't change how the panel looks.
+//   bm_bottour  — the "seen the tour" flag; replaying it would be a nuisance.
+//   saved bots  — stored separately and never touched.
+const PANEL_SETTING_KEYS = [
+  'bm_premoveOn','bm_premoveLowClock','bm_premoveRate','bm_premoveConf',
+  'bm_premoveSecs','bm_premoveOppSecs','bm_premoveBust',
+  'bm_wzTriggerSec','bm_wzMinSec','bm_format'
+];
+
+function resetPanelToDefaults(){
+  const msg = 'Reset every control to its default?\n\n' +
+              'This clears all tuning in this panel — engine, personality, timing, ' +
+              'premove and pressure settings.\n\nYour saved bots will NOT be affected.';
+  if(!window.confirm(msg)) return;
+  try {
+    PANEL_SETTING_KEYS.forEach(k => localStorage.removeItem(k));
+  } catch(e){}
+  location.reload();
+}
+
 // ── Premove explainer popup ─────────────────────────────────────────────────
 function pmtOpen(){
   const ov = document.getElementById('pmt-overlay');
@@ -8805,10 +8901,15 @@ function onDaySlider(){
 }
 
 /* ── Timing mode control visibility ──────────────────────────────────────── */
+// Modes are stacked vertically, each owning a control drawer beneath its card.
+// 'instant' is included because it now has a drawer too (one stating it has no
+// settings), so selecting any mode always produces a visible response.
 function showTimingCtrl(mode){
-  ['complexity','fixed','mirror'].forEach(m=>{
+  ['complexity','fixed','mirror','instant'].forEach(m=>{
     const el = document.getElementById('timing-'+m+'-ctrl');
     if(el) el.style.display = m===mode ? 'block' : 'none';
+    const block = document.getElementById('tb-'+m);
+    if(block) block.classList.toggle('open', m===mode);
   });
   updateQsThinkTime();
 }
@@ -9362,6 +9463,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   _initReadability();
   _initWeaponizerPrefs();
   _initPremovePrefs();
+  updateTimingStatus();   // collapsed header must show premove state from load
   buildTimeGrid();
   renderTempGrid();
   buildSFPips('sf-pips');

@@ -1099,8 +1099,8 @@ function botLoadConfig(event) {
       if (cfg.ghostPieces !== undefined) document.getElementById('cbGhostPieces').checked = cfg.ghostPieces;
       if (cfg.premove) {
         botPremoveEnabled      = !!cfg.premove.enabled;
-        botPremoveRatePct      = (cfg.premove.ratePct   != null) ? +cfg.premove.ratePct   : 70;
-        botPremoveMinPct       = (cfg.premove.minPct    != null) ? +cfg.premove.minPct    : 45;
+        botPremoveRatePct      = (cfg.premove.ratePct   != null) ? +cfg.premove.ratePct   : 80;
+        botPremoveMinPct       = (cfg.premove.minPct    != null) ? +cfg.premove.minPct    : 85;
         botPremoveOnlyLowClock = !!cfg.premove.onlyLowClock;
         botPremoveOppClockSecs = (cfg.premove.oppClockSecs != null) ? +cfg.premove.oppClockSecs : 30;
         botPremoveClockSecs    = (cfg.premove.clockSecs != null) ? +cfg.premove.clockSecs : 30;
@@ -1550,8 +1550,8 @@ window.addEventListener('message', function(e) {
   // Premove — the bot commits a reply before seeing the human's move, so the
   // human can practice baiting a premove and punishing it.
   botPremoveEnabled      = !!cfg.premoveEnabled;
-  botPremoveRatePct      = (cfg.premoveRatePct   != null) ? +cfg.premoveRatePct   : 70;
-  botPremoveMinPct       = (cfg.premoveMinPct    != null) ? +cfg.premoveMinPct    : 45;
+  botPremoveRatePct      = (cfg.premoveRatePct   != null) ? +cfg.premoveRatePct   : 80;
+  botPremoveMinPct       = (cfg.premoveMinPct    != null) ? +cfg.premoveMinPct    : 85;
   botPremoveOnlyLowClock = !!cfg.premoveOnlyLowClock;
   botPremoveOppClockSecs = (cfg.premoveOppClockSecs != null) ? +cfg.premoveOppClockSecs : 30;
   botPremoveClockSecs    = (cfg.premoveClockSecs != null) ? +cfg.premoveClockSecs : 30;
