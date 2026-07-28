@@ -999,6 +999,32 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 /* Toggle labels and their descriptions share a row with a switch — let the
    text column shrink instead of pushing the switch off the edge. */
 #sec-timing .tog-row > div:first-child{min-width:0;padding-right:8px;}
+
+/* ── Auto-suppressed toggle ────────────────────────────────────────────────
+   Move blink returns 200–500ms on any near-forced position, which fires
+   BEFORE the timing mode is consulted — so with Fixed interval it silently
+   overrode the user's chosen duration. Selecting Fixed now switches blink off
+   and marks the row, so the change is visible rather than something the user
+   has to discover by watching the bot move instantly. The toggle stays fully
+   operable: re-enabling it is one click, and doing so clears the mark. */
+.tog-row.auto-off .tog-lbl,
+.tog-row.auto-off .tog-desc{opacity:0.55;}
+/* This note is the entire reason the row is highlighted — it must not be the
+   smallest text in the panel. Sized with .tog-desc, not below it. */
+.tog-note{
+  display:none;margin-top:4px;font-family:var(--font-m);font-size:8px;
+  line-height:1.5;color:var(--amber);
+}
+.tog-row.auto-off .tog-note{display:block;}
+/* Amber hairline marks the row as changed-by-the-app without shouting. */
+.tog-row.auto-off{
+  border-left:2px solid var(--amber);
+  padding-left:8px;margin-left:-10px;
+  background:var(--amber-glow);
+  border-radius:var(--r);
+  transition:background 0.25s,border-color 0.25s;
+}
+#sec-timing .tog-row.auto-off{padding-left:8px;}
 .mode-compact .mdesc{font-size:7.5px;line-height:1.35;color:var(--text-secondary);margin-top:2px;}
 .mode-compact .mname{font-size:8px;}
 .mode-compact .mcard{padding:8px 8px;}
@@ -2023,7 +2049,14 @@ body.fj .picon{font-weight:500;}
 
           <div class="dlbl"><span>Human behaviour modifiers</span></div>
           <div class="tog-row"><div><div class="tog-lbl">Reconsideration pauses</div><div class="tog-desc">Occasionally hesitates then takes longer — as if changing its mind</div></div><label class="tog"><input type="checkbox" id="cb-reconsidered" checked><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
-          <div class="tog-row"><div><div class="tog-lbl">Move blink on forced moves</div><div class="tog-desc">Plays obvious recaptures and forced replies instantly</div></div><label class="tog"><input type="checkbox" id="cb-blink" checked><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
+          <div class="tog-row" id="row-blink">
+            <div>
+              <div class="tog-lbl">Move blink on forced moves</div>
+              <div class="tog-desc">Plays obvious recaptures and forced replies instantly</div>
+              <div class="tog-note" id="blink-note">Turned off by <strong>Fixed interval</strong> — blink would override your set duration on forced moves. Switch back on to allow it.</div>
+            </div>
+            <label class="tog"><input type="checkbox" id="cb-blink" checked onchange="onBlinkToggle(this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label>
+          </div>
           <div class="tog-row"><div><div class="tog-lbl">Clock-pressure mirroring</div><div class="tog-desc">Bot speeds up when your clock runs low</div></div><label class="tog"><input type="checkbox" id="cb-clock-mirror" checked onchange="syncClockMirror(this.checked,'cb-clock-mirror')"><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
 
           <!-- Time Weaponizer — adjacent to clock-pressure mirroring -->
@@ -6626,14 +6659,21 @@ function selColor(btn){
   setTimeout(() => closeAllQsDropdowns(), 240);
 }
 
+// Read the mode off the SELECTED CARD, which is the single source of truth.
+// This used to infer the mode from which control rail was visible, but the
+// rails no longer encode selection: Fixed's and Mirror's are on screen at all
+// times (dimmed when inactive) and Complexity's is shown via a CSS class, so
+// every inline style.display read came back the same and the mode was
+// mis-saved. data-v is set in the markup and never changes.
+const _TIMING_MODE_BY_V = {
+  'Instantaneous':     'instant',
+  'Fixed interval':    'fixed',
+  'Mirror user':       'mirror',
+  'Complexity-scaled': 'complexity'
+};
 function _getTimingMode(){
-  const cx = document.getElementById('timing-complexity-ctrl');
-  const fx = document.getElementById('timing-fixed-ctrl');
-  const mr = document.getElementById('timing-mirror-ctrl');
-  if(cx && cx.style.display !== 'none') return 'complexity';
-  if(fx && fx.style.display !== 'none') return 'fixed';
-  if(mr && mr.style.display !== 'none') return 'mirror';
-  return 'instant';
+  const sel = document.querySelector('#timing-mode-grid .mcard.sel');
+  return (sel && _TIMING_MODE_BY_V[sel.dataset.v]) || 'fixed';
 }
 
 function getBotConfig(){
@@ -6880,7 +6920,13 @@ function applyBotConfig(cfg){
   grp(() => {
     const setCb = (id, v) => { const el = document.getElementById(id); if(el) el.checked = v !== false; };
     setCb('cb-reconsidered', cfg.behavReconsider);
+    // A saved bot's blink setting is a deliberate choice — restore it as-is.
+    // If it was saved ON while in fixed mode, treat that as the user's own
+    // override so the mode doesn't switch it back off on load; the row mark
+    // is then recomputed from the final state.
     setCb('cb-blink',        cfg.behavBlink);
+    _blinkUserOverride = (cfg.behavBlink !== false);
+    applyBlinkSuppression(_getTimingMode());
     setCb('cb-clock-mirror', cfg.behavClockMirror);
     syncClockMirror(cfg.behavClockMirror !== false, 'cb-clock-mirror');
     setCb('cb-flag',         cfg.canFlag);
@@ -9117,7 +9163,53 @@ function showTimingCtrl(mode){
     const block = document.getElementById('tb-'+m);
     if(block) block.classList.toggle('attached', sel);
   });
+  applyBlinkSuppression(mode);
   updateQsThinkTime();
+}
+
+// Fixed interval promises a specific duration, but Move blink is evaluated
+// ahead of the timing mode in botThinkTime() and returns 200–500ms on any
+// near-forced position — so leaving blink on quietly breaks that promise.
+// Selecting Fixed switches it off and says so on the row. The user keeps the
+// final word: toggling it back on clears the mark and is respected.
+//
+// `_blinkUserOverride` remembers that the user re-enabled blink FOR fixed
+// mode, so re-entering fixed later doesn't switch it off behind their back.
+let _blinkUserOverride = false;
+// Blink's state before fixed mode switched it off, so leaving fixed can hand
+// it back. Without this the setting stays off in Mirror/Complexity, where
+// nothing overrides it — the user never chose that, the mode did.
+let _blinkPreFixed = null;
+function applyBlinkSuppression(mode){
+  const cb  = document.getElementById('cb-blink');
+  const row = document.getElementById('row-blink');
+  if(!cb || !row) return;
+  if(mode === 'fixed' && !_blinkUserOverride){
+    if(cb.checked){ _blinkPreFixed = true; cb.checked = false; }
+    row.classList.add('auto-off');
+    return;
+  }
+  row.classList.remove('auto-off');
+  // Left fixed mode: the reason for the suppression is gone, so restore what
+  // the user had. Not done when they overrode inside fixed — that state is
+  // already theirs.
+  if(mode !== 'fixed' && _blinkPreFixed === true){
+    cb.checked = true;
+    _blinkPreFixed = null;
+  }
+}
+// Manual toggle wins over the automatic suppression.
+function onBlinkToggle(on){
+  const row = document.getElementById('row-blink');
+  if(on){
+    _blinkUserOverride = true;          // don't re-suppress while in this mode
+    if(row) row.classList.remove('auto-off');
+  } else if(_getTimingMode() === 'fixed'){
+    // Switched off by hand while in fixed — same end state, so drop the
+    // override and let the row explain why it belongs off here.
+    _blinkUserOverride = false;
+    if(row) row.classList.add('auto-off');
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -9671,7 +9763,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
   _initPremovePrefs();
   updateTimingStatus();   // collapsed header must show premove state from load
   // Fixed is the markup default; this puts the other rails into their inert
-  // (dimmed + disabled) state, which markup alone can't express.
+  // (dimmed + disabled) state, which markup alone can't express, and applies
+  // the fixed-mode blink suppression to the checked-by-default toggle.
   showTimingCtrl('fixed');
   buildTimeGrid();
   renderTempGrid();
