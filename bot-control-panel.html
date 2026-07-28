@@ -1267,6 +1267,121 @@ body.fj .picon{font-weight:500;}
   background:rgba(93,173,226,0.06);border-left:2px solid var(--blue);
   font-size:10.5px;line-height:1.65;color:var(--text-secondary);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHONES / NARROW VIEWPORTS
+   ───────────────────────────────────────────────────────────────────────────
+   The panel was laid out for a ~1100px page. On a phone the browser was
+   shrinking ~890px of content into a ~460px viewport instead of reflowing it,
+   which is why everything read as tiny rather than as a narrow column. The
+   fix is structural, not a font bump: collapse every multi-column grid to a
+   single column so the panel becomes one readable vertical scroll, then give
+   the controls real touch targets (44px is the platform minimum; the sliders
+   and checkboxes here were 10–15px).
+
+   Last in the file so these win over the base rules without !important.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width:760px){
+  /* ── One column everywhere ── */
+  .panel-2col{grid-template-columns:1fr;gap:14px;}
+  .mode-grid,.mode-grid-3,.mode-grid-4,.mode-grid-5{grid-template-columns:1fr;}
+  .persona-grid,.persona-grid-4col{grid-template-columns:1fr 1fr;}
+  .page{padding-left:10px;padding-right:10px;}
+
+  /* ── The three nowrap flex strips that set the page's minimum width ──
+     Each forced the document to ~890px, which is what made the browser
+     shrink the whole panel instead of reflowing it. Wrapping these is what
+     actually lets the single-column layout above take effect. */
+  .header{flex-wrap:wrap;gap:4px 12px;padding:16px 12px 12px;}
+  .header-line{display:none;}          /* decorative rule, no room for it */
+  .header-title{font-size:20px;}
+
+  /* Quick-start pills become a 2-up grid instead of one long row. */
+  .qs-bar{display:grid;grid-template-columns:1fr 1fr;align-items:stretch;}
+  .qs-label{display:none;}
+
+  /* Section tabs stay a single row but scroll sideways — wrapping tabs read
+     as two competing rows, and horizontal swipe is the familiar pattern. */
+  .itab-strip{
+    overflow-x:auto;overflow-y:hidden;flex-wrap:nowrap;
+    -webkit-overflow-scrolling:touch;scrollbar-width:none;
+  }
+  .itab-strip::-webkit-scrollbar{display:none;}
+  .itab{flex:0 0 auto;}
+
+  /* ── Section headers: let the status chip wrap instead of overflowing ── */
+  .sec-trigger{flex-wrap:wrap;padding:11px 12px;}
+  .sec-labels{min-width:0;flex:1 1 auto;}
+  .sec-label,.sec-sub{white-space:normal;}
+  .sec-status{
+    flex:0 1 auto;max-width:100%;white-space:normal;text-align:left;
+    order:3;margin-top:4px;
+  }
+
+  /* ── Touch targets ──
+     Sliders are the main interaction here and were the hardest to hit: the
+     track is only a few px tall, so pad the control itself rather than
+     inflating the visual track. */
+  input[type=range]{height:34px;}
+  input[type=range]::-webkit-slider-thumb{width:20px;height:20px;}
+  input[type=range]::-moz-range-thumb{width:20px;height:20px;}
+  /* The switch is 32×17 by design. Scaling it up would fight the panel's
+     visual rhythm, so keep the drawn control and extend only the hit area with
+     an invisible overlay — .tog-track is inset:0, so padding would have
+     stretched the track itself. */
+  .tog{transform:scale(1.2);transform-origin:right center;}
+  .tog::after{
+    content:'';position:absolute;
+    left:-14px;right:-14px;top:-14px;bottom:-14px;
+  }
+  input[type=checkbox]{width:20px;height:20px;}
+  input.ctrl-val[type=number]{min-height:32px;font-size:13px;}
+  .seg-btn,.preset-btn,.itab,.xsbtn,.pa-btn,.ap-btn{min-height:38px;}
+  .info-i{width:26px;height:26px;font-size:12px;}
+  .pmt-help-btn{min-height:32px;padding:6px 10px;}
+
+  /* ── Readable text at arm's length ──
+     The desktop panel runs 7.5–11px, which is deliberate density on a large
+     screen and simply unreadable on a phone. */
+  .ctrl-lbl{font-size:12px;min-width:0;flex:1 1 auto;}
+  .ctrl-val{font-size:14px;min-width:52px;}
+  .ctrl-hint,.tog-note{font-size:11px;line-height:1.5;}
+  .tog-lbl{font-size:12.5px;}
+  .tog-desc{font-size:11.5px;}
+  .dlbl span{font-size:11px;}
+  .sec-label{font-size:14px;}
+  .sec-sub{font-size:11px;}
+  .sec-status{font-size:11px;}
+  .mode-stack .mname{font-size:13px;}
+  .mode-stack .mdesc{font-size:11px;}
+  .sub-title{font-size:11px;}
+  .info-pop{font-size:11.5px;}
+
+  /* ── Control rows stack when the label + slider + value + ⓘ won't fit ──
+     Keeps the slider full-width and thumb-reachable instead of crushing it
+     into ~60px beside a long label. */
+  .ctrl{flex-wrap:wrap;gap:6px 10px;}
+  .ctrl input[type=range]{flex:1 1 100%;order:3;}
+  .ctrl-lbl{order:1;}
+  .ctrl-val{order:2;text-align:right;}
+  .info-i{order:2;}
+  /* The popover anchors to the row, which is now taller — keep it in flow. */
+  .info-pop{position:static;margin-top:6px;order:4;flex:1 1 100%;}
+
+  /* Mode cards: name and description stack rather than ellipsising away. */
+  .mode-stack .mcard{flex-wrap:wrap;padding:9px 11px;}
+  .mode-stack .mdesc{
+    margin-left:0;flex:1 1 100%;text-align:left;white-space:normal;
+  }
+  .mode-ctrl .ctrl-lbl{min-width:0;}
+}
+
+/* Very narrow (small phones held in portrait) */
+@media (max-width:420px){
+  .persona-grid,.persona-grid-4col{grid-template-columns:1fr;}
+  .page{padding-left:7px;padding-right:7px;}
+  .sec-trigger{padding:10px 9px;}
+}
 </style>
 </head>
 <body>

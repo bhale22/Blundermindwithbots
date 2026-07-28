@@ -665,12 +665,81 @@ canvas{
 #ghostCanvas { position:absolute;top:0;left:0;pointer-events:none;border-radius:4px; }
 #board-canvas-wrap { position:relative;display:inline-block;flex-shrink:0; }
 
-@media(max-width:700px){
-  #page-wrap{padding:8px 12px 0;}
-  #app{flex-direction:column;justify-content:flex-start;}
-  #sidebar{min-width:0;width:100%;max-width:100%;}
-  canvas{width:100% !important;height:auto !important;}
-  .player-box{width:100% !important;}
+/* ── Board-vision settings drawer ──────────────────────────────────────────
+   Desktop: the wrapper is inert (display:contents), so #sidebar lays its
+   children out exactly as it did before this element existed, and the toggle
+   is hidden. The mobile rules below are what give it behaviour. */
+#board-settings{display:contents;}
+#bv-toggle{display:none;}
+
+@media(max-width:760px){
+  /* ── Board first, and as large as the screen allows ──
+     The board is the reason someone opened the page; on a phone it should be
+     the thing they land on, not something they scroll up to find. */
+  #page-wrap{padding:6px 10px 0;}
+  #app{flex-direction:column;justify-content:flex-start;gap:8px;}
+
+  /* Site header is a nowrap flex row — it set a 447px floor on the page. */
+  #site-header{flex-wrap:wrap;justify-content:center;row-gap:2px;}
+
+  /* The tour card is positioned against its spotlight by JS (inline top/left),
+     which on a narrow screen puts it partly off the right edge. Dock it to the
+     bottom instead — always fully visible, can't overflow, and the familiar
+     mobile pattern. !important is needed to beat the inline positioning. */
+  #tourPanel{
+    position:fixed;
+    left:12px !important;right:12px !important;
+    top:auto !important;bottom:12px !important;
+    width:auto !important;max-width:none;transform:none !important;
+  }
+  /* Explicit order for EVERY child of #app. Ordering only some of them left
+     #proSide at the default 0, which floated the pro notation panel and its
+     action buttons above the board and pushed the board off the bottom. */
+  #board-col{width:100%;min-width:0;order:1;}
+  #proSide{width:100%;min-width:0;max-width:100%;order:2;}
+  #sidebar{min-width:0;width:100%;max-width:100%;order:3;}
+  /* resizeBoard() sizes the canvas and player boxes inline (it knows the
+     available height); these just cap them to the column and centre them, so
+     there's one source of truth for the board's size rather than CSS and JS
+     fighting through !important. */
+  canvas{max-width:100%;height:auto;margin:0 auto;}
+  .player-box{max-width:100%;height:auto;min-height:36px;padding:4px 10px;}
+  .player-name{font-size:12px;}
+  .player-time{font-size:15px;}
+  .hint-text{font-size:9px;}
+  .mat-bar{font-size:12px;}
+
+  /* ── The settings drawer ── */
+  #bv-toggle{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    width:100%;min-height:44px;padding:10px 12px;margin:2px 0 4px;
+    background:var(--bg-panel);border:1px solid var(--border);border-radius:6px;
+    color:var(--text-secondary);font-size:13px;font-weight:600;
+    font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;
+  }
+  #bv-toggle .bv-c{font-size:11px;transition:transform 0.2s;}
+  #bv-toggle[aria-expanded="true"] .bv-c{transform:rotate(180deg);}
+  #bv-toggle[aria-expanded="true"]{border-color:var(--accent);color:var(--text-primary);}
+  #board-settings{display:none;}
+  #board-settings.open{display:flex;flex-direction:column;gap:4px;}
+
+  /* ── Touch targets inside the drawer and the button rows ── */
+  .s-row{padding:7px 0;gap:8px;}
+  .s-row label{display:flex;align-items:center;gap:6px;min-height:32px;}
+  .s-lbl{font-size:12px;}
+  #sidebar input[type=checkbox]{width:20px;height:20px;}
+  #sidebar select{font-size:13px !important;padding:7px 6px !important;min-height:38px;}
+  .ctrl-btn,.gbtn{min-height:42px;font-size:12px;}
+  .ctrl-row{gap:6px;}
+  /* Indicator cards go 1-up so their labels stop truncating */
+  .ind-grid{grid-template-columns:1fr;}
+}
+
+/* Short viewports (landscape phones): cap the board by height, not width, and
+   keep the clocks compact so board + clocks still fit above the fold. */
+@media(max-width:900px) and (max-height:500px){
+  canvas{max-height:62vh;max-width:62vh;}
+  .player-box{min-height:30px;padding:2px 8px;}
 }
 /* When board is flipped (human plays black), move white box to top and black box to bottom
    so the player's clock always appears adjacent to their pieces. */
@@ -1335,6 +1404,18 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
   <!-- RIGHT: sidebar -->
   <div id="sidebar">
 
+    <!-- Board-vision settings + indicator cards.
+         On a phone these are ~450px of configuration sitting between the board
+         and the game buttons, which pushed the board off screen. They collapse
+         behind #bv-toggle there; on desktop the wrapper is display:contents so
+         the sidebar's own flex layout is completely unchanged. -->
+    <button type="button" id="bv-toggle" aria-expanded="false" aria-controls="board-settings"
+            onclick="toggleBoardSettings()">
+      <span class="bv-t">⚙ Board vision settings</span>
+      <span class="bv-c">▾</span>
+    </button>
+    <div id="board-settings">
+
     <!-- Settings -->
     <div class="s-row">
       <span class="s-lbl">🔊 Move sounds:</span>
@@ -1513,6 +1594,8 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     </div>
 
     <div class="sep"></div>
+
+    </div><!-- end #board-settings -->
 
     <!-- Draw/Resign (multiplayer only) -->
     <div id="gameActions">
