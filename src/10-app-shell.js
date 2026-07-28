@@ -137,18 +137,43 @@ let botUserTurnStartMs   = null; // wall-clock ms when the human's current turn 
 
 // ── Board sizing ──────────────────────────────────────────────────────
 function resizeBoard() {
-  const sidebar = document.getElementById('sidebar');
-  const sidebarW = sidebar ? sidebar.offsetWidth : 240;
   const pageWrap = document.getElementById('page-wrap');
   const wrapW = pageWrap ? pageWrap.clientWidth : (window.innerWidth - 40);
-  const maxFromWidth = wrapW - sidebarW - 16;
+
+  // Below the breakpoint the sidebar sits BELOW the board rather than beside
+  // it, so its width is no longer competing for horizontal space — subtracting
+  // it (as the desktop path does) yields a negative budget and pins the board
+  // at its 280px floor. On phones the board gets the full column width, and
+  // only the viewport height limits it.
+  const stacked = window.matchMedia('(max-width:760px)').matches;
+  const sidebar = document.getElementById('sidebar');
+  const sidebarW = sidebar ? sidebar.offsetWidth : 240;
+  // clientWidth includes padding, so subtract it — otherwise the board is sized
+  // wider than the column that holds it. Stacked, that made the canvas render
+  // non-square (CSS capped the width, the inline height kept the un-capped
+  // value); side-by-side, it pushed #app past the viewport on narrow desktops
+  // and tablets (~820px portrait), which is where the horizontal scroll there
+  // came from.
+  let padX = 0;
+  if (pageWrap) {
+    const cs = getComputedStyle(pageWrap);
+    padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+  }
+  const avail = wrapW - padX;
+  // 24 (not the gap's 12) leaves room for the canvas border and sub-pixel
+  // rounding — at exactly 768px the old reserve overflowed the page by 4px.
+  const maxFromWidth = stacked ? avail : (avail - sidebarW - 24);
 
   // Vertical space: measure header, use fixed estimates for player/footer
   const headerEl = document.getElementById('site-header');
   const topH     = (headerEl && headerEl.offsetHeight > 0 ? headerEl.offsetHeight : 40) + 8;
   const playerH  = 44 * 2 + 8; // two player boxes, fixed height
   const footerH  = 30;
-  const maxFromHeight = window.innerHeight - topH - playerH - footerH - 12;
+  // Stacked layout scrolls, so the board may exceed the fold — reserve room for
+  // the clocks and the settings toggle, but don't shrink it to fit everything.
+  const maxFromHeight = stacked
+    ? window.innerHeight - topH - playerH - 8
+    : window.innerHeight - topH - playerH - footerH - 12;
   const boardPx = Math.max(280, Math.min(maxFromWidth, maxFromHeight, 900));
   const bpx = boardPx + 'px';
   const cv = document.getElementById('cv');

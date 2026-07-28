@@ -28,6 +28,32 @@ function playMoveSound(isCapture){
 function saveSoundPref(){const el=document.getElementById('cbSound');if(el)localStorage.setItem('bm_sound',el.checked?'1':'0');}
 function loadSoundPref(){const v=localStorage.getItem('bm_sound');const el=document.getElementById('cbSound');if(el&&v!==null)el.checked=(v==='1');}
 
+// ── Board-vision settings drawer (phones only) ──────────────────────────────
+// These controls sit between the board and the game buttons. At desktop widths
+// that's a sidebar; stacked on a phone it's ~450px of configuration pushing the
+// board off screen, so there it collapses behind a toggle. The wrapper is
+// display:contents above the breakpoint, so this only ever does anything on
+// narrow viewports. Choice is remembered — someone who opens it to set up
+// their indicators shouldn't have to reopen it every move.
+function toggleBoardSettings(){
+  const box = document.getElementById('board-settings');
+  const btn = document.getElementById('bv-toggle');
+  if(!box || !btn) return;
+  const open = !box.classList.contains('open');
+  box.classList.toggle('open', open);
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  try{ localStorage.setItem('bm_bvOpen', open ? '1' : '0'); }catch(e){}
+}
+function loadBoardSettingsPref(){
+  const box = document.getElementById('board-settings');
+  const btn = document.getElementById('bv-toggle');
+  if(!box || !btn) return;
+  let open = false;
+  try{ open = localStorage.getItem('bm_bvOpen') === '1'; }catch(e){}
+  box.classList.toggle('open', open);
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
 // ── Draw-rule tracking (threefold repetition + fifty-move rule) ──────────────
 let positionCounts = {};   // positionKey → times this position has occurred
 let halfmoveClock  = 0;    // plies since the last pawn move or capture
@@ -2356,6 +2382,7 @@ if (!localStorage.getItem('bm_bgTheme')) applyBgTheme('lightblue'); // Cool blue
 if (!localStorage.getItem('bm_pieceSet')) { currentPieceSet = 'staunton'; }
 loadPrefs();
 loadSoundPref();
+loadBoardSettingsPref();
 loadPos(0);
 resizeBoard();
 
