@@ -692,8 +692,12 @@ canvas{
     top:auto !important;bottom:12px !important;
     width:auto !important;max-width:none;transform:none !important;
   }
+  /* Explicit order for EVERY child of #app. Ordering only some of them left
+     #proSide at the default 0, which floated the pro notation panel and its
+     action buttons above the board and pushed the board off the bottom. */
   #board-col{width:100%;min-width:0;order:1;}
-  #sidebar{min-width:0;width:100%;max-width:100%;order:2;}
+  #proSide{width:100%;min-width:0;max-width:100%;order:2;}
+  #sidebar{min-width:0;width:100%;max-width:100%;order:3;}
   /* resizeBoard() sizes the canvas and player boxes inline (it knows the
      available height); these just cap them to the column and centre them, so
      there's one source of truth for the board's size rather than CSS and JS
