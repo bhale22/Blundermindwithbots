@@ -848,6 +848,7 @@ async function botStart() {
   botActive = false;
   botThinking = false;
   _botGameGen++;   // invalidate any in-flight botMakeMove from the previous game
+  if (typeof botPremoveReset === 'function') botPremoveReset(); // drop stale premove + stats
   clearGhostPieces();
   botGhostResponses = {};
   botLastHoverSq = -1;
@@ -981,6 +982,7 @@ function botStop() {
   botActive = false;
   botThinking = false;
   _botGameGen++;   // invalidate any in-flight botMakeMove
+  if (typeof botPremoveReset === 'function') botPremoveReset(); // drop stale premove + stats
   clearGhostPieces();
   botGhostResponses = {};
   boardFlipped = false;
@@ -1039,6 +1041,15 @@ function botSaveConfig() {
     pace: parseInt(document.getElementById('botPace').value),
     playerColor: botPlayerColor,
     ghostPieces: document.getElementById('cbGhostPieces').checked,
+    premove: {
+      enabled:      botPremoveEnabled,
+      ratePct:      botPremoveRatePct,
+      minPct:       botPremoveMinPct,
+      onlyLowClock: botPremoveOnlyLowClock,
+      oppClockSecs: botPremoveOppClockSecs,
+      clockSecs:    botPremoveClockSecs,
+      bustDelayMs:  botPremoveBustDelayMs
+    },
     opening: {
       mode: botOpeningMode,
       config: botOpeningConfig,
@@ -1086,6 +1097,15 @@ function botLoadConfig(event) {
       if (cfg.pace) { document.getElementById('botPace').value = cfg.pace; document.getElementById('botPaceVal').textContent = cfg.pace; }
       if (cfg.playerColor) botSetPlayerColor(cfg.playerColor);
       if (cfg.ghostPieces !== undefined) document.getElementById('cbGhostPieces').checked = cfg.ghostPieces;
+      if (cfg.premove) {
+        botPremoveEnabled      = !!cfg.premove.enabled;
+        botPremoveRatePct      = (cfg.premove.ratePct   != null) ? +cfg.premove.ratePct   : 80;
+        botPremoveMinPct       = (cfg.premove.minPct    != null) ? +cfg.premove.minPct    : 85;
+        botPremoveOnlyLowClock = !!cfg.premove.onlyLowClock;
+        botPremoveOppClockSecs = (cfg.premove.oppClockSecs != null) ? +cfg.premove.oppClockSecs : 30;
+        botPremoveClockSecs    = (cfg.premove.clockSecs != null) ? +cfg.premove.clockSecs : 30;
+        botPremoveBustDelayMs  = (cfg.premove.bustDelayMs != null) ? +cfg.premove.bustDelayMs : 2000;
+      }
       if (cfg.opening) {
         botOpeningConfig = Object.assign(botOpeningConfig, cfg.opening.config || {});
         // Migrate old loyalty/repertoire modes to unified 'preferred'
@@ -1527,6 +1547,16 @@ window.addEventListener('message', function(e) {
   botBehavClockMirror = cfg.behavClockMirror !== false;
   botCanFlag          = cfg.canFlag          !== false;
 
+  // Premove — the bot commits a reply before seeing the human's move, so the
+  // human can practice baiting a premove and punishing it.
+  botPremoveEnabled      = !!cfg.premoveEnabled;
+  botPremoveRatePct      = (cfg.premoveRatePct   != null) ? +cfg.premoveRatePct   : 80;
+  botPremoveMinPct       = (cfg.premoveMinPct    != null) ? +cfg.premoveMinPct    : 85;
+  botPremoveOnlyLowClock = !!cfg.premoveOnlyLowClock;
+  botPremoveOppClockSecs = (cfg.premoveOppClockSecs != null) ? +cfg.premoveOppClockSecs : 30;
+  botPremoveClockSecs    = (cfg.premoveClockSecs != null) ? +cfg.premoveClockSecs : 30;
+  botPremoveBustDelayMs  = (cfg.premoveBustDelayMs != null) ? +cfg.premoveBustDelayMs : 2000;
+
   // Time pressure max drop → drives sfEffectiveLevel floor
   botTimePressureMaxDrop = (cfg.timePressureMaxDrop != null) ? cfg.timePressureMaxDrop : null;
 
@@ -1562,7 +1592,15 @@ window.addEventListener('message', function(e) {
 
   // Weaponizer
   botWeaponizerEnabled = !!cfg.weaponizerEnabled;
-  botWeaponizerLeadMs  = (cfg.weaponizerLeadSec || 30) * 1000;
+  // Trigger is the opponent's remaining clock, not the bot's lead over it — a
+  // 5-minute lead means nothing in a 90-minute game, but 15 s left is always
+  // flaggable. Bots saved before this change carry weaponizerLeadSec instead;
+  // that value was a lead, not a threshold, so it is ignored in favour of the
+  // 15 s default rather than silently reinterpreted.
+  botWeaponizerTriggerMs = (cfg.weaponizerTriggerSec != null)
+    ? Math.max(1, Math.min(120, +cfg.weaponizerTriggerSec)) * 1000
+    : 15000;
+  botWeaponizerMinMs   = Math.max(0, Math.min(5, +cfg.weaponizerMinSec || 0)) * 1000;
 
   // Calm/panicky (-5..+5) → botTimePressure
   // Center (0) = steady (no boost); positive = panicky boost under pressure
