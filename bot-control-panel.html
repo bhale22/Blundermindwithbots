@@ -612,14 +612,24 @@ body.rs-highvis .attr-right,
 body.rs-highvis .day-vals,
 body.rs-highvis .dual-range-labels{font-size:11px !important;line-height:1.45;}
 body.rs-highvis .cc-field,body.rs-highvis .cc-select{font-size:12px !important;}
-/* The Move Timing mode rows are headings for the control rail attached to
-   each one. High-vis lifts .ctrl-lbl/.ctrl-val to 11px but left .mname at its
-   base 9px, which inverted the hierarchy — "Fixed interval" rendered smaller
-   than its own Duration slider. Scale the row with the controls it heads, and
-   keep the description a step below the name. Scoped to .mode-stack so the
-   engine and persona card grids keep their own sizing. */
-body.rs-highvis .mode-stack .mname{font-size:12.5px !important;}
-body.rs-highvis .mode-stack .mdesc{font-size:11px !important;}
+/* Selection cards are headings for the controls they govern, but High-vis
+   only ever lifted .ctrl-lbl/.ctrl-val to 11px — every card name and blurb
+   kept its 7–9px base size, so headings rendered SMALLER than the sliders
+   beneath them and the blurbs fell well under a low-vision floor. Bring the
+   whole card family up: name above the 11px control tier, supporting text
+   level with it.
+
+   Excluded via :not(.fj) because Journal already sets these larger (14 /
+   13.5 / 12) — !important here would otherwise SHRINK text in Journal +
+   High-vis, the opposite of what the mode is for. */
+body.rs-highvis:not(.fj) .mode-stack .mname,
+body.rs-highvis:not(.fj) .pcard .pname{font-size:12.5px !important;}
+body.rs-highvis:not(.fj) .mode-stack .mdesc,
+body.rs-highvis:not(.fj) .mode-compact .mdesc,
+body.rs-highvis:not(.fj) .pcard .ptrait{font-size:11px !important;line-height:1.45;}
+/* Tags are a deliberate step down from the trait line, but 7px is unreadable
+   here — floor them just under the body tier. */
+body.rs-highvis:not(.fj) .pcard .ptag{font-size:10px !important;}
 body.rs-highvis [style*="font-size:6px"]{font-size:11px !important;}
 body.rs-highvis [style*="font-size:6.5px"]{font-size:11px !important;}
 body.rs-highvis [style*="font-size:7px"]{font-size:11px !important;}
