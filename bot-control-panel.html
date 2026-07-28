@@ -612,6 +612,14 @@ body.rs-highvis .attr-right,
 body.rs-highvis .day-vals,
 body.rs-highvis .dual-range-labels{font-size:11px !important;line-height:1.45;}
 body.rs-highvis .cc-field,body.rs-highvis .cc-select{font-size:12px !important;}
+/* The Move Timing mode rows are headings for the control rail attached to
+   each one. High-vis lifts .ctrl-lbl/.ctrl-val to 11px but left .mname at its
+   base 9px, which inverted the hierarchy — "Fixed interval" rendered smaller
+   than its own Duration slider. Scale the row with the controls it heads, and
+   keep the description a step below the name. Scoped to .mode-stack so the
+   engine and persona card grids keep their own sizing. */
+body.rs-highvis .mode-stack .mname{font-size:12.5px !important;}
+body.rs-highvis .mode-stack .mdesc{font-size:11px !important;}
 body.rs-highvis [style*="font-size:6px"]{font-size:11px !important;}
 body.rs-highvis [style*="font-size:6.5px"]{font-size:11px !important;}
 body.rs-highvis [style*="font-size:7px"]{font-size:11px !important;}
@@ -1939,44 +1947,12 @@ body.fj .picon{font-weight:500;}
           </div>
         </div>
 
-        <!-- RIGHT: human behaviour modifiers + Time Weaponizer -->
+        <!-- RIGHT: premove first (the headline behaviour — it changes play the
+             most, so it gets the top slot), then the always-on human
+             modifiers, then the opt-in Time Weaponizer -->
         <div>
-          <div class="dlbl"><span>Human behaviour modifiers</span></div>
-          <div class="tog-row"><div><div class="tog-lbl">Reconsideration pauses</div><div class="tog-desc">Occasionally hesitates then takes longer — as if changing its mind</div></div><label class="tog"><input type="checkbox" id="cb-reconsidered" checked><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
-          <div class="tog-row"><div><div class="tog-lbl">Move blink on forced moves</div><div class="tog-desc">Plays obvious recaptures and forced replies instantly</div></div><label class="tog"><input type="checkbox" id="cb-blink" checked><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
-          <div class="tog-row"><div><div class="tog-lbl">Clock-pressure mirroring</div><div class="tog-desc">Bot speeds up when your clock runs low</div></div><label class="tog"><input type="checkbox" id="cb-clock-mirror" checked onchange="syncClockMirror(this.checked,'cb-clock-mirror')"><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
-
-          <!-- Time Weaponizer — adjacent to clock-pressure mirroring -->
-          <div class="dlbl" style="margin-top:10px;"><span>Time Weaponizer</span></div>
-          <div class="tog-row">
-            <div>
-              <div class="tog-lbl">Enable Time Weaponizer</div>
-              <div class="tog-desc">When the opponent is low on clock, plays fast + drops ELO to pressure flagging. Opt-in.</div>
-            </div>
-            <label class="tog"><input type="checkbox" id="weaponizer-toggle" onchange="showWeaponizer(this.checked,'weaponizer-toggle')"><div class="tog-track"><div class="tog-thumb"></div></div></label>
-          </div>
-          <div id="weaponizer-sub" style="display:none;">
-            <div class="sub-panel blue-accent" style="margin-top:8px;">
-              <div class="sub-title blue">Weaponizer controls</div>
-              <div class="ctrl has-info">
-                <span class="ctrl-lbl">Opponent clock</span>
-                <input type="range" id="r-wtrig" min="1" max="120" step="1" value="15" oninput="syncWeaponizerTrigger(this.value,'r-wtrig')">
-                <input type="number" id="n-wtrig" class="ctrl-val" min="1" max="120" step="1" value="15" style="width:52px;" oninput="syncWeaponizerTrigger(this.value,'n-wtrig')">
-                <button type="button" class="info-i" aria-label="About the weaponizer trigger" onclick="infoToggle(this,event)">i</button>
-                <div class="info-pop">Activates once the opponent has this many seconds or fewer left. Absolute time remaining, not a lead — <strong>15s</strong> is flaggable in any format.</div>
-              </div>
-              <div class="ctrl has-info">
-                <span class="ctrl-lbl">Min move time</span>
-                <input type="range" id="r-wmin" min="0" max="5" step="0.1" value="0" oninput="syncWeaponizerMin(this.value,'r-wmin')">
-                <input type="number" id="n-wmin" class="ctrl-val" min="0" max="5" step="0.1" value="0" style="width:52px;" oninput="syncWeaponizerMin(this.value,'n-wmin')">
-                <button type="button" class="info-i" aria-label="About minimum move time" onclick="infoToggle(this,event)">i</button>
-                <div class="info-pop"><strong>0s</strong> = instant, as if pre-moved. <strong>0.3s</strong>–<strong>2.5s</strong> simulates a human moving as fast as input controls allow.</div>
-              </div>
-            </div>
-          </div>
-
           <!-- Premove — bot commits a reply before seeing your move -->
-          <div class="dlbl" style="margin-top:10px;"><span>Premove</span><button type="button" class="pmt-help-btn" onclick="pmtOpen()">What's a premove trap?</button></div>
+          <div class="dlbl" style="margin-top:0;"><span>Premove</span><button type="button" class="pmt-help-btn" onclick="pmtOpen()">What's a premove trap?</button></div>
           <div class="tog-row">
             <div>
               <div class="tog-lbl">Enable premoving</div>
@@ -2032,6 +2008,40 @@ body.fj .picon{font-weight:500;}
                 <div class="info-pop">Seconds of extra thinking when you bust a premove — the "didn't see that coming" stall. This is your reward for springing a trap: the bot burns its own clock. <strong>0</strong> = no penalty. Never allowed to flag the bot.</div>
               </div>
               <div class="ctrl-hint" style="margin-top:8px;">Requires <strong>Maia 3</strong>. This game: <span id="premove-stats" style="color:var(--blue);">none yet</span>.</div>
+            </div>
+          </div>
+
+          <div class="dlbl"><span>Human behaviour modifiers</span></div>
+          <div class="tog-row"><div><div class="tog-lbl">Reconsideration pauses</div><div class="tog-desc">Occasionally hesitates then takes longer — as if changing its mind</div></div><label class="tog"><input type="checkbox" id="cb-reconsidered" checked><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
+          <div class="tog-row"><div><div class="tog-lbl">Move blink on forced moves</div><div class="tog-desc">Plays obvious recaptures and forced replies instantly</div></div><label class="tog"><input type="checkbox" id="cb-blink" checked><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
+          <div class="tog-row"><div><div class="tog-lbl">Clock-pressure mirroring</div><div class="tog-desc">Bot speeds up when your clock runs low</div></div><label class="tog"><input type="checkbox" id="cb-clock-mirror" checked onchange="syncClockMirror(this.checked,'cb-clock-mirror')"><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
+
+          <!-- Time Weaponizer — adjacent to clock-pressure mirroring -->
+          <div class="dlbl" style="margin-top:10px;"><span>Time Weaponizer</span></div>
+          <div class="tog-row">
+            <div>
+              <div class="tog-lbl">Enable Time Weaponizer</div>
+              <div class="tog-desc">When the opponent is low on clock, plays fast + drops ELO to pressure flagging. Opt-in.</div>
+            </div>
+            <label class="tog"><input type="checkbox" id="weaponizer-toggle" onchange="showWeaponizer(this.checked,'weaponizer-toggle')"><div class="tog-track"><div class="tog-thumb"></div></div></label>
+          </div>
+          <div id="weaponizer-sub" style="display:none;">
+            <div class="sub-panel blue-accent" style="margin-top:8px;">
+              <div class="sub-title blue">Weaponizer controls</div>
+              <div class="ctrl has-info">
+                <span class="ctrl-lbl">Opponent clock</span>
+                <input type="range" id="r-wtrig" min="1" max="120" step="1" value="15" oninput="syncWeaponizerTrigger(this.value,'r-wtrig')">
+                <input type="number" id="n-wtrig" class="ctrl-val" min="1" max="120" step="1" value="15" style="width:52px;" oninput="syncWeaponizerTrigger(this.value,'n-wtrig')">
+                <button type="button" class="info-i" aria-label="About the weaponizer trigger" onclick="infoToggle(this,event)">i</button>
+                <div class="info-pop">Activates once the opponent has this many seconds or fewer left. Absolute time remaining, not a lead — <strong>15s</strong> is flaggable in any format.</div>
+              </div>
+              <div class="ctrl has-info">
+                <span class="ctrl-lbl">Min move time</span>
+                <input type="range" id="r-wmin" min="0" max="5" step="0.1" value="0" oninput="syncWeaponizerMin(this.value,'r-wmin')">
+                <input type="number" id="n-wmin" class="ctrl-val" min="0" max="5" step="0.1" value="0" style="width:52px;" oninput="syncWeaponizerMin(this.value,'n-wmin')">
+                <button type="button" class="info-i" aria-label="About minimum move time" onclick="infoToggle(this,event)">i</button>
+                <div class="info-pop"><strong>0s</strong> = instant, as if pre-moved. <strong>0.3s</strong>–<strong>2.5s</strong> simulates a human moving as fast as input controls allow.</div>
+              </div>
             </div>
           </div>
         </div>
