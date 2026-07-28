@@ -73,7 +73,11 @@ await page.evaluate(() => {
 });
 await page.waitForTimeout(150);
 
-// Move Timing two-column layout: modes stacked, each owning its control drawer
+// Move Timing two-column layout: modes stacked as one-line rows. Fixed's and
+// Mirror's control rails are rendered at ALL times (dimmed + disabled when the
+// mode isn't selected) so selecting a mode never reflows the stack;
+// Instantaneous has no settings and owns no rail; Complexity is the only real
+// drawer, since three sliders can't sit in a static row.
 const layout = await page.evaluate(() => {
   const stack = document.querySelector('#timing-mode-grid');
   const blocks = [...document.querySelectorAll('.mode-block')];
@@ -82,24 +86,82 @@ const layout = await page.evaluate(() => {
     isStack: !!stack && getComputedStyle(stack).flexDirection === 'column',
     blocks: blocks.length,
     order: cards.map(c => c.dataset.v),
-    drawers: blocks.filter(b => b.querySelector('.mode-ctrl')).length,
+    rails: blocks.filter(b => b.querySelector('.mode-ctrl')).length,
+    drawers: blocks.filter(b => b.querySelector('.mode-ctrl.drawer')).length,
+    // one line each: dot, name and description share a row
+    oneLine: [...document.querySelectorAll('#timing-mode-grid .mcard')]
+      .every(c => getComputedStyle(c).flexDirection === 'row'),
   };
 });
 ok(layout.isStack, 'timing modes are stacked vertically');
 ok(layout.blocks === 4, 'four mode blocks (' + layout.blocks + ')');
-ok(layout.drawers === 4, 'every mode owns a control drawer (' + layout.drawers + ')');
+ok(layout.rails === 3, 'three modes own a control rail; Instantaneous has none (' + layout.rails + ')');
+ok(layout.drawers === 1, 'only Complexity uses an opening drawer (' + layout.drawers + ')');
+ok(layout.oneLine, 'each mode card is a single line (dot · name · description)');
 ok(layout.order.join('|') === 'Instantaneous|Fixed interval|Mirror user|Complexity-scaled',
    'order is Instantaneous → Fixed → Mirror → Complexity: ' + layout.order.join(' → '));
 
-// Selecting a mode opens exactly one drawer
+// Selecting a mode attaches exactly one rail, and the Fixed/Mirror rails stay
+// on screen throughout — inert, not hidden.
 for (const [v, id] of [['Complexity-scaled','tb-complexity'], ['Instantaneous','tb-instant'],
                        ['Mirror user','tb-mirror'], ['Fixed interval','tb-fixed']]) {
   await page.evaluate((val) => {
     document.querySelector(`[data-v="${val}"]`).click();
   }, v);
   await page.waitForTimeout(120);
-  const open = await page.evaluate(() => [...document.querySelectorAll('.mode-block.open')].map(b => b.id));
-  ok(open.length === 1 && open[0] === id, v + ' opens only its own drawer (' + open.join(',') + ')');
+  const st = await page.evaluate(() => ({
+    attached: [...document.querySelectorAll('.mode-block.attached')].map(b => b.id),
+    fixedVisible:  document.getElementById('timing-fixed-ctrl').offsetParent !== null,
+    mirrorVisible: document.getElementById('timing-mirror-ctrl').offsetParent !== null,
+    inertDisabled: [...document.querySelectorAll('.mode-ctrl.inert input')].every(i => i.disabled),
+  }));
+  ok(st.attached.length === 1 && st.attached[0] === id,
+     v + ' attaches only its own rail (' + st.attached.join(',') + ')');
+  ok(st.fixedVisible && st.mirrorVisible,
+     v + ': Duration and Speed offset both stay visible');
+  ok(st.inertDisabled, v + ': unselected rails are disabled, not just dimmed');
+}
+
+// Fixed interval must switch Move blink off and say so: blink returns
+// 200–500ms on near-forced positions BEFORE the timing mode is consulted, so
+// leaving it on silently overrides the duration the user set.
+await page.evaluate(() => document.querySelector('[data-v="Mirror user"]').click());
+await page.waitForTimeout(120);
+await page.evaluate(() => { const c = document.getElementById('cb-blink');
+  if (!c.checked) { c.checked = true; c.dispatchEvent(new Event('change')); } });
+await page.evaluate(() => document.querySelector('[data-v="Fixed interval"]').click());
+await page.waitForTimeout(150);
+const blinkAuto = await page.evaluate(() => ({
+  off:    document.getElementById('cb-blink').checked === false,
+  marked: document.getElementById('row-blink').classList.contains('auto-off'),
+  note:   document.getElementById('blink-note').offsetParent !== null,
+  saved:  getBotConfig().behavBlink,
+}));
+ok(blinkAuto.off,    'Fixed interval switches Move blink off');
+ok(blinkAuto.marked, 'the blink row is highlighted as auto-changed');
+ok(blinkAuto.note,   'the row explains why blink was switched off');
+ok(blinkAuto.saved === false, 'the saved config carries blink off');
+
+// The user keeps the final word.
+await page.evaluate(() => { const c = document.getElementById('cb-blink');
+  c.checked = true; c.dispatchEvent(new Event('change')); });
+await page.waitForTimeout(120);
+const blinkOverride = await page.evaluate(() => ({
+  on:     document.getElementById('cb-blink').checked === true,
+  marked: document.getElementById('row-blink').classList.contains('auto-off'),
+}));
+ok(blinkOverride.on && !blinkOverride.marked,
+   're-enabling blink is respected and clears the highlight');
+
+// Each mode must round-trip through the saved config. This regressed once when
+// the mode was inferred from which rail was visible rather than from the
+// selected card, and every mode silently saved as "complexity".
+for (const [v, expected] of [['Instantaneous','instant'], ['Fixed interval','fixed'],
+                             ['Mirror user','mirror'], ['Complexity-scaled','complexity']]) {
+  await page.evaluate((val) => document.querySelector(`[data-v="${val}"]`).click(), v);
+  await page.waitForTimeout(120);
+  const got = await page.evaluate(() => getBotConfig().timingMode);
+  ok(got === expected, v + ' saves as timingMode "' + expected + '" (got "' + got + '")');
 }
 
 ok(await page.locator('#btn-reset-panel').count() === 1, 'whole-panel reset button exists');
