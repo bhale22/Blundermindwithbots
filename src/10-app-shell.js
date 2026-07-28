@@ -1158,10 +1158,37 @@ function _tourRestoreBoard(){
   if(typeof render === 'function') render();
 }
 
+// On phones the board-vision settings live in a collapsed drawer, so their
+// elements have zero width — and the filter below would drop every indicator
+// step, cutting the tour from 21 steps to 4 and losing the part that actually
+// teaches the product. Open the drawer for the duration of the tour and put it
+// back afterwards.
+let _tourOpenedBv = false;
+function _tourOpenBoardSettings(){
+  const box = document.getElementById('board-settings');
+  const btn = document.getElementById('bv-toggle');
+  if(!box || !btn) return;
+  if(getComputedStyle(btn).display === 'none') return;   // desktop: always open
+  if(!box.classList.contains('open')){
+    box.classList.add('open');
+    btn.setAttribute('aria-expanded', 'true');
+    _tourOpenedBv = true;
+  }
+}
+function _tourRestoreBoardSettings(){
+  if(!_tourOpenedBv) return;
+  _tourOpenedBv = false;
+  const box = document.getElementById('board-settings');
+  const btn = document.getElementById('bv-toggle');
+  if(box) box.classList.remove('open');
+  if(btn) btn.setAttribute('aria-expanded', 'false');
+}
+
 function startTour(){
   _tourShell = (typeof proMode !== 'undefined' && proMode) ? 'pro' : 'amateur';
   _tourDidDemo = false; _tourSavedFen = null;
   if(_tourShell === 'amateur') _tourSnapshotInd();
+  _tourOpenBoardSettings();   // must run BEFORE the visibility filter below
   const all = TOURS[_tourShell] || [];
   // Keep only steps whose target is present and visible (drops hidden chrome).
   _tourSteps = all.filter(s => {
@@ -1178,6 +1205,7 @@ function endTour(){
   _tourActive = false;
   const ov = document.getElementById('tourOverlay'); if(ov) ov.style.display = 'none';
   if(_tourShell === 'amateur') _tourRestoreBoard();
+  _tourRestoreBoardSettings();
   try{ localStorage.setItem('bm_tour_' + _tourShell, '1'); }catch(e){}
 }
 function tourNext(){ if(_tourIdx < _tourSteps.length - 1){ _tourIdx++; _renderTourStep(); } else endTour(); }
@@ -1238,6 +1266,32 @@ function _positionTourPanel(rect){
   const cx = clampL(rect.left + rect.width / 2 - pw / 2);
   const cy = clampT(rect.top + rect.height / 2 - ph / 2);
   let top, left;
+
+  // ── Narrow screens ──
+  // The panel is nearly as wide as the viewport, so the beside-the-target
+  // cases can never fit and the below/above cases rarely do — the old logic
+  // fell through to the corner case and landed on top of the very control it
+  // was describing. Put it in whichever half the target is NOT in, which
+  // guarantees they never overlap.
+  if(vw <= 760){
+    // A target taller than the leftover space can't be cleared by any
+    // placement. Dock to the bottom there so the top of the highlighted block
+    // stays visible — least-bad, and better than hiding the card.
+    if(rect.height > vh - ph - gap * 3){
+      panel.style.top = (vh - ph - gap) + 'px';
+      panel.style.left = '';
+      return;
+    }
+    const targetMid = rect.top + rect.height / 2;
+    if(targetMid < vh / 2){
+      top = Math.max(rect.bottom + gap, vh - ph - gap);   // target up top → panel low
+    } else {
+      top = Math.min(rect.top - gap - ph, gap);           // target down low → panel high
+    }
+    panel.style.top = Math.max(gap, Math.min(vh - ph - gap, top)) + 'px';
+    panel.style.left = '';   // CSS pins left/right on mobile
+    return;
+  }
   if(rect.bottom + gap + ph <= vh){            // below
     top = rect.bottom + gap; left = cx;
   } else if(rect.top - gap - ph >= 0){          // above

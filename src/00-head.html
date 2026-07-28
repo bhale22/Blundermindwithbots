@@ -682,14 +682,13 @@ canvas{
   /* Site header is a nowrap flex row — it set a 447px floor on the page. */
   #site-header{flex-wrap:wrap;justify-content:center;row-gap:2px;}
 
-  /* The tour card is positioned against its spotlight by JS (inline top/left),
-     which on a narrow screen puts it partly off the right edge. Dock it to the
-     bottom instead — always fully visible, can't overflow, and the familiar
-     mobile pattern. !important is needed to beat the inline positioning. */
+  /* Tour card spans the width (a 288px card beside a target can't fit here),
+     but the VERTICAL position stays with _positionTourPanel(), which places it
+     in the half the highlighted control isn't in. Pinning bottom here instead
+     would sit it on top of the controls it's describing. */
   #tourPanel{
     position:fixed;
     left:12px !important;right:12px !important;
-    top:auto !important;bottom:12px !important;
     width:auto !important;max-width:none;transform:none !important;
   }
   /* Explicit order for EVERY child of #app. Ordering only some of them left

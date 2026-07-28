@@ -25,13 +25,23 @@ All of this is built as a pipeline inside `botThinkTime()` in `src/50-bot-engine
 
 The pipeline runs as a series of stages. Early stages can short-circuit (return immediately); later stages apply successive multipliers to a base `thinkMs` value.
 
+### Stage −1 — Premove (bypasses `botThinkTime` entirely)
+
+Before any of the below runs, `botPostMoveHook` checks whether a premove is armed and still legal after the human's actual move. If it is, `botPremoveTryFire()` executes it immediately and think time is **never computed** — the whole point of a premove is that it is instant. See [Premove simulation](#premove-simulation) below.
+
+If the premove was *busted* (the human's move made it illegal), the bot falls through to the normal path and `botPremoveBustTaxMs()` adds a one-shot penalty in Stage 2.
+
 ### Stage 0 — Early exits (short-circuit)
+
+Order matters here: the **first** stage that applies wins, and the timing mode is only consulted if nothing above it fired.
 
 **Instant mode** (`botTimeBehavior === 'instant'`): returns 0. Used for testing, the Weaponizer's flagging path, and any personality that wants purely reactive play.
 
-**Weaponizer** (`botWeaponizerEnabled`): if the bot is ahead on the clock by more than `botWeaponizerLeadMs` (default 30 s), returns 0. The bot plays instantly to maximize time pressure and increase flagging risk. This is a personality-level feature (the Time Weaponizer preset) with its own toggle and lead-threshold slider.
+**Weaponizer** (`botWeaponizerEnabled`): if the **opponent's** clock is at or below `botWeaponizerTriggerMs` (default 15 s), returns `botWeaponizerMinMs` (default 0 = instant). Note this is the opponent's *absolute time remaining*, not a lead — 15 s is flaggable in any format. `botOppClockMs` is null in untimed games, which keeps the stage inert there. Personality-level feature (the Time Weaponizer preset) with its own toggle, trigger slider and minimum-move-time slider.
 
 **Move blink** (`botBehavBlink`, Maia3 paths only): if position entropy is below 0.5 (a near-forced position — only one or two moves have significant probability), plays in 200–500 ms. This models the human reflex of instantly recapturing or making an obvious reply. Disabled when Maia3 move probabilities are unavailable (SF path).
+
+> **Blink outranks the timing mode.** Because this check sits *above* Fixed/Mirror/Complexity, leaving blink on with **Fixed interval** lets any near-forced position ignore the duration the user set — a "22-second" bot still snaps out recaptures in ~0.3 s. The panel therefore switches blink off when Fixed interval is selected and marks the row with the reason; the user can switch it back on, and that choice is respected. This was a real support case before the interaction was made visible.
 
 **Fixed mode** (`botTimeBehavior === 'fixed'`): returns a user-set constant (`botFixedDelayMs`, default 5 s), subject to clock-pressure caps.
 
@@ -139,6 +149,45 @@ The opening familiarity decay in `botThinkTime()` is additive to this: it affect
 
 ---
 
+## Premove simulation
+
+*Implemented — `src/50-bot-engine.js`. This was previously listed as a future direction; the shipped design differs from that sketch in an important way, described below.*
+
+Human speed-chess players **premove**: they queue a reply before the opponent has moved, and the client fires it the instant the opponent's move lands. It buys seconds but commits *blind*, which is exactly what makes it exploitable — and what makes it worth practising against.
+
+### Why not "detect the forced move"
+
+The original sketch was to detect a single legal move (or a forced recapture) and play it in 50–150 ms. That models the *safe* case, which is the uninteresting one — a genuinely forced reply is not a mistake. Real premoves are interesting because players premove on *likely* replies, not certain ones, and get punished when the opponent deviates. The shipped design predicts the human's move and commits to a reply that can be wrong. Blink already covers the forced-move case.
+
+### Mechanism
+
+Armed by `botPremoveArm()` right after the bot's own move completes, while the human is on move. Fully async — it never blocks the human, and a human move mid-computation discards the result through a generation guard (`_botPremoveGen`). Two Maia passes:
+
+1. **Predict the human's reply** from the current position. If top-move confidence is below `botPremoveMinPct`, don't commit.
+2. **Apply that predicted move hypothetically** and ask Maia what the *bot* should play in the resulting position. Lock that in.
+
+When the human moves, `botPremoveTryFire()` checks the locked move against the real board:
+
+- **Still legal** → fires instantly, bypassing think time entirely.
+- **Illegal now** (the human pinned the piece, captured it, or moved its target) → **busted**. The premove is discarded, the bot thinks from scratch, and `_botPremoveBusted` adds `botPremoveBustDelayMs` to the next think time off the bot's own clock. This is the payoff for setting the trap, and is capped so it can never flag the bot.
+
+The bot only predicts with its *own* rating band — it has no access to the human's rating. This is realistic: a human premoving is also guessing from their own understanding.
+
+### Gating
+
+`botPremoveShouldArm()` requires the Maia 3 model (`_maiaReady`), then:
+
+- **`botPremoveOnlyLowClock`** — optional master gate restricting premoving to time scrambles. Under it sit **two independent triggers**, and *either alone* arms a premove: the opponent's clock at or below `botPremoveOppClockSecs` (the aggressive reason — keep their clock burning and play for the flag), or the bot's own at or below `botPremoveClockSecs` (its own desperation). Either threshold at 0 disables that trigger. Both clocks read null in untimed games, so the gate simply never opens there.
+- **`botPremoveRatePct`** — a percentage roll over the moves that **already cleared the confidence bar**, not over all moves. This distinction matters and is easy to misread from the UI.
+
+### Tuning notes
+
+`botPremoveMinPct` is the setting that determines whether the bot reads as *fast* or as *broken*. At 85% it premoves only on near-forced replies, matching real play. Far below ~60% it commits in positions no human would, and the resulting play looks erratic rather than quick. A configuration of `minPct: 0` with `ratePct: 100` makes the bot premove on essentially every move — useful for testing the trap mechanic, misleading as a general-purpose opponent.
+
+Per-game telemetry (`botPremoveStats`: armed / fired / busted) is surfaced live in the panel so users can see whether their traps are landing. Premove state is also reported in the collapsed Move Timing header, because a bot replying instantly looks like a malfunction if you don't know the setting is on.
+
+---
+
 ## State variables (src/10-app-shell.js)
 
 | Variable | Default | Purpose |
@@ -153,8 +202,10 @@ The opening familiarity decay in `botThinkTime()` is additive to this: it affect
 | `botBehavReconsider` | true | Enable random reconsideration pauses |
 | `botBehavClockMirror` | true | Speed up when opponent clock is low |
 | `botCanFlag` | true | Whether bot is allowed to run clock to zero |
-| `botWeaponizerEnabled` | false | Enable instant play when ahead on clock |
-| `botWeaponizerLeadMs` | 30000 | Clock lead required to activate weaponizer |
+| `botWeaponizerEnabled` | false | Enable fast play when the opponent is low on clock |
+| `botWeaponizerTriggerMs` | 15000 | Opponent's *absolute* time remaining that activates it (not a lead) |
+| `botWeaponizerMinMs` | 0 | Floor on weaponizer move time; 0 = instant |
+| `botOppClockMs` | null | Opponent's clock in ms; null in untimed games |
 | `botUserMoveTimestamps` | `[]` | Rolling window of human move durations |
 | `botStartClockMs` | null | Captured at game start; used for `botThinkCapMs()` |
 | `sfCplxScore` | null | SF MultiPV complexity score 0–1; null when unavailable |
@@ -162,24 +213,45 @@ The opening familiarity decay in `botThinkTime()` is additive to this: it affect
 | `_explorerConfidence` | null | 0-1 from log10(games); null until first explorer response; 0 when off-book |
 | `_explorerSurpriseBoost` | 0 | 0-1; set in botPostMoveHook on low-freq human move; consumed in next botThinkTime() |
 
+### Premove state (src/50-bot-engine.js)
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `botPremoveEnabled` | false | Master on/off |
+| `botPremoveRatePct` | 80 | % of *confidence-clearing* turns it premoves — not of all turns |
+| `botPremoveMinPct` | 85 | Minimum Maia confidence in the predicted human move before committing |
+| `botPremoveOnlyLowClock` | false | Restrict premoving to time scrambles |
+| `botPremoveOppClockSecs` | 30 | Opponent-clock trigger, seconds; 0 = off |
+| `botPremoveClockSecs` | 30 | Bot's own clock trigger, seconds; 0 = off |
+| `botPremoveBustDelayMs` | 2000 | One-shot think-time penalty after a busted premove |
+| `botActivePremove` | null | The locked-in move, or null |
+| `_botPremoveGen` | 0 | Generation guard — discards premoves computed for a superseded position |
+| `_botPremoveBusted` | false | Set on bust; consumed by the next `botThinkTime()` |
+| `botPremoveStats` | `{armed,fired,busted}` | Per-game telemetry surfaced in the panel |
+
 ---
 
 ## Future directions
 
 These are gaps or extensions worth considering, roughly in priority order.
 
-**1. Premove simulation** *(was #3)*
-Real bullet/blitz players premove in sequences when forcing a trade or responding to a check. The bot currently has no premove concept — it always waits the full think time. A premove mode would: detect that only one legal move exists (or that the best move is clearly forced by a check), and play it in 50–150 ms regardless of the think-time mode. The blink mode is a partial approximation, but genuine one-legal-move detection would be cleaner and more reliable.
+**1. Premove sequences**
+Premoving is implemented (see [Premove simulation](#premove-simulation)), but only ever one move deep. Real bullet players chain premoves through a forced sequence — a queen trade, a recapture chain, a series of checks — queueing several replies at once. Extending `botPremoveArm()` to lock a short sequence when every intermediate reply is near-certain would model the endgame scramble more faithfully. The generation guard and legality check already handle the single-move case, so the machinery mostly exists; the open question is how to abandon a partially-consumed sequence cleanly.
 
-**2. Time-mode interaction with opening familiarity**
+**2. Predicting at the *human's* rating**
+The premove predictor uses the bot's own Maia rating band to guess the human's move, because that's the only band it has. Feeding it the human's actual rating (where known) would make strong bots better at anticipating weak opponents and vice versa — currently a 2400 bot predicts a 900's replies as though they were a 2400's, which makes its premoves miss in ways that read as odd rather than human.
+
+**3. Time-mode interaction with opening familiarity**
 The familiarity multiplier currently applies to the `complexity` and `pace` paths but not to `mirror` mode (which short-circuits before reaching it). This is arguably correct — if the bot is mirroring the human's pace, it doesn't matter whether the position is familiar. But an argument exists for applying a floor: even in mirror mode, a bot in deep familiar opening territory should play faster than the human if the human is slow, because a real player in that situation *would* play faster regardless of what their opponent just did. Whether to implement this depends on whether the mirror mode use case warrants it.
 
-**3. Endgame acceleration / simplification recognition**
+**4. Endgame acceleration / simplification recognition**
 The hustle attractor already scales think time globally, and the Hustler personality uses piece count to modulate temperature across game phases. But there's no specific model of the well-known human pattern of playing faster in simplified endgames with limited material. A piece-count-based familiarity curve (analogous to the opening depth curve but on the other end of the game) could model this: as material drops below ~8 pieces, bots above ~1600 ELO start to "know the theory" again and play faster K+R vs K endgames, pawn races, etc.
 
-**4. Time control awareness in complexity base**
+**5. Time control awareness in complexity base**
 `botThinkCapMs()` already scales the upper bound to the time control. But the base pace (`botPace` slider) is set manually and doesn't know whether it's a 1-minute bullet or a 30-minute rapid. A bullet bot should default to much faster base pace than a rapid bot even before any other modifiers. Consider auto-initializing `botCplxBase` (or the effective pace) from the time control when a game starts.
 
 ---
 
-*Last updated: June 2026. Code reference: `src/50-bot-engine.js` (`botThinkTime`, `openingFamiliarity`, `botEffectiveElo`, `botThinkCapMs`, `explorerConfidenceFromData`, `botPostMoveHook`), `src/10-app-shell.js` (state variables), `src/60-bot-ui.js` (game-start resets).*
+*Last updated: July 2026. Code reference: `src/50-bot-engine.js` (`botThinkTime`, `botPremoveArm`, `botPremoveShouldArm`, `botPremoveTryFire`, `botPremoveBustTaxMs`, `openingFamiliarity`, `botEffectiveElo`, `botThinkCapMs`, `explorerConfidenceFromData`, `botPostMoveHook`), `src/10-app-shell.js` (state variables), `src/60-bot-ui.js` (config bridge, game-start resets).*
+
+*Note on the build: `blundermind.html` is a generated artifact assembled from `src/` by `build.js`, and `server.js` performs the same assembly in memory per request. Always edit `src/` — a hand-edited `blundermind.html` is overwritten on the next build and is not tracked by git.*
