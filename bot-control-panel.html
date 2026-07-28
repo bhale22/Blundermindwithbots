@@ -905,27 +905,82 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 .mode-grid-5{grid-template-columns:repeat(5,1fr);}
 
 /* ── Move Timing: modes stacked in the left column ─────────────────────────
-   Each mode's controls open in a drawer joined to its own card, so the
-   settings are never orphaned from the mode they belong to. Ordered
-   Instantaneous → Fixed → Mirror → Complexity, with the slider-heavy
-   Complexity mode last so expanding it pushes nothing else down. */
+   Each mode is a single-line row — dot · NAME · description — so scanning the
+   four modes is one vertical read instead of twelve stacked lines. Ordered
+   Instantaneous → Fixed → Mirror → Complexity.
+
+   Fixed's Duration and Mirror's Speed offset are ALWAYS rendered, dimmed and
+   disabled until their mode is selected. Selecting a mode then costs no
+   reflow — nothing below shifts — and the user can see what each mode is
+   parameterised by without clicking through all four. Complexity keeps a
+   real drawer: three sliders can't live in a static row, and it sits last so
+   opening it pushes nothing down. */
 .mode-stack{display:flex;flex-direction:column;gap:6px;}
 .mode-block{display:flex;flex-direction:column;}
 .mode-block .mcard{border-radius:var(--r);}
-.mode-block.open .mcard{border-bottom-left-radius:0;border-bottom-right-radius:0;border-bottom-color:transparent;}
-.mode-ctrl{
-  display:none;padding:10px 12px 11px;
-  background:var(--carbon-raise);
-  border:0.5px solid var(--amber);border-top:none;
-  border-radius:0 0 var(--r) var(--r);
+.mode-block.attached .mcard{border-bottom-left-radius:0;border-bottom-right-radius:0;border-bottom-color:transparent;}
+
+/* One-line mode card: dot and name hold their width, description takes the
+   rest and ellipsises rather than wrapping to a second line. */
+.mode-stack .mcard{
+  display:flex;align-items:center;gap:9px;padding:7px 11px;
 }
-.mode-block.open .mode-ctrl{display:block;}
-.mode-ctrl .ctrl:first-child{margin-top:0;}
+.mode-stack .mdot{margin-bottom:0;flex-shrink:0;}
+.mode-stack .mname{flex-shrink:0;line-height:1.2;}
+.mode-stack .mdesc{
+  margin-top:0;margin-left:auto;text-align:right;
+  font-size:8px;color:var(--text-dim);line-height:1.3;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;
+}
+.mode-stack .mcard.sel .mdesc{color:var(--text-secondary);}
+
+/* Persistent control rail under Fixed / Mirror. Present at all times; the
+   amber border and full-strength text only arrive with selection. */
+.mode-ctrl{
+  padding:7px 11px 8px;
+  background:var(--carbon-surface);
+  border:0.5px solid var(--border);border-top:none;
+  border-radius:0 0 var(--r) var(--r);
+  transition:border-color 0.2s,background 0.2s,opacity 0.2s;
+}
+.mode-block.attached .mode-ctrl{
+  background:var(--carbon-raise);border-color:var(--amber);
+}
+/* Unselected: readable but clearly inert, and not tab-reachable (the inputs
+   themselves carry `disabled`, which is what actually blocks interaction). */
+.mode-ctrl.inert{opacity:0.42;}
+.mode-ctrl.inert input[type=range]{cursor:not-allowed;}
+.mode-ctrl .ctrl{margin-bottom:0;}
+.mode-ctrl .ctrl-lbl{min-width:74px;}
+.mode-ctrl .ctrl-hint{margin-top:4px;}
 .mode-ctrl .ctrl-hint:last-child{margin-bottom:0;}
-.mode-none{font-family:var(--font-m);font-size:8.5px;color:var(--text-dim);line-height:1.55;}
+/* Complexity's drawer is the one that still opens and closes. */
+.mode-ctrl.drawer{display:none;padding:10px 12px 11px;}
+.mode-block.attached .mode-ctrl.drawer{display:block;}
+.mode-ctrl.drawer .ctrl{margin-bottom:10px;}
+.mode-ctrl.drawer .ctrl-lbl{min-width:88px;}
 /* Collapsed-header badge turns amber while premoving is on — the setting
    changes play enough that it should read as a live state, not a footnote. */
 .sec-status.st-warn{color:var(--amber-bright);}
+
+/* ── Move Timing right column: density pass ────────────────────────────────
+   Scoped to #sec-timing so the shared primitives keep their roomier defaults
+   everywhere else. With the prose moved behind ⓘ icons, the rows here are
+   short and uniform, and the original padding left them floating apart. */
+#sec-timing .tog-row{padding:6px 0;}
+#sec-timing .tog-desc{line-height:1.4;margin-top:2px;}
+#sec-timing .sub-panel{margin-top:8px;padding:9px 11px;}
+#sec-timing .sub-title{margin-bottom:6px;}
+/* Uniform rhythm across the slider rows. The low-clock pair lives in its own
+   wrapper, so `:last-of-type` would zero the gap mid-list — set the spacing
+   on every row and pull it back off the final one only. */
+#sec-timing .sub-panel .ctrl{margin-bottom:0;margin-top:7px;}
+#sec-timing .sub-panel .ctrl:first-child{margin-top:0;}
+#sec-timing #premove-clock-ctrl > .ctrl:first-child{margin-top:7px;}
+#sec-timing .sub-panel .ctrl-lbl{min-width:96px;}
+/* Toggle labels and their descriptions share a row with a switch — let the
+   text column shrink instead of pushing the switch off the edge. */
+#sec-timing .tog-row > div:first-child{min-width:0;padding-right:8px;}
 .mode-compact .mdesc{font-size:7.5px;line-height:1.35;color:var(--text-secondary);margin-top:2px;}
 .mode-compact .mname{font-size:8px;}
 .mode-compact .mcard{padding:8px 8px;}
@@ -1084,6 +1139,35 @@ body.fj .picon{font-weight:500;}
   transition:background 0.15s,color 0.15s;
 }
 .pmt-help-btn:hover{background:var(--blue-dim);color:#8fc9ee;}
+
+/* ── Inline info icons ─────────────────────────────────────────────────────
+   The premove controls each carried 2–4 lines of prose explaining their
+   tuning range. That text is worth reading once and is noise every time
+   after, so it moves behind an ⓘ at the end of the control's row: the
+   guidance stays one click away, the panel stays scannable. */
+.info-i{
+  flex-shrink:0;width:13px;height:13px;padding:0;line-height:1;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:transparent;border:0.5px solid var(--border-blue);border-radius:50%;
+  color:var(--blue);font-family:var(--font-u);font-size:8px;
+  cursor:pointer;transition:background 0.15s,color 0.15s,border-color 0.15s;
+}
+.info-i:hover,.info-i.open{background:var(--blue-dim);color:#8fc9ee;border-color:var(--blue);}
+/* Anchor for the popover. The row is the positioning context so the bubble
+   tracks its own control rather than the panel. */
+.ctrl.has-info{position:relative;}
+.info-pop{
+  display:none;position:absolute;z-index:60;
+  top:calc(100% + 5px);left:0;right:0;
+  background:var(--carbon-light,var(--carbon-raise));
+  border:0.5px solid var(--border-blue);border-radius:var(--r);
+  box-shadow:0 8px 20px rgba(0,0,0,0.55);
+  padding:7px 10px;
+  font-family:var(--font-m);font-size:8px;color:var(--text-secondary);line-height:1.6;
+}
+.info-pop.open{display:block;}
+.info-pop strong{color:var(--blue);}
+.info-pop em{color:var(--text-primary);font-style:italic;}
 .pmt-overlay{
   display:none;position:fixed;inset:0;z-index:9000;
   background:rgba(8,10,14,0.82);backdrop-filter:blur(3px);
@@ -1800,36 +1884,38 @@ body.fj .picon{font-weight:500;}
           <div class="dlbl" style="margin-top:0;"><span>Timing mode</span></div>
           <div class="mode-stack" id="timing-mode-grid">
 
-            <!-- Instantaneous — no settings of its own -->
+            <!-- Instantaneous — no settings of its own, so no control rail -->
             <div class="mode-block" id="tb-instant">
-              <div class="mcard" data-g="timing" data-v="Instantaneous" onclick="selMode(this,'st-timing');showTimingCtrl('instant')"><div class="mdot"></div><div class="mname">Instantaneous</div><div class="mdesc">Moves at engine speed. No delay.</div></div>
-              <div class="mode-ctrl" id="timing-instant-ctrl">
-                <div class="mode-none">No settings — the bot replies the moment its engine returns a move.</div>
-              </div>
+              <div class="mcard" data-g="timing" data-v="Instantaneous" onclick="selMode(this,'st-timing');showTimingCtrl('instant')"><div class="mdot"></div><div class="mname">Instantaneous</div><div class="mdesc">Engine speed, no delay</div></div>
             </div>
 
-            <!-- Fixed interval -->
-            <div class="mode-block open" id="tb-fixed">
-              <div class="mcard sel" data-g="timing" data-v="Fixed interval" onclick="selMode(this,'st-timing');showTimingCtrl('fixed')"><div class="mdot"></div><div class="mname">Fixed interval</div><div class="mdesc">Constant pause between all moves.</div></div>
-              <div class="mode-ctrl" id="timing-fixed-ctrl" style="display:block;">
+            <!-- Fixed interval — Duration rail is always rendered -->
+            <div class="mode-block attached" id="tb-fixed">
+              <div class="mcard sel" data-g="timing" data-v="Fixed interval" onclick="selMode(this,'st-timing');showTimingCtrl('fixed')"><div class="mdot"></div><div class="mname">Fixed interval</div><div class="mdesc">Constant pause between moves</div></div>
+              <div class="mode-ctrl" id="timing-fixed-ctrl">
                 <div class="ctrl"><span class="ctrl-lbl">Duration</span><input type="range" id="r-fixed" min="1" max="60" value="2" oninput="sv(this,'v-fixed',v=>v+'s'); updateQsThinkTime()"><span class="ctrl-val" id="v-fixed">2s</span></div>
               </div>
             </div>
 
-            <!-- Mirror user -->
+            <!-- Mirror user — Speed offset rail is always rendered -->
             <div class="mode-block" id="tb-mirror">
-              <div class="mcard" data-g="timing" data-v="Mirror user" onclick="selMode(this,'st-timing');showTimingCtrl('mirror')"><div class="mdot"></div><div class="mname">Mirror user</div><div class="mdesc">Matches your move rhythm ± offset.</div></div>
+              <div class="mcard" data-g="timing" data-v="Mirror user" onclick="selMode(this,'st-timing');showTimingCtrl('mirror')"><div class="mdot"></div><div class="mname">Mirror user</div><div class="mdesc">Matches your rhythm ± offset</div></div>
               <div class="mode-ctrl" id="timing-mirror-ctrl">
-                <div class="ctrl"><span class="ctrl-lbl">Speed offset</span><input type="range" id="r-mirror" min="-100" max="100" value="0" oninput="sv(this,'v-mirror',v=>v>0?'+'+v+'%':v+'%')"><span class="ctrl-val" id="v-mirror">0%</span></div>
-                <div class="ctrl-hint">Negative = bot faster. Positive = bot slower.</div>
+                <div class="ctrl has-info">
+                  <span class="ctrl-lbl">Speed offset</span>
+                  <input type="range" id="r-mirror" min="-100" max="100" value="0" oninput="sv(this,'v-mirror',v=>v>0?'+'+v+'%':v+'%')">
+                  <span class="ctrl-val" id="v-mirror">0%</span>
+                  <button type="button" class="info-i" aria-label="About speed offset" onclick="infoToggle(this,event)">i</button>
+                  <div class="info-pop">Negative = bot moves <strong>faster</strong> than you. Positive = <strong>slower</strong>. At 0% it matches your pace move for move.</div>
+                </div>
               </div>
             </div>
 
-            <!-- Complexity scaled — most sliders, kept last so expanding it
-                 pushes nothing else down -->
+            <!-- Complexity scaled — three sliders, so this one keeps a real
+                 drawer; last in the stack so opening it pushes nothing down -->
             <div class="mode-block" id="tb-complexity">
-              <div class="mcard" data-g="timing" data-v="Complexity-scaled" onclick="selMode(this,'st-timing');showTimingCtrl('complexity')"><div class="mdot"></div><div class="mname">Complexity scaled</div><div class="mdesc">Think time scales with position complexity.</div></div>
-              <div class="mode-ctrl" id="timing-complexity-ctrl">
+              <div class="mcard" data-g="timing" data-v="Complexity-scaled" onclick="selMode(this,'st-timing');showTimingCtrl('complexity')"><div class="mdot"></div><div class="mname">Complexity scaled</div><div class="mdesc">Scales with position complexity</div></div>
+              <div class="mode-ctrl drawer" id="timing-complexity-ctrl">
                 <div class="ctrl">
                   <span class="ctrl-lbl">Base time</span>
                   <input type="range" id="r-cplx-base" min="0.5" max="15" value="3" step="0.5" oninput="sv(this,'v-cplx-base',v=>v+'s')">
@@ -1872,10 +1958,20 @@ body.fj .picon{font-weight:500;}
           <div id="weaponizer-sub" style="display:none;">
             <div class="sub-panel blue-accent" style="margin-top:8px;">
               <div class="sub-title blue">Weaponizer controls</div>
-              <div class="ctrl"><span class="ctrl-lbl">Opponent clock</span><input type="range" id="r-wtrig" min="1" max="120" step="1" value="15" oninput="syncWeaponizerTrigger(this.value,'r-wtrig')"><input type="number" id="n-wtrig" class="ctrl-val" min="1" max="120" step="1" value="15" style="width:52px;" oninput="syncWeaponizerTrigger(this.value,'n-wtrig')"></div>
-              <div class="ctrl-hint">Activates once the opponent has this many seconds or fewer left. Absolute time remaining, not a lead — <strong>15s</strong> is flaggable in any format.</div>
-              <div class="ctrl" style="margin-top:6px;"><span class="ctrl-lbl">Min move time</span><input type="range" id="r-wmin" min="0" max="5" step="0.1" value="0" oninput="syncWeaponizerMin(this.value,'r-wmin')"><input type="number" id="n-wmin" class="ctrl-val" min="0" max="5" step="0.1" value="0" style="width:52px;" oninput="syncWeaponizerMin(this.value,'n-wmin')"></div>
-              <div class="ctrl-hint"><strong>0s</strong> = instant, as if pre-moved. <strong>0.3s</strong>–<strong>2.5s</strong> simulates a human moving as fast as input controls allow.</div>
+              <div class="ctrl has-info">
+                <span class="ctrl-lbl">Opponent clock</span>
+                <input type="range" id="r-wtrig" min="1" max="120" step="1" value="15" oninput="syncWeaponizerTrigger(this.value,'r-wtrig')">
+                <input type="number" id="n-wtrig" class="ctrl-val" min="1" max="120" step="1" value="15" style="width:52px;" oninput="syncWeaponizerTrigger(this.value,'n-wtrig')">
+                <button type="button" class="info-i" aria-label="About the weaponizer trigger" onclick="infoToggle(this,event)">i</button>
+                <div class="info-pop">Activates once the opponent has this many seconds or fewer left. Absolute time remaining, not a lead — <strong>15s</strong> is flaggable in any format.</div>
+              </div>
+              <div class="ctrl has-info">
+                <span class="ctrl-lbl">Min move time</span>
+                <input type="range" id="r-wmin" min="0" max="5" step="0.1" value="0" oninput="syncWeaponizerMin(this.value,'r-wmin')">
+                <input type="number" id="n-wmin" class="ctrl-val" min="0" max="5" step="0.1" value="0" style="width:52px;" oninput="syncWeaponizerMin(this.value,'n-wmin')">
+                <button type="button" class="info-i" aria-label="About minimum move time" onclick="infoToggle(this,event)">i</button>
+                <div class="info-pop"><strong>0s</strong> = instant, as if pre-moved. <strong>0.3s</strong>–<strong>2.5s</strong> simulates a human moving as fast as input controls allow.</div>
+              </div>
             </div>
           </div>
 
@@ -1884,7 +1980,7 @@ body.fj .picon{font-weight:500;}
           <div class="tog-row">
             <div>
               <div class="tog-lbl">Enable premoving</div>
-              <div class="tog-desc">Bot guesses your move with Maia, commits its reply in advance, and plays it instantly — whatever you actually play. Bait the guess and punish it.</div>
+              <div class="tog-desc">Commits its reply in advance and plays it instantly — bait the guess to punish it</div>
             </div>
             <label class="tog"><input type="checkbox" id="cb-premove" onchange="showPremove(this.checked,'cb-premove')"><div class="tog-track"><div class="tog-thumb"></div></div></label>
           </div>
@@ -1899,18 +1995,43 @@ body.fj .picon{font-weight:500;}
                 <label class="tog"><input type="checkbox" id="cb-premove-clock" onchange="showPremoveClock(this.checked,'cb-premove-clock')"><div class="tog-track"><div class="tog-thumb"></div></div></label>
               </div>
               <div id="premove-clock-ctrl" style="display:none;">
-                <div class="ctrl"><span class="ctrl-lbl">Opponent clock under</span><input type="range" id="r-premove-oppsecs" min="0" max="120" step="5" value="30" oninput="syncPremoveOppSecs(this.value,'r-premove-oppsecs')"><input type="number" id="n-premove-oppsecs" class="ctrl-val" min="0" max="120" step="5" value="30" style="width:52px;" oninput="syncPremoveOppSecs(this.value,'n-premove-oppsecs')"></div>
-                <div class="ctrl-hint">Premoves once <em>you</em> drop under this, to keep your clock burning and play for the flag — the aggressive reason humans premove. <strong>0</strong> = off.</div>
-                <div class="ctrl" style="margin-top:6px;"><span class="ctrl-lbl">Bot clock under</span><input type="range" id="r-premove-secs" min="0" max="120" step="5" value="30" oninput="syncPremoveSecs(this.value,'r-premove-secs')"><input type="number" id="n-premove-secs" class="ctrl-val" min="0" max="120" step="5" value="30" style="width:52px;" oninput="syncPremoveSecs(this.value,'n-premove-secs')"></div>
-                <div class="ctrl-hint">Premoves once the <em>bot</em> drops under this, out of its own time desperation. <strong>0</strong> = off. Either trigger alone is enough to start premoving.</div>
+                <div class="ctrl has-info">
+                  <span class="ctrl-lbl">Opponent clock under</span>
+                  <input type="range" id="r-premove-oppsecs" min="0" max="120" step="5" value="30" oninput="syncPremoveOppSecs(this.value,'r-premove-oppsecs')">
+                  <input type="number" id="n-premove-oppsecs" class="ctrl-val" min="0" max="120" step="5" value="30" style="width:52px;" oninput="syncPremoveOppSecs(this.value,'n-premove-oppsecs')">
+                  <button type="button" class="info-i" aria-label="About opponent clock trigger" onclick="infoToggle(this,event)">i</button>
+                  <div class="info-pop">Premoves once <em>you</em> drop under this, to keep your clock burning and play for the flag — the aggressive reason humans premove. <strong>0</strong> = off.</div>
+                </div>
+                <div class="ctrl has-info">
+                  <span class="ctrl-lbl">Bot clock under</span>
+                  <input type="range" id="r-premove-secs" min="0" max="120" step="5" value="30" oninput="syncPremoveSecs(this.value,'r-premove-secs')">
+                  <input type="number" id="n-premove-secs" class="ctrl-val" min="0" max="120" step="5" value="30" style="width:52px;" oninput="syncPremoveSecs(this.value,'n-premove-secs')">
+                  <button type="button" class="info-i" aria-label="About bot clock trigger" onclick="infoToggle(this,event)">i</button>
+                  <div class="info-pop">Premoves once the <em>bot</em> drops under this, out of its own time desperation. <strong>0</strong> = off. Either trigger alone is enough to start premoving.</div>
+                </div>
               </div>
-              <div class="ctrl" style="margin-top:6px;"><span class="ctrl-lbl">Premove rate</span><input type="range" id="r-premove-rate" min="0" max="100" step="5" value="80" oninput="syncPremoveRate(this.value,'r-premove-rate')"><input type="number" id="n-premove-rate" class="ctrl-val" min="0" max="100" step="5" value="80" style="width:52px;" oninput="syncPremoveRate(this.value,'n-premove-rate')"></div>
-              <div class="ctrl-hint">Of the moves that <em>clear the confidence bar below</em>, the percent the bot actually premoves — not a percent of all moves. <strong>100%</strong> = premoves every time it's confident.</div>
-              <div class="ctrl" style="margin-top:6px;"><span class="ctrl-lbl">Min confidence</span><input type="range" id="r-premove-conf" min="0" max="95" step="5" value="85" oninput="syncPremoveConf(this.value,'r-premove-conf')"><input type="number" id="n-premove-conf" class="ctrl-val" min="0" max="95" step="5" value="85" style="width:52px;" oninput="syncPremoveConf(this.value,'n-premove-conf')"></div>
-              <div class="ctrl-hint">Only premoves when Maia is at least this sure of your reply — humans premove on near-forced replies, not coin flips. <strong>85%</strong> mirrors real play; dropping it far below ~60% makes the bot premove into positions a human never would, and its play will look erratic.</div>
-              <div class="ctrl" style="margin-top:6px;"><span class="ctrl-lbl">Busted-premove delay</span><input type="range" id="r-premove-bust" min="0" max="5" step="0.1" value="2" oninput="syncPremoveBust(this.value,'r-premove-bust')"><input type="number" id="n-premove-bust" class="ctrl-val" min="0" max="5" step="0.1" value="2" style="width:52px;" oninput="syncPremoveBust(this.value,'n-premove-bust')"></div>
-              <div class="ctrl-hint">Seconds of extra thinking when you bust a premove — the "didn't see that coming" stall. This is your reward for springing a trap: the bot burns its own clock. <strong>0</strong> = no penalty. Never allowed to flag the bot.</div>
-              <div class="ctrl-hint" style="margin-top:8px;">Requires the <strong>Maia 3</strong> model — the prediction runs on it. Live counts this game: <span id="premove-stats" style="color:var(--blue);">none yet</span>.</div>
+              <div class="ctrl has-info">
+                <span class="ctrl-lbl">Premove rate</span>
+                <input type="range" id="r-premove-rate" min="0" max="100" step="5" value="80" oninput="syncPremoveRate(this.value,'r-premove-rate')">
+                <input type="number" id="n-premove-rate" class="ctrl-val" min="0" max="100" step="5" value="80" style="width:52px;" oninput="syncPremoveRate(this.value,'n-premove-rate')">
+                <button type="button" class="info-i" aria-label="About premove rate" onclick="infoToggle(this,event)">i</button>
+                <div class="info-pop">Of the moves that <em>clear the confidence bar below</em>, the percent the bot actually premoves — not a percent of all moves. <strong>100%</strong> = premoves every time it's confident.</div>
+              </div>
+              <div class="ctrl has-info">
+                <span class="ctrl-lbl">Min confidence</span>
+                <input type="range" id="r-premove-conf" min="0" max="95" step="5" value="85" oninput="syncPremoveConf(this.value,'r-premove-conf')">
+                <input type="number" id="n-premove-conf" class="ctrl-val" min="0" max="95" step="5" value="85" style="width:52px;" oninput="syncPremoveConf(this.value,'n-premove-conf')">
+                <button type="button" class="info-i" aria-label="About minimum confidence" onclick="infoToggle(this,event)">i</button>
+                <div class="info-pop">Only premoves when Maia is at least this sure of your reply — humans premove on near-forced replies, not coin flips. <strong>85%</strong> mirrors real play; dropping it far below ~60% makes the bot premove into positions a human never would, and its play will look erratic.</div>
+              </div>
+              <div class="ctrl has-info">
+                <span class="ctrl-lbl">Busted-premove delay</span>
+                <input type="range" id="r-premove-bust" min="0" max="5" step="0.1" value="2" oninput="syncPremoveBust(this.value,'r-premove-bust')">
+                <input type="number" id="n-premove-bust" class="ctrl-val" min="0" max="5" step="0.1" value="2" style="width:52px;" oninput="syncPremoveBust(this.value,'n-premove-bust')">
+                <button type="button" class="info-i" aria-label="About busted-premove delay" onclick="infoToggle(this,event)">i</button>
+                <div class="info-pop">Seconds of extra thinking when you bust a premove — the "didn't see that coming" stall. This is your reward for springing a trap: the bot burns its own clock. <strong>0</strong> = no penalty. Never allowed to flag the bot.</div>
+              </div>
+              <div class="ctrl-hint" style="margin-top:8px;">Requires <strong>Maia 3</strong>. This game: <span id="premove-stats" style="color:var(--blue);">none yet</span>.</div>
             </div>
           </div>
         </div>
@@ -6366,6 +6487,39 @@ function pmtClose(){
 }
 function pmtEsc(e){ if (e.key === 'Escape') pmtClose(); }
 
+// ── Inline info popovers ────────────────────────────────────────────────────
+// One ⓘ per control, opening the tuning guidance that used to sit permanently
+// under every slider. Only one is open at a time: these bubbles overlay the
+// rows beneath them, so two at once would collide.
+function infoToggle(btn, ev){
+  if (ev) ev.stopPropagation();
+  const pop = btn.parentElement && btn.parentElement.querySelector('.info-pop');
+  if (!pop) return;
+  const wasOpen = pop.classList.contains('open');
+  infoCloseAll();
+  if (!wasOpen){
+    pop.classList.add('open');
+    btn.classList.add('open');
+    // Dismiss on the next click anywhere else, and on Escape.
+    setTimeout(() => {
+      document.addEventListener('click', _infoOutside);
+      document.addEventListener('keydown', _infoEsc);
+    }, 0);
+  }
+}
+function infoCloseAll(){
+  document.querySelectorAll('.info-pop.open, .info-i.open')
+    .forEach(n => n.classList.remove('open'));
+  document.removeEventListener('click', _infoOutside);
+  document.removeEventListener('keydown', _infoEsc);
+}
+// Clicks inside the bubble (selecting text, following a link) must not close it.
+function _infoOutside(e){
+  if (e.target.closest && e.target.closest('.info-pop')) return;
+  infoCloseAll();
+}
+function _infoEsc(e){ if (e.key === 'Escape') infoCloseAll(); }
+
 // Restore premove settings from the last session
 function _initPremovePrefs(){
   try {
@@ -6686,7 +6840,9 @@ function applyBotConfig(cfg){
 
   // Timing mode + its sliders
   grp(() => {
-    const order = { complexity: 0, instant: 1, fixed: 2, mirror: 3 };
+    // Indices must track the DOM order of the cards in #timing-mode-grid:
+    // Instantaneous → Fixed → Mirror → Complexity.
+    const order = { instant: 0, fixed: 1, mirror: 2, complexity: 3 };
     const mode  = cfg.timingMode || 'fixed';
     const cards = document.querySelectorAll('#timing-mode-grid .mcard');
     if(order[mode] != null && cards[order[mode]]){
@@ -8922,12 +9078,24 @@ function onDaySlider(){
 // Modes are stacked vertically, each owning a control drawer beneath its card.
 // 'instant' is included because it now has a drawer too (one stating it has no
 // settings), so selecting any mode always produces a visible response.
+// Fixed's Duration and Mirror's Speed offset stay on screen whatever mode is
+// selected — only their live/inert state changes, so choosing a mode never
+// reflows the stack. Complexity's rail is a real drawer (`.drawer`) and is the
+// only one that appears and disappears.
 function showTimingCtrl(mode){
   ['complexity','fixed','mirror','instant'].forEach(m=>{
+    const sel = m === mode;
     const el = document.getElementById('timing-'+m+'-ctrl');
-    if(el) el.style.display = m===mode ? 'block' : 'none';
+    if(el){
+      el.classList.toggle('inert', !sel);
+      // Disabled inputs are what actually make an unselected rail inert —
+      // the dimming is only the visual half of it.
+      el.querySelectorAll('input,button').forEach(i => { i.disabled = !sel; });
+      if(!sel) el.querySelectorAll('.info-pop.open, .info-i.open')
+                 .forEach(n => n.classList.remove('open'));
+    }
     const block = document.getElementById('tb-'+m);
-    if(block) block.classList.toggle('open', m===mode);
+    if(block) block.classList.toggle('attached', sel);
   });
   updateQsThinkTime();
 }
@@ -9482,6 +9650,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
   _initWeaponizerPrefs();
   _initPremovePrefs();
   updateTimingStatus();   // collapsed header must show premove state from load
+  // Fixed is the markup default; this puts the other rails into their inert
+  // (dimmed + disabled) state, which markup alone can't express.
+  showTimingCtrl('fixed');
   buildTimeGrid();
   renderTempGrid();
   buildSFPips('sf-pips');
