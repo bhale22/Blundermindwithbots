@@ -1340,6 +1340,16 @@ body.fj .picon{font-weight:500;}
   .info-i{width:26px;height:26px;font-size:12px;}
   .pmt-help-btn{min-height:32px;padding:6px 10px;}
 
+  /* Tour card spans the width; _btPos() owns the vertical placement so the
+     card never covers the control it is describing. */
+  #btPanel{
+    left:12px !important;right:12px !important;
+    width:auto !important;max-width:none;
+  }
+  .bt-title{font-size:15px;}
+  .bt-body{font-size:12px;line-height:1.6;}
+  .bt-chip{font-size:10px;padding:6px 9px;}
+
   /* ── Readable text at arm's length ──
      The desktop panel runs 7.5–11px, which is deliberate density on a large
      screen and simply unreadable on a phone. */
@@ -2441,6 +2451,38 @@ body.fj .picon{font-weight:500;}
           <div class="formula-title">Think time feeds move quality — not just pacing</div>
           <div class="formula-body" style="text-align:left;line-height:1.75;">
             Think time is the central input to both degradation curves. Controls that shorten think time — the <span style="color:var(--amber);">Hustle</span> slider, the Weaponizer, clock-mirroring, the Blink shortcut — all reduce move quality through curves A and B, not just move speed. A bot configured to think 0.3 s per move will have its ELO degraded and its move pool narrowed to first-pass instinctive choices on <em>every move</em>, exactly as a human would under severe time pressure.
+          </div>
+        </div>
+
+        <!-- Think-time precedence: what overrides what -->
+        <div class="formula-box" style="margin-top:12px;">
+          <div class="formula-title">Think time — order of precedence</div>
+          <div class="formula-body" style="text-align:left;line-height:1.75;">
+            These are checked in order, and the <em>first</em> one that applies wins — the timing mode is consulted only if nothing above it fired:
+            <div style="margin-top:8px;padding-left:2px;line-height:1.9;">
+              <div><span style="color:var(--amber);">1 · Premove</span> — if a premove is armed and still legal it fires <em>instantly</em>, bypassing think time entirely.</div>
+              <div><span style="color:var(--amber);">2 · Instantaneous mode</span> — returns 0.</div>
+              <div><span style="color:var(--amber);">3 · Time Weaponizer</span> — opponent under the trigger: play at the minimum move time.</div>
+              <div><span style="color:var(--amber);">4 · Move blink</span> — near-forced position (entropy &lt; 0.5): 200–500&nbsp;ms.</div>
+              <div><span style="color:var(--amber);">5 · Timing mode</span> — fixed / mirror / complexity-scaled / pace, then the human modifiers, familiarity decay and jitter.</div>
+            </div>
+            <div style="margin-top:8px;">Because blink sits <em>above</em> the mode, leaving it on with <strong>Fixed interval</strong> would let obvious recaptures ignore the duration you set — so selecting Fixed switches blink off and marks the row. You can switch it back on if you want that behaviour.</div>
+          </div>
+        </div>
+
+        <!-- Premove simulation -->
+        <div class="formula-box" style="margin-top:12px;">
+          <div class="formula-title">Premove simulation</div>
+          <div class="formula-body" style="text-align:left;line-height:1.75;">
+            Human speed-chess players <strong>premove</strong>: they queue a reply before the opponent has moved, and it fires the moment the opponent's move lands. It saves seconds but commits <em>blind</em> — which is what makes it exploitable.
+            <div style="margin-top:8px;">The bot reproduces this in two Maia passes, run while you are on move so it never blocks you:</div>
+            <div style="margin-top:6px;padding-left:2px;line-height:1.9;">
+              <div><span style="color:var(--amber);">1 ·</span> Predict <em>your</em> move from the current position. If Maia's confidence is under <strong>Min confidence</strong>, it doesn't commit.</div>
+              <div><span style="color:var(--amber);">2 ·</span> Apply that predicted move and ask what <em>it</em> should play in the resulting position — and lock that answer in.</div>
+            </div>
+            <div style="margin-top:8px;">When you move, the locked reply fires instantly whatever you actually played. If your move made it <em>illegal</em>, the premove is <strong>busted</strong>: the bot must think from scratch and pays the <strong>Busted-premove delay</strong> off its own clock. That is the reward for springing the trap — and the reason to bait one.</div>
+            <div style="margin-top:8px;"><strong>Min confidence</strong> is the setting that matters most. At <strong>85%</strong> the bot only premoves on near-forced replies, as humans do. Far below ~60% it premoves into positions no human would, and play looks erratic rather than fast. <strong>Premove rate</strong> is a percentage of the moves that <em>already cleared</em> that confidence bar, not of all moves. The low-clock gate is optional and has two independent triggers — the opponent's clock or the bot's own — and <em>either</em> alone is enough to arm one.</div>
+            <div style="margin-top:8px;color:var(--text-dim);">Requires the <strong>Maia 3</strong> model, since the prediction runs on it. Premoving is reported in the collapsed Move Timing header, because a bot replying instantly looks like a malfunction if you don't know it's switched on.</div>
           </div>
         </div>
 
@@ -7528,7 +7570,13 @@ const BOT_TOUR = [
     body:'Give White and Black <i>separate</i> opening behaviour: <b>Off</b>, <b>Main Line</b> (the most popular book moves), or a <b>Repertoire</b> of several openings you weight by percentage.' },
 
   { stage:'Timing', open:'timing', sel:'#timing-mode-grid', title:'4 · Move timing',
-    body:'How the bot spends its clock between moves — instant, fixed, scaled to position complexity, or mirroring your own pace. The little things that make it feel human.' },
+    body:'How the bot spends its clock between moves — <b>instant</b>, a <b>fixed</b> pause, <b>scaled to position complexity</b>, or <b>mirroring your own pace</b>. Each mode\'s setting sits right under it, so you can see what every mode is tuned by before you pick one. The little things that make it feel human.' },
+
+  { stage:'Timing', open:'timing', sel:'#row-blink', title:'Human timing habits',
+    body:'Layered on top of the mode: <b>reconsideration pauses</b>, <b>move blink</b> on forced replies, and <b>speeding up when your clock runs low</b>. Note that blink fires <i>before</i> the timing mode is consulted, so choosing <b>Fixed interval</b> switches it off and tells you why — otherwise a "22-second" bot would still snap out obvious recaptures instantly.' },
+
+  { stage:'Timing', open:'timing', sel:'#premove-sub', title:'Premoves — and premove traps',
+    body:'Switch this on and the bot <b>guesses your reply with Maia, commits its own answer in advance, and plays it the instant you move</b> — whatever you actually played, exactly like a human premoving in a time scramble. That is the whole point: a premove is <i>blind</i>, so you can <b>bait it and punish it</b>. Tune how often it premoves, how sure it must be first, whether to do it only when a clock is low, and how long it stalls when you bust one. Needs the Maia 3 model.' },
 
   { stage:'Time pressure', open:'pressure', sel:'#cvA', title:'5 · Time-pressure degradation',
     body:'Make it crack under the clock: the bot’s <b>ELO and move quality fall as its time runs low</b>, along curves you can drag by hand. For example, a 2400 in time trouble doesn"t suddenly play like a calm 1900 — it"s closer to a <i>lower-probability</i> move from a 2300. Both the strength <i>and</i> which part of the distribution it draws from shift.' },
@@ -7671,6 +7719,28 @@ function _btPos(rect, corner){
   const cx = clampL(rect.left + rect.width / 2 - pw / 2);   // centered on target horizontally
   const cy = clampT(rect.top + rect.height / 2 - ph / 2);   // centered on target vertically
   let top, left;
+
+  // Narrow screens: the card is nearly viewport-width, so the beside-the-target
+  // branches can't fit and the fallback corner landed on top of the control
+  // being described. Place it in whichever half the target is NOT in.
+  if(vw <= 760){
+    // A target taller than the space left over can't be cleared by any
+    // placement (the persona grid is one). Dock to the bottom there: the top
+    // of the highlighted block — where its heading is — stays visible, which
+    // is the least-bad option and better than hiding the card.
+    if(rect.height > vh - ph - gap * 3){
+      panel.style.top = (vh - ph - gap) + 'px';
+      panel.style.left = '';
+      return;
+    }
+    const targetMid = rect.top + rect.height / 2;
+    top = (targetMid < vh / 2)
+      ? Math.max(rect.bottom + gap, vh - ph - gap)   // target high → card low
+      : Math.min(rect.top - gap - ph, gap);          // target low  → card high
+    panel.style.top = clampT(top) + 'px';
+    panel.style.left = '';   // CSS pins left/right on mobile
+    return;
+  }
   if(rect.bottom + gap + ph <= vh){            // below the target
     top = rect.bottom + gap; left = cx;
   } else if(rect.top - gap - ph >= 0){         // above the target
