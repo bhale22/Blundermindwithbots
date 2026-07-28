@@ -62,6 +62,33 @@
     .toc ol{columns:1}
     h1{font-size:1.55rem}
   }
+
+  /* ── Print / Save as PDF ──────────────────────────────────────────────────
+     Printing must yield a usable document rather than a screenshot of a dark
+     UI: ink on white, tables and headings that don't split across pages, and
+     URLs spelled out, since a printed link can't be clicked. */
+  @media print{
+    :root{
+      --bg:#fff; --panel:#fff; --panel2:#fafafa; --ink:#111; --muted:#444;
+      --amber:#8a5a00; --amber-soft:#8a5a00; --line:#bbb; --accent:#134a7c;
+      --chip-bg:#f0f0f0; --chip-ink:#222; --code-bg:#f5f5f5; --code-ink:#0a5228;
+    }
+    body{background:#fff; color:#111; font-size:10.5pt; line-height:1.45;}
+    .wrap{max-width:none; padding:0;}
+    a{color:#134a7c; text-decoration:none;}
+    /* Spell out external links; leave in-page anchors alone. */
+    a[href^="http"]::after{content:" (" attr(href) ")"; font-size:.82em; color:#555; word-break:break-all;}
+    h1{font-size:19pt;} h2{font-size:14pt;} h3{font-size:11.5pt;}
+    h1,h2,h3{break-after:avoid; page-break-after:avoid;}
+    table,figure,.formula,.note,pre{break-inside:avoid; page-break-inside:avoid;}
+    tr{break-inside:avoid;}
+    thead{display:table-header-group;}   /* repeat headers after a page break */
+    h2{break-before:page; page-break-before:page;}
+    h2:first-of-type{break-before:auto; page-break-before:auto;}
+    .toc{break-after:page; page-break-after:page;}
+    .wide{overflow:visible;}
+    @page{margin:16mm 14mm;}
+  }
 </style>
 </head>
 <body>
@@ -83,7 +110,7 @@
       <li><a href="#attractors">Strategic Attractors</a></li>
       <li><a href="#custom">Custom Controls — Build Your Own Rule</a></li>
       <li><a href="#openings">Openings</a></li>
-      <li><a href="#timing">Move Timing</a></li>
+      <li><a href="#timing">Move Timing</a> — <a href="#premove" style="font-size:.9em;">premoves &amp; premove traps</a></li>
       <li><a href="#pressure">Time-Pressure Degradation</a></li>
       <li><a href="#saving">Saving, Loading &amp; Sharing</a></li>
       <li><a href="#playing">Playing Against Your Bot</a></li>
@@ -334,6 +361,59 @@ argmax (Top move): always picks the single highest-probability move (determinist
   <div class="formula">t_actual = t_base × (1 − hustle × 0.15)</div>
   <p>A Hustle +5 bot cuts think time by 75%. This same <code>t_actual</code> value is the input to both degradation
   curves — not a clock percentage.</p>
+
+  <p class="note">Each mode's setting sits directly beneath it in the panel — Fixed interval has its Duration, Mirror
+  user its Speed offset — so you can see what every mode is tuned by without selecting it first.</p>
+
+  <h3>Human Timing Habits</h3>
+  <p>Three modifiers layer on top of whichever mode you pick, and they are what make the pacing feel human rather
+  than mechanical:</p>
+  <div class="wide">
+  <table>
+    <thead><tr><th>Modifier</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>Reconsideration pauses</td><td>Occasionally hesitates and takes noticeably longer, as if changing its mind mid-thought.</td></tr>
+      <tr><td>Move blink on forced moves</td><td>Plays obvious recaptures and forced replies almost instantly (200–500 ms) — the human reflex of not thinking about a move that has only one sensible answer.</td></tr>
+      <tr><td>Clock-pressure mirroring</td><td>Speeds up when your clock runs low, the way a real opponent presses when they smell a flag.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p class="note"><strong>Blink overrides your timing mode.</strong> It is checked <em>before</em> the mode is
+  consulted, so a bot set to a fixed 22-second interval will still snap out obvious recaptures in a fraction of a
+  second. So that the interval you set is the interval you get, selecting <strong>Fixed interval</strong> switches
+  blink off and highlights the row to say why. Switch it back on whenever you want that behaviour — the panel
+  respects your choice.</p>
+
+  <h3 id="premove">Premoves &amp; Premove Traps</h3>
+  <p>In fast chess, players <strong>premove</strong>: they queue their reply before the opponent has moved, so it
+  fires the instant the opponent's move lands. It saves precious seconds — but it commits <em>blind</em>. The premove
+  doesn't react to what you actually played. That is the whole point, and the reason it can be punished.</p>
+
+  <p>Switch premoving on and the bot does the same thing: it guesses your reply using Maia, decides its own answer in
+  advance, and plays that answer the moment you move — whatever you actually played.</p>
+
+  <p><strong>How to trap it.</strong> Play a move the bot didn't predict and its committed reply can walk a piece
+  onto a square you control, or leave something hanging. If your move makes the premove <em>illegal</em> — you pin
+  the piece, capture it, or move its target away — the premove is <strong>busted</strong>: the bot has to think from
+  scratch and burns extra time on its own clock. Baiting premoves is a real bullet skill, and this is where to
+  practise it.</p>
+
+  <div class="wide">
+  <table>
+    <thead><tr><th>Control</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>Min confidence</td><td><strong>The one that matters most.</strong> How sure Maia must be of your reply before the bot commits. <strong>85%</strong> mirrors real play — humans premove on near-forced replies, not coin flips. Drop it far below ~60% and the bot premoves into positions a human never would, so its play looks erratic rather than fast.</td></tr>
+      <tr><td>Premove rate</td><td>Of the moves that <em>already cleared</em> the confidence bar, the percentage it actually premoves — not a percentage of all moves. 100% = every time it's confident.</td></tr>
+      <tr><td>Only when low on clock</td><td>Optional. Restricts premoving to time scrambles, as humans do. Two independent triggers sit under it — your clock, or the bot's — and <em>either one alone</em> is enough to start it premoving.</td></tr>
+      <tr><td>Busted-premove delay</td><td>Extra thinking time when you bust one — the "didn't see that coming" stall. This is your reward for springing the trap. It can never flag the bot.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p class="note">Premoving requires the <strong>Maia 3</strong> model, since the prediction runs on it. Live counts of
+  premoves armed, fired and busted appear in the panel while you play, and the collapsed Move Timing header always
+  reports whether premoving is on — a bot that answers instantly looks broken if you don't know the setting is active.</p>
 
   <!-- 8 -->
   <h2 id="pressure">8 · Time-Pressure Degradation</h2>

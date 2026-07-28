@@ -41,7 +41,7 @@ Order matters here: the **first** stage that applies wins, and the timing mode i
 
 **Move blink** (`botBehavBlink`, Maia3 paths only): if position entropy is below 0.5 (a near-forced position — only one or two moves have significant probability), plays in 200–500 ms. This models the human reflex of instantly recapturing or making an obvious reply. Disabled when Maia3 move probabilities are unavailable (SF path).
 
-> **Blink outranks the timing mode.** Because this check sits *above* Fixed/Mirror/Complexity, leaving blink on with **Fixed interval** lets any near-forced position ignore the duration the user set — a "22-second" bot still snaps out recaptures in ~0.3 s. The panel therefore switches blink off when Fixed interval is selected and marks the row with the reason; the user can switch it back on, and that choice is respected. This was a real support case before the interaction was made visible.
+> **Blink outranks the timing mode.** Because this check sits *above* Fixed/Mirror/Complexity, leaving blink on with **Fixed interval** lets any near-forced position ignore the duration the user set — a "22-second" bot still snaps out recaptures in ~0.3 s. The panel therefore switches blink off when Fixed interval is selected and marks the row with the reason; the user can switch it back on, and that choice is respected.
 
 **Fixed mode** (`botTimeBehavior === 'fixed'`): returns a user-set constant (`botFixedDelayMs`, default 5 s), subject to clock-pressure caps.
 
@@ -151,13 +151,13 @@ The opening familiarity decay in `botThinkTime()` is additive to this: it affect
 
 ## Premove simulation
 
-*Implemented — `src/50-bot-engine.js`. This was previously listed as a future direction; the shipped design differs from that sketch in an important way, described below.*
+*Code: `src/50-bot-engine.js`.*
 
 Human speed-chess players **premove**: they queue a reply before the opponent has moved, and the client fires it the instant the opponent's move lands. It buys seconds but commits *blind*, which is exactly what makes it exploitable — and what makes it worth practising against.
 
-### Why not "detect the forced move"
+### Why prediction rather than forced-move detection
 
-The original sketch was to detect a single legal move (or a forced recapture) and play it in 50–150 ms. That models the *safe* case, which is the uninteresting one — a genuinely forced reply is not a mistake. Real premoves are interesting because players premove on *likely* replies, not certain ones, and get punished when the opponent deviates. The shipped design predicts the human's move and commits to a reply that can be wrong. Blink already covers the forced-move case.
+Premoving is deliberately built on *predicting* the human's reply rather than on detecting a position where only one legal move exists. Detecting the forced case models the *safe* half of the behaviour, which is the uninteresting one: a genuinely forced reply is never a mistake, and there is nothing to trap. What makes premoving worth practising against is that players commit on *likely* replies, not certain ones, and get punished when the opponent deviates — so the bot commits to a reply that can be wrong. The forced-move case is already covered by blink.
 
 ### Mechanism
 
@@ -236,7 +236,7 @@ Per-game telemetry (`botPremoveStats`: armed / fired / busted) is surfaced live 
 These are gaps or extensions worth considering, roughly in priority order.
 
 **1. Premove sequences**
-Premoving is implemented (see [Premove simulation](#premove-simulation)), but only ever one move deep. Real bullet players chain premoves through a forced sequence — a queen trade, a recapture chain, a series of checks — queueing several replies at once. Extending `botPremoveArm()` to lock a short sequence when every intermediate reply is near-certain would model the endgame scramble more faithfully. The generation guard and legality check already handle the single-move case, so the machinery mostly exists; the open question is how to abandon a partially-consumed sequence cleanly.
+Premoves are one move deep (see [Premove simulation](#premove-simulation)). Real bullet players chain them through a forced sequence — a queen trade, a recapture chain, a series of checks — queueing several replies at once. Extending `botPremoveArm()` to lock a short sequence when every intermediate reply is near-certain would model the endgame scramble more faithfully. The generation guard and legality check already handle the single-move case, so the machinery mostly exists; the open question is how to abandon a partially-consumed sequence cleanly.
 
 **2. Predicting at the *human's* rating**
 The premove predictor uses the bot's own Maia rating band to guess the human's move, because that's the only band it has. Feeding it the human's actual rating (where known) would make strong bots better at anticipating weak opponents and vice versa — currently a 2400 bot predicts a 900's replies as though they were a 2400's, which makes its premoves miss in ways that read as odd rather than human.

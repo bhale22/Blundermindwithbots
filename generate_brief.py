@@ -1,5 +1,20 @@
 """
 Blundermind Bot Controls — Project Brief PDF Generator
+
+DEPRECATED — superseded by the HTML briefs (July 2026). Do not update this file.
+
+The live documentation is now:
+    Blundermind_Bot_Controls_Reference.html   (user-facing)
+    Blundermind_Bot_Controls_Technical.html   (implementation detail)
+
+Both are served by server.js, linked from the bot panel's "How Bot Behavior
+Works" section, readable on a phone, and carry print CSS so a browser's
+Print -> Save as PDF still produces a clean offline document.
+
+The PDF this script generates is no longer linked anywhere; server.js keeps a
+route to the existing file only so old bookmarks don't 404. Content here is
+frozen at June 2026 and predates premove simulation, so it should not be
+regenerated over the current PDF. Edit the HTML briefs instead.
 """
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
