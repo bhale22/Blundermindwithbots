@@ -65,7 +65,11 @@ body{
   font-size:18px;font-weight:600;color:#c8d8e8;
   letter-spacing:-0.02em;
 }
-#site-name span{color:#4a9fd4;}
+#site-name .sn-accent{color:#4a9fd4;}
+/* Header wordmark follows the shell, same two-span swap as the landing title:
+   Blundermind on the Visualization board, Build-A-Bot Chess on the Expert one.
+   Pro overrides live in the PRO SHELL block below. */
+#site-name .sn-bab{display:none;}
 #site-tagline{
   font-size:11px;color:#506070;font-style:italic;
   letter-spacing:0.02em;
@@ -495,7 +499,13 @@ canvas{
   font-size:40px;font-weight:700;color:var(--text-primary);
   letter-spacing:-0.03em;margin-bottom:5px;
 }
-.landing-title span { color:#4a9fd4; }
+.landing-title .lt-accent { color:#4a9fd4; }
+/* Two wordmarks, one shown at a time: the Expert board is branded Build-A-Bot
+   Chess, the Visualization board Blundermind. Swapped in CSS off .landing-expert
+   so the pre-paint inline script below sets it with no flash. */
+.landing-title .lt-bab { display:none; }
+.landing-expert .landing-title .lt-bm  { display:none; }
+.landing-expert .landing-title .lt-bab { display:inline; }
 .landing-tagline {
   font-size:15px;color:var(--text-dim);font-style:italic;
   margin-bottom:28px;letter-spacing:0.02em;
@@ -513,14 +523,23 @@ canvas{
   border-color:var(--accent);box-shadow:0 0 0 2px rgba(74,159,212,0.18);
 }
 .landing-shell-btn .ls-name { font-size:14px;font-weight:700;color:var(--text-primary); }
+/* Brand line above the board name — same font/size/weight as .ls-name, accent
+   coloured, pulled tight so the two read as one two-line title. */
+.landing-shell-btn .ls-brand {
+  font-size:14px;font-weight:700;color:var(--accent);margin-bottom:-2px;
+}
 .landing-shell-btn .ls-desc { font-size:10.5px;color:var(--text-dim);line-height:1.45; }
 
 /* ── Expert landing theme — carbon/amber palette + panel fonts (matches the
       Expert board & bot control panels). Applied when Expert Board is chosen. ── */
 #landingOverlay.landing-expert { background:#0e0f11; font-family:'Chakra Petch',sans-serif; }
 .landing-expert .landing-title { font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:300;letter-spacing:0.01em;color:#e8e6e0; }
-.landing-expert .landing-title span { color:#c8922a; }
-.landing-expert .landing-tagline { font-family:'DM Mono',monospace;color:#717a8a;font-style:normal;letter-spacing:0.06em; }
+.landing-expert .landing-title .lt-accent { color:#c8922a; }
+.landing-expert .landing-shell-btn .ls-brand { color:#c8922a; }
+/* Build-A-Bot runs untaglined for now — hidden, not deleted, so restoring one
+   is a matter of dropping the display:none (the title absorbs the spacing). */
+.landing-expert .landing-tagline { font-family:'DM Mono',monospace;color:#717a8a;font-style:normal;letter-spacing:0.06em;display:none; }
+.landing-expert .landing-title { margin-bottom:30px; }
 .landing-expert .landing-shell-btn { background:#22262d;border-color:rgba(255,255,255,0.08); }
 .landing-expert .landing-shell-btn:hover { border-color:#c8922a; }
 .landing-expert .landing-shell-btn.sel { border-color:#c8922a;box-shadow:0 0 0 2px rgba(200,146,42,0.2); }
@@ -1044,6 +1063,13 @@ body.pro-mode{
   --pfm:'DM Mono',monospace; --pfu:'Chakra Petch',sans-serif; --pfd:'Cormorant Garamond',serif;
   background:radial-gradient(1200px 700px at 50% -10%, var(--bg-panel) 0%, var(--bg-page) 55%), var(--bg-page) !important;
 }
+/* Expert board is branded Build-A-Bot Chess — swap the wordmark and take the
+   amber accent instead of the blue one. */
+body.pro-mode #site-name .sn-bm { display:none; }
+body.pro-mode #site-name .sn-bab{ display:inline; }
+body.pro-mode #site-name .sn-accent{ color:var(--pa); }
+body.pro-mode #site-tagline{ display:none; }   /* no Build-A-Bot tagline yet */
+
 /* hide amateur chrome in pro mode */
 body.pro-mode #sidebar{ display:none !important; }
 body.pro-mode #playerBoxB,
@@ -1161,16 +1187,21 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
      LANDING PAGE OVERLAY
      ══════════════════════════════════════════════════════════════════════════ -->
 <div id="landingOverlay">
-  <div class="landing-title">♟ Blunder<span>mind</span></div>
+  <div class="landing-title">
+    <span class="lt-bm">♟ Blunder<span class="lt-accent">mind</span></span>
+    <span class="lt-bab">♟ Build-A-Bot <span class="lt-accent">Chess</span></span>
+  </div>
   <div class="landing-tagline">Stop getting blundermined.</div>
 
   <!-- Board experience: Beginner (full overlays) vs Expert (clean tournament look) -->
   <div class="landing-shell-pick">
     <button class="landing-shell-btn sel" data-shell="amateur" onclick="landingSetShell('amateur')">
+      <span class="ls-brand">Blundermind</span>
       <span class="ls-name">🎓 Visualization Training Board</span>
       <span class="ls-desc">Full board-vision indicators: plan your move, then visualize threats, opportunities, and possible opponent responses before committing.</span>
     </button>
     <button class="landing-shell-btn" data-shell="pro" onclick="landingSetShell('pro')">
+      <span class="ls-brand">Build-A-Bot</span>
       <span class="ls-name">♟ Expert Board</span>
       <span class="ls-desc">Clean tournament look — minimal chrome, side notation, no overlays.</span>
     </button>
@@ -1221,15 +1252,42 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     No account · No tracking · Your games are yours · <em>Free forever</em>
   </div>
 </div>
-<!-- Open the landing in the style of the visitor's last-chosen board (no flash). -->
-<script>try{if(localStorage.getItem('bm_shell')==='pro'){var _lo=document.getElementById('landingOverlay');if(_lo){_lo.classList.add('landing-expert');_lo.querySelectorAll('.landing-shell-btn').forEach(function(b){b.classList.toggle('sel',b.dataset.shell==='pro');});}}}catch(e){}</script>
+<!-- Open the landing in the style of the visitor's last-chosen board (no flash).
+     FIRST VISIT ONLY, the default comes from the domain they arrived on:
+     buildabotchess.com opens the Expert board, blundermindchess.com (and any
+     other host — localhost, previews) opens the Visualization board. Both
+     domains serve this identical page; the hostname is read at runtime, so
+     there is no per-site build. localStorage is per-origin, so each site
+     remembers its own visitors separately and the stored choice wins from the
+     second visit onwards on both. Sets window.__bmShell for 10-app-shell.js,
+     which applies the shell itself on DOMContentLoaded. -->
+<script>
+(function(){
+  var ls = null, s = null;
+  try { ls = window.localStorage; s = ls.getItem('bm_shell'); } catch(e) {}
+  if (s !== 'pro' && s !== 'amateur') {
+    s = /(^|\.)buildabotchess\.com$/i.test(location.hostname) ? 'pro' : 'amateur';
+    try { ls.setItem('bm_shell', s); } catch(e) {}   // storage blocked → session-only default
+  }
+  window.__bmShell = s;
+  if (s === 'pro') {
+    var lo = document.getElementById('landingOverlay');
+    if (lo) {
+      lo.classList.add('landing-expert');
+      lo.querySelectorAll('.landing-shell-btn').forEach(function(b){
+        b.classList.toggle('sel', b.dataset.shell === 'pro');
+      });
+    }
+  }
+})();
+</script>
 
 <!-- ── Page wrapper: aligns header and board column ──────────────────────── -->
 <div id="page-wrap">
 
 <!-- ── Site header ──────────────────────────────────────────────────────── -->
 <div id="site-header">
-  <span id="site-name" onclick="landingShow()" style="cursor:pointer;" title="Home — choose board experience">♟ Blunder<span>mind</span></span>
+  <span id="site-name" onclick="landingShow()" style="cursor:pointer;" title="Home — choose board experience"><span class="sn-bm">♟ Blunder<span class="sn-accent">mind</span></span><span class="sn-bab">♟ Build-A-Bot <span class="sn-accent">Chess</span></span></span>
   <span id="site-tagline">Stop getting blundermined.</span>
   <div id="headerBtnGroup" style="display:flex;gap:8px;align-items:center;flex-shrink:0;margin-left:20px;">
     <button id="tourBtn" onclick="startTour()"
