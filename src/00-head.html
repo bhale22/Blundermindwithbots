@@ -65,7 +65,11 @@ body{
   font-size:18px;font-weight:600;color:#c8d8e8;
   letter-spacing:-0.02em;
 }
-#site-name span{color:#4a9fd4;}
+#site-name .sn-accent{color:#4a9fd4;}
+/* Header wordmark follows the shell, same two-span swap as the landing title:
+   Blundermind on the Visualization board, Build-A-Bot Chess on the Expert one.
+   Pro overrides live in the PRO SHELL block below. */
+#site-name .sn-bab{display:none;}
 #site-tagline{
   font-size:11px;color:#506070;font-style:italic;
   letter-spacing:0.02em;
@@ -482,20 +486,35 @@ canvas{
 .replay-play:hover{border-color:#5ad490;color:#5ad490;}
 
 /* ── Landing page overlay ─────────────────────────────────────────────────── */
+/* The overlay is the scroll container; .landing-inner does the centring.
+   These must be separate elements: a flex container that both centres with
+   justify-content and scrolls will push overflow past its own top edge, where
+   no scrollbar can reach it. That put the title and the two board-choice panels
+   ~490px above the top of a phone screen, permanently unreachable. min-height
+   on the inner keeps the centred look whenever the content does fit. */
 #landingOverlay {
-  position:fixed;top:0;left:0;width:100vw;height:100vh;
+  position:fixed;top:0;left:0;width:100%;height:100%;
   background:var(--bg-page);
   z-index:5000;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  padding:20px;overflow-y:auto;
+  padding:20px;overflow-y:auto;-webkit-overflow-scrolling:touch;
   transition:opacity 0.4s ease, background 0.3s ease;
+}
+.landing-inner {
+  min-height:100%;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
 }
 #landingOverlay.fade-out { opacity:0;pointer-events:none; }
 .landing-title {
   font-size:40px;font-weight:700;color:var(--text-primary);
   letter-spacing:-0.03em;margin-bottom:5px;
 }
-.landing-title span { color:#4a9fd4; }
+.landing-title .lt-accent { color:#4a9fd4; }
+/* Two wordmarks, one shown at a time: the Expert board is branded Build-A-Bot
+   Chess, the Visualization board Blundermind. Swapped in CSS off .landing-expert
+   so the pre-paint inline script below sets it with no flash. */
+.landing-title .lt-bab { display:none; }
+.landing-expert .landing-title .lt-bm  { display:none; }
+.landing-expert .landing-title .lt-bab { display:inline; }
 .landing-tagline {
   font-size:15px;color:var(--text-dim);font-style:italic;
   margin-bottom:28px;letter-spacing:0.02em;
@@ -513,14 +532,23 @@ canvas{
   border-color:var(--accent);box-shadow:0 0 0 2px rgba(74,159,212,0.18);
 }
 .landing-shell-btn .ls-name { font-size:14px;font-weight:700;color:var(--text-primary); }
+/* Brand line above the board name — same font/size/weight as .ls-name, accent
+   coloured, pulled tight so the two read as one two-line title. */
+.landing-shell-btn .ls-brand {
+  font-size:14px;font-weight:700;color:var(--accent);margin-bottom:-2px;
+}
 .landing-shell-btn .ls-desc { font-size:10.5px;color:var(--text-dim);line-height:1.45; }
 
 /* ── Expert landing theme — carbon/amber palette + panel fonts (matches the
       Expert board & bot control panels). Applied when Expert Board is chosen. ── */
 #landingOverlay.landing-expert { background:#0e0f11; font-family:'Chakra Petch',sans-serif; }
 .landing-expert .landing-title { font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:300;letter-spacing:0.01em;color:#e8e6e0; }
-.landing-expert .landing-title span { color:#c8922a; }
-.landing-expert .landing-tagline { font-family:'DM Mono',monospace;color:#717a8a;font-style:normal;letter-spacing:0.06em; }
+.landing-expert .landing-title .lt-accent { color:#c8922a; }
+.landing-expert .landing-shell-btn .ls-brand { color:#c8922a; }
+/* Build-A-Bot runs untaglined for now — hidden, not deleted, so restoring one
+   is a matter of dropping the display:none (the title absorbs the spacing). */
+.landing-expert .landing-tagline { font-family:'DM Mono',monospace;color:#717a8a;font-style:normal;letter-spacing:0.06em;display:none; }
+.landing-expert .landing-title { margin-bottom:30px; }
 .landing-expert .landing-shell-btn { background:#22262d;border-color:rgba(255,255,255,0.08); }
 .landing-expert .landing-shell-btn:hover { border-color:#c8922a; }
 .landing-expert .landing-shell-btn.sel { border-color:#c8922a;box-shadow:0 0 0 2px rgba(200,146,42,0.2); }
@@ -558,6 +586,7 @@ canvas{
   box-shadow:0 0 0 2px rgba(200,160,0,0.18);
 }
 .landing-card-icon { font-size:42px;line-height:1; }
+.landing-card-icon.small { font-size:24px; }
 .landing-card-title {
   font-size:14px;font-weight:700;color:var(--text-primary);
   line-height:1.3;transition:color 0.25s ease;
@@ -565,6 +594,14 @@ canvas{
 .landing-card-desc {
   font-size:11px;color:var(--text-dim);line-height:1.5;transition:color 0.25s ease;
 }
+/* Split card (Load Game / Load Bot): two stacked hit areas in one card. */
+.landing-card-split { padding:0;overflow:hidden;gap:0; }
+.landing-split-half {
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:10px;padding:16px 12px;cursor:pointer;
+}
+.landing-split-half + .landing-split-half { border-top:1px solid var(--border); }
+.landing-expert .landing-split-half + .landing-split-half { border-top-color:rgba(255,255,255,0.08); }
 .landing-upload-row {
   display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center;
   margin-bottom:16px;
@@ -579,6 +616,66 @@ canvas{
 .landing-footer {
   font-size:10px;color:var(--text-dim);text-align:center;
   margin-top:8px;
+}
+
+/* ── Landing on phones ──────────────────────────────────────────────────────
+   The desktop layout is fixed-width (280px pickers, 195px cards) inside
+   wrapping flex rows, which on a 390px screen leaves every card marooned in a
+   narrow centred column with ~100px of dead space either side. Here everything
+   goes full-bleed to one shared column width, and the four cards become
+   icon-left rows — the same content, roughly half the scroll height, and every
+   card edge on the same two vertical lines. */
+@media(max-width:760px){
+  #landingOverlay{ padding:18px 14px 24px; }
+  .landing-inner{ justify-content:flex-start;padding-top:8px; }
+
+  .landing-title{ font-size:31px;text-align:center; }
+  .landing-tagline{ font-size:13px;margin-bottom:20px;text-align:center; }
+
+  /* One column, one width — .landing-col is the shared measure. */
+  .landing-shell-pick,.landing-cards{
+    flex-direction:column;flex-wrap:nowrap;
+    width:100%;max-width:420px;gap:10px;
+  }
+  .landing-shell-pick{ margin-bottom:18px; }
+  .landing-cards{ margin-bottom:20px; }
+  .landing-shell-btn,.landing-card{ width:100%; }
+
+  /* Board pickers: keep the brand + name on their own lines, tighten the blurb */
+  .landing-shell-btn{ padding:11px 14px;gap:4px; }
+  .landing-shell-btn .ls-desc{ font-size:11px; }
+
+  /* Cards → icon-left rows. Grid rather than flex: icon, title and desc are
+     flat siblings, and only grid can park the icon in a gutter spanning both
+     text rows without adding a wrapper element around the text. */
+  .landing-card:not(.landing-card-split){
+    display:grid;
+    grid-template-columns:36px minmax(0,1fr);
+    grid-template-areas:"icon title"
+                        "icon desc";
+    align-items:start;text-align:left;
+    gap:3px 12px;padding:14px;
+  }
+  .landing-card:not(.landing-card-split) .landing-card-icon{
+    grid-area:icon;font-size:27px;line-height:1.15;text-align:center;
+  }
+  .landing-card:not(.landing-card-split) .landing-card-title{ grid-area:title;font-size:14px; }
+  .landing-card:not(.landing-card-split) .landing-card-desc{ grid-area:desc;font-size:11.5px; }
+
+  /* Split card: the two halves sit side by side rather than stacked, so the
+     card stays the same height as its neighbours. */
+  .landing-card-split{ flex-direction:row;padding:0;flex-wrap:nowrap; }
+  .landing-split-half{ padding:12px 8px;gap:6px;text-align:center; }
+  .landing-split-half + .landing-split-half{ border-top:none;border-left:1px solid var(--border); }
+  .landing-expert .landing-split-half + .landing-split-half{ border-left-color:rgba(255,255,255,0.08); }
+  .landing-card-split .landing-card-icon{ font-size:26px;flex:none; }
+  .landing-card-split .landing-card-icon.small{ font-size:22px; }
+  .landing-card-split .landing-card-title{ font-size:12.5px;width:auto;padding:0; }
+  .landing-card-split .landing-card-desc{ display:none; }
+
+  /* Hover transforms are noise on touch — a tap shouldn't nudge the layout. */
+  .landing-card:hover{ transform:none; }
+  .landing-footer{ font-size:9.5px;line-height:1.6;max-width:300px; }
 }
 
 /* ── Guided tour ──────────────────────────────────────────────────────────── */
@@ -1044,6 +1141,13 @@ body.pro-mode{
   --pfm:'DM Mono',monospace; --pfu:'Chakra Petch',sans-serif; --pfd:'Cormorant Garamond',serif;
   background:radial-gradient(1200px 700px at 50% -10%, var(--bg-panel) 0%, var(--bg-page) 55%), var(--bg-page) !important;
 }
+/* Expert board is branded Build-A-Bot Chess — swap the wordmark and take the
+   amber accent instead of the blue one. */
+body.pro-mode #site-name .sn-bm { display:none; }
+body.pro-mode #site-name .sn-bab{ display:inline; }
+body.pro-mode #site-name .sn-accent{ color:var(--pa); }
+body.pro-mode #site-tagline{ display:none; }   /* no Build-A-Bot tagline yet */
+
 /* hide amateur chrome in pro mode */
 body.pro-mode #sidebar{ display:none !important; }
 body.pro-mode #playerBoxB,
@@ -1161,16 +1265,22 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
      LANDING PAGE OVERLAY
      ══════════════════════════════════════════════════════════════════════════ -->
 <div id="landingOverlay">
-  <div class="landing-title">♟ Blunder<span>mind</span></div>
+ <div class="landing-inner">
+  <div class="landing-title">
+    <span class="lt-bm">♟ Blunder<span class="lt-accent">mind</span></span>
+    <span class="lt-bab">♟ Build-A-Bot <span class="lt-accent">Chess</span></span>
+  </div>
   <div class="landing-tagline">Stop getting blundermined.</div>
 
   <!-- Board experience: Beginner (full overlays) vs Expert (clean tournament look) -->
   <div class="landing-shell-pick">
     <button class="landing-shell-btn sel" data-shell="amateur" onclick="landingSetShell('amateur')">
+      <span class="ls-brand">Blundermind</span>
       <span class="ls-name">🎓 Visualization Training Board</span>
       <span class="ls-desc">Full board-vision indicators: plan your move, then visualize threats, opportunities, and possible opponent responses before committing.</span>
     </button>
     <button class="landing-shell-btn" data-shell="pro" onclick="landingSetShell('pro')">
+      <span class="ls-brand">Build-A-Bot</span>
       <span class="ls-name">♟ Expert Board</span>
       <span class="ls-desc">Clean tournament look — minimal chrome, side notation, no overlays.</span>
     </button>
@@ -1199,15 +1309,17 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="landing-card-desc">Play games with outcomes determined by strategy instead of hung pieces. Post an open challenge or send a private invite link to play games where both players can use visual overlays. No move recommendations, no engine analysis, no cheat detection.</div>
     </div>
 
-    <!-- Load PGN / Bot config — split card -->
-    <div class="landing-card gold-card" style="display:flex;flex-direction:column;padding:0;overflow:hidden;">
-      <div onclick="landingChoose('pgn')" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px 12px 10px;cursor:pointer;border-bottom:1px solid var(--border);">
+    <!-- Load PGN / Bot config — split card. Layout lives in .landing-card-split
+         / .landing-split-half (not inline styles) so the mobile rules below can
+         re-flow it without fighting specificity. -->
+    <div class="landing-card gold-card landing-card-split">
+      <div class="landing-split-half" onclick="landingChoose('pgn')">
         <div class="landing-card-icon">📂</div>
         <div class="landing-card-title">Load a Saved Game</div>
         <div class="landing-card-desc">Upload a PGN file and replay or explore any game move by move.</div>
       </div>
-      <div onclick="document.getElementById('landingBotConfigInput').click()" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 12px 16px;cursor:pointer;">
-        <div class="landing-card-icon" style="font-size:24px;">⚙️</div>
+      <div class="landing-split-half" onclick="document.getElementById('landingBotConfigInput').click()">
+        <div class="landing-card-icon small">⚙️</div>
         <div class="landing-card-title">Load a Saved Bot</div>
         <div class="landing-card-desc">Upload a bot configuration file to restore a custom opponent.</div>
       </div>
@@ -1220,16 +1332,44 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
   <div class="landing-footer">
     No account · No tracking · Your games are yours · <em>Free forever</em>
   </div>
+ </div>
 </div>
-<!-- Open the landing in the style of the visitor's last-chosen board (no flash). -->
-<script>try{if(localStorage.getItem('bm_shell')==='pro'){var _lo=document.getElementById('landingOverlay');if(_lo){_lo.classList.add('landing-expert');_lo.querySelectorAll('.landing-shell-btn').forEach(function(b){b.classList.toggle('sel',b.dataset.shell==='pro');});}}}catch(e){}</script>
+<!-- Open the landing in the style of the visitor's last-chosen board (no flash).
+     FIRST VISIT ONLY, the default comes from the domain they arrived on:
+     buildabotchess.com opens the Expert board, blundermindchess.com (and any
+     other host — localhost, previews) opens the Visualization board. Both
+     domains serve this identical page; the hostname is read at runtime, so
+     there is no per-site build. localStorage is per-origin, so each site
+     remembers its own visitors separately and the stored choice wins from the
+     second visit onwards on both. Sets window.__bmShell for 10-app-shell.js,
+     which applies the shell itself on DOMContentLoaded. -->
+<script>
+(function(){
+  var ls = null, s = null;
+  try { ls = window.localStorage; s = ls.getItem('bm_shell'); } catch(e) {}
+  if (s !== 'pro' && s !== 'amateur') {
+    s = /(^|\.)buildabotchess\.com$/i.test(location.hostname) ? 'pro' : 'amateur';
+    try { ls.setItem('bm_shell', s); } catch(e) {}   // storage blocked → session-only default
+  }
+  window.__bmShell = s;
+  if (s === 'pro') {
+    var lo = document.getElementById('landingOverlay');
+    if (lo) {
+      lo.classList.add('landing-expert');
+      lo.querySelectorAll('.landing-shell-btn').forEach(function(b){
+        b.classList.toggle('sel', b.dataset.shell === 'pro');
+      });
+    }
+  }
+})();
+</script>
 
 <!-- ── Page wrapper: aligns header and board column ──────────────────────── -->
 <div id="page-wrap">
 
 <!-- ── Site header ──────────────────────────────────────────────────────── -->
 <div id="site-header">
-  <span id="site-name" onclick="landingShow()" style="cursor:pointer;" title="Home — choose board experience">♟ Blunder<span>mind</span></span>
+  <span id="site-name" onclick="landingShow()" style="cursor:pointer;" title="Home — choose board experience"><span class="sn-bm">♟ Blunder<span class="sn-accent">mind</span></span><span class="sn-bab">♟ Build-A-Bot <span class="sn-accent">Chess</span></span></span>
   <span id="site-tagline">Stop getting blundermined.</span>
   <div id="headerBtnGroup" style="display:flex;gap:8px;align-items:center;flex-shrink:0;margin-left:20px;">
     <button id="tourBtn" onclick="startTour()"

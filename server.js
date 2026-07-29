@@ -178,6 +178,22 @@ app.get('/bot-control-panel.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'bot-control-panel.html'));
 });
 
+// ── Briefs ──────────────────────────────────────────────────────────────────
+// These are HTML, not PDF: they read properly on a phone (a letter-size PDF
+// means pinch-zooming every paragraph), they carry print CSS so the browser's
+// Save-as-PDF still produces a clean document, and they're editable without
+// regenerating anything. The old PDF route is kept below so existing links and
+// bookmarks don't 404 — nothing in the app points at it any more.
+['Blundermind_Bot_Controls_Reference.html',
+ 'Blundermind_Bot_Controls_Technical.html'].forEach((file) => {
+  app.get('/' + file, (req, res) => {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.sendFile(path.join(__dirname, file));
+  });
+});
+
+// Legacy: superseded by the HTML briefs above. Retained for old links only.
 app.get('/Bot_Controls_Technical_Brief.pdf', (req, res) => {
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', 'attachment; filename="Bot_Controls_Technical_Brief.pdf"');

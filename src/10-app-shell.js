@@ -1027,9 +1027,15 @@ function proSaveCurrentBot(){
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-// Restore the saved shell on load
+// Restore the saved shell on load. window.__bmShell is resolved by the inline
+// script next to the landing markup: the stored choice if there is one, else
+// the first-visit default for this domain (Expert on buildabotchess.com).
+// Falling back to localStorage keeps this working if that script didn't run.
 document.addEventListener('DOMContentLoaded', () => {
-  try{ if(localStorage.getItem('bm_shell') === 'pro') setShell('pro'); }catch(e){}
+  try{
+    const want = window.__bmShell || localStorage.getItem('bm_shell');
+    if(want === 'pro') setShell('pro');
+  }catch(e){}
 });
 
 // ══════════════════════════════════════════════════════════════════════════

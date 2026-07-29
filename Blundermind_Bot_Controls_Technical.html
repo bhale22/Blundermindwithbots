@@ -59,6 +59,33 @@
     .toc ol{columns:1}
     h1{font-size:1.5rem}
   }
+
+  /* ── Print / Save as PDF ──────────────────────────────────────────────────
+     Printing must yield a usable document rather than a screenshot of a dark
+     UI: ink on white, tables and headings that don't split across pages, and
+     URLs spelled out, since a printed link can't be clicked. */
+  @media print{
+    :root{
+      --bg:#fff; --panel:#fff; --panel2:#fafafa; --ink:#111; --muted:#444;
+      --amber:#8a5a00; --amber-soft:#8a5a00; --line:#bbb; --accent:#134a7c;
+      --chip-bg:#f0f0f0; --chip-ink:#222; --code-bg:#f5f5f5; --code-ink:#0a5228;
+    }
+    body{background:#fff; color:#111; font-size:10pt; line-height:1.45;}
+    .wrap{max-width:none; padding:0;}
+    a{color:#134a7c; text-decoration:none;}
+    a[href^="http"]::after{content:" (" attr(href) ")"; font-size:.82em; color:#555; word-break:break-all;}
+    h1{font-size:18pt;} h2{font-size:13.5pt;} h3{font-size:11pt;}
+    h1,h2,h3{break-after:avoid; page-break-after:avoid;}
+    table,figure,.formula,.note,pre{break-inside:avoid; page-break-inside:avoid;}
+    tr{break-inside:avoid;}
+    thead{display:table-header-group;}   /* repeat headers after a page break */
+    h2{break-before:page; page-break-before:page;}
+    h2:first-of-type{break-before:auto; page-break-before:auto;}
+    .toc{break-after:page; page-break-after:page;}
+    .wide{overflow:visible;}
+    code,pre{font-size:9pt;}
+    @page{margin:16mm 14mm;}
+  }
 </style>
 </head>
 <body>
@@ -78,7 +105,7 @@
     <ol>
       <li><a href="#pipeline">Architecture — Move Selection Pipeline</a></li>
       <li><a href="#source">Move Source Layer</a></li>
-      <li><a href="#thinktime">Think Time Calculation</a></li>
+      <li><a href="#thinktime">Think Time Calculation</a> — <a href="#premove" style="font-size:.9em;">premove simulation</a></li>
       <li><a href="#degradation">Time-Pressure Play Degradation</a></li>
       <li><a href="#temperature">Temperature &amp; Move Sampling</a></li>
       <li><a href="#attractors">Strategic Attractors (Centipawmeter)</a></li>
@@ -205,8 +232,9 @@ Level clamped to [1, 20]</div>
   <table>
     <thead><tr><th>Modifier</th><th>Condition</th><th>Effect</th></tr></thead>
     <tbody>
-      <tr><td>Weaponizer shortcut</td><td>Enabled AND bot clock &gt; opp clock + leadMs</td><td>Return 0 ms immediately (skip all delays)</td></tr>
-      <tr><td>Move blink</td><td>Blink flag AND entropy &lt; 0.5 (forced/obvious positions)</td><td>200–500 ms random; skips further calculation</td></tr>
+      <tr><td>Premove fires</td><td>A premove is armed and still legal after the human's move</td><td>Plays <em>instantly</em> — <code>botThinkTime()</code> is never called. See 3c.</td></tr>
+      <tr><td>Weaponizer shortcut</td><td>Enabled AND the <em>opponent's</em> clock ≤ <code>botWeaponizerTriggerMs</code> (default 15 s)</td><td>Return <code>botWeaponizerMinMs</code> (default 0 = instant). Absolute time remaining, <em>not</em> a lead.</td></tr>
+      <tr><td>Move blink</td><td>Blink flag AND entropy &lt; 0.5 (forced/obvious positions)</td><td>200–500 ms random; skips further calculation — <em>including the timing mode</em></td></tr>
       <tr><td>Clock-pressure mirroring</td><td>Clock-mirror flag AND oppClock &lt; botClock × 0.6</td><td>thinkMs ×= 0.5</td></tr>
       <tr><td>Hustle attractor</td><td>value v ∈ [−5, +5]</td><td>thinkMs ×= (1 − v × 0.15). At +5: ×0.25 (very fast). At −5: ×1.75 (very slow).</td></tr>
       <tr><td>Reconsideration</td><td>Reconsider flag, 15% random chance</td><td>thinkMs ×= 1.5 to 2.5 (hesitation pause)</td></tr>
@@ -219,6 +247,65 @@ Level clamped to [1, 20]</div>
   </div>
   <p class="note">Position entropy is the Shannon entropy over Maia move probabilities: H = −Σ p·log(p). Higher entropy
   = more complex / branching position.</p>
+
+  <p class="note"><strong>Precedence matters.</strong> The table above is evaluated top-down and the first match wins,
+  so <em>Move blink is checked before the timing mode</em>. Leaving blink enabled alongside <strong>Fixed
+  interval</strong> therefore lets any near-forced position ignore the duration the user set — a bot configured for
+  22 s still answers obvious recaptures in ~0.3 s. Selecting Fixed interval in the panel therefore switches blink off
+  and marks the row with the reason; re-enabling it by hand is respected.</p>
+
+  <!-- 3c -->
+  <h3 id="premove">3c · Premove Simulation</h3>
+  <p>Human speed-chess players <strong>premove</strong>: they queue a reply before the opponent has moved, and it
+  fires the instant the opponent's move lands. It buys seconds but commits <em>blind</em> — which is what makes it
+  both realistic and exploitable. The bot reproduces this, so players can practise baiting a premove and punishing it.</p>
+
+  <p>Arming runs in <code>botPremoveArm()</code> immediately after the bot's own move, while the human is on move. It
+  is fully asynchronous and never blocks input; a human move made mid-computation discards the result through a
+  generation guard (<code>_botPremoveGen</code>). Two Maia passes:</p>
+
+  <div class="wide">
+  <table>
+    <thead><tr><th>Pass</th><th>Question</th><th>Gate</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>What will the <em>human</em> play from the current position?</td><td>Top-move confidence must be ≥ <code>botPremoveMinPct</code>, else no commitment</td></tr>
+      <tr><td>2</td><td>Apply that predicted move; what should the <em>bot</em> play in the resulting position?</td><td>That answer is locked in as the premove</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>When the human moves, <code>botPremoveTryFire()</code> tests the locked move against the real board:</p>
+  <ul>
+    <li><strong>Still legal</strong> → fires instantly, bypassing think time entirely.</li>
+    <li><strong>Illegal now</strong> — the human pinned the piece, captured it, or moved its target → <strong>busted</strong>.
+    The premove is discarded, the bot thinks from scratch, and <code>botPremoveBustTaxMs()</code> adds a one-shot
+    <code>botPremoveBustDelayMs</code> penalty to the next think time, paid from the bot's own clock. This is the
+    reward for springing the trap, and is capped so it can never flag the bot.</li>
+  </ul>
+
+  <div class="wide">
+  <table>
+    <thead><tr><th>Setting</th><th>Default</th><th>Behaviour</th></tr></thead>
+    <tbody>
+      <tr><td><code>botPremoveEnabled</code></td><td>false</td><td>Master switch. Requires the Maia 3 model — the prediction runs on it.</td></tr>
+      <tr><td><code>botPremoveMinPct</code></td><td>85</td><td>Minimum Maia confidence in the predicted human reply. <strong>The setting that decides whether the bot reads as fast or as broken.</strong> 85% ≈ near-forced replies only, matching real play. Far below ~60% it premoves into positions no human would, and play looks erratic.</td></tr>
+      <tr><td><code>botPremoveRatePct</code></td><td>80</td><td>Percentage of the moves that <em>already cleared</em> the confidence bar — <strong>not</strong> a percentage of all moves.</td></tr>
+      <tr><td><code>botPremoveOnlyLowClock</code></td><td>false</td><td>Optional master gate restricting premoving to time scrambles.</td></tr>
+      <tr><td><code>botPremoveOppClockSecs</code></td><td>30</td><td>Trigger: opponent at or below this. The aggressive reason humans premove — keep their clock burning and play for the flag. 0 = off.</td></tr>
+      <tr><td><code>botPremoveClockSecs</code></td><td>30</td><td>Trigger: the bot itself at or below this, out of its own desperation. 0 = off.</td></tr>
+      <tr><td><code>botPremoveBustDelayMs</code></td><td>2000</td><td>The "didn't see that coming" stall after a bust.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p class="note">The two clock triggers are <strong>independent — either one alone arms a premove</strong>. Both clocks
+  read null in untimed games, so the gate simply never opens there. Per-game telemetry (armed / fired / busted) is
+  surfaced live in the panel, and premove state is shown in the collapsed Move Timing header, because a bot replying
+  instantly looks like a malfunction if you don't know the setting is on.</p>
+
+  <p class="note">The predictor uses the bot's <em>own</em> Maia rating band to guess the human's move, since that is
+  the only band available to it. This is realistic — a human premoving is also guessing from their own understanding —
+  but it does mean a 2400 bot anticipates a 900's replies as though they were a 2400's.</p>
 
   <!-- 4 -->
   <h2 id="degradation">4 · Time-Pressure Play Degradation</h2>
@@ -607,7 +694,7 @@ if clockInc > 0 AND fullMoveNum ≥ tc.incFromMove:
       <tr><td>Move Blink</td><td>Maia mode only. Position entropy &lt; 0.5 (forced or obvious move)</td><td>Returns a 200–500 ms random pause immediately, skipping the full think-time calculation. Simulates a human instantly playing the obvious recapture or forced reply.</td></tr>
       <tr><td>Reconsider</td><td>15% random chance per move</td><td>Multiplies computed think time by 1.5–2.5×. Simulates the human hesitation of starting to play a move then reconsidering.</td></tr>
       <tr><td>Clock Mirror</td><td>Opponent clock &lt; bot clock × 0.6</td><td>Halves think time when the opponent is significantly lower on time. Simulates a human speeding up to maintain a clock advantage.</td></tr>
-      <tr><td>Clock Weaponizer</td><td>Bot clock ahead of opp by more than leadMs</td><td>Returns 0 ms think time AND drops Stockfish to the floor level. Maximises time pressure on the opponent by playing instantly when already ahead on clock. leadMs is set by the Weaponizer Lead Time slider.</td></tr>
+      <tr><td>Clock Weaponizer</td><td>Opponent's clock at or below the trigger (default 15 s)</td><td>Returns the minimum move time (default 0 ms) AND drops Stockfish to the floor level. Maximises pressure when the opponent is close to flagging. The trigger is <em>absolute time remaining</em>, not a lead — 15 s is flaggable in any format — and is set by the Opponent Clock slider, with a separate Min Move Time slider for the floor.</td></tr>
       <tr><td>Can Flag</td><td>Always on or off</td><td>When OFF: think time capped at max(200 ms, clockMs − 3000 ms) to stop the bot flagging itself. When ON: no such safeguard.</td></tr>
     </tbody>
   </table>
