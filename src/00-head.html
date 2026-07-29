@@ -66,10 +66,10 @@ body{
   letter-spacing:-0.02em;
 }
 #site-name .sn-accent{color:#4a9fd4;}
-/* Header wordmark follows the shell, same two-span swap as the landing title:
-   Blundermind on the Visualization board, Build-A-Bot Chess on the Expert one.
-   Pro overrides live in the PRO SHELL block below. */
-#site-name .sn-bab{display:none;}
+/* Header wordmark and tagline follow the shell, same two-span swap as the
+   landing: Blundermind on the Visualization board, Build-A-Bot Chess on the
+   Expert one. Pro overrides live in the PRO SHELL block below. */
+.sn-bab{display:none;}
 #site-tagline{
   font-size:11px;color:#506070;font-style:italic;
   letter-spacing:0.02em;
@@ -509,12 +509,12 @@ canvas{
   letter-spacing:-0.03em;margin-bottom:5px;
 }
 .landing-title .lt-accent { color:#4a9fd4; }
-/* Two wordmarks, one shown at a time: the Expert board is branded Build-A-Bot
-   Chess, the Visualization board Blundermind. Swapped in CSS off .landing-expert
-   so the pre-paint inline script below sets it with no flash. */
-.landing-title .lt-bab { display:none; }
-.landing-expert .landing-title .lt-bm  { display:none; }
-.landing-expert .landing-title .lt-bab { display:inline; }
+/* Brand swap, used by BOTH the title and the tagline: .lt-bm shows on the
+   Visualization board, .lt-bab on the Expert (Build-A-Bot) board. Done in CSS
+   off .landing-expert so the pre-paint inline script sets it with no flash. */
+.lt-bab { display:none; }
+.landing-expert .lt-bm  { display:none; }
+.landing-expert .lt-bab { display:inline; }
 .landing-tagline {
   font-size:15px;color:var(--text-dim);font-style:italic;
   margin-bottom:28px;letter-spacing:0.02em;
@@ -545,10 +545,7 @@ canvas{
 .landing-expert .landing-title { font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:300;letter-spacing:0.01em;color:#e8e6e0; }
 .landing-expert .landing-title .lt-accent { color:#c8922a; }
 .landing-expert .landing-shell-btn .ls-brand { color:#c8922a; }
-/* Build-A-Bot runs untaglined for now — hidden, not deleted, so restoring one
-   is a matter of dropping the display:none (the title absorbs the spacing). */
-.landing-expert .landing-tagline { font-family:'DM Mono',monospace;color:#717a8a;font-style:normal;letter-spacing:0.06em;display:none; }
-.landing-expert .landing-title { margin-bottom:30px; }
+.landing-expert .landing-tagline { font-family:'DM Mono',monospace;color:#717a8a;font-style:normal;letter-spacing:0.06em; }
 .landing-expert .landing-shell-btn { background:#22262d;border-color:rgba(255,255,255,0.08); }
 .landing-expert .landing-shell-btn:hover { border-color:#c8922a; }
 .landing-expert .landing-shell-btn.sel { border-color:#c8922a;box-shadow:0 0 0 2px rgba(200,146,42,0.2); }
@@ -1143,10 +1140,9 @@ body.pro-mode{
 }
 /* Expert board is branded Build-A-Bot Chess — swap the wordmark and take the
    amber accent instead of the blue one. */
-body.pro-mode #site-name .sn-bm { display:none; }
-body.pro-mode #site-name .sn-bab{ display:inline; }
+body.pro-mode .sn-bm { display:none; }
+body.pro-mode .sn-bab{ display:inline; }
 body.pro-mode #site-name .sn-accent{ color:var(--pa); }
-body.pro-mode #site-tagline{ display:none; }   /* no Build-A-Bot tagline yet */
 
 /* hide amateur chrome in pro mode */
 body.pro-mode #sidebar{ display:none !important; }
@@ -1270,7 +1266,10 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <span class="lt-bm">♟ Blunder<span class="lt-accent">mind</span></span>
     <span class="lt-bab">♟ Build-A-Bot <span class="lt-accent">Chess</span></span>
   </div>
-  <div class="landing-tagline">Stop getting blundermined.</div>
+  <div class="landing-tagline">
+    <span class="lt-bm">Stop getting blundermined.</span>
+    <span class="lt-bab">Domo Arigato</span>
+  </div>
 
   <!-- Board experience: Beginner (full overlays) vs Expert (clean tournament look) -->
   <div class="landing-shell-pick">
@@ -1370,7 +1369,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 <!-- ── Site header ──────────────────────────────────────────────────────── -->
 <div id="site-header">
   <span id="site-name" onclick="landingShow()" style="cursor:pointer;" title="Home — choose board experience"><span class="sn-bm">♟ Blunder<span class="sn-accent">mind</span></span><span class="sn-bab">♟ Build-A-Bot <span class="sn-accent">Chess</span></span></span>
-  <span id="site-tagline">Stop getting blundermined.</span>
+  <span id="site-tagline"><span class="sn-bm">Stop getting blundermined.</span><span class="sn-bab">Domo Arigato</span></span>
   <div id="headerBtnGroup" style="display:flex;gap:8px;align-items:center;flex-shrink:0;margin-left:20px;">
     <button id="tourBtn" onclick="startTour()"
       style="font-size:10px;padding:4px 12px;background:transparent;
