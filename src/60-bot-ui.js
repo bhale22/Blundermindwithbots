@@ -1169,7 +1169,10 @@ function _landingApplyShellStyle(s) {
 function landingShow() {
   const ov = document.getElementById('landingOverlay');
   if (!ov) return;
-  ov.style.display = 'flex';
+  // Clear the inline display rather than setting one: the overlay is a plain
+  // block scroll container now (.landing-inner does the centring), so hardcoding
+  // 'flex' here would re-open Home in a different layout than a fresh load.
+  ov.style.display = '';
   // force reflow so the fade-in transition re-runs after removing fade-out
   void ov.offsetWidth;
   ov.classList.remove('fade-out');
