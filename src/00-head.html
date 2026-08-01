@@ -1127,6 +1127,34 @@ canvas{
   #mpPanel:not(.open){ right:-100vw; }
 }
 
+/* ── Slide-in panels on phones ─────────────────────────────────────────────
+   The 2-player panel already goes full-bleed here; the rest (Theme, About &
+   Feedback, Help, Donate, Bot) kept their desktop 300–340px, which on a 390px
+   screen leaves a dead sliver of board down one edge — it reads as a drawer
+   that failed to finish opening, and costs the panel a fifth of its width for
+   nothing. Same treatment, one behaviour for every panel.
+
+   Panel text also stops being desktop-small: 10px body copy in a fixed 300px
+   column was borderline on a monitor and unreadable on a handset. */
+@media(max-width:520px){
+  .slide-panel{ width:100vw; }
+  .slide-panel:not(.open){ right:-100vw; }
+  #botPanel{ width:100vw; }
+  #botPanel:not(.open){ right:-100vw; }
+
+  .panel-header{ padding:14px 16px 12px; }
+  .panel-title{ font-size:15px; }
+  .panel-close{ min-width:44px;min-height:44px;font-size:18px; }
+  .panel-body{ font-size:13px;padding:14px 16px calc(20px + env(safe-area-inset-bottom,0px)); }
+  .panel-body h3{ font-size:14px;margin:16px 0 6px; }
+  /* Real touch targets for the theme pickers. The swatch label is width-locked
+     to its swatch, so it has to grow with it or "Hi-contrast" breaks apart. */
+  .piece-btn{ min-height:44px;font-size:12px;padding:0 14px; }
+  .piece-btns{ gap:6px; }
+  .swatch{ width:44px;height:44px; }
+  .swatch-label{ width:44px;font-size:9px; }
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    JOURNAL FORMAT (body.journal) — editorial serif for the display tiers across
    landing, board chrome, panels, and the pro shell. Color still comes from the
@@ -1277,6 +1305,77 @@ body.pro-mode #proChatMount #chatBox{
 body.pro-mode #chatBox #chatHeader{ background:var(--pc-surface);color:var(--ptd); }
 body.pro-mode #chatBox #chatMessages{ color:var(--pt2); }
 body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
+
+/* Notation header: a plain title row on desktop, a toggle strip on phones. */
+.pro-card-hd{ display:flex;align-items:center;gap:8px; }
+.pro-note-peek,.pro-note-caret{ display:none; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PRO SHELL ON PHONES — clocks flank the board
+   ──────────────────────────────────────────────────────────────────────────
+   Desktop puts #proSide beside the board, so its two clocks already sit level
+   with the halves they belong to. Stacked on a phone the whole column landed
+   UNDER the board, which read as both clocks at the bottom with the move list
+   wedged between them — the one arrangement that tells you nothing about whose
+   turn it is at a glance.
+
+   Both #board-col and #proSide become display:contents here, so their children
+   are laid out directly by #app and can be interleaved by `order`: opponent
+   clock, board, your clock — the same adjacency the Training board has always
+   had. display:contents only removes the wrapper's own box; every id, class
+   and JS hook is untouched, and resizeBoard() measures #page-wrap, not these.
+
+   This block sits after the pro-shell rules above so its #app overrides land;
+   the earlier phone block's `#board-col{order:1}` is inert once the column is
+   dissolved.
+   ══════════════════════════════════════════════════════════════════════════ */
+@media(max-width:760px){
+  body.pro-mode #app{ gap:6px;align-items:center; }
+  body.pro-mode #board-col,
+  body.pro-mode #proSide{ display:contents; }
+  body.pro-mode #board-col > *,
+  body.pro-mode #proSide > *{ width:100%;max-width:100%;min-width:0; }
+  /* The canvas wrapper is the board's positioning context (#ghostCanvas is
+     absolute inside it) — it stays a real box and sizes itself to the canvas. */
+  body.pro-mode #board-canvas-wrap{ width:auto;align-self:center; }
+
+  body.pro-mode #proPlayerTop      { order:1; }
+  body.pro-mode #board-canvas-wrap { order:2; }
+  body.pro-mode #proPlayerBottom   { order:3; }
+  body.pro-mode #replayControls    { order:4; }
+  body.pro-mode #distPanel         { order:5; }
+  body.pro-mode #proNotationCard   { order:6; }
+  body.pro-mode #proResultBar      { order:7; }
+  body.pro-mode #proIdleActions    { order:8; }
+  body.pro-mode #proSide > .pro-actions:not(.pro-idle){ order:9; }
+  body.pro-mode #proGearMenu       { order:10; }
+  body.pro-mode #proChatMount      { order:11; }
+
+  /* Clock strips: shorter, and the clock itself is the loudest thing on them. */
+  body.pro-mode .pro-player{ padding:6px 10px;gap:9px; }
+  body.pro-mode .pro-avatar{ width:26px;height:26px;font-size:13px; }
+  body.pro-mode .pro-clock{ font-size:22px;padding:2px 10px;min-width:84px; }
+
+  /* ── Notation collapses to its header ── */
+  body.pro-mode #proNotationHd{
+    cursor:pointer;-webkit-tap-highlight-color:transparent;
+    min-height:44px;border-bottom:none;
+  }
+  body.pro-mode #proNotationCard .pro-note-peek{
+    display:block;flex:1;min-width:0;text-align:right;
+    font-family:var(--pfm);font-size:10px;color:var(--pt2);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  body.pro-mode #proNotationCard .pro-note-caret{
+    display:block;font-size:10px;color:var(--ptd);
+    transition:transform 0.18s;flex:0 0 auto;
+  }
+  body.pro-mode #proNotationCard #proMoves{ display:none; }
+  body.pro-mode #proNotationCard.open #proNotationHd{ border-bottom:0.5px solid var(--pbd); }
+  body.pro-mode #proNotationCard.open .pro-note-peek{ display:none; }
+  body.pro-mode #proNotationCard.open .pro-note-caret{ transform:rotate(180deg);margin-left:auto; }
+  body.pro-mode #proNotationCard.open #proMoves{ display:block; }
+}
 </style>
 </head>
 <body>
@@ -1804,9 +1903,16 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="pro-clock" id="proClockTop">—</div>
     </div>
 
-    <!-- Notation -->
-    <div class="pro-card" style="display:flex;flex-direction:column;">
-      <div class="pro-card-hd"><span class="pro-card-title">Notation</span></div>
+    <!-- Notation. On phones the move list collapses and this header becomes the
+         toggle (see PRO SHELL ON PHONES) — the peek span carries the last few
+         moves so the closed strip still says where the game is. Peek and caret
+         are display:none on desktop, where the list is always open. -->
+    <div class="pro-card" id="proNotationCard" style="display:flex;flex-direction:column;">
+      <div class="pro-card-hd" id="proNotationHd" onclick="proToggleNotation()">
+        <span class="pro-card-title">Notation</span>
+        <span class="pro-note-peek" id="proNotationPeek"></span>
+        <span class="pro-note-caret">&#9662;</span>
+      </div>
       <div class="pro-moves" id="proMoves"><div class="pro-moves-empty">No moves yet</div></div>
     </div>
 

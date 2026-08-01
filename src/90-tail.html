@@ -34,10 +34,19 @@
      device actually used, and pin the scanner to it. -->
 <script>
 (function(){
+  // Font signature of the last successful measurement. The scan below reads
+  // back a 320×320 canvas, so skip it when nothing that affects the glyph has
+  // changed — the shell observer can otherwise fire it on every class change.
+  var lastSig = null;
   function calibrate(){
     var el = document.querySelector('.bab-pawn-eye');
+    // Zero height = the Blundermind landing, where .lt-bab is display:none.
+    // There is no glyph to measure yet; the shell observer re-runs this the
+    // moment the Build-A-Bot title becomes visible.
     if (!el || !el.offsetHeight) return;
     var cs = getComputedStyle(el);
+    var sig = cs.fontSize + '|' + cs.fontFamily + '|' + cs.fontStyle + '|' + cs.fontWeight;
+    if (sig === lastSig) return;
     var fs = parseFloat(cs.fontSize) || 40;
     var S = 200, PAD = 60, BASE = 250, N = 320;
     var c = document.createElement('canvas'); c.width = c.height = N;
@@ -111,12 +120,29 @@
     // Flat scanner slit rather than a ball
     el.style.setProperty('--eye-h', Math.max(1.3, dia * 0.22).toFixed(2) + 'px');
     el.style.setProperty('--eye-travel', travel.toFixed(2) + 'px');
+    lastSig = sig;   // only after a complete measurement, never on a bail-out
   }
   function run(){ try { calibrate(); } catch(e) {} }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
   else run();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(run);
   var t; addEventListener('resize', function(){ clearTimeout(t); t = setTimeout(run, 200); });
+
+  // Switching Blundermind → Build-A-Bot only toggles .landing-expert on the
+  // overlay: no load or resize event fires, so without this the eye keeps the
+  // CSS em fallbacks and sits off the pawn. Watching the overlay's attributes
+  // catches every route in (the shell picker, landingShow re-opening Home, the
+  // pre-paint class) without the eye having to know about any of them.
+  // The expert title is also a different face from the Blundermind one, so this
+  // is a genuine re-measure, not just a repositioning.
+  var ov = document.getElementById('landingOverlay');
+  if (ov && window.MutationObserver) {
+    new MutationObserver(function(){
+      // Next frame: the class has applied but layout has not necessarily run,
+      // and offsetHeight is what decides whether there is anything to measure.
+      requestAnimationFrame(run);
+    }).observe(ov, { attributes:true, attributeFilter:['class','style'] });
+  }
 })();
 </script>
 

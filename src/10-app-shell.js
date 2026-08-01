@@ -902,7 +902,31 @@ function proUnmountChat(){
   }
 }
 
+// Phone only: the move list is collapsed under its header (the caret and peek
+// are display:none above 760px, where the list is always open), so the header
+// is the toggle. Harmless on desktop — nothing there is hidden to reveal.
+function proToggleNotation(){
+  const card = document.getElementById('proNotationCard');
+  if(card) card.classList.toggle('open');
+}
+
+// Last two full moves, for the collapsed notation strip. Kept to two pairs so
+// it fits the strip at phone width without truncating — the newest move is the
+// point of the peek, and an ellipsis would eat it.
+function proNotationPeekText(){
+  if(typeof gameMovesAlgebraic === 'undefined' || !gameMovesAlgebraic.length) return '';
+  const start = Math.max(0, gameMovesAlgebraic.length - 4) & ~1;   // whole move pairs
+  let out = [];
+  for(let i=start;i<gameMovesAlgebraic.length;i+=2){
+    out.push((i/2 + 1) + '.' + gameMovesAlgebraic[i] +
+             (gameMovesAlgebraic[i+1] ? ' ' + gameMovesAlgebraic[i+1] : ''));
+  }
+  return out.join('  ');
+}
+
 function proRenderNotation(){
+  const peek = document.getElementById('proNotationPeek');
+  if(peek) peek.textContent = proNotationPeekText();
   const el = document.getElementById('proMoves');
   if(!el || typeof gameMovesAlgebraic === 'undefined') return;
   if(!gameMovesAlgebraic.length){ el.innerHTML = '<div class="pro-moves-empty">No moves yet</div>'; return; }
