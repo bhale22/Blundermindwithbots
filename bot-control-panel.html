@@ -258,7 +258,10 @@ table.tg td.tg-inc-lbl{
 .tcm-head{
   position:sticky;top:0;z-index:2;
   display:flex;align-items:center;gap:10px;
-  padding:13px 14px 11px;
+  /* Right gutter clears the HOST modal's close button — it is fixed at
+     top:10px right:14px in the parent document, so it paints over this sheet
+     and was landing squarely on Done. */
+  padding:13px 54px 11px 14px;
   background:var(--carbon-light);
   border-bottom:0.5px solid var(--border-amber);
 }
@@ -1533,9 +1536,6 @@ body.fj .picon{font-weight:500;}
   .page{padding-left:7px;padding-right:7px;}
   .sec-trigger{padding:10px 9px;}
 }
-/* Mobile-only quick-start toggle (see the phone layer below) */
-.qs-more-btn{display:none;}
-
 /* ═══════════════════════════════════════════════════════════════════════════
    PHONES — TOUCH PASS
    ───────────────────────────────────────────────────────────────────────────
@@ -1549,32 +1549,42 @@ body.fj .picon{font-weight:500;}
   html,body{overflow-x:hidden;}
   .page{max-width:100%;}
 
-  /* ── Quick-start: sticky Start + collapsible setup sheet ──
-     Eight 52px pills stacked 2-up is ~210px of permanently-stuck chrome. The
-     bar keeps Start reachable and folds the status pills behind Setup. */
-  .quickstart{position:sticky;top:0;}
+  /* ── Quick-start: every pill visible, Start pinned to the bottom ──
+     The desktop bar puts the whole setup on one line so it reads at a glance
+     and any of it is one click from changing. The phone equivalent is two
+     columns of the same pills — not a fold. Folding them behind a "Setup"
+     button (the previous approach here) hid the three things the bar exists
+     to expose — engine, time, colour — behind an extra tap each, and left a
+     permanently-stuck bar that showed nothing but its own label.
+
+     Start comes out of the bar and becomes a fixed bottom action instead, so
+     it is in reach from anywhere in the panel rather than only at the top. */
+  /* Not sticky any more (Start left the bar), but it must stay POSITIONED: the
+     fixed Start button is its child, so the bar's own z-index is what decides
+     whether Start paints above the section cards that come after it in the DOM.
+     Static made z-index inert and the cards covered the button. */
+  .quickstart{position:relative;top:auto;z-index:600;}
   /* Right gutter keeps the host modal's fixed close button (top:10px right:14px,
-     34px) from landing on top of the bar and the header buttons. */
-  .qs-bar{display:grid;grid-template-columns:1fr 1fr;gap:0;padding-right:50px;background:var(--carbon-light);}
-  .header{padding-right:54px;}
-  .start-btn{grid-column:1;grid-row:1;min-height:54px;justify-content:center;padding:0 14px;font-size:12px;border-right:none;}
-  .qs-more-btn{
-    grid-column:2;grid-row:1;display:flex;align-items:center;justify-content:center;gap:7px;
-    min-height:54px;background:var(--carbon-surface);color:var(--text-secondary);
-    border:none;border-left:0.5px solid var(--border-amber);cursor:pointer;
-    font-family:var(--font-m);font-size:11px;letter-spacing:0.12em;text-transform:uppercase;
-  }
-  .quickstart.qs-open .qs-more-btn{color:var(--amber-bright);background:var(--carbon-light);}
-  .qs-more-caret{transition:transform 0.18s ease;}
-  .quickstart.qs-open .qs-more-caret{transform:rotate(180deg);}
-  .qs-bar > .qs-pill-btn,.qs-bar > .qs-pill-wrap{display:none;border-top:0.5px solid var(--border);}
-  .quickstart.qs-open .qs-bar > .qs-pill-btn,
-  .quickstart.qs-open .qs-bar > .qs-pill-wrap{display:flex;}
+     34px) from landing on top of the header. */
+  .qs-bar{display:grid;grid-template-columns:1fr 1fr;gap:0;background:var(--carbon-light);}
+  .qs-bar > .qs-pill-btn,.qs-bar > .qs-pill-wrap{display:flex;border-top:0.5px solid var(--border);}
   .qs-bar > .qs-pill-btn,.qs-bar > .qs-pill-wrap > .qs-pill-btn{min-height:56px;height:auto;padding:0 14px;}
+  /* Odd pill count — let the last one span rather than sit as a half orphan. */
+  .qs-bar > *:last-child{grid-column:1 / -1;}
   .qs-label{display:block;font-size:8.5px;margin-bottom:3px;}
   .qs-pill-value{font-size:12px;white-space:normal;}
   .qs-engine-zone{min-width:0;}
   .qs-pill-wrap{border-right:none;}
+
+  .start-btn{
+    position:fixed;left:0;right:0;bottom:0;z-index:400;
+    height:auto;min-height:56px;justify-content:center;
+    padding:0 14px calc(env(safe-area-inset-bottom,0px));
+    font-size:12px;border-right:none;
+    box-shadow:0 -6px 20px rgba(0,0,0,0.35);
+  }
+  /* Clearance so the bar never covers the last section's controls. */
+  .page{padding-bottom:96px;}
   /* Desktop offsets would push these dropdowns off a phone screen */
   .qs-float-drop{left:0 !important;right:auto;max-width:calc(100vw - 20px);overflow-x:auto;}
   .qs-inplace-drop{min-width:0 !important;}
@@ -1649,7 +1659,6 @@ body.fj .picon{font-weight:500;}
      tabs, and one-per-row put ~500px of navigation above the first control.
      Two columns wrap the longer labels to two lines and cost half that. */
   .start-btn{font-size:11px;letter-spacing:0.1em;}
-  .qs-more-btn{font-size:10px;letter-spacing:0.08em;}
 }
 /* Phone touch pass, corrections ─────────────────────────────────────────────
    1) The Budget / Hard Floor inputs sit inside .slider-scale-wrap (a column
@@ -1753,24 +1762,70 @@ body.fj .picon{font-weight:500;}
 /* ═══════════════════════════════════════════════════════════════════════════
    PHONE — HEADER
    ───────────────────────────────────────────────────────────────────────────
-   Five controls of different widths wrapping freely produced a ragged
-   three-row block — about 330px of chrome before Start came into view, on a
-   screen with 844 of them. Given full-height tap targets these have to be
-   rows, so make them deliberate ones: title, then Tour + Appearance sharing a
-   line, then the three readability buttons as one segmented row.
+   Given full-height tap targets, five controls of different widths can only
+   wrap into rows: title, Tour + Appearance, then the three readability
+   buttons. That was 173px — a fifth of the screen — spent on a tour link and
+   two appearance pickers, while the controls needed to actually start a game
+   sat folded away below it.
+
+   None of those five are things you touch while setting up a bot, so they all
+   go behind one ⋯ button and the header collapses to a single row. The buttons
+   themselves are not duplicated: .hdr-tools is display:contents on desktop
+   (the header lays its children out exactly as it did before the wrapper
+   existed) and becomes the menu surface here, so there is one Tour button and
+   one text-size picker in the document, wherever it is being shown.
    ═══════════════════════════════════════════════════════════════════════════ */
+.hdr-tools{display:contents;}
+.hdr-more{display:none;}
+
 @media (max-width:760px){
-  .header{gap:7px;padding:13px 12px 11px;align-items:center;}
-  .header > div:first-child{flex:1 1 100%;}       /* title owns its own row */
-  .header-title{font-size:19px;}
+  /* fadeUp ends on transform:translateY(0) — an identity transform still makes
+     the header the containing block for position:fixed descendants, which the
+     Appearance popover below relies on NOT being the case. Same reason the
+     quick-start bar uses fadeFlat. */
+  .header{
+    animation-name:fadeFlat;
+    flex-wrap:nowrap;gap:8px;align-items:center;
+    padding:10px 54px 10px 12px;position:relative;
+    /* Above the quick-start bar's 600, so the ⋯ menu hanging off the header
+       isn't painted under the pills. The clock sheet still wins: it lifts
+       .quickstart to 9000 while it is open. */
+    z-index:700;
+  }
+  .header > div:first-child{flex:0 1 auto;min-width:0;}
+  .header-sub{display:none;}                      /* "Configuration" — the title says it */
+  .header-title{font-size:19px;white-space:nowrap;}
+  .header-line{display:none;}
+
+  .hdr-more{
+    display:flex;align-items:center;justify-content:center;
+    min-width:44px;min-height:44px;margin-left:auto;
+    font-size:17px;line-height:1;letter-spacing:0;
+  }
+
+  .hdr-tools{
+    display:none;position:absolute;top:calc(100% - 4px);right:12px;z-index:400;
+    flex-direction:column;gap:8px;
+    width:min(280px,calc(100vw - 24px));padding:10px;
+    background:var(--carbon-mid);border:0.5px solid var(--border-amber);
+    border-radius:5px;box-shadow:0 8px 30px rgba(0,0,0,0.45);
+  }
+  .hdr-tools.open{display:flex;}
   .hdr-tour,.hdr-appearance{
-    flex:1 1 0;min-width:0;
+    width:100%;
     margin-right:0 !important;                    /* beats the inline style */
   }
   .hdr-appearance > #appearance-btn{width:100%;}
-  .hdr-text{flex:1 1 100%;gap:6px;}
+  .hdr-text{display:flex;gap:6px;width:100%;}
   .hdr-text .rs-btn{flex:1 1 0;min-width:0;}
   .rs-label{display:none;}                        /* the three buttons say it */
+
+  /* The popover is 308px of swatches — too wide to hang off a 280px menu.
+     Pin it to the viewport under the header instead. */
+  #appearance-pop{
+    position:fixed;top:56px;left:10px;right:10px;width:auto;
+    max-height:calc(100vh - 120px);overflow-y:auto;z-index:500;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1812,19 +1867,26 @@ body.fj .picon{font-weight:500;}
     <div class="header-title">Bot Builder</div>
   </div>
   <div class="header-line"></div>
-  <!-- hdr-* classes exist so the phone layer can lay these three out as rows
-       (see PHONE — HEADER); they carry no desktop styling. -->
-  <button class="rs-btn hdr-tour" onclick="startTour()" style="align-self:center;margin-right:8px;" title="Guided tour of the bot controls">🧭 Tour</button>
-  <div class="rs-picker hdr-appearance" role="group" aria-label="Appearance" style="margin-right:8px;position:relative;">
-    <button class="rs-btn" id="appearance-btn" onclick="toggleAppearancePop()"
-      title="Format, background theme, board colors &amp; pieces — applies to the whole site">🎨 Appearance</button>
-    <div id="appearance-pop" style="display:none;"></div>
-  </div>
-  <div class="rs-picker hdr-text" role="group" aria-label="Text readability">
-    <span class="rs-label">Text</span>
-    <button class="rs-btn active" data-rs="readable" onclick="setReadability('readable')" title="Cleaner, brighter standard text">Standard</button>
-    <button class="rs-btn" data-rs="default" onclick="setReadability('default')" title="Original stylized look">Stylized</button>
-    <button class="rs-btn" data-rs="highvis" onclick="setReadability('highvis')" title="Larger, high-contrast text for low vision">High-vis</button>
+  <!-- Phone only: opens .hdr-tools as a menu. display:none above 760px, where
+       all three groups fit on the header line. -->
+  <button class="rs-btn hdr-more" id="hdr-more-btn" onclick="toggleHdrTools()"
+    aria-expanded="false" aria-label="Tour, appearance and text size">&#8943;</button>
+  <!-- display:contents on desktop, so the header lays these three out exactly
+       as it did before this wrapper existed; on phones it is the menu surface
+       (see PHONE — HEADER). One copy of each button either way. -->
+  <div class="hdr-tools" id="hdr-tools">
+    <button class="rs-btn hdr-tour" onclick="startTour()" style="align-self:center;margin-right:8px;" title="Guided tour of the bot controls">🧭 Tour</button>
+    <div class="rs-picker hdr-appearance" role="group" aria-label="Appearance" style="margin-right:8px;position:relative;">
+      <button class="rs-btn" id="appearance-btn" onclick="toggleAppearancePop()"
+        title="Format, background theme, board colors &amp; pieces — applies to the whole site">🎨 Appearance</button>
+      <div id="appearance-pop" style="display:none;"></div>
+    </div>
+    <div class="rs-picker hdr-text" role="group" aria-label="Text readability">
+      <span class="rs-label">Text</span>
+      <button class="rs-btn active" data-rs="readable" onclick="setReadability('readable')" title="Cleaner, brighter standard text">Standard</button>
+      <button class="rs-btn" data-rs="default" onclick="setReadability('default')" title="Original stylized look">Stylized</button>
+      <button class="rs-btn" data-rs="highvis" onclick="setReadability('highvis')" title="Larger, high-contrast text for low vision">High-vis</button>
+    </div>
   </div>
 </div>
 
@@ -1835,10 +1897,8 @@ body.fj .picon{font-weight:500;}
 
   <div class="qs-bar">
 
-    <!-- 1. START -->
+    <!-- 1. START — a fixed bottom bar on phones, see the phone quick-start rules -->
     <button class="start-btn" onclick="startGame()">&#9654; Start</button>
-    <!-- Phone only: folds the status pills below into a tap-to-open sheet -->
-    <button class="qs-more-btn" id="qs-more-btn" onclick="toggleQsMore()" aria-expanded="false">Setup <span class="qs-more-caret">&#9662;</span></button>
 
     <!-- 2. ENGINE — indicator + button to open Engine accordion -->
     <button class="qs-pill-btn qs-engine-zone" onclick="openEngineSection()" aria-label="Open engine settings">
@@ -7089,28 +7149,32 @@ function selectTC90plus30(inc){
 
 let _openDrop = null;
 
-// Phone quick-start sheet. The eight status pills are a screenful on a handset,
-// so they collapse behind the Setup button and the sticky bar keeps only Start.
-// The button is display:none above the 760px breakpoint, so desktop is unchanged.
-function toggleQsMore(){
-  const qs = document.querySelector('.quickstart');
-  if(!qs) return;
-  const open = qs.classList.toggle('qs-open');
-  const btn = document.getElementById('qs-more-btn');
-  if(btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-  if(!open){ try{ closeAllQsDropdowns(); }catch(e){} }
+// Phone header menu — Tour, Appearance and the text-size picker. On desktop
+// .hdr-tools is display:contents and the ⋯ button is display:none, so this is
+// never reachable there.
+function toggleHdrTools(force){
+  const tools = document.getElementById('hdr-tools');
+  if(!tools) return;
+  const open = (typeof force === 'boolean')
+    ? (tools.classList.toggle('open', force), force)
+    : tools.classList.toggle('open');
+  const btn = document.getElementById('hdr-more-btn');
+  if(btn){
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.classList.toggle('active', open);
+  }
+  // Closing the menu takes the Appearance popover with it — it is anchored to
+  // the viewport, so it would otherwise be left floating with nothing behind it.
+  if(!open){
+    const pop = document.getElementById('appearance-pop');
+    if(pop) pop.style.display = 'none';
+  }
 }
-// A pill that jumps to a section should also close the sheet, so the section it
-// opened is what lands on screen. Pills that own a dropdown keep it open.
 document.addEventListener('click', function(e){
-  const qs = document.querySelector('.quickstart');
-  if(!qs || !qs.classList.contains('qs-open')) return;
-  const pill = e.target.closest && e.target.closest('.qs-pill-btn');
-  if(!pill) return;
-  if(pill.id === 'qs-time-btn' || pill.id === 'qs-color-btn' || pill.id === 'qs-bots-btn') return;
-  qs.classList.remove('qs-open');
-  const m = document.getElementById('qs-more-btn');
-  if(m) m.setAttribute('aria-expanded','false');
+  const tools = document.getElementById('hdr-tools');
+  if(!tools || !tools.classList.contains('open')) return;
+  if(e.target.closest('#hdr-tools') || e.target.closest('#hdr-more-btn')) return;
+  toggleHdrTools(false);
 });
 
 function toggleQsDropdown(which){

@@ -1365,6 +1365,14 @@ function _gameInProgress() {
   return gameMovesAlgebraic.length > 0;
 }
 
+// The Draw/Resign row is shown for bot and 2-player games and hidden the rest
+// of the time. Read what is actually on screen rather than re-deriving the
+// condition, so the two can't drift apart again.
+function _resignRowVisible() {
+  const ga = document.getElementById('gameActions');
+  return !!(ga && ga.offsetParent !== null);
+}
+
 function updateActionBtn() {
   const btn = document.getElementById('resignBtn');
   if (!btn) return;
@@ -1395,6 +1403,15 @@ function updateActionBtn() {
       btn.className = 'ctrl-btn';
       btn.style.borderColor = ''; btn.style.color = '';
       btn.onclick = resetGame;
+    } else if (_resignRowVisible()) {
+      // #gameActions carries Resign — with Offer draw beside it — for exactly
+      // these games, so this slot was drawing a SECOND Resign one row below
+      // the first. Hand the slot back to the tips it holds when idle; a phone
+      // gets a 44px row back and nobody has to pick between two Resigns.
+      btn.textContent = '🎯 Training Tips';
+      btn.className = 'ctrl-btn util-btn';
+      btn.style.borderColor = ''; btn.style.color = '';
+      btn.onclick = () => openHelp('howto');
     } else {
       btn.textContent = '⚑ Resign';
       btn.className = 'ctrl-btn reset-btn';
