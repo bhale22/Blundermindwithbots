@@ -515,6 +515,30 @@ canvas{
 .lt-bab { display:none; }
 .landing-expert .lt-bm  { display:none; }
 .landing-expert .lt-bab { display:inline; }
+/* Cylon eye — a red scanner sweeping the pawn's head sphere. U+265F is drawn by
+   whatever symbol font the device falls back to, so the head's diameter and
+   height above the baseline differ per platform: _calibratePawnEye() measures
+   the rendered glyph and writes the vars below. The defaults are a serif
+   approximation, used only until that measurement lands. */
+.bab-pawn-eye { position:relative;display:inline-block;line-height:1; }
+.bab-pawn-eye .cylon-dot {
+  position:absolute;
+  top:var(--eye-y,0.30em);left:var(--eye-x,0.30em);
+  width:var(--eye-d,0.055em);height:var(--eye-h,0.024em);
+  border-radius:50%;background:#ff2a2a;
+  box-shadow:0 0 0.09em 0.02em rgba(255,45,45,0.95);
+  /*,0 0 0.24em 0.06em rgba(255,0,0,0.45);*/
+  animation:cylonScan 2.6s cubic-bezier(0.45,0,0.55,1) infinite;
+  pointer-events:none;
+}
+/* Sweep is a transform so the dot keeps its glow and never reflows the title. */
+@keyframes cylonScan {
+  0%,100% { transform:translate(-50%,-50%) translateX(calc(var(--eye-travel,0.05em) * -1)); }
+  50%     { transform:translate(-50%,-50%) translateX(var(--eye-travel,0.05em)); }
+}
+@media (prefers-reduced-motion:reduce){
+  .bab-pawn-eye .cylon-dot{ animation-duration:6s; }
+}
 .landing-tagline {
   font-size:15px;color:var(--text-dim);font-style:italic;
   margin-bottom:28px;letter-spacing:0.02em;
@@ -1264,7 +1288,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
  <div class="landing-inner">
   <div class="landing-title">
     <span class="lt-bm">♟ Blunder<span class="lt-accent">mind</span></span>
-    <span class="lt-bab">♟ Build-A-Bot <span class="lt-accent">Chess</span></span>
+    <span class="lt-bab"><span class="bab-pawn-eye">♟<span class="cylon-dot"></span></span> Build-A-Bot <span class="lt-accent">Chess</span></span>
   </div>
   <div class="landing-tagline">
     <span class="lt-bm">Stop getting blundermined.</span>
