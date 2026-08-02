@@ -221,6 +221,55 @@ app.get('/stockfish.wasm', (req, res) => {
   res.send(sfWasm);
 });
 
+// ── PWA: manifest, service worker, icons ────────────────────────────────────
+// The manifest is generated rather than a static file because the two domains
+// are two products: buildabotchess.com opens the Expert board, everything else
+// is Blundermind (same split 00-head.html makes client-side). Installing from
+// either should give you that one, named correctly, with its own start URL.
+app.get('/manifest.webmanifest', (req, res) => {
+  const isBab = /(^|\.)buildabotchess\.com$/i.test(req.hostname || '');
+  const name = isBab ? 'Build-A-Bot Chess' : 'Blundermind';
+  res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.json({
+    name,
+    short_name: name,
+    description: isBab
+      ? 'Build a chess bot with a personality, then play it.'
+      : 'Stop getting blundermined. Board vision training for novice chess players.',
+    start_url: '/',
+    scope: '/',
+    display: 'standalone',
+    orientation: 'any',
+    background_color: '#0e0f11',
+    theme_color: '#0e0f11',
+    categories: ['games', 'education'],
+    icons: [
+      { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
+  });
+});
+
+// Must be served from the root for its scope to cover the whole app, and must
+// never be cached hard or a bad worker becomes very hard to replace.
+app.get('/sw.js', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Service-Worker-Allowed', '/');
+  res.sendFile(path.join(__dirname, 'sw.js'));
+});
+
+app.get('/icons/:file', (req, res) => {
+  if (!/^[\w.-]+\.png$/.test(req.params.file)) { res.status(404).end(); return; }
+  const p = path.join(__dirname, 'icons', req.params.file);
+  if (!fs.existsSync(p)) { res.status(404).end(); return; }
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Cache-Control', 'public, max-age=604800'); // 7 days
+  res.sendFile(p);
+});
+
 // Serve HTML — short cache with ETag so deploys propagate quickly
 function serveHtml(req, res) {
   loadHtml(); // re-check if file changed (cheap stat call)

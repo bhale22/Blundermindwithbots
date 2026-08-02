@@ -146,5 +146,38 @@
 })();
 </script>
 
+<!-- ── PWA: install the service worker, ask for durable storage ────────────
+     The app already runs its engines locally; the service worker is only what
+     keeps the files around so it opens and plays with no network. See sw.js
+     for what is and isn't cached (notably: it does NOT touch the Maia model —
+     maia-worker.js owns that cache).
+
+     storage.persist() matters more here than on a typical site: Maia is a 44MB
+     download, and without a persistence grant the browser may evict it under
+     disk pressure, silently costing the user that download again. It is only
+     granted on engagement, so this asks once per load and takes no for an
+     answer — the app works either way, it just may have to re-download. -->
+<script>
+(function(){
+  if ('serviceWorker' in navigator) {
+    // After load: registration competes with the model fetch and the WASM
+    // compiles for bandwidth otherwise, and it is not needed for first paint.
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('/sw.js').catch(function(err){
+        console.warn('[pwa] service worker registration failed:', err && err.message);
+      });
+    });
+  }
+  if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persisted()
+      .then(function(already){ if (!already) return navigator.storage.persist(); })
+      .then(function(granted){
+        if (granted === false) console.info('[pwa] storage not persisted — the Maia model may be evicted');
+      })
+      .catch(function(){ /* unsupported; nothing to do */ });
+  }
+})();
+</script>
+
 </body>
 </html>
