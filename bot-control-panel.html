@@ -39,7 +39,11 @@
   --font-u:'Chakra Petch',sans-serif;
   --radar-ring:rgba(255,255,255,0.06);
   --radar-axis:rgba(255,255,255,0.07);
-  --radar-node-inactive:#4a5060;
+  /* Was #4a5060 — about 2.2:1 against the carbon background, under the 3:1
+     WCAG floor for graphical objects. Not a phone-specific problem: this is
+     the fill for the Elometer's ELO ticks, the Centipawmeter's scale and the
+     radar's inactive axis labels at every width. ~5.7:1 here. */
+  --radar-node-inactive:#8f98a8;
   --radar-node-fill:#e8aa40;
   --radar-node-active:#ffcc55;
   --radar-label-badge:#ffcc55;
@@ -893,6 +897,12 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
    at every width but inert here: display:contents drops .attr-body out of the
    box tree entirely, so the desktop row lays out exactly as it did when
    .attractor-row was a direct child of .attr-group. */
+/* Chart tick labels hard-code the old low-contrast fill as a presentation
+   attribute. CSS wins over presentation attributes, so this lifts the numbers
+   to the same ~5.7:1 as --radar-node-inactive without moving any geometry.
+   Not scoped to phones — 2.2:1 is a failure on a monitor too. */
+.panel svg text[fill="#4a5060"]{fill:#8f98a8;}
+
 .attr-body{display:contents;}
 .attr-head,.attr-steppers,.attr-more,.radar-hint-phone{display:none;}
 .attr-left-piece{width:70px;}
@@ -2170,15 +2180,6 @@ body.fj .picon{font-weight:500;}
      readable label wins the space. */
   .gauge-watermark{display:none;}
 
-  /* Contrast. #4a5060 on the carbon background is about 2.2:1 — under the 3:1
-     WCAG floor for graphical objects, never mind the 4.5:1 for text, and it is
-     what the Elometer's ELO ticks and the Centipawmeter's scale are drawn in.
-     CSS fill overrides the presentation attribute, so the numbers lift without
-     the tick geometry moving. ~5.7:1 at #8f98a8. */
-  .panel svg text[fill="#4a5060"]{fill:#8f98a8;}
-  /* Same value, reached through the radar's canvas: drawRadar reads this var
-     at paint time for inactive axis labels and nodes. */
-  :root{--radar-node-inactive:#8f98a8;}
 
   /* Mode cards — the earlier pass raised these only inside .mode-stack, which
      left the five engine cards (.mode-compact) at 8px names / 7.5px blurbs and
@@ -9512,10 +9513,14 @@ function drawTempChart(T){
   // so on a phone the gutter and the pitch both grow with the type — the chart
   // is taller there too (see #temp-dist-chart in the phone layer).
   const _ph = _isPhoneLayout();
-  // Phone gets a deeper label gutter (three stacked rows at the 11px floor) and
-  // a legend strip along the top instead of tucked into the bottom-right
-  // corner, where at 11px it landed on the M/T/P row.
-  const padT=_ph?24:6, padB=_ph?62:38, padL=4, padR=4;
+  // The legend is a strip along the top at both widths. It used to sit in the
+  // bottom-right corner, on the same baseline as the last column's M/T/P row
+  // (legend at H-5, labels at H-padB+29 = H-9) — so on a narrow chart it
+  // overlapped them and rendered as "P Maia" / "Temp M". Moving it up costs a
+  // little bar height and removes the collision at every width.
+  // Phones additionally need a deeper bottom gutter: three stacked label rows
+  // at the 11px type floor do not fit the desktop 11/21/29 pitch.
+  const padT=_ph?24:20, padB=_ph?62:38, padL=4, padR=4;
   const rowMove = _ph?15:11, rowPct = _ph?34:21, rowMTP = _ph?52:29;
   const chartH = H - padT - padB;
   const chartW = W - padL - padR;
@@ -9612,38 +9617,20 @@ function drawTempChart(T){
     ctx.fillText('P', pX + barW/2, H - padB + rowMTP);
   });
 
-  // Legend: Maia → Temperature → Personality. Along the top on a phone (the
-  // bottom-right corner is occupied by the M/T/P row at this type size),
-  // bottom-right on desktop where it always sat.
+  // Legend: Maia → Temperature → Personality, as a strip along the top.
   ctx.font = _chartFont(7);
   const swatch = _ph ? 9 : 7;
-  if(_ph){
-    let lx = padL;
-    ctx.textAlign = 'left';
-    [['rgba(235,140,0,0.3)','Maia'],['rgba(235,160,0,0.88)','Temp'],[C_PERS,'Pers.']]
-      .forEach(([col,label]) => {
-        ctx.fillStyle = col;
-        ctx.fillRect(lx, 6, swatch, swatch);
-        ctx.fillStyle = _tDim;
-        ctx.fillText(label, lx + swatch + 5, 6 + swatch);
-        lx += swatch + 5 + ctx.measureText(label).width + 14;
-      });
-  } else {
-    const legY = H - 5;
-    ctx.textAlign = 'right';
-    ctx.fillStyle = 'rgba(235,140,0,0.3)';
-    ctx.fillRect(W - padR - 128, legY - 8, swatch, swatch);
-    ctx.fillStyle = _tDim;
-    ctx.fillText('Maia', W - padR - 117, legY);
-    ctx.fillStyle = 'rgba(235,160,0,0.88)';
-    ctx.fillRect(W - padR - 90, legY - 8, swatch, swatch);
-    ctx.fillStyle = _tDim;
-    ctx.fillText('Temp', W - padR - 74, legY);
-    ctx.fillStyle = C_PERS;
-    ctx.fillRect(W - padR - 46, legY - 8, swatch, swatch);
-    ctx.fillStyle = _tDim;
-    ctx.fillText('Pers.', W - padR, legY);
-  }
+  const legTop = _ph ? 6 : 4;
+  let lx = padL;
+  ctx.textAlign = 'left';
+  [['rgba(235,140,0,0.3)','Maia'],['rgba(235,160,0,0.88)','Temp'],[C_PERS,'Pers.']]
+    .forEach(([col,label]) => {
+      ctx.fillStyle = col;
+      ctx.fillRect(lx, legTop, swatch, swatch);
+      ctx.fillStyle = _tDim;
+      ctx.fillText(label, lx + swatch + 5, legTop + swatch);
+      lx += swatch + 5 + ctx.measureText(label).width + 14;
+    });
 }
 
 function onTempSlider(T){

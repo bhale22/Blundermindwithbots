@@ -82,7 +82,9 @@ const offState = await page.evaluate(() => ({
 ok(offState.off && !offState.checked, 'switch off → pressureOffA true, thumb left');
 ok(offState.flat, 'off → curve flat at E0');
 ok(offState.dim, 'off → chart dimmed');
-ok(offState.chip === 'Dist only', 'status chip: Dist only');
+// Renamed from "Dist only" when the label it summarises became "Temperature
+// escalation only" — _syncPressureOffUi sets both from the same branch.
+ok(offState.chip === 'Temp only', 'status chip: Temp only');
 await page.evaluate(() => { const cb = document.getElementById('pressure-off-a'); cb.checked = true; cb.onchange(); });
 await page.waitForTimeout(150);
 ok(await page.evaluate(() => !pressureOffA && ctrlA.some(p => p.y < currentElo - 100)), 'switch on → Regan seed restored');
