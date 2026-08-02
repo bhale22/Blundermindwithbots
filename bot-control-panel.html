@@ -868,6 +868,14 @@ input.attr-slider::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 0 10px rgba(232,170,64,0.4);}
 .attr-val{font-family:var(--font-m);font-size:9px;color:var(--amber-bright);min-width:52px;text-align:right;flex-shrink:0;}
 
+/* Phone row chrome — see the ATTRACTOR ROWS block in the phone layer. Rendered
+   at every width but inert here: display:contents drops .attr-body out of the
+   box tree entirely, so the desktop row lays out exactly as it did when
+   .attractor-row was a direct child of .attr-group. */
+.attr-body{display:contents;}
+.attr-head,.attr-steppers{display:none;}
+.attr-left-piece{width:70px;}
+
 /* Piece attractor grid */
 .piece-grid{display:grid;grid-template-columns:auto 1fr 1fr;gap:0;background:var(--carbon-surface);border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden;}
 .piece-hdr{font-family:var(--font-m);font-size:7px;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-dim);padding:6px 10px;background:var(--carbon-raise);border-bottom:0.5px solid var(--border);}
@@ -1014,6 +1022,10 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 
 /* ══ 2-COLUMN PANEL LAYOUT ══ */
 .panel-2col{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;}
+/* Was an inline style on the Strategy & Piece Focus grid, which outranked the
+   phone layer's one-column rule — that tab stayed two columns on a handset,
+   giving its sliders 186px and 133px. As a class it can be overridden. */
+.panel-2col-wide{grid-template-columns:1.4fr 1fr;}
 .panel-full{grid-column:1/-1;margin-top:10px;}
 
 /* ══ INNER TABS ══ */
@@ -1423,7 +1435,7 @@ body.fj .picon{font-weight:500;}
    ═══════════════════════════════════════════════════════════════════════════ */
 @media (max-width:760px){
   /* ── One column everywhere ── */
-  .panel-2col{grid-template-columns:1fr;gap:14px;}
+  .panel-2col,.panel-2col-wide{grid-template-columns:1fr;gap:14px;}
   .mode-grid,.mode-grid-3,.mode-grid-4,.mode-grid-5{grid-template-columns:1fr;}
   .persona-grid,.persona-grid-4col{grid-template-columns:1fr 1fr;}
   .page{padding-left:10px;padding-right:10px;}
@@ -1854,6 +1866,129 @@ body.fj .picon{font-weight:500;}
   /* ELO box moves under the dial as a full-width labelled row. */
   .elo-col{flex:1 1 100%;flex-direction:row;justify-content:center;gap:10px;}
   .elo-col .elo-input{max-width:140px;}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHONE — ATTRACTOR ROWS
+   ───────────────────────────────────────────────────────────────────────────
+   The one part of the panel the earlier phone passes never reached: every
+   media rule so far targets .ctrl / .ctrl-lbl / .slider-scale-wrap, and the
+   attractor rows use none of those. Left alone they were the worst controls
+   in the panel on a handset — the row spends ~262px on two 90px pole labels,
+   a 52px cp readout and its gaps, which on a 390px screen leaves the track
+   about 66px. Worse, the generic slider rule above grows the thumb to 26px
+   (same specificity, later in the file, so it wins over input.attr-slider's
+   14px), leaving eleven discrete steps to share ~40px of thumb travel.
+
+   So the row collapses to a head — what the bot does, how far, what it costs —
+   and opens on tap to a full-width track. Seventeen rows across Strategic
+   preferences and Piece focus share the one component.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width:760px){
+  /* The wrapper stops being display:contents and becomes the thing that hides,
+     so the whole open control is one box the accordion can toggle. */
+  .attr-body{display:none;}
+  .attr-group.open .attr-body{display:block;padding:2px 0 10px;}
+
+  .attr-group{
+    margin-bottom:0;
+    border-bottom:0.5px solid var(--border);
+  }
+  .attr-group:last-child{border-bottom:none;}
+
+  /* ── The head: the only thing on screen while collapsed ── */
+  .attr-head{
+    display:flex;align-items:center;gap:9px;width:100%;
+    min-height:52px;padding:8px 2px;
+    background:none;border:none;text-align:left;cursor:pointer;
+    font-family:var(--font-m);color:var(--text-secondary);
+  }
+  .attr-head-name{
+    flex:1 1 auto;min-width:0;font-size:12px;line-height:1.35;
+    letter-spacing:0.02em;
+  }
+  /* At rest the head offers both poles; the separator and the inactive pole
+     are dimmed so a list of untouched rows reads as quiet rather than busy. */
+  .attr-head-pole{color:var(--text-dim);}
+  .attr-group.is-set .attr-head-name{color:var(--text-primary);}
+
+  /* Bipolar micro-bar — the fingerprint, per row. Without it a column of
+     eleven untouched rows is a column of em dashes. */
+  .attr-bar{
+    position:relative;flex:0 0 auto;width:56px;height:4px;border-radius:2px;
+    background:rgba(128,140,160,0.28);overflow:hidden;
+  }
+  .attr-bar::before{
+    content:'';position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;
+    background:var(--border);transform:translateX(-50%);
+  }
+  .attr-bar-fill{
+    position:absolute;top:0;bottom:0;left:50%;width:0;
+    background:var(--amber);border-radius:2px;
+    transition:left 0.12s ease,width 0.12s ease;
+  }
+
+  /* The setting is what you chose; the cp is what it costs. Both, because the
+     cp figure is a share of one budget and moves when OTHER rows change —
+     alone it would read as a number drifting on its own. */
+  .attr-head-set{
+    flex:0 0 auto;min-width:26px;text-align:right;
+    font-size:13px;color:var(--text-dim);
+  }
+  .attr-head-set.is-set{color:var(--amber-bright);}
+  .attr-head-cp{
+    flex:0 0 auto;min-width:44px;text-align:right;
+    font-size:10.5px;color:var(--text-dim);
+  }
+  .attr-caret{
+    flex:0 0 auto;width:14px;height:14px;fill:none;
+    stroke:var(--text-dim);stroke-width:2;
+    transition:transform 0.18s ease;
+  }
+  .attr-group.open .attr-caret{transform:rotate(180deg);}
+
+  /* ── The open row: track full width, poles beneath its ends ── */
+  .attr-group .attractor-row{flex-wrap:wrap;gap:4px 8px;margin-bottom:0;}
+  .attr-slider-wrap{flex:1 1 100%;order:1;}
+  .attr-left,.attr-right{
+    width:auto;flex:1 1 0;min-width:0;order:2;
+    font-size:11px;color:var(--text-dim);letter-spacing:0.02em;
+  }
+  .attr-left{text-align:left;}
+  .attr-right{text-align:right;}
+  /* Piece rows have no right pole and an icon in the left one — it is a
+     caption for the track, not a column. */
+  .attr-left-piece{width:auto;}
+  /* cp already sits in the head, two lines above. */
+  .attr-group .attr-val{display:none;}
+  /* The centre tick is drawn against the wrap; the taller touch strip needs it
+     to span the whole control or it reads as a stray mark near the top. */
+  .attr-center-tick{top:0;bottom:0;height:auto;}
+
+  /* ── Steppers: exact values without precision dragging ── */
+  .attr-steppers{display:flex;align-items:center;gap:8px;margin-top:2px;}
+  .attr-step{
+    flex:0 0 auto;min-width:52px;min-height:44px;
+    background:var(--carbon-raise);border:0.5px solid var(--border);
+    border-radius:var(--r);color:var(--text-secondary);
+    font-family:var(--font-m);font-size:17px;line-height:1;cursor:pointer;
+  }
+  .attr-step:active{background:var(--carbon-mid);border-color:var(--border-amber);}
+  .attr-step-mid{flex:1 1 auto;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;}
+
+  /* ── Descriptions finally get a home ──
+     .attr-desc is a :hover overlay, which on a touch screen is either dead or
+     stuck open — every explanation in this section was unreachable on a phone.
+     Open rows put it in the flow instead. Two classes deep so the size
+     survives the readability layer's `body.rs-readable .attr-desc` (9px) —
+     High-vis carries !important and is meant to win, so it still does. */
+  .attr-group.open .attr-desc{
+    position:static;display:block;margin-top:10px;
+    box-shadow:none;font-size:11.5px;line-height:1.65;
+  }
+  .attr-group.open .attr-desc code{font-size:11px;}
+  /* ...but only for the row that is open. */
+  .attr-group:not(.open) .attr-desc{display:none;}
 }
 </style>
 </head>
@@ -2401,7 +2536,7 @@ body.fj .picon{font-weight:500;}
 
         <!-- TAB: Strategy & Piece Focus -->
         <div class="itab-pane" id="itab-attract-pieces">
-          <div class="panel-2col" style="grid-template-columns:1.4fr 1fr;">
+          <div class="panel-2col panel-2col-wide">
             <!-- LEFT: Strategic preference sliders (more prominent) -->
             <div>
               <div class="dlbl"><span>Strategic preferences</span></div>
@@ -6749,10 +6884,19 @@ function updateAttrCpDisplays(){
   entries.forEach(e => {
     const el = document.getElementById(e.domId);
     if(!el) return;
-    if(e.absVal === 0){ el.textContent = '—'; return; }
-    const denom = entries.reduce((s, f) => s + (exclusive(e, f) ? 0 : f.absVal), 0);
-    el.textContent = denom > 0 ? (Math.round(budget * e.absVal / denom) + ' cp') : '—';
+    // `-m` is the same figure repeated in the phone row head, which is all that
+    // is on screen while the row is collapsed.
+    const mirror = document.getElementById(e.domId + '-m');
+    const txt = e.absVal === 0
+      ? '—'
+      : (() => {
+          const denom = entries.reduce((s, f) => s + (exclusive(e, f) ? 0 : f.absVal), 0);
+          return denom > 0 ? (Math.round(budget * e.absVal / denom) + ' cp') : '—';
+        })();
+    el.textContent = txt;
+    if(mirror) mirror.textContent = txt;
   });
+  syncAttrHeads();
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -9062,24 +9206,152 @@ function selTemp(card, id){
 /* ══════════════════════════════════════════════════════════════
    ATTRACTORS
 ══════════════════════════════════════════════════════════════ */
+/* ── Collapsed row heads (phone) ───────────────────────────────
+   The desktop row — pole label, slider, pole label, cp — needs about 260px of
+   fixed furniture before the track gets a pixel, which left the slider ~66px
+   wide on a 390px handset: eleven discrete steps across a 40px thumb travel.
+
+   So on a phone each row collapses to a summary the finger can hit (what the
+   bot does, how far, what it costs) and opens on tap to a full-width track.
+   The head and stepper markup below is rendered for every row at every width;
+   `display:none` / `display:contents` in the ≤760px layer is what decides
+   which presentation runs, so the desktop box tree is unchanged.
+
+   `inputId` is the range input's own id ('attr-chaos' / 'piece-knight') — it
+   is the key for everything here, so both lists share one component. */
+function _attrRowDef(inputId){
+  const i = inputId.indexOf('-');
+  const kind = inputId.slice(0, i), id = inputId.slice(i + 1);
+  return kind === 'piece'
+    ? { kind, id, def: PIECE_TYPES.find(p => p.id === id), cpId: 'pieceval-' + id }
+    : { kind, id, def: ATTRACTORS.find(a => a.id === id),  cpId: 'attrval-'  + id };
+}
+
+// What the row says at rest. Centred, it offers both poles; set, it names the
+// one the bot is actually pulled toward — the row states the behaviour.
+function _attrHeadName(inputId, val){
+  const { kind, def } = _attrRowDef(inputId);
+  if(!def) return '';
+  if(kind === 'piece'){
+    const base = `<span class="piece-icon">${def.icon}</span> ${def.name}`;
+    return val === 0 ? base : base + `<span class="attr-head-pole"> · ${val > 0 ? 'seeks' : 'avoids'}</span>`;
+  }
+  if(val === 0) return `${def.labelLeft} <span class="attr-head-pole">↔</span> ${def.labelRight}`;
+  return val > 0 ? def.labelRight : def.labelLeft;
+}
+
+function _attrHead(inputId){
+  return `<button type="button" class="attr-head" id="attrhead-${inputId}"
+      aria-expanded="false" aria-controls="attrbody-${inputId}"
+      onclick="toggleAttrRow('${inputId}')">
+      <span class="attr-head-name" id="attrname-${inputId}"></span>
+      <span class="attr-bar"><i class="attr-bar-fill" id="attrbar-${inputId}"></i></span>
+      <span class="attr-head-set" id="attrset-${inputId}">—</span>
+      <span class="attr-head-cp" id="${_attrRowDef(inputId).cpId}-m">—</span>
+      <svg class="attr-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </button>`;
+}
+
+// Eleven discrete steps are easier to land exactly with a pair of 44px buttons
+// than with any track, so the open row carries both: drag for coarse, tap for
+// exact. Centre is the value people return to most, so it gets its own key.
+function _attrSteppers(inputId){
+  return `<div class="attr-steppers">
+      <button type="button" class="attr-step" aria-label="Decrease"
+        onclick="attrNudge('${inputId}',-1)">−</button>
+      <button type="button" class="attr-step attr-step-mid"
+        onclick="attrSetValue('${inputId}',0)">Centre</button>
+      <button type="button" class="attr-step" aria-label="Increase"
+        onclick="attrNudge('${inputId}',1)">+</button>
+    </div>`;
+}
+
+// Repaints every head from state. Called by updateAttrCpDisplays, which every
+// path that can change an attractor already goes through (slider, radar drag,
+// preset, saved-bot load, reset), so heads cannot drift out of sync.
+function syncAttrHeads(){
+  const rows = [
+    ...ATTRACTORS.filter(a => a.id !== 'luck').map(a => ['attr-'  + a.id, attractorValues[a.id] ?? 0]),
+    ...PIECE_TYPES.map(p                        => ['piece-' + p.id, pieceValues[p.id]     ?? 0]),
+  ];
+  rows.forEach(([inputId, val]) => {
+    const name = document.getElementById('attrname-' + inputId);
+    if(!name) return;                       // list not rendered yet
+    name.innerHTML = _attrHeadName(inputId, val);
+    const set = document.getElementById('attrset-' + inputId);
+    if(set){
+      set.textContent = val === 0 ? '—' : (val > 0 ? '+' + val : String(val));
+      set.classList.toggle('is-set', val !== 0);
+    }
+    // Bipolar fill: grows from the centre tick toward the active pole.
+    const bar = document.getElementById('attrbar-' + inputId);
+    if(bar){
+      const frac = Math.abs(val) / 5;
+      bar.style.width = (frac * 50) + '%';
+      bar.style.left  = (val >= 0 ? 50 : 50 - frac * 50) + '%';
+    }
+    const grp = document.getElementById('attrg-' + inputId);
+    if(grp) grp.classList.toggle('is-set', val !== 0);
+  });
+}
+
+// Accordion within one list: opening a row closes its siblings, so the open
+// control is always the only full-height thing on screen.
+function toggleAttrRow(inputId){
+  const grp = document.getElementById('attrg-' + inputId);
+  if(!grp || !grp.parentElement) return;
+  const wasOpen = grp.classList.contains('open');
+  grp.parentElement.querySelectorAll('.attr-group.open').forEach(o => {
+    o.classList.remove('open');
+    const h = o.querySelector('.attr-head');
+    if(h) h.setAttribute('aria-expanded', 'false');
+  });
+  if(!wasOpen){
+    grp.classList.add('open');
+    const h = grp.querySelector('.attr-head');
+    if(h) h.setAttribute('aria-expanded', 'true');
+  }
+}
+
+// Writes through the range input and fires its own oninput, so the existing
+// onAttractorChange / onPieceChange wiring stays the single source of truth —
+// preset deselection, radar redraw and cp re-split all happen as if dragged.
+function attrSetValue(inputId, val){
+  const inp = document.getElementById(inputId);
+  if(!inp) return;
+  const next = Math.max(-5, Math.min(5, Math.round(+val || 0)));
+  if(next === +inp.value) return;
+  inp.value = next;
+  inp.dispatchEvent(new Event('input', { bubbles:true }));
+}
+function attrNudge(inputId, delta){
+  const inp = document.getElementById(inputId);
+  if(inp) attrSetValue(inputId, (+inp.value || 0) + delta);
+}
+
 function renderAttractors(){
   const container = document.getElementById('attractor-rows');
   container.innerHTML = ATTRACTORS.filter(a => a.id !== 'luck').map(a=>`
-    <div class="attr-group">
-      <div class="attractor-row">
-        <span class="attr-left attr-left-narrow">${a.labelLeft}</span>
-        <div class="attr-slider-wrap">
-          <div class="attr-center-tick"></div>
-          <input class="attr-slider" type="range" min="-5" max="5" step="1" value="${a.default}"
-            id="attr-${a.id}"
-            oninput="onAttractorChange('${a.id}',this.value)">
+    <div class="attr-group" id="attrg-attr-${a.id}">
+      ${_attrHead('attr-' + a.id)}
+      <div class="attr-body">
+        <div class="attractor-row">
+          <span class="attr-left attr-left-narrow">${a.labelLeft}</span>
+          <div class="attr-slider-wrap">
+            <div class="attr-center-tick"></div>
+            <input class="attr-slider" type="range" min="-5" max="5" step="1" value="${a.default}"
+              id="attr-${a.id}"
+              oninput="onAttractorChange('${a.id}',this.value)">
+          </div>
+          <span class="attr-right attr-right-narrow">${a.labelRight}</span>
+          <span class="attr-val" id="attrval-${a.id}">—</span>
         </div>
-        <span class="attr-right attr-right-narrow">${a.labelRight}</span>
-        <span class="attr-val" id="attrval-${a.id}">—</span>
+        ${_attrSteppers('attr-' + a.id)}
+        <div class="attr-desc">${ATTRACTOR_DESCS[a.id] || ''}</div>
       </div>
-      <div class="attr-desc">${ATTRACTOR_DESCS[a.id] || ''}</div>
     </div>
   `).join('');
+  syncAttrHeads();
 }
 
 function onAttractorChange(id, val){
@@ -9122,20 +9394,25 @@ function updateAttractorStatus(){
 function renderPieceAttractors(){
   const container = document.getElementById('piece-rows');
   container.innerHTML = PIECE_TYPES.map(p=>`
-    <div class="attr-group">
-      <div class="attractor-row">
-        <span class="attr-left" style="width:70px;"><span class="piece-icon">${p.icon}</span> ${p.name}</span>
-        <div class="attr-slider-wrap">
-          <div class="attr-center-tick"></div>
-          <input class="attr-slider" type="range" min="-5" max="5" step="1" value="0"
-            id="piece-${p.id}"
-            oninput="onPieceChange('${p.id}',this.value)">
+    <div class="attr-group" id="attrg-piece-${p.id}">
+      ${_attrHead('piece-' + p.id)}
+      <div class="attr-body">
+        <div class="attractor-row">
+          <span class="attr-left attr-left-piece"><span class="piece-icon">${p.icon}</span> ${p.name}</span>
+          <div class="attr-slider-wrap">
+            <div class="attr-center-tick"></div>
+            <input class="attr-slider" type="range" min="-5" max="5" step="1" value="0"
+              id="piece-${p.id}"
+              oninput="onPieceChange('${p.id}',this.value)">
+          </div>
+          <span class="attr-val" id="pieceval-${p.id}">—</span>
         </div>
-        <span class="attr-val" id="pieceval-${p.id}">—</span>
+        ${_attrSteppers('piece-' + p.id)}
+        <div class="attr-desc">${PIECE_DESCS[p.id] || ''}</div>
       </div>
-      <div class="attr-desc">${PIECE_DESCS[p.id] || ''}</div>
     </div>
   `).join('');
+  syncAttrHeads();
 }
 
 function onPieceChange(id, val){
