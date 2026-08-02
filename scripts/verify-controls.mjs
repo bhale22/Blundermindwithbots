@@ -104,21 +104,37 @@ console.log('\nPHONE  390×844');
     /recommend/i.test(document.querySelector('.mcard[data-engine="maia3"] .mrec')?.textContent || '')));
   ok('selected card sorts above its sub-panel', await order(page, '#sec-engine .mcard.sel') === '1');
   ok('sub-panel sorts above the other engines', await order(page, '#engine-sub-maia3') === '2');
-  ok('description tail sits after the controls', await order(page, '#engine-desc-tail') === '3');
-  ok('rejected engines sort below all of it', await order(page, '#sec-engine .mcard:not(.sel)') === '4');
-  ok('shared quality column is last', await order(page, '#engine-temp-col') === '5');
+  ok('temperature + histogram sit right under the Elometer',
+    await order(page, '#engine-temp-col') === '3');
+  ok('description tail sits after the temperature control',
+    await order(page, '#engine-desc-tail') === '4');
+  ok('rejected engines sort below all of it', await order(page, '#sec-engine .mcard:not(.sel)') === '5');
 
   const tail = await page.evaluate(() => document.getElementById('engine-desc-tail').textContent.trim());
   ok('tail carries the selected engine\'s blurb', /Human-like neural net/.test(tail), tail.slice(0, 40));
   ok('the card no longer shows it twice', !(await shown(page, '#sec-engine .mcard.sel .mdesc')));
+  // The maiachess.com credit sat at the bottom of the sub-panel, i.e. between
+  // the Elometer and the temperature controls. It belongs after them.
+  ok('engine credit moved out of the sub-panel',
+    !(await shown(page, '#engine-sub-maia3 .engine-credit'))); 
+  ok('...and into the tail, link intact', await page.evaluate(() => {
+    const a = document.querySelector('#engine-desc-tail a[href*="maiachess"]');
+    return !!a && a.offsetParent !== null;
+  }));
 
-  // The dial must actually beat the rejected engines up the page.
+  // Everything that configures the chosen engine must physically precede the
+  // engines you didn't choose — the whole point of the reorder.
   const geom = await page.evaluate(() => {
     const y = s => { const e = document.querySelector(s); return e ? Math.round(e.getBoundingClientRect().top) : null; };
-    return { sub: y('#engine-sub-maia3'), other: y('#sec-engine .mcard:not(.sel)') };
+    return { sub: y('#engine-sub-maia3'), temp: y('#engine-temp-col'),
+             tail: y('#engine-desc-tail'), other: y('#sec-engine .mcard:not(.sel)') };
   });
   ok('Maia controls come before the other engine cards', geom.sub < geom.other,
     `sub@${geom.sub} vs other@${geom.other}`);
+  ok('temperature follows the Elometer, not the rejected engines',
+    geom.temp > geom.sub && geom.temp < geom.other, `temp@${geom.temp}`);
+  ok('Maia blurb lands below the temperature control',
+    geom.tail > geom.temp, `tail@${geom.tail} vs temp@${geom.temp}`);
 
   // Tap the selected card again → fold.
   await tap(page, '#sec-engine .mcard.sel');
@@ -130,6 +146,8 @@ console.log('\nPHONE  390×844');
   // Selecting a different engine swaps the sub-panel and never leaves it folded.
   await tap(page, '#sec-engine .mcard[data-engine="stockfish"]');
   ok('switching engine shows the new sub-panel', await shown(page, '#engine-sub-stockfish'));
+  ok('an engine with no temperature column leaves no gap', await page.evaluate(() =>
+    getComputedStyle(document.getElementById('engine-temp-col')).display === 'none'));
   ok('...and its blurb follows it', await page.evaluate(() =>
     /Classical engine/.test(document.getElementById('engine-desc-tail').textContent)));
   await tap(page, '#sec-engine .mcard[data-engine="maia3"]');
@@ -189,6 +207,22 @@ console.log('\nPHONE  390×844');
   await page.waitForTimeout(400);
   ok('3 custom controls render as cards', await page.$$eval('.cc-card', c => c.length) === 3);
   ok('their controls are collapsed', !(await shown(page, '.cc-row2')));
+
+  // The + button is a single gesture: add, open the card, raise the metric list.
+  // Two buttons share this class — the Quality tab's shortcut and the one in
+  // the Custom Controls pane. Target the pane's.
+  await tap(page, '.cc-wrap .cc-add-btn');
+  const added = await page.evaluate(() => {
+    const c = customControls[customControls.length - 1];
+    const grp = document.getElementById('ccg-' + c.id);
+    return { n: customControls.length, open: grp.classList.contains('open'),
+             focused: document.activeElement === grp.querySelector('.cc-select') };
+  });
+  ok('+ Add adds a control', added.n === 4, 'got ' + added.n);
+  ok('+ Add opens its card in the same tap', added.open);
+  ok('+ Add puts the metric list under the finger', added.focused);
+  await page.evaluate(() => { const c = customControls.pop(); renderCustomControls(); });
+  await page.waitForTimeout(200);
   ok('their heads are tappable', await shown(page, '.cc-head'));
   const ccH = await page.evaluate(() => Math.round(document.querySelector('.cc-wrap').scrollHeight));
   ok('3 collapsed controls fit on one screen', ccH < 844, ccH + 'px');

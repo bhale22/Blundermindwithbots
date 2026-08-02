@@ -2214,12 +2214,23 @@ body.fj .picon{font-weight:500;}
   #sec-engine .panel > .panel-2col,
   #sec-engine #engine-sub-col{display:contents;}
 
+  /* Everything that configures the chosen engine comes before the engines you
+     didn't choose. Temperature and its histogram are part of that setup, not
+     an afterthought: left at the end they sat below four rejected engine
+     cards, off the bottom of the screen. Order is therefore
+     card → Elometer/sub-panel → temperature+histogram → blurb → the rest. */
   #sec-engine .dlbl{order:0;}
-  #sec-engine .mcard{order:4;}          /* the engines you didn't pick */
+  #sec-engine .mcard{order:5;}          /* the engines you didn't pick */
   #sec-engine .mcard.sel{order:1;}
   #sec-engine [id^="engine-sub-"]{order:2;}
-  #sec-engine #engine-desc-tail{order:3;}
-  #sec-engine #engine-temp-col{order:5;}
+  #sec-engine #engine-temp-col{order:3;}
+  #sec-engine #engine-desc-tail{order:4;}
+
+  /* On desktop the shared column is hidden with visibility so the two-column
+     grid keeps its size. Stacked, that would leave a tall empty gap in the
+     middle of the run — between the engine's own controls and the other
+     cards — so here it comes out of the flow entirely. */
+  #sec-engine #engine-temp-col.tc-hidden{display:none;}
 
   /* Tapping the selected card again folds its controls away — selEngineCard.
      !important because selEngineMode sets `style.display = 'block'` on the
@@ -2237,10 +2248,18 @@ body.fj .picon{font-weight:500;}
   /* Its blurb is repeated below the controls instead — see #engine-desc-tail. */
   #sec-engine .mcard.sel .mdesc{display:none;}
   #sec-engine.eng-collapsed .mcard.sel .mdesc{display:block;}
-  #engine-desc-tail{
+  /* Scoped through #sec-engine (2,0,0) on purpose. The base rule that hides
+     this on desktop is `.temp-head,#engine-desc-tail{display:none}` — same
+     (1,0,0) specificity as a bare #engine-desc-tail here, and it sits LATER in
+     the file, so it was winning inside this media query too and the blurb was
+     hidden on phones as well as desktop. Media queries add no specificity. */
+  #sec-engine #engine-desc-tail{
     display:block;font-family:var(--font-m);font-size:11.5px;line-height:1.55;
     color:var(--text-dim);padding:2px 2px 0;
   }
+  .edt-line + .edt-line{margin-top:9px;}
+  /* Shown from #engine-desc-tail instead — see updateEngineDescTail. */
+  #sec-engine .engine-credit{display:none;}
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2675,7 +2694,7 @@ body.fj .picon{font-weight:500;}
               </div>
             </div>
             <div class="ctrl-hint" style="margin-top:4px;text-align:center;">Budget = the personality's engine-calculated spend · Floor = worst-move backstop · click a tile to fine-tune in the Personality panel</div>
-            <div style="margin-top:10px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);line-height:1.6;">
+            <div class="engine-credit" style="margin-top:10px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);line-height:1.6;">
               Maia is a human-like neural net with its own free web app — analysis tools, puzzles, and play against Maia bots:
               <a href="https://maiachess.com" target="_blank" rel="noopener" style="color:var(--amber);text-decoration:none;">maiachess.com</a>
             </div>
@@ -2724,7 +2743,7 @@ body.fj .picon{font-weight:500;}
             <div class="ctrl" style="margin-top:6px;"><span class="ctrl-lbl">Stockfish level</span></div>
             <div class="sf-pips" id="lcsf-sf-pips"></div>
             <div class="ctrl-hint" style="margin-top:8px;">LC modes use the Lichess Open Explorer as an opening book; Stockfish takes over when the book runs dry.</div>
-            <div style="margin-top:10px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);line-height:1.6;">
+            <div class="engine-credit" style="margin-top:10px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);line-height:1.6;">
               Lichess is free, open-source, and ad-free — opening explorer, engine analysis, puzzles, and more:
               <a href="https://lichess.org/analysis" target="_blank" rel="noopener" style="color:var(--amber);text-decoration:none;">lichess.org/analysis</a>
             </div>
@@ -2759,7 +2778,7 @@ body.fj .picon{font-weight:500;}
                 </button>
               </div>
             </div>
-            <div style="margin-top:10px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);line-height:1.6;">
+            <div class="engine-credit" style="margin-top:10px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);line-height:1.6;">
               Maia has its own free web app with analysis tools and play:
               <a href="https://maiachess.com" target="_blank" rel="noopener" style="color:var(--amber);text-decoration:none;">maiachess.com</a><br>
               Lichess is free, open-source, and ad-free — opening explorer and engine analysis:
@@ -2947,7 +2966,7 @@ body.fj .picon{font-weight:500;}
           <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-bottom:8px;max-width:440px;">Build your own attractor: pick a board feature, the game phase it applies in, and a direction. Each attactor re-ranks the engine's candidate moves. The centipawn budget is shared only among controls currently active, so full cp budget is available for every move.</div>
           <div class="cc-wrap">
             <div id="custom-control-rows"></div>
-            <button type="button" class="cc-add-btn" onclick="addCustomControl()">+ Add custom control</button>
+            <button type="button" class="cc-add-btn" onclick="addCustomControlAndPick()">+ Add custom control</button>
           </div>
         </div>
 
@@ -9060,8 +9079,19 @@ function selEngineCard(card){
 function updateEngineDescTail(){
   const tail = document.getElementById('engine-desc-tail');
   if(!tail) return;
-  const desc = document.querySelector('#engine-mode-grid .mcard.sel .mdesc');
-  tail.textContent = desc ? desc.textContent.trim() : '';
+  const card = document.querySelector('#engine-mode-grid .mcard.sel');
+  const desc = card && card.querySelector('.mdesc');
+  // The engine's own credit paragraph (maiachess.com / lichess.org) lives at
+  // the bottom of its sub-panel, which on a phone puts it ABOVE the
+  // temperature controls — reading matter in front of a control. Route it
+  // here instead, below them. Read from the markup rather than duplicated, so
+  // there is still one copy of the words, and desktop keeps it in place.
+  const credit = card && document.querySelector(
+    '#engine-sub-' + card.dataset.engine + ' .engine-credit');
+  tail.innerHTML = '';
+  const line = () => { const d = document.createElement('div'); d.className = 'edt-line'; return d; };
+  if(desc){   const d = line(); d.textContent = desc.textContent.trim(); tail.appendChild(d); }
+  if(credit){ const d = line(); d.innerHTML  = credit.innerHTML;        tail.appendChild(d); }
 }
 
 function selEngineMode(card){
@@ -9090,7 +9120,13 @@ function selEngineMode(card){
   const mqr = document.getElementById('move-quality-range');
   if(mqr) mqr.style.visibility = (['maia3','lcmaia','hybrid'].includes(currentEngine)) ? '' : 'hidden';
   const tempCol = document.getElementById('engine-temp-col');
-  if(tempCol) tempCol.style.visibility = (['stockfish','lcsf'].includes(currentEngine)) ? 'hidden' : '';
+  const tempOff = ['stockfish','lcsf'].includes(currentEngine);
+  // visibility keeps the desktop grid stable; the class lets the phone layer
+  // take it out of the flow instead (see #engine-temp-col.tc-hidden).
+  if(tempCol){
+    tempCol.style.visibility = tempOff ? 'hidden' : '';
+    tempCol.classList.toggle('tc-hidden', tempOff);
+  }
   updateEngineDescTail();
   updatePersonalityGating();
 }
@@ -10163,12 +10199,37 @@ function toggleCcRow(id){
 
 function addCustomControl(){
   const m = CUSTOM_METRICS[0];
+  const id = 'cc' + Date.now().toString(36) + (++_ccSeq);
   customControls.push({
-    id: 'cc' + Date.now().toString(36) + (++_ccSeq),
-    name: m.name, metric: m.id, phase: 'all', result: 'any', pressure: 'any', value: 0
+    id, name: m.name, metric: m.id, phase: 'all', result: 'any', pressure: 'any', value: 0
   });
   renderCustomControls();
   _ccDirty();
+  return id;
+}
+
+/* What the "+ Add custom control" button does, as opposed to what the model
+   function does. A new control defaults to the first metric in the list, and
+   on a phone its card arrives collapsed — so adding one and then choosing what
+   it actually measures cost three taps, the first two of which only undid the
+   default. This adds the control, opens its card and raises the metric list in
+   one gesture.
+
+   showPicker() has to run inside the gesture that triggered it and is not
+   universally supported; where it isn't, the select is focused and scrolled
+   to, which is still a tap closer than before. Kept out of addCustomControl()
+   so programmatic callers (bot loading, tests) don't inherit the UI side
+   effects. */
+function addCustomControlAndPick(){
+  const id = addCustomControl();
+  const grp = document.getElementById('ccg-' + id);
+  if(!grp) return;
+  if(_isPhoneLayout() && !grp.classList.contains('open')) toggleCcRow(id);
+  grp.scrollIntoView({ block:'center', behavior:'instant' });
+  const sel = grp.querySelector('.cc-select');
+  if(!sel) return;
+  sel.focus({ preventScroll:true });
+  try { if(typeof sel.showPicker === 'function') sel.showPicker(); } catch(e) {}
 }
 function removeCustomControl(id){
   customControls = customControls.filter(c => c.id !== id);
@@ -10178,8 +10239,8 @@ function removeCustomControl(id){
 // Entry button on the Move Quality & Strategy tab: add a control and jump to the
 // dedicated Custom Controls tab so the builder is right there.
 function addCustomControlAndGo(){
-  addCustomControl();
   if(typeof switchItab === 'function') switchItab('attract','custom');
+  addCustomControlAndPick();   // same gesture, same expectation
 }
 function onCustomControlValue(id, val){
   const c = _ccFind(id); if(!c) return;
