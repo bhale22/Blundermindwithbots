@@ -1619,7 +1619,7 @@ body.fj .picon{font-weight:500;}
   .ctrl{flex-wrap:wrap;}
   .ctrl > .ctrl-lbl{min-width:0 !important;flex:1 1 auto;}
   .ctrl > .slider-scale-wrap{flex:1 1 100%;order:3;width:100%;}
-  .slider-scale{font-size:9px;margin-top:0;}
+  .slider-scale{font-size:11px;margin-top:0;}
   .dual-range-wrap{height:48px;}
   .dual-range-wrap input[type=range]{height:48px;}
   .dual-range-wrap input[type=range]::-webkit-slider-thumb{width:26px;height:26px;}
@@ -1631,7 +1631,7 @@ body.fj .picon{font-weight:500;}
   .itab{
     min-height:44px;display:flex;align-items:center;justify-content:center;text-align:center;
     border-radius:var(--r);border-bottom:0.5px solid var(--border);
-    font-size:10px;letter-spacing:0.06em;padding:8px 10px;line-height:1.3;
+    font-size:11.5px;letter-spacing:0.03em;padding:8px 9px;line-height:1.25;
   }
   /* An odd number of tabs leaves the last one alone on its row — let it span
      rather than sit as a half-width orphan. */
@@ -2053,6 +2053,100 @@ body.fj .picon{font-weight:500;}
   .cc-sval{order:3;flex:0 0 auto;font-size:12px;min-width:46px;}
   .cc-slidecell .attr-steppers{order:4;flex:1 1 100%;}
   .cc-empty{font-size:11.5px;line-height:1.55;}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHONE — TYPE FLOOR (11px)
+   ───────────────────────────────────────────────────────────────────────────
+   The panel's desktop type runs 6–10px. That is deliberate density on a large
+   screen an arm's length away and simply unreadable on a handset; Apple and
+   Android both publish 11pt as the floor for any text a user is expected to
+   read. Earlier phone passes lifted the controls they touched one at a time
+   (.ctrl-lbl, .tog-lbl, .sec-label…), which left every label, caption, scale
+   and button they didn't touch at its desktop size.
+
+   This is the sweep: nothing below 11px anywhere in the panel on a phone.
+
+   Inline sizes are raised with the same attribute-selector idiom the
+   readability layer already uses (body.rs-readable [style*="font-size:7px"]).
+   There are ~195 sub-11px inline declarations in the markup; rewriting each
+   into a class would be a far larger diff for the same rendered result, and
+   would fight the readability layer that is keyed on those same attributes.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width:760px){
+  [style*="font-size:6px"],  [style*="font-size:6.5px"],
+  [style*="font-size:7px"],  [style*="font-size:7.5px"],
+  [style*="font-size:8px"],  [style*="font-size:8.5px"],
+  [style*="font-size:9px"],  [style*="font-size:9.5px"],
+  [style*="font-size:10px"], [style*="font-size:10.5px"]{
+    font-size:11.5px !important;line-height:1.5;
+  }
+
+  /* Class-based offenders, by section:
+     Engine     — CP-budget guide labels + its "Set:" action, temperature zone
+                  captions, the ELO/temp readouts
+     Personality— gauge title, dial zone captions, tab strip, slider endpoints
+     Opening    — Off / Main Line / Repertoire segments
+     Move timing— premove help
+     Docs       — brief note */
+  .cpg-lbl{font-size:11px;letter-spacing:0.06em;}
+  .cpg-btn{font-size:11.5px;min-height:44px;padding:6px 12px;}
+  .tt{font-size:11px;letter-spacing:0.02em;}
+  .dial-zone{font-size:11px;letter-spacing:0.02em;}
+  .gauge-title{font-size:11.5px;letter-spacing:0.08em;}
+  .seg-btn{font-size:11px;letter-spacing:0.04em;min-height:44px;}
+  .pmt-help-btn{font-size:11.5px;}
+  .cc-add-btn{font-size:11.5px;min-height:44px;}
+  .brief-note{font-size:11.5px;line-height:1.55;}
+  .cc-headers span,.cc-mm{font-size:11px;}
+  .radar-hint{font-size:11px;letter-spacing:0.02em;}
+
+  /* Repertoire search is the only free-text entry in the panel and was the
+     one input still under target at 34px. */
+  .eco-search{min-height:44px;font-size:12px;}
+
+  /* Link LISTS read as rows of tappable items, so they get row height.
+     Links inline INSIDE prose (the Regan credits, maiachess.com) deliberately
+     do not: a 44px inline box would break the paragraph it sits in, and the
+     44pt rule is about controls, not text runs. Raising the surrounding copy
+     to 11.5px is what makes those reachable. */
+  .pmt-links li a,.brief-links li a{
+    display:block;min-height:44px;display:flex;align-items:center;
+    font-size:11.5px;line-height:1.4;
+  }
+
+  /* ── Chart labels ──
+     These are font-size PRESENTATION ATTRIBUTES inside fixed viewBoxes, so
+     the number in the markup is user units, not pixels: what the eye gets is
+     that number × (rendered width ÷ viewBox width). The Centipawmeter draws
+     280 units into ~309px, so its 7px labels reach the eye at 7.7px. The
+     specified sizes below are therefore set to clear 11px AFTER that scaling,
+     not at it.
+
+     Matched on the attribute VALUE so only the small labels are caught — the
+     16 and 22 unit value readouts keep their size. Tick geometry, arcs and
+     anchors are untouched, so nothing is repositioned; verify-typefloor
+     checks the raised labels for collisions. */
+  .panel svg text[font-size="6"],   .panel svg text[font-size="6.5"],
+  .panel svg text[font-size="7"],   .panel svg text[font-size="7.5"],
+  .panel svg text[font-size="8"],   .panel svg text[font-size="8.5"],
+  .panel svg text[font-size="9"],   .panel svg text[font-size="9.5"],
+  .panel svg text[font-size="10"],  .panel svg text[font-size="10.5"]{
+    font-size:11px;
+  }
+  /* At 7 units the dial's watermark cleared the quality label beneath it; at
+     11 the two overlap. It is decorative and repeats the card title directly
+     above the dial ("Max Centipawn Budget" / "CP Budget"), so on a phone the
+     readable label wins the space. */
+  .gauge-watermark{display:none;}
+
+  /* Mode cards — the earlier pass raised these only inside .mode-stack, which
+     left the five engine cards (.mode-compact) at 8px names / 7.5px blurbs and
+     the temperature presets at 9px / 8.5px. */
+  .mname,.mode-compact .mname{font-size:12px;letter-spacing:0.04em;}
+  .mdesc,.mode-compact .mdesc{font-size:11.5px;line-height:1.5;}
+  #temp-formula-line{font-size:11.5px;}
+  .tcm-opt .tcm-sub{font-size:11px;letter-spacing:0.04em;}
 }
 </style>
 </head>
@@ -6920,7 +7014,7 @@ function drawStyleGauge(val){
     <text x="${CX}" y="${CY - 12}" text-anchor="middle"
       font-family="'DM Mono',monospace" font-size="22" font-weight="500" fill="${fillColor}">${val}</text>
     <text x="${CX}" y="${CY + 14}" text-anchor="middle"
-      font-family="'DM Mono',monospace" font-size="7" fill="#717a8a" letter-spacing="0.8">Centipawmeter</text>
+      font-family="'DM Mono',monospace" font-size="7" fill="#717a8a" letter-spacing="0.8" class="gauge-watermark">Centipawmeter</text>
     <!-- Quality label (dynamic) -->
     <text x="${CX}" y="${CY + 25}" text-anchor="middle"
       font-family="'DM Mono',monospace" font-size="7.5" fill="${qualityColor}" letter-spacing="0.08em">${qualityLabel}</text>
@@ -9726,7 +9820,14 @@ function drawRadar(){
     ctx.stroke();
     // Label
     const lx=CX+(R+20)*Math.cos(ang), ly=CY+(R+20)*Math.sin(ang);
-    ctx.font = isActive ? '9px "DM Mono",monospace' : '8px "DM Mono",monospace';
+    // Canvas text is drawn in pixels and ignores the CSS type layer entirely,
+    // so the 11px phone floor has to be applied here at draw time. Safe for
+    // these labels specifically: they are free-standing around the ring, ~63px
+    // of arc apart. The other three charts are NOT — their labels sit at
+    // hardcoded offsets (the temperature chart stacks three rows on an 8px
+    // pitch; the pressure curves carry ten x-ticks ~30px apart), so raising
+    // their type needs the geometry reworked with it.
+    ctx.font = _chartFont(isActive ? 9 : 8);
     ctx.fillStyle = isActive ? amberColor : nodeInact;
     ctx.textAlign='center';
     ctx.textBaseline='middle';
@@ -9776,7 +9877,7 @@ function drawRadar(){
       const vStr = val > 0 ? '+'+val : String(val);
       const badgeR = r + 14;
       const bx=CX+badgeR*Math.cos(ang), by=CY+badgeR*Math.sin(ang);
-      ctx.font='bold 9px "DM Mono",monospace';
+      ctx.font=_chartFont(9,'bold');
       ctx.fillStyle=badgeColor;
       ctx.textAlign='center';
       ctx.textBaseline='middle';
@@ -9853,6 +9954,12 @@ function _radarSetAxis(axIdx, val){
    id !== 'luck' — Good day/Bad day is governed by the Move Distribution Range
    dual slider), so it routes there instead. */
 const _isPhoneLayout = () => window.matchMedia('(max-width:760px)').matches;
+
+// Canvas labels can't inherit the phone type floor from CSS — they are painted
+// in device pixels. This applies it at draw time. Only use it where the label
+// has room to grow; see the note at the radar's fillText.
+const _chartFont = (px, weight) =>
+  `${weight ? weight + ' ' : ''}${_isPhoneLayout() ? Math.max(11, px) : px}px "DM Mono",monospace`;
 
 function _radarNavigate(axIdx){
   const ax = RADAR_AXES[axIdx];
