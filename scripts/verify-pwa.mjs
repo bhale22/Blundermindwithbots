@@ -58,6 +58,31 @@ console.log('\nMANIFEST & ICONS');
   ok('blundermindchess.com installs as Blundermind',
     /Blundermind/i.test((await bm.json()).name));
 
+  // ── Digital Asset Links (TWA domain verification) ──
+  // Unconfigured is the expected state until the signing key exists; what must
+  // not happen is serving a file that is present but unverifiable, which looks
+  // identical to a wrong fingerprint when you're debugging an address bar.
+  const al = await api.get('/.well-known/assetlinks.json');
+  if (al.status() === 404) {
+    ok('assetlinks 404s cleanly while unconfigured', true);
+    ok('...and says how to configure it', /TWA_PACKAGE_NAME/.test(JSON.stringify(await al.json())));
+    ok('...and is not cached', (al.headers()['cache-control'] || '').includes('no-store'));
+  } else {
+    const links = await al.json();
+    const t = links[0] && links[0].target;
+    ok('assetlinks is a Digital Asset Links array',
+      Array.isArray(links) && links[0].relation.includes('delegate_permission/common.handle_all_urls'));
+    ok('names an android_app package', t && t.namespace === 'android_app' && !!t.package_name, t && t.package_name);
+    ok('every fingerprint is a 32-byte SHA-256',
+      t.sha256_cert_fingerprints.every(f => /^[A-F0-9]{2}(:[A-F0-9]{2}){31}$/.test(f)),
+      (t.sha256_cert_fingerprints || []).join(' '));
+    // Play App Signing re-signs the app, so the fingerprint users receive is
+    // Google's, not the upload key's. One entry is a common shipping bug.
+    if (t.sha256_cert_fingerprints.length < 2)
+      console.log('    note: only one fingerprint listed — with Play App Signing you need '
+        + 'the app signing key too, or the shipped app shows an address bar');
+  }
+
   const sw = await api.get('/sw.js');
   ok('service worker served from the root scope', sw.status() === 200);
   ok('service worker is not hard-cached',
