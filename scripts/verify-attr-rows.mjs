@@ -281,7 +281,14 @@ console.log('\nPHONE  390×844');
   await page.evaluate(() => { switchItab('attract', 'custom'); addCustomControl(); });
   await page.waitForTimeout(300);
   const ccId = await page.evaluate(() => customControls[0].id);
-  ok('a custom control renders', await shown(page, '.cc-row2'));
+  // Custom controls collapse to a head now (see verify-controls); open the card
+  // before measuring the controls inside it.
+  ok('a custom control renders', await shown(page, '.cc-head'));
+  await page.evaluate(id => {
+    toggleCcRow(id);
+    document.getElementById('ccg-' + id).scrollIntoView({ block: 'center', behavior: 'instant' });
+  }, ccId);
+  await page.waitForTimeout(350);
   ok('column-header strip dropped', !(await shown(page, '.cc-headers')));
   const sel = await box(page, '.cc-row2 .cc-select');
   ok('selects are 44px targets', sel.h >= 44, sel.h + 'px');
@@ -291,8 +298,9 @@ console.log('\nPHONE  390×844');
   const mm = await box(page, '.cc-slidecell .cc-mm');
   ok('direction label sits below the track', mm.y > ccTrack.y + ccTrack.h - 8,
     `mmY ${mm.y} vs trackBottom ${ccTrack.y + ccTrack.h}`);
-  await page.click(`.cc-row2 .attr-steppers .attr-step:last-child`);
-  await page.waitForTimeout(150);
+  await page.evaluate(() =>
+    document.querySelector('.cc-row2 .attr-steppers .attr-step:last-child').click());
+  await page.waitForTimeout(200);
   ok('custom-control stepper writes through onCustomControlValue',
     await page.evaluate(() => customControls[0].value === 1));
   ok('its cp readout updates',

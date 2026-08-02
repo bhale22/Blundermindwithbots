@@ -505,6 +505,13 @@ input[type=range]::-webkit-slider-thumb:active{cursor:grabbing;}
 .mdot{width:5px;height:5px;border-radius:50%;border:1px solid var(--steel);margin-bottom:6px;transition:background 0.2s,border-color 0.2s,box-shadow 0.2s;}
 .mcard.sel .mdot{background:var(--amber);border-color:var(--amber);box-shadow:0 0 6px var(--amber-glow-s);}
 .mname{font-family:var(--font-u);font-size:9px;font-weight:500;letter-spacing:0.09em;text-transform:uppercase;color:var(--text-secondary);transition:color 0.2s;line-height:1.4;}
+/* Maia 3 is the only engine every personality control actually applies to
+   (attractors reweight a move distribution — Stockfish returns one best move),
+   so it is the default and says so. */
+.mrec{display:inline-block;margin-left:5px;padding:1px 5px;border-radius:8px;
+  background:rgba(232,170,64,0.14);border:0.5px solid var(--border-amber);
+  color:var(--amber);font-size:0.82em;letter-spacing:0.06em;text-transform:none;
+  vertical-align:middle;}
 .mcard.sel .mname{color:var(--text-primary);}
 .mdesc{font-family:var(--font-m);font-size:8.5px;color:var(--text-secondary);margin-top:3px;line-height:1.5;}
 
@@ -2089,7 +2096,13 @@ body.fj .picon{font-weight:500;}
      Opening    — Off / Main Line / Repertoire segments
      Move timing— premove help
      Docs       — brief note */
-  .cpg-lbl{font-size:11px;letter-spacing:0.06em;}
+  /* Three equal cells fit at 7px labels, not at 11px — "Rec. for ELO 1500"
+     alone needs most of the width. Budget and Floor share the top row (they
+     are the pair you compare), the recommendation spans beneath them. */
+  .cp-guardrails{flex-wrap:wrap;gap:6px;}
+  .cp-guardrails > .cpg-cell{flex:1 1 calc(50% - 3px);}
+  .cp-guardrails > .cpg-cell:last-child{flex:1 1 100%;flex-direction:row;gap:10px;}
+  .cpg-lbl{font-size:11px;letter-spacing:0.06em;white-space:normal;text-align:center;}
   .cpg-btn{font-size:11.5px;min-height:44px;padding:6px 12px;}
   .tt{font-size:11px;letter-spacing:0.02em;}
   .dial-zone{font-size:11px;letter-spacing:0.02em;}
@@ -2147,6 +2160,173 @@ body.fj .picon{font-weight:500;}
   .mdesc,.mode-compact .mdesc{font-size:11.5px;line-height:1.5;}
   #temp-formula-line{font-size:11.5px;}
   .tcm-opt .tcm-sub{font-size:11px;letter-spacing:0.04em;}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHONE — ENGINE PICKER
+   ───────────────────────────────────────────────────────────────────────────
+   Desktop puts five engine cards on one row with the sub-panels in a column
+   beside them, so the controls for whichever engine you pick are always in
+   view. Stacked on a phone that ordering inverts: all five cards render first
+   and the ELO dial for the one you chose sits below four engines you just
+   rejected — about 400px of scrolling past the wrong answers.
+
+   So the sub-panel moves up under its own card and the rejected engines move
+   below it. Done with flex `order` over a display:contents chain rather than
+   by moving nodes: .pr, #engine-mode-grid, .panel-2col and #engine-sub-col all
+   drop out of the box tree, which makes the cards, the sub-panels and the
+   shared quality column siblings in one flex column that can be ordered. No
+   JS reparenting, no desktop DOM difference — same trick the pro board shell
+   uses for #proSide.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width:760px){
+  #sec-engine .panel{display:flex;flex-direction:column;gap:10px;}
+  #sec-engine .panel > .pr,
+  #sec-engine #engine-mode-grid,
+  #sec-engine .panel > .panel-2col,
+  #sec-engine #engine-sub-col{display:contents;}
+
+  #sec-engine .dlbl{order:0;}
+  #sec-engine .mcard{order:4;}          /* the engines you didn't pick */
+  #sec-engine .mcard.sel{order:1;}
+  #sec-engine [id^="engine-sub-"]{order:2;}
+  #sec-engine #engine-desc-tail{order:3;}
+  #sec-engine #engine-temp-col{order:5;}
+
+  /* Tapping the selected card again folds its controls away — selEngineCard.
+     !important because selEngineMode sets `style.display = 'block'` on the
+     active sub-panel inline, which an ordinary rule cannot beat. */
+  #sec-engine.eng-collapsed [id^="engine-sub-"]{display:none !important;}
+  #sec-engine.eng-collapsed #engine-desc-tail,
+  #sec-engine.eng-collapsed #engine-temp-col{display:none;}
+
+  /* The selected card reads as the open accordion header. */
+  #sec-engine .mcard{min-height:56px;padding:11px 12px;}
+  #sec-engine .mcard.sel{
+    border-color:var(--amber);background:var(--carbon-raise);
+    border-left:2px solid var(--amber);
+  }
+  /* Its blurb is repeated below the controls instead — see #engine-desc-tail. */
+  #sec-engine .mcard.sel .mdesc{display:none;}
+  #sec-engine.eng-collapsed .mcard.sel .mdesc{display:block;}
+  #engine-desc-tail{
+    display:block;font-family:var(--font-m);font-size:11.5px;line-height:1.55;
+    color:var(--text-dim);padding:2px 2px 0;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SLIDER THUMBS
+   ───────────────────────────────────────────────────────────────────────────
+   The phone pass took the thumb to 26px purely to make it hittable, which read
+   as a row of oversized bubbles. The size was never what made it reachable: a
+   range input jumps and starts dragging from a tap ANYWHERE on the control, so
+   the 44px min-height of the input is the real target. That lets the drawn
+   thumb come back down to something proportionate — a solid 17px disc with a
+   soft shadow rather than a hollow ring — without losing a pixel of reach.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width:760px){
+  input[type=range]::-webkit-slider-thumb{
+    width:17px;height:17px;margin-top:-5.5px;
+    background:var(--amber);border:none;
+    box-shadow:0 1px 3px rgba(0,0,0,0.45);
+  }
+  input[type=range]::-moz-range-thumb{
+    width:17px;height:17px;
+    background:var(--amber);border:none;
+    box-shadow:0 1px 3px rgba(0,0,0,0.45);
+  }
+  .dual-range-wrap input[type=range]::-webkit-slider-thumb{width:19px;height:19px;}
+  .dual-range-wrap input[type=range]::-moz-range-thumb{width:19px;height:19px;}
+  /* The tensometer's two stacked handles stay distinguishable: budget above
+     the line, hard floor below, so they keep their offsets. */
+  #r-style::-webkit-slider-thumb{margin-top:-13px;}
+  #r-blunder::-webkit-slider-thumb{margin-top:13px;}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHONE — TEMPERATURE
+   ───────────────────────────────────────────────────────────────────────────
+   The control had no prominent statement of where it is set: the value lived
+   in a 7px tick caption and an 8.5px formula line, so the one thing you want
+   to know — what sampling this bot is on — was the smallest text in the box.
+   It gets the same treatment as the Centipawmeter: a named badge at the top of
+   the control, and the active zone caption lit rather than uniform grey.
+   ═══════════════════════════════════════════════════════════════════════════ */
+/* Both are phone-only restatements of information the desktop layout already
+   shows in place — the card keeps its own blurb, the formula line its value. */
+.temp-head,#engine-desc-tail{display:none;}
+@media (max-width:760px){
+  .temp-head{
+    display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+    margin-bottom:8px;
+  }
+  .temp-head-name{
+    font-family:var(--font-m);font-size:15px;color:var(--amber-bright);
+    letter-spacing:0.02em;
+  }
+  .temp-head-t{
+    font-family:var(--font-m);font-size:12px;color:var(--text-dim);
+  }
+  .tt.tt-on{color:var(--amber-bright);}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHONE — CUSTOM CONTROL CARDS COLLAPSE
+   ───────────────────────────────────────────────────────────────────────────
+   A card is now ~330px tall, so eight of them is three screens with no way to
+   see the shape of what you built. Same accordion as the attractor rows, and
+   the same head: direction, gates, strength, cp.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width:760px){
+  .cc-card{border-bottom:0.5px solid var(--border);}
+  .cc-card:last-of-type{border-bottom:none;}
+  .cc-card > .cc-row2{display:none;}
+  .cc-card.open > .cc-row2{display:grid;}
+  .cc-head{padding-left:2px;padding-right:2px;}
+  .cc-card.open .attr-caret{transform:rotate(180deg);}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHONE — MOVE TIMING GROUPS
+   ───────────────────────────────────────────────────────────────────────────
+   The section is one flat 1,048px scroll of five toggle blocks and their
+   dependent sliders, so finding "premove" means reading past everything else.
+   Each .dlbl becomes the header of a fold covering the controls beneath it,
+   with the first one open. Markup is untouched: tmGroupTiming() wraps each
+   heading and its following siblings at load, which keeps every id, handler
+   and getBotConfig read exactly where it was.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.tm-group > .dlbl{cursor:default;}
+.tm-caret{display:none;}
+@media (max-width:760px){
+  .tm-group{border:0.5px solid var(--border);border-radius:var(--r);
+    margin-bottom:8px;overflow:hidden;}
+  /* !important: several of these headings carry an inline margin-top, which
+     would otherwise open a gap inside the fold's own border. */
+  .tm-group > .dlbl{
+    cursor:pointer;margin:0 !important;padding:13px 12px;min-height:52px;
+    background:var(--carbon-surface);
+  }
+  /* .dlbl draws a decorative hairline either side of its label via ::before and
+     ::after. Inside a fold header those read as a broken rule around a control,
+     so both are dropped and the caret is a real element pushed to the right. */
+  .tm-group > .dlbl::before,
+  .tm-group > .dlbl::after{display:none;}
+  .tm-group > .dlbl > span{white-space:normal;font-size:12px;letter-spacing:0.1em;}
+  .tm-caret{
+    display:block;width:8px;height:8px;flex:0 0 auto;margin-left:auto;
+    border-right:1.5px solid var(--text-dim);border-bottom:1.5px solid var(--text-dim);
+    transform:rotate(45deg) translateY(-2px);transition:transform 0.18s ease;
+  }
+  .tm-group.open .tm-caret{transform:rotate(-135deg) translateY(2px);}
+  /* Quieter inside a header it now shares with a caret — via weight and
+     padding, not size: 11px is the floor and this text is no exception. */
+  .tm-group > .dlbl .pmt-help-btn{
+    font-size:11px;padding:5px 9px;margin-left:8px;letter-spacing:0.02em;
+  }
+  .tm-body{display:none;padding:10px 12px 12px;}
+  .tm-group.open > .tm-body{display:block;}
 }
 </style>
 </head>
@@ -2317,27 +2497,27 @@ body.fj .picon{font-weight:500;}
       <div class="pr">
         <div class="dlbl"><span>Engine mode</span></div>
         <div class="mode-grid mode-grid-5 mode-compact" id="engine-mode-grid">
-          <div class="mcard sel" data-engine="maia3" onclick="selEngineMode(this)">
+          <div class="mcard sel" data-engine="maia3" onclick="selEngineCard(this)">
             <div class="mdot"></div>
-            <div class="mname">Maia 3</div>
-            <div class="mdesc">Human-like neural net. Choose ELO 600–2600.</div>
+            <div class="mname">Maia 3 <span class="mrec">recommended</span></div>
+            <div class="mdesc">Human-like neural net. Choose ELO 600–2600. Every personality control applies on this engine.</div>
           </div>
-          <div class="mcard" data-engine="stockfish" onclick="selEngineMode(this)">
+          <div class="mcard" data-engine="stockfish" onclick="selEngineCard(this)">
             <div class="mdot"></div>
             <div class="mname">Stockfish</div>
             <div class="mdesc">Classical engine. Set level SF1–SF10.</div>
           </div>
-          <div class="mcard" data-engine="hybrid" onclick="selEngineMode(this)">
+          <div class="mcard" data-engine="hybrid" onclick="selEngineCard(this)">
             <div class="mdot"></div>
             <div class="mname">Hybrid</div>
             <div class="mdesc">Weighted blend of Maia ELOs + SF levels.</div>
           </div>
-          <div class="mcard" data-engine="lcsf" onclick="selEngineMode(this)">
+          <div class="mcard" data-engine="lcsf" onclick="selEngineCard(this)">
             <div class="mdot"></div>
             <div class="mname">LC + Stockfish</div>
             <div class="mdesc">Lichess explorer fallback + Stockfish.</div>
           </div>
-          <div class="mcard" data-engine="lcmaia" onclick="selEngineMode(this)">
+          <div class="mcard" data-engine="lcmaia" onclick="selEngineCard(this)">
             <div class="mdot"></div>
             <div class="mname">LC + Maia 3</div>
             <div class="mdesc">Lichess explorer fallback + Maia 3.</div>
@@ -2349,7 +2529,7 @@ body.fj .picon{font-weight:500;}
       <div class="panel-2col">
 
         <!-- LEFT: engine-specific sub-panels -->
-        <div>
+        <div id="engine-sub-col">
           <!-- Maia 3 sub-panel -->
           <div id="engine-sub-maia3">
             <div class="dlbl"><span>Maia 3 — ELO</span></div>
@@ -2521,11 +2701,25 @@ body.fj .picon{font-weight:500;}
               <a href="https://lichess.org/analysis" target="_blank" rel="noopener" style="color:var(--amber);text-decoration:none;">lichess.org/analysis</a>
             </div>
           </div>
+          <!-- Phone only: the selected card's own blurb, repeated BELOW its
+               controls. On a phone the card sits directly above the sub-panel,
+               so leaving the description in the card pushes the ELO dial down
+               the screen behind text you have already read. Filled by
+               updateEngineDescTail() from the selected .mcard — one source of
+               words, and the card keeps it on desktop. -->
+          <div id="engine-desc-tail"></div>
         </div><!-- /left col -->
 
         <!-- RIGHT: shared quality controls — hidden for pure-SF engines -->
         <div id="engine-temp-col">
           <div class="dlbl"><span>Move sampling — temperature</span></div>
+
+          <!-- Phone only: says where the control is set, in the size that
+               matters. Desktop keeps the formula line as the readout. -->
+          <div class="temp-head">
+            <span class="temp-head-name" id="temp-head-name">Neutral</span>
+            <span class="temp-head-t" id="temp-head-t">T = 1.00</span>
+          </div>
 
           <!-- Continuous T slider with named tick marks -->
           <div class="temp-slider-zone">
@@ -8778,6 +8972,33 @@ function equalizeEngineSubHeights(){
   }
 }
 
+/* Click handler for the five engine cards.
+
+   On a phone the selected card's sub-panel opens directly beneath it and the
+   four rejected engines move below that (see PHONE — ENGINE PICKER), so the
+   card behaves like an accordion header: tapping the one that is already
+   selected folds its controls away and brings the other four back into view.
+   Desktop has all five cards on one row with the sub-panel in a column beside
+   them, where there is nothing to fold — so it just selects. */
+function selEngineCard(card){
+  const sec = document.getElementById('sec-engine');
+  if(_isPhoneLayout() && card.classList.contains('sel') && sec){
+    sec.classList.toggle('eng-collapsed');
+    return;
+  }
+  if(sec) sec.classList.remove('eng-collapsed');
+  selEngineMode(card);
+}
+
+// Repeats the selected card's blurb below its controls on phones; see the
+// #engine-desc-tail markup for why.
+function updateEngineDescTail(){
+  const tail = document.getElementById('engine-desc-tail');
+  if(!tail) return;
+  const desc = document.querySelector('#engine-mode-grid .mcard.sel .mdesc');
+  tail.textContent = desc ? desc.textContent.trim() : '';
+}
+
 function selEngineMode(card){
   document.querySelectorAll('#engine-mode-grid .mcard')
     .forEach(c => c.classList.remove('sel'));
@@ -8805,6 +9026,7 @@ function selEngineMode(card){
   if(mqr) mqr.style.visibility = (['maia3','lcmaia','hybrid'].includes(currentEngine)) ? '' : 'hidden';
   const tempCol = document.getElementById('engine-temp-col');
   if(tempCol) tempCol.style.visibility = (['stockfish','lcsf'].includes(currentEngine)) ? 'hidden' : '';
+  updateEngineDescTail();
   updatePersonalityGating();
 }
 
@@ -9337,6 +9559,15 @@ function onTempSlider(T){
   selectedTempPresetId = _tempPresetIdFromValue(T); // keep in sync for back-compat
 
   const info = _tempLabel(T);
+  // Phone badge + lit tick — the same information the formula line carries,
+  // at a size that can be read. Desktop hides .temp-head entirely.
+  const hn = document.getElementById('temp-head-name');
+  const ht = document.getElementById('temp-head-t');
+  if(hn) hn.textContent = info.name;
+  if(ht) ht.textContent = 'T = ' + T.toFixed(2);
+  document.querySelectorAll('.temp-ticks .tt').forEach(el =>
+    el.classList.toggle('tt-on', el.textContent.trim() === info.name));
+
   const fEl  = document.getElementById('temp-formula-line');
   if(fEl){
     fEl.innerHTML =
@@ -9453,6 +9684,9 @@ function syncAttrHeads(){
   });
   _repartitionAttrList('attractor-rows');
   _repartitionAttrList('piece-rows');
+  // The chip carries the cp budget, so it has to refresh whenever the budget
+  // or any control changes — this fn is on every one of those paths.
+  updateAttractorStatus();
 }
 
 // Accordion within one list: opening a row closes its siblings, so the open
@@ -9586,14 +9820,30 @@ function onCalmPanickyChange(val){
   maybePersHybridAlert();
 }
 
+/* The old version averaged |value| across all 11 attractors against fixed
+   thresholds (<0.5 Neutral, <2 Light bias, else Strong bias). Averaging is the
+   wrong statistic for a sparse set: ONE attractor at ±5 with the rest centred
+   averages 0.45 and reported "Neutral", and The Blunderer (0.73), Bad Day
+   (0.64) and Clock Watcher (0.55) — all strongly characterful — all reported
+   "Light bias". It also never read the cp budget, which is the actual size of
+   the effect: budget 10 and budget 300 produced the same chip.
+
+   The chip now says what the section is set to, in the same shape as the other
+   section chips ("Maia 3 · 1500"): what is driving the bot, and what it is
+   allowed to spend. */
 function updateAttractorStatus(){
-  const vals = Object.values(attractorValues);
-  const avg = vals.reduce((a,b)=>a+Math.abs(b),0)/vals.length;
   const st = document.getElementById('st-attract');
   if(!st) return;
-  if(avg < 0.5) st.textContent = 'Neutral';
-  else if(avg < 2) st.textContent = 'Light bias';
-  else st.textContent = 'Strong bias';
+  const budget = Math.round(+(document.getElementById('r-style')?.value ?? 100));
+  const active = ATTRACTORS.filter(a => (attractorValues[a.id] ?? 0) !== 0).length
+               + PIECE_TYPES.filter(p => (pieceValues[p.id]  ?? 0) !== 0).length
+               + customControls.filter(c => (c.value ?? 0) !== 0).length;
+  // No control set means nothing spends the budget, whatever it is set to.
+  if(!active){ st.textContent = 'Neutral'; return; }
+  const preset = (selectedPersonality && selectedPersonality !== 'custom')
+    ? (PERSONALITIES.find(p => p.id === selectedPersonality) || {}).name : null;
+  const what = preset || (_activeBotName) || (active + ' control' + (active === 1 ? '' : 's'));
+  st.textContent = what + ' · ' + budget + ' cp';
 }
 
 /* ── Piece attractors ── */
@@ -9676,6 +9926,9 @@ function renderCustomControls(){
     const pressureOpts = CUSTOM_PRESSURE.map(([v,l]) =>
       `<option value="${v}" ${v===(c.pressure||'any')?'selected':''}>${l}</option>`).join('');
     return `
+    <div class="cc-card" id="ccg-${c.id}">
+      <button type="button" class="attr-head cc-head" id="cchead-${c.id}"
+        onclick="toggleCcRow('${c.id}')" aria-expanded="false">${_ccHeadHtml(c)}</button>
     <div class="cc-row2" data-cc="${c.id}">
       <select class="cc-field cc-select" title="${_ccEsc(m.desc)}" onchange="onCustomControlMetric('${c.id}',this.value)">${metricOpts}</select>
       <select class="cc-field cc-select" onchange="onCustomControlPhase('${c.id}',this.value)">${phaseOpts}</select>
@@ -9691,9 +9944,101 @@ function renderCustomControls(){
         ${_attrSteppers('ccslider-' + c.id)}
       </div>
       <button type="button" class="cc-del" onclick="removeCustomControl('${c.id}')" title="Remove control">×</button>
+    </div>
     </div>`;
   }).join('');
   updateAttrCpDisplays();
+}
+
+/* The collapsed head, built the same way as an attractor row's: the direction
+   the control pulls, the gates that narrow when it fires, and its cp share.
+   Shared by the initial render and syncCcHead so the two can't drift. */
+function _ccHeadHtml(c){
+  const m = _ccMeta(c.metric);
+  const PHASE_LBL    = { opening:'Opening', middlegame:'Middlegame', endgame:'Endgame' };
+  const gates = [
+    c.phase    && c.phase    !== 'all' ? PHASE_LBL[c.phase] : null,
+    c.result   && c.result   !== 'any' ? (CUSTOM_RESULTS.find(x => x[0] === c.result)   || [])[1] : null,
+    c.pressure && c.pressure !== 'any' ? (CUSTOM_PRESSURE.find(x => x[0] === c.pressure) || [])[1] : null,
+  ].filter(Boolean);
+  const v = c.value || 0;
+  const frac = Math.abs(v) / 5;
+  return `<span class="attr-head-name">${_ccEsc(v === 0 ? m.name : (v > 0 ? m.max : m.min))}${
+      gates.length ? '<span class="attr-head-pole"> · ' + _ccEsc(gates.join(' · ')) + '</span>' : ''}</span>
+    <span class="attr-bar"><i class="attr-bar-fill"
+      style="left:${v >= 0 ? 50 : 50 - frac * 50}%;width:${frac * 50}%;"></i></span>
+    <span class="attr-head-set${v !== 0 ? ' is-set' : ''}">${v === 0 ? '—' : (v > 0 ? '+' + v : v)}</span>
+    <span class="attr-head-cp" id="ccval-${c.id}-m">—</span>
+    <svg class="attr-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>`;
+}
+
+// Repaints one head in place. The card's controls are live inputs, so
+// re-rendering the whole list on every change would drop focus mid-drag.
+function syncCcHead(id){
+  const c = _ccFind(id), head = document.getElementById('cchead-' + id);
+  if(c && head){ head.innerHTML = _ccHeadHtml(c); updateAttrCpDisplays(); }
+}
+
+/* ── Move Timing: wrap each heading + its controls into a fold ──────────────
+   Runs once at load, at every width. On desktop .tm-group and .tm-body carry
+   no styling, so the section renders exactly as it did — the wrappers are
+   inert boxes in the same order. On phones the ≤760px layer turns each heading
+   into an accordion header.
+
+   Structural rather than markup-level on purpose: every control keeps its id,
+   its handler and its position in the DOM, so getBotConfig / applyBotConfig /
+   the tour's element lookups are all untouched. */
+function tmGroupTiming(){
+  const panel = document.querySelector('#sec-timing .panel');
+  if(!panel || panel.dataset.tmGrouped) return;
+  panel.querySelectorAll(':scope > .panel-2col > div').forEach(col => {
+    let body = null;
+    [...col.children].forEach(el => {
+      if(el.classList.contains('dlbl')){
+        const group = document.createElement('div');
+        group.className = 'tm-group';
+        col.insertBefore(group, el);
+        group.appendChild(el);
+        const caret = document.createElement('span');
+        caret.className = 'tm-caret';
+        el.appendChild(caret);
+        body = document.createElement('div');
+        body.className = 'tm-body';
+        group.appendChild(body);
+        el.addEventListener('click', ev => {
+          // The Premove heading carries a help button, and some headings carry
+          // a toggle — those keep their own behaviour.
+          if(ev.target.closest('button,input,label,a')) return;
+          group.classList.toggle('open');
+        });
+      } else if(body){
+        body.appendChild(el);
+      }
+    });
+  });
+  // One group open to start, so the section never reads as an empty menu.
+  panel.querySelectorAll(':scope > .panel-2col > div > .tm-group:first-child')
+       .forEach(g => g.classList.add('open'));
+  panel.dataset.tmGrouped = '1';
+}
+
+// Same accordion as the attractor rows: eight custom controls at ~330px each
+// is three screens of scroll with no way to see the shape of what you built,
+// so each one collapses to what it measures, its gates, and what it costs.
+function toggleCcRow(id){
+  const g = document.getElementById('ccg-' + id);
+  if(!g || !g.parentElement) return;
+  const wasOpen = g.classList.contains('open');
+  g.parentElement.querySelectorAll('.cc-card.open').forEach(o => {
+    o.classList.remove('open');
+    const h = o.querySelector('.cc-head');
+    if(h) h.setAttribute('aria-expanded', 'false');
+  });
+  if(!wasOpen){
+    g.classList.add('open');
+    const h = g.querySelector('.cc-head');
+    if(h) h.setAttribute('aria-expanded', 'true');
+  }
 }
 
 function addCustomControl(){
@@ -9719,7 +10064,7 @@ function addCustomControlAndGo(){
 function onCustomControlValue(id, val){
   const c = _ccFind(id); if(!c) return;
   c.value = +val;
-  updateAttrCpDisplays();
+  syncCcHead(id);   // → updateAttrCpDisplays
   _ccDirty();
 }
 function onCustomControlMetric(id, val){
@@ -9728,22 +10073,28 @@ function onCustomControlMetric(id, val){
   const prev = _ccMeta(c.metric);
   if(!c.name || c.name === prev.name) c.name = _ccMeta(val).name;
   c.metric = val;
-  renderCustomControls();
+  const wasOpen = (document.getElementById('ccg-' + id) || {}).classList
+    && document.getElementById('ccg-' + id).classList.contains('open');
+  renderCustomControls();          // the min/max direction labels change with the metric
+  if(wasOpen) toggleCcRow(id);     // re-open the card the user is editing
   _ccDirty();
 }
 function onCustomControlPhase(id, val){
   const c = _ccFind(id); if(!c) return;
   c.phase = val;
+  syncCcHead(id);
   _ccDirty();
 }
 function onCustomControlResult(id, val){
   const c = _ccFind(id); if(!c) return;
   c.result = val;
+  syncCcHead(id);
   _ccDirty();
 }
 function onCustomControlPressure(id, val){
   const c = _ccFind(id); if(!c) return;
   c.pressure = val;
+  syncCcHead(id);
   _ccDirty();
 }
 function onCustomControlName(id, val){
@@ -10316,9 +10667,8 @@ function _applyPersonality(id){
     const slider = document.getElementById('attr-'+a.id);
     if(slider) slider.value = val;
   });
-  document.getElementById('st-attract').textContent = p.name;
   drawRadar();
-  updateAttrCpDisplays();
+  updateAttrCpDisplays();   // → syncAttrHeads + updateAttractorStatus (shows the preset name)
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -11145,6 +11495,10 @@ document.addEventListener('DOMContentLoaded', ()=>{
   initStyleGauge();
   initRadarInteraction();      // interactive cp-budget gauge
   updateAttrCpDisplays(); // populate attractor cp allocations
+  // Maia 3 carries `sel` in the markup, so selEngineMode never runs for the
+  // default engine and the phone description tail would start empty.
+  updateEngineDescTail();
+  tmGroupTiming();
   onDaySlider(); // init dual-range fill
   _updateEnginePanelHeader();
   updatePersonalityGating(); // reflect the initial engine in the personality section
