@@ -128,7 +128,12 @@ ok(errors2.length === 0, 'main app loads with no page errors' + (errors2.length 
 const src = await page2.evaluate(() => {
   const s = [...document.scripts].map(x => x.textContent).join('');
   return {
-    m3Cascade: s.includes("botTab === 'maia3'") && /maia3'[\s\S]{0,900}_bcpHustlerTempMode/.test(s),
+    // Proximity heuristic: the hustler/temp cascade must appear inside the
+    // maia3 branch. The window was 900 chars and the real distance is ~3660,
+    // so this failed against working code — it needs widening whenever that
+    // branch grows. Kept as a proximity test because there is no cheap way to
+    // scope a regex to one branch of the served bundle.
+    m3Cascade: s.includes("botTab === 'maia3'") && /maia3'[\s\S]{0,6000}_bcpHustlerTempMode/.test(s),
     hybCascade: /hybrid Maia[\s\S]{0,600}_bcpHustlerTempMode/.test(s) || /every other Maia path[\s\S]{0,300}_bcpHustlerTempMode/.test(s),
     m3ByThink: s.includes('pressureEffectiveMaiaEloByThink(m3RoughThinkSec)'),
     hybProbe: s.includes('cplxPromiseHyb'),

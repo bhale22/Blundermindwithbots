@@ -39,7 +39,11 @@
   --font-u:'Chakra Petch',sans-serif;
   --radar-ring:rgba(255,255,255,0.06);
   --radar-axis:rgba(255,255,255,0.07);
-  --radar-node-inactive:#4a5060;
+  /* Was #4a5060 — about 2.2:1 against the carbon background, under the 3:1
+     WCAG floor for graphical objects. Not a phone-specific problem: this is
+     the fill for the Elometer's ELO ticks, the Centipawmeter's scale and the
+     radar's inactive axis labels at every width. ~5.7:1 here. */
+  --radar-node-inactive:#8f98a8;
   --radar-node-fill:#e8aa40;
   --radar-node-active:#ffcc55;
   --radar-label-badge:#ffcc55;
@@ -409,6 +413,20 @@ table.tg td.tg-inc-lbl{
 .chevron path{stroke:var(--steel-light);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
 .section.open .chevron{transform:rotate(180deg);}
 
+/* The 3600px ceiling is a real trap — a section that outgrows it is silently
+   truncated, with no error and nothing to scroll. "How Bot Behavior Works" was
+   3493px on a phone, 107px short of it, before the folds below took it to
+   ~510px.
+
+   Animating grid-template-rows 0fr→1fr instead would remove the cap entirely,
+   but it cannot work here: .panel carries 14/18px of padding, and padding is
+   not shrinkable, so the closed row floors at 33px and every section leaks a
+   strip of panel (the temperature chart was visibly drawing in it). Fixing
+   that needs the padding moved to an inner wrapper in all six sections.
+
+   So the mechanism stays as it was, and the ceiling is held by a test instead:
+   verify-typefloor asserts every section's content clears the cap at both
+   widths, which turns a silent truncation into a failing check. */
 .panel-shell{max-height:0;overflow:hidden;transition:max-height 0.45s cubic-bezier(0.4,0,0.2,1);}
 .section.open .panel-shell{max-height:3600px;}
 .panel{background:var(--carbon-mid);border:0.5px solid var(--border-amber);border-top:none;border-radius:0 0 var(--r) var(--r);padding:14px 18px 18px;}
@@ -505,6 +523,13 @@ input[type=range]::-webkit-slider-thumb:active{cursor:grabbing;}
 .mdot{width:5px;height:5px;border-radius:50%;border:1px solid var(--steel);margin-bottom:6px;transition:background 0.2s,border-color 0.2s,box-shadow 0.2s;}
 .mcard.sel .mdot{background:var(--amber);border-color:var(--amber);box-shadow:0 0 6px var(--amber-glow-s);}
 .mname{font-family:var(--font-u);font-size:9px;font-weight:500;letter-spacing:0.09em;text-transform:uppercase;color:var(--text-secondary);transition:color 0.2s;line-height:1.4;}
+/* Maia 3 is the only engine every personality control actually applies to
+   (attractors reweight a move distribution — Stockfish returns one best move),
+   so it is the default and says so. */
+.mrec{display:inline-block;margin-left:5px;padding:1px 5px;border-radius:8px;
+  background:rgba(232,170,64,0.14);border:0.5px solid var(--border-amber);
+  color:var(--amber);font-size:0.82em;letter-spacing:0.06em;text-transform:none;
+  vertical-align:middle;}
 .mcard.sel .mname{color:var(--text-primary);}
 .mdesc{font-family:var(--font-m);font-size:8.5px;color:var(--text-secondary);margin-top:3px;line-height:1.5;}
 
@@ -868,6 +893,24 @@ input.attr-slider::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 0 10px rgba(232,170,64,0.4);}
 .attr-val{font-family:var(--font-m);font-size:9px;color:var(--amber-bright);min-width:52px;text-align:right;flex-shrink:0;}
 
+/* Phone row chrome — see the ATTRACTOR ROWS block in the phone layer. Rendered
+   at every width but inert here: display:contents drops .attr-body out of the
+   box tree entirely, so the desktop row lays out exactly as it did when
+   .attractor-row was a direct child of .attr-group. */
+/* Chart tick labels hard-code the old low-contrast fill as a presentation
+   attribute. CSS wins over presentation attributes, so this lifts the numbers
+   to the same ~5.7:1 as --radar-node-inactive without moving any geometry.
+   Not scoped to phones — 2.2:1 is a failure on a monitor too. */
+.panel svg text[fill="#4a5060"]{fill:#8f98a8;}
+
+.attr-body{display:contents;}
+.attr-head,.attr-steppers,.attr-more,.radar-hint-phone{display:none;}
+.attr-left-piece{width:70px;}
+/* .attr-list is deliberately unstyled here — it only becomes a flex column on
+   phones, where the active-first ordering needs it. */
+@keyframes attrFlash{0%,100%{box-shadow:none;}35%{box-shadow:0 0 0 2px var(--amber);}}
+.attr-flash{animation:attrFlash 1.4s ease;border-radius:var(--r);}
+
 /* Piece attractor grid */
 .piece-grid{display:grid;grid-template-columns:auto 1fr 1fr;gap:0;background:var(--carbon-surface);border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden;}
 .piece-hdr{font-family:var(--font-m);font-size:7px;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-dim);padding:6px 10px;background:var(--carbon-raise);border-bottom:0.5px solid var(--border);}
@@ -1014,6 +1057,10 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 
 /* ══ 2-COLUMN PANEL LAYOUT ══ */
 .panel-2col{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;}
+/* Was an inline style on the Strategy & Piece Focus grid, which outranked the
+   phone layer's one-column rule — that tab stayed two columns on a handset,
+   giving its sliders 186px and 133px. As a class it can be overridden. */
+.panel-2col-wide{grid-template-columns:1.4fr 1fr;}
 .panel-full{grid-column:1/-1;margin-top:10px;}
 
 /* ══ INNER TABS ══ */
@@ -1423,7 +1470,7 @@ body.fj .picon{font-weight:500;}
    ═══════════════════════════════════════════════════════════════════════════ */
 @media (max-width:760px){
   /* ── One column everywhere ── */
-  .panel-2col{grid-template-columns:1fr;gap:14px;}
+  .panel-2col,.panel-2col-wide{grid-template-columns:1fr;gap:14px;}
   .mode-grid,.mode-grid-3,.mode-grid-4,.mode-grid-5{grid-template-columns:1fr;}
   .persona-grid,.persona-grid-4col{grid-template-columns:1fr 1fr;}
   .page{padding-left:10px;padding-right:10px;}
@@ -1603,7 +1650,7 @@ body.fj .picon{font-weight:500;}
   .ctrl{flex-wrap:wrap;}
   .ctrl > .ctrl-lbl{min-width:0 !important;flex:1 1 auto;}
   .ctrl > .slider-scale-wrap{flex:1 1 100%;order:3;width:100%;}
-  .slider-scale{font-size:9px;margin-top:0;}
+  .slider-scale{font-size:11px;margin-top:0;}
   .dual-range-wrap{height:48px;}
   .dual-range-wrap input[type=range]{height:48px;}
   .dual-range-wrap input[type=range]::-webkit-slider-thumb{width:26px;height:26px;}
@@ -1615,7 +1662,7 @@ body.fj .picon{font-weight:500;}
   .itab{
     min-height:44px;display:flex;align-items:center;justify-content:center;text-align:center;
     border-radius:var(--r);border-bottom:0.5px solid var(--border);
-    font-size:10px;letter-spacing:0.06em;padding:8px 10px;line-height:1.3;
+    font-size:11.5px;letter-spacing:0.03em;padding:8px 9px;line-height:1.25;
   }
   /* An odd number of tabs leaves the last one alone on its row — let it span
      rather than sit as a half-width orphan. */
@@ -1855,6 +1902,516 @@ body.fj .picon{font-weight:500;}
   .elo-col{flex:1 1 100%;flex-direction:row;justify-content:center;gap:10px;}
   .elo-col .elo-input{max-width:140px;}
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHONE — ATTRACTOR ROWS
+   ───────────────────────────────────────────────────────────────────────────
+   The one part of the panel the earlier phone passes never reached: every
+   media rule so far targets .ctrl / .ctrl-lbl / .slider-scale-wrap, and the
+   attractor rows use none of those. Left alone they were the worst controls
+   in the panel on a handset — the row spends ~262px on two 90px pole labels,
+   a 52px cp readout and its gaps, which on a 390px screen leaves the track
+   about 66px. Worse, the generic slider rule above grows the thumb to 26px
+   (same specificity, later in the file, so it wins over input.attr-slider's
+   14px), leaving eleven discrete steps to share ~40px of thumb travel.
+
+   So the row collapses to a head — what the bot does, how far, what it costs —
+   and opens on tap to a full-width track. Seventeen rows across Strategic
+   preferences and Piece focus share the one component.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width:760px){
+  /* The wrapper stops being display:contents and becomes the thing that hides,
+     so the whole open control is one box the accordion can toggle. */
+  .attr-body{display:none;}
+  .attr-group.open .attr-body{display:block;padding:2px 0 10px;}
+
+  .attr-group{
+    margin-bottom:0;
+    border-bottom:0.5px solid var(--border);
+  }
+  .attr-group:last-child{border-bottom:none;}
+
+  /* ── The head: the only thing on screen while collapsed ── */
+  .attr-head{
+    display:flex;align-items:center;gap:9px;width:100%;
+    min-height:52px;padding:8px 2px;
+    background:none;border:none;text-align:left;cursor:pointer;
+    font-family:var(--font-m);color:var(--text-secondary);
+  }
+  .attr-head-name{
+    flex:1 1 auto;min-width:0;font-size:12px;line-height:1.35;
+    letter-spacing:0.02em;
+  }
+  /* At rest the head offers both poles; the separator and the inactive pole
+     are dimmed so a list of untouched rows reads as quiet rather than busy. */
+  .attr-head-pole{color:var(--text-dim);}
+  .attr-group.is-set .attr-head-name{color:var(--text-primary);}
+
+  /* Bipolar micro-bar — the fingerprint, per row. Without it a column of
+     eleven untouched rows is a column of em dashes. */
+  .attr-bar{
+    position:relative;flex:0 0 auto;width:56px;height:4px;border-radius:2px;
+    background:rgba(128,140,160,0.28);overflow:hidden;
+  }
+  .attr-bar::before{
+    content:'';position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;
+    background:var(--border);transform:translateX(-50%);
+  }
+  .attr-bar-fill{
+    position:absolute;top:0;bottom:0;left:50%;width:0;
+    background:var(--amber);border-radius:2px;
+    transition:left 0.12s ease,width 0.12s ease;
+  }
+
+  /* The setting is what you chose; the cp is what it costs. Both, because the
+     cp figure is a share of one budget and moves when OTHER rows change —
+     alone it would read as a number drifting on its own. */
+  .attr-head-set{
+    flex:0 0 auto;min-width:26px;text-align:right;
+    font-size:13px;color:var(--text-dim);
+  }
+  .attr-head-set.is-set{color:var(--amber-bright);}
+  .attr-head-cp{
+    flex:0 0 auto;min-width:44px;text-align:right;
+    font-size:10.5px;color:var(--text-dim);
+  }
+  .attr-caret{
+    flex:0 0 auto;width:14px;height:14px;fill:none;
+    stroke:var(--text-dim);stroke-width:2;
+    transition:transform 0.18s ease;
+  }
+  .attr-group.open .attr-caret{transform:rotate(180deg);}
+
+  /* ── The open row: track full width, poles beneath its ends ── */
+  .attr-group .attractor-row{flex-wrap:wrap;gap:4px 8px;margin-bottom:0;}
+  .attr-slider-wrap{flex:1 1 100%;order:1;}
+  .attr-left,.attr-right{
+    width:auto;flex:1 1 0;min-width:0;order:2;
+    font-size:11px;color:var(--text-dim);letter-spacing:0.02em;
+  }
+  .attr-left{text-align:left;}
+  .attr-right{text-align:right;}
+  /* Piece rows have no right pole and an icon in the left one — it is a
+     caption for the track, not a column. */
+  .attr-left-piece{width:auto;}
+  /* cp already sits in the head, two lines above. */
+  .attr-group .attr-val{display:none;}
+  /* The centre tick is drawn against the wrap; the taller touch strip needs it
+     to span the whole control or it reads as a stray mark near the top. */
+  .attr-center-tick{top:0;bottom:0;height:auto;}
+
+  /* ── Steppers: exact values without precision dragging ── */
+  .attr-steppers{display:flex;align-items:center;gap:8px;margin-top:2px;}
+  .attr-step{
+    flex:0 0 auto;min-width:52px;min-height:44px;
+    background:var(--carbon-raise);border:0.5px solid var(--border);
+    border-radius:var(--r);color:var(--text-secondary);
+    font-family:var(--font-m);font-size:17px;line-height:1;cursor:pointer;
+  }
+  .attr-step:active{background:var(--carbon-mid);border-color:var(--border-amber);}
+  .attr-step-mid{flex:1 1 auto;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;}
+
+  /* ── Descriptions finally get a home ──
+     .attr-desc is a :hover overlay, which on a touch screen is either dead or
+     stuck open — every explanation in this section was unreachable on a phone.
+     Open rows put it in the flow instead. Two classes deep so the size
+     survives the readability layer's `body.rs-readable .attr-desc` (9px) —
+     High-vis carries !important and is meant to win, so it still does. */
+  .attr-group.open .attr-desc{
+    position:static;display:block;margin-top:10px;
+    box-shadow:none;font-size:11.5px;line-height:1.65;
+  }
+  .attr-group.open .attr-desc code{font-size:11px;}
+  /* ...but only for the row that is open. */
+  .attr-group:not(.open) .attr-desc{display:none;}
+
+  /* ── Active first, silent rows folded ──
+     `order` rather than reordering the DOM, so renderAttractors stays the one
+     place row order is expressed and every id keeps its position in markup. */
+  .attr-list{display:flex;flex-direction:column;}
+  .attr-list > .attr-group{order:3;}
+  .attr-list > .attr-group.part-active{order:1;}
+  .attr-list > .attr-more{order:2;}
+  .attr-list.partitioned > .attr-more{
+    display:block;width:100%;min-height:44px;margin:4px 0 2px;
+    background:none;border:0.5px dashed var(--border);border-radius:var(--r);
+    color:var(--text-dim);font-family:var(--font-m);font-size:11px;
+    letter-spacing:0.08em;cursor:pointer;
+  }
+  .attr-list.partitioned > .attr-more:active{border-color:var(--amber-dim);color:var(--amber);}
+  /* An open row is never folded away, whatever bucket it lands in. */
+  .attr-list.partitioned:not(.show-all) > .attr-group:not(.part-active):not(.open){display:none;}
+
+  /* Radar keeps drawing the fingerprint but stops taking values — see
+     _radarNavigate. Swap the caption to say what a tap now does. */
+  .radar-hint-desk{display:none;}
+  .radar-hint-phone{display:inline;}
+  .radar-hint{font-size:11px;}
+  #radar-canvas{max-width:100%;height:auto;}
+  /* The three label rows under each bar need a deeper gutter at 11px — see
+     padB / rowMove / rowPct / rowMTP in drawTempChart. */
+  #temp-dist-chart{height:158px;}
+
+  /* ═══ CUSTOM CONTROLS ═══
+     .cc-row2 is a six-track grid (four selects, the slider cell, delete) whose
+     narrowest column alone asks for 195px — at 328px it was the most crushed
+     control in the panel. Each control becomes a card instead: what it
+     measures on top with its delete, the three gates stacked full-width
+     beneath, then the strength track. The .cc-headers strip is dropped
+     because each select already states its own value ("All phases",
+     "Any result", "Any clock"). */
+  .cc-headers{display:none;}
+  .cc-row2{
+    grid-template-columns:1fr 44px;gap:8px;
+    padding:11px;margin-bottom:10px;border-left-width:3px;
+  }
+  .cc-row2 > :nth-child(1){grid-area:1 / 1 / 2 / 2;}   /* variable  */
+  .cc-row2 > :nth-child(6){grid-area:1 / 2 / 2 / 3;}   /* delete    */
+  .cc-row2 > :nth-child(2){grid-area:2 / 1 / 3 / 3;}   /* phase     */
+  .cc-row2 > :nth-child(3){grid-area:3 / 1 / 4 / 3;}   /* result    */
+  .cc-row2 > :nth-child(4){grid-area:4 / 1 / 5 / 3;}   /* clock     */
+  .cc-row2 > :nth-child(5){grid-area:5 / 1 / 6 / 3;}   /* strength  */
+  .cc-field{font-size:12px;min-height:44px;padding:8px 10px;border-radius:var(--r);}
+  .cc-del{width:44px;height:44px;font-size:18px;justify-self:end;}
+  /* Track full width with its direction labels beneath the ends, matching the
+     open attractor row — same control, same shape. */
+  .cc-slidecell{flex-wrap:wrap;gap:4px 8px;}
+  .cc-slidecell .attr-slider{flex:1 1 100%;order:1;min-width:0;}
+  .cc-mm{
+    order:2;flex:1 1 0;max-width:none;font-size:11px;
+    white-space:normal;overflow:visible;
+  }
+  /* Gap so the cp figure reads as its own value rather than a word tacked
+     onto the right-hand direction label. */
+  .cc-slidecell .cc-mm:nth-of-type(2){text-align:right;padding-right:8px;}
+  .cc-sval{order:3;flex:0 0 auto;font-size:12px;min-width:46px;}
+  .cc-slidecell .attr-steppers{order:4;flex:1 1 100%;}
+  .cc-empty{font-size:11.5px;line-height:1.55;}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHONE — TYPE FLOOR (11px)
+   ───────────────────────────────────────────────────────────────────────────
+   The panel's desktop type runs 6–10px. That is deliberate density on a large
+   screen an arm's length away and simply unreadable on a handset; Apple and
+   Android both publish 11pt as the floor for any text a user is expected to
+   read. Earlier phone passes lifted the controls they touched one at a time
+   (.ctrl-lbl, .tog-lbl, .sec-label…), which left every label, caption, scale
+   and button they didn't touch at its desktop size.
+
+   This is the sweep: nothing below 11px anywhere in the panel on a phone.
+
+   Inline sizes are raised with the same attribute-selector idiom the
+   readability layer already uses (body.rs-readable [style*="font-size:7px"]).
+   There are ~195 sub-11px inline declarations in the markup; rewriting each
+   into a class would be a far larger diff for the same rendered result, and
+   would fight the readability layer that is keyed on those same attributes.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width:760px){
+  [style*="font-size:6px"],  [style*="font-size:6.5px"],
+  [style*="font-size:7px"],  [style*="font-size:7.5px"],
+  [style*="font-size:8px"],  [style*="font-size:8.5px"],
+  [style*="font-size:9px"],  [style*="font-size:9.5px"],
+  [style*="font-size:10px"], [style*="font-size:10.5px"]{
+    font-size:11.5px !important;line-height:1.5;
+  }
+
+  /* Class-based offenders, by section:
+     Engine     — CP-budget guide labels + its "Set:" action, temperature zone
+                  captions, the ELO/temp readouts
+     Personality— gauge title, dial zone captions, tab strip, slider endpoints
+     Opening    — Off / Main Line / Repertoire segments
+     Move timing— premove help
+     Docs       — brief note */
+  /* Three equal cells fit at 7px labels, not at 11px — "Rec. for ELO 1500"
+     alone needs most of the width. Budget and Floor share the top row (they
+     are the pair you compare), the recommendation spans beneath them. */
+  .cp-guardrails{flex-wrap:wrap;gap:6px;}
+  .cp-guardrails > .cpg-cell{flex:1 1 calc(50% - 3px);}
+  .cp-guardrails > .cpg-cell:last-child{flex:1 1 100%;flex-direction:row;gap:10px;}
+  .cpg-lbl{font-size:11px;letter-spacing:0.06em;white-space:normal;text-align:center;}
+  .cpg-btn{font-size:11.5px;min-height:44px;padding:6px 12px;}
+  .tt{font-size:11px;letter-spacing:0.02em;}
+  .dial-zone{font-size:11px;letter-spacing:0.02em;}
+  .gauge-title{font-size:11.5px;letter-spacing:0.08em;}
+  .seg-btn{font-size:11px;letter-spacing:0.04em;min-height:44px;}
+  .pmt-help-btn{font-size:11.5px;}
+  .cc-add-btn{font-size:11.5px;min-height:44px;}
+  .brief-note{font-size:11.5px;line-height:1.55;}
+  .cc-headers span,.cc-mm{font-size:11px;}
+  .radar-hint{font-size:11px;letter-spacing:0.02em;}
+
+  /* Repertoire search is the only free-text entry in the panel and was the
+     one input still under target at 34px. */
+  .eco-search{min-height:44px;font-size:12px;}
+
+  /* Link LISTS read as rows of tappable items, so they get row height.
+     Links inline INSIDE prose (the Regan credits, maiachess.com) deliberately
+     do not: a 44px inline box would break the paragraph it sits in, and the
+     44pt rule is about controls, not text runs. Raising the surrounding copy
+     to 11.5px is what makes those reachable. */
+  .pmt-links li a,.brief-links li a{
+    display:block;min-height:44px;display:flex;align-items:center;
+    font-size:11.5px;line-height:1.4;
+  }
+
+  /* ── Chart labels ──
+     These are font-size PRESENTATION ATTRIBUTES inside fixed viewBoxes, so
+     the number in the markup is user units, not pixels: what the eye gets is
+     that number × (rendered width ÷ viewBox width). The Centipawmeter draws
+     280 units into ~309px, so its 7px labels reach the eye at 7.7px. The
+     specified sizes below are therefore set to clear 11px AFTER that scaling,
+     not at it.
+
+     Matched on the attribute VALUE so only the small labels are caught — the
+     16 and 22 unit value readouts keep their size. Tick geometry, arcs and
+     anchors are untouched, so nothing is repositioned; verify-typefloor
+     checks the raised labels for collisions. */
+  .panel svg text[font-size="6"],   .panel svg text[font-size="6.5"],
+  .panel svg text[font-size="7"],   .panel svg text[font-size="7.5"],
+  .panel svg text[font-size="8"],   .panel svg text[font-size="8.5"],
+  .panel svg text[font-size="9"],   .panel svg text[font-size="9.5"],
+  .panel svg text[font-size="10"],  .panel svg text[font-size="10.5"]{
+    font-size:11px;
+  }
+  /* At 7 units the dial's watermark cleared the quality label beneath it; at
+     11 the two overlap. It is decorative and repeats the card title directly
+     above the dial ("Max Centipawn Budget" / "CP Budget"), so on a phone the
+     readable label wins the space. */
+  .gauge-watermark{display:none;}
+
+
+  /* Mode cards — the earlier pass raised these only inside .mode-stack, which
+     left the five engine cards (.mode-compact) at 8px names / 7.5px blurbs and
+     the temperature presets at 9px / 8.5px. */
+  .mname,.mode-compact .mname{font-size:12px;letter-spacing:0.04em;}
+  .mdesc,.mode-compact .mdesc{font-size:11.5px;line-height:1.5;}
+  #temp-formula-line{font-size:11.5px;}
+  .tcm-opt .tcm-sub{font-size:11px;letter-spacing:0.04em;}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHONE — ENGINE PICKER
+   ───────────────────────────────────────────────────────────────────────────
+   Desktop puts five engine cards on one row with the sub-panels in a column
+   beside them, so the controls for whichever engine you pick are always in
+   view. Stacked on a phone that ordering inverts: all five cards render first
+   and the ELO dial for the one you chose sits below four engines you just
+   rejected — about 400px of scrolling past the wrong answers.
+
+   So the sub-panel moves up under its own card and the rejected engines move
+   below it. Done with flex `order` over a display:contents chain rather than
+   by moving nodes: .pr, #engine-mode-grid, .panel-2col and #engine-sub-col all
+   drop out of the box tree, which makes the cards, the sub-panels and the
+   shared quality column siblings in one flex column that can be ordered. No
+   JS reparenting, no desktop DOM difference — same trick the pro board shell
+   uses for #proSide.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width:760px){
+  #sec-engine .panel{display:flex;flex-direction:column;gap:10px;}
+  #sec-engine .panel > .pr,
+  #sec-engine #engine-mode-grid,
+  #sec-engine .panel > .panel-2col,
+  #sec-engine #engine-sub-col{display:contents;}
+
+  /* Everything that configures the chosen engine comes before the engines you
+     didn't choose. Temperature and its histogram are part of that setup, not
+     an afterthought: left at the end they sat below four rejected engine
+     cards, off the bottom of the screen. Order is therefore
+     card → Elometer/sub-panel → temperature+histogram → blurb → the rest. */
+  #sec-engine .dlbl{order:0;}
+  #sec-engine .mcard{order:5;}          /* the engines you didn't pick */
+  #sec-engine .mcard.sel{order:1;}
+  #sec-engine [id^="engine-sub-"]{order:2;}
+  #sec-engine #engine-temp-col{order:3;}
+  #sec-engine #engine-desc-tail{order:4;}
+
+  /* On desktop the shared column is hidden with visibility so the two-column
+     grid keeps its size. Stacked, that would leave a tall empty gap in the
+     middle of the run — between the engine's own controls and the other
+     cards — so here it comes out of the flow entirely. */
+  #sec-engine #engine-temp-col.tc-hidden{display:none;}
+
+  /* Tapping the selected card again folds its controls away — selEngineCard.
+     !important because selEngineMode sets `style.display = 'block'` on the
+     active sub-panel inline, which an ordinary rule cannot beat. */
+  #sec-engine.eng-collapsed [id^="engine-sub-"]{display:none !important;}
+  #sec-engine.eng-collapsed #engine-desc-tail,
+  #sec-engine.eng-collapsed #engine-temp-col{display:none;}
+
+  /* The selected card reads as the open accordion header. */
+  #sec-engine .mcard{min-height:56px;padding:11px 12px;}
+  #sec-engine .mcard.sel{
+    border-color:var(--amber);background:var(--carbon-raise);
+    border-left:2px solid var(--amber);
+  }
+  /* Its blurb is repeated below the controls instead — see #engine-desc-tail. */
+  #sec-engine .mcard.sel .mdesc{display:none;}
+  #sec-engine.eng-collapsed .mcard.sel .mdesc{display:block;}
+  /* Scoped through #sec-engine (2,0,0) on purpose. The base rule that hides
+     this on desktop is `.temp-head,#engine-desc-tail{display:none}` — same
+     (1,0,0) specificity as a bare #engine-desc-tail here, and it sits LATER in
+     the file, so it was winning inside this media query too and the blurb was
+     hidden on phones as well as desktop. Media queries add no specificity. */
+  #sec-engine #engine-desc-tail{
+    display:block;font-family:var(--font-m);font-size:11.5px;line-height:1.55;
+    color:var(--text-dim);padding:2px 2px 0;
+  }
+  .edt-line + .edt-line{margin-top:9px;}
+  /* Shown from #engine-desc-tail instead — see updateEngineDescTail. */
+  #sec-engine .engine-credit{display:none;}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SLIDER THUMBS
+   ───────────────────────────────────────────────────────────────────────────
+   The phone pass took the thumb to 26px purely to make it hittable, which read
+   as a row of oversized bubbles. The size was never what made it reachable: a
+   range input jumps and starts dragging from a tap ANYWHERE on the control, so
+   the 44px min-height of the input is the real target. That lets the drawn
+   thumb come back down to something proportionate — a solid 17px disc with a
+   soft shadow rather than a hollow ring — without losing a pixel of reach.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width:760px){
+  input[type=range]::-webkit-slider-thumb{
+    width:17px;height:17px;margin-top:-5.5px;
+    background:var(--amber);border:none;
+    box-shadow:0 1px 3px rgba(0,0,0,0.45);
+  }
+  input[type=range]::-moz-range-thumb{
+    width:17px;height:17px;
+    background:var(--amber);border:none;
+    box-shadow:0 1px 3px rgba(0,0,0,0.45);
+  }
+  .dual-range-wrap input[type=range]::-webkit-slider-thumb{width:19px;height:19px;}
+  .dual-range-wrap input[type=range]::-moz-range-thumb{width:19px;height:19px;}
+  /* The tensometer's two stacked handles stay distinguishable: budget above
+     the line, hard floor below, so they keep their offsets. */
+  #r-style::-webkit-slider-thumb{margin-top:-13px;}
+  #r-blunder::-webkit-slider-thumb{margin-top:13px;}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHONE — TEMPERATURE
+   ───────────────────────────────────────────────────────────────────────────
+   The control had no prominent statement of where it is set: the value lived
+   in a 7px tick caption and an 8.5px formula line, so the one thing you want
+   to know — what sampling this bot is on — was the smallest text in the box.
+   It gets the same treatment as the Centipawmeter: a named badge at the top of
+   the control, and the active zone caption lit rather than uniform grey.
+   ═══════════════════════════════════════════════════════════════════════════ */
+/* Both are phone-only restatements of information the desktop layout already
+   shows in place — the card keeps its own blurb, the formula line its value. */
+.temp-head,#engine-desc-tail{display:none;}
+@media (max-width:760px){
+  .temp-head{
+    display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+    margin-bottom:8px;
+  }
+  .temp-head-name{
+    font-family:var(--font-m);font-size:15px;color:var(--amber-bright);
+    letter-spacing:0.02em;
+  }
+  .temp-head-t{
+    font-family:var(--font-m);font-size:12px;color:var(--text-dim);
+  }
+  .tt.tt-on{color:var(--amber-bright);}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHONE — CUSTOM CONTROL CARDS COLLAPSE
+   ───────────────────────────────────────────────────────────────────────────
+   A card is now ~330px tall, so eight of them is three screens with no way to
+   see the shape of what you built. Same accordion as the attractor rows, and
+   the same head: direction, gates, strength, cp.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width:760px){
+  .cc-card{border-bottom:0.5px solid var(--border);}
+  .cc-card:last-of-type{border-bottom:none;}
+  .cc-card > .cc-row2{display:none;}
+  .cc-card.open > .cc-row2{display:grid;}
+  .cc-head{padding-left:2px;padding-right:2px;}
+  .cc-card.open .attr-caret{transform:rotate(180deg);}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHONE — MOVE TIMING GROUPS
+   ───────────────────────────────────────────────────────────────────────────
+   The section is one flat 1,048px scroll of five toggle blocks and their
+   dependent sliders, so finding "premove" means reading past everything else.
+   Each .dlbl becomes the header of a fold covering the controls beneath it,
+   with the first one open. Markup is untouched: tmGroupTiming() wraps each
+   heading and its following siblings at load, which keeps every id, handler
+   and getBotConfig read exactly where it was.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.tm-group > .dlbl{cursor:default;}
+.tm-caret{display:none;}
+@media (max-width:760px){
+  .tm-group{border:0.5px solid var(--border);border-radius:var(--r);
+    margin-bottom:8px;overflow:hidden;}
+  /* !important: several of these headings carry an inline margin-top, which
+     would otherwise open a gap inside the fold's own border. */
+  .tm-group > .dlbl{
+    cursor:pointer;margin:0 !important;padding:13px 12px;min-height:52px;
+    background:var(--carbon-surface);
+  }
+  /* .dlbl draws a decorative hairline either side of its label via ::before and
+     ::after. Inside a fold header those read as a broken rule around a control,
+     so both are dropped and the caret is a real element pushed to the right. */
+  .tm-group > .dlbl::before,
+  .tm-group > .dlbl::after{display:none;}
+  .tm-group > .dlbl > span{white-space:normal;font-size:12px;letter-spacing:0.1em;}
+  .tm-caret{
+    display:block;width:8px;height:8px;flex:0 0 auto;margin-left:auto;
+    border-right:1.5px solid var(--text-dim);border-bottom:1.5px solid var(--text-dim);
+    transform:rotate(45deg) translateY(-2px);transition:transform 0.18s ease;
+  }
+  .tm-group.open .tm-caret{transform:rotate(-135deg) translateY(2px);}
+  /* Quieter inside a header it now shares with a caret — via weight and
+     padding, not size: 11px is the floor and this text is no exception. */
+  .tm-group > .dlbl .pmt-help-btn{
+    font-size:11px;padding:5px 9px;margin-left:8px;letter-spacing:0.02em;
+  }
+  .tm-body{display:none;padding:10px 12px 12px;}
+  .tm-group.open > .tm-body{display:block;}
+
+  /* ── How Bot Behavior Works ──
+     The .formula-box already supplies the frame and padding, so its fold is
+     just the title plus a hidden body. All four start closed: this is
+     reference material you arrive at with a question. */
+  .formula-box.fold > .fold-head{
+    cursor:pointer;display:flex;align-items:center;gap:8px;
+    min-height:44px;margin:0;
+  }
+  .formula-box.fold > .tm-body{padding:8px 0 0;}
+  .formula-box.fold.open > .tm-body{display:block;}
+  .formula-box.fold.open .tm-caret{transform:rotate(-135deg) translateY(2px);}
+
+  /* ═══ PRESET PERSONALITIES ═══
+     Thirteen cards stacked one per column is 2,102px — two and a half screens
+     to see a list whose whole job is comparison. As rows it is one screen: the
+     icon and name carry identity, the tag groups them at a glance, and the
+     description stays but is clamped to two lines. */
+  .persona-grid,.persona-grid-4col{
+    grid-template-columns:1fr;gap:0;
+    border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden;
+  }
+  .pcard{
+    display:grid;grid-template-columns:30px 1fr auto;gap:1px 10px;
+    align-items:center;padding:10px 11px;
+    border:none;border-bottom:0.5px solid var(--border);border-radius:0;
+  }
+  .persona-grid .pcard:last-child{border-bottom:none;}
+  .pcard.sel{border-left:2px solid var(--amber);padding-left:9px;}
+  .picon{grid-row:1 / 3;justify-self:center;font-size:20px;margin:0;}
+  .pname{grid-column:2;grid-row:1;font-size:13px;margin:0;}
+  .ptag{grid-column:3;grid-row:1;justify-self:end;font-size:10.5px;margin:0;}
+  .ptrait{
+    grid-column:2 / 4;grid-row:2;font-size:11.5px;line-height:1.4;margin:0;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+    overflow:hidden;
+  }
+}
 </style>
 </head>
 <body>
@@ -2024,27 +2581,27 @@ body.fj .picon{font-weight:500;}
       <div class="pr">
         <div class="dlbl"><span>Engine mode</span></div>
         <div class="mode-grid mode-grid-5 mode-compact" id="engine-mode-grid">
-          <div class="mcard sel" data-engine="maia3" onclick="selEngineMode(this)">
+          <div class="mcard sel" data-engine="maia3" onclick="selEngineCard(this)">
             <div class="mdot"></div>
-            <div class="mname">Maia 3</div>
-            <div class="mdesc">Human-like neural net. Choose ELO 600–2600.</div>
+            <div class="mname">Maia 3 <span class="mrec">recommended</span></div>
+            <div class="mdesc">Human-like neural net. Choose ELO 600–2600. Every personality control applies on this engine.</div>
           </div>
-          <div class="mcard" data-engine="stockfish" onclick="selEngineMode(this)">
+          <div class="mcard" data-engine="stockfish" onclick="selEngineCard(this)">
             <div class="mdot"></div>
             <div class="mname">Stockfish</div>
             <div class="mdesc">Classical engine. Set level SF1–SF10.</div>
           </div>
-          <div class="mcard" data-engine="hybrid" onclick="selEngineMode(this)">
+          <div class="mcard" data-engine="hybrid" onclick="selEngineCard(this)">
             <div class="mdot"></div>
             <div class="mname">Hybrid</div>
             <div class="mdesc">Weighted blend of Maia ELOs + SF levels.</div>
           </div>
-          <div class="mcard" data-engine="lcsf" onclick="selEngineMode(this)">
+          <div class="mcard" data-engine="lcsf" onclick="selEngineCard(this)">
             <div class="mdot"></div>
             <div class="mname">LC + Stockfish</div>
             <div class="mdesc">Lichess explorer fallback + Stockfish.</div>
           </div>
-          <div class="mcard" data-engine="lcmaia" onclick="selEngineMode(this)">
+          <div class="mcard" data-engine="lcmaia" onclick="selEngineCard(this)">
             <div class="mdot"></div>
             <div class="mname">LC + Maia 3</div>
             <div class="mdesc">Lichess explorer fallback + Maia 3.</div>
@@ -2056,7 +2613,7 @@ body.fj .picon{font-weight:500;}
       <div class="panel-2col">
 
         <!-- LEFT: engine-specific sub-panels -->
-        <div>
+        <div id="engine-sub-col">
           <!-- Maia 3 sub-panel -->
           <div id="engine-sub-maia3">
             <div class="dlbl"><span>Maia 3 — ELO</span></div>
@@ -2137,7 +2694,7 @@ body.fj .picon{font-weight:500;}
               </div>
             </div>
             <div class="ctrl-hint" style="margin-top:4px;text-align:center;">Budget = the personality's engine-calculated spend · Floor = worst-move backstop · click a tile to fine-tune in the Personality panel</div>
-            <div style="margin-top:10px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);line-height:1.6;">
+            <div class="engine-credit" style="margin-top:10px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);line-height:1.6;">
               Maia is a human-like neural net with its own free web app — analysis tools, puzzles, and play against Maia bots:
               <a href="https://maiachess.com" target="_blank" rel="noopener" style="color:var(--amber);text-decoration:none;">maiachess.com</a>
             </div>
@@ -2186,7 +2743,7 @@ body.fj .picon{font-weight:500;}
             <div class="ctrl" style="margin-top:6px;"><span class="ctrl-lbl">Stockfish level</span></div>
             <div class="sf-pips" id="lcsf-sf-pips"></div>
             <div class="ctrl-hint" style="margin-top:8px;">LC modes use the Lichess Open Explorer as an opening book; Stockfish takes over when the book runs dry.</div>
-            <div style="margin-top:10px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);line-height:1.6;">
+            <div class="engine-credit" style="margin-top:10px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);line-height:1.6;">
               Lichess is free, open-source, and ad-free — opening explorer, engine analysis, puzzles, and more:
               <a href="https://lichess.org/analysis" target="_blank" rel="noopener" style="color:var(--amber);text-decoration:none;">lichess.org/analysis</a>
             </div>
@@ -2221,18 +2778,32 @@ body.fj .picon{font-weight:500;}
                 </button>
               </div>
             </div>
-            <div style="margin-top:10px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);line-height:1.6;">
+            <div class="engine-credit" style="margin-top:10px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);line-height:1.6;">
               Maia has its own free web app with analysis tools and play:
               <a href="https://maiachess.com" target="_blank" rel="noopener" style="color:var(--amber);text-decoration:none;">maiachess.com</a><br>
               Lichess is free, open-source, and ad-free — opening explorer and engine analysis:
               <a href="https://lichess.org/analysis" target="_blank" rel="noopener" style="color:var(--amber);text-decoration:none;">lichess.org/analysis</a>
             </div>
           </div>
+          <!-- Phone only: the selected card's own blurb, repeated BELOW its
+               controls. On a phone the card sits directly above the sub-panel,
+               so leaving the description in the card pushes the ELO dial down
+               the screen behind text you have already read. Filled by
+               updateEngineDescTail() from the selected .mcard — one source of
+               words, and the card keeps it on desktop. -->
+          <div id="engine-desc-tail"></div>
         </div><!-- /left col -->
 
         <!-- RIGHT: shared quality controls — hidden for pure-SF engines -->
         <div id="engine-temp-col">
           <div class="dlbl"><span>Move sampling — temperature</span></div>
+
+          <!-- Phone only: says where the control is set, in the size that
+               matters. Desktop keeps the formula line as the readout. -->
+          <div class="temp-head">
+            <span class="temp-head-name" id="temp-head-name">Neutral</span>
+            <span class="temp-head-t" id="temp-head-t">T = 1.00</span>
+          </div>
 
           <!-- Continuous T slider with named tick marks -->
           <div class="temp-slider-zone">
@@ -2365,7 +2936,7 @@ body.fj .picon{font-weight:500;}
               <div class="dlbl"><span>Personality fingerprint</span></div>
               <div class="radar-wrap">
                 <canvas id="radar-canvas" width="320" height="260"></canvas>
-                <div class="radar-hint">drag nodes or click axis to set value</div>
+                <div class="radar-hint"><span class="radar-hint-desk">drag nodes or click axis to set value</span><span class="radar-hint-phone">tap an axis to open its control</span></div>
               </div>
 
               <!-- Clock tactics — synced with the same switches in Move Timing -->
@@ -2395,23 +2966,23 @@ body.fj .picon{font-weight:500;}
           <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-bottom:8px;max-width:440px;">Build your own attractor: pick a board feature, the game phase it applies in, and a direction. Each attactor re-ranks the engine's candidate moves. The centipawn budget is shared only among controls currently active, so full cp budget is available for every move.</div>
           <div class="cc-wrap">
             <div id="custom-control-rows"></div>
-            <button type="button" class="cc-add-btn" onclick="addCustomControl()">+ Add custom control</button>
+            <button type="button" class="cc-add-btn" onclick="addCustomControlAndPick()">+ Add custom control</button>
           </div>
         </div>
 
         <!-- TAB: Strategy & Piece Focus -->
         <div class="itab-pane" id="itab-attract-pieces">
-          <div class="panel-2col" style="grid-template-columns:1.4fr 1fr;">
+          <div class="panel-2col panel-2col-wide">
             <!-- LEFT: Strategic preference sliders (more prominent) -->
             <div>
               <div class="dlbl"><span>Strategic preferences</span></div>
-              <div id="attractor-rows"></div>
+              <div class="attr-list" id="attractor-rows"></div>
             </div>
             <!-- RIGHT: Piece focus -->
             <div>
               <div class="dlbl"><span>Piece focus</span></div>
               <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-bottom:8px;">Left = avoid · Right = seek · Center = neutral</div>
-              <div id="piece-rows"></div>
+              <div class="attr-list" id="piece-rows"></div>
             </div>
           </div>
         </div>
@@ -6721,7 +7292,7 @@ function drawStyleGauge(val){
     <text x="${CX}" y="${CY - 12}" text-anchor="middle"
       font-family="'DM Mono',monospace" font-size="22" font-weight="500" fill="${fillColor}">${val}</text>
     <text x="${CX}" y="${CY + 14}" text-anchor="middle"
-      font-family="'DM Mono',monospace" font-size="7" fill="#717a8a" letter-spacing="0.8">Centipawmeter</text>
+      font-family="'DM Mono',monospace" font-size="7" fill="#717a8a" letter-spacing="0.8" class="gauge-watermark">Centipawmeter</text>
     <!-- Quality label (dynamic) -->
     <text x="${CX}" y="${CY + 25}" text-anchor="middle"
       font-family="'DM Mono',monospace" font-size="7.5" fill="${qualityColor}" letter-spacing="0.08em">${qualityLabel}</text>
@@ -6749,10 +7320,19 @@ function updateAttrCpDisplays(){
   entries.forEach(e => {
     const el = document.getElementById(e.domId);
     if(!el) return;
-    if(e.absVal === 0){ el.textContent = '—'; return; }
-    const denom = entries.reduce((s, f) => s + (exclusive(e, f) ? 0 : f.absVal), 0);
-    el.textContent = denom > 0 ? (Math.round(budget * e.absVal / denom) + ' cp') : '—';
+    // `-m` is the same figure repeated in the phone row head, which is all that
+    // is on screen while the row is collapsed.
+    const mirror = document.getElementById(e.domId + '-m');
+    const txt = e.absVal === 0
+      ? '—'
+      : (() => {
+          const denom = entries.reduce((s, f) => s + (exclusive(e, f) ? 0 : f.absVal), 0);
+          return denom > 0 ? (Math.round(budget * e.absVal / denom) + ' cp') : '—';
+        })();
+    el.textContent = txt;
+    if(mirror) mirror.textContent = txt;
   });
+  syncAttrHeads();
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -8476,6 +9056,44 @@ function equalizeEngineSubHeights(){
   }
 }
 
+/* Click handler for the five engine cards.
+
+   On a phone the selected card's sub-panel opens directly beneath it and the
+   four rejected engines move below that (see PHONE — ENGINE PICKER), so the
+   card behaves like an accordion header: tapping the one that is already
+   selected folds its controls away and brings the other four back into view.
+   Desktop has all five cards on one row with the sub-panel in a column beside
+   them, where there is nothing to fold — so it just selects. */
+function selEngineCard(card){
+  const sec = document.getElementById('sec-engine');
+  if(_isPhoneLayout() && card.classList.contains('sel') && sec){
+    sec.classList.toggle('eng-collapsed');
+    return;
+  }
+  if(sec) sec.classList.remove('eng-collapsed');
+  selEngineMode(card);
+}
+
+// Repeats the selected card's blurb below its controls on phones; see the
+// #engine-desc-tail markup for why.
+function updateEngineDescTail(){
+  const tail = document.getElementById('engine-desc-tail');
+  if(!tail) return;
+  const card = document.querySelector('#engine-mode-grid .mcard.sel');
+  const desc = card && card.querySelector('.mdesc');
+  // The engine's own credit paragraph (maiachess.com / lichess.org) lives at
+  // the bottom of its sub-panel, which on a phone puts it ABOVE the
+  // temperature controls — reading matter in front of a control. Route it
+  // here instead, below them. Read from the markup rather than duplicated, so
+  // there is still one copy of the words, and desktop keeps it in place.
+  const credit = card && document.querySelector(
+    '#engine-sub-' + card.dataset.engine + ' .engine-credit');
+  tail.innerHTML = '';
+  const line = () => { const d = document.createElement('div'); d.className = 'edt-line'; return d; };
+  if(desc){   const d = line(); d.textContent = desc.textContent.trim(); tail.appendChild(d); }
+  if(credit){ const d = line(); d.innerHTML  = credit.innerHTML;        tail.appendChild(d); }
+}
+
 function selEngineMode(card){
   document.querySelectorAll('#engine-mode-grid .mcard')
     .forEach(c => c.classList.remove('sel'));
@@ -8502,7 +9120,14 @@ function selEngineMode(card){
   const mqr = document.getElementById('move-quality-range');
   if(mqr) mqr.style.visibility = (['maia3','lcmaia','hybrid'].includes(currentEngine)) ? '' : 'hidden';
   const tempCol = document.getElementById('engine-temp-col');
-  if(tempCol) tempCol.style.visibility = (['stockfish','lcsf'].includes(currentEngine)) ? 'hidden' : '';
+  const tempOff = ['stockfish','lcsf'].includes(currentEngine);
+  // visibility keeps the desktop grid stable; the class lets the phone layer
+  // take it out of the flow instead (see #engine-temp-col.tc-hidden).
+  if(tempCol){
+    tempCol.style.visibility = tempOff ? 'hidden' : '';
+    tempCol.classList.toggle('tc-hidden', tempOff);
+  }
+  updateEngineDescTail();
   updatePersonalityGating();
 }
 
@@ -8919,13 +9544,30 @@ function drawTempChart(T){
   const _tLabel = _tcs.getPropertyValue('--text-primary').trim() || 'rgba(240,237,232,0.78)';
   const _tDim   = _tcs.getPropertyValue('--text-dim').trim()     || 'rgba(200,185,165,0.40)';
 
-  const padT=6, padB=38, padL=4, padR=4;
+  // The label block under each bar is three stacked rows. At the desktop pitch
+  // (11 / 21 / 29 within a 38px gutter) an 11px type floor would overlap them,
+  // so on a phone the gutter and the pitch both grow with the type — the chart
+  // is taller there too (see #temp-dist-chart in the phone layer).
+  const _ph = _isPhoneLayout();
+  // The legend is a strip along the top at both widths. It used to sit in the
+  // bottom-right corner, on the same baseline as the last column's M/T/P row
+  // (legend at H-5, labels at H-padB+29 = H-9) — so on a narrow chart it
+  // overlapped them and rendered as "P Maia" / "Temp M". Moving it up costs a
+  // little bar height and removes the collision at every width.
+  // Phones additionally need a deeper bottom gutter: three stacked label rows
+  // at the 11px type floor do not fit the desktop 11/21/29 pitch.
+  const padT=_ph?24:20, padB=_ph?62:38, padL=4, padR=4;
+  const rowMove = _ph?15:11, rowPct = _ph?34:21, rowMTP = _ph?52:29;
   const chartH = H - padT - padB;
   const chartW = W - padL - padR;
 
   ctx.clearRect(0, 0, W, H);
 
-  const moves = TEMP_CHART_MOVES;
+  // Five columns leave ~65px each on a 390px screen, and three percentages at
+  // 11px need ~75px — they ran together as "60%60%59%". Three columns give
+  // ~109px, so the numbers fit and no information is dropped, only the two
+  // smallest moves (1% and 4% bars, invisible at this size anyway).
+  const moves = _ph ? TEMP_CHART_MOVES.slice(0, 3) : TEMP_CHART_MOVES;
   const adj   = _tempAdjusted(moves, T);
   const budgetNow = +(document.getElementById('r-style')?.value || 0);
   const pers  = _persAdjusted(adj, budgetNow);
@@ -8982,14 +9624,14 @@ function drawTempChart(T){
 
     // Row 1: move label
     ctx.fillStyle = _tLabel;
-    ctx.font = '9px "DM Mono", monospace';
+    ctx.font = _chartFont(9);
     ctx.textAlign = 'center';
-    ctx.fillText(mv.label, cx, H - padB + 11);
+    ctx.fillText(mv.label, cx, H - padB + rowMove);
 
     // Row 2: Maia % (left column, dim)
     ctx.fillStyle = 'rgba(235,140,0,0.60)';
-    ctx.font = '7px "DM Mono", monospace';
-    ctx.fillText(Math.round(maiaP*100)+'%', mX + barW/2, H - padB + 21);
+    ctx.font = _chartFont(7);
+    ctx.fillText(Math.round(maiaP*100)+'%', mX + barW/2, H - padB + rowPct);
 
     // Row 2: temperature % (middle column)
     const adjPct = Math.round(adjP*100);
@@ -8997,36 +9639,34 @@ function drawTempChart(T){
                    : adjP < maiaP - 0.005 ? 'rgba(235,160,0,0.88)'
                    : 'rgba(235,140,0,0.60)';
     ctx.fillStyle = adjColor;
-    ctx.fillText(adjP < 0.005 ? '~0' : adjPct+'%', aX + barW/2, H - padB + 21);
+    ctx.fillText(adjP < 0.005 ? '~0' : adjPct+'%', aX + barW/2, H - padB + rowPct);
 
     // Row 2: personality % (right column, blue)
     ctx.fillStyle = C_PERS;
-    ctx.fillText(perP < 0.005 ? '~0' : Math.round(perP*100)+'%', pX + barW/2, H - padB + 21);
+    ctx.fillText(perP < 0.005 ? '~0' : Math.round(perP*100)+'%', pX + barW/2, H - padB + rowPct);
 
     // Row 3: column labels (M / T / P)
     ctx.fillStyle = _tDim;
-    ctx.font = '6.5px "DM Mono", monospace';
-    ctx.fillText('M', mX + barW/2, H - padB + 29);
-    ctx.fillText('T', aX + barW/2, H - padB + 29);
-    ctx.fillText('P', pX + barW/2, H - padB + 29);
+    ctx.font = _chartFont(6.5);
+    ctx.fillText('M', mX + barW/2, H - padB + rowMTP);
+    ctx.fillText('T', aX + barW/2, H - padB + rowMTP);
+    ctx.fillText('P', pX + barW/2, H - padB + rowMTP);
   });
 
-  // Legend (bottom-right): Maia → Temperature → Personality
-  const legY = H - 5;
-  ctx.font = '7px "DM Mono", monospace';
-  ctx.textAlign = 'right';
-  ctx.fillStyle = 'rgba(235,140,0,0.3)';
-  ctx.fillRect(W - padR - 128, legY - 8, 7, 7);
-  ctx.fillStyle = _tDim;
-  ctx.fillText('Maia', W - padR - 117, legY);
-  ctx.fillStyle = 'rgba(235,160,0,0.88)';
-  ctx.fillRect(W - padR - 90, legY - 8, 7, 7);
-  ctx.fillStyle = _tDim;
-  ctx.fillText('Temp', W - padR - 74, legY);
-  ctx.fillStyle = C_PERS;
-  ctx.fillRect(W - padR - 46, legY - 8, 7, 7);
-  ctx.fillStyle = _tDim;
-  ctx.fillText('Pers.', W - padR, legY);
+  // Legend: Maia → Temperature → Personality, as a strip along the top.
+  ctx.font = _chartFont(7);
+  const swatch = _ph ? 9 : 7;
+  const legTop = _ph ? 6 : 4;
+  let lx = padL;
+  ctx.textAlign = 'left';
+  [['rgba(235,140,0,0.3)','Maia'],['rgba(235,160,0,0.88)','Temp'],[C_PERS,'Pers.']]
+    .forEach(([col,label]) => {
+      ctx.fillStyle = col;
+      ctx.fillRect(lx, legTop, swatch, swatch);
+      ctx.fillStyle = _tDim;
+      ctx.fillText(label, lx + swatch + 5, legTop + swatch);
+      lx += swatch + 5 + ctx.measureText(label).width + 14;
+    });
 }
 
 function onTempSlider(T){
@@ -9035,6 +9675,15 @@ function onTempSlider(T){
   selectedTempPresetId = _tempPresetIdFromValue(T); // keep in sync for back-compat
 
   const info = _tempLabel(T);
+  // Phone badge + lit tick — the same information the formula line carries,
+  // at a size that can be read. Desktop hides .temp-head entirely.
+  const hn = document.getElementById('temp-head-name');
+  const ht = document.getElementById('temp-head-t');
+  if(hn) hn.textContent = info.name;
+  if(ht) ht.textContent = 'T = ' + T.toFixed(2);
+  document.querySelectorAll('.temp-ticks .tt').forEach(el =>
+    el.classList.toggle('tt-on', el.textContent.trim() === info.name));
+
   const fEl  = document.getElementById('temp-formula-line');
   if(fEl){
     fEl.innerHTML =
@@ -9062,24 +9711,203 @@ function selTemp(card, id){
 /* ══════════════════════════════════════════════════════════════
    ATTRACTORS
 ══════════════════════════════════════════════════════════════ */
+/* ── Collapsed row heads (phone) ───────────────────────────────
+   The desktop row — pole label, slider, pole label, cp — needs about 260px of
+   fixed furniture before the track gets a pixel, which left the slider ~66px
+   wide on a 390px handset: eleven discrete steps across a 40px thumb travel.
+
+   So on a phone each row collapses to a summary the finger can hit (what the
+   bot does, how far, what it costs) and opens on tap to a full-width track.
+   The head and stepper markup below is rendered for every row at every width;
+   `display:none` / `display:contents` in the ≤760px layer is what decides
+   which presentation runs, so the desktop box tree is unchanged.
+
+   `inputId` is the range input's own id ('attr-chaos' / 'piece-knight') — it
+   is the key for everything here, so both lists share one component. */
+function _attrRowDef(inputId){
+  const i = inputId.indexOf('-');
+  const kind = inputId.slice(0, i), id = inputId.slice(i + 1);
+  return kind === 'piece'
+    ? { kind, id, def: PIECE_TYPES.find(p => p.id === id), cpId: 'pieceval-' + id }
+    : { kind, id, def: ATTRACTORS.find(a => a.id === id),  cpId: 'attrval-'  + id };
+}
+
+// What the row says at rest. Centred, it offers both poles; set, it names the
+// one the bot is actually pulled toward — the row states the behaviour.
+function _attrHeadName(inputId, val){
+  const { kind, def } = _attrRowDef(inputId);
+  if(!def) return '';
+  if(kind === 'piece'){
+    const base = `<span class="piece-icon">${def.icon}</span> ${def.name}`;
+    return val === 0 ? base : base + `<span class="attr-head-pole"> · ${val > 0 ? 'seeks' : 'avoids'}</span>`;
+  }
+  if(val === 0) return `${def.labelLeft} <span class="attr-head-pole">↔</span> ${def.labelRight}`;
+  return val > 0 ? def.labelRight : def.labelLeft;
+}
+
+function _attrHead(inputId){
+  return `<button type="button" class="attr-head" id="attrhead-${inputId}"
+      aria-expanded="false" aria-controls="attrbody-${inputId}"
+      onclick="toggleAttrRow('${inputId}')">
+      <span class="attr-head-name" id="attrname-${inputId}"></span>
+      <span class="attr-bar"><i class="attr-bar-fill" id="attrbar-${inputId}"></i></span>
+      <span class="attr-head-set" id="attrset-${inputId}">—</span>
+      <span class="attr-head-cp" id="${_attrRowDef(inputId).cpId}-m">—</span>
+      <svg class="attr-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </button>`;
+}
+
+// Eleven discrete steps are easier to land exactly with a pair of 44px buttons
+// than with any track, so the open row carries both: drag for coarse, tap for
+// exact. Centre is the value people return to most, so it gets its own key.
+function _attrSteppers(inputId){
+  return `<div class="attr-steppers">
+      <button type="button" class="attr-step" aria-label="Decrease"
+        onclick="attrNudge('${inputId}',-1)">−</button>
+      <button type="button" class="attr-step attr-step-mid"
+        onclick="attrSetValue('${inputId}',0)">Centre</button>
+      <button type="button" class="attr-step" aria-label="Increase"
+        onclick="attrNudge('${inputId}',1)">+</button>
+    </div>`;
+}
+
+// Repaints every head from state. Called by updateAttrCpDisplays, which every
+// path that can change an attractor already goes through (slider, radar drag,
+// preset, saved-bot load, reset), so heads cannot drift out of sync.
+function syncAttrHeads(){
+  const rows = [
+    ...ATTRACTORS.filter(a => a.id !== 'luck').map(a => ['attr-'  + a.id, attractorValues[a.id] ?? 0]),
+    ...PIECE_TYPES.map(p                        => ['piece-' + p.id, pieceValues[p.id]     ?? 0]),
+  ];
+  rows.forEach(([inputId, val]) => {
+    const name = document.getElementById('attrname-' + inputId);
+    if(!name) return;                       // list not rendered yet
+    name.innerHTML = _attrHeadName(inputId, val);
+    const set = document.getElementById('attrset-' + inputId);
+    if(set){
+      set.textContent = val === 0 ? '—' : (val > 0 ? '+' + val : String(val));
+      set.classList.toggle('is-set', val !== 0);
+    }
+    // Bipolar fill: grows from the centre tick toward the active pole.
+    const bar = document.getElementById('attrbar-' + inputId);
+    if(bar){
+      const frac = Math.abs(val) / 5;
+      bar.style.width = (frac * 50) + '%';
+      bar.style.left  = (val >= 0 ? 50 : 50 - frac * 50) + '%';
+    }
+    const grp = document.getElementById('attrg-' + inputId);
+    if(grp) grp.classList.toggle('is-set', val !== 0);
+  });
+  _repartitionAttrList('attractor-rows');
+  _repartitionAttrList('piece-rows');
+  // The chip carries the cp budget, so it has to refresh whenever the budget
+  // or any control changes — this fn is on every one of those paths.
+  updateAttractorStatus();
+}
+
+// Accordion within one list: opening a row closes its siblings, so the open
+// control is always the only full-height thing on screen.
+function toggleAttrRow(inputId){
+  const grp = document.getElementById('attrg-' + inputId);
+  if(!grp || !grp.parentElement) return;
+  const wasOpen = grp.classList.contains('open');
+  grp.parentElement.querySelectorAll('.attr-group.open').forEach(o => {
+    o.classList.remove('open');
+    const h = o.querySelector('.attr-head');
+    if(h) h.setAttribute('aria-expanded', 'false');
+  });
+  if(!wasOpen){
+    grp.classList.add('open');
+    const h = grp.querySelector('.attr-head');
+    if(h) h.setAttribute('aria-expanded', 'true');
+  }
+  // Closing is the moment the list is allowed to re-sort — see below.
+  _repartitionAttrList(grp.parentElement);
+}
+
+/* ── Active-first partition (phone) ────────────────────────────────────────
+   Seventeen rows is a long scroll when most of them are centred and doing
+   nothing. Rows that spend budget sort above the ones that don't, and the
+   silent ones fold behind a "Show N more".
+
+   Two rules keep it from being annoying:
+   · A list where NOTHING is set stays fully expanded. Folding all ten away
+     would greet a fresh bot with a tab containing one button.
+   · The partition is never recomputed while a row in that list is open, so
+     nudging a centred row to +1 can't slide it out from under your finger.
+     Closing the row is what re-sorts. */
+function _attrMoreBtn(containerId){
+  return `<button type="button" class="attr-more" id="attrmore-${containerId}"
+      aria-expanded="false" onclick="toggleAttrMore('${containerId}')"></button>`;
+}
+
+function _repartitionAttrList(container){
+  if(typeof container === 'string') container = document.getElementById(container);
+  if(!container) return;
+  if(container.querySelector('.attr-group.open')) return;   // mid-edit: leave it alone
+  const groups = [...container.querySelectorAll('.attr-group')];
+  let active = 0;
+  groups.forEach(g => {
+    const on = g.classList.contains('is-set');
+    g.classList.toggle('part-active', on);
+    if(on) active++;
+  });
+  const hidden = groups.length - active;
+  container.classList.toggle('partitioned', active > 0 && hidden > 0);
+  const btn = container.querySelector('.attr-more');
+  if(btn){
+    const openAll = container.classList.contains('show-all');
+    btn.textContent = openAll ? 'Show only the ' + active + ' in use' : 'Show ' + hidden + ' more';
+    btn.setAttribute('aria-expanded', openAll ? 'true' : 'false');
+  }
+}
+
+function toggleAttrMore(containerId){
+  const c = document.getElementById(containerId);
+  if(!c) return;
+  c.classList.toggle('show-all');
+  _repartitionAttrList(c);
+}
+
+// Writes through the range input and fires its own oninput, so the existing
+// onAttractorChange / onPieceChange wiring stays the single source of truth —
+// preset deselection, radar redraw and cp re-split all happen as if dragged.
+function attrSetValue(inputId, val){
+  const inp = document.getElementById(inputId);
+  if(!inp) return;
+  const next = Math.max(-5, Math.min(5, Math.round(+val || 0)));
+  if(next === +inp.value) return;
+  inp.value = next;
+  inp.dispatchEvent(new Event('input', { bubbles:true }));
+}
+function attrNudge(inputId, delta){
+  const inp = document.getElementById(inputId);
+  if(inp) attrSetValue(inputId, (+inp.value || 0) + delta);
+}
+
 function renderAttractors(){
   const container = document.getElementById('attractor-rows');
   container.innerHTML = ATTRACTORS.filter(a => a.id !== 'luck').map(a=>`
-    <div class="attr-group">
-      <div class="attractor-row">
-        <span class="attr-left attr-left-narrow">${a.labelLeft}</span>
-        <div class="attr-slider-wrap">
-          <div class="attr-center-tick"></div>
-          <input class="attr-slider" type="range" min="-5" max="5" step="1" value="${a.default}"
-            id="attr-${a.id}"
-            oninput="onAttractorChange('${a.id}',this.value)">
+    <div class="attr-group" id="attrg-attr-${a.id}">
+      ${_attrHead('attr-' + a.id)}
+      <div class="attr-body">
+        <div class="attractor-row">
+          <span class="attr-left attr-left-narrow">${a.labelLeft}</span>
+          <div class="attr-slider-wrap">
+            <div class="attr-center-tick"></div>
+            <input class="attr-slider" type="range" min="-5" max="5" step="1" value="${a.default}"
+              id="attr-${a.id}"
+              oninput="onAttractorChange('${a.id}',this.value)">
+          </div>
+          <span class="attr-right attr-right-narrow">${a.labelRight}</span>
+          <span class="attr-val" id="attrval-${a.id}">—</span>
         </div>
-        <span class="attr-right attr-right-narrow">${a.labelRight}</span>
-        <span class="attr-val" id="attrval-${a.id}">—</span>
+        ${_attrSteppers('attr-' + a.id)}
+        <div class="attr-desc">${ATTRACTOR_DESCS[a.id] || ''}</div>
       </div>
-      <div class="attr-desc">${ATTRACTOR_DESCS[a.id] || ''}</div>
     </div>
-  `).join('');
+  `).join('') + _attrMoreBtn(container.id);
+  syncAttrHeads();
 }
 
 function onAttractorChange(id, val){
@@ -9108,34 +9936,55 @@ function onCalmPanickyChange(val){
   maybePersHybridAlert();
 }
 
+/* The old version averaged |value| across all 11 attractors against fixed
+   thresholds (<0.5 Neutral, <2 Light bias, else Strong bias). Averaging is the
+   wrong statistic for a sparse set: ONE attractor at ±5 with the rest centred
+   averages 0.45 and reported "Neutral", and The Blunderer (0.73), Bad Day
+   (0.64) and Clock Watcher (0.55) — all strongly characterful — all reported
+   "Light bias". It also never read the cp budget, which is the actual size of
+   the effect: budget 10 and budget 300 produced the same chip.
+
+   The chip now says what the section is set to, in the same shape as the other
+   section chips ("Maia 3 · 1500"): what is driving the bot, and what it is
+   allowed to spend. */
 function updateAttractorStatus(){
-  const vals = Object.values(attractorValues);
-  const avg = vals.reduce((a,b)=>a+Math.abs(b),0)/vals.length;
   const st = document.getElementById('st-attract');
   if(!st) return;
-  if(avg < 0.5) st.textContent = 'Neutral';
-  else if(avg < 2) st.textContent = 'Light bias';
-  else st.textContent = 'Strong bias';
+  const budget = Math.round(+(document.getElementById('r-style')?.value ?? 100));
+  const active = ATTRACTORS.filter(a => (attractorValues[a.id] ?? 0) !== 0).length
+               + PIECE_TYPES.filter(p => (pieceValues[p.id]  ?? 0) !== 0).length
+               + customControls.filter(c => (c.value ?? 0) !== 0).length;
+  // No control set means nothing spends the budget, whatever it is set to.
+  if(!active){ st.textContent = 'Neutral'; return; }
+  const preset = (selectedPersonality && selectedPersonality !== 'custom')
+    ? (PERSONALITIES.find(p => p.id === selectedPersonality) || {}).name : null;
+  const what = preset || (_activeBotName) || (active + ' control' + (active === 1 ? '' : 's'));
+  st.textContent = what + ' · ' + budget + ' cp';
 }
 
 /* ── Piece attractors ── */
 function renderPieceAttractors(){
   const container = document.getElementById('piece-rows');
   container.innerHTML = PIECE_TYPES.map(p=>`
-    <div class="attr-group">
-      <div class="attractor-row">
-        <span class="attr-left" style="width:70px;"><span class="piece-icon">${p.icon}</span> ${p.name}</span>
-        <div class="attr-slider-wrap">
-          <div class="attr-center-tick"></div>
-          <input class="attr-slider" type="range" min="-5" max="5" step="1" value="0"
-            id="piece-${p.id}"
-            oninput="onPieceChange('${p.id}',this.value)">
+    <div class="attr-group" id="attrg-piece-${p.id}">
+      ${_attrHead('piece-' + p.id)}
+      <div class="attr-body">
+        <div class="attractor-row">
+          <span class="attr-left attr-left-piece"><span class="piece-icon">${p.icon}</span> ${p.name}</span>
+          <div class="attr-slider-wrap">
+            <div class="attr-center-tick"></div>
+            <input class="attr-slider" type="range" min="-5" max="5" step="1" value="0"
+              id="piece-${p.id}"
+              oninput="onPieceChange('${p.id}',this.value)">
+          </div>
+          <span class="attr-val" id="pieceval-${p.id}">—</span>
         </div>
-        <span class="attr-val" id="pieceval-${p.id}">—</span>
+        ${_attrSteppers('piece-' + p.id)}
+        <div class="attr-desc">${PIECE_DESCS[p.id] || ''}</div>
       </div>
-      <div class="attr-desc">${PIECE_DESCS[p.id] || ''}</div>
     </div>
-  `).join('');
+  `).join('') + _attrMoreBtn(container.id);
+  syncAttrHeads();
 }
 
 function onPieceChange(id, val){
@@ -9193,6 +10042,9 @@ function renderCustomControls(){
     const pressureOpts = CUSTOM_PRESSURE.map(([v,l]) =>
       `<option value="${v}" ${v===(c.pressure||'any')?'selected':''}>${l}</option>`).join('');
     return `
+    <div class="cc-card" id="ccg-${c.id}">
+      <button type="button" class="attr-head cc-head" id="cchead-${c.id}"
+        onclick="toggleCcRow('${c.id}')" aria-expanded="false">${_ccHeadHtml(c)}</button>
     <div class="cc-row2" data-cc="${c.id}">
       <select class="cc-field cc-select" title="${_ccEsc(m.desc)}" onchange="onCustomControlMetric('${c.id}',this.value)">${metricOpts}</select>
       <select class="cc-field cc-select" onchange="onCustomControlPhase('${c.id}',this.value)">${phaseOpts}</select>
@@ -9201,24 +10053,183 @@ function renderCustomControls(){
       <div class="cc-slidecell">
         <span class="cc-mm" title="${_ccEsc(m.min)}">${m.min}</span>
         <input class="attr-slider" type="range" min="-5" max="5" step="1" value="${c.value||0}"
+          id="ccslider-${c.id}"
           oninput="onCustomControlValue('${c.id}',this.value)">
         <span class="cc-mm" title="${_ccEsc(m.max)}">${m.max}</span>
         <span class="attr-val cc-sval" id="ccval-${c.id}">—</span>
+        ${_attrSteppers('ccslider-' + c.id)}
       </div>
       <button type="button" class="cc-del" onclick="removeCustomControl('${c.id}')" title="Remove control">×</button>
+    </div>
     </div>`;
   }).join('');
   updateAttrCpDisplays();
 }
 
+/* The collapsed head, built the same way as an attractor row's: the direction
+   the control pulls, the gates that narrow when it fires, and its cp share.
+   Shared by the initial render and syncCcHead so the two can't drift. */
+function _ccHeadHtml(c){
+  const m = _ccMeta(c.metric);
+  const PHASE_LBL    = { opening:'Opening', middlegame:'Middlegame', endgame:'Endgame' };
+  const gates = [
+    c.phase    && c.phase    !== 'all' ? PHASE_LBL[c.phase] : null,
+    c.result   && c.result   !== 'any' ? (CUSTOM_RESULTS.find(x => x[0] === c.result)   || [])[1] : null,
+    c.pressure && c.pressure !== 'any' ? (CUSTOM_PRESSURE.find(x => x[0] === c.pressure) || [])[1] : null,
+  ].filter(Boolean);
+  const v = c.value || 0;
+  const frac = Math.abs(v) / 5;
+  return `<span class="attr-head-name">${_ccEsc(v === 0 ? m.name : (v > 0 ? m.max : m.min))}${
+      gates.length ? '<span class="attr-head-pole"> · ' + _ccEsc(gates.join(' · ')) + '</span>' : ''}</span>
+    <span class="attr-bar"><i class="attr-bar-fill"
+      style="left:${v >= 0 ? 50 : 50 - frac * 50}%;width:${frac * 50}%;"></i></span>
+    <span class="attr-head-set${v !== 0 ? ' is-set' : ''}">${v === 0 ? '—' : (v > 0 ? '+' + v : v)}</span>
+    <span class="attr-head-cp" id="ccval-${c.id}-m">—</span>
+    <svg class="attr-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>`;
+}
+
+// Repaints one head in place. The card's controls are live inputs, so
+// re-rendering the whole list on every change would drop focus mid-drag.
+function syncCcHead(id){
+  const c = _ccFind(id), head = document.getElementById('cchead-' + id);
+  if(c && head){ head.innerHTML = _ccHeadHtml(c); updateAttrCpDisplays(); }
+}
+
+/* ── Move Timing: wrap each heading + its controls into a fold ──────────────
+   Runs once at load, at every width. On desktop .tm-group and .tm-body carry
+   no styling, so the section renders exactly as it did — the wrappers are
+   inert boxes in the same order. On phones the ≤760px layer turns each heading
+   into an accordion header.
+
+   Structural rather than markup-level on purpose: every control keeps its id,
+   its handler and its position in the DOM, so getBotConfig / applyBotConfig /
+   the tour's element lookups are all untouched. */
+// Turns one element into a fold header and moves everything up to the next
+// header into a body beneath it. Shared by Move Timing and How Bot Behavior
+// Works — the only difference between them is what counts as a header.
+function _makeFold(container, headEl, groupClass){
+  const group = document.createElement('div');
+  group.className = groupClass;
+  container.insertBefore(group, headEl);
+  group.appendChild(headEl);
+  headEl.classList.add('fold-head');
+  const caret = document.createElement('span');
+  caret.className = 'tm-caret';
+  headEl.appendChild(caret);
+  const body = document.createElement('div');
+  body.className = 'tm-body';
+  group.appendChild(body);
+  headEl.addEventListener('click', ev => {
+    // Some headers carry a help button or a toggle of their own — those keep
+    // their behaviour rather than folding the section.
+    if(ev.target.closest('button,input,label,a')) return;
+    group.classList.toggle('open');
+  });
+  return body;
+}
+
+function tmGroupTiming(){
+  const panel = document.querySelector('#sec-timing .panel');
+  if(!panel || panel.dataset.tmGrouped) return;
+  panel.querySelectorAll(':scope > .panel-2col > div').forEach(col => {
+    let body = null;
+    [...col.children].forEach(el => {
+      if(el.classList.contains('dlbl')) body = _makeFold(col, el, 'tm-group');
+      else if(body) body.appendChild(el);
+    });
+  });
+  // One group open to start, so the section never reads as an empty menu.
+  panel.querySelectorAll(':scope > .panel-2col > div > .tm-group:first-child')
+       .forEach(g => g.classList.add('open'));
+  panel.dataset.tmGrouped = '1';
+}
+
+/* How Bot Behavior Works is 3,493px of continuous reference prose on a phone —
+   four essays under four headings, with no way to reach the third without
+   reading past the first two. Each .formula-box already has a .formula-title,
+   so the box itself becomes the fold and the title its header. Unlike Move
+   Timing these all start CLOSED: it is reference material you come to with a
+   question, not controls you came to set. */
+function foldHowMoves(){
+  const panel = document.querySelector('#sec-howmoves .panel');
+  if(!panel || panel.dataset.hmFolded) return;
+  panel.querySelectorAll('.formula-box').forEach(box => {
+    const title = box.querySelector(':scope > .formula-title');
+    if(!title) return;
+    box.classList.add('fold');
+    const body = document.createElement('div');
+    body.className = 'tm-body';
+    [...box.children].forEach(el => { if(el !== title) body.appendChild(el); });
+    box.appendChild(body);
+    title.classList.add('fold-head');
+    const caret = document.createElement('span');
+    caret.className = 'tm-caret';
+    title.appendChild(caret);
+    title.addEventListener('click', ev => {
+      if(ev.target.closest('button,input,label,a')) return;
+      // Accordion, not independent folds. Two reasons: you read one of these
+      // at a time, and with all four open the section is 3606px — past the
+      // .panel-shell ceiling, which would truncate the last one silently.
+      const wasOpen = box.classList.contains('open');
+      panel.querySelectorAll('.formula-box.fold.open').forEach(o => o.classList.remove('open'));
+      if(!wasOpen) box.classList.add('open');
+    });
+  });
+  panel.dataset.hmFolded = '1';
+}
+
+// Same accordion as the attractor rows: eight custom controls at ~330px each
+// is three screens of scroll with no way to see the shape of what you built,
+// so each one collapses to what it measures, its gates, and what it costs.
+function toggleCcRow(id){
+  const g = document.getElementById('ccg-' + id);
+  if(!g || !g.parentElement) return;
+  const wasOpen = g.classList.contains('open');
+  g.parentElement.querySelectorAll('.cc-card.open').forEach(o => {
+    o.classList.remove('open');
+    const h = o.querySelector('.cc-head');
+    if(h) h.setAttribute('aria-expanded', 'false');
+  });
+  if(!wasOpen){
+    g.classList.add('open');
+    const h = g.querySelector('.cc-head');
+    if(h) h.setAttribute('aria-expanded', 'true');
+  }
+}
+
 function addCustomControl(){
   const m = CUSTOM_METRICS[0];
+  const id = 'cc' + Date.now().toString(36) + (++_ccSeq);
   customControls.push({
-    id: 'cc' + Date.now().toString(36) + (++_ccSeq),
-    name: m.name, metric: m.id, phase: 'all', result: 'any', pressure: 'any', value: 0
+    id, name: m.name, metric: m.id, phase: 'all', result: 'any', pressure: 'any', value: 0
   });
   renderCustomControls();
   _ccDirty();
+  return id;
+}
+
+/* What the "+ Add custom control" button does, as opposed to what the model
+   function does. A new control defaults to the first metric in the list, and
+   on a phone its card arrives collapsed — so adding one and then choosing what
+   it actually measures cost three taps, the first two of which only undid the
+   default. This adds the control, opens its card and raises the metric list in
+   one gesture.
+
+   showPicker() has to run inside the gesture that triggered it and is not
+   universally supported; where it isn't, the select is focused and scrolled
+   to, which is still a tap closer than before. Kept out of addCustomControl()
+   so programmatic callers (bot loading, tests) don't inherit the UI side
+   effects. */
+function addCustomControlAndPick(){
+  const id = addCustomControl();
+  const grp = document.getElementById('ccg-' + id);
+  if(!grp) return;
+  if(_isPhoneLayout() && !grp.classList.contains('open')) toggleCcRow(id);
+  grp.scrollIntoView({ block:'center', behavior:'instant' });
+  const sel = grp.querySelector('.cc-select');
+  if(!sel) return;
+  sel.focus({ preventScroll:true });
+  try { if(typeof sel.showPicker === 'function') sel.showPicker(); } catch(e) {}
 }
 function removeCustomControl(id){
   customControls = customControls.filter(c => c.id !== id);
@@ -9228,13 +10239,13 @@ function removeCustomControl(id){
 // Entry button on the Move Quality & Strategy tab: add a control and jump to the
 // dedicated Custom Controls tab so the builder is right there.
 function addCustomControlAndGo(){
-  addCustomControl();
   if(typeof switchItab === 'function') switchItab('attract','custom');
+  addCustomControlAndPick();   // same gesture, same expectation
 }
 function onCustomControlValue(id, val){
   const c = _ccFind(id); if(!c) return;
   c.value = +val;
-  updateAttrCpDisplays();
+  syncCcHead(id);   // → updateAttrCpDisplays
   _ccDirty();
 }
 function onCustomControlMetric(id, val){
@@ -9243,22 +10254,28 @@ function onCustomControlMetric(id, val){
   const prev = _ccMeta(c.metric);
   if(!c.name || c.name === prev.name) c.name = _ccMeta(val).name;
   c.metric = val;
-  renderCustomControls();
+  const wasOpen = (document.getElementById('ccg-' + id) || {}).classList
+    && document.getElementById('ccg-' + id).classList.contains('open');
+  renderCustomControls();          // the min/max direction labels change with the metric
+  if(wasOpen) toggleCcRow(id);     // re-open the card the user is editing
   _ccDirty();
 }
 function onCustomControlPhase(id, val){
   const c = _ccFind(id); if(!c) return;
   c.phase = val;
+  syncCcHead(id);
   _ccDirty();
 }
 function onCustomControlResult(id, val){
   const c = _ccFind(id); if(!c) return;
   c.result = val;
+  syncCcHead(id);
   _ccDirty();
 }
 function onCustomControlPressure(id, val){
   const c = _ccFind(id); if(!c) return;
   c.pressure = val;
+  syncCcHead(id);
   _ccDirty();
 }
 function onCustomControlName(id, val){
@@ -9335,7 +10352,14 @@ function drawRadar(){
     ctx.stroke();
     // Label
     const lx=CX+(R+20)*Math.cos(ang), ly=CY+(R+20)*Math.sin(ang);
-    ctx.font = isActive ? '9px "DM Mono",monospace' : '8px "DM Mono",monospace';
+    // Canvas text is drawn in pixels and ignores the CSS type layer entirely,
+    // so the 11px phone floor has to be applied here at draw time. Safe for
+    // these labels specifically: they are free-standing around the ring, ~63px
+    // of arc apart. The other three charts are NOT — their labels sit at
+    // hardcoded offsets (the temperature chart stacks three rows on an 8px
+    // pitch; the pressure curves carry ten x-ticks ~30px apart), so raising
+    // their type needs the geometry reworked with it.
+    ctx.font = _chartFont(isActive ? 9 : 8);
     ctx.fillStyle = isActive ? amberColor : nodeInact;
     ctx.textAlign='center';
     ctx.textBaseline='middle';
@@ -9385,7 +10409,7 @@ function drawRadar(){
       const vStr = val > 0 ? '+'+val : String(val);
       const badgeR = r + 14;
       const bx=CX+badgeR*Math.cos(ang), by=CY+badgeR*Math.sin(ang);
-      ctx.font='bold 9px "DM Mono",monospace';
+      ctx.font=_chartFont(9,'bold');
       ctx.fillStyle=badgeColor;
       ctx.textAlign='center';
       ctx.textBaseline='middle';
@@ -9452,6 +10476,52 @@ function _radarSetAxis(axIdx, val){
   selectedPersonality=null;
 }
 
+/* ── Radar on phones: a display, not an editor ─────────────────────────────
+   Eleven axes on a ~300px canvas gives each node a target about 10px across —
+   worse than the sliders it was meant to rescue, and a drag that misses sets
+   the WRONG attractor. So on a phone the radar keeps drawing the fingerprint
+   and a tap becomes navigation: it opens the control for that axis.
+
+   'luck' is the one axis with no attractor row (ATTRACTORS is filtered by
+   id !== 'luck' — Good day/Bad day is governed by the Move Distribution Range
+   dual slider), so it routes there instead. */
+const _isPhoneLayout = () => window.matchMedia('(max-width:760px)').matches;
+
+// Canvas labels can't inherit the phone type floor from CSS — they are painted
+// in device pixels. This applies it at draw time. Only use it where the label
+// has room to grow; see the note at the radar's fillText.
+const _chartFont = (px, weight) =>
+  `${weight ? weight + ' ' : ''}${_isPhoneLayout() ? Math.max(11, px) : px}px "DM Mono",monospace`;
+
+function _radarNavigate(axIdx){
+  const ax = RADAR_AXES[axIdx];
+  if(!ax) return;
+  if(ax.key === 'luck'){
+    switchItab('attract', 'quality');
+    setTimeout(() => {
+      const el = document.getElementById('move-quality-range');
+      if(el){
+        el.scrollIntoView({ behavior:'smooth', block:'center' });
+        el.classList.add('attr-flash');
+        setTimeout(() => el.classList.remove('attr-flash'), 1400);
+      }
+    }, 90);
+    return;
+  }
+  const inputId = 'attr-' + ax.key;
+  switchItab('attract', 'pieces');
+  setTimeout(() => {
+    const grp = document.getElementById('attrg-' + inputId);
+    if(!grp) return;
+    // The row may be folded away as "not in use" — reveal its list first.
+    const list = grp.parentElement;
+    if(list && !grp.classList.contains('is-set')) list.classList.add('show-all');
+    _repartitionAttrList(list);
+    if(!grp.classList.contains('open')) toggleAttrRow(inputId);
+    grp.scrollIntoView({ behavior:'smooth', block:'center' });
+  }, 90);
+}
+
 function initRadarInteraction(){
   const canvas=document.getElementById('radar-canvas');
   if(!canvas) return;
@@ -9506,6 +10576,9 @@ function initRadarInteraction(){
     const {mx,my}=_radarCanvasPos(canvas,t.clientX,t.clientY);
     const idx=_radarNearestAxis(mx,my);
     if(idx<0) return;
+    // Phone: navigate to the axis's own control instead of setting it here.
+    // _radarDragIdx stays -1, so touchmove can't drag a value either.
+    if(_isPhoneLayout()){ _radarNavigate(idx); return; }
     _radarDragIdx=idx;
     _radarSetAxis(idx, _radarAxisValue(mx,my,idx));
   },{passive:false});
@@ -9775,9 +10848,8 @@ function _applyPersonality(id){
     const slider = document.getElementById('attr-'+a.id);
     if(slider) slider.value = val;
   });
-  document.getElementById('st-attract').textContent = p.name;
   drawRadar();
-  updateAttrCpDisplays();
+  updateAttrCpDisplays();   // → syncAttrHeads + updateAttractorStatus (shows the preset name)
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -10309,20 +11381,23 @@ function drawCurve(canvasId, ctrl, sigFn, yMin, yMax, yFmt, lineColor, fillColor
     const y = yp(v);
     ctx.strokeStyle='rgba(255,255,255,0.05)'; ctx.lineWidth=0.5;
     ctx.beginPath(); ctx.moveTo(PAD.l,y); ctx.lineTo(w-PAD.r,y); ctx.stroke();
-    ctx.fillStyle=_curveLabelColor; ctx.font='9px "DM Mono",monospace'; ctx.textAlign='right';
+    ctx.fillStyle=_curveLabelColor; ctx.font=_chartFont(9); ctx.textAlign='right';
     ctx.fillText(yFmt(v), PAD.l-4, y+3);
   }
 
   // ── X grid + labels (log: decade ticks; linear: even intervals)
+  // Ten ticks sit ~30px apart on a phone, where "1000s" alone is ~33px wide at
+  // the 11px type floor. Half as many decades, so the labels can grow.
+  const _phT = _isPhoneLayout();
   const xTicks = scale==='log'
-    ? [1,2,5,10,20,50,100,200,500,1000]
-    : [20,40,60,80,100,120,140,160,180,200];
+    ? (_phT ? [1,5,20,100,500] : [1,2,5,10,20,50,100,200,500,1000])
+    : (_phT ? [40,80,120,160,200] : [20,40,60,80,100,120,140,160,180,200]);
   xTicks.forEach(t => {
     if(t < X_MIN || t > X_MAX) return;
     const x = xp(t);
     ctx.strokeStyle='rgba(255,255,255,0.05)'; ctx.lineWidth=0.5;
     ctx.beginPath(); ctx.moveTo(x,PAD.t); ctx.lineTo(x,CH-PAD.b); ctx.stroke();
-    ctx.fillStyle=_curveLabelColor; ctx.font='9px "DM Mono",monospace'; ctx.textAlign='center';
+    ctx.fillStyle=_curveLabelColor; ctx.font=_chartFont(9); ctx.textAlign='center';
     ctx.fillText(t+'s', x, CH-PAD.b+13);
   });
 
@@ -10332,7 +11407,7 @@ function drawCurve(canvasId, ctrl, sigFn, yMin, yMax, yFmt, lineColor, fillColor
   ctx.strokeStyle='rgba(200,146,42,0.35)'; ctx.lineWidth=1; ctx.setLineDash([4,3]);
   ctx.beginPath(); ctx.moveTo(gxp,PAD.t); ctx.lineTo(gxp,CH-PAD.b); ctx.stroke();
   ctx.setLineDash([]);
-  ctx.fillStyle='rgba(200,146,42,0.7)'; ctx.font='8px "DM Mono",monospace'; ctx.textAlign='center';
+  ctx.fillStyle='rgba(200,146,42,0.7)'; ctx.font=_chartFont(8); ctx.textAlign='center';
   ctx.fillText('game start', gxp, PAD.t-3);
 
   // ── Axis border
@@ -10340,7 +11415,7 @@ function drawCurve(canvasId, ctrl, sigFn, yMin, yMax, yFmt, lineColor, fillColor
   ctx.strokeRect(PAD.l, PAD.t, w-PAD.l-PAD.r, CH-PAD.t-PAD.b);
 
   // ── Axis titles
-  ctx.fillStyle=_curveDimColor; ctx.font='8px "DM Mono",monospace'; ctx.textAlign='center';
+  ctx.fillStyle=_curveDimColor; ctx.font=_chartFont(8); ctx.textAlign='center';
   ctx.fillText('think time per move — more time \u2192 left', w/2, CH-2);
   ctx.save(); ctx.translate(11, CH/2); ctx.rotate(-Math.PI/2);
   ctx.fillText(canvasId==='cvA'?'Effective ELO':'Available distribution %', 0, 0);
@@ -10353,7 +11428,7 @@ function drawCurve(canvasId, ctrl, sigFn, yMin, yMax, yFmt, lineColor, fillColor
       const fxR = xp(X_MIN), fxL = xp(Math.min(3, X_MIN+2));
       ctx.fillStyle='rgba(163,45,45,0.12)';
       ctx.fillRect(fxL, PAD.t, fxR-fxL, CH-PAD.t-PAD.b);
-      ctx.fillStyle='#A32D2D'; ctx.font='8px "DM Mono",monospace'; ctx.textAlign='center';
+      ctx.fillStyle='#A32D2D'; ctx.font=_chartFont(8); ctx.textAlign='center';
       ctx.fillText('flag zone', (fxL+fxR)/2, PAD.t+11);
     }
   }
@@ -10604,6 +11679,11 @@ document.addEventListener('DOMContentLoaded', ()=>{
   initStyleGauge();
   initRadarInteraction();      // interactive cp-budget gauge
   updateAttrCpDisplays(); // populate attractor cp allocations
+  // Maia 3 carries `sel` in the markup, so selEngineMode never runs for the
+  // default engine and the phone description tail would start empty.
+  updateEngineDescTail();
+  tmGroupTiming();
+  foldHowMoves();
   onDaySlider(); // init dual-range fill
   _updateEnginePanelHeader();
   updatePersonalityGating(); // reflect the initial engine in the personality section
