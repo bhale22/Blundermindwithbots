@@ -409,6 +409,20 @@ table.tg td.tg-inc-lbl{
 .chevron path{stroke:var(--steel-light);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
 .section.open .chevron{transform:rotate(180deg);}
 
+/* The 3600px ceiling is a real trap — a section that outgrows it is silently
+   truncated, with no error and nothing to scroll. "How Bot Behavior Works" was
+   3493px on a phone, 107px short of it, before the folds below took it to
+   ~510px.
+
+   Animating grid-template-rows 0fr→1fr instead would remove the cap entirely,
+   but it cannot work here: .panel carries 14/18px of padding, and padding is
+   not shrinkable, so the closed row floors at 33px and every section leaks a
+   strip of panel (the temperature chart was visibly drawing in it). Fixing
+   that needs the padding moved to an inner wrapper in all six sections.
+
+   So the mechanism stays as it was, and the ceiling is held by a test instead:
+   verify-typefloor asserts every section's content clears the cap at both
+   widths, which turns a silent truncation into a failing check. */
 .panel-shell{max-height:0;overflow:hidden;transition:max-height 0.45s cubic-bezier(0.4,0,0.2,1);}
 .section.open .panel-shell{max-height:3600px;}
 .panel{background:var(--carbon-mid);border:0.5px solid var(--border-amber);border-top:none;border-radius:0 0 var(--r) var(--r);padding:14px 18px 18px;}
@@ -2024,6 +2038,9 @@ body.fj .picon{font-weight:500;}
   .radar-hint-phone{display:inline;}
   .radar-hint{font-size:11px;}
   #radar-canvas{max-width:100%;height:auto;}
+  /* The three label rows under each bar need a deeper gutter at 11px — see
+     padB / rowMove / rowPct / rowMTP in drawTempChart. */
+  #temp-dist-chart{height:158px;}
 
   /* ═══ CUSTOM CONTROLS ═══
      .cc-row2 is a six-track grid (four selects, the slider cell, delete) whose
@@ -2152,6 +2169,16 @@ body.fj .picon{font-weight:500;}
      above the dial ("Max Centipawn Budget" / "CP Budget"), so on a phone the
      readable label wins the space. */
   .gauge-watermark{display:none;}
+
+  /* Contrast. #4a5060 on the carbon background is about 2.2:1 — under the 3:1
+     WCAG floor for graphical objects, never mind the 4.5:1 for text, and it is
+     what the Elometer's ELO ticks and the Centipawmeter's scale are drawn in.
+     CSS fill overrides the presentation attribute, so the numbers lift without
+     the tick geometry moving. ~5.7:1 at #8f98a8. */
+  .panel svg text[fill="#4a5060"]{fill:#8f98a8;}
+  /* Same value, reached through the radar's canvas: drawRadar reads this var
+     at paint time for inactive axis labels and nodes. */
+  :root{--radar-node-inactive:#8f98a8;}
 
   /* Mode cards — the earlier pass raised these only inside .mode-stack, which
      left the five engine cards (.mode-compact) at 8px names / 7.5px blurbs and
@@ -2327,6 +2354,43 @@ body.fj .picon{font-weight:500;}
   }
   .tm-body{display:none;padding:10px 12px 12px;}
   .tm-group.open > .tm-body{display:block;}
+
+  /* ── How Bot Behavior Works ──
+     The .formula-box already supplies the frame and padding, so its fold is
+     just the title plus a hidden body. All four start closed: this is
+     reference material you arrive at with a question. */
+  .formula-box.fold > .fold-head{
+    cursor:pointer;display:flex;align-items:center;gap:8px;
+    min-height:44px;margin:0;
+  }
+  .formula-box.fold > .tm-body{padding:8px 0 0;}
+  .formula-box.fold.open > .tm-body{display:block;}
+  .formula-box.fold.open .tm-caret{transform:rotate(-135deg) translateY(2px);}
+
+  /* ═══ PRESET PERSONALITIES ═══
+     Thirteen cards stacked one per column is 2,102px — two and a half screens
+     to see a list whose whole job is comparison. As rows it is one screen: the
+     icon and name carry identity, the tag groups them at a glance, and the
+     description stays but is clamped to two lines. */
+  .persona-grid,.persona-grid-4col{
+    grid-template-columns:1fr;gap:0;
+    border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden;
+  }
+  .pcard{
+    display:grid;grid-template-columns:30px 1fr auto;gap:1px 10px;
+    align-items:center;padding:10px 11px;
+    border:none;border-bottom:0.5px solid var(--border);border-radius:0;
+  }
+  .persona-grid .pcard:last-child{border-bottom:none;}
+  .pcard.sel{border-left:2px solid var(--amber);padding-left:9px;}
+  .picon{grid-row:1 / 3;justify-self:center;font-size:20px;margin:0;}
+  .pname{grid-column:2;grid-row:1;font-size:13px;margin:0;}
+  .ptag{grid-column:3;grid-row:1;justify-self:end;font-size:10.5px;margin:0;}
+  .ptrait{
+    grid-column:2 / 4;grid-row:2;font-size:11.5px;line-height:1.4;margin:0;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+    overflow:hidden;
+  }
 }
 </style>
 </head>
@@ -9443,13 +9507,26 @@ function drawTempChart(T){
   const _tLabel = _tcs.getPropertyValue('--text-primary').trim() || 'rgba(240,237,232,0.78)';
   const _tDim   = _tcs.getPropertyValue('--text-dim').trim()     || 'rgba(200,185,165,0.40)';
 
-  const padT=6, padB=38, padL=4, padR=4;
+  // The label block under each bar is three stacked rows. At the desktop pitch
+  // (11 / 21 / 29 within a 38px gutter) an 11px type floor would overlap them,
+  // so on a phone the gutter and the pitch both grow with the type — the chart
+  // is taller there too (see #temp-dist-chart in the phone layer).
+  const _ph = _isPhoneLayout();
+  // Phone gets a deeper label gutter (three stacked rows at the 11px floor) and
+  // a legend strip along the top instead of tucked into the bottom-right
+  // corner, where at 11px it landed on the M/T/P row.
+  const padT=_ph?24:6, padB=_ph?62:38, padL=4, padR=4;
+  const rowMove = _ph?15:11, rowPct = _ph?34:21, rowMTP = _ph?52:29;
   const chartH = H - padT - padB;
   const chartW = W - padL - padR;
 
   ctx.clearRect(0, 0, W, H);
 
-  const moves = TEMP_CHART_MOVES;
+  // Five columns leave ~65px each on a 390px screen, and three percentages at
+  // 11px need ~75px — they ran together as "60%60%59%". Three columns give
+  // ~109px, so the numbers fit and no information is dropped, only the two
+  // smallest moves (1% and 4% bars, invisible at this size anyway).
+  const moves = _ph ? TEMP_CHART_MOVES.slice(0, 3) : TEMP_CHART_MOVES;
   const adj   = _tempAdjusted(moves, T);
   const budgetNow = +(document.getElementById('r-style')?.value || 0);
   const pers  = _persAdjusted(adj, budgetNow);
@@ -9506,14 +9583,14 @@ function drawTempChart(T){
 
     // Row 1: move label
     ctx.fillStyle = _tLabel;
-    ctx.font = '9px "DM Mono", monospace';
+    ctx.font = _chartFont(9);
     ctx.textAlign = 'center';
-    ctx.fillText(mv.label, cx, H - padB + 11);
+    ctx.fillText(mv.label, cx, H - padB + rowMove);
 
     // Row 2: Maia % (left column, dim)
     ctx.fillStyle = 'rgba(235,140,0,0.60)';
-    ctx.font = '7px "DM Mono", monospace';
-    ctx.fillText(Math.round(maiaP*100)+'%', mX + barW/2, H - padB + 21);
+    ctx.font = _chartFont(7);
+    ctx.fillText(Math.round(maiaP*100)+'%', mX + barW/2, H - padB + rowPct);
 
     // Row 2: temperature % (middle column)
     const adjPct = Math.round(adjP*100);
@@ -9521,36 +9598,52 @@ function drawTempChart(T){
                    : adjP < maiaP - 0.005 ? 'rgba(235,160,0,0.88)'
                    : 'rgba(235,140,0,0.60)';
     ctx.fillStyle = adjColor;
-    ctx.fillText(adjP < 0.005 ? '~0' : adjPct+'%', aX + barW/2, H - padB + 21);
+    ctx.fillText(adjP < 0.005 ? '~0' : adjPct+'%', aX + barW/2, H - padB + rowPct);
 
     // Row 2: personality % (right column, blue)
     ctx.fillStyle = C_PERS;
-    ctx.fillText(perP < 0.005 ? '~0' : Math.round(perP*100)+'%', pX + barW/2, H - padB + 21);
+    ctx.fillText(perP < 0.005 ? '~0' : Math.round(perP*100)+'%', pX + barW/2, H - padB + rowPct);
 
     // Row 3: column labels (M / T / P)
     ctx.fillStyle = _tDim;
-    ctx.font = '6.5px "DM Mono", monospace';
-    ctx.fillText('M', mX + barW/2, H - padB + 29);
-    ctx.fillText('T', aX + barW/2, H - padB + 29);
-    ctx.fillText('P', pX + barW/2, H - padB + 29);
+    ctx.font = _chartFont(6.5);
+    ctx.fillText('M', mX + barW/2, H - padB + rowMTP);
+    ctx.fillText('T', aX + barW/2, H - padB + rowMTP);
+    ctx.fillText('P', pX + barW/2, H - padB + rowMTP);
   });
 
-  // Legend (bottom-right): Maia → Temperature → Personality
-  const legY = H - 5;
-  ctx.font = '7px "DM Mono", monospace';
-  ctx.textAlign = 'right';
-  ctx.fillStyle = 'rgba(235,140,0,0.3)';
-  ctx.fillRect(W - padR - 128, legY - 8, 7, 7);
-  ctx.fillStyle = _tDim;
-  ctx.fillText('Maia', W - padR - 117, legY);
-  ctx.fillStyle = 'rgba(235,160,0,0.88)';
-  ctx.fillRect(W - padR - 90, legY - 8, 7, 7);
-  ctx.fillStyle = _tDim;
-  ctx.fillText('Temp', W - padR - 74, legY);
-  ctx.fillStyle = C_PERS;
-  ctx.fillRect(W - padR - 46, legY - 8, 7, 7);
-  ctx.fillStyle = _tDim;
-  ctx.fillText('Pers.', W - padR, legY);
+  // Legend: Maia → Temperature → Personality. Along the top on a phone (the
+  // bottom-right corner is occupied by the M/T/P row at this type size),
+  // bottom-right on desktop where it always sat.
+  ctx.font = _chartFont(7);
+  const swatch = _ph ? 9 : 7;
+  if(_ph){
+    let lx = padL;
+    ctx.textAlign = 'left';
+    [['rgba(235,140,0,0.3)','Maia'],['rgba(235,160,0,0.88)','Temp'],[C_PERS,'Pers.']]
+      .forEach(([col,label]) => {
+        ctx.fillStyle = col;
+        ctx.fillRect(lx, 6, swatch, swatch);
+        ctx.fillStyle = _tDim;
+        ctx.fillText(label, lx + swatch + 5, 6 + swatch);
+        lx += swatch + 5 + ctx.measureText(label).width + 14;
+      });
+  } else {
+    const legY = H - 5;
+    ctx.textAlign = 'right';
+    ctx.fillStyle = 'rgba(235,140,0,0.3)';
+    ctx.fillRect(W - padR - 128, legY - 8, swatch, swatch);
+    ctx.fillStyle = _tDim;
+    ctx.fillText('Maia', W - padR - 117, legY);
+    ctx.fillStyle = 'rgba(235,160,0,0.88)';
+    ctx.fillRect(W - padR - 90, legY - 8, swatch, swatch);
+    ctx.fillStyle = _tDim;
+    ctx.fillText('Temp', W - padR - 74, legY);
+    ctx.fillStyle = C_PERS;
+    ctx.fillRect(W - padR - 46, legY - 8, swatch, swatch);
+    ctx.fillStyle = _tDim;
+    ctx.fillText('Pers.', W - padR, legY);
+  }
 }
 
 function onTempSlider(T){
@@ -9988,38 +10081,78 @@ function syncCcHead(id){
    Structural rather than markup-level on purpose: every control keeps its id,
    its handler and its position in the DOM, so getBotConfig / applyBotConfig /
    the tour's element lookups are all untouched. */
+// Turns one element into a fold header and moves everything up to the next
+// header into a body beneath it. Shared by Move Timing and How Bot Behavior
+// Works — the only difference between them is what counts as a header.
+function _makeFold(container, headEl, groupClass){
+  const group = document.createElement('div');
+  group.className = groupClass;
+  container.insertBefore(group, headEl);
+  group.appendChild(headEl);
+  headEl.classList.add('fold-head');
+  const caret = document.createElement('span');
+  caret.className = 'tm-caret';
+  headEl.appendChild(caret);
+  const body = document.createElement('div');
+  body.className = 'tm-body';
+  group.appendChild(body);
+  headEl.addEventListener('click', ev => {
+    // Some headers carry a help button or a toggle of their own — those keep
+    // their behaviour rather than folding the section.
+    if(ev.target.closest('button,input,label,a')) return;
+    group.classList.toggle('open');
+  });
+  return body;
+}
+
 function tmGroupTiming(){
   const panel = document.querySelector('#sec-timing .panel');
   if(!panel || panel.dataset.tmGrouped) return;
   panel.querySelectorAll(':scope > .panel-2col > div').forEach(col => {
     let body = null;
     [...col.children].forEach(el => {
-      if(el.classList.contains('dlbl')){
-        const group = document.createElement('div');
-        group.className = 'tm-group';
-        col.insertBefore(group, el);
-        group.appendChild(el);
-        const caret = document.createElement('span');
-        caret.className = 'tm-caret';
-        el.appendChild(caret);
-        body = document.createElement('div');
-        body.className = 'tm-body';
-        group.appendChild(body);
-        el.addEventListener('click', ev => {
-          // The Premove heading carries a help button, and some headings carry
-          // a toggle — those keep their own behaviour.
-          if(ev.target.closest('button,input,label,a')) return;
-          group.classList.toggle('open');
-        });
-      } else if(body){
-        body.appendChild(el);
-      }
+      if(el.classList.contains('dlbl')) body = _makeFold(col, el, 'tm-group');
+      else if(body) body.appendChild(el);
     });
   });
   // One group open to start, so the section never reads as an empty menu.
   panel.querySelectorAll(':scope > .panel-2col > div > .tm-group:first-child')
        .forEach(g => g.classList.add('open'));
   panel.dataset.tmGrouped = '1';
+}
+
+/* How Bot Behavior Works is 3,493px of continuous reference prose on a phone —
+   four essays under four headings, with no way to reach the third without
+   reading past the first two. Each .formula-box already has a .formula-title,
+   so the box itself becomes the fold and the title its header. Unlike Move
+   Timing these all start CLOSED: it is reference material you come to with a
+   question, not controls you came to set. */
+function foldHowMoves(){
+  const panel = document.querySelector('#sec-howmoves .panel');
+  if(!panel || panel.dataset.hmFolded) return;
+  panel.querySelectorAll('.formula-box').forEach(box => {
+    const title = box.querySelector(':scope > .formula-title');
+    if(!title) return;
+    box.classList.add('fold');
+    const body = document.createElement('div');
+    body.className = 'tm-body';
+    [...box.children].forEach(el => { if(el !== title) body.appendChild(el); });
+    box.appendChild(body);
+    title.classList.add('fold-head');
+    const caret = document.createElement('span');
+    caret.className = 'tm-caret';
+    title.appendChild(caret);
+    title.addEventListener('click', ev => {
+      if(ev.target.closest('button,input,label,a')) return;
+      // Accordion, not independent folds. Two reasons: you read one of these
+      // at a time, and with all four open the section is 3606px — past the
+      // .panel-shell ceiling, which would truncate the last one silently.
+      const wasOpen = box.classList.contains('open');
+      panel.querySelectorAll('.formula-box.fold.open').forEach(o => o.classList.remove('open'));
+      if(!wasOpen) box.classList.add('open');
+    });
+  });
+  panel.dataset.hmFolded = '1';
 }
 
 // Same accordion as the attractor rows: eight custom controls at ~330px each
@@ -11200,20 +11333,23 @@ function drawCurve(canvasId, ctrl, sigFn, yMin, yMax, yFmt, lineColor, fillColor
     const y = yp(v);
     ctx.strokeStyle='rgba(255,255,255,0.05)'; ctx.lineWidth=0.5;
     ctx.beginPath(); ctx.moveTo(PAD.l,y); ctx.lineTo(w-PAD.r,y); ctx.stroke();
-    ctx.fillStyle=_curveLabelColor; ctx.font='9px "DM Mono",monospace'; ctx.textAlign='right';
+    ctx.fillStyle=_curveLabelColor; ctx.font=_chartFont(9); ctx.textAlign='right';
     ctx.fillText(yFmt(v), PAD.l-4, y+3);
   }
 
   // ── X grid + labels (log: decade ticks; linear: even intervals)
+  // Ten ticks sit ~30px apart on a phone, where "1000s" alone is ~33px wide at
+  // the 11px type floor. Half as many decades, so the labels can grow.
+  const _phT = _isPhoneLayout();
   const xTicks = scale==='log'
-    ? [1,2,5,10,20,50,100,200,500,1000]
-    : [20,40,60,80,100,120,140,160,180,200];
+    ? (_phT ? [1,5,20,100,500] : [1,2,5,10,20,50,100,200,500,1000])
+    : (_phT ? [40,80,120,160,200] : [20,40,60,80,100,120,140,160,180,200]);
   xTicks.forEach(t => {
     if(t < X_MIN || t > X_MAX) return;
     const x = xp(t);
     ctx.strokeStyle='rgba(255,255,255,0.05)'; ctx.lineWidth=0.5;
     ctx.beginPath(); ctx.moveTo(x,PAD.t); ctx.lineTo(x,CH-PAD.b); ctx.stroke();
-    ctx.fillStyle=_curveLabelColor; ctx.font='9px "DM Mono",monospace'; ctx.textAlign='center';
+    ctx.fillStyle=_curveLabelColor; ctx.font=_chartFont(9); ctx.textAlign='center';
     ctx.fillText(t+'s', x, CH-PAD.b+13);
   });
 
@@ -11223,7 +11359,7 @@ function drawCurve(canvasId, ctrl, sigFn, yMin, yMax, yFmt, lineColor, fillColor
   ctx.strokeStyle='rgba(200,146,42,0.35)'; ctx.lineWidth=1; ctx.setLineDash([4,3]);
   ctx.beginPath(); ctx.moveTo(gxp,PAD.t); ctx.lineTo(gxp,CH-PAD.b); ctx.stroke();
   ctx.setLineDash([]);
-  ctx.fillStyle='rgba(200,146,42,0.7)'; ctx.font='8px "DM Mono",monospace'; ctx.textAlign='center';
+  ctx.fillStyle='rgba(200,146,42,0.7)'; ctx.font=_chartFont(8); ctx.textAlign='center';
   ctx.fillText('game start', gxp, PAD.t-3);
 
   // ── Axis border
@@ -11231,7 +11367,7 @@ function drawCurve(canvasId, ctrl, sigFn, yMin, yMax, yFmt, lineColor, fillColor
   ctx.strokeRect(PAD.l, PAD.t, w-PAD.l-PAD.r, CH-PAD.t-PAD.b);
 
   // ── Axis titles
-  ctx.fillStyle=_curveDimColor; ctx.font='8px "DM Mono",monospace'; ctx.textAlign='center';
+  ctx.fillStyle=_curveDimColor; ctx.font=_chartFont(8); ctx.textAlign='center';
   ctx.fillText('think time per move — more time \u2192 left', w/2, CH-2);
   ctx.save(); ctx.translate(11, CH/2); ctx.rotate(-Math.PI/2);
   ctx.fillText(canvasId==='cvA'?'Effective ELO':'Available distribution %', 0, 0);
@@ -11244,7 +11380,7 @@ function drawCurve(canvasId, ctrl, sigFn, yMin, yMax, yFmt, lineColor, fillColor
       const fxR = xp(X_MIN), fxL = xp(Math.min(3, X_MIN+2));
       ctx.fillStyle='rgba(163,45,45,0.12)';
       ctx.fillRect(fxL, PAD.t, fxR-fxL, CH-PAD.t-PAD.b);
-      ctx.fillStyle='#A32D2D'; ctx.font='8px "DM Mono",monospace'; ctx.textAlign='center';
+      ctx.fillStyle='#A32D2D'; ctx.font=_chartFont(8); ctx.textAlign='center';
       ctx.fillText('flag zone', (fxL+fxR)/2, PAD.t+11);
     }
   }
@@ -11499,6 +11635,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   // default engine and the phone description tail would start empty.
   updateEngineDescTail();
   tmGroupTiming();
+  foldHowMoves();
   onDaySlider(); // init dual-range fill
   _updateEnginePanelHeader();
   updatePersonalityGating(); // reflect the initial engine in the personality section

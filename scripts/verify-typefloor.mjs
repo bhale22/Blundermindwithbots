@@ -38,8 +38,12 @@ async function openAll(width, height, mobile) {
     if (typeof customControls !== 'undefined' && !customControls.length) addCustomControl();
   });
   await page.waitForTimeout(700);
-  // Force every inner tab pane visible so collapsed panes are measured too.
-  await page.evaluate(() => document.querySelectorAll('.itab-pane').forEach(x => x.classList.add('active')));
+  // Force every inner tab pane visible so collapsed panes are measured too —
+  // and every fold open, or the type inside them goes unmeasured.
+  await page.evaluate(() => {
+    document.querySelectorAll('.itab-pane').forEach(x => x.classList.add('active'));
+    document.querySelectorAll('.tm-group,.formula-box.fold').forEach(x => x.classList.add('open'));
+  });
   await page.waitForTimeout(500);
   return { ctx, page };
 }
@@ -62,6 +66,54 @@ const textUnder = (page, floor) => page.evaluate(f => {
   });
   return [...new Set(out)];
 }, floor);
+
+// Each section's real content height vs the accordion's max-height ceiling.
+// Sections are opened one at a time so nothing is measured mid-transition.
+//
+// openAll() force-shows every inner tab pane at once so the type scan can see
+// them, which is a state no user reaches — five stacked panes put Personality
+// at 4105px. So this restores one active pane per section first and measures
+// the realistic worst case: the tallest single tab, with the folds a user can
+// actually open left as they are.
+async function sectionHeights(page) {
+  const ids = await page.evaluate(() => {
+    document.querySelectorAll('.itab-strip').forEach(strip => {
+      const panes = strip.parentElement.querySelectorAll(':scope > .itab-pane');
+      panes.forEach((p, i) => p.classList.toggle('active', i === 0));
+    });
+    return [...document.querySelectorAll('.section')].map(s => s.id);
+  });
+  const out = [];
+  for (const id of ids) {
+    await page.evaluate(i => {
+      document.querySelectorAll('.section.open').forEach(s => toggleSec(s.id.replace('sec-', '')));
+      toggleSec(i.replace('sec-', ''));
+    }, id);
+    await page.waitForTimeout(650);
+    out.push(await page.evaluate(i => {
+      const sec = document.getElementById(i);
+      const panel = sec.querySelector('.panel');
+      const cap = parseFloat(getComputedStyle(sec.querySelector('.panel-shell')).maxHeight);
+      // How Bot Behavior Works folds as an accordion, so "all four open" is a
+      // state no user can reach. The real worst case is the tallest single
+      // fold — measure each in turn and take the maximum.
+      const folds = [...panel.querySelectorAll('.formula-box.fold')];
+      let h = 0;
+      if (folds.length) {
+        folds.forEach(f => f.classList.remove('open'));
+        folds.forEach(f => {
+          f.classList.add('open');
+          h = Math.max(h, panel.scrollHeight);
+          f.classList.remove('open');
+        });
+      } else {
+        h = panel.scrollHeight;
+      }
+      return { id: i.replace('sec-', ''), h: Math.round(h), cap };
+    }, id));
+  }
+  return out;
+}
 
 // SVG <text> is measured in rendered pixels: user units × (width ÷ viewBox).
 const svgUnder = (page, floor) => page.evaluate(f => {
@@ -156,6 +208,15 @@ console.log('\nPHONE  390×844  — 11px floor');
   });
   ok('every text/number input and select is ≥44px tall', small.length === 0, small.join('\n      → '));
 
+  // ── The accordion's height ceiling ──
+  // .section.open .panel-shell caps at max-height:3600px with overflow:hidden,
+  // so a section that outgrows it is truncated silently. Held by this check
+  // rather than by the CSS — see the .panel-shell comment for why the cap
+  // cannot simply be removed.
+  const caps = await sectionHeights(page);
+  caps.forEach(s => ok(`${s.id} clears the 3600px accordion cap (${s.h}px)`,
+    s.h < s.cap, `${s.h} ≥ ${s.cap} — content is being CUT OFF`));
+
   const errs = [];
   page.on('pageerror', e => errs.push(e.message));
   await page.waitForTimeout(300);
@@ -196,6 +257,10 @@ console.log('\nDESKTOP  1440×900  — density preserved on purpose');
     return t ? parseFloat(getComputedStyle(t).fontSize) : null;
   });
   ok('SVG 7-unit labels untouched on desktop', svgSpec === 7, 'got ' + svgSpec);
+
+  const dcaps = await sectionHeights(page);
+  dcaps.forEach(s => ok(`${s.id} clears the accordion cap on desktop (${s.h}px)`,
+    s.h < s.cap, `${s.h} ≥ ${s.cap} — content is being CUT OFF`));
 
   await ctx.close();
 }
