@@ -149,13 +149,16 @@ console.log('\nPHONE  390×844');
   ok('nudge clamps at −5', await page.evaluate(() => attractorValues.chaos === -5));
 
   // ── Accordion ──
-  await page.click('#attrhead-attr-gambito');
+  // Uses 'trade' (set to −5 above) rather than an untouched row: by this point
+  // the active-first partition has folded the centred rows away, which is the
+  // feature working, not a failure.
+  await page.click('#attrhead-attr-trade');
   await page.waitForTimeout(200);
   ok('opening another row closes the first',
-    (await shown(page, '#attr-gambito')) && !(await shown(page, '#attr-chaos')));
-  await page.click('#attrhead-attr-gambito');
+    (await shown(page, '#attr-trade')) && !(await shown(page, '#attr-chaos')));
+  await page.click('#attrhead-attr-trade');
   await page.waitForTimeout(200);
-  ok('tapping an open row closes it', !(await shown(page, '#attr-gambito')));
+  ok('tapping an open row closes it', !(await shown(page, '#attr-trade')));
 
   // ── Piece rows use the same component ──
   await page.evaluate(() => attrSetValue('piece-knight', 2));
@@ -183,6 +186,119 @@ console.log('\nPHONE  390×844');
   ok('radar drag repaints the head',
     await page.evaluate(() => document.getElementById('attrset-attr-chaos').textContent.trim() === '-2'
       && document.getElementById('attrname-attr-chaos').innerText.trim() === 'Simplifier'));
+
+  // ── Active-first partition ──
+  // Entropy leaves 'pressure' at 0, so exactly one strategic row is inactive.
+  await page.evaluate(() => { switchItab('attract', 'presets'); _applyPersonality('entropy'); switchItab('attract', 'pieces'); });
+  await page.waitForTimeout(250);
+  ok('list is partitioned once something is set',
+    await page.evaluate(() => document.getElementById('attractor-rows').classList.contains('partitioned')));
+  ok('inactive row is folded away', !(await shown(page, '#attrg-attr-pressure')));
+  ok('active rows still shown', await shown(page, '#attrg-attr-chaos'));
+  ok('active rows sort above the expander', await page.evaluate(() => {
+    const g = document.getElementById('attrg-attr-chaos');
+    const b = document.getElementById('attrmore-attractor-rows');
+    return getComputedStyle(g).order === '1' && getComputedStyle(b).order === '2';
+  }));
+  const moreTxt = await page.evaluate(() => document.getElementById('attrmore-attractor-rows').textContent.trim());
+  ok('expander counts the folded rows', /^Show 1 more$/.test(moreTxt), moreTxt);
+  await page.click('#attrmore-attractor-rows');
+  await page.waitForTimeout(200);
+  ok('expander reveals them', await shown(page, '#attrg-attr-pressure'));
+  ok('expander flips its label', await page.evaluate(() =>
+    /Show only the 9 in use/.test(document.getElementById('attrmore-attractor-rows').textContent)));
+  await page.click('#attrmore-attractor-rows');
+  await page.waitForTimeout(200);
+  ok('expander folds them again', !(await shown(page, '#attrg-attr-pressure')));
+
+  // A list with nothing set must stay whole — folding everything behind one
+  // button would greet a fresh bot with an empty tab. (Presets don't touch
+  // piece values, so clear the one this run set earlier.)
+  // Close the knight row first: an open row deliberately freezes its list's
+  // partition, so leaving it open would keep the stale buckets.
+  await page.evaluate(() => {
+    if (document.getElementById('attrg-piece-knight').classList.contains('open')) toggleAttrRow('piece-knight');
+    attrSetValue('piece-knight', 0);
+  });
+  await page.waitForTimeout(200);
+  ok('untouched list is NOT partitioned',
+    await page.evaluate(() => !document.getElementById('piece-rows').classList.contains('partitioned')));
+  ok('every piece row visible while none are set', await shown(page, '#attrg-piece-rook'));
+
+  // The row being edited must never slide out from under the finger.
+  await page.evaluate(() => { document.getElementById('attractor-rows').classList.add('show-all'); _repartitionAttrList('attractor-rows'); });
+  await page.click('#attrhead-attr-pressure');
+  await page.waitForTimeout(200);
+  await page.evaluate(() => attrSetValue('attr-pressure', 3));
+  await page.waitForTimeout(200);
+  ok('open row keeps its bucket while being edited',
+    await page.evaluate(() => !document.getElementById('attrg-attr-pressure').classList.contains('part-active')));
+  ok('...and is still on screen', await shown(page, '#attrg-attr-pressure'));
+  await page.click('#attrhead-attr-pressure');   // close → allowed to re-sort
+  await page.waitForTimeout(200);
+  ok('closing re-sorts it into the active group',
+    await page.evaluate(() => document.getElementById('attrg-attr-pressure').classList.contains('part-active')));
+  ok('nothing inactive left → expander retires',
+    await page.evaluate(() => !document.getElementById('attractor-rows').classList.contains('partitioned')));
+
+  // ── Radar: display, not editor ──
+  await page.evaluate(() => switchItab('attract', 'quality'));
+  await page.waitForTimeout(250);
+  ok('radar caption tells you a tap navigates', await shown(page, '.radar-hint-phone'));
+  ok('...and the drag caption is gone', !(await shown(page, '.radar-hint-desk')));
+  ok('radar fits the column', await page.evaluate(() => {
+    const c = document.getElementById('radar-canvas');
+    return c.getBoundingClientRect().width <= c.parentElement.getBoundingClientRect().width + 1;
+  }));
+  const before = await page.evaluate(() => attractorValues.chaos);
+  await page.evaluate(() => {
+    // Tap the Chaos spoke (axis 0 = straight up from centre 160,130).
+    const c = document.getElementById('radar-canvas'), r = c.getBoundingClientRect();
+    const sx = r.width / c.width, sy = r.height / c.height;
+    c.dispatchEvent(new TouchEvent('touchstart', {
+      bubbles: true, cancelable: true,
+      touches: [new Touch({ identifier: 1, target: c,
+        clientX: r.left + 160 * sx, clientY: r.top + (130 - 70) * sy })],
+    }));
+  });
+  await page.waitForTimeout(500);
+  ok('radar tap does NOT change the value',
+    await page.evaluate(v => attractorValues.chaos === v, before), 'was ' + before);
+  ok('radar tap switches to the Strategy tab',
+    await page.evaluate(() => document.getElementById('itab-attract-pieces').classList.contains('active')));
+  ok('radar tap opens that axis\'s row',
+    await page.evaluate(() => document.getElementById('attrg-attr-chaos').classList.contains('open')));
+
+  // 'luck' has no row — ATTRACTORS is filtered by id !== 'luck' — so it routes
+  // to the dual slider that actually governs Good day / Bad day.
+  await page.evaluate(() => { switchItab('attract', 'quality'); _radarNavigate(8); });
+  await page.waitForTimeout(400);
+  ok('Bad day axis routes to Move Distribution Range',
+    await page.evaluate(() => document.getElementById('itab-attract-quality').classList.contains('active')
+      && !!document.getElementById('move-quality-range')));
+
+  // ── Custom controls as cards ──
+  await page.evaluate(() => { switchItab('attract', 'custom'); addCustomControl(); });
+  await page.waitForTimeout(300);
+  const ccId = await page.evaluate(() => customControls[0].id);
+  ok('a custom control renders', await shown(page, '.cc-row2'));
+  ok('column-header strip dropped', !(await shown(page, '.cc-headers')));
+  const sel = await box(page, '.cc-row2 .cc-select');
+  ok('selects are 44px targets', sel.h >= 44, sel.h + 'px');
+  ok('selects go full width', sel.w > 230, sel.w + 'px');
+  const ccTrack = await box(page, `#ccslider-${ccId}`);
+  ok('strength track gets real width', ccTrack.w > 250, ccTrack.w + 'px');
+  const mm = await box(page, '.cc-slidecell .cc-mm');
+  ok('direction label sits below the track', mm.y > ccTrack.y + ccTrack.h - 8,
+    `mmY ${mm.y} vs trackBottom ${ccTrack.y + ccTrack.h}`);
+  await page.click(`.cc-row2 .attr-steppers .attr-step:last-child`);
+  await page.waitForTimeout(150);
+  ok('custom-control stepper writes through onCustomControlValue',
+    await page.evaluate(() => customControls[0].value === 1));
+  ok('its cp readout updates',
+    await page.evaluate(id => /cp$/.test(document.getElementById('ccval-' + id).textContent), ccId));
+  const ccCard = await box(page, '.cc-row2');
+  ok('card stays inside the column', ccCard.w <= 340, ccCard.w + 'px');
 
   ok('no horizontal overflow', await page.evaluate(() =>
     document.documentElement.scrollWidth <= window.innerWidth + 1));
@@ -236,6 +352,46 @@ console.log('\nDESKTOP  1440×900  (must be unchanged)');
   await page.waitForTimeout(150);
   ok('desktop slider still updates state + cp',
     await page.evaluate(() => attractorValues.fortkx === 4 && /cp$/.test(document.getElementById('attrval-fortkx').textContent)));
+
+  // ── The three later additions must also be invisible at 1440 ──
+  await page.evaluate(() => { switchItab('attract', 'presets'); _applyPersonality('entropy'); switchItab('attract', 'pieces'); });
+  await page.waitForTimeout(250);
+  ok('no expander button', !(await shown(page, '#attrmore-attractor-rows')));
+  ok('every row visible, nothing folded', await shown(page, '#attrg-attr-pressure'));
+  ok('.attr-list is not a flex column',
+    await page.evaluate(() => getComputedStyle(document.getElementById('attractor-rows')).display) !== 'flex');
+  ok('rows keep DOM order (no reordering)',
+    await page.evaluate(() => getComputedStyle(document.getElementById('attrg-attr-chaos')).order) === '0');
+
+  // The radar lives on the Quality tab — switch back before asserting on it.
+  await page.evaluate(() => switchItab('attract', 'quality'));
+  await page.waitForTimeout(250);
+  ok('radar caption still says drag', await shown(page, '.radar-hint-desk'));
+  ok('phone caption hidden', !(await shown(page, '.radar-hint-phone')));
+  const rBefore = await page.evaluate(() => attractorValues.trade);
+  await page.evaluate(() => {
+    // Axis 1 is 'trade'. Aim down its spoke at 2/3 radius rather than guessing
+    // a pixel — a near-miss lands on a neighbouring axis and proves nothing.
+    const c = document.getElementById('radar-canvas'), r = c.getBoundingClientRect();
+    const ang = (1 / RADAR_AXES.length) * 2 * Math.PI - Math.PI / 2;
+    const cx = 160 + 60 * Math.cos(ang), cy = 130 + 60 * Math.sin(ang);
+    c.dispatchEvent(new MouseEvent('mousedown', { bubbles: true,
+      clientX: r.left + cx * (r.width / c.width),
+      clientY: r.top + cy * (r.height / c.height) }));
+    window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+  });
+  await page.waitForTimeout(200);
+  ok('desktop radar still EDITS on click',
+    await page.evaluate(v => attractorValues.trade !== v, rBefore), 'unchanged at ' + rBefore);
+
+  await page.evaluate(() => { switchItab('attract', 'custom'); addCustomControl(); });
+  await page.waitForTimeout(300);
+  ok('custom-control header strip still shown', await shown(page, '.cc-headers'));
+  ok('custom control is still one row', await page.evaluate(() => {
+    const r = document.querySelector('.cc-row2').getBoundingClientRect();
+    return r.height < 70;
+  }));
+  ok('custom-control steppers hidden', !(await shown(page, '.cc-row2 .attr-steppers')));
 
   await ctx.close();
 }

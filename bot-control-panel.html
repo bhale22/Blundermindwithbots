@@ -873,8 +873,12 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
    box tree entirely, so the desktop row lays out exactly as it did when
    .attractor-row was a direct child of .attr-group. */
 .attr-body{display:contents;}
-.attr-head,.attr-steppers{display:none;}
+.attr-head,.attr-steppers,.attr-more,.radar-hint-phone{display:none;}
 .attr-left-piece{width:70px;}
+/* .attr-list is deliberately unstyled here — it only becomes a flex column on
+   phones, where the active-first ordering needs it. */
+@keyframes attrFlash{0%,100%{box-shadow:none;}35%{box-shadow:0 0 0 2px var(--amber);}}
+.attr-flash{animation:attrFlash 1.4s ease;border-radius:var(--r);}
 
 /* Piece attractor grid */
 .piece-grid{display:grid;grid-template-columns:auto 1fr 1fr;gap:0;background:var(--carbon-surface);border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden;}
@@ -1989,6 +1993,66 @@ body.fj .picon{font-weight:500;}
   .attr-group.open .attr-desc code{font-size:11px;}
   /* ...but only for the row that is open. */
   .attr-group:not(.open) .attr-desc{display:none;}
+
+  /* ── Active first, silent rows folded ──
+     `order` rather than reordering the DOM, so renderAttractors stays the one
+     place row order is expressed and every id keeps its position in markup. */
+  .attr-list{display:flex;flex-direction:column;}
+  .attr-list > .attr-group{order:3;}
+  .attr-list > .attr-group.part-active{order:1;}
+  .attr-list > .attr-more{order:2;}
+  .attr-list.partitioned > .attr-more{
+    display:block;width:100%;min-height:44px;margin:4px 0 2px;
+    background:none;border:0.5px dashed var(--border);border-radius:var(--r);
+    color:var(--text-dim);font-family:var(--font-m);font-size:11px;
+    letter-spacing:0.08em;cursor:pointer;
+  }
+  .attr-list.partitioned > .attr-more:active{border-color:var(--amber-dim);color:var(--amber);}
+  /* An open row is never folded away, whatever bucket it lands in. */
+  .attr-list.partitioned:not(.show-all) > .attr-group:not(.part-active):not(.open){display:none;}
+
+  /* Radar keeps drawing the fingerprint but stops taking values — see
+     _radarNavigate. Swap the caption to say what a tap now does. */
+  .radar-hint-desk{display:none;}
+  .radar-hint-phone{display:inline;}
+  .radar-hint{font-size:11px;}
+  #radar-canvas{max-width:100%;height:auto;}
+
+  /* ═══ CUSTOM CONTROLS ═══
+     .cc-row2 is a six-track grid (four selects, the slider cell, delete) whose
+     narrowest column alone asks for 195px — at 328px it was the most crushed
+     control in the panel. Each control becomes a card instead: what it
+     measures on top with its delete, the three gates stacked full-width
+     beneath, then the strength track. The .cc-headers strip is dropped
+     because each select already states its own value ("All phases",
+     "Any result", "Any clock"). */
+  .cc-headers{display:none;}
+  .cc-row2{
+    grid-template-columns:1fr 44px;gap:8px;
+    padding:11px;margin-bottom:10px;border-left-width:3px;
+  }
+  .cc-row2 > :nth-child(1){grid-area:1 / 1 / 2 / 2;}   /* variable  */
+  .cc-row2 > :nth-child(6){grid-area:1 / 2 / 2 / 3;}   /* delete    */
+  .cc-row2 > :nth-child(2){grid-area:2 / 1 / 3 / 3;}   /* phase     */
+  .cc-row2 > :nth-child(3){grid-area:3 / 1 / 4 / 3;}   /* result    */
+  .cc-row2 > :nth-child(4){grid-area:4 / 1 / 5 / 3;}   /* clock     */
+  .cc-row2 > :nth-child(5){grid-area:5 / 1 / 6 / 3;}   /* strength  */
+  .cc-field{font-size:12px;min-height:44px;padding:8px 10px;border-radius:var(--r);}
+  .cc-del{width:44px;height:44px;font-size:18px;justify-self:end;}
+  /* Track full width with its direction labels beneath the ends, matching the
+     open attractor row — same control, same shape. */
+  .cc-slidecell{flex-wrap:wrap;gap:4px 8px;}
+  .cc-slidecell .attr-slider{flex:1 1 100%;order:1;min-width:0;}
+  .cc-mm{
+    order:2;flex:1 1 0;max-width:none;font-size:11px;
+    white-space:normal;overflow:visible;
+  }
+  /* Gap so the cp figure reads as its own value rather than a word tacked
+     onto the right-hand direction label. */
+  .cc-slidecell .cc-mm:nth-of-type(2){text-align:right;padding-right:8px;}
+  .cc-sval{order:3;flex:0 0 auto;font-size:12px;min-width:46px;}
+  .cc-slidecell .attr-steppers{order:4;flex:1 1 100%;}
+  .cc-empty{font-size:11.5px;line-height:1.55;}
 }
 </style>
 </head>
@@ -2500,7 +2564,7 @@ body.fj .picon{font-weight:500;}
               <div class="dlbl"><span>Personality fingerprint</span></div>
               <div class="radar-wrap">
                 <canvas id="radar-canvas" width="320" height="260"></canvas>
-                <div class="radar-hint">drag nodes or click axis to set value</div>
+                <div class="radar-hint"><span class="radar-hint-desk">drag nodes or click axis to set value</span><span class="radar-hint-phone">tap an axis to open its control</span></div>
               </div>
 
               <!-- Clock tactics — synced with the same switches in Move Timing -->
@@ -2540,13 +2604,13 @@ body.fj .picon{font-weight:500;}
             <!-- LEFT: Strategic preference sliders (more prominent) -->
             <div>
               <div class="dlbl"><span>Strategic preferences</span></div>
-              <div id="attractor-rows"></div>
+              <div class="attr-list" id="attractor-rows"></div>
             </div>
             <!-- RIGHT: Piece focus -->
             <div>
               <div class="dlbl"><span>Piece focus</span></div>
               <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-bottom:8px;">Left = avoid · Right = seek · Center = neutral</div>
-              <div id="piece-rows"></div>
+              <div class="attr-list" id="piece-rows"></div>
             </div>
           </div>
         </div>
@@ -9293,6 +9357,8 @@ function syncAttrHeads(){
     const grp = document.getElementById('attrg-' + inputId);
     if(grp) grp.classList.toggle('is-set', val !== 0);
   });
+  _repartitionAttrList('attractor-rows');
+  _repartitionAttrList('piece-rows');
 }
 
 // Accordion within one list: opening a row closes its siblings, so the open
@@ -9311,6 +9377,52 @@ function toggleAttrRow(inputId){
     const h = grp.querySelector('.attr-head');
     if(h) h.setAttribute('aria-expanded', 'true');
   }
+  // Closing is the moment the list is allowed to re-sort — see below.
+  _repartitionAttrList(grp.parentElement);
+}
+
+/* ── Active-first partition (phone) ────────────────────────────────────────
+   Seventeen rows is a long scroll when most of them are centred and doing
+   nothing. Rows that spend budget sort above the ones that don't, and the
+   silent ones fold behind a "Show N more".
+
+   Two rules keep it from being annoying:
+   · A list where NOTHING is set stays fully expanded. Folding all ten away
+     would greet a fresh bot with a tab containing one button.
+   · The partition is never recomputed while a row in that list is open, so
+     nudging a centred row to +1 can't slide it out from under your finger.
+     Closing the row is what re-sorts. */
+function _attrMoreBtn(containerId){
+  return `<button type="button" class="attr-more" id="attrmore-${containerId}"
+      aria-expanded="false" onclick="toggleAttrMore('${containerId}')"></button>`;
+}
+
+function _repartitionAttrList(container){
+  if(typeof container === 'string') container = document.getElementById(container);
+  if(!container) return;
+  if(container.querySelector('.attr-group.open')) return;   // mid-edit: leave it alone
+  const groups = [...container.querySelectorAll('.attr-group')];
+  let active = 0;
+  groups.forEach(g => {
+    const on = g.classList.contains('is-set');
+    g.classList.toggle('part-active', on);
+    if(on) active++;
+  });
+  const hidden = groups.length - active;
+  container.classList.toggle('partitioned', active > 0 && hidden > 0);
+  const btn = container.querySelector('.attr-more');
+  if(btn){
+    const openAll = container.classList.contains('show-all');
+    btn.textContent = openAll ? 'Show only the ' + active + ' in use' : 'Show ' + hidden + ' more';
+    btn.setAttribute('aria-expanded', openAll ? 'true' : 'false');
+  }
+}
+
+function toggleAttrMore(containerId){
+  const c = document.getElementById(containerId);
+  if(!c) return;
+  c.classList.toggle('show-all');
+  _repartitionAttrList(c);
 }
 
 // Writes through the range input and fires its own oninput, so the existing
@@ -9350,7 +9462,7 @@ function renderAttractors(){
         <div class="attr-desc">${ATTRACTOR_DESCS[a.id] || ''}</div>
       </div>
     </div>
-  `).join('');
+  `).join('') + _attrMoreBtn(container.id);
   syncAttrHeads();
 }
 
@@ -9411,7 +9523,7 @@ function renderPieceAttractors(){
         <div class="attr-desc">${PIECE_DESCS[p.id] || ''}</div>
       </div>
     </div>
-  `).join('');
+  `).join('') + _attrMoreBtn(container.id);
   syncAttrHeads();
 }
 
@@ -9478,9 +9590,11 @@ function renderCustomControls(){
       <div class="cc-slidecell">
         <span class="cc-mm" title="${_ccEsc(m.min)}">${m.min}</span>
         <input class="attr-slider" type="range" min="-5" max="5" step="1" value="${c.value||0}"
+          id="ccslider-${c.id}"
           oninput="onCustomControlValue('${c.id}',this.value)">
         <span class="cc-mm" title="${_ccEsc(m.max)}">${m.max}</span>
         <span class="attr-val cc-sval" id="ccval-${c.id}">—</span>
+        ${_attrSteppers('ccslider-' + c.id)}
       </div>
       <button type="button" class="cc-del" onclick="removeCustomControl('${c.id}')" title="Remove control">×</button>
     </div>`;
@@ -9729,6 +9843,46 @@ function _radarSetAxis(axIdx, val){
   selectedPersonality=null;
 }
 
+/* ── Radar on phones: a display, not an editor ─────────────────────────────
+   Eleven axes on a ~300px canvas gives each node a target about 10px across —
+   worse than the sliders it was meant to rescue, and a drag that misses sets
+   the WRONG attractor. So on a phone the radar keeps drawing the fingerprint
+   and a tap becomes navigation: it opens the control for that axis.
+
+   'luck' is the one axis with no attractor row (ATTRACTORS is filtered by
+   id !== 'luck' — Good day/Bad day is governed by the Move Distribution Range
+   dual slider), so it routes there instead. */
+const _isPhoneLayout = () => window.matchMedia('(max-width:760px)').matches;
+
+function _radarNavigate(axIdx){
+  const ax = RADAR_AXES[axIdx];
+  if(!ax) return;
+  if(ax.key === 'luck'){
+    switchItab('attract', 'quality');
+    setTimeout(() => {
+      const el = document.getElementById('move-quality-range');
+      if(el){
+        el.scrollIntoView({ behavior:'smooth', block:'center' });
+        el.classList.add('attr-flash');
+        setTimeout(() => el.classList.remove('attr-flash'), 1400);
+      }
+    }, 90);
+    return;
+  }
+  const inputId = 'attr-' + ax.key;
+  switchItab('attract', 'pieces');
+  setTimeout(() => {
+    const grp = document.getElementById('attrg-' + inputId);
+    if(!grp) return;
+    // The row may be folded away as "not in use" — reveal its list first.
+    const list = grp.parentElement;
+    if(list && !grp.classList.contains('is-set')) list.classList.add('show-all');
+    _repartitionAttrList(list);
+    if(!grp.classList.contains('open')) toggleAttrRow(inputId);
+    grp.scrollIntoView({ behavior:'smooth', block:'center' });
+  }, 90);
+}
+
 function initRadarInteraction(){
   const canvas=document.getElementById('radar-canvas');
   if(!canvas) return;
@@ -9783,6 +9937,9 @@ function initRadarInteraction(){
     const {mx,my}=_radarCanvasPos(canvas,t.clientX,t.clientY);
     const idx=_radarNearestAxis(mx,my);
     if(idx<0) return;
+    // Phone: navigate to the axis's own control instead of setting it here.
+    // _radarDragIdx stays -1, so touchmove can't drag a value either.
+    if(_isPhoneLayout()){ _radarNavigate(idx); return; }
     _radarDragIdx=idx;
     _radarSetAxis(idx, _radarAxisValue(mx,my,idx));
   },{passive:false});
