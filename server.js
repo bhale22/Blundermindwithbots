@@ -221,6 +221,108 @@ app.get('/stockfish.wasm', (req, res) => {
   res.send(sfWasm);
 });
 
+// ── PWA: manifest, service worker, icons ────────────────────────────────────
+// The manifest is generated rather than a static file because the two domains
+// are two products: buildabotchess.com opens the Expert board, everything else
+// is Blundermind (same split 00-head.html makes client-side). Installing from
+// either should give you that one, named correctly, with its own start URL.
+app.get('/manifest.webmanifest', (req, res) => {
+  const isBab = /(^|\.)buildabotchess\.com$/i.test(req.hostname || '');
+  const name = isBab ? 'Build-A-Bot Chess' : 'Blundermind';
+  res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.json({
+    name,
+    short_name: name,
+    description: isBab
+      ? 'Build a chess bot with a personality, then play it.'
+      : 'Stop getting blundermined. Board vision training for novice chess players.',
+    start_url: '/',
+    scope: '/',
+    display: 'standalone',
+    orientation: 'any',
+    background_color: '#0e0f11',
+    theme_color: '#0e0f11',
+    categories: ['games', 'education'],
+    icons: [
+      { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
+  });
+});
+
+// ── Digital Asset Links — proves this domain and the Android app are ours ───
+// A Trusted Web Activity is the site running full-screen inside Chrome. Chrome
+// only drops the address bar if it can verify that whoever signed the Android
+// app also controls this domain, and this file is that proof: the app's
+// package name plus the SHA-256 fingerprint(s) of the signing key.
+//
+// Configured by environment, not committed, so the same code serves staging
+// and production and the fingerprint can be set once the key exists:
+//   TWA_PACKAGE_NAME       com.example.app
+//   TWA_CERT_FINGERPRINTS  AA:BB:…  (comma-separated for more than one)
+//
+// TWO fingerprints are normal. With Play App Signing, Google re-signs the app
+// with a key it holds, so the fingerprint users actually get is Google's — the
+// one shown in Play Console under "App signing key certificate". Listing only
+// your local upload key is the usual reason a TWA ships with a visible URL
+// bar. List both and either path verifies.
+const TWA_FP_RE = /^[A-F0-9]{2}(:[A-F0-9]{2}){31}$/i;
+app.get('/.well-known/assetlinks.json', (req, res) => {
+  const pkg = (process.env.TWA_PACKAGE_NAME || '').trim();
+  const fingerprints = (process.env.TWA_CERT_FINGERPRINTS || '')
+    .split(',').map((s) => s.trim()).filter(Boolean);
+
+  // Not configured yet: 404 rather than an empty-but-valid file. A served-but-
+  // failing assetlinks is indistinguishable from a wrong one when debugging.
+  if (!pkg || !fingerprints.length) {
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(404).json({ error: 'assetlinks not configured',
+      hint: 'set TWA_PACKAGE_NAME and TWA_CERT_FINGERPRINTS' });
+    return;
+  }
+  const bad = fingerprints.filter((f) => !TWA_FP_RE.test(f));
+  if (bad.length) {
+    // Loud rather than silently unverifiable — this only shows up otherwise as
+    // an address bar in the shipped app.
+    console.error('[twa] ignoring malformed SHA-256 fingerprint(s):', bad.join(' '));
+  }
+  const good = fingerprints.filter((f) => TWA_FP_RE.test(f));
+  if (!good.length) { res.setHeader('Cache-Control', 'no-store'); res.status(500).json({ error: 'no valid fingerprints' }); return; }
+
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  // Short: Chrome caches its verification result anyway, and a long TTL means
+  // living with a wrong fingerprint for as long as it takes to expire.
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.json([{
+    relation: ['delegate_permission/common.handle_all_urls'],
+    target: {
+      namespace: 'android_app',
+      package_name: pkg,
+      sha256_cert_fingerprints: good.map((f) => f.toUpperCase()),
+    },
+  }]);
+});
+
+// Must be served from the root for its scope to cover the whole app, and must
+// never be cached hard or a bad worker becomes very hard to replace.
+app.get('/sw.js', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Service-Worker-Allowed', '/');
+  res.sendFile(path.join(__dirname, 'sw.js'));
+});
+
+app.get('/icons/:file', (req, res) => {
+  if (!/^[\w.-]+\.png$/.test(req.params.file)) { res.status(404).end(); return; }
+  const p = path.join(__dirname, 'icons', req.params.file);
+  if (!fs.existsSync(p)) { res.status(404).end(); return; }
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Cache-Control', 'public, max-age=604800'); // 7 days
+  res.sendFile(p);
+});
+
 // Serve HTML — short cache with ETag so deploys propagate quickly
 function serveHtml(req, res) {
   loadHtml(); // re-check if file changed (cheap stat call)
