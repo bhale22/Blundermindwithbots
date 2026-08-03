@@ -1,0 +1,5 @@
+# The Android wrapper is built locally with `bubblewrap build` and uploaded to
+# Google Play. It is not a service, it is never deployed, and shipping it in the
+# build context would only risk confusing language detection (it contains a
+# gradlew) and slow every upload.
+android/
