@@ -1201,6 +1201,50 @@ function landingChoose(mode) {
   }
 }
 
+// ── Guided tours from the landing ────────────────────────────────────────────
+// "Take a guided tour" asks which one first rather than guessing: the board
+// overlays and the bot builder are separate skills, and which one a visitor
+// wants depends on why they came.
+function landingTourPick(show) {
+  const el = document.getElementById('landingTourPick');
+  if (!el) return;
+  el.hidden = !show;
+  if (show) {
+    const first = el.querySelector('.ltp-opt');
+    if (first) first.focus();
+    el.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+// 'board' runs the overlay tour for whichever shell is active; 'bot' opens the
+// panel and runs the tour that lives inside its iframe.
+function landingStartTour(which) {
+  landingTourPick(false);
+  try {
+    localStorage.setItem('bm_shell', (typeof proMode !== 'undefined' && proMode) ? 'pro' : 'amateur');
+  } catch (e) {}
+  landingDismiss();
+  if (which === 'bot') {
+    setTimeout(function () { openBotModal(); startBotTour(); }, 340);
+  } else {
+    // Longer wait than the bot path: the overlay tour measures its targets, so
+    // the landing has to be fully out of the way before the first step is rung.
+    setTimeout(function () { if (typeof startTour === 'function') startTour(); }, 520);
+  }
+}
+
+// Force the panel's own tour. openBotModal() also sends botTourAuto, which the
+// panel ignores once the visitor has seen it — this one was asked for, so it
+// takes a message the panel never suppresses.
+function startBotTour() {
+  setTimeout(function () {
+    try {
+      const f = document.getElementById('botModalFrame');
+      if (f && f.contentWindow) f.contentWindow.postMessage({ type: 'botTourForce' }, location.origin);
+    } catch (e) {}
+  }, 620);
+}
+
 function landingLoadBotConfig(event) {
   botLoadConfig(event);
   landingDismiss();
@@ -1227,11 +1271,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (mpCard) {
       mpCard.style.opacity = '0.55';
       mpCard.title = 'Multiplayer requires the deployed server';
+      // Nested inside the existing blurb, not appended as a second
+      // .landing-card-desc: the phone layout is a grid with named areas, and a
+      // second element claiming grid-area:desc renders on top of the first.
       var mpLocalNote = document.createElement('div');
-      mpLocalNote.className = 'landing-card-desc';
-      mpLocalNote.style.cssText = 'color:#c06060;font-style:italic;';
+      mpLocalNote.style.cssText = 'color:#c06060;font-style:italic;margin-top:6px;';
       mpLocalNote.textContent = 'Unavailable locally — requires the deployed server';
-      mpCard.appendChild(mpLocalNote);
+      var mpDesc = mpCard.querySelector('.landing-card-desc');
+      (mpDesc || mpCard).appendChild(mpLocalNote);
     }
   }
   const cv3 = document.getElementById('cv');
@@ -1475,6 +1522,13 @@ window.addEventListener('message', function(e) {
   }
   if (e.data.type === 'formatChanged') {
     if (typeof applyFormat === 'function') applyFormat(e.data.format, true);  // true = no echo back
+    return;
+  }
+  // The bot tour finished and the visitor chose the board tour. Close the panel
+  // first — the overlay tour measures elements behind it.
+  if (e.data.type === 'startBoardTour') {
+    closeBotModal();
+    setTimeout(function () { if (typeof startTour === 'function') startTour(); }, 340);
     return;
   }
   if (e.data.type !== 'botConfig') return;

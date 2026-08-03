@@ -1228,17 +1228,60 @@ function startTour(){
   });
   if(!_tourSteps.length) return;
   _tourIdx = 0; _tourActive = true;
+  // A previous run may have left the outro up in place of the step panel.
+  const _p = document.getElementById('tourPanel'); if(_p) _p.style.display = '';
+  const _o = document.getElementById('tourOutro'); if(_o) _o.style.display = 'none';
   const ov = document.getElementById('tourOverlay'); if(ov) ov.style.display = 'block';
   _renderTourStep();
 }
-function endTour(){
+
+// ── Tour outro — hand off to the other half of the site ──────────────────────
+// The board tour and the bot-builder tour cover the two things this site is,
+// so finishing one is the moment to offer the other. The bot tour lives in the
+// panel iframe, so the handoff goes through startBotTour()'s postMessage.
+function _tourShowOutro(){
+  const ov = document.getElementById('tourOverlay');
+  const panel = document.getElementById('tourPanel');
+  const outro = document.getElementById('tourOutro');
+  const ring = document.getElementById('tourRing');
+  const back = document.getElementById('tourBackdrop');
+  if(!ov || !outro){ if(ov) ov.style.display = 'none'; return; }
+  if(ring) ring.style.display = 'none';
+  if(back) back.style.display = 'block';
+  if(panel) panel.style.display = 'none';
+  outro.style.display = 'block';
+  ov.style.display = 'block';
+  const b = outro.querySelector('.tour-next'); if(b) b.focus();
+}
+function _tourHideOutro(){
+  const ov = document.getElementById('tourOverlay');
+  const panel = document.getElementById('tourPanel');
+  const outro = document.getElementById('tourOutro');
+  const back = document.getElementById('tourBackdrop');
+  if(outro) outro.style.display = 'none';
+  if(panel) panel.style.display = '';
+  if(back) back.style.display = 'none';
+  if(ov) ov.style.display = 'none';
+}
+function tourOutroClose(){ _tourHideOutro(); }
+function tourGoBotTour(){
+  _tourHideOutro();
+  if(typeof openBotModal === 'function') openBotModal();
+  if(typeof startBotTour === 'function') startBotTour();
+}
+function endTour(completed){
   _tourActive = false;
-  const ov = document.getElementById('tourOverlay'); if(ov) ov.style.display = 'none';
+  const ov = document.getElementById('tourOverlay');
   if(_tourShell === 'amateur') _tourRestoreBoard();
   _tourRestoreBoardSettings();
   try{ localStorage.setItem('bm_tour_' + _tourShell, '1'); }catch(e){}
+  // Reaching the end offers the other tour; skipping out just closes. Passing
+  // the distinction in rather than inferring it from _tourIdx keeps "Skip tour"
+  // on the final step behaving like a skip.
+  if(completed === true){ _tourShowOutro(); return; }
+  if(ov) ov.style.display = 'none';
 }
-function tourNext(){ if(_tourIdx < _tourSteps.length - 1){ _tourIdx++; _renderTourStep(); } else endTour(); }
+function tourNext(){ if(_tourIdx < _tourSteps.length - 1){ _tourIdx++; _renderTourStep(); } else endTour(true); }
 function tourPrev(){ if(_tourIdx > 0){ _tourIdx--; _renderTourStep(); } }
 
 function _renderTourStep(){

@@ -574,7 +574,57 @@ canvas{
 
 /* ── Expert landing theme — carbon/amber palette + panel fonts (matches the
       Expert board & bot control panels). Applied when Expert Board is chosen. ── */
-#landingOverlay.landing-expert { background:#0e0f11; font-family:'Chakra Petch',sans-serif; }
+/* Ground and watermark are lifted from the Play feature graphic, so the store
+   listing and the first screen of the app show the same character. The lift to
+   #1a2b3a comes up from below, which is where the knight sits. */
+#landingOverlay.landing-expert {
+  background:radial-gradient(120% 90% at 50% 120%, #1a2b3a 0%, #0e0f11 62%);
+  font-family:'Chakra Petch',sans-serif;
+}
+/* The scanning eye lives on the watermark and nowhere else. It was previously
+   on the title glyph too, at a different duration — two red scanners blinking
+   out of phase read as busy rather than deliberate. */
+.bab-mark { display:none; }
+.landing-expert .bab-mark {
+  display:block;position:fixed;left:-40px;bottom:-120px;
+  width:420px;height:336px;pointer-events:none;z-index:0;
+}
+.bab-mark .bab-knight {
+  position:absolute;left:0;top:0;
+  font:420px/0.8 Georgia,'Times New Roman',serif;
+  color:#ffffff;opacity:0.045;user-select:none;
+}
+/* The bar is the visor slot; the mask fades its trailing edge so the glint
+   emerges from the muzzle instead of switching on at a hard border. */
+.bab-mark .bab-visor {
+  position:absolute;left:113px;top:69px;width:89px;height:12px;border-radius:6px;
+  background:#0e0f11;overflow:hidden;
+  -webkit-mask-image:linear-gradient(to left,#000 0 47%,rgba(0,0,0,0) 66%);
+          mask-image:linear-gradient(to left,#000 0 47%,rgba(0,0,0,0) 66%);
+}
+.bab-mark .bab-glint {
+  position:absolute;left:0;top:0;width:26px;height:12px;filter:blur(1px);
+  background:radial-gradient(closest-side,rgba(255,58,46,0.92),rgba(255,58,46,0) 85%);
+  animation:babVisorSweep 5.6s cubic-bezier(0.37,0,0.63,1) infinite,
+            babVisorFade  5.6s linear infinite;
+}
+@keyframes babVisorSweep {
+  0%,6%    { transform:translateX(57px); }
+  48%,52%  { transform:translateX(26px); }
+  94%,100% { transform:translateX(57px); }
+}
+@keyframes babVisorFade {
+  0%,18%   { opacity:0.92; }
+  44%,56%  { opacity:0; }
+  82%,100% { opacity:0.92; }
+}
+/* A sweeping red light is the exact thing this preference exists for, so stop
+   it outright rather than slowing it down. */
+@media (prefers-reduced-motion:reduce){
+  .bab-mark .bab-glint { animation:none;transform:translateX(57px);opacity:0.9; }
+}
+/* Content rides above the watermark. */
+#landingOverlay .landing-inner { position:relative;z-index:1; }
 .landing-expert .landing-title { font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:300;letter-spacing:0.01em;color:#e8e6e0; }
 .landing-expert .landing-title .lt-accent { color:#c8922a; }
 .landing-expert .landing-shell-btn .ls-brand { color:#c8922a; }
@@ -594,6 +644,10 @@ canvas{
 .landing-cards {
   display:flex;flex-wrap:wrap;gap:16px;justify-content:center;
   max-width:880px;margin-bottom:30px;
+  /* Cards size to their own content. Stretching them to match the tallest —
+     the two-part Load card — left the short ones as mostly empty well once
+     the blurbs were cut down. */
+  align-items:flex-start;
 }
 .landing-card {
   width:195px;padding:24px 16px 20px;
@@ -643,6 +697,56 @@ canvas{
   transition:all 0.12s;
 }
 .landing-upload-btn:hover { border-color:var(--accent);color:var(--accent); }
+/* ── Guided tour: entry line + which-one picker ──────────────────────────
+   Dashed and quiet on purpose. The cards above are what people came to
+   click; this is the way back for someone who wants orientation first. */
+.landing-tour-btn {
+  display:flex;align-items:center;gap:10px;
+  padding:0 18px;min-height:44px;margin-bottom:14px;
+  background:transparent;border:1px dashed var(--border);border-radius:9px;
+  color:var(--text-dim);font-family:inherit;font-size:13px;font-weight:600;
+  cursor:pointer;-webkit-tap-highlight-color:transparent;
+  transition:border-color 0.18s,color 0.18s;
+}
+.landing-tour-btn:hover,.landing-tour-btn:focus-visible {
+  border-color:var(--accent);color:var(--text-primary);outline:none;
+}
+.landing-tour-btn .ltb-icon { font-size:15px;line-height:1; }
+.landing-tour-btn .ltb-chev { opacity:0.6; }
+.landing-expert .landing-tour-btn:hover,
+.landing-expert .landing-tour-btn:focus-visible { border-color:#c8922a; }
+
+.landing-tour-pick {
+  display:flex;flex-direction:column;align-items:center;gap:10px;
+  width:100%;max-width:460px;margin-bottom:16px;
+  padding:16px;background:var(--bg-panel);
+  border:1px solid var(--border);border-radius:10px;
+}
+.landing-tour-pick[hidden] { display:none; }
+.ltp-head {
+  font-size:13px;font-weight:600;color:var(--text-primary);letter-spacing:0.01em;
+}
+.ltp-opts { display:flex;gap:10px;width:100%; }
+.ltp-opt {
+  flex:1;display:flex;flex-direction:column;gap:4px;align-items:flex-start;
+  text-align:left;padding:12px 14px;min-height:44px;
+  background:var(--bg-panel2);border:1px solid var(--border);border-radius:8px;
+  font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;
+  transition:border-color 0.15s,transform 0.12s;
+}
+.ltp-opt:hover,.ltp-opt:focus-visible {
+  border-color:var(--accent);transform:translateY(-1px);outline:none;
+}
+.landing-expert .ltp-opt:hover,
+.landing-expert .ltp-opt:focus-visible { border-color:#c8922a; }
+.ltp-name { font-size:13px;font-weight:600;color:var(--text-primary);line-height:1.25; }
+.ltp-desc { font-size:11px;color:var(--text-dim);line-height:1.4; }
+.ltp-cancel {
+  background:none;border:0;color:var(--text-dim);font-family:inherit;
+  font-size:12px;cursor:pointer;padding:6px 10px;min-height:32px;
+}
+.ltp-cancel:hover,.ltp-cancel:focus-visible { color:var(--text-primary);outline:none; }
+
 .landing-footer {
   font-size:10px;color:var(--text-dim);text-align:center;
   margin-top:8px;
@@ -658,6 +762,10 @@ canvas{
 @media(max-width:760px){
   #landingOverlay{ padding:18px 14px 24px; }
   .landing-inner{ justify-content:flex-start;padding-top:8px; }
+  /* Scale the whole watermark rather than resizing its parts — the visor sweep
+     is keyframed in px, so anything else would desynchronise the glint from
+     the slot it travels along. */
+  .landing-expert .bab-mark{ transform:scale(0.62);transform-origin:left bottom; }
 
   .landing-title{ font-size:31px;text-align:center; }
   .landing-tagline{ font-size:13px;margin-bottom:20px;text-align:center; }
@@ -669,6 +777,14 @@ canvas{
   }
   .landing-shell-pick{ margin-bottom:18px; }
   .landing-cards{ margin-bottom:20px; }
+  /* Tour entry matches the shared column measure; the two options stack so
+     each keeps a full-width 44px target. */
+  .landing-tour-btn{ width:100%;max-width:420px;font-size:14px; }
+  .landing-tour-pick{ max-width:420px; }
+  .ltp-opts{ flex-direction:column; }
+  .ltp-name{ font-size:14px; }
+  .ltp-desc{ font-size:12px; }
+  .ltp-cancel{ font-size:13px;min-height:44px; }
   .landing-shell-btn,.landing-card{ width:100%; }
 
   /* Board pickers: keep the brand + name on their own lines, tighten the blurb */
@@ -718,7 +834,7 @@ canvas{
   pointer-events:none;
   transition:top 0.25s ease,left 0.25s ease,width 0.25s ease,height 0.25s ease;
 }
-#tourPanel {
+#tourPanel,#tourOutro {
   position:absolute;top:50%;left:50%;width:288px;max-width:calc(100vw - 24px);
   background:var(--bg-panel,#14161a);border:1px solid var(--accent,#4a9fd4);
   border-radius:10px;box-shadow:0 14px 44px rgba(0,0,0,0.6);
@@ -726,6 +842,9 @@ canvas{
   font-family:var(--font-u,'Chakra Petch',sans-serif);
   transition:top 0.22s ease,left 0.22s ease;
 }
+/* The outro has no target to point at, so it sits centred and stays put —
+   unlike #tourPanel, whose top/left are rewritten per step. */
+#tourOutro { transform:translate(-50%,-50%);transition:none; }
 .tour-count { font-size:8px;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-dim);margin-bottom:5px; }
 .tour-title { font-size:14px;font-weight:700;color:var(--text-primary);margin-bottom:6px;line-height:1.25; }
 .tour-body { font-size:11px;line-height:1.55;color:var(--text-secondary,#aab4c6);margin-bottom:13px; }
@@ -1403,10 +1522,15 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
      LANDING PAGE OVERLAY
      ══════════════════════════════════════════════════════════════════════════ -->
 <div id="landingOverlay">
+ <!-- Build-A-Bot only — .bab-mark stays display:none until .landing-expert. -->
+ <div class="bab-mark" aria-hidden="true">
+   <div class="bab-knight">&#9822;</div>
+   <div class="bab-visor"><div class="bab-glint"></div></div>
+ </div>
  <div class="landing-inner">
   <div class="landing-title">
     <span class="lt-bm">♟ Blunder<span class="lt-accent">mind</span></span>
-    <span class="lt-bab"><span class="bab-pawn-eye">♟<span class="cylon-dot"></span></span> Build-A-Bot <span class="lt-accent">Chess</span></span>
+    <span class="lt-bab">&#9822; Build-A-Bot <span class="lt-accent">Chess</span></span>
   </div>
   <div class="landing-tagline">
     <span class="lt-bm">Stop getting blundermined.</span>
@@ -1418,12 +1542,12 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <button class="landing-shell-btn sel" data-shell="amateur" onclick="landingSetShell('amateur')">
       <span class="ls-brand">Blundermind</span>
       <span class="ls-name">🎓 Visualization Training Board</span>
-      <span class="ls-desc">Full board-vision indicators: plan your move, then visualize threats, opportunities, and possible opponent responses before committing.</span>
+      <span class="ls-desc">Threats, pins and hanging pieces, shown on the board.</span>
     </button>
     <button class="landing-shell-btn" data-shell="pro" onclick="landingSetShell('pro')">
       <span class="ls-brand">Build-A-Bot</span>
       <span class="ls-name">♟ Expert Board</span>
-      <span class="ls-desc">Clean tournament look — minimal chrome, side notation, no overlays.</span>
+      <span class="ls-desc">Clean tournament view — no overlays.</span>
     </button>
   </div>
 
@@ -1433,21 +1557,21 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div class="landing-card" onclick="landingChoose('solo')">
       <div class="landing-card-icon">🔍</div>
       <div class="landing-card-title">Solo Play &amp; Explore</div>
-      <div class="landing-card-desc">A blundercheck for every level — hover any piece to see what hangs, forks, or falls before you commit. Play alone, explore positions, and train board vision.</div>
+      <div class="landing-card-desc">Hover any piece to see what hangs, forks or falls — before you commit.</div>
     </div>
 
     <!-- vs Bot -->
     <div class="landing-card green-card" onclick="landingChoose('bot')">
       <div class="landing-card-icon">🤖</div>
       <div class="landing-card-title">Play or Build a Bot</div>
-      <div class="landing-card-desc">If chess bots don't feel realistic, build your own. Create a bot you enjoy playing against. Practice favorite openings. Hone bullet skills against bots that panic under time pressure, or build ones that keep their cool as they try to flag you.</div>
+      <div class="landing-card-desc">Build an opponent worth playing — one that panics on the clock, or never does.</div>
     </div>
 
     <!-- 2 Player -->
     <div class="landing-card" onclick="landingChoose('mp')">
       <div class="landing-card-icon">⚔️</div>
       <div class="landing-card-title">&ldquo;Hang-Free&rdquo; 2-Player Online</div>
-      <div class="landing-card-desc">Play games with outcomes determined by strategy instead of hung pieces. Post an open challenge or send a private invite link to play games where both players can use visual overlays. No move recommendations, no engine analysis, no cheat detection.</div>
+      <div class="landing-card-desc">Both players get the overlays. Games decided by strategy, not hung pieces.</div>
     </div>
 
     <!-- Load PGN / Bot config — split card. Layout lives in .landing-card-split
@@ -1457,17 +1581,42 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="landing-split-half" onclick="landingChoose('pgn')">
         <div class="landing-card-icon">📂</div>
         <div class="landing-card-title">Load a Saved Game</div>
-        <div class="landing-card-desc">Upload a PGN file and replay or explore any game move by move.</div>
+        <div class="landing-card-desc">Replay any PGN, move by move.</div>
       </div>
       <div class="landing-split-half" onclick="document.getElementById('landingBotConfigInput').click()">
         <div class="landing-card-icon small">⚙️</div>
         <div class="landing-card-title">Load a Saved Bot</div>
-        <div class="landing-card-desc">Upload a bot configuration file to restore a custom opponent.</div>
+        <div class="landing-card-desc">Restore a bot you built earlier.</div>
       </div>
       <input type="file" id="landingBotConfigInput" accept=".json" style="display:none"
         onchange="landingLoadBotConfig(event)">
     </div>
 
+  </div>
+
+  <!-- One compact line rather than a fifth card: the tour is a helper, not a
+       destination, and the cards above are what people came to click. -->
+  <button type="button" class="landing-tour-btn" onclick="landingTourPick(true)">
+    <span class="ltb-icon">🧭</span>
+    <span class="ltb-text">Take a guided tour</span>
+    <span class="ltb-chev">→</span>
+  </button>
+
+  <!-- Which tour. Hidden until asked for; the two halves are the two things
+       this site actually is, so the choice is the product's own split. -->
+  <div class="landing-tour-pick" id="landingTourPick" hidden>
+    <div class="ltp-head">Which one first?</div>
+    <div class="ltp-opts">
+      <button type="button" class="ltp-opt" onclick="landingStartTour('board')">
+        <span class="ltp-name">🎓 Visualization board</span>
+        <span class="ltp-desc">What every overlay on the board means.</span>
+      </button>
+      <button type="button" class="ltp-opt" onclick="landingStartTour('bot')">
+        <span class="ltp-name">🤖 Bot-building tools</span>
+        <span class="ltp-desc">How to shape an opponent's personality.</span>
+      </button>
+    </div>
+    <button type="button" class="ltp-cancel" onclick="landingTourPick(false)">Not now</button>
   </div>
 
   <div class="landing-footer">

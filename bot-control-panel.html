@@ -687,7 +687,10 @@ canvas{display:block;background:transparent;}
 #botTourOverlay{position:fixed;inset:0;z-index:9000;pointer-events:none;}
 #btBackdrop{position:absolute;inset:0;background:rgba(0,0,0,0.55);pointer-events:none;display:none;}
 #btRing{position:absolute;display:none;border-radius:5px;border:2px solid var(--amber);box-shadow:0 0 0 9999px rgba(0,0,0,0.55),0 0 16px 2px rgba(200,146,42,0.5);pointer-events:none;transition:top 0.25s ease,left 0.25s ease,width 0.25s ease,height 0.25s ease;}
-#btPanel{position:absolute;top:50%;left:50%;width:300px;max-width:calc(100vw - 24px);background:var(--carbon-mid);border:1px solid var(--border-amber);border-radius:var(--r);box-shadow:0 14px 44px rgba(0,0,0,0.65);padding:14px 16px;pointer-events:auto;transition:top 0.22s ease,left 0.22s ease;}
+#btPanel,#btOutro{position:absolute;top:50%;left:50%;width:300px;max-width:calc(100vw - 24px);background:var(--carbon-mid);border:1px solid var(--border-amber);border-radius:var(--r);box-shadow:0 14px 44px rgba(0,0,0,0.65);padding:14px 16px;pointer-events:auto;transition:top 0.22s ease,left 0.22s ease;}
+/* The outro points at nothing, so it stays centred — unlike #btPanel, whose
+   top/left are rewritten for every step. */
+#btOutro{transform:translate(-50%,-50%);transition:none;}
 .bt-count{font-family:var(--font-m);font-size:8px;letter-spacing:0.14em;text-transform:uppercase;color:var(--amber-dim);margin-bottom:5px;}
 .bt-title{font-family:var(--font-u);font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:6px;line-height:1.25;}
 .bt-body{font-family:var(--font-m);font-size:10px;line-height:1.6;color:var(--text-secondary);margin-bottom:13px;}
@@ -8768,9 +8771,16 @@ window.addEventListener('message', function(e){
     }
   }
   if(e.data && e.data.type === 'botTourAuto'){
-    // First time the panel is opened — auto-start the tour once.
+    // First time the panel is opened — auto-start the tour once. Skipped when a
+    // tour is already running, so an explicit botTourForce isn't restarted by
+    // the auto message openBotModal() sends alongside it.
     let seen = null; try { seen = localStorage.getItem('bm_bottour'); } catch(err){}
-    if(!seen) setTimeout(startTour, 350);
+    if(!seen && !_btOn) setTimeout(function(){ if(!_btOn) startTour(); }, 350);
+  }
+  if(e.data && e.data.type === 'botTourForce'){
+    // Asked for by name — from the landing picker, or from the end of the board
+    // tour. Runs whether or not bm_bottour has been set.
+    setTimeout(startTour, 120);
   }
   if(e.data && e.data.type === 'setTheme' && e.data.vars){
     _applyPanelTheme(e.data.vars);
@@ -8866,14 +8876,21 @@ function _btOutsideClick(e){
 function startTour(){
   _bt = BOT_TOUR.slice(); // keep all steps; missing targets just show centered
   _btIdx = 0; _btOn = true;
+  // A previous run may have left the outro up in place of the step panel.
+  const _p = document.getElementById('btPanel');  if(_p) _p.style.display = '';
+  const _o = document.getElementById('btOutro');  if(_o) _o.style.display = 'none';
   const ov = document.getElementById('botTourOverlay'); if(ov) ov.style.display = 'block';
   document.addEventListener('mousedown', _btOutsideClick, true);
   _btRender();
 }
-function endTour(){
+function endTour(completed){
   _btOn = false;
   document.removeEventListener('mousedown', _btOutsideClick, true);
-  const ov = document.getElementById('botTourOverlay'); if(ov) ov.style.display = 'none';
+  const ov = document.getElementById('botTourOverlay');
+  // Finishing the last step offers the board tour; skipping or clicking outside
+  // just closes. The overlay stays up for the outro, so it is hidden below.
+  if(completed === true){ _btShowOutro(); }
+  else if(ov) ov.style.display = 'none';
   // Remove the tour's demo custom control if it added one.
   if(_btDemoId && typeof removeCustomControl === 'function'){
     try { removeCustomControl(_btDemoId); } catch(e){}
@@ -8884,8 +8901,45 @@ function endTour(){
   try { switchItab('attract', 'quality'); } catch(e){}
   try { localStorage.setItem('bm_bottour','1'); } catch(e){}
 }
-function tourNext(){ if(_btIdx < _bt.length - 1){ _btIdx++; _btRender(); } else endTour(); }
+function tourNext(){ if(_btIdx < _bt.length - 1){ _btIdx++; _btRender(); } else endTour(true); }
 function tourPrev(){ if(_btIdx > 0){ _btIdx--; _btRender(); } }
+
+// ── Tour outro — hand back to the board tour ─────────────────────────────────
+// This panel is an iframe, so it cannot start the board tour itself; the parent
+// owns that overlay. It closes this modal first, because the board tour
+// measures elements that sit behind it.
+function _btShowOutro(){
+  const ov = document.getElementById('botTourOverlay');
+  const panel = document.getElementById('btPanel');
+  const outro = document.getElementById('btOutro');
+  const ring = document.getElementById('btRing');
+  const back = document.getElementById('btBackdrop');
+  if(!ov || !outro){ if(ov) ov.style.display = 'none'; return; }
+  if(ring) ring.style.display = 'none';
+  if(back) back.style.display = 'block';
+  if(panel) panel.style.display = 'none';
+  outro.style.display = 'block';
+  ov.style.display = 'block';
+  const b = outro.querySelector('.bt-next'); if(b) b.focus();
+}
+function _btHideOutro(){
+  const ov = document.getElementById('botTourOverlay');
+  const panel = document.getElementById('btPanel');
+  const outro = document.getElementById('btOutro');
+  const back = document.getElementById('btBackdrop');
+  if(outro) outro.style.display = 'none';
+  if(panel) panel.style.display = '';
+  if(back) back.style.display = 'none';
+  if(ov) ov.style.display = 'none';
+}
+function btOutroClose(){ _btHideOutro(); }
+function btGoBoardTour(){
+  _btHideOutro();
+  try{
+    if(window.parent && window.parent !== window)
+      window.parent.postMessage({ type:'startBoardTour' }, location.origin);
+  }catch(e){}
+}
 function _btJump(i){ if(i >= 0 && i < _bt.length){ _btIdx = i; _btRender(); } }
 
 // Ordered unique stages with the index of their first step (for the jump chips).
@@ -11870,6 +11924,19 @@ document.addEventListener('DOMContentLoaded', ()=>{
       <span style="flex:1"></span>
       <button class="bt-btn" id="btPrev" onclick="tourPrev()">← Back</button>
       <button class="bt-btn bt-next" id="btNext" onclick="tourNext()">Next →</button>
+    </div>
+  </div>
+  <!-- Shown in place of the step panel once the last step is finished, offering
+       the other half of the site. A separate block rather than rewriting
+       #btPanel's buttons, so a second run still has Back / Next. -->
+  <div id="btOutro" style="display:none;">
+    <div class="bt-count">Tour complete</div>
+    <div class="bt-title">That's the bot builder</div>
+    <div class="bt-body">The other half of this site is the board itself — the overlays that show what hangs, forks or falls before you commit.</div>
+    <div class="bt-actions">
+      <button class="bt-skip" onclick="btOutroClose()">Done</button>
+      <span style="flex:1"></span>
+      <button class="bt-btn bt-next" onclick="btGoBoardTour()">Tour the board →</button>
     </div>
   </div>
 </div>
