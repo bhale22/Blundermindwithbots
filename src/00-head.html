@@ -849,6 +849,16 @@ canvas{
   #board-settings{display:none;}
   #board-settings.open{display:flex;flex-direction:column;gap:4px;}
 
+  /* Resign / Offer draw belong directly under the clock, above the drawer.
+     They are live-game controls, and sitting after #board-settings meant that
+     opening the vision settings pushed them off screen at the exact moment
+     they matter. #sidebar is already a flex column and #bv-toggle is its
+     first child, so order alone lifts them to the top: the DOM is unchanged,
+     and so is desktop, where #board-settings is display:contents and this
+     media query doesn't apply. Display stays untouched here — updateSidePanel
+     sets it inline, and inline wins. */
+  #gameActions{order:-1;}
+
   /* ── Touch targets inside the drawer and the button rows ── */
   .s-row{padding:7px 0;gap:8px;}
   .s-row label{display:flex;align-items:center;gap:6px;min-height:32px;}

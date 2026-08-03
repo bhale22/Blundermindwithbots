@@ -23,32 +23,28 @@ for. Fail that check and the app still works but shows a URL bar.
 ## Prerequisites on this machine — all present
 
     Node          v24
-    JDK 21        C:\Program Files\Android\Android Studio1\jbr
-    Android SDK   C:\Users\bbrow\AppData\Local\Android\sdk   (build-tools 35, 36)
+    JDK 17        C:\Users\bbrow\.bubblewrap\jdk-17.0.20+8   (Temurin — 21 is rejected)
+    Android SDK   C:\Users\bbrow\AppData\Local\Android\sdk   (build-tools 36.1.0)
 
-Bubblewrap asks for the JDK and SDK paths on first run; use those.
+These are already recorded in `~/.bubblewrap/config.json`, so Bubblewrap no
+longer asks. Getting there needed three non-obvious fixes — all written up in
+[`android/README.md`](android/README.md), which is the source of truth for the
+Android project itself. This file covers the web side and the release runbook.
 
 ## Steps
 
-### 1. Decide the package name — this is permanent
+### 1. Decide the package name — this is permanent ✅ done
 
 An Android package name can never be changed once published to Play. It doesn't
 have to match a domain you own, but reverse-DNS of one you do is the convention:
 
     com.blundermindchess.app
 
-### 2. Generate the project
+### 2. Generate the project ✅ done
 
-```
-npm i -g @bubblewrap/cli
-bubblewrap init --manifest https://blundermindchess.com/manifest.webmanifest
-```
-
-Answers that matter:
-- **Application ID** — the package name from step 1.
-- **Display mode** — `standalone`.
-- **Orientation** — `any` (the phone layout works both ways).
-- **Signing key** — let it create one, then read step 3 before you publish.
+The generated project lives in [`android/`](android/) — `bubblewrap init` has
+already run, and `enableNotifications` is off. To change any setting, edit
+`android/twa-manifest.json` and re-run `bubblewrap update` from that directory.
 
 ### 3. Enrol in Play App Signing, and list BOTH fingerprints
 
