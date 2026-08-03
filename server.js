@@ -252,6 +252,22 @@ app.get('/manifest.webmanifest', (req, res) => {
   });
 });
 
+// ── Privacy policy ──────────────────────────────────────────────────────────
+// Play requires a publicly reachable privacy policy URL, with no login, before
+// an app can be published; the Data safety form links to it. Served from here
+// rather than a third-party host so it shares the domain the app is verified
+// against, and so it can't quietly 404 from somewhere we don't control.
+//
+// /privacy is the canonical URL. /privacy.html is accepted because that is what
+// people type — a redirect keeps one URL in Play's console and in the listing.
+app.get('/privacy.html', (req, res) => res.redirect(301, '/privacy'));
+app.get('/privacy', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  // Short cache: a policy needs to be correctable quickly, and it is 5 KB.
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.sendFile(path.join(__dirname, 'privacy.html'));
+});
+
 // ── Digital Asset Links — proves this domain and the Android app are ours ───
 // A Trusted Web Activity is the site running full-screen inside Chrome. Chrome
 // only drops the address bar if it can verify that whoever signed the Android
