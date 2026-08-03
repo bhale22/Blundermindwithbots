@@ -140,13 +140,29 @@ Google re-signs the app with a key it holds. That means:
 
 So `/.well-known/assetlinks.json` must list **both**. Get them from:
 
-    keytool -list -v -keystore android.keystore -alias android   # upload key
+    apksigner verify --print-certs app-release-signed.apk   # upload key, no password
+    keytool -list -v -keystore android.keystore -alias android
     Play Console → Setup → App integrity → App signing key certificate
+
+`apksigner` reads the cert out of the built APK, so it needs no keystore
+password — prefer it. It prints lowercase hex with no separators; Digital Asset
+Links wants uppercase, colon-separated.
+
+**Upload key**, `CN=Benjamin Hale, OU=Da Solo, O=Kelpdog, C=US`:
+
+    19:54:B9:A5:5C:5B:34:F4:05:A4:EF:E8:09:9F:03:83:37:54:97:8E:A8:FC:AD:91:1D:0A:F1:9B:B9:65:03:29
+
+Fingerprints are public by design — they are served in `assetlinks.json`. The
+keystore they came from is not.
 
 Then set on Railway, in the web app's environment (comma-separated, no spaces):
 
     TWA_PACKAGE_NAME       com.blundermindchess.app
-    TWA_CERT_FINGERPRINTS  <upload SHA-256>,<Play app signing SHA-256>
+    TWA_CERT_FINGERPRINTS  <upload SHA-256>[,<Play app signing SHA-256>]
+
+Sideloading the APK above needs only the upload key. Add Google's second
+fingerprint when the app goes to Play, or store installs will show an address
+bar even though your sideloaded test build didn't.
 
 Listing only the upload key is the usual reason a shipped TWA displays an
 address bar.
