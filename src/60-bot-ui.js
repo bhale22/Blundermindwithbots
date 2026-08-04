@@ -1223,13 +1223,14 @@ function landingStartTour(which) {
   try {
     localStorage.setItem('bm_shell', (typeof proMode !== 'undefined' && proMode) ? 'pro' : 'amateur');
   } catch (e) {}
-  landingDismiss();
   if (which === 'bot') {
+    landingDismiss();
     setTimeout(function () { openBotModal(); startBotTour(); }, 340);
   } else {
-    // Longer wait than the bot path: the overlay tour measures its targets, so
-    // the landing has to be fully out of the way before the first step is rung.
-    setTimeout(function () { if (typeof startTour === 'function') startTour(); }, 520);
+    // The landing deliberately stays up: the first step explains the board
+    // choice on the page that offers it. _renderTourStep() dismisses it as soon
+    // as the tour moves past that step, and brings it back on Back.
+    if (typeof startTour === 'function') startTour({ fromLanding: true });
   }
 }
 
@@ -1528,7 +1529,13 @@ window.addEventListener('message', function(e) {
   // first — the overlay tour measures elements behind it.
   if (e.data.type === 'startBoardTour') {
     closeBotModal();
-    setTimeout(function () { if (typeof startTour === 'function') startTour(); }, 340);
+    // The panel names which board it wants. Switch shells before starting:
+    // TOURS.pro targets chrome that only exists in pro mode, and startTour()
+    // drops steps whose targets aren't visible.
+    if (e.data.shell && typeof setShell === 'function') {
+      setShell(e.data.shell === 'pro' ? 'pro' : 'amateur');
+    }
+    setTimeout(function () { if (typeof startTour === 'function') startTour(); }, 440);
     return;
   }
   if (e.data.type !== 'botConfig') return;

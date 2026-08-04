@@ -845,6 +845,11 @@ canvas{
 /* The outro has no target to point at, so it sits centred and stays put —
    unlike #tourPanel, whose top/left are rewritten per step. */
 #tourOutro { transform:translate(-50%,-50%);transition:none; }
+/* Three choices don't fit on one row at 288px, and stacking keeps each a
+   full-width target rather than three cramped ones. */
+.tour-actions-stack { flex-direction:column;align-items:stretch;gap:6px; }
+.tour-actions-stack .tour-btn { width:100%;text-align:center; }
+.tour-actions-stack .tour-skip { margin-top:2px; }
 .tour-count { font-size:8px;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-dim);margin-bottom:5px; }
 .tour-title { font-size:14px;font-weight:700;color:var(--text-primary);margin-bottom:6px;line-height:1.25; }
 .tour-body { font-size:11px;line-height:1.55;color:var(--text-secondary,#aab4c6);margin-bottom:13px; }

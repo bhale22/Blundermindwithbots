@@ -112,19 +112,41 @@ console.log('\nTour picker on the landing');
   ok('"Not now" closes it',
      await page.evaluate(() => document.getElementById('landingTourPick').hasAttribute('hidden')));
 
-  // Board tour from the picker.
+  // Board tour from the picker — opens ON the landing, explaining the choice
+  // the landing itself offers.
   await page.click('.landing-tour-btn');
   await page.waitForTimeout(150);
   await page.evaluate(() => landingStartTour('board'));
-  await page.waitForTimeout(1400);
+  await page.waitForTimeout(900);
   const t = await page.evaluate(() => ({
     overlay: getComputedStyle(document.getElementById('tourOverlay')).display,
     landing: getComputedStyle(document.getElementById('landingOverlay')).display,
     count: document.getElementById('tourCount').textContent,
+    title: document.getElementById('tourTitle').textContent,
+    body: document.getElementById('tourBody').textContent,
+    ringOnPicker: (() => {
+      const r = document.getElementById('tourRing').getBoundingClientRect();
+      const p = document.querySelector('.landing-shell-pick').getBoundingClientRect();
+      return Math.abs(r.top - (p.top - 5)) < 3 && Math.abs(r.left - (p.left - 5)) < 3;
+    })(),
   }));
   ok('board tour starts', t.overlay === 'block', t.overlay);
-  ok('landing is dismissed', t.landing === 'none', t.landing);
-  ok('it is on a real step', /\d+\s*\/\s*\d+/.test(t.count), t.count);
+  ok('it opens ON the landing, not after it', t.landing !== 'none', t.landing);
+  ok('first step is step 1', /^1\s*\/\s*\d+/.test(t.count.trim()), t.count);
+  ok('first step explains the board choice',
+     /two boards/i.test(t.title) && /visualization/i.test(t.body) && /expert/i.test(t.body),
+     t.title);
+  ok('it says the choice is reversible', /switched at any time|not a decision/i.test(t.body));
+  ok('the ring points at the board picker', t.ringOnPicker);
+
+  await page.evaluate(() => tourNext());
+  await page.waitForTimeout(900);
+  ok('moving on dismisses the landing',
+     await page.evaluate(() => getComputedStyle(document.getElementById('landingOverlay')).display === 'none'));
+  await page.evaluate(() => tourPrev());
+  await page.waitForTimeout(800);
+  ok('stepping back brings the landing back',
+     await page.evaluate(() => getComputedStyle(document.getElementById('landingOverlay')).display !== 'none'));
   ok('no console errors', errs.length === 0, errs.slice(0, 2).join(' | '));
   await ctx.close();
 }
@@ -153,11 +175,14 @@ console.log('\nBoard tour outro → offers the bot tour');
   const o = await page.evaluate(() => ({
     outro: getComputedStyle(document.getElementById('tourOutro')).display,
     panel: getComputedStyle(document.getElementById('tourPanel')).display,
-    cta: (document.querySelector('#tourOutro .tour-next') || {}).textContent || '',
+    board: document.getElementById('tourOutroBoard').textContent,
+    bot: document.getElementById('tourOutroBot').textContent,
   }));
   ok('finishing shows the outro', o.outro === 'block', o.outro);
   ok('step panel is swapped out', o.panel === 'none', o.panel);
-  ok('it offers the bot builder', /bot builder/i.test(o.cta), o.cta);
+  ok('it offers the bot builder', /bot builder/i.test(o.bot), o.bot);
+  // Finished the Visualization tour, so the board on offer is the Expert one.
+  ok('it also offers the OTHER board', /expert board/i.test(o.board), o.board);
 
   // Restarting must restore the step panel, not leave the outro up.
   await page.evaluate(() => startTour());
@@ -172,7 +197,7 @@ console.log('\nBoard tour outro → offers the bot tour');
   await page.waitForTimeout(300);
   for (let i = 0; i < steps; i++) { await page.evaluate(() => tourNext()); await page.waitForTimeout(90); }
   await page.waitForTimeout(250);
-  await page.click('#tourOutro .tour-next');
+  await page.click('#tourOutroBot');
   await page.waitForTimeout(1800);
   const bot = await page.evaluate(() => ({
     modal: getComputedStyle(document.getElementById('botModal')).display,
@@ -207,22 +232,69 @@ console.log('\nBot tour outro → hands back across the frame');
   const o = await f.evaluate(() => ({
     outro: getComputedStyle(document.getElementById('btOutro')).display,
     panel: getComputedStyle(document.getElementById('btPanel')).display,
-    cta: (document.querySelector('#btOutro .bt-next') || {}).textContent || '',
+    ctas: [...document.querySelectorAll('#btOutro .bt-next')].map(b => b.textContent.trim()),
   }));
   ok('finishing the bot tour shows its outro', o.outro === 'block', o.outro);
   ok('its step panel is swapped out', o.panel === 'none', o.panel);
-  ok('it offers the board', /board/i.test(o.cta), o.cta);
+  ok('it offers BOTH boards', o.ctas.length === 2, JSON.stringify(o.ctas));
+  ok('one is Visualization', /visualization/i.test(o.ctas.join(' ')), JSON.stringify(o.ctas));
+  ok('one is Expert', /expert/i.test(o.ctas.join(' ')), JSON.stringify(o.ctas));
 
-  await f.click('#btOutro .bt-next');
-  await page.waitForTimeout(1200);
+  // Take the Expert one — it has to switch shells, or its steps get filtered out.
+  await f.click('#btOutro .bt-next:nth-of-type(2)');
+  await page.waitForTimeout(1600);
   const back = await page.evaluate(() => ({
     modal: getComputedStyle(document.getElementById('botModal')).display,
     overlay: getComputedStyle(document.getElementById('tourOverlay')).display,
+    pro: !!(typeof proMode !== 'undefined' && proMode),
+    steps: (typeof _tourSteps !== 'undefined') ? _tourSteps.length : 0,
   }));
   ok('the panel closes', back.modal === 'none', back.modal);
   ok('the board tour takes over', back.overlay === 'block', back.overlay);
+  ok('it switched to the Expert shell', back.pro, String(back.pro));
+  ok('the Expert tour kept its steps', back.steps > 0, String(back.steps));
   ok('no console errors', errs.length === 0, errs.slice(0, 2).join(' | '));
   await ctx.close();
+}
+
+console.log('\nBot-tour panel must not cover what it describes');
+{
+  for (const [label, w, h, mob, limit] of [['phone', 390, 844, true, 25], ['desktop', 1440, 900, false, 10]]) {
+    const ctx = await browser.newContext({
+      viewport: { width: w, height: h }, deviceScaleFactor: 1, isMobile: mob, hasTouch: mob,
+    });
+    await ctx.addInitScript(() => { try { localStorage.removeItem('bm_bottour'); } catch (e) {} });
+    const page = await ctx.newPage();
+    await page.goto(BASE + '/bot-control-panel.html', { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.evaluate(() => {
+      const o = document.getElementById('botTourOverlay'); if (o) o.style.display = 'none';
+      startTour();
+    });
+    await page.waitForTimeout(700);
+    const n = await page.evaluate(() => _bt.length);
+    const bad = [];
+    for (let i = 0; i < n; i++) {
+      await page.waitForTimeout(950);
+      const r = await page.evaluate(() => {
+        const s = _bt[_btIdx];
+        const el = s.sel ? document.querySelector(s.sel) : null;
+        if (!el) return { i: _btIdx, sel: '(none)', ov: 0, tall: false };
+        const p = document.getElementById('btPanel').getBoundingClientRect();
+        const t = el.getBoundingClientRect();
+        const ox = Math.max(0, Math.min(p.right, t.right) - Math.max(p.left, t.left));
+        const oy = Math.max(0, Math.min(p.bottom, t.bottom) - Math.max(p.top, t.top));
+        return { i: _btIdx, sel: s.sel, tall: t.height > window.innerHeight - p.height - 40,
+                 ov: Math.round(ox * oy / Math.max(1, t.width * t.height) * 100) };
+      });
+      // A target taller than the free band cannot be cleared by any placement;
+      // what matters there is that its heading stays visible, not the percentage.
+      if (r.ov > limit && !r.tall) bad.push(`${r.i}:${r.sel} ${r.ov}%`);
+      await page.evaluate(() => { if (_btIdx < _bt.length - 1) tourNext(); });
+    }
+    ok(`${label}: no step is covered by its own description`, bad.length === 0, bad.join(' | '));
+    await ctx.close();
+  }
 }
 
 console.log('\nPhone — 390x844');

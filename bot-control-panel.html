@@ -691,6 +691,11 @@ canvas{display:block;background:transparent;}
 /* The outro points at nothing, so it stays centred — unlike #btPanel, whose
    top/left are rewritten for every step. */
 #btOutro{transform:translate(-50%,-50%);transition:none;}
+/* Two board tours plus Done won't fit on one 300px row; stacking keeps each a
+   full-width target. */
+.bt-actions-stack{flex-direction:column;align-items:stretch;gap:6px;}
+.bt-actions-stack .bt-btn{width:100%;text-align:center;}
+.bt-actions-stack .bt-skip{margin-top:2px;}
 .bt-count{font-family:var(--font-m);font-size:8px;letter-spacing:0.14em;text-transform:uppercase;color:var(--amber-dim);margin-bottom:5px;}
 .bt-title{font-family:var(--font-u);font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:6px;line-height:1.25;}
 .bt-body{font-family:var(--font-m);font-size:10px;line-height:1.6;color:var(--text-secondary);margin-bottom:13px;}
@@ -8933,11 +8938,12 @@ function _btHideOutro(){
   if(ov) ov.style.display = 'none';
 }
 function btOutroClose(){ _btHideOutro(); }
-function btGoBoardTour(){
+function btGoBoardTour(shell){
   _btHideOutro();
   try{
     if(window.parent && window.parent !== window)
-      window.parent.postMessage({ type:'startBoardTour' }, location.origin);
+      window.parent.postMessage({ type:'startBoardTour',
+                                  shell: shell === 'pro' ? 'pro' : 'amateur' }, location.origin);
   }catch(e){}
 }
 function _btJump(i){ if(i >= 0 && i < _bt.length){ _btIdx = i; _btRender(); } }
@@ -8989,9 +8995,33 @@ function _btRender(){
   clearTimeout(_btTimer);
   _btTimer = setTimeout(function(){
     const tgt = step.sel ? document.querySelector(step.sel) : null;
-    if(tgt){ try{ tgt.scrollIntoView({block:'center', behavior:'smooth'}); }catch(e){} }
+    if(tgt) _btScrollClear(tgt);
     _btSpot();
   }, opened ? 520 : 120);
+}
+
+// Scroll the target somewhere the card is not.
+//
+// On a phone the card is docked to the bottom (see _btPos), so the target has
+// to land in the band above it — scrollIntoView({block:'center'}) put it in the
+// middle of the screen, half of which the card occupies. Desktop keeps
+// scrollIntoView: there the card is placed beside or clear of the target.
+function _btScrollClear(el){
+  if(window.innerWidth > 760){
+    try{ el.scrollIntoView({block:'center', behavior:'smooth'}); }catch(e){}
+    return;
+  }
+  const panel = document.getElementById('btPanel');
+  const ph = panel ? (panel.offsetHeight || 200) : 200;
+  const gap = 14;
+  const freeH = Math.max(120, window.innerHeight - ph - gap * 2);
+  const r = el.getBoundingClientRect();
+  // Centre it in the free band; a target taller than the band is aligned to the
+  // top of it instead, so its heading stays on screen.
+  const want = (r.height >= freeH) ? gap : gap + (freeH - r.height) / 2;
+  const dy = r.top - want;
+  try{ window.scrollBy({ top: dy, behavior:'smooth' }); }
+  catch(e){ window.scrollBy(0, dy); }
 }
 
 function _btSpot(){
@@ -9026,9 +9056,14 @@ function _btPos(rect, corner){
   const vw = window.innerWidth, vh = window.innerHeight, gap = 14;
   if(corner){
     // Upper-left — first place the eye goes, so the overview is seen
-    // immediately (bottom-right proved easy to miss).
-    panel.style.top = gap + 'px';
-    panel.style.left = gap + 'px';
+    // immediately (bottom-right proved easy to miss). But the overview step
+    // talks about the quick-start bar, and at the very top the card sat on top
+    // of it, so start below whatever the bar currently occupies.
+    const qs = document.getElementById('quickstart');
+    const qb = qs ? qs.getBoundingClientRect() : null;
+    const below = (qb && qb.height > 0) ? qb.bottom + gap : gap;
+    panel.style.top = Math.max(gap, Math.min(vh - ph - gap, below)) + 'px';
+    panel.style.left = (vw <= 760) ? '' : gap + 'px';   // CSS pins left/right on mobile
     return;
   }
   if(!(rect && rect.width > 0)){
@@ -9046,20 +9081,24 @@ function _btPos(rect, corner){
   // branches can't fit and the fallback corner landed on top of the control
   // being described. Place it in whichever half the target is NOT in.
   if(vw <= 760){
-    // A target taller than the space left over can't be cleared by any
-    // placement (the persona grid is one). Dock to the bottom there: the top
-    // of the highlighted block — where its heading is — stays visible, which
-    // is the least-bad option and better than hiding the card.
-    if(rect.height > vh - ph - gap * 3){
-      panel.style.top = (vh - ph - gap) + 'px';
-      panel.style.left = '';
-      return;
-    }
-    const targetMid = rect.top + rect.height / 2;
-    top = (targetMid < vh / 2)
-      ? Math.max(rect.bottom + gap, vh - ph - gap)   // target high → card low
-      : Math.min(rect.top - gap - ph, gap);          // target low  → card high
-    panel.style.top = clampT(top) + 'px';
+    // The card is nearly viewport-wide here, so there is no "beside the target"
+    // placement — only above or below. The old code chose between those from
+    // the target's position, but _btRender had just scrolled the target to the
+    // middle of the screen, which is exactly where neither side has room: the
+    // card covered the control in almost every section.
+    //
+    // Dock it, and let _btScrollClear() put the target in the band left over.
+    // One predictable position the scroll can aim at beats four conditional
+    // ones racing a smooth scroll.
+    //
+    // Bottom is the normal dock, but some targets can't be scrolled out of it —
+    // the Start button is fixed to the bottom of the viewport, so docking there
+    // sat on top of it whatever the scroll did. Measure both docks and take
+    // whichever covers less; that handles fixed furniture without special-casing
+    // it, and a target taller than the free band still gets the better half.
+    const dockB = vh - ph - gap, dockT = gap;
+    const covered = t => Math.max(0, Math.min(t + ph, rect.bottom) - Math.max(t, rect.top));
+    panel.style.top = (covered(dockT) < covered(dockB) ? dockT : dockB) + 'px';
     panel.style.left = '';   // CSS pins left/right on mobile
     return;
   }
@@ -11932,11 +11971,11 @@ document.addEventListener('DOMContentLoaded', ()=>{
   <div id="btOutro" style="display:none;">
     <div class="bt-count">Tour complete</div>
     <div class="bt-title">That's the bot builder</div>
-    <div class="bt-body">The other half of this site is the board itself — the overlays that show what hangs, forks or falls before you commit.</div>
-    <div class="bt-actions">
+    <div class="bt-body">The board itself comes in two views, each with its own tour: <b>Visualization</b> marks threats, pins and hanging pieces as you play; <b>Expert</b> is a clean tournament view without overlays.</div>
+    <div class="bt-actions bt-actions-stack">
+      <button class="bt-btn bt-next" onclick="btGoBoardTour('amateur')">Tour the Visualization board →</button>
+      <button class="bt-btn bt-next" onclick="btGoBoardTour('pro')">Tour the Expert board →</button>
       <button class="bt-skip" onclick="btOutroClose()">Done</button>
-      <span style="flex:1"></span>
-      <button class="bt-btn bt-next" onclick="btGoBoardTour()">Tour the board →</button>
     </div>
   </div>
 </div>
