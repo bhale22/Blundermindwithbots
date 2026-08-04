@@ -483,6 +483,37 @@ input.ctrl-val[type=number]::-webkit-inner-spin-button{
 .slider-scale-wrap{flex:1;display:flex;flex-direction:column;min-width:0;}
 .slider-scale-wrap input[type=range]{width:100%;flex:none;}
 .slider-scale{display:flex;justify-content:space-between;font-family:var(--font-m);font-size:7px;color:var(--text-dim);line-height:1;margin-top:2px;}
+
+/* ── Reference mark drawn on a slider ────────────────────────────────────
+   Max temp uses this to show where the game-start temperature sits, and to
+   shade the stretch below it where raising the ceiling changes nothing (the
+   curve clamps to max(t0, ceiling), so a ceiling under base temp is flat).
+
+   A range thumb is inset by half its width at each end, so the travel is
+   (100% - thumb) starting at thumb/2. --thumb-w therefore has to track the
+   thumb size at each breakpoint or the mark drifts off the value it names.
+   --mk is the 0–1 position, written by syncMaxTempMark(). */
+.rng-track{position:relative;display:flex;align-items:center;width:100%;--thumb-w:12px;--mk:0;}
+.rng-track > input[type=range]{width:100%;}
+.rng-dead{
+  position:absolute;top:50%;left:calc(var(--thumb-w)/2);
+  width:calc(var(--mk) * (100% - var(--thumb-w)));
+  transform:translateY(-50%);height:5px;border-radius:3px;pointer-events:none;
+  background:repeating-linear-gradient(135deg,rgba(128,140,160,0.34) 0 3px,transparent 3px 6px);
+}
+.rng-mark{
+  position:absolute;top:50%;
+  left:calc(var(--thumb-w)/2 + var(--mk) * (100% - var(--thumb-w)));
+  transform:translate(-50%,-50%);
+  width:2px;height:14px;border-radius:1px;pointer-events:none;
+  background:var(--amber);box-shadow:0 0 4px var(--amber-glow-s);
+}
+@media (max-width:760px){
+  /* Matches the 17px phone thumb set in the touch-target layer below. */
+  .rng-track{--thumb-w:17px;}
+  .rng-mark{width:2.5px;height:24px;}
+  .rng-dead{height:6px;}
+}
 /* Clickable phrase inside a ctrl-hint that opens an info popup */
 .hint-link{color:var(--amber);cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px;}
 .hint-link:hover{color:var(--amber-bright);}
@@ -656,7 +687,15 @@ canvas{display:block;background:transparent;}
 #botTourOverlay{position:fixed;inset:0;z-index:9000;pointer-events:none;}
 #btBackdrop{position:absolute;inset:0;background:rgba(0,0,0,0.55);pointer-events:none;display:none;}
 #btRing{position:absolute;display:none;border-radius:5px;border:2px solid var(--amber);box-shadow:0 0 0 9999px rgba(0,0,0,0.55),0 0 16px 2px rgba(200,146,42,0.5);pointer-events:none;transition:top 0.25s ease,left 0.25s ease,width 0.25s ease,height 0.25s ease;}
-#btPanel{position:absolute;top:50%;left:50%;width:300px;max-width:calc(100vw - 24px);background:var(--carbon-mid);border:1px solid var(--border-amber);border-radius:var(--r);box-shadow:0 14px 44px rgba(0,0,0,0.65);padding:14px 16px;pointer-events:auto;transition:top 0.22s ease,left 0.22s ease;}
+#btPanel,#btOutro{position:absolute;top:50%;left:50%;width:300px;max-width:calc(100vw - 24px);background:var(--carbon-mid);border:1px solid var(--border-amber);border-radius:var(--r);box-shadow:0 14px 44px rgba(0,0,0,0.65);padding:14px 16px;pointer-events:auto;transition:top 0.22s ease,left 0.22s ease;}
+/* The outro points at nothing, so it stays centred — unlike #btPanel, whose
+   top/left are rewritten for every step. */
+#btOutro{transform:translate(-50%,-50%);transition:none;}
+/* Two board tours plus Done won't fit on one 300px row; stacking keeps each a
+   full-width target. */
+.bt-actions-stack{flex-direction:column;align-items:stretch;gap:6px;}
+.bt-actions-stack .bt-btn{width:100%;text-align:center;}
+.bt-actions-stack .bt-skip{margin-top:2px;}
 .bt-count{font-family:var(--font-m);font-size:8px;letter-spacing:0.14em;text-transform:uppercase;color:var(--amber-dim);margin-bottom:5px;}
 .bt-title{font-family:var(--font-u);font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:6px;line-height:1.25;}
 .bt-body{font-family:var(--font-m);font-size:10px;line-height:1.6;color:var(--text-secondary);margin-bottom:13px;}
@@ -3321,7 +3360,23 @@ body.fj .picon{font-weight:500;}
               <canvas id="cvB" style="width:100%;cursor:ns-resize;"></canvas>
               <div class="ctip" id="tipB"></div>
             </div>
-            <div class="ctrl" id="ctrl-maxtemp" style="margin-top:12px;"><span class="ctrl-lbl">Max temp</span><input type="range" id="r-maxtemp" min="1" max="15" step="0.5" value="8" oninput="sv(this,'v-maxtemp',v=>'T '+(+v).toFixed(1));initPtsB();drawB()"><span class="ctrl-val" id="v-maxtemp">T 8.0</span></div>
+            <!-- min 0 so the ceiling can be taken below the game-start
+                 temperature, which flattens the curve — a second way to turn
+                 escalation off for anyone who misses the switch above the
+                 chart. step 0.1 so low ceilings like T 0.8 are reachable. -->
+            <div class="ctrl" id="ctrl-maxtemp" style="margin-top:12px;">
+              <span class="ctrl-lbl">Max temp</span>
+              <span class="slider-scale-wrap">
+                <span class="rng-track" id="maxtemp-track">
+                  <input type="range" id="r-maxtemp" min="0" max="8" step="0.1" value="8" oninput="sv(this,'v-maxtemp',v=>'T '+(+v).toFixed(1));syncMaxTempMark();initPtsB();drawB()">
+                  <i class="rng-dead" aria-hidden="true"></i>
+                  <i class="rng-mark" aria-hidden="true"></i>
+                </span>
+                <span class="slider-scale"><span>0</span><span>8</span></span>
+              </span>
+              <span class="ctrl-val" id="v-maxtemp">T 8.0</span>
+            </div>
+            <div class="ctrl-hint" id="maxtemp-hint"></div>
           </div>
         </div>
 
@@ -8195,7 +8250,9 @@ function applyBotConfig(cfg){
   // reapplied in the curve-restore step below, so this only sets the framing.
   grp(() => { if(cfg.timePressureMaxDrop != null) _setRange('r-drop', Math.max(0, Math.min(600, cfg.timePressureMaxDrop))); });
   // Max temp caps Curve B's ceiling + reseeds, same pattern as r-drop above.
-  grp(() => { if(cfg.timePressureMaxTemp != null) _setRange('r-maxtemp', Math.max(1, Math.min(15, cfg.timePressureMaxTemp))); });
+  // Clamped to the slider's own 0–8 range. Bots saved under the old 1–15
+  // slider land at 8, which is the ceiling the curve was already using.
+  grp(() => { if(cfg.timePressureMaxTemp != null) _setRange('r-maxtemp', Math.max(0, Math.min(8, cfg.timePressureMaxTemp))); });
 
   // Quality controls (legacy cfg.blunderLimitCp is ignored). Budget restores
   // first; Hard Floor defaults to matching Budget for configs saved before
@@ -8719,9 +8776,16 @@ window.addEventListener('message', function(e){
     }
   }
   if(e.data && e.data.type === 'botTourAuto'){
-    // First time the panel is opened — auto-start the tour once.
+    // First time the panel is opened — auto-start the tour once. Skipped when a
+    // tour is already running, so an explicit botTourForce isn't restarted by
+    // the auto message openBotModal() sends alongside it.
     let seen = null; try { seen = localStorage.getItem('bm_bottour'); } catch(err){}
-    if(!seen) setTimeout(startTour, 350);
+    if(!seen && !_btOn) setTimeout(function(){ if(!_btOn) startTour(); }, 350);
+  }
+  if(e.data && e.data.type === 'botTourForce'){
+    // Asked for by name — from the landing picker, or from the end of the board
+    // tour. Runs whether or not bm_bottour has been set.
+    setTimeout(startTour, 120);
   }
   if(e.data && e.data.type === 'setTheme' && e.data.vars){
     _applyPanelTheme(e.data.vars);
@@ -8817,14 +8881,21 @@ function _btOutsideClick(e){
 function startTour(){
   _bt = BOT_TOUR.slice(); // keep all steps; missing targets just show centered
   _btIdx = 0; _btOn = true;
+  // A previous run may have left the outro up in place of the step panel.
+  const _p = document.getElementById('btPanel');  if(_p) _p.style.display = '';
+  const _o = document.getElementById('btOutro');  if(_o) _o.style.display = 'none';
   const ov = document.getElementById('botTourOverlay'); if(ov) ov.style.display = 'block';
   document.addEventListener('mousedown', _btOutsideClick, true);
   _btRender();
 }
-function endTour(){
+function endTour(completed){
   _btOn = false;
   document.removeEventListener('mousedown', _btOutsideClick, true);
-  const ov = document.getElementById('botTourOverlay'); if(ov) ov.style.display = 'none';
+  const ov = document.getElementById('botTourOverlay');
+  // Finishing the last step offers the board tour; skipping or clicking outside
+  // just closes. The overlay stays up for the outro, so it is hidden below.
+  if(completed === true){ _btShowOutro(); }
+  else if(ov) ov.style.display = 'none';
   // Remove the tour's demo custom control if it added one.
   if(_btDemoId && typeof removeCustomControl === 'function'){
     try { removeCustomControl(_btDemoId); } catch(e){}
@@ -8835,8 +8906,46 @@ function endTour(){
   try { switchItab('attract', 'quality'); } catch(e){}
   try { localStorage.setItem('bm_bottour','1'); } catch(e){}
 }
-function tourNext(){ if(_btIdx < _bt.length - 1){ _btIdx++; _btRender(); } else endTour(); }
+function tourNext(){ if(_btIdx < _bt.length - 1){ _btIdx++; _btRender(); } else endTour(true); }
 function tourPrev(){ if(_btIdx > 0){ _btIdx--; _btRender(); } }
+
+// ── Tour outro — hand back to the board tour ─────────────────────────────────
+// This panel is an iframe, so it cannot start the board tour itself; the parent
+// owns that overlay. It closes this modal first, because the board tour
+// measures elements that sit behind it.
+function _btShowOutro(){
+  const ov = document.getElementById('botTourOverlay');
+  const panel = document.getElementById('btPanel');
+  const outro = document.getElementById('btOutro');
+  const ring = document.getElementById('btRing');
+  const back = document.getElementById('btBackdrop');
+  if(!ov || !outro){ if(ov) ov.style.display = 'none'; return; }
+  if(ring) ring.style.display = 'none';
+  if(back) back.style.display = 'block';
+  if(panel) panel.style.display = 'none';
+  outro.style.display = 'block';
+  ov.style.display = 'block';
+  const b = outro.querySelector('.bt-next'); if(b) b.focus();
+}
+function _btHideOutro(){
+  const ov = document.getElementById('botTourOverlay');
+  const panel = document.getElementById('btPanel');
+  const outro = document.getElementById('btOutro');
+  const back = document.getElementById('btBackdrop');
+  if(outro) outro.style.display = 'none';
+  if(panel) panel.style.display = '';
+  if(back) back.style.display = 'none';
+  if(ov) ov.style.display = 'none';
+}
+function btOutroClose(){ _btHideOutro(); }
+function btGoBoardTour(shell){
+  _btHideOutro();
+  try{
+    if(window.parent && window.parent !== window)
+      window.parent.postMessage({ type:'startBoardTour',
+                                  shell: shell === 'pro' ? 'pro' : 'amateur' }, location.origin);
+  }catch(e){}
+}
 function _btJump(i){ if(i >= 0 && i < _bt.length){ _btIdx = i; _btRender(); } }
 
 // Ordered unique stages with the index of their first step (for the jump chips).
@@ -8886,9 +8995,33 @@ function _btRender(){
   clearTimeout(_btTimer);
   _btTimer = setTimeout(function(){
     const tgt = step.sel ? document.querySelector(step.sel) : null;
-    if(tgt){ try{ tgt.scrollIntoView({block:'center', behavior:'smooth'}); }catch(e){} }
+    if(tgt) _btScrollClear(tgt);
     _btSpot();
   }, opened ? 520 : 120);
+}
+
+// Scroll the target somewhere the card is not.
+//
+// On a phone the card is docked to the bottom (see _btPos), so the target has
+// to land in the band above it — scrollIntoView({block:'center'}) put it in the
+// middle of the screen, half of which the card occupies. Desktop keeps
+// scrollIntoView: there the card is placed beside or clear of the target.
+function _btScrollClear(el){
+  if(window.innerWidth > 760){
+    try{ el.scrollIntoView({block:'center', behavior:'smooth'}); }catch(e){}
+    return;
+  }
+  const panel = document.getElementById('btPanel');
+  const ph = panel ? (panel.offsetHeight || 200) : 200;
+  const gap = 14;
+  const freeH = Math.max(120, window.innerHeight - ph - gap * 2);
+  const r = el.getBoundingClientRect();
+  // Centre it in the free band; a target taller than the band is aligned to the
+  // top of it instead, so its heading stays on screen.
+  const want = (r.height >= freeH) ? gap : gap + (freeH - r.height) / 2;
+  const dy = r.top - want;
+  try{ window.scrollBy({ top: dy, behavior:'smooth' }); }
+  catch(e){ window.scrollBy(0, dy); }
 }
 
 function _btSpot(){
@@ -8923,9 +9056,14 @@ function _btPos(rect, corner){
   const vw = window.innerWidth, vh = window.innerHeight, gap = 14;
   if(corner){
     // Upper-left — first place the eye goes, so the overview is seen
-    // immediately (bottom-right proved easy to miss).
-    panel.style.top = gap + 'px';
-    panel.style.left = gap + 'px';
+    // immediately (bottom-right proved easy to miss). But the overview step
+    // talks about the quick-start bar, and at the very top the card sat on top
+    // of it, so start below whatever the bar currently occupies.
+    const qs = document.getElementById('quickstart');
+    const qb = qs ? qs.getBoundingClientRect() : null;
+    const below = (qb && qb.height > 0) ? qb.bottom + gap : gap;
+    panel.style.top = Math.max(gap, Math.min(vh - ph - gap, below)) + 'px';
+    panel.style.left = (vw <= 760) ? '' : gap + 'px';   // CSS pins left/right on mobile
     return;
   }
   if(!(rect && rect.width > 0)){
@@ -8943,20 +9081,24 @@ function _btPos(rect, corner){
   // branches can't fit and the fallback corner landed on top of the control
   // being described. Place it in whichever half the target is NOT in.
   if(vw <= 760){
-    // A target taller than the space left over can't be cleared by any
-    // placement (the persona grid is one). Dock to the bottom there: the top
-    // of the highlighted block — where its heading is — stays visible, which
-    // is the least-bad option and better than hiding the card.
-    if(rect.height > vh - ph - gap * 3){
-      panel.style.top = (vh - ph - gap) + 'px';
-      panel.style.left = '';
-      return;
-    }
-    const targetMid = rect.top + rect.height / 2;
-    top = (targetMid < vh / 2)
-      ? Math.max(rect.bottom + gap, vh - ph - gap)   // target high → card low
-      : Math.min(rect.top - gap - ph, gap);          // target low  → card high
-    panel.style.top = clampT(top) + 'px';
+    // The card is nearly viewport-wide here, so there is no "beside the target"
+    // placement — only above or below. The old code chose between those from
+    // the target's position, but _btRender had just scrolled the target to the
+    // middle of the screen, which is exactly where neither side has room: the
+    // card covered the control in almost every section.
+    //
+    // Dock it, and let _btScrollClear() put the target in the band left over.
+    // One predictable position the scroll can aim at beats four conditional
+    // ones racing a smooth scroll.
+    //
+    // Bottom is the normal dock, but some targets can't be scrolled out of it —
+    // the Start button is fixed to the bottom of the viewport, so docking there
+    // sat on top of it whatever the scroll did. Measure both docks and take
+    // whichever covers less; that handles fixed furniture without special-casing
+    // it, and a target taller than the free band still gets the better half.
+    const dockB = vh - ph - gap, dockT = gap;
+    const covered = t => Math.max(0, Math.min(t + ph, rect.bottom) - Math.max(t, rect.top));
+    panel.style.top = (covered(dockT) < covered(dockB) ? dockT : dockB) + 'px';
     panel.style.left = '';   // CSS pins left/right on mobile
     return;
   }
@@ -9693,6 +9835,11 @@ function onTempSlider(T){
       ' · <span style="opacity:0.5;">' + info.desc + '</span>';
   }
   drawTempChart(T);
+  // Curve B is drawn against this value — its y-axis starts at t0-0.5 and its
+  // ceiling clamps up to t0 — and the Max temp marker names it outright. Both
+  // were left stale by a temperature change until now.
+  syncMaxTempMark();
+  if(typeof drawB === 'function') drawB();
 }
 
 function renderTempGrid(){
@@ -11220,6 +11367,33 @@ function maxTempCeiling(){
   const el = document.getElementById('r-maxtemp');
   return el ? +el.value : TEMP_PRESSURE_CEILING_DEFAULT;
 }
+// What the curve actually tops out at. sigB clamps the slider up to the base
+// temperature, so anything that frames or hit-tests the chart has to use this
+// rather than the raw slider — otherwise a ceiling set below base temp gives a
+// zero-height y-range and yp() divides by zero.
+function effTempCeiling(){
+  return Math.max(Math.max(0.1, +_currentTempValue || 1.0), maxTempCeiling());
+}
+// Draws the game-start temperature onto the Max temp slider: a line at that
+// value, and hatching over the stretch below it where moving the ceiling can
+// have no effect. Without it, dragging Max temp under the base temperature
+// looks broken — the curve simply stops responding.
+function syncMaxTempMark(){
+  const inp = document.getElementById('r-maxtemp');
+  const trk = document.getElementById('maxtemp-track');
+  if(!inp || !trk) return;
+  const mn = +inp.min, mx = +inp.max;
+  const t0 = Math.max(0.1, +_currentTempValue || 1.0);
+  const frac = mx > mn ? Math.max(0, Math.min(1, (t0 - mn) / (mx - mn))) : 0;
+  trk.style.setProperty('--mk', String(frac));
+  trk.title = 'Game-start temperature: T ' + t0.toFixed(1);
+  const hint = document.getElementById('maxtemp-hint');
+  if(hint) hint.textContent = maxTempCeiling() <= t0
+    ? 'Ceiling is at or below the game-start temperature (T ' + t0.toFixed(1)
+      + ') — temperature stays flat, so escalation is effectively off.'
+    : 'Marker shows the game-start temperature (T ' + t0.toFixed(1)
+      + '). Below it the ceiling has no effect.';
+}
 function sigB(t){
   const t0 = Math.max(0.1, +_currentTempValue || 1.0);
   if(pressureOffB) return t0;
@@ -11350,6 +11524,27 @@ function catmullRomPath(ctx, cpx){
 // ── Main draw function ────────────────────────────────────────────────────────
 // sigFn: function(t) → baseline y value at think-time t
 // scale: 'log' | 'lin'
+// Smallest "round" step (1, 2 or 5 × a power of ten) that puts 3–5 labelled
+// lines on the axis.
+//
+// Rounding the raw step to the nearest nice multiplier is the usual approach
+// and it fails here: an ELO span of 2110 wants 527.5, which rounds up to 1000
+// and draws two lines. So this picks by the outcome instead — walk the
+// candidates upward and take the first whose label count is in range. Only
+// 1/2/5 are offered because 2.5 prints 0.75 and 1.25 on a one-decimal
+// temperature axis, which reads as noise beside 0.5 and 1.0.
+function _niceStep(span, target){
+  if(!(span > 0)) return 1;
+  const mag = Math.pow(10, Math.floor(Math.log10(span / Math.max(1, target))));
+  const cands = [];
+  for(let m = mag/10; m <= mag*1000; m *= 10) for(const k of [1,2,5]) cands.push(k*m);
+  cands.sort((a,b) => a-b);
+  const lines = s => Math.floor(span/s) + 1;
+  return cands.find(s => lines(s) >= 3 && lines(s) <= 5)
+      || cands.find(s => lines(s) <= 5)
+      || cands[cands.length-1];
+}
+
 function drawCurve(canvasId, ctrl, sigFn, yMin, yMax, yFmt, lineColor, fillColor, tipId, scale){
   const cv = document.getElementById(canvasId);
   if(!cv) return;
@@ -11375,9 +11570,17 @@ function drawCurve(canvasId, ctrl, sigFn, yMin, yMax, yFmt, lineColor, fillColor
   ctx.fillRect(PAD.l, PAD.t, w-PAD.l-PAD.r, CH-PAD.t-PAD.b);
 
   // ── Y grid + labels
+  // A fixed step ladder can't serve both charts: temperature spans ~8 units,
+  // which fell in the old ladder's last bucket (step 5) and drew a single
+  // gridline, while a small ELO drop drew eleven. _niceStep sizes the step to
+  // the range instead, so every chart lands on 3–5 labelled lines whatever it
+  // is showing.
   const ySpan = yMax-yMin;
-  const yStep = ySpan>400?200 : ySpan>150?100 : ySpan>40?10 : 5;
-  for(let v = Math.ceil(yMin/yStep)*yStep; v <= yMax; v += yStep){
+  const yStep = _niceStep(ySpan, 4);
+  const yStart = Math.ceil(yMin/yStep)*yStep;
+  // Step by index rather than accumulating: 0.1-sized steps accumulate float
+  // error fast enough to drop or duplicate the top label.
+  for(let i = 0, v = yStart; (v = yStart + i*yStep) <= yMax + 1e-9; i++){
     const y = yp(v);
     ctx.strokeStyle='rgba(255,255,255,0.05)'; ctx.lineWidth=0.5;
     ctx.beginPath(); ctx.moveTo(PAD.l,y); ctx.lineTo(w-PAD.r,y); ctx.stroke();
@@ -11499,7 +11702,8 @@ function drawA(){
 function drawB(){
   if(!document.getElementById('cvB')) return;
   const t0 = Math.max(0.1, +_currentTempValue || 1.0);
-  drawCurve('cvB', ctrlB, sigB, Math.max(0, t0-0.5), maxTempCeiling()+0.5,
+  syncMaxTempMark();
+  drawCurve('cvB', ctrlB, sigB, Math.max(0, t0-0.5), effTempCeiling()+0.5,
     v=>v.toFixed(1), '#5dade2', 'rgba(41,128,185,0.08)', 'tipB', scaleB);
 }
 function reDraw(){ initPts(); drawA(); drawB(); }
@@ -11569,7 +11773,7 @@ function setupDrag(canvasId, getCtrl, getSigFn, isElo, tipId, getScale){
     const eloFloor = Math.max(600, Math.min(currentElo,2600) - gv('r-drop'));
     const t0 = Math.max(0.1, +_currentTempValue || 1.0);
     return isElo ? { mn:eloFloor-60, mx:currentElo+50 }
-                 : { mn:Math.max(0, t0-0.5), mx:maxTempCeiling()+0.5 };
+                 : { mn:Math.max(0, t0-0.5), mx:effTempCeiling()+0.5 };
   }
   function pxToV(py,mn,mx){ return mx - (py-PAD.t)/(CH-PAD.t-PAD.b)*(mx-mn); }
   function snap(v){ return isElo ? Math.round(v/25)*25 : Math.round(v*10)/10; }
@@ -11759,6 +11963,19 @@ document.addEventListener('DOMContentLoaded', ()=>{
       <span style="flex:1"></span>
       <button class="bt-btn" id="btPrev" onclick="tourPrev()">← Back</button>
       <button class="bt-btn bt-next" id="btNext" onclick="tourNext()">Next →</button>
+    </div>
+  </div>
+  <!-- Shown in place of the step panel once the last step is finished, offering
+       the other half of the site. A separate block rather than rewriting
+       #btPanel's buttons, so a second run still has Back / Next. -->
+  <div id="btOutro" style="display:none;">
+    <div class="bt-count">Tour complete</div>
+    <div class="bt-title">That's the bot builder</div>
+    <div class="bt-body">The board itself comes in two views, each with its own tour: <b>Visualization</b> marks threats, pins and hanging pieces as you play; <b>Expert</b> is a clean tournament view without overlays.</div>
+    <div class="bt-actions bt-actions-stack">
+      <button class="bt-btn bt-next" onclick="btGoBoardTour('amateur')">Tour the Visualization board →</button>
+      <button class="bt-btn bt-next" onclick="btGoBoardTour('pro')">Tour the Expert board →</button>
+      <button class="bt-skip" onclick="btOutroClose()">Done</button>
     </div>
   </div>
 </div>

@@ -28,6 +28,20 @@
       <button class="tour-btn tour-next" id="tourNext" onclick="tourNext()">Next →</button>
     </div>
   </div>
+  <!-- Shown in place of the step panel once the last step is finished. The two
+       tours are the two halves of the site, so completing one is the natural
+       moment to offer the other. A separate block rather than rewriting
+       #tourPanel's buttons, so a second run still has Back / Next. -->
+  <div id="tourOutro" style="display:none;">
+    <div class="tour-count">Tour complete</div>
+    <div class="tour-title" id="tourOutroTitle">That's the board</div>
+    <div class="tour-body" id="tourOutroBody"></div>
+    <div class="tour-actions tour-actions-stack">
+      <button class="tour-btn tour-next" id="tourOutroBoard"></button>
+      <button class="tour-btn tour-next" id="tourOutroBot">Tour the bot builder →</button>
+      <button class="tour-skip" onclick="tourOutroClose()">Done</button>
+    </div>
+  </div>
 </div>
 
 <!-- Cylon eye calibration: find the pawn glyph's head sphere in the font the

@@ -1214,12 +1214,23 @@ function _tourRestoreBoardSettings(){
   if(btn) btn.setAttribute('aria-expanded', 'false');
 }
 
-function startTour(){
+// Started from the landing, the tour opens on the landing itself: the board
+// choice is the first decision the site asks for, and explaining it after
+// dismissing the page that offers it would be backwards. The step is prepended
+// rather than living in TOURS, because it only makes sense on that entry path.
+const _TOUR_LANDING_STEP = {
+  landing: true, sel:'.landing-shell-pick', title:'Two boards, one site',
+  body:'Start by picking how the board looks. <b>Visualization</b> marks threats, pins and hanging pieces while you play — the one to choose while you are still building board vision. <b>Expert</b> is a clean tournament view for players who would rather not have overlays. Either can be switched at any time, so this is not a decision you are stuck with.'
+};
+
+function startTour(opts){
   _tourShell = (typeof proMode !== 'undefined' && proMode) ? 'pro' : 'amateur';
   _tourDidDemo = false; _tourSavedFen = null;
   if(_tourShell === 'amateur') _tourSnapshotInd();
   _tourOpenBoardSettings();   // must run BEFORE the visibility filter below
-  const all = TOURS[_tourShell] || [];
+  const all = (opts && opts.fromLanding)
+    ? [_TOUR_LANDING_STEP].concat(TOURS[_tourShell] || [])
+    : (TOURS[_tourShell] || []);
   // Keep only steps whose target is present and visible (drops hidden chrome).
   _tourSteps = all.filter(s => {
     if(!s.sel) return true;
@@ -1228,17 +1239,84 @@ function startTour(){
   });
   if(!_tourSteps.length) return;
   _tourIdx = 0; _tourActive = true;
+  // A previous run may have left the outro up in place of the step panel.
+  const _p = document.getElementById('tourPanel'); if(_p) _p.style.display = '';
+  const _o = document.getElementById('tourOutro'); if(_o) _o.style.display = 'none';
   const ov = document.getElementById('tourOverlay'); if(ov) ov.style.display = 'block';
   _renderTourStep();
 }
-function endTour(){
+
+// ── Tour outro — hand off to the other half of the site ──────────────────────
+// The board tour and the bot-builder tour cover the two things this site is,
+// so finishing one is the moment to offer the other. The bot tour lives in the
+// panel iframe, so the handoff goes through startBotTour()'s postMessage.
+function _tourShowOutro(){
+  const ov = document.getElementById('tourOverlay');
+  const panel = document.getElementById('tourPanel');
+  const outro = document.getElementById('tourOutro');
+  const ring = document.getElementById('tourRing');
+  const back = document.getElementById('tourBackdrop');
+  if(!ov || !outro){ if(ov) ov.style.display = 'none'; return; }
+  // There are three tours, so finishing one offers the other two by name. The
+  // board option is whichever board this run wasn't — and taking it switches
+  // shells, because TOURS.pro points at chrome that only exists in pro mode.
+  const other = (_tourShell === 'pro') ? 'amateur' : 'pro';
+  const otherName = (other === 'pro') ? 'Expert board' : 'Visualization board';
+  const t = document.getElementById('tourOutroTitle');
+  if(t) t.textContent = (_tourShell === 'pro') ? "That's the Expert board" : "That's the Visualization board";
+  const b = document.getElementById('tourOutroBody');
+  if(b) b.textContent = 'Two more to try: the ' + otherName.toLowerCase()
+    + ', and the bot builder, where you shape an opponent’s personality before playing it.';
+  const bb = document.getElementById('tourOutroBoard');
+  if(bb){
+    bb.textContent = 'Tour the ' + otherName + ' →';
+    bb.onclick = function(){ tourGoBoardTour(other); };
+  }
+  const bot = document.getElementById('tourOutroBot');
+  if(bot) bot.onclick = function(){ tourGoBotTour(); };
+  if(ring) ring.style.display = 'none';
+  if(back) back.style.display = 'block';
+  if(panel) panel.style.display = 'none';
+  outro.style.display = 'block';
+  ov.style.display = 'block';
+  if(bb) bb.focus();
+}
+// Switching shells first: TOURS.pro targets #proSide / .pro-actions / #proMoves,
+// which startTour()'s visibility filter would drop in the amateur shell.
+function tourGoBoardTour(shell){
+  _tourHideOutro();
+  if(typeof setShell === 'function') setShell(shell === 'pro' ? 'pro' : 'amateur');
+  setTimeout(function(){ startTour(); }, 460);
+}
+function _tourHideOutro(){
+  const ov = document.getElementById('tourOverlay');
+  const panel = document.getElementById('tourPanel');
+  const outro = document.getElementById('tourOutro');
+  const back = document.getElementById('tourBackdrop');
+  if(outro) outro.style.display = 'none';
+  if(panel) panel.style.display = '';
+  if(back) back.style.display = 'none';
+  if(ov) ov.style.display = 'none';
+}
+function tourOutroClose(){ _tourHideOutro(); }
+function tourGoBotTour(){
+  _tourHideOutro();
+  if(typeof openBotModal === 'function') openBotModal();
+  if(typeof startBotTour === 'function') startBotTour();
+}
+function endTour(completed){
   _tourActive = false;
-  const ov = document.getElementById('tourOverlay'); if(ov) ov.style.display = 'none';
+  const ov = document.getElementById('tourOverlay');
   if(_tourShell === 'amateur') _tourRestoreBoard();
   _tourRestoreBoardSettings();
   try{ localStorage.setItem('bm_tour_' + _tourShell, '1'); }catch(e){}
+  // Reaching the end offers the other tour; skipping out just closes. Passing
+  // the distinction in rather than inferring it from _tourIdx keeps "Skip tour"
+  // on the final step behaving like a skip.
+  if(completed === true){ _tourShowOutro(); return; }
+  if(ov) ov.style.display = 'none';
 }
-function tourNext(){ if(_tourIdx < _tourSteps.length - 1){ _tourIdx++; _renderTourStep(); } else endTour(); }
+function tourNext(){ if(_tourIdx < _tourSteps.length - 1){ _tourIdx++; _renderTourStep(); } else endTour(true); }
 function tourPrev(){ if(_tourIdx > 0){ _tourIdx--; _renderTourStep(); } }
 
 function _renderTourStep(){
@@ -1246,6 +1324,17 @@ function _renderTourStep(){
   const ring = document.getElementById('tourRing');
   const back = document.getElementById('tourBackdrop');
   if(!step || !ring) return;
+  // The landing step needs the landing up; every other step needs it gone, and
+  // stepping back to it should bring it back. Driven off the step rather than a
+  // one-shot dismiss so Back works as well as Next.
+  const _lo = document.getElementById('landingOverlay');
+  if(_lo){
+    if(step.landing){
+      if(getComputedStyle(_lo).display === 'none' && typeof landingShow === 'function') landingShow();
+    } else if(getComputedStyle(_lo).display !== 'none' && typeof landingDismiss === 'function'){
+      landingDismiss();
+    }
+  }
   // Indicator demo (Beginner shell): show each overlay on a sample position.
   if(_tourModeTimer){ clearInterval(_tourModeTimer); _tourModeTimer = null; }
   if(_tourShell === 'amateur'){
