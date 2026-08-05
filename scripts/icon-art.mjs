@@ -5,7 +5,12 @@
 // Authored at 512; every other size scales from these.
 export const BASE = 512;
 export const ANY  = { s: 1.13,        x: 100, y: 56  };  // fills the tile, shown uncropped
-export const MASK = { s: 1.13 * 0.62, x: 155, y: 132 };  // inside the safe circle, ink-centred
+// Largest scale whose ink still clears the adaptive-icon safe circle, found by
+// solving the centring at each step: 0.74 lands at 0.99 of the safe radius,
+// 0.76 clips. There is no headroom left above this — the launcher's circle mask
+// is only 66.7% of the canvas, so a mark that looks small in a full-tile circle
+// preview is in fact nearly touching the real crop.
+export const MASK = { s: 0.74, x: 149, y: 125 };
 
 // Moonlight, with the lake as colour rather than as scenery. An earlier version
 // drew a literal frozen surface — horizon rule, specular line, reflection — which
@@ -15,7 +20,7 @@ export const MASK = { s: 1.13 * 0.62, x: 155, y: 132 };  // inside the safe circ
 // horizon band used to light.
 export const ground = () => `
   <div style="position:absolute;inset:0;background:linear-gradient(158deg,#1b3348 0%,#0d1a27 44%,#060b12 100%)"></div>
-  <div style="position:absolute;inset:0;background:radial-gradient(74% 62% at 28% 27%,#cfe3f5 0%,rgba(178,208,233,.82) 23%,rgba(120,163,200,.50) 46%,rgba(56,92,128,.20) 68%,rgba(0,0,0,0) 84%)"></div>
+  <div style="position:absolute;inset:0;background:radial-gradient(72% 60% at 39% 31%,#dcecfa 0%,rgba(190,218,240,.86) 22%,rgba(126,168,204,.54) 46%,rgba(56,92,128,.20) 68%,rgba(0,0,0,0) 84%)"></div>
   <div style="position:absolute;inset:0;background:radial-gradient(96% 58% at 24% 106%,rgba(72,116,152,.62) 0%,rgba(48,82,112,.30) 42%,rgba(0,0,0,0) 74%)"></div>
   <div style="position:absolute;inset:0;background:radial-gradient(104% 82% at 84% 74%,rgba(0,0,0,.70) 0%,rgba(0,0,0,0) 62%)"></div>`;
 
