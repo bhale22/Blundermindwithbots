@@ -1419,8 +1419,8 @@ body.pro-mode #proSide{
   font-family:'Segoe UI Symbol',sans-serif;color:var(--pt1);
 }
 .pro-meta{ flex:1;min-width:0; }
-.pro-name{ font-family:var(--pfu);font-size:12px;font-weight:500;color:var(--pt1); }
-.pro-rating{ font-family:var(--pfm);font-size:9px;color:var(--ptd);margin-top:1px;min-height:11px; }
+.pro-name{ font-family:var(--pfu);font-size:12px;font-weight:500;color:var(--pt1);height:15px; }
+.pro-rating{ font-family:var(--pfm);font-size:9px;color:var(--ptd);margin-top:1px;height:12px; }
 .pro-clock{
   font-family:var(--pfm);font-size:21px;font-weight:500;letter-spacing:0.04em;
   color:var(--pt2);padding:4px 12px;border-radius:4px;background:var(--pc);
@@ -1489,6 +1489,28 @@ body.pro-mode #proSide{
 
 /* Relocated chat, restyled for the pro column.
    Visibility stays governed by chatShow() — only shows during 2-player games. */
+/* Clock + commit chip as one stacked unit on the player's own panel. The
+   stack has a constant height, so the clock's position does not move. */
+.pro-clock-stack{ display:flex;flex-direction:column;align-items:stretch;gap:5px;flex-shrink:0; }
+body.pro-mode #proChipMount{ display:flex; }
+body.pro-mode #proChipMount .commit-chip{
+  width:100%;justify-content:center;text-align:center;
+  font-family:var(--pfu);font-size:8px;letter-spacing:0.06em;text-transform:uppercase;
+  background:var(--pc);border:0.5px solid var(--pbd);color:var(--ptd);padding:4px 6px;
+}
+body.pro-mode #proChipMount .commit-chip:hover{ border-color:var(--pbd-a);color:var(--pt2); }
+body.pro-mode #proChipMount .commit-chip.on{
+  background:var(--pc-mid);border-color:var(--pbd-a);color:var(--pa);
+}
+/* Empty in pro mode once the chip has been relocated — collapse it so it does
+   not leave a gap under the board. */
+body.pro-mode #boardInputRow{ display:none; }
+
+/* Long bot names and rating lines must not wrap: a second line would grow the
+   player row and move the clock, which is exactly what this layout guarantees
+   against. */
+.pro-name, .pro-rating, .pro-mat{ white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+
 body.pro-mode #proChatMount{ display:flex;flex-direction:column; }
 body.pro-mode #proChatMount #chatBox{
   width:auto;background:var(--pc-mid);border:0.5px solid var(--pbd);
@@ -2160,7 +2182,9 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="pro-moves" id="proMoves"><div class="pro-moves-empty">No moves yet</div></div>
     </div>
 
-    <!-- You (bottom of board) -->
+    <!-- You (bottom of board). The move-commit chip is mounted under this clock
+         in pro mode (proMountChip) — it belongs with the player's own controls
+         rather than floating under the board's corner. -->
     <div class="pro-player active" id="proPlayerBottom">
       <div class="pro-avatar" id="proAvatarBottom">♔</div>
       <div class="pro-meta">
@@ -2168,7 +2192,10 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <div class="pro-rating" id="proRatingBottom"></div>
         <div class="pro-mat" id="proMatBottom"></div>
       </div>
-      <div class="pro-clock" id="proClockBottom">—</div>
+      <div class="pro-clock-stack">
+        <div class="pro-clock" id="proClockBottom">—</div>
+        <div id="proChipMount"></div>
+      </div>
     </div>
 
     <!-- Game-over result (shown when checkmate / stalemate / resign / draw) -->

@@ -66,7 +66,8 @@ describe('pro shell layout stability', { concurrency: 1 }, () => {
     // Play well past the point where the old min/max range would have grown:
     // 60px to 188px was roughly the first ten moves.
     const seq = [[52, 36], [12, 28], [62, 45], [1, 18], [61, 34], [5, 26],
-                 [59, 45], [3, 21], [60, 62], [6, 21]];
+                 [59, 45], [3, 21], [60, 62], [6, 21], [51, 35], [11, 27],
+                 [34, 27], [21, 27], [45, 35], [27, 35], [45, 35]];
     for (const [from, to] of seq) {
       await page.evaluate(([f, t]) => { executeMove(f, t); }, [from, to]);
       await page.waitForTimeout(120);
@@ -136,6 +137,60 @@ describe('pro shell layout stability', { concurrency: 1 }, () => {
     await page.waitForTimeout(200);
     const now = await layout();
     assert.strictEqual(now.bottomY, start.bottomY, 'player clock moved when the result bar appeared');
+  });
+
+  test('a long bot name does not wrap and shift the clock', async () => {
+    // Build-A-Bot names can be long ("The Drunken Master Mk II"). A wrapped
+    // name would add a line to the player row and push the clock down.
+    await page.evaluate(() => {
+      const n = document.getElementById('proNameTop');
+      const r = document.getElementById('proRatingTop');
+      if (n) n.textContent = 'The Drunken Master Mk II, Scourge of the Open File';
+      if (r) r.textContent = 'Maia 1700 · aggressive · hustle +4 · budget 175cp';
+    });
+    await page.waitForTimeout(200);
+    const now = await layout();
+    assert.strictEqual(now.bottomY, start.bottomY, 'clock moved under a long bot name');
+    assert.strictEqual(now.topY, start.topY);
+  });
+
+  test('the commit chip sits in the player clock panel in pro mode', async () => {
+    const where = await page.evaluate(() => {
+      const chip = document.getElementById('commitModeChip');
+      return {
+        inClockPanel: !!document.getElementById('proPlayerBottom').contains(chip),
+        visible: !!(chip && chip.offsetParent !== null),
+      };
+    });
+    assert.ok(where.inClockPanel, 'chip should be mounted in the player clock panel');
+    assert.ok(where.visible, 'chip should be visible');
+  });
+
+  test('the chip still toggles from its new home', async () => {
+    const before = await page.evaluate(() => boardCommitMode);
+    await page.locator('#commitModeChip').click();
+    await page.waitForTimeout(250);
+    const after = await page.evaluate(() => boardCommitMode);
+    assert.notStrictEqual(after, before, 'clicking the chip should switch mode');
+    // And doing so must not disturb the layout.
+    const now = await layout();
+    assert.strictEqual(now.bottomY, start.bottomY, 'clock moved when the chip toggled');
+  });
+
+  test('switching back to the amateur shell returns the chip under the board', async () => {
+    await page.evaluate(() => setShell('amateur'));
+    await page.waitForTimeout(500);
+    const back = await page.evaluate(() => {
+      const chip = document.getElementById('commitModeChip');
+      return {
+        inBoardRow: !!document.getElementById('boardInputRow').contains(chip),
+        visible: !!(chip && chip.offsetParent !== null),
+      };
+    });
+    assert.ok(back.inBoardRow, 'chip should return to the board input row');
+    assert.ok(back.visible, 'chip should still be visible in the amateur shell');
+    await page.evaluate(() => setShell('pro'));
+    await page.waitForTimeout(400);
   });
 
   test('no page errors were raised throughout', () => {

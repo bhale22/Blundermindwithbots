@@ -843,11 +843,13 @@ function setShell(mode){
   try{ localStorage.setItem('bm_shell', proMode ? 'pro' : 'amateur'); }catch(e){}
   if(proMode){
     proMountChat();
+    proMountChip();
     proApplyBoardClean();   // slate board + indicators off (minimal look)
     proSync();
   } else {
     const gm = document.getElementById('proGearMenu'); if(gm) gm.style.display = 'none';
     proUnmountChat();
+    proUnmountChip();
     proRestoreBoard();
   }
   if(typeof render === 'function') render();
@@ -895,6 +897,21 @@ function proRestoreBoard(){
   if(gh && _proSaved.ghost != null){ gh.value = _proSaved.ghost; if(typeof ghostModeChanged === 'function') ghostModeChanged(); }
   _proSaved = null;
   if(typeof indApply === 'function') indApply();   // recompute the amateur indicators
+}
+
+// The move-commit chip lives under the board in the amateur shell, which puts
+// it under the board's bottom-right corner in pro mode — visually stranded.
+// In pro mode it belongs with the player's own clock. Same relocate-on-switch
+// pattern as the chat box below.
+function proMountChip(){
+  const chip = document.getElementById('commitModeChip');
+  const mount = document.getElementById('proChipMount');
+  if(chip && mount && chip.parentNode !== mount) mount.appendChild(chip);
+}
+function proUnmountChip(){
+  const chip = document.getElementById('commitModeChip');
+  const row = document.getElementById('boardInputRow');
+  if(chip && row && chip.parentNode !== row) row.appendChild(chip);
 }
 
 function proMountChat(){
