@@ -584,34 +584,62 @@ canvas{
 /* The scanning eye lives on the watermark and nowhere else. It was previously
    on the title glyph too, at a different duration — two red scanners blinking
    out of phase read as busy rather than deliberate. */
+/* The same chimera as the app icon and the Play banner — machine knight in
+   front, Staunton pawn behind — so the mark someone tapped on their launcher is
+   the mark that greets them. Authored in the icon's 276×355 space and scaled,
+   so scripts/icon-art.mjs stays the one definition of the proportions. */
 .bab-mark { display:none; }
 .landing-expert .bab-mark {
-  display:block;position:fixed;left:-40px;bottom:-120px;
-  width:420px;height:336px;pointer-events:none;z-index:0;
+  display:block;position:fixed;left:0;bottom:0;
+  width:460px;height:290px;pointer-events:none;z-index:0;
 }
+/* The knight half is near-black by design. On this ground that would be
+   invisible, so a pool of moonlight sits behind it — the same fix the Play
+   banner needed, and the reason the mark can stay identical everywhere instead
+   of being redrawn light-on-dark here. */
+.bab-mark .bab-pool {
+  position:absolute;left:-160px;bottom:-220px;width:700px;height:620px;
+  background:radial-gradient(50% 50% at 50% 50%,rgba(158,196,226,.30) 0%,rgba(96,138,180,.14) 40%,rgba(0,0,0,0) 72%);
+}
+/* A watermark, not an element. At full strength the pawn's white dome is the
+   brightest thing on the page and it sat directly behind the tour button and
+   the footer; the mark has to stay behind the interface it decorates. */
+.bab-mark .bab-piece {
+  position:absolute;left:16px;top:0;width:276px;height:355px;
+  transform:scale(1.42);transform-origin:0 0;opacity:0.38;
+}
+/* Black across the muzzle, lifting over the last 40px to meet the tone the pawn
+   starts on, so the two halves blend instead of meeting at a hard seam. */
 .bab-mark .bab-knight {
-  position:absolute;left:0;top:0;
-  font:420px/0.8 Georgia,'Times New Roman',serif;
-  color:#ffffff;opacity:0.045;user-select:none;
+  position:absolute;left:0;top:0;width:157px;height:355px;overflow:hidden;
 }
+.bab-mark .bab-knight span {
+  position:absolute;left:-92px;top:-42.5px;
+  font:480px/1 Georgia,'Times New Roman',serif;
+  color:transparent;white-space:nowrap;user-select:none;
+  background-image:linear-gradient(to right,#04060a 0,#04060a 206px,#0d1219 226px,#232b34 240px,#3d4650 249px);
+  -webkit-background-clip:text;background-clip:text;
+}
+.bab-mark .bab-pawn { position:absolute;left:157px;top:-60px;width:142px;height:415px;overflow:hidden; }
+.bab-mark .bab-pawn svg { position:absolute;left:-142px;top:0; }
 /* The bar is the visor slot; the mask fades its trailing edge so the glint
    emerges from the muzzle instead of switching on at a hard border. */
 .bab-mark .bab-visor {
-  position:absolute;left:113px;top:69px;width:89px;height:12px;border-radius:6px;
-  background:#0e0f11;overflow:hidden;
+  position:absolute;left:34px;top:82px;width:108px;height:17px;border-radius:9px;
+  background:#04060a;overflow:hidden;
   -webkit-mask-image:linear-gradient(to left,#000 0 47%,rgba(0,0,0,0) 66%);
           mask-image:linear-gradient(to left,#000 0 47%,rgba(0,0,0,0) 66%);
 }
 .bab-mark .bab-glint {
-  position:absolute;left:0;top:0;width:26px;height:12px;filter:blur(1px);
-  background:radial-gradient(closest-side,rgba(255,58,46,0.92),rgba(255,58,46,0) 85%);
+  position:absolute;left:0;top:0;width:38px;height:17px;filter:blur(0.8px);
+  background:radial-gradient(closest-side,rgba(255,72,58,1),rgba(255,58,46,0) 88%);
   animation:babVisorSweep 5.6s cubic-bezier(0.37,0,0.63,1) infinite,
             babVisorFade  5.6s linear infinite;
 }
 @keyframes babVisorSweep {
-  0%,6%    { transform:translateX(57px); }
-  48%,52%  { transform:translateX(26px); }
-  94%,100% { transform:translateX(57px); }
+  0%,6%    { transform:translateX(66px); }
+  48%,52%  { transform:translateX(30px); }
+  94%,100% { transform:translateX(66px); }
 }
 @keyframes babVisorFade {
   0%,18%   { opacity:0.92; }
@@ -765,7 +793,11 @@ canvas{
   /* Scale the whole watermark rather than resizing its parts — the visor sweep
      is keyframed in px, so anything else would desynchronise the glint from
      the slot it travels along. */
-  .landing-expert .bab-mark{ transform:scale(0.62);transform-origin:left bottom; }
+  .landing-expert .bab-mark{ transform:scale(0.56);transform-origin:left bottom; }
+  /* Less room to get out of the way of on a phone: the cards run the full
+     width, so the mark drops to a suggestion rather than a picture. */
+  .bab-mark .bab-piece{ opacity:0.2; }
+  .bab-mark .bab-pool{ opacity:0.7; }
 
   .landing-title{ font-size:31px;text-align:center; }
   .landing-tagline{ font-size:13px;margin-bottom:20px;text-align:center; }
@@ -1529,8 +1561,22 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 <div id="landingOverlay">
  <!-- Build-A-Bot only — .bab-mark stays display:none until .landing-expert. -->
  <div class="bab-mark" aria-hidden="true">
-   <div class="bab-knight">&#9822;</div>
-   <div class="bab-visor"><div class="bab-glint"></div></div>
+   <div class="bab-pool"></div>
+   <div class="bab-piece">
+     <div class="bab-knight"><span>&#9822;</span></div>
+     <div class="bab-pawn">
+       <svg viewBox="-142 -60 284 415" width="284" height="415">
+         <defs><linearGradient id="babPawnGrad" gradientUnits="userSpaceOnUse" x1="15" y1="0" x2="31" y2="0">
+           <stop offset="0" stop-color="#414b56"/><stop offset="0.34" stop-color="#b3bec8"/>
+           <stop offset="0.72" stop-color="#eff3f7"/><stop offset="1" stop-color="#ffffff"/>
+         </linearGradient></defs>
+         <g transform="translate(0,-103.2) scale(11.6) translate(-22.5,0)" fill="url(#babPawnGrad)">
+           <path d="M 22.5,9 C 20.29,9 18.5,10.79 18.5,13 C 18.5,13.89 18.79,14.71 19.28,15.38 C 17.33,16.5 16,18.59 16,21 C 16,23.03 16.94,24.84 18.41,26.03 C 15.41,27.09 11,31.58 11,39.5 L 34,39.5 C 34,31.58 29.59,27.09 26.59,26.03 C 28.06,24.84 29,23.03 29,21 C 29,18.59 27.67,16.5 25.72,15.38 C 26.21,14.71 26.5,13.89 26.5,13 C 26.5,10.79 24.71,9 22.5,9 z"/>
+         </g>
+       </svg>
+     </div>
+     <div class="bab-visor"><div class="bab-glint"></div></div>
+   </div>
  </div>
  <div class="landing-inner">
   <div class="landing-title">
