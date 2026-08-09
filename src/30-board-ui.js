@@ -676,7 +676,13 @@ function render(){
     // was played" — it is adjacent to the yellow-green last-move highlight —
     // when the whole point is that it has not been played yet.
     else if(isPreviewing&&awaitingConfirm&&sq===premoveTo)fill=light?'#f6f669':'#baca2b';
-    else if(isPreviewing){if(sq===premoveFrom)fill=light?'#d8d860':'#b0b020';else if(sq===premoveTo)fill=light?'#a0d8a0':'#5a9e5a';}
+    // Preview destination is the selection yellow, not green. Green read as
+    // "this move was played" by association with the yellow-green last-move
+    // highlight, when a preview is the opposite: nothing has happened yet.
+    // Origin stays the darker olive, so the two ends stay distinguishable.
+    // (Last-move highlighting is suppressed while previewing — see above — so
+    // these two yellows are never on the board at the same time.)
+    else if(isPreviewing){if(sq===premoveFrom)fill=light?'#d8d860':'#b0b020';else if(sq===premoveTo)fill=light?'#f6f669':'#baca2b';}
     else{if(sq===selSq)fill=light?'#f6f669':'#baca2b';else if(sq===dragFrom&&isDragging)fill=light?'#d0d0d0':'#aaa';}
     ctx.fillStyle=fill;ctx.fillRect(c*SQ,r*SQ,SQ,SQ);
     // Subtle texture — stable per-square grain

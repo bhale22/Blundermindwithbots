@@ -1089,6 +1089,33 @@ document.addEventListener('DOMContentLoaded', () => {
   }catch(e){}
 });
 
+// ── "Also on the web" cross-links ───────────────────────────────────────────
+// The installed app serves the same HTML as the websites, so the note telling
+// people this is an adaptation of the browser version can only be shown by
+// detecting the app at runtime — on blundermindchess.com itself it would be
+// circular. Several signals, because a Trusted Web Activity does not always
+// report the same one: TWAs set an android-app:// referrer, installed PWAs
+// report a non-browser display-mode, and iOS uses navigator.standalone.
+// `?app=1` forces it on for testing in a desktop browser.
+function bmIsAppContext(){
+  try{
+    if(/[?&]app=1\b/.test(location.search)) return true;
+    if(document.referrer && document.referrer.startsWith('android-app://')) return true;
+    if(window.navigator.standalone === true) return true;   // iOS home-screen
+    return ['standalone','fullscreen','minimal-ui'].some(m =>
+      window.matchMedia('(display-mode: ' + m + ')').matches);
+  }catch(e){ return false; }
+}
+
+function bmRevealWebNotes(){
+  if(!bmIsAppContext()) return;
+  ['landingWebNote','aboutWebNote'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.hidden = false;
+  });
+}
+document.addEventListener('DOMContentLoaded', bmRevealWebNotes);
+
 // ══════════════════════════════════════════════════════════════════════════
 // GUIDED TOUR — spotlight overlay with per-shell step sequences. The overlay
 // is click-through (pointer-events:none) so users can jump straight into an
