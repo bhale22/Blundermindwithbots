@@ -899,20 +899,31 @@ function proRestoreBoard(){
   if(typeof indApply === 'function') indApply();   // recompute the amateur indicators
 }
 
-// The move-commit chip lives under the board in the amateur shell, which puts
-// it under the board's bottom-right corner in pro mode — visually stranded.
-// In pro mode it belongs with the player's own clock. Same relocate-on-switch
-// pattern as the chat box below.
-function proMountChip(){
+// The commit chip belongs with the player's OWN clock in both shells — it is a
+// control for your moves, so it sits where your time sits. That target moves:
+// the pro shell has its own panel, and in the amateur shell .board-flipped
+// swaps the two player boxes so "your" box is playerBoxB when you play Black.
+// Rather than hunt down every place the flip can change, this is called from
+// updatePlayerBoxes() (which already runs after every move and turn change)
+// and no-ops when the chip is already where it belongs.
+function syncCommitChipMount(){
   const chip = document.getElementById('commitModeChip');
-  const mount = document.getElementById('proChipMount');
-  if(chip && mount && chip.parentNode !== mount) mount.appendChild(chip);
+  if(!chip) return;
+  let mount;
+  if(typeof proMode !== 'undefined' && proMode){
+    mount = document.getElementById('proChipMount');
+  } else {
+    // The bottom box is the player's own. boardFlipped is set when the human
+    // plays Black, which moves playerBoxB to the bottom.
+    const flipped = (typeof boardFlipped !== 'undefined' && boardFlipped) ||
+                    (typeof mpRole !== 'undefined' && mpRole === 'black' &&
+                     typeof mpRoomId !== 'undefined' && mpRoomId);
+    mount = document.getElementById(flipped ? 'chipMountB' : 'chipMountW');
+  }
+  if(mount && chip.parentNode !== mount) mount.appendChild(chip);
 }
-function proUnmountChip(){
-  const chip = document.getElementById('commitModeChip');
-  const row = document.getElementById('boardInputRow');
-  if(chip && row && chip.parentNode !== row) row.appendChild(chip);
-}
+function proMountChip(){ syncCommitChipMount(); }
+function proUnmountChip(){ syncCommitChipMount(); }
 
 function proMountChat(){
   const chat = document.getElementById('chatBox');
@@ -1115,6 +1126,17 @@ function bmRevealWebNotes(){
   });
 }
 document.addEventListener('DOMContentLoaded', bmRevealWebNotes);
+
+// Start pulling the Maia model in the background on app launch, so a fresh
+// install can play a Maia bot without first hunting for a download button.
+// Deferred past load so it never competes with first paint or the engines the
+// user can already play against.
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    try { if(typeof maiaMaybePrefetch === 'function') maiaMaybePrefetch(); }
+    catch(e){ console.warn('maia prefetch', e); }
+  }, 2500);
+});
 
 // ══════════════════════════════════════════════════════════════════════════
 // GUIDED TOUR — spotlight overlay with per-shell step sequences. The overlay

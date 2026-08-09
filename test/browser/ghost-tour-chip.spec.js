@@ -1,0 +1,204 @@
+// Ghost timing, the landing tour, and where the commit chip lives.
+const { test, before, after, describe } = require('node:test');
+const assert = require('node:assert');
+const { chromium } = require('playwright');
+const H = require('./_harness');
+
+describe('ghost delay, tour launch, chip placement', { concurrency: 1 }, () => {
+  let server, browser, page;
+  const errs = [];
+
+  before(async () => {
+    server = await H.startServer();
+    browser = await chromium.launch();
+    page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
+    page.on('pageerror', (e) => errs.push(e.message));
+    await page.addInitScript(() => {
+      try { localStorage.removeItem('bm_liveGame'); } catch (e) {}
+    });
+  });
+
+  after(async () => {
+    if (browser) await browser.close();
+    H.stopServer(server);
+  });
+
+  async function load(query) {
+    await page.goto(server.baseUrl + (query || ''), { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#cv');
+    await page.waitForTimeout(1800);
+  }
+
+  // ── Chip placement ────────────────────────────────────────────────────────
+  test('the chip sits inside the player clock box, not in a row under the board', async () => {
+    await load();
+    await H.dismissLanding(page);
+    const where = await page.evaluate(() => {
+      const chip = document.getElementById('commitModeChip');
+      return {
+        inPlayerBox: !!document.getElementById('playerBoxW').contains(chip),
+        inOldRow: !!document.getElementById('boardInputRow').contains(chip),
+        visible: !!(chip && chip.offsetParent !== null),
+      };
+    });
+    assert.ok(where.inPlayerBox, 'chip should be in the White (bottom) player box');
+    assert.strictEqual(where.inOldRow, false, 'chip should have left the old board row');
+    assert.ok(where.visible, 'chip should be visible');
+  });
+
+  test('the old board row leaves no gap under the board', async () => {
+    const gap = await page.evaluate(() => {
+      const row = document.getElementById('boardInputRow');
+      return row ? row.getBoundingClientRect().height : 0;
+    });
+    assert.strictEqual(gap, 0, 'the retired row must take no vertical space');
+  });
+
+  test('the chip follows the board flip to whichever box is the player\'s', async () => {
+    await page.evaluate(() => {
+      boardFlipped = true;
+      document.getElementById('board-col').classList.add('board-flipped');
+      updatePlayerBoxes();
+    });
+    await page.waitForTimeout(300);
+    assert.ok(await page.evaluate(() =>
+      document.getElementById('playerBoxB').contains(document.getElementById('commitModeChip'))),
+      'playing Black, the chip should move to the Black box (now at the bottom)');
+
+    await page.evaluate(() => {
+      boardFlipped = false;
+      document.getElementById('board-col').classList.remove('board-flipped');
+      updatePlayerBoxes();
+    });
+    await page.waitForTimeout(300);
+    assert.ok(await page.evaluate(() =>
+      document.getElementById('playerBoxW').contains(document.getElementById('commitModeChip'))),
+      'and back again');
+  });
+
+  // ── Tour ──────────────────────────────────────────────────────────────────
+  test('the tour renders above the landing page, not behind it', async () => {
+    await load();
+    const z = await page.evaluate(() => ({
+      landing: +getComputedStyle(document.getElementById('landingOverlay')).zIndex,
+      tour: +getComputedStyle(document.getElementById('tourOverlay')).zIndex,
+    }));
+    assert.ok(z.tour > z.landing,
+      'tour z-index (' + z.tour + ') must beat the landing overlay (' + z.landing + ')');
+  });
+
+  test('starting the visualization tour from the landing actually shows a step', async () => {
+    await load();
+    await page.evaluate(() => landingStartTour('board'));
+    await page.waitForTimeout(900);
+
+    const state = await page.evaluate(() => {
+      const panel = document.getElementById('tourPanel');
+      const r = panel.getBoundingClientRect();
+      return {
+        active: _tourActive,
+        steps: _tourSteps.length,
+        idx: _tourIdx,
+        title: (document.getElementById('tourTitle') || {}).textContent || '',
+        overlayShown: getComputedStyle(document.getElementById('tourOverlay')).display !== 'none',
+        panelOnScreen: r.width > 0 && r.height > 0,
+      };
+    });
+    assert.strictEqual(state.active, true, 'tour should be running');
+    assert.ok(state.steps > 1, 'tour should have steps: ' + state.steps);
+    assert.ok(state.overlayShown, 'tour overlay should be displayed');
+    assert.ok(state.panelOnScreen, 'tour panel should be laid out on screen');
+    assert.match(state.title, /\S/, 'the first step should have a title');
+
+    // And it must be the topmost thing at its own centre, not covered by the
+    // landing — this is what "jumps back to the landing" actually looked like.
+    const covered = await page.evaluate(() => {
+      const panel = document.getElementById('tourPanel');
+      const r = panel.getBoundingClientRect();
+      const el = document.elementFromPoint(r.left + r.width / 2, r.top + 12);
+      return !panel.contains(el);
+    });
+    assert.strictEqual(covered, false, 'tour panel must not be covered by the landing overlay');
+  });
+
+  test('the tour advances past the landing step', async () => {
+    await page.evaluate(() => tourNext());
+    await page.waitForTimeout(700);
+    const after = await page.evaluate(() => ({
+      idx: _tourIdx,
+      active: _tourActive,
+      landingGone: getComputedStyle(document.getElementById('landingOverlay')).display === 'none'
+        || document.getElementById('landingOverlay').classList.contains('fade-out'),
+    }));
+    assert.strictEqual(after.idx, 1, 'should be on the second step');
+    assert.strictEqual(after.active, true);
+    assert.ok(after.landingGone, 'landing should step aside once the tour moves on');
+    await page.evaluate(() => endTour());
+  });
+
+  // ── Ghost delay ───────────────────────────────────────────────────────────
+  test('ghost replies wait before drawing, so indicators can be read first', async () => {
+    await load();
+    await H.dismissLanding(page);
+    assert.strictEqual(await page.evaluate(() => GHOST_DELAY_MS), 1500,
+      'the delay should be 1.5s');
+
+    // Hovering schedules rather than drawing immediately.
+    const scheduled = await page.evaluate(() => {
+      selSq = 52;                      // e2 selected
+      legalMoves = legalMovesFor(52, board, epSq, castling);
+      ghostOnMouseMove(36);            // hover e4
+      return _ghostDelayTimer !== null;
+    });
+    assert.ok(scheduled, 'a hover should schedule the ghost, not draw it at once');
+
+    // Moving to another square restarts the wait rather than stacking.
+    const restarted = await page.evaluate(() => {
+      const first = _ghostDelayTimer;
+      ghostOnMouseMove(44);            // hover e3
+      return _ghostDelayTimer !== null && _ghostDelayTimer !== first;
+    });
+    assert.ok(restarted, 'a new square should restart the delay');
+
+    // Dropping the piece cancels it, so no ghost lands after the move is gone.
+    const cancelled = await page.evaluate(() => {
+      ghostOnMouseDown(52);
+      return _ghostDelayTimer === null;
+    });
+    assert.ok(cancelled, 'picking up again should cancel a pending ghost');
+  });
+
+  test('the ghost search timeout scales with depth', async () => {
+    // A flat 5s silently broke "SF Deep (depth 12)": the search outran it and
+    // resolved null, so nothing was ever drawn.
+    const budgets = await page.evaluate(() => {
+      const f = (depth, excl) =>
+        Math.max(5000, Math.min(20000, depth * 1200)) * (excl ? 1.6 : 1);
+      return { d4: f(4, false), d12: f(12, false), d12x: f(12, true) };
+    });
+    assert.ok(budgets.d12 > budgets.d4, 'depth 12 should get more time than depth 4');
+    assert.ok(budgets.d12 >= 14000, 'depth 12 needs a realistic budget, got ' + budgets.d12);
+    assert.ok(budgets.d12x > budgets.d12, 'the searchmoves pass should get more still');
+  });
+
+  test('a parked piece keeps its ghosts in confirm mode', async () => {
+    // Parking releases both dragFrom and selSq while the preview stays live, so
+    // the ghost hook has to fall back to the preview origin or the ghosts died
+    // the moment the piece was placed.
+    await page.evaluate(() => setCommitMode('confirm'));
+    const kept = await page.evaluate(() => {
+      selSq = -1; dragFrom = -1;
+      premoveFrom = 52; premoveTo = 36;
+      setAwaitingConfirm(true);
+      ghostOnMouseMove(36);
+      return { from: _ghostFromSq, scheduled: _ghostDelayTimer !== null };
+    });
+    assert.strictEqual(kept.from, 52, 'ghost origin should come from the parked preview');
+    assert.ok(kept.scheduled, 'a parked piece should still schedule its ghosts');
+    await page.evaluate(() => { setAwaitingConfirm(false); setCommitMode('release'); });
+  });
+
+  test('no page errors were raised throughout', () => {
+    assert.deepStrictEqual(errs, []);
+  });
+});

@@ -1814,6 +1814,10 @@ function updatePlayerBoxes(){
   // Reflect ghost-availability (off during live 2-player games)
   if(typeof mpUpdateGhostAvailability==='function') mpUpdateGhostAvailability();
   // Auto-save the game once it ends (and offer a save-as download)
+  // Keep the commit chip in the player's own clock box: which box that is
+  // changes with the board flip, and this is the one function that already
+  // runs after every move and turn change.
+  if(typeof syncCommitChipMount==='function') syncCommitChipMount();
   if(typeof maybeAutoSaveGame==='function') maybeAutoSaveGame();
   // A finished multiplayer game has nothing to rejoin — drop the seat token so
   // a later reload does not try to resume a game that is already over.

@@ -2546,26 +2546,57 @@ function _drawGhost(bd, fromSq, toSq, alpha, outlineColor) {
   ghostCtx.restore();
 }
 
+// ── Ghost reply delay ────────────────────────────────────────────────────────
+// Ghost replies used to appear the instant you crossed into a square, on top
+// of the overlays you moved there to read. The board's own indicators are the
+// thing being taught; the engine's opinion is a second opinion, and arriving
+// first it pre-empts your own assessment. The pause gives you time to look
+// before being told.
+var GHOST_DELAY_MS = 1500;
+var _ghostDelayTimer = null;
+
+function _ghostCancelPending() {
+  if (_ghostDelayTimer) { clearTimeout(_ghostDelayTimer); _ghostDelayTimer = null; }
+}
+
 // Called from existing canvas mousemove handler
 function ghostOnMouseMove(hSq) {
-  if (!ghostEnabled()) { clearGhostPieces(); return; }
+  if (!ghostEnabled()) { _ghostCancelPending(); clearGhostPieces(); return; }
   // Square-change gating is handled at the call site (inside sq!==hoverSq/dragOver gates)
   // so this function is only called once per new square.
   var fromSq = (dragFrom >= 0) ? dragFrom : selSq;
-  if (fromSq < 0) { clearGhostPieces(); return; }
+  // In confirm mode a parked piece has released both dragFrom and selSq while
+  // still showing a live preview, so fall back to the preview's own origin —
+  // otherwise parking the piece silently killed its ghosts.
+  if (fromSq < 0 && typeof awaitingConfirm !== 'undefined' && awaitingConfirm) fromSq = premoveFrom;
+  if (fromSq < 0) { _ghostCancelPending(); clearGhostPieces(); return; }
   // Skip if bot's turn
   if (botActive) {
     var bc = botPlayerColor === 'white' ? 'b' : 'w';
-    if (turn === bc) { clearGhostPieces(); return; }
+    if (turn === bc) { _ghostCancelPending(); clearGhostPieces(); return; }
   }
   botLastHoverSq = hSq;
   _ghostFromSq = fromSq;
-  ghostShowForSquare(fromSq, hSq);
+
+  // Moving to a new square restarts the wait and drops whatever was drawn for
+  // the old one, so a stale ghost never lingers over a different square.
+  _ghostCancelPending();
+  _ghostRequestId++;
+  clearGhostPieces();
+  var _f = fromSq, _h = hSq;
+  _ghostDelayTimer = setTimeout(function() {
+    _ghostDelayTimer = null;
+    // Re-check: the piece may have been dropped or committed while we waited.
+    if (!ghostEnabled()) return;
+    if (botLastHoverSq !== _h) return;
+    ghostShowForSquare(_f, _h);
+  }, GHOST_DELAY_MS);
 }
 
 // Called from existing canvas mousedown handler
 function ghostOnMouseDown(sq) {
   if (!ghostEnabled()) return;
+  _ghostCancelPending();
   _ghostFromSq = sq; // set immediately (before 15ms delay fires)
   _ghostRequestId++; // cancel any in-flight request
   botLastHoverSq = -1; // reset so first hover fires
@@ -2576,7 +2607,16 @@ function ghostOnMouseDown(sq) {
 function ghostOnMouseUp() {
   _ghostRequestId++; // cancel any in-flight request
   botLastHoverSq = -1; // reset hover tracking
-  setTimeout(function() { if (selSq < 0 && dragFrom < 0) { _ghostFromSq = -1; clearGhostPieces(); } }, 80);
+  setTimeout(function() {
+    // A parked piece in confirm mode still has a live preview on the board, so
+    // its ghosts must survive the release that parked it.
+    if (typeof awaitingConfirm !== 'undefined' && awaitingConfirm) return;
+    if (selSq < 0 && dragFrom < 0) {
+      _ghostCancelPending();
+      _ghostFromSq = -1;
+      clearGhostPieces();
+    }
+  }, 80);
 }
 
 // Legacy alias kept so botPostMoveHook still compiles

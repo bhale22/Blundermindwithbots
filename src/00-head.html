@@ -132,12 +132,15 @@ body{
 .turn-pill{font-size:7px;font-weight:500;padding:1px 6px;border-radius:8px;background:rgba(74,159,212,0.15);color:#2878b8;white-space:nowrap;border:0.5px solid rgba(74,159,212,0.3);}
 .turn-pill.check-pill{background:rgba(200,40,40,0.12);color:#c03030;border-color:rgba(200,40,40,0.3);}
 .player-box.in-check{border-color:rgba(180,40,40,0.6);}
-/* Board input row — fixed directly under the board in both orientations. */
-#boardInputRow{display:flex;justify-content:flex-end;align-items:center;
-  width:var(--board-size);box-sizing:border-box;}
+/* The chip lives flush against the right edge of the player's own clock box.
+   .player-box is a fixed 32px row, so the chip sits IN the row rather than
+   under it — the mid-col (flex:1) absorbs the width, which keeps the chip
+   pinned right whether or not the turn pill is currently in this box. */
+.pb-chip-mount{ display:flex;align-items:center;flex-shrink:0;margin-left:2px; }
+.pb-chip-mount:empty{ display:none; }
 /* Move-commit mode chip. Tap target is padded well beyond the 7px text so it
    is comfortably hittable with a thumb. */
-.commit-chip{font-size:7px;font-weight:600;padding:5px 10px;border-radius:8px;
+.commit-chip{font-size:7px;font-weight:600;padding:5px 9px;border-radius:8px;
   background:var(--bg-panel2);color:var(--text-dim);white-space:nowrap;
   border:0.5px solid var(--border);cursor:pointer;user-select:none;
   font-family:inherit;line-height:1.4;transition:background 0.15s,color 0.15s,border-color 0.15s;}
@@ -895,7 +898,13 @@ canvas{
 }
 
 /* ── Guided tour ──────────────────────────────────────────────────────────── */
-#tourOverlay { position:fixed;inset:0;z-index:4500;pointer-events:none; }
+/* Above #landingOverlay (5000), not below it. The first step of the tour
+   started from the landing page deliberately keeps the landing up — it explains
+   the board choice on the page that offers it — but at 4500 the whole tour
+   rendered behind an opaque overlay. Nothing was visibly wrong: the tour was
+   running, you just could not see any of it, so picking "tour of the
+   visualization board" looked like it bounced straight back to the landing. */
+#tourOverlay { position:fixed;inset:0;z-index:5500;pointer-events:none; }
 #tourBackdrop { position:absolute;inset:0;background:rgba(0,0,0,0.5);pointer-events:none;display:none; }
 #tourRing {
   position:absolute;display:none;border-radius:8px;
@@ -1023,7 +1032,12 @@ canvas{
      there's one source of truth for the board's size rather than CSS and JS
      fighting through !important. */
   canvas{max-width:100%;height:auto;margin:0 auto;}
-  .player-box{max-width:100%;height:auto;min-height:36px;padding:4px 10px;}
+  /* Genuinely fixed, matching the `44 * 2 + 8` resizeBoard() already reserves
+     for these two boxes. With height:auto/min-height:36px the box grew by ~7px
+     whenever the turn pill was re-parented into it — and since the pill swaps
+     boxes every single move, both boxes changed height and the whole board
+     shifted up and down on every move. */
+  .player-box{max-width:100%;height:44px;min-height:44px;padding:4px 10px;}
   .player-name{font-size:12px;}
   .player-time{font-size:15px;}
   .hint-text{font-size:9px;}
@@ -1842,6 +1856,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <div class="mat-bar" id="matB"></div>
       </div>
       <div class="right-col" id="rightColB"></div>
+      <div class="pb-chip-mount" id="chipMountB"></div>
     </div>
 
     <!-- Clock time control panel (inline) -->
@@ -1866,12 +1881,10 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <canvas id="ghostCanvas" width="480" height="480"></canvas>
     </div>
 
-    <!-- Board input row. Deliberately NOT inside a player box: the turn pill is
-         re-parented between rightColW/rightColB every turn, and .board-flipped
-         swaps the two boxes top-to-bottom — either would make this chip jump
-         around mid-game. As a plain order-0 child it stays under the board in
-         both orientations. -->
-    <div id="boardInputRow">
+    <!-- The commit chip is mounted into the player's own clock box by
+         syncCommitChipMount(); this element only exists as its parking spot
+         before that first runs. -->
+    <div id="boardInputRow" hidden>
       <button class="commit-chip" id="commitModeChip" onclick="toggleCommitMode()">✋ Release to move</button>
     </div>
 
@@ -1902,6 +1915,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="right-col" id="rightColW">
         <div class="turn-pill" id="turnPill">▶ your move</div>
       </div>
+      <div class="pb-chip-mount" id="chipMountW"></div>
     </div>
 
     <!-- Chat bar — below white player box, only visible during 2-player games -->
