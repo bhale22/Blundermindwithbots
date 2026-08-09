@@ -132,9 +132,12 @@ body{
 .turn-pill{font-size:7px;font-weight:500;padding:1px 6px;border-radius:8px;background:rgba(74,159,212,0.15);color:#2878b8;white-space:nowrap;border:0.5px solid rgba(74,159,212,0.3);}
 .turn-pill.check-pill{background:rgba(200,40,40,0.12);color:#c03030;border-color:rgba(200,40,40,0.3);}
 .player-box.in-check{border-color:rgba(180,40,40,0.6);}
-/* Move-commit mode chip — sits above the board so it can be switched mid-game.
-   Tap target is padded well beyond the 7px text for thumbs on a phone. */
-.commit-chip{font-size:7px;font-weight:600;padding:3px 8px;border-radius:8px;
+/* Board input row — fixed directly under the board in both orientations. */
+#boardInputRow{display:flex;justify-content:flex-end;align-items:center;
+  width:var(--board-size);box-sizing:border-box;}
+/* Move-commit mode chip. Tap target is padded well beyond the 7px text so it
+   is comfortably hittable with a thumb. */
+.commit-chip{font-size:7px;font-weight:600;padding:5px 10px;border-radius:8px;
   background:var(--bg-panel2);color:var(--text-dim);white-space:nowrap;
   border:0.5px solid var(--border);cursor:pointer;user-select:none;
   font-family:inherit;line-height:1.4;transition:background 0.15s,color 0.15s,border-color 0.15s;}
@@ -1766,9 +1769,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="mid-col">
         <div class="mat-bar" id="matB"></div>
       </div>
-      <div class="right-col" id="rightColB">
-        <button class="commit-chip" id="commitModeChip" onclick="toggleCommitMode()">✋ Release to move</button>
-      </div>
+      <div class="right-col" id="rightColB"></div>
     </div>
 
     <!-- Clock time control panel (inline) -->
@@ -1791,6 +1792,15 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div id="board-canvas-wrap">
       <canvas id="cv" width="480" height="480"></canvas>
       <canvas id="ghostCanvas" width="480" height="480"></canvas>
+    </div>
+
+    <!-- Board input row. Deliberately NOT inside a player box: the turn pill is
+         re-parented between rightColW/rightColB every turn, and .board-flipped
+         swaps the two boxes top-to-bottom — either would make this chip jump
+         around mid-game. As a plain order-0 child it stays under the board in
+         both orientations. -->
+    <div id="boardInputRow">
+      <button class="commit-chip" id="commitModeChip" onclick="toggleCommitMode()">✋ Release to move</button>
     </div>
 
     <!-- PGN Replay controls (shown during replay) -->

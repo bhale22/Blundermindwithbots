@@ -717,10 +717,11 @@ function render(){
     }
     if(activePremove&&sq===activePremove.from)fill=light?'#a8c8f8':'#6090d0';
     else if(activePremove&&sq===activePremove.to)fill=light?'#90b8f0':'#4878c0';
-    // A parked piece awaiting its confirming tap gets a brighter destination
-    // than an ordinary hover preview, so "this will play if I tap here" is
-    // distinguishable at a glance from "I am just looking at this".
-    else if(isPreviewing&&awaitingConfirm&&sq===premoveTo)fill=light?'#7fe08a':'#3f9e58';
+    // A parked piece is still being composed, so its destination uses the
+    // SELECTION yellow, not the preview green. Green here read as "this move
+    // was played" — it is adjacent to the yellow-green last-move highlight —
+    // when the whole point is that it has not been played yet.
+    else if(isPreviewing&&awaitingConfirm&&sq===premoveTo)fill=light?'#f6f669':'#baca2b';
     else if(isPreviewing){if(sq===premoveFrom)fill=light?'#d8d860':'#b0b020';else if(sq===premoveTo)fill=light?'#a0d8a0':'#5a9e5a';}
     else{if(sq===selSq)fill=light?'#f6f669':'#baca2b';else if(sq===dragFrom&&isDragging)fill=light?'#d0d0d0':'#aaa';}
     ctx.fillStyle=fill;ctx.fillRect(c*SQ,r*SQ,SQ,SQ);
@@ -1063,20 +1064,45 @@ function render(){
   try {
     _alertDirectAtk = indActive('battery') ? buildDirectAtk(dispBoard) : dispAtk;
   } catch(e) { _alertDirectAtk = dispAtk; }
+  // A piece parked awaiting confirmation is drawn semi-transparent — the
+  // "not placed yet" convention. It reads as provisional without motion, which
+  // a pulse would not: the board already carries a lot of overlay detail and an
+  // animating piece competes with it on every move.
+  const _ghostSq = (isPreviewing && awaitingConfirm) ? premoveTo : -1;
+  const PARKED_ALPHA = 0.45;
+
   // Draw pieces — per-square try/catch prevents one crash from blanking the board
   for(let sq=0;sq<64;sq++){
     try{
       const p=dispBoard[sq];
       if(!p||(sq===dragFrom&&isDragging))continue;
+      if(sq===_ghostSq){ctx.save();ctx.globalAlpha=PARKED_ALPHA;}
       drawPieceUnder(sq,p,dispAtk,showLayers,showBull);
+      if(sq===_ghostSq){ctx.restore();}
     }catch(e){console.warn('drawPieceUnder sq='+sq,e);}
   }
   for(let sq=0;sq<64;sq++){
     try{
       const p=dispBoard[sq];
       if(!p||(sq===dragFrom&&isDragging))continue;
+      if(sq===_ghostSq){ctx.save();ctx.globalAlpha=PARKED_ALPHA;}
       drawPieceGlyph(sq,p,dispAtk,showNums);
+      if(sq===_ghostSq){ctx.restore();}
     }catch(e){console.warn('drawPieceGlyph sq='+sq,e);}
+  }
+
+  // Dashed outline on the parked square. Translucency alone is easy to miss on
+  // a phone, and a dashed edge is a static "provisional" cue — no animation.
+  if(_ghostSq>=0){
+    try{
+      const {r:_pr,c:_pc}=sqCanvas(_ghostSq);
+      ctx.save();
+      ctx.strokeStyle='rgba(40,40,40,0.75)';
+      ctx.lineWidth=1.6;
+      ctx.setLineDash([5,3.5]);
+      ctx.strokeRect(_pc*SQ+1.6,_pr*SQ+1.6,SQ-3.2,SQ-3.2);
+      ctx.restore();
+    }catch(e){console.warn('parked outline',e);}
   }
 
   try{
@@ -1607,6 +1633,10 @@ function enterExploreMode() {
 }
 
 function resetGame(){
+  // Drop the previous game's snapshot immediately. Waiting for the first move
+  // of the new game to overwrite it would let a reload before that move
+  // restore the game the user just abandoned.
+  if(typeof bmSessionClear==='function') bmSessionClear();
   cancelResign();showRematchBtn(false);clockStop();clockInit(clockControl);
   lastMoveFrom=-1;lastMoveTo=-1;_gameStartFen=null;_gameStartSans=[];
   // Every game start funnels through here: kill any lingering replay/review
@@ -1785,7 +1815,7 @@ function updatePlayerBoxes(){
       hint.textContent = 'King must move, block, or capture';
       hint.className = 'hint-text check';
     } else if(awaitingConfirm){
-      hint.textContent = 'Move parked — tap the green square to play it';
+      hint.textContent = 'Move not played yet — tap the outlined square to confirm';
       hint.className = 'hint-text';
     } else if(isWhiteTurn){
       hint.textContent = isConfirmMode()
@@ -1826,6 +1856,12 @@ function updatePlayerBoxes(){
   if(typeof mpUpdateGhostAvailability==='function') mpUpdateGhostAvailability();
   // Auto-save the game once it ends (and offer a save-as download)
   if(typeof maybeAutoSaveGame==='function') maybeAutoSaveGame();
+  // A finished multiplayer game has nothing to rejoin — drop the seat token so
+  // a later reload does not try to resume a game that is already over.
+  if(gameOver && typeof mpSessionClear==='function') mpSessionClear();
+  // Snapshot the live game so a backgrounded phone can come back to it. Sits
+  // here because this is the one function that already runs after every move.
+  if(typeof maybeSessionSave==='function') maybeSessionSave();
   // Keep the pro side column (clocks, names, notation, turn) in sync
   if(typeof proMode!=='undefined' && proMode && typeof proSync==='function') proSync();
 }

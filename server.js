@@ -375,7 +375,54 @@ app.get('/beautifulblundermind.html', (req, res) => {
 });
 
 // ── Multiplayer room system ───────────────────────────────────────────────────
+//
+// Rooms used to hold nothing but two sockets: moves were relayed and forgotten.
+// That made a dropped connection unrecoverable — a phone backgrounding the tab
+// for a moment lost a game both players might have spent hours on, because
+// there was no state anywhere to come back to.
+//
+// A room now also carries the authoritative move list and clocks, and each
+// player holds a token identifying their seat. A returning client presents the
+// token and gets the game replayed to it. Seats are RESERVED rather than freed
+// on disconnect (once the game has started), so a stranger cannot take the
+// place of someone who is mid-reconnect.
+//
+// The protocol additions are all additive: a client that never sends `resume`
+// behaves exactly as before, which keeps players on an already-loaded page
+// working across a deploy.
 const rooms = {};
+
+// How long a started game survives with nobody connected. Long enough for a
+// phone to be locked, a tab to be discarded, or a train to go through a tunnel;
+// short enough that abandoned games do not accumulate.
+const MP_RESUME_GRACE_MS = 15 * 60 * 1000;
+
+function mpToken() {
+  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+}
+
+// A seat is claimed once someone has occupied it, whether or not they are
+// currently connected. Used instead of `!room.white` so a reconnecting player's
+// seat is not handed to a stranger.
+function seatClaimed(room, role) {
+  return !!(room.tokens && room.tokens[role]);
+}
+
+// Everything a returning client needs to rebuild the game exactly.
+function roomStatePayload(room, role) {
+  return {
+    role,
+    tc: room.tc,
+    tcBaseMin: room.tcBaseMin,
+    tcIncSec: room.tcIncSec,
+    startFen: room.startFen || undefined,
+    startSans: room.startSans || undefined,
+    moves: room.moves || [],
+    timeW: (typeof room.timeW === 'number') ? room.timeW : undefined,
+    timeB: (typeof room.timeB === 'number') ? room.timeB : undefined,
+    over: !!room.over,
+  };
+}
 // Open lobby challenges: code → { code, name, rating, ratingRange, tc, tcLabel, tcBaseMin, tcIncSec }
 const lobbyChallenges = {};
 
@@ -403,6 +450,9 @@ function leaveCurrentRoom(ws) {
     delete lobbyChallenges[ws.roomCode];
     broadcastLobbyList();
   }
+  // A deliberate leave gives up the seat for good, so clear the token too —
+  // otherwise the room would linger for the full resume grace period.
+  if (room.tokens) room.tokens[ws.role] = null;
   if (ws.role === 'white') room.white = null; else room.black = null;
   if (!room.white && !room.black) delete rooms[ws.roomCode];
   ws.roomCode = null;
@@ -417,19 +467,26 @@ function broadcastLobbyList() {
   });
 }
 
-// Clean up stale rooms every 10 minutes
+// Clean up stale rooms. Runs every minute rather than every ten so the resume
+// grace window is honoured with reasonable precision.
 setInterval(() => {
+  const now = Date.now();
   for (const code in rooms) {
     const room = rooms[code];
     const wDead = !room.white || room.white.readyState > 1;
     const bDead = !room.black || room.black.readyState > 1;
-    if (wDead && bDead) {
-      delete rooms[code];
-      const wasLobby = delete lobbyChallenges[code];
-      console.log('Cleaned stale room', code, wasLobby ? '(lobby)' : '');
-    }
+    if (!(wDead && bDead)) continue;
+    // A started, unfinished game is held for the grace window so a player whose
+    // phone dropped the connection can still come back to it.
+    const resumable = room.started && !room.over &&
+                      (seatClaimed(room, 'white') || seatClaimed(room, 'black'));
+    const emptySince = room.emptySince || now;
+    if (resumable && (now - emptySince) < MP_RESUME_GRACE_MS) continue;
+    delete rooms[code];
+    const wasLobby = delete lobbyChallenges[code];
+    console.log('Cleaned stale room', code, wasLobby ? '(lobby)' : '');
   }
-}, 10 * 60 * 1000);
+}, 60 * 1000);
 
 wss.on('connection', (ws) => {
   ws.roomCode = null;
@@ -474,11 +531,19 @@ wss.on('connection', (ws) => {
         tc: msg.tc || 'untimed',
         tcBaseMin, tcIncSec,
         startFen, startSans,
+        // Authoritative game state, so a reconnecting client can be rebuilt.
+        moves: [], timeW: null, timeB: null,
+        started: false, over: false,
+        tokens: { white: null, black: null },
+        emptySince: null,
       };
       rooms[code][hostRole] = ws;
       ws.roomCode = code;
       ws.role = hostRole;
-      ws.send(JSON.stringify({ type: 'created', code, role: hostRole, lobby: isLobby }));
+      const hostToken = mpToken();
+      rooms[code].tokens[hostRole] = hostToken;
+      ws.seatToken = hostToken;
+      ws.send(JSON.stringify({ type: 'created', code, role: hostRole, lobby: isLobby, token: hostToken }));
       if (isLobby) {
         lobbyChallenges[code] = {
           code,
@@ -497,19 +562,27 @@ wss.on('connection', (ws) => {
       const code = msg.code?.toUpperCase();
       const room = rooms[code];
       if (!room) { ws.send(JSON.stringify({ type: 'error', message: 'Room not found' })); return; }
-      // The joiner takes whichever colour the host didn't pick
-      const openRole = !room.white ? 'white' : (!room.black ? 'black' : null);
+      // The joiner takes whichever colour the host didn't pick. Keyed on the
+      // seat token rather than the live socket: a seat whose player is
+      // mid-reconnect is still theirs, and must not be handed to a stranger.
+      const openRole = !seatClaimed(room, 'white') ? 'white'
+                     : (!seatClaimed(room, 'black') ? 'black' : null);
       if (!openRole) { ws.send(JSON.stringify({ type: 'error', message: 'Room is full' })); return; }
       room[openRole] = ws;
       ws.roomCode = code;
       ws.role = openRole;
+      const joinToken = mpToken();
+      room.tokens[openRole] = joinToken;
+      ws.seatToken = joinToken;
+      room.started = true;      // both seats taken — the game is live
+      room.emptySince = null;
       const host = openRole === 'white' ? room.black : room.white;
       // Remove from lobby challenges — it's now a live game
       if (lobbyChallenges[code]) {
         delete lobbyChallenges[code];
         broadcastLobbyList();
       }
-      ws.send(JSON.stringify({ type: 'joined', code, role: openRole,
+      ws.send(JSON.stringify({ type: 'joined', code, role: openRole, token: joinToken,
         tc: room.tc, tcBaseMin: room.tcBaseMin, tcIncSec: room.tcIncSec,
         startFen: room.startFen || undefined, startSans: room.startSans || undefined }));
       if (host && host.readyState === 1) {
@@ -518,12 +591,60 @@ wss.on('connection', (ws) => {
           startFen: room.startFen || undefined, startSans: room.startSans || undefined }));
       }
 
+    } else if (msg.type === 'resume') {
+      // A client coming back after its page was reloaded or discarded. The
+      // token proves which seat is theirs; without it we would have no way to
+      // tell them from someone guessing a room code.
+      const code = typeof msg.code === 'string' ? msg.code.toUpperCase() : '';
+      const room = rooms[code];
+      if (!room) {
+        ws.send(JSON.stringify({ type: 'resume_failed', reason: 'gone' })); return;
+      }
+      const token = typeof msg.token === 'string' ? msg.token : '';
+      const role = (token && room.tokens.white === token) ? 'white'
+                 : (token && room.tokens.black === token) ? 'black' : null;
+      if (!role) {
+        ws.send(JSON.stringify({ type: 'resume_failed', reason: 'denied' })); return;
+      }
+      // Drop any socket still sitting in this seat (a zombie from the old page)
+      // before taking it over, so the room never holds two sockets for one seat.
+      const stale = room[role];
+      if (stale && stale !== ws) {
+        stale.roomCode = null; stale.role = null;
+        try { stale.close(); } catch (e) {}
+      }
+      leaveCurrentRoom(ws);
+      room[role] = ws;
+      ws.roomCode = code;
+      ws.role = role;
+      ws.seatToken = token;
+      room.emptySince = null;
+      ws.send(JSON.stringify(Object.assign({ type: 'resumed', code }, roomStatePayload(room, role))));
+      const other = role === 'white' ? room.black : room.white;
+      if (other && other.readyState === 1) {
+        other.send(JSON.stringify({ type: 'opponent_reconnected' }));
+      }
+
     } else if (msg.type === 'lobby_list') {
       ws.send(JSON.stringify({ type: 'lobby_list', challenges: Object.values(lobbyChallenges) }));
 
     } else if (msg.type === 'move') {
       const room = rooms[ws.roomCode];
       if (!room) return;
+      // Record before relaying. The clients still validate each other's moves;
+      // this list exists so a reconnecting player can be rebuilt, and is only
+      // ever replayed through the same legality checks on the client.
+      const mv = msg.move;
+      if (mv && Number.isInteger(mv.from) && Number.isInteger(mv.to) &&
+          mv.from >= 0 && mv.from <= 63 && mv.to >= 0 && mv.to <= 63) {
+        const promo = ['Q', 'R', 'B', 'N'].includes(mv.promo) ? mv.promo : null;
+        room.moves.push({ from: mv.from, to: mv.to, promo });
+        // Bound the history so a pathological client cannot grow it forever.
+        if (room.moves.length > 800) room.moves.shift();
+      }
+      if (typeof msg.timeW === 'number') room.timeW = msg.timeW;
+      if (typeof msg.timeB === 'number') room.timeB = msg.timeB;
+
       const opponent = ws.role === 'white' ? room.black : room.white;
       if (opponent && opponent.readyState === 1) {
         const relay = { type: 'move', move: msg.move };
@@ -543,6 +664,13 @@ wss.on('connection', (ws) => {
     } else if (['resign','rematch','rematch_offer','rematch_declined','timeout','chat','draw_offer','draw_accept','draw_decline'].includes(msg.type)) {
       const room = rooms[ws.roomCode];
       if (!room) return;
+      // Track terminal and restart events so the room knows whether it still
+      // holds a game worth resuming.
+      if (msg.type === 'resign' || msg.type === 'timeout' || msg.type === 'draw_accept') {
+        room.over = true;
+      } else if (msg.type === 'rematch') {
+        room.moves = []; room.timeW = null; room.timeB = null; room.over = false;
+      }
       const opponent = ws.role === 'white' ? room.black : room.white;
       if (opponent && opponent.readyState === 1) {
         if (msg.type === 'chat') {
@@ -563,6 +691,10 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     const room = rooms[ws.roomCode];
     if (!room) return;
+    // A resume already re-bound this seat to a newer socket — this close is the
+    // old zombie going away, and must not disturb the live game.
+    if (room[ws.role] && room[ws.role] !== ws) return;
+
     const opponent = ws.role === 'white' ? room.black : room.white;
     if (opponent && opponent.readyState === 1) {
       opponent.send(JSON.stringify({ type: 'opponent_disconnected' }));
@@ -576,7 +708,19 @@ wss.on('connection', (ws) => {
     }
     if (ws.role === 'white') room.white = null;
     else room.black = null;
-    if (!room.white && !room.black) delete rooms[ws.roomCode];
+
+    if (!room.white && !room.black) {
+      // A started, unfinished game is kept alive for the resume grace window
+      // instead of being deleted the instant both sides drop. This is the
+      // whole point: two people an hour into a game should not lose it because
+      // a phone locked. The sweeper collects it once the window expires.
+      if (room.started && !room.over &&
+          (seatClaimed(room, 'white') || seatClaimed(room, 'black'))) {
+        room.emptySince = Date.now();
+      } else {
+        delete rooms[ws.roomCode];
+      }
+    }
   });
 });
 

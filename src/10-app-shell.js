@@ -100,6 +100,16 @@ let botBehavReconsider  = true;    // human behaviour: reconsideration pauses
 let botBehavBlink       = true;    // human behaviour: instant play on forced moves
 let botBehavClockMirror = true;    // human behaviour: speed up when opponent is low
 let botCanFlag   = true;           // whether bot is allowed to flag (run clock to 0)
+// ── Time-pressure feel ───────────────────────────────────────────────────────
+// How hard the bot hurries as its own time-per-remaining-move budget tightens
+// (0 = ignores its clock entirely until the safety caps bite, 1 = collapses to
+// near-instant when out of budget). Distinct from botBehavClockMirror, which is
+// about the OPPONENT being low; this is the bot feeling its own clock.
+let botPressureDepth  = 0.85;
+// How much being behind on the clock relative to the opponent hurries the bot.
+// The most recognisable human time-pressure tell, and previously absent: the
+// old code only ever reacted to the opponent being low, never to itself.
+let botDeficitWeight  = 0.5;
 let botDayLower  = 0;              // probability-band range: lower percentile (0 = highest-probability end)
 let botDayUpper  = 100;            // probability-band range: upper percentile (100 = all)
 let botSfTempLevel = 2;            // temperature tier 0-4 (legacy; superseded by botSfVar1/2)
@@ -1647,6 +1657,8 @@ function clockSetControl(key) {
 // MULTIPLAYER — WebSocket room system (Lobby + Private + Code join)
 // ══════════════════════════════════════════════════════════════════════════════
 let mpRoomId = null, mpRole = null, mpWs = null;
+// Identifies our seat in the room so the server can hand it back after a reload.
+let mpSeatToken = null;
 let mpConnected = false;
 let mpOriginalRole = null;  // role as assigned by server (never changes per session)
 let mpCurrentTab = 'lobby';
@@ -1775,6 +1787,178 @@ function getWsUrl() {
   return proto + '//' + location.host;
 }
 
+// ── Multiplayer resume ───────────────────────────────────────────────────────
+// A dropped connection used to be fatal: the server kept no game state, the
+// room was deleted the moment both sockets went, and `opponent_disconnected`
+// ended the game on the spot. A phone locking for a few seconds could destroy
+// a game two people had spent hours on.
+//
+// The server now holds the move list, the clocks and a seat token per player.
+// This half stores that token, presents it after a reload, and — just as
+// importantly — stops treating a disconnect as a loss while the other player
+// is on their way back.
+const MP_SESSION_KEY = 'bm_mpSession';
+// Must not exceed the server's MP_RESUME_GRACE_MS, or we would offer to resume
+// a room the server has already collected.
+const MP_RESUME_GRACE_MS = 15 * 60 * 1000;
+
+let _mpResumePending = false;   // true while a resume attempt is in flight
+let _mpWaitTimer     = null;    // countdown while the opponent is away
+let _mpWaitUntil     = 0;
+
+function mpSessionSave() {
+  if (!mpRoomId || !mpRole || !mpSeatToken) return;
+  try {
+    localStorage.setItem(MP_SESSION_KEY, JSON.stringify({
+      code: mpRoomId, role: mpRole, token: mpSeatToken, ts: Date.now(),
+    }));
+  } catch (e) { console.warn('mpSessionSave failed — game will not be resumable:', e); }
+}
+
+function mpSessionClear() {
+  try { localStorage.removeItem(MP_SESSION_KEY); } catch (e) {}
+}
+
+function mpSessionRead() {
+  try {
+    const raw = localStorage.getItem(MP_SESSION_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    if (!s || !s.code || !s.token) return null;
+    if (Date.now() - (s.ts || 0) > MP_RESUME_GRACE_MS) { mpSessionClear(); return null; }
+    return s;
+  } catch (e) { return null; }
+}
+
+// Called on page load. Returns true if a resume is being attempted, so the
+// local single-player snapshot restore knows to stand down.
+function mpTryResume() {
+  const s = mpSessionRead();
+  if (!s) return false;
+  _mpResumePending = true;
+  mpConnect(() => {
+    try {
+      mpWs.send(JSON.stringify({ type: 'resume', code: s.code, token: s.token }));
+    } catch (e) { _mpResumePending = false; }
+  });
+  // If the server never answers (offline, or it was restarted), give up rather
+  // than leaving the user staring at "Connecting…" forever.
+  setTimeout(() => {
+    if (_mpResumePending) {
+      _mpResumePending = false;
+      mpSessionClear();
+      mpShowStatus('Could not rejoin the previous game.', true);
+    }
+  }, 12000);
+  return true;
+}
+
+// Rebuild the game from the server's authoritative state.
+function mpApplyResume(msg) {
+  _mpResumePending = false;
+  mpRoomId    = msg.code;
+  mpSeatToken = (mpSessionRead() || {}).token || mpSeatToken;
+  mpRole      = msg.role;
+  mpOriginalRole = msg.role;
+  // mpStartGame does `mpGameCount++` and then swaps colours on even counts, so
+  // 0 here becomes 1 and leaves the server's assignment untouched. This is the
+  // same value the normal 'joined' path uses.
+  mpGameCount = 0;
+
+  if (msg.tcBaseMin !== undefined) {
+    mpBaseMin = msg.tcBaseMin;
+    mpIncSec  = msg.tcIncSec || 0;
+    mpUpdateTCDisplay();
+  }
+  mpStartFen  = (typeof msg.startFen === 'string' && msg.startFen) ? msg.startFen : null;
+  mpStartSans = Array.isArray(msg.startSans) ? msg.startSans : [];
+
+  mpSetMode('ingame');
+  mpStartGame(msg.tc || mpSelectedTC);
+
+  // Replay the recorded moves. These go through executeMove directly rather
+  // than mpReceiveMove: that path deliberately rejects moves made on our own
+  // turn, and a replay legitimately contains both players' moves. Legality is
+  // still checked per move, so a corrupt list stops the replay rather than
+  // corrupting the board.
+  const moves = Array.isArray(msg.moves) ? msg.moves : [];
+  let replayed = 0;
+  for (const mv of moves) {
+    if (!mv || !Number.isInteger(mv.from) || !Number.isInteger(mv.to)) break;
+    const p = board[mv.from];
+    if (!p || p.color !== turn) break;
+    if (!legalMovesFor(mv.from, board, epSq, castling).includes(mv.to)) break;
+    const promo = ['Q', 'R', 'B', 'N'].includes(mv.promo) ? mv.promo : null;
+    executeMove(mv.from, mv.to, promo);
+    replayed++;
+  }
+
+  if (replayed !== moves.length) {
+    mpShowStatus('⚠ Rejoined, but the move history did not replay cleanly.', true);
+  }
+
+  // Clocks are the server's last recorded values; re-anchor so the running
+  // side is charged from now rather than from a stale anchor.
+  if (typeof msg.timeW === 'number' && typeof msg.timeB === 'number' && !gameOver) {
+    clockTimeW = msg.timeW;
+    clockTimeB = msg.timeB;
+    if (clockActive) {
+      _clockAnchorMs  = Date.now();
+      _clockAnchorSec = turn === 'w' ? clockTimeW : clockTimeB;
+    }
+    clockUpdateDisplay();
+  }
+
+  mpSessionSave();
+  render();
+  updatePlayerBoxes();
+  mpUpdateTurnIndicator();
+  if (typeof landingDismiss === 'function') landingDismiss();
+  mpShowStatus('✓ Rejoined your game as ' + (mpRole === 'white' ? 'White ♔' : 'Black ♚'));
+}
+
+// ── Opponent-away grace ──────────────────────────────────────────────────────
+// A disconnect is no longer a result. The opponent has the same window we do
+// to come back, and the game only ends if they do not use it.
+function mpStartWaitForOpponent() {
+  mpStopWaitForOpponent();
+  _mpWaitUntil = Date.now() + MP_RESUME_GRACE_MS;
+  const tick = () => {
+    const left = Math.max(0, _mpWaitUntil - Date.now());
+    if (left <= 0) {
+      mpStopWaitForOpponent();
+      if (!gameOver) {
+        gameOver = true;
+        gameOverMsg = 'Opponent did not reconnect — you win! 🏆';
+        if (typeof clockStop === 'function') clockStop();
+        mpSessionClear();
+        updatePlayerBoxes();
+        if (typeof showRematchBtn === 'function') showRematchBtn(true);
+      }
+      return;
+    }
+    const mins = Math.floor(left / 60000);
+    const secs = Math.floor((left % 60000) / 1000);
+    mpShowStatus('⏳ Opponent disconnected — waiting for them to rejoin (' +
+      mins + ':' + String(secs).padStart(2, '0') + ')', true);
+  };
+  tick();
+  _mpWaitTimer = setInterval(tick, 1000);
+}
+
+function mpStopWaitForOpponent() {
+  if (_mpWaitTimer) { clearInterval(_mpWaitTimer); _mpWaitTimer = null; }
+  _mpWaitUntil = 0;
+}
+
+// Try the multiplayer resume before anything else on load: it is the only
+// restore path that is authoritative, because the server holds the real game.
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    try { mpTryResume(); } catch (e) { console.warn('mp resume', e); }
+  }, 200);
+});
+
 function mpConnect(onOpen) {
   if (mpWs && mpWs.readyState === WebSocket.OPEN) { onOpen(); return; }
   if (mpWs) { try { mpWs.close(); } catch(e){} mpWs = null; }
@@ -1788,7 +1972,9 @@ function mpConnect(onOpen) {
   mpWs.onclose = () => {
     mpConnected = false;
     clearInterval(mpLobbyRefreshTimer);
-    if (mpRoomId) mpShowStatus('Connection lost. Reload to reconnect.', true);
+    // Reloading now genuinely does restore the game: the seat token is in
+    // localStorage and the server holds the position for the grace window.
+    if (mpRoomId) mpShowStatus('Connection lost — reload to rejoin your game.', true);
     else mpShowStatus('⚠ Server not reachable — multiplayer needs the deployed server.', true);
   };
   mpWs.onerror = () => mpShowStatus('⚠ Connection error.', true);
@@ -1804,6 +1990,7 @@ function mpHandleMessage(msg) {
 
     case 'created':
       mpRoomId = msg.code; mpRole = msg.role;
+      mpSeatToken = msg.token || null; mpSessionSave();
       // Build and show invite link
       const inviteUrl = location.origin + location.pathname + '?join=' + msg.code;
       const linkEl = document.getElementById('mpInviteLink');
@@ -1817,6 +2004,7 @@ function mpHandleMessage(msg) {
 
     case 'joined':
       mpRoomId = msg.code; mpRole = msg.role;
+      mpSeatToken = msg.token || null; mpSessionSave();
       mpGameCount = 0;
       mpOriginalRole = msg.role;
       // Apply host's time control so clocks match
@@ -1834,6 +2022,7 @@ function mpHandleMessage(msg) {
       break;
 
     case 'opponent_joined':
+      mpSessionSave();
       mpGameCount = 0;
       mpOriginalRole = mpRole;
       // Server echoes TC back to confirm — re-apply to ensure consistency
@@ -1934,10 +2123,35 @@ function mpHandleMessage(msg) {
       mpSetPresenceDot('green');
       break;
 
+    case 'resumed':
+      mpApplyResume(msg);
+      break;
+
+    case 'resume_failed':
+      // The room is gone, or the token no longer matches. Clear the stored
+      // seat and fall through to a normal session — nothing to rejoin.
+      _mpResumePending = false;
+      mpSessionClear();
+      mpShowStatus(msg.reason === 'gone'
+        ? 'That game has finished or expired.'
+        : 'Could not rejoin that game.', true);
+      break;
+
+    case 'opponent_reconnected':
+      mpStopWaitForOpponent();
+      mpSetPresenceDot('green');
+      mpShowStatus('✓ Opponent is back.');
+      mpUpdateTurnIndicator();
+      break;
+
     case 'opponent_disconnected':
+      // NOT a result. The opponent has the same grace window we do to come
+      // back; ending the game here used to throw away hours of play because
+      // someone's phone locked.
       mpSetPresenceDot('red');
-      mpShowStatus('Opponent disconnected.', true);
-      gameOver = true; updatePlayerBoxes();
+      if (mpMode === 'ingame' && !gameOver) mpStartWaitForOpponent();
+      else mpShowStatus('Opponent disconnected.', true);
+      updatePlayerBoxes();
       break;
 
     case 'error':
@@ -2232,8 +2446,11 @@ function mpMaybeLeave() {
 
 function mpLeave() {
   _mpStopPresence();
+  mpStopWaitForOpponent();
+  mpSessionClear();          // deliberate leave: the seat is not coming back
   if (mpWs) { mpWs.close(); mpWs = null; }
   mpRoomId = null; mpRole = null; mpConnected = false;
+  mpSeatToken = null;
   mpOriginalRole = null; mpGameCount = 0;
   mpStartFen = null; mpStartSans = [];   // don't leak a from-position start into the next room
   clearInterval(mpLobbyRefreshTimer);
@@ -3094,7 +3311,9 @@ function startReplayOfCurrentGame(){
   if(typeof botActive!=='undefined'&&botActive&&typeof botStop==='function') botStop();
   if(typeof mpRoomId!=='undefined'&&mpRoomId){
     if(mpWs){try{mpWs.close();}catch(e){} mpWs=null;}
-    mpRoomId=null;mpRole=null;mpConnected=false;
+    if(typeof mpSessionClear==='function') mpSessionClear();
+    if(typeof mpStopWaitForOpponent==='function') mpStopWaitForOpponent();
+    mpRoomId=null;mpRole=null;mpConnected=false;mpSeatToken=null;
     mpOriginalRole=null;mpGameCount=0;
     const rc=document.getElementById('mpRoomCode');if(rc)rc.textContent='';
     if(typeof chatShow==='function')chatShow(false);

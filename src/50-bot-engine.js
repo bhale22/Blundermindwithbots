@@ -477,6 +477,49 @@ function botRemainingMovesEstimate() {
   return Math.max(5, 40 - Math.floor(botMoveHistory.length / 2));
 }
 
+// ── Time budget ──────────────────────────────────────────────────────────────
+// Seconds the bot can afford per move from here, increment included.
+//
+// This estimate already existed and already drove the strength curves — but
+// think time never consulted it, so the bot's SPEED was blind to its clock
+// until a hard 30-second cliff. That cliff also meant one constant doing two
+// incompatible jobs: 30 s is half a bullet game and a genuine emergency in a
+// 90-minute classical one.
+//
+// Increment matters here and was ignored entirely: in 15+10 a player banking
+// 10 s a move is not in trouble at 30 s, and the draw logic already knew this
+// ("with a healthy increment nobody flags") while think time did not.
+function botTimeBudgetSec(clockMs) {
+  if (clockMs === null || clockMs === undefined) return null;
+  const movesLeft = botRemainingMovesEstimate();
+  const inc = (typeof clockInc === 'number') ? clockInc : 0;
+  return (clockMs / 1000 + inc * movesLeft) / movesLeft;
+}
+
+// 0 = comfortable, 1 = out of time. Compares what this move WANTS to spend
+// against what the clock can actually afford, so the same shortfall means the
+// same thing in bullet and in classical.
+function botBudgetPressure(clockMs, wantMs) {
+  const budget = botTimeBudgetSec(clockMs);
+  if (budget === null) return 0;
+  const want = Math.max(0.2, (wantMs || 0) / 1000);
+  return Math.max(0, Math.min(1, 1 - budget / want));
+}
+
+// How far behind the opponent's clock we are, 0–1. Zero when level or ahead.
+// Continuous, unlike the binary 60 % step it complements.
+function botClockDeficit(clockMs) {
+  if (clockMs === null || typeof botOppClockMs !== 'number' || botOppClockMs <= 0) return 0;
+  return Math.max(0, Math.min(1, 1 - (clockMs / botOppClockMs)));
+}
+
+// How far ahead we are — i.e. how low the OPPONENT is relative to us. Drives
+// the clock-mirroring aggression that used to be a hard ×0.5 at exactly 60 %.
+function botOppClockDeficit(clockMs) {
+  if (clockMs === null || typeof botOppClockMs !== 'number' || clockMs <= 0) return 0;
+  return Math.max(0, Math.min(1, 1 - (botOppClockMs / clockMs)));
+}
+
 // ── Move attractor filtering — applied before sampleFromProbs ─────────────────
 // Implements: move quality range (percentile band), luck attractor (band shift),
 // piece attractors (×6), pawn strategic, trade, spacecadet, fortkx, gambito,
@@ -1630,6 +1673,22 @@ function openingFamiliarity(plies) {
   return 1 / (1 + Math.exp(k * (plies - threshold)));
 }
 
+// The clock ceilings, in one place so every timing mode obeys the same rules.
+// Fixed and Mirror used to carry their own copy of the flat 30 s / 8 % rule,
+// which meant a change to the pressure model silently applied to some modes
+// and not others.
+function botApplyClockCaps(thinkMs, clockMs) {
+  const budgetSec = botTimeBudgetSec(clockMs);
+  if (budgetSec !== null) thinkMs = Math.min(thinkMs, budgetSec * 1000);
+  if (clockMs !== null && clockMs !== undefined) {
+    const emergencyMs = (typeof botStartClockMs === 'number' && botStartClockMs > 0)
+      ? Math.min(30000, botStartClockMs * 0.15) : 30000;
+    if (clockMs < emergencyMs) thinkMs = Math.min(thinkMs, clockMs * 0.10);
+    if (!botCanFlag) thinkMs = Math.min(thinkMs, Math.max(200, clockMs - 3000));
+  }
+  return thinkMs;
+}
+
 // Upper bound on simulated think time, scaled to the time control: 6 s for
 // blitz-and-faster, growing to 45 s for long classical. A 6 s ceiling in a
 // 90-minute game made every bot feel like a speed player.
@@ -1660,10 +1719,7 @@ function botThinkTime(moveProbs, clockMs) {
 
   // ── Fixed ────────────────────────────────────────────────────────────────
   if (botTimeBehavior === 'fixed') {
-    let ms = botFixedDelayMs;
-    if (clockMs !== null && clockMs < 30000) ms = Math.min(ms, clockMs * 0.08);
-    if (!botCanFlag && clockMs !== null) ms = Math.min(ms, Math.max(200, clockMs - 3000));
-    return Math.max(200, ms);
+    return Math.max(200, botApplyClockCaps(botFixedDelayMs, clockMs));
   }
 
   // ── Mirror ───────────────────────────────────────────────────────────────
@@ -1672,9 +1728,7 @@ function botThinkTime(moveProbs, clockMs) {
       const avg = botUserMoveTimestamps.reduce((a, b) => a + b, 0) / botUserMoveTimestamps.length;
       const jitter = 0.8 + Math.random() * 0.4;
       const offsetMul = 1 + (botMirrorOffsetPct / 100);
-      let mirrorMs = avg * jitter * offsetMul;
-      if (clockMs !== null && clockMs < 30000) mirrorMs = Math.min(mirrorMs, clockMs * 0.08);
-      if (!botCanFlag && clockMs !== null) mirrorMs = Math.min(mirrorMs, Math.max(200, clockMs - 3000));
+      const mirrorMs = botApplyClockCaps(avg * jitter * offsetMul, clockMs);
       return Math.max(200, Math.min(botThinkCapMs(), mirrorMs));
     }
     // No human moves yet — fall through to complexity/pace
@@ -1695,10 +1749,22 @@ function botThinkTime(moveProbs, clockMs) {
     thinkMs = baseSec * complexity * 1000;
   }
 
-  // ── Clock-pressure mirroring: speed up when opponent is low on time ──────
-  if (botBehavClockMirror && botOppClockMs !== null && clockMs !== null &&
-      botOppClockMs < clockMs * 0.6) {
-    thinkMs *= 0.5;
+  // ── Clock-pressure mirroring: speed up when the OPPONENT is low ──────────
+  // Was a hard ×0.5 the instant their clock crossed 60 % of ours — a step
+  // change a human never makes. Now proportional to how far ahead we are, so
+  // the aggression comes on gradually as they sink.
+  if (botBehavClockMirror) {
+    const oppDef = botOppClockDeficit(clockMs);
+    if (oppDef > 0) thinkMs *= Math.max(0.3, 1 - oppDef);
+  }
+
+  // ── Clock deficit: hurry when WE are the one behind ───────────────────────
+  // The most recognisable time-pressure tell in human chess, and previously
+  // absent entirely: a bot down 2:00 to 8:00 deliberated exactly as long as one
+  // that was comfortably ahead.
+  const _deficit = botClockDeficit(clockMs);
+  if (_deficit > 0 && botDeficitWeight > 0) {
+    thinkMs *= Math.max(0.2, 1 - _deficit * botDeficitWeight);
   }
 
   // ── Hustle attractor: +5 (faster hustler) … −5 (slower grinder) ────────────
@@ -1742,9 +1808,24 @@ function botThinkTime(moveProbs, clockMs) {
   // on the clock, not just a better position.
   thinkMs += botPremoveBustTaxMs();
 
-  // ── Clock pressure caps ───────────────────────────────────────────────────
-  if (clockMs !== null && clockMs < 30000) thinkMs = Math.min(thinkMs, clockMs * 0.08);
-  if (!botCanFlag && clockMs !== null) thinkMs = Math.min(thinkMs, Math.max(200, clockMs - 3000));
+  // ── Budget pressure ───────────────────────────────────────────────────────
+  // Graduated hurrying as the per-move budget tightens. This is what replaces
+  // the old behaviour of ignoring the clock completely until 30 s and then
+  // slamming a cap on: at 30.1 s the bot might take 6 s, at 29.9 s it was
+  // capped at 2.4 s, and that discontinuity is exactly what read as mechanical.
+  // Measured against what THIS move wants, so a hustler and a grinder feel the
+  // same shortfall proportionally.
+  const _pressure = botBudgetPressure(clockMs, thinkMs);
+  if (_pressure > 0 && botPressureDepth > 0) {
+    thinkMs *= Math.max(0.05, 1 - _pressure * botPressureDepth);
+  }
+
+  // ── Ceilings ──────────────────────────────────────────────────────────────
+  // The budget is the honest ceiling: never plan to spend more than the time
+  // remaining per expected move allows. It scales itself to the time control,
+  // so bullet and classical need no special-casing — and it subsumes the old
+  // flat 8 %-of-remaining rule, which was only ever sane at ~12 moves left.
+  thinkMs = botApplyClockCaps(thinkMs, clockMs);
 
   return Math.max(200, Math.min(botThinkCapMs(), thinkMs));
 }

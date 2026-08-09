@@ -1019,28 +1019,40 @@ function botStop() {
 }
 
 // ── Save / Load bot config ───────────────────────────────────────────────────
-function botSaveConfig() {
-  var botCustomName = document.getElementById('botNameInput');
-  var configName = (botCustomName && botCustomName.value.trim()) || (botGenerateName() + ' — ' + new Date().toLocaleDateString());
-  const config = {
+// Collect the full bot configuration as a plain object. Split out of
+// botSaveConfig so the session snapshot can persist the exact same shape the
+// file export uses — a restored game must come back as the same opponent, not
+// a default bot wearing its name.
+function botCollectConfig(configName, botNameVal) {
+  // Every DOM read here is guarded. The Maia rating slider (#maiaElo) was
+  // replaced by the #maia3RatingBtns button row backed by maia3SelectedRating,
+  // and the stale getElementById('maiaElo').value threw — which took out Save
+  // Config entirely, not just this snapshot.
+  const _num = (id, dflt) => {
+    const el = document.getElementById(id);
+    const v = el ? parseFloat(el.value) : NaN;
+    return isNaN(v) ? dflt : v;
+  };
+  return {
     name: configName,
-    botName: botCustomName ? botCustomName.value.trim() : '',
+    botName: botNameVal || '',
     tab: botTab,
     stockfish: {
-      level: parseInt(document.getElementById('sfLevel').value),
-      pressureLevel: parseInt(document.getElementById('sfPressureLevel').value),
-      temperature: parseInt(document.getElementById('sfTemperature').value)
+      level: _num('sfLevel', 8),
+      pressureLevel: _num('sfPressureLevel', 4),
+      temperature: _num('sfTemperature', 0)
     },
     maia: {
-      elo: parseInt(document.getElementById('maiaElo').value),
-      temperature: parseFloat(document.getElementById('maiaTemp').value)
+      elo: (typeof maia3SelectedRating !== 'undefined' && maia3SelectedRating)
+        ? maia3SelectedRating : _num('maiaElo', 1200),
+      temperature: _num('maia3Temp', _num('maiaTemp', 1.0))
     },
     hybrid: botHybridSlots,
     timePressure: botTimePressure,
     timeBehavior: botTimeBehavior,
-    pace: parseInt(document.getElementById('botPace').value),
+    pace: _num('botPace', 40),
     playerColor: botPlayerColor,
-    ghostPieces: document.getElementById('cbGhostPieces').checked,
+    ghostPieces: !!(document.getElementById('cbGhostPieces') || {}).checked,
     premove: {
       enabled:      botPremoveEnabled,
       ratePct:      botPremoveRatePct,
@@ -1056,6 +1068,12 @@ function botSaveConfig() {
       frequencyPct: botOpeningFrequencyPct
     }
   };
+}
+
+function botSaveConfig() {
+  var botCustomName = document.getElementById('botNameInput');
+  var configName = (botCustomName && botCustomName.value.trim()) || (botGenerateName() + ' — ' + new Date().toLocaleDateString());
+  const config = botCollectConfig(configName, botCustomName ? botCustomName.value.trim() : '');
   const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -1063,40 +1081,48 @@ function botSaveConfig() {
   a.click();
 }
 
-function botLoadConfig(event) {
-  const file = event.target.files[0]; if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      const cfg = JSON.parse(e.target.result);
+// Apply a collected config object. Split out of botLoadConfig so the session
+// restore can reuse the identical application path — one place decides what a
+// config means, whether it came from a file or from the snapshot.
+function botApplyConfig(cfg) {
       if (cfg.botName !== undefined) {
         var ni = document.getElementById('botNameInput');
         if (ni) ni.value = cfg.botName || '';
       }
+      // Guarded the same way as botCollectConfig: a renamed or absent control
+      // must not abort the whole apply half-way through.
+      var _setVal = function (id, v) { var e = document.getElementById(id); if (e) e.value = v; };
+      var _setTxt = function (id, v) { var e = document.getElementById(id); if (e) e.textContent = v; };
       if (cfg.tab) botSetTab(cfg.tab);
       if (cfg.stockfish) {
-        document.getElementById('sfLevel').value = cfg.stockfish.level || 8;
-        document.getElementById('sfLevelVal').textContent = cfg.stockfish.level || 8;
-        document.getElementById('sfPressureLevel').value = cfg.stockfish.pressureLevel || 4;
-        document.getElementById('sfPressureVal').textContent = cfg.stockfish.pressureLevel || 4;
+        _setVal('sfLevel', cfg.stockfish.level || 8);
+        _setTxt('sfLevelVal', cfg.stockfish.level || 8);
+        _setVal('sfPressureLevel', cfg.stockfish.pressureLevel || 4);
+        _setTxt('sfPressureVal', cfg.stockfish.pressureLevel || 4);
         if (cfg.stockfish.temperature !== undefined) {
-          document.getElementById('sfTemperature').value = cfg.stockfish.temperature;
+          _setVal('sfTemperature', cfg.stockfish.temperature);
           var td = document.getElementById('sfTempDesc');
           if (td) td.textContent = cfg.stockfish.temperature === 0 ? 'Always plays at selected level' : 'Varies: 50% target · 20% ±1 · 5% ±2';
         }
       }
       if (cfg.maia) {
-        document.getElementById('maiaElo').value = cfg.maia.elo || 900;
-        document.getElementById('maiaEloVal').textContent = cfg.maia.elo || 900;
-        document.getElementById('maiaTemp').value = cfg.maia.temperature || 1.0;
-        document.getElementById('maiaTempVal').textContent = (cfg.maia.temperature || 1.0).toFixed(1);
+        // Rating lives in maia3SelectedRating now, driven by the button row.
+        if (cfg.maia.elo && typeof maia3SetRating === 'function') maia3SetRating(cfg.maia.elo);
+        _setVal('maiaElo', cfg.maia.elo || 900);
+        _setTxt('maiaEloVal', cfg.maia.elo || 900);
+        var _mt = cfg.maia.temperature || 1.0;
+        _setVal('maia3Temp', _mt);  _setTxt('maia3TempVal', _mt.toFixed(1));
+        _setVal('maiaTemp', _mt);   _setTxt('maiaTempVal', _mt.toFixed(1));
       }
       if (cfg.hybrid) { botHybridSlots = cfg.hybrid; botRenderHybridSlots(); }
       if (cfg.timePressure) botSetTpBtn(cfg.timePressure);
       if (cfg.timeBehavior) botSetTimeBehavior(cfg.timeBehavior);
-      if (cfg.pace) { document.getElementById('botPace').value = cfg.pace; document.getElementById('botPaceVal').textContent = cfg.pace; }
+      if (cfg.pace) { _setVal('botPace', cfg.pace); _setTxt('botPaceVal', cfg.pace); }
       if (cfg.playerColor) botSetPlayerColor(cfg.playerColor);
-      if (cfg.ghostPieces !== undefined) document.getElementById('cbGhostPieces').checked = cfg.ghostPieces;
+      if (cfg.ghostPieces !== undefined) {
+        var _gp = document.getElementById('cbGhostPieces');
+        if (_gp) _gp.checked = cfg.ghostPieces;
+      }
       if (cfg.premove) {
         botPremoveEnabled      = !!cfg.premove.enabled;
         botPremoveRatePct      = (cfg.premove.ratePct   != null) ? +cfg.premove.ratePct   : 80;
@@ -1122,6 +1148,15 @@ function botLoadConfig(event) {
           if (freqVal)    freqVal.textContent = botOpeningFrequencyPct + '%';
         }
       }
+}
+
+function botLoadConfig(event) {
+  const file = event.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const cfg = JSON.parse(e.target.result);
+      botApplyConfig(cfg);
       document.getElementById('botStatus').textContent = '✓ Config loaded: ' + (cfg.name || 'unnamed');
       setTimeout(() => { document.getElementById('botStatus').textContent = ''; }, 3000);
     } catch(e) { alert('Could not parse config file.'); }
@@ -1610,6 +1645,11 @@ window.addEventListener('message', function(e) {
   botBehavBlink       = cfg.behavBlink       !== false;
   botBehavClockMirror = cfg.behavClockMirror !== false;
   botCanFlag          = cfg.canFlag          !== false;
+  // Time-pressure feel. Both default to the tuned values rather than 0 so a
+  // config saved before these existed still gets the graduated behaviour —
+  // 0 would silently restore the old "ignore my own clock" model.
+  botPressureDepth    = (cfg.pressureDepth  != null) ? Math.max(0, Math.min(1, +cfg.pressureDepth))  : 0.85;
+  botDeficitWeight    = (cfg.deficitWeight  != null) ? Math.max(0, Math.min(1, +cfg.deficitWeight))  : 0.5;
 
   // Premove — the bot commits a reply before seeing the human's move, so the
   // human can practice baiting a premove and punishing it.
@@ -1732,3 +1772,227 @@ window.addEventListener('message', function(e) {
   botStart();
 });
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SESSION PERSISTENCE — surviving a backgrounded phone
+// ═══════════════════════════════════════════════════════════════════════════
+// Android discards a backgrounded WebView under memory pressure, and this app
+// is an unusually fat target: a 44MB Maia net plus Stockfish WASM resident.
+// When it comes back the page has RELOADED, and because nothing about a live
+// game was ever persisted the user landed on the home screen with the game
+// gone. beforeunload does not fire on an OS kill, so the snapshot is written
+// eagerly — after every move and on visibilitychange — rather than on exit.
+//
+// Multiplayer is deliberately excluded: the room lives on the server, and a
+// restored client would be reasoning about a position the server disagrees
+// with. Those reconnect through the multiplayer path or not at all.
+const BM_SESSION_KEY = 'bm_liveGame';
+const BM_SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+function bmSessionEligible() {
+  if (typeof mpRoomId !== 'undefined' && mpRoomId) return false;   // multiplayer
+  if (typeof replayActive !== 'undefined' && replayActive) return false;
+  if (typeof gameOver === 'undefined' || gameOver) return false;
+  if (typeof gameMovesAlgebraic === 'undefined' || !gameMovesAlgebraic.length) return false;
+  return true;
+}
+
+function bmSessionSave() {
+  if (!bmSessionEligible()) return;
+  try {
+    const fullmove = Math.floor(gameMovesAlgebraic.length / 2) + 1;
+    const snap = {
+      v: 1,
+      ts: Date.now(),
+      fen: boardToFen(board, turn, castling, epSq, halfmoveClock, fullmove),
+      moves: gameMovesAlgebraic.slice(),
+      lastMoveFrom: lastMoveFrom,
+      lastMoveTo: lastMoveTo,
+      startFen: (typeof _gameStartFen !== 'undefined') ? _gameStartFen : null,
+      startSans: (typeof _gameStartSans !== 'undefined' && _gameStartSans) ? _gameStartSans.slice() : [],
+      halfmoveClock: halfmoveClock,
+      positionCounts: Object.assign({}, positionCounts),
+      flipped: !!boardFlipped,
+      clock: {
+        control: clockControl,
+        inc: clockInc,
+        w: clockTimeW,
+        b: clockTimeB
+      },
+      bot: botActive ? {
+        active: true,
+        playerColor: botPlayerColor,
+        startClockMs: botStartClockMs,
+        moveHistory: botMoveHistory.slice(),
+        sanHistory: botSanHistory.slice(),
+        config: botCollectConfig('session', (document.getElementById('botNameInput') || {}).value || '')
+      } : { active: false }
+    };
+    localStorage.setItem(BM_SESSION_KEY, JSON.stringify(snap));
+  } catch (e) {
+    // Never break the game over a failed snapshot — but never fail silently
+    // either. A swallowed throw here is exactly how a stale element id went
+    // unnoticed: the game looked fine and simply stopped being resumable.
+    console.warn('bmSessionSave failed — game will not be resumable:', e);
+  }
+}
+
+function bmSessionClear() {
+  try { localStorage.removeItem(BM_SESSION_KEY); } catch (e) {}
+}
+
+// Called from updatePlayerBoxes(), alongside maybeAutoSaveGame — the one place
+// that already runs after every move and every turn change.
+function maybeSessionSave() {
+  if (typeof gameOver !== 'undefined' && gameOver) { bmSessionClear(); return; }
+  bmSessionSave();
+}
+
+function bmSessionRead() {
+  try {
+    const raw = localStorage.getItem(BM_SESSION_KEY);
+    if (!raw) return null;
+    const snap = JSON.parse(raw);
+    if (!snap || snap.v !== 1 || !snap.fen) return null;
+    if (!snap.moves || !snap.moves.length) return null;
+    if (Date.now() - (snap.ts || 0) > BM_SESSION_MAX_AGE_MS) { bmSessionClear(); return null; }
+    return snap;
+  } catch (e) { return null; }
+}
+
+function bmSessionRestore() {
+  const snap = bmSessionRead();
+  if (!snap) return false;
+  try {
+    // Bot identity first: botApplyConfig touches sliders and the colour
+    // buttons, and botSetPlayerColor flips the board. Doing it before the
+    // position means nothing it changes can clobber the restored board.
+    if (snap.bot && snap.bot.active && snap.bot.config) {
+      botApplyConfig(snap.bot.config);
+      botPlayerColor  = snap.bot.playerColor || botPlayerColor;
+      botStartClockMs = (snap.bot.startClockMs != null) ? snap.bot.startClockMs : null;
+      botMoveHistory  = Array.isArray(snap.bot.moveHistory) ? snap.bot.moveHistory.slice() : [];
+      botSanHistory   = Array.isArray(snap.bot.sanHistory)  ? snap.bot.sanHistory.slice()  : [];
+    }
+
+    // Clocks: clockInit resets the times to the control defaults, so it has to
+    // run first and the saved times go on top of it.
+    clockStop();
+    clockInit(snap.clock ? snap.clock.control : 'untimed');
+    if (snap.clock) {
+      if (typeof snap.clock.inc === 'number') clockInc = snap.clock.inc;
+      clockTimeW = snap.clock.w;
+      clockTimeB = snap.clock.b;
+    }
+
+    // Position. parseFen sets turn/castling/epSq as a side effect.
+    board = parseFen(snap.fen);
+    halfmoveClock      = snap.halfmoveClock || 0;
+    positionCounts     = snap.positionCounts || {};
+    gameMovesAlgebraic = Array.isArray(snap.moves) ? snap.moves.slice() : [];
+    lastMoveFrom       = (snap.lastMoveFrom != null) ? snap.lastMoveFrom : -1;
+    lastMoveTo         = (snap.lastMoveTo   != null) ? snap.lastMoveTo   : -1;
+    _gameStartFen      = snap.startFen  || null;
+    _gameStartSans     = Array.isArray(snap.startSans) ? snap.startSans.slice() : [];
+    gameOver = false; gameOverMsg = '';
+    promotionPending = null; activePremove = null;
+    selSq = -1; legalMoves = []; dragFrom = -1; dragMoved = false; hoverSq = -1;
+    clearPreview();
+    setAwaitingConfirm(false);
+
+    boardFlipped = !!snap.flipped;
+    const bcol = document.getElementById('board-col');
+    if (bcol) bcol.classList.toggle('board-flipped', boardFlipped);
+
+    atkMap = buildAtk(board);
+    const _rp = computePins(board);
+    pinnedWSquares = _rp.w; pinnedBSquares = _rp.b;
+    if (typeof indInitAll === 'function') { indInitAll(); indApply(); }
+
+    // Bot game UI: mirror what botStart() puts on screen.
+    if (snap.bot && snap.bot.active) {
+      botActive = true;
+      botThinking = false;
+      const _ga = document.getElementById('gameActions');
+      if (_ga) _ga.style.display = 'flex';
+      if (typeof botUpdatePlayerNames === 'function') botUpdatePlayerNames(botPlayerColor);
+      const startBtn = document.getElementById('botStartBtn');
+      const stopBtn  = document.getElementById('botStopBtn');
+      const sideBtn  = document.getElementById('botSidebarBtn');
+      if (startBtn) startBtn.textContent = '↺ Restart Bot Game';
+      if (stopBtn)  stopBtn.style.display = '';
+      if (sideBtn)  { sideBtn.textContent = '🤖 Bot Active'; sideBtn.style.borderColor = '#22a85a'; }
+    }
+
+    updatePlayerBoxes();
+    render();
+    if (typeof landingDismiss === 'function') landingDismiss();
+
+    // Resume the clock only for a timed game that still has time on both sides.
+    // Time spent backgrounded is not charged — the same policy the existing
+    // visibilitychange handler already applies to an ordinary tab switch.
+    if (clockControl !== 'untimed' && clockTimeW > 0 && clockTimeB > 0) clockStart();
+
+    // If it is the bot's move, let it play. The delay matches botStart's, and
+    // gives the engines a moment to come back up after the reload.
+    if (botActive) {
+      const botColor = (botPlayerColor === 'white') ? 'b' : 'w';
+      if (turn === botColor) setTimeout(botMakeMove, 1200);
+      else if (typeof botUserTurnStartMs !== 'undefined') botUserTurnStartMs = Date.now();
+    }
+
+    bmSessionToast();
+    return true;
+  } catch (e) {
+    console.warn('session restore failed', e);
+    bmSessionClear();
+    return false;
+  }
+}
+
+// Says what happened and offers the way out, because silently dropping someone
+// into a half-played game is its own kind of confusing.
+function bmSessionToast() {
+  const old = document.getElementById('bm-session-toast'); if (old) old.remove();
+  const d = document.createElement('div');
+  d.id = 'bm-session-toast';
+  d.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);' +
+    'background:#14161a;border:0.5px solid rgba(74,200,120,0.5);border-radius:6px;' +
+    'color:#e8e6e0;font-family:system-ui,sans-serif;font-size:12px;padding:10px 14px;' +
+    'display:flex;align-items:center;gap:12px;z-index:9999;box-shadow:0 4px 18px rgba(0,0,0,0.4);';
+  const span = document.createElement('span');
+  span.textContent = '♟ Game resumed';
+  const btn = document.createElement('button');
+  btn.textContent = 'Start fresh';
+  btn.style.cssText = 'background:none;border:0.5px solid rgba(232,230,224,0.35);' +
+    'border-radius:4px;color:#e8e6e0;font-size:11px;padding:3px 9px;cursor:pointer;font-family:inherit;';
+  btn.onclick = function () {
+    bmSessionClear();
+    d.remove();
+    if (typeof botStop === 'function' && botActive) botStop();
+    if (typeof resetGame === 'function') resetGame();
+    if (typeof landingShow === 'function') landingShow();
+  };
+  d.appendChild(span); d.appendChild(btn);
+  document.body.appendChild(d);
+  setTimeout(function () { if (d.parentNode) d.remove(); }, 9000);
+}
+
+// Write on the way out as well as after each move: visibilitychange is the one
+// signal Android reliably delivers before discarding the page.
+document.addEventListener('visibilitychange', function () {
+  if (document.hidden) bmSessionSave();
+});
+window.addEventListener('pagehide', bmSessionSave);
+
+// Restore after the whole app has finished its own inline start-up, so nothing
+// downstream re-initialises the board out from under the restored position.
+window.addEventListener('load', function () {
+  setTimeout(function () {
+    // A multiplayer rejoin takes precedence: the server holds the real game,
+    // and this local snapshot never covers multiplayer anyway.
+    if (typeof _mpResumePending !== 'undefined' && _mpResumePending) return;
+    if (typeof mpRoomId !== 'undefined' && mpRoomId) return;
+    try { bmSessionRestore(); } catch (e) { console.warn('session restore', e); }
+  }, 500);
+});
