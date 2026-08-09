@@ -117,7 +117,7 @@ function setPremove(from,to,promo){
 function cancelPremove(){
   if(!activePremove)return;
   activePremove=null;
-  selSq=-1;legalMoves=[];dragFrom=-1;dragMoved=false;
+  selSq=-1;legalMoves=[];dragFrom=-1;dragMoved=false;setAwaitingConfirm(false);
   clearPreview();atkMap=buildAtk(board);render();
 }
 function tryFirePremove(){
@@ -217,6 +217,62 @@ function showRemovalAtk(sq){
 }
 function isHoverMode(){const el=document.getElementById('pmHover');return el?el.checked:true;}
 
+// ── Move commit mode ─────────────────────────────────────────────────────────
+// 'release' — dropping a piece on a legal square plays the move (default; the
+//             behaviour this board has always had).
+// 'confirm' — dropping PARKS the piece on the destination and leaves the
+//             preview overlays live. A second tap commits. Exists because on a
+//             phone the finger covers the very overlays you dropped the piece
+//             to read, and lifting it used to be what played the move.
+// Persisted so the choice survives a reload, and switchable mid-game from the
+// chip above the board.
+let boardCommitMode = 'release';
+try { const _cm = localStorage.getItem('bmCommitMode'); if (_cm === 'confirm' || _cm === 'release') boardCommitMode = _cm; } catch(e){}
+
+// True once a piece has been parked on its destination and is waiting for the
+// confirming tap. Only ever set in 'confirm' mode.
+let awaitingConfirm = false;
+
+function isConfirmMode(){ return boardCommitMode === 'confirm'; }
+
+// The parked/not-parked hint lives in updatePlayerBoxes(), which the board's
+// own render() does not call — so route every change through here rather than
+// assigning the flag directly, or the hint goes stale.
+function setAwaitingConfirm(v){
+  v = !!v;
+  if (awaitingConfirm === v) return;
+  awaitingConfirm = v;
+  if (typeof updatePlayerBoxes === 'function') updatePlayerBoxes();
+}
+
+function setCommitMode(mode){
+  boardCommitMode = (mode === 'confirm') ? 'confirm' : 'release';
+  try { localStorage.setItem('bmCommitMode', boardCommitMode); } catch(e){}
+  // Drop any half-finished interaction so the modes never hand state to each other.
+  setAwaitingConfirm(false);
+  clearPreview();selSq=-1;legalMoves=[];hoverSq=-1;dragFrom=-1;dragMoved=false;
+  atkMap=buildAtk(board);
+  updateCommitModeChip();
+  render();
+}
+
+function toggleCommitMode(){ setCommitMode(isConfirmMode() ? 'release' : 'confirm'); }
+
+// The board markup is emitted before this script, so the chip is already in the
+// DOM — sync it to the persisted mode straight away.
+updateCommitModeChip();
+
+function updateCommitModeChip(){
+  const el = document.getElementById('commitModeChip');
+  if(!el) return;
+  const confirming = isConfirmMode();
+  el.textContent = confirming ? '👆 Tap to confirm' : '✋ Release to move';
+  el.classList.toggle('on', confirming);
+  el.title = confirming
+    ? 'Drag a piece, let go to park it and read the overlays, then tap again to play the move. Tap to switch to release-to-move.'
+    : 'Letting go of a piece plays the move. Tap to switch to park-then-confirm.';
+}
+
 function getEvtPos(e){const rect=cv.getBoundingClientRect();const cl=e.touches?e.touches[0]:e;return{x:cl.clientX-rect.left,y:cl.clientY-rect.top};}
 function getSq(pos){
   const scale=480/cv.getBoundingClientRect().width;
@@ -285,6 +341,48 @@ cv.addEventListener('mousedown',e=>{
   // Committing a move from own piece during opponent's turn will queue a premove.
 
   if(isHoverMode()){
+    // ── Confirm mode: a piece is parked and waiting for its second tap ───────
+    // Tapping the parked square plays the move; tapping a different legal
+    // square re-parks there (change your mind without starting over); anything
+    // else puts the piece back and clears the preview.
+    // Piece is selected but not yet parked, and a legal square was tapped:
+    // park it there rather than playing it. This is the tap-only route to the
+    // same place dragging reaches on release.
+    // The origin can come from either selSq or the live preview: on desktop a
+    // hover over a legal square already started a preview and cleared selSq,
+    // so selSq alone would miss the mouse case entirely.
+    if(isConfirmMode()&&!awaitingConfirm){
+      const _origin=(selSq>=0)?selSq:premoveFrom;
+      if(_origin>=0&&sq!==_origin&&legalMoves.includes(sq)){
+        startPreview(_origin,sq);
+        setAwaitingConfirm(true);
+        render();return;
+      }
+    }
+    if(isConfirmMode()&&awaitingConfirm&&premoveFrom>=0&&premoveTo>=0){
+      if(sq===premoveTo){
+        const f=premoveFrom,t=premoveTo;
+        setAwaitingConfirm(false);
+        // A parked piece can sit for a while, and in multiplayer the position
+        // can change underneath it. Re-derive legality from the live board
+        // rather than trusting the list captured when it was picked up.
+        if(board[f]) legalMoves=legalMovesFor(f,board,epSq,castling);
+        if(board[f]&&legalMoves.includes(t)) tryCommit(f,t);
+        else{selSq=-1;legalMoves=[];clearPreview();atkMap=buildAtk(board);render();}
+        return;
+      }
+      if(sq!==premoveFrom&&legalMoves.includes(sq)){
+        startPreview(premoveFrom,sq);
+        setAwaitingConfirm(true); // startPreview does not touch the flag; keep it explicit
+        render();return;
+      }
+      // Cancelled — put it back.
+      setAwaitingConfirm(false);
+      selSq=-1;legalMoves=[];clearPreview();atkMap=buildAtk(board);
+      dragFrom=-1;dragMoved=false;render();
+      if(!isOwnPiece)return; // tapped empty space: just cancel
+      // Tapped another piece: fall through and select it below.
+    }
     if(isOwnPiece){
       if(selSq===sq){selSq=-1;legalMoves=[];clearPreview();atkMap=buildAtk(board);dragFrom=-1;dragMoved=false;render();}
       else{
@@ -296,7 +394,9 @@ cv.addEventListener('mousedown',e=>{
         selSq=sq; // startPreview clears selSq; restore it so hover exploration works
       }
     }else{
-      if(previewBoard&&premoveFrom>=0&&premoveTo>=0){tryCommit(premoveFrom,premoveTo);}
+      // Confirm mode never commits from here — only the tap on the parked
+      // square does, and that is handled above. Anything else clears.
+      if(!isConfirmMode()&&previewBoard&&premoveFrom>=0&&premoveTo>=0){tryCommit(premoveFrom,premoveTo);}
       else{selSq=-1;legalMoves=[];clearPreview();atkMap=buildAtk(board);dragFrom=-1;dragMoved=false;render();}
     }
   }else{
@@ -380,6 +480,39 @@ cv.addEventListener('mouseup',e=>{
   if (typeof ghostOnMouseUp === 'function') ghostOnMouseUp();
   const pos=getEvtPos(e);const sq=canvasToBoard(pos);
   if(isHoverMode()){
+    // Confirm mode: releasing parks the piece instead of playing it. The preview
+    // stays live so the overlays can be read with the finger off the board; the
+    // next tap (handled in mousedown) is what commits.
+    if(isConfirmMode()){
+      if(dragFrom>=0&&dragMoved){
+        const dest=(premoveTo>=0&&premoveTo!==dragFrom&&legalMoves.includes(premoveTo))?premoveTo
+                  :(sq>=0&&sq!==dragFrom&&legalMoves.includes(sq))?sq:-1;
+        if(dest>=0){
+          // Park it: legalMoves is kept so the confirming tap can still validate,
+          // and so dragging on to a different legal square re-parks there.
+          const f=dragFrom;
+          dragFrom=-1;dragMoved=false;selSq=-1;
+          startPreview(f,dest);
+          setAwaitingConfirm(true);
+          render();return;
+        }
+        // Dragged somewhere illegal — put the piece back but keep it selected,
+        // so the next tap on a legal square can park it without re-picking up.
+        const o=dragFrom;
+        dragFrom=-1;dragMoved=false;dragOver=-1;
+        startPreview(o,o);selSq=o;
+        render();return;
+      }
+      // Plain tap, nothing parked: hold the identity preview so the piece stays
+      // selected with its overlays live. The tap that lands it is what parks.
+      const o=(selSq>=0)?selSq:dragFrom;
+      dragMoved=false;dragFrom=-1;dragOver=-1;
+      if(!awaitingConfirm){
+        if(o>=0&&board[o]){startPreview(o,o);selSq=o;}
+        else clearPreview();
+      }
+      render();return;
+    }
     if(dragFrom>=0){
       if(dragMoved){
         if(premoveTo>=0&&premoveTo!==dragFrom&&legalMoves.includes(premoveTo)){const f=dragFrom,t=premoveTo;dragFrom=-1;dragMoved=false;selSq=-1;tryCommit(f,t);return;}
@@ -401,11 +534,14 @@ cv.addEventListener('mouseup',e=>{
 cv.addEventListener('dblclick',e=>{e.preventDefault();if(!isHoverMode()&&previewBoard&&premoveFrom>=0&&premoveTo>=0)tryCommit(premoveFrom,premoveTo);});
 cv.addEventListener('mouseleave',()=>{
   hoverSq=-1;
+  // A parked piece survives the cursor leaving the board — that is the whole
+  // point of the mode, and on desktop the pointer often exits while reading.
+  if(isConfirmMode()&&awaitingConfirm){render();return;}
   if(isHoverMode()){if(selSq>=0){const _orig=selSq;startPreview(_orig,_orig);selSq=_orig;}else if(dragFrom>=0&&dragMoved){startPreview(dragFrom,dragFrom);}dragMoved=false;}
   else{dragMoved=false;dragFrom=-1;dragOver=-1;}
   render();
 });
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){cancelPremove();clearPreview();selSq=-1;legalMoves=[];hoverSq=-1;dragFrom=-1;dragMoved=false;atkMap=buildAtk(board);render();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){setAwaitingConfirm(false);cancelPremove();clearPreview();selSq=-1;legalMoves=[];hoverSq=-1;dragFrom=-1;dragMoved=false;atkMap=buildAtk(board);render();}});
 document.querySelectorAll('input[name="pmMode"]').forEach(r=>r.addEventListener('change',()=>{clearPreview();selSq=-1;legalMoves=[];hoverSq=-1;dragFrom=-1;dragMoved=false;atkMap=buildAtk(board);render();}));
 cv.addEventListener('touchstart',e=>{e.preventDefault();const t=e.touches[0];cv.dispatchEvent(new MouseEvent('mousedown',{clientX:t.clientX,clientY:t.clientY,bubbles:true}));},{passive:false});
 cv.addEventListener('touchmove',e=>{e.preventDefault();const t=e.touches[0];cv.dispatchEvent(new MouseEvent('mousemove',{clientX:t.clientX,clientY:t.clientY,bubbles:true}));},{passive:false});
@@ -581,6 +717,10 @@ function render(){
     }
     if(activePremove&&sq===activePremove.from)fill=light?'#a8c8f8':'#6090d0';
     else if(activePremove&&sq===activePremove.to)fill=light?'#90b8f0':'#4878c0';
+    // A parked piece awaiting its confirming tap gets a brighter destination
+    // than an ordinary hover preview, so "this will play if I tap here" is
+    // distinguishable at a glance from "I am just looking at this".
+    else if(isPreviewing&&awaitingConfirm&&sq===premoveTo)fill=light?'#7fe08a':'#3f9e58';
     else if(isPreviewing){if(sq===premoveFrom)fill=light?'#d8d860':'#b0b020';else if(sq===premoveTo)fill=light?'#a0d8a0':'#5a9e5a';}
     else{if(sq===selSq)fill=light?'#f6f669':'#baca2b';else if(sq===dragFrom&&isDragging)fill=light?'#d0d0d0':'#aaa';}
     ctx.fillStyle=fill;ctx.fillRect(c*SQ,r*SQ,SQ,SQ);
@@ -1644,9 +1784,14 @@ function updatePlayerBoxes(){
     } else if(inChk){
       hint.textContent = 'King must move, block, or capture';
       hint.className = 'hint-text check';
+    } else if(awaitingConfirm){
+      hint.textContent = 'Move parked — tap the green square to play it';
+      hint.className = 'hint-text';
     } else if(isWhiteTurn){
-      hint.textContent = 'Click a piece · hover to explore · ' +
-        (isHoverMode() ? 'click again to commit' : 'release to commit');
+      hint.textContent = isConfirmMode()
+        ? 'Drag a piece · let go to park it · tap again to play'
+        : 'Click a piece · hover to explore · ' +
+          (isHoverMode() ? 'click again to commit' : 'release to commit');
       hint.className = 'hint-text';
     } else {
       hint.textContent = "Black to move";
