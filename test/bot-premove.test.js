@@ -27,6 +27,9 @@ function makeCtx() {
     document: { getElementById: () => null },
     indActive: () => false,
     setTimeout: (fn) => fn(),
+    // Shadowed so individual tests can seed it without touching global Math.
+    // Deliberately NOT seeded here: two tests below assert that sampling
+    // genuinely varies, and a blanket seed would make them vacuous.
     Math: Object.create(Math),
     // Declared in 10-app-shell.js, which these tests don't load. The premove
     // reply now goes through applyMoveAttractors (the same scoring pipeline a
@@ -94,6 +97,12 @@ const sq = (ctx, n) => ctx.fileRankToSq(n);
 
 test('arms a premove from Maia\'s predicted human move, then Maia\'s reply to it', async () => {
   const ctx = makeCtx();
+  // The predictor SAMPLES from the distribution stubbed below, so with a
+  // 0.9/0.1 split roughly one run in ten legitimately drew c7c5 and this test
+  // failed at about 5%. Seed the draw to the top of the distribution: what is
+  // being asserted here is which move gets armed, not the sampling behaviour —
+  // that has its own tests further down, which is why the seed is per-test.
+  ctx.Math.random = () => 0;
   // Black (bot) to face 1.e4; predict e7e5 reply chain.
   setPos(ctx, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
   ctx.botPlayerColor = 'white';   // human is white, bot is black

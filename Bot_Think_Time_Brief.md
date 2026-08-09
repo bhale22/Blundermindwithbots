@@ -68,7 +68,13 @@ thinkMs  = baseSec × min(1 + entropy × 0.35, 2.5) × 1000
 
 Applied in order after `thinkMs` is set. Each multiplier is independent.
 
-**Clock-pressure mirroring** (`botBehavClockMirror`): if the human's clock is below 60% of the bot's, halves think time. Models the human tendency to play faster when their opponent is low on time — defensive aggression.
+**Clock-pressure mirroring** (`botBehavClockMirror`): scales think time down in proportion to how far *ahead* of the opponent the bot is on the clock — `× max(0.3, 1 − oppDeficit)` where `oppDeficit = clamp01(1 − oppClock/myClock)`. Models the human tendency to play faster when their opponent is low on time — defensive aggression.
+
+> *Until July 2026 this was a hard `× 0.5` the instant the opponent's clock crossed 60% of the bot's: nothing at 61%, half at 59%. Step changes like that are precisely what read as mechanical, so it is now continuous.*
+
+**Clock deficit** (`botDeficitWeight`, default 0.5): scales think time down in proportion to how far *behind* the opponent the bot is — `× max(0.2, 1 − deficit × botDeficitWeight)` where `deficit = clamp01(1 − myClock/oppClock)`, zero when level or ahead. A bot down 2:00 to 8:00 hurries; one that is comfortably ahead does not.
+
+> *This is the single most recognisable time-pressure tell in human chess and it was absent entirely — the old pipeline reacted only to the opponent being low, never to the bot's own predicament.*
 
 **Hustle attractor** (`_bcpAttractorValues.hustle`, −5 to +5): scales think time by `(1 − hustle × 0.15)`. +5 (hustler) → 25% faster; −5 (grinder) → 25% slower. Part of the personality attractor system.
 
@@ -86,12 +92,46 @@ At peak familiarity the bot plays at ~15% of its normal pace (brief but not robo
 
 **Base jitter** (always on): multiplies by a uniform random value in [0.8, 1.2]. Prevents mechanical regularity in any mode.
 
-### Stage 3 — Clock-pressure caps (always applied last)
+### Stage 2b — Budget pressure *(added July 2026)*
 
-- If clock < 30 s: caps think time at 8% of remaining clock (`clockMs × 0.08`)
+Applied after the multipliers and before the ceilings. The bot compares what this move *wants* to spend against what its clock can actually afford:
+
+```
+budgetSec = (clock + inc × movesLeft) / movesLeft     // botTimeBudgetSec()
+pressure  = clamp01(1 − budgetSec / wantSec)          // botBudgetPressure()
+thinkMs  ×= max(0.05, 1 − pressure × botPressureDepth)
+```
+
+`movesLeft` comes from `botRemainingMovesEstimate()` — which already existed and already drove the *strength* curves, but which think time never consulted. Because the shortfall is measured as a ratio, the same degree of trouble means the same thing in bullet and in classical, with no format-specific constants.
+
+**Increment is counted.** In 15+10 a player banking 10 s a move is not in trouble at 30 s. The draw logic already understood this (`flaggable: inc < 10`, "with a healthy increment nobody flags") while think time did not.
+
+### Stage 3 — Clock ceilings (always applied last)
+
+All timing modes route through `botApplyClockCaps()`, so Fixed and Mirror obey the same rules as the main path — they each used to carry their own copy of the old constants.
+
+- **Budget ceiling:** think time never exceeds `budgetSec × 1000`. This scales itself to the time control and replaces the old flat 8%-of-remaining rule, which was only ever sane at roughly twelve moves left.
+- **Emergency backstop:** below `min(30 s, startClock × 0.15)`, caps at 10% of the remaining clock. Relative rather than absolute, matching the test `_ccUnderPressure()` already used. Guards against a bad remaining-moves estimate.
 - If `botCanFlag` is false: caps at `max(200, clockMs − 3000)` to guarantee the bot never flags itself
 - Hard floor: 200 ms (no move is played in less than 200 ms regardless of mode)
 - Hard ceiling: `botThinkCapMs()` — 2% of starting clock, clamped between 6 s and 45 s. Prevents a 90-minute classical game from having a 6-second-max bot.
+
+> **Why the old model was replaced.** A flat 30-second threshold meant the bot's own clock had *no* influence on its speed until it arrived, and then a cap slammed on — at 30.1 s it might take 6 s, at 29.9 s it was capped at 2.4 s. That discontinuity is exactly what reads as machine-like. The same constant also meant opposite things in different formats: 30 s is half a bullet game and a genuine emergency in a 90-minute classical one.
+
+### Resulting pacing
+
+Think time at move 20 by fraction of clock remaining (complexity mode, base 3 s, no opponent-clock effect):
+
+| Control | 100% | 50% | 25% | 10% | 5% | 2% |
+|---|---|---|---|---|---|---|
+| Bullet 1+0 | 3.0 s | 1.5 s | 0.8 s | 0.3 s | 0.2 s | 0.2 s |
+| Blitz 3+2 | 4.4 s | 4.4 s | 4.3 s | 1.8 s | 0.9 s | 0.4 s |
+| Blitz 5+0 | 4.4 s | 4.4 s | 3.8 s | 1.5 s | 0.8 s | 0.3 s |
+| Rapid 10+0 | 4.4 s | 4.4 s | 4.4 s | 3.0 s | 1.5 s | 0.6 s |
+| Rapid 15+10 | 4.4 s | 4.4 s | 4.4 s | 4.4 s | 4.4 s | 1.8 s |
+| Classical 90+0 | 4.4 s | 4.4 s | 4.4 s | 4.4 s | 4.4 s | 4.4 s |
+
+Bullet self-limits to a 3 s budget even on a full clock; 15+10 holds full pace down to 45 s because the increment is counted; classical never rushes. With both clocks in play the curve is a V — the bot is fastest when *either* side is in trouble and slowest when the clocks are level.
 
 ---
 
@@ -202,6 +242,8 @@ Per-game telemetry (`botPremoveStats`: armed / fired / busted) is surfaced live 
 | `botBehavReconsider` | true | Enable random reconsideration pauses |
 | `botBehavClockMirror` | true | Speed up when opponent clock is low |
 | `botCanFlag` | true | Whether bot is allowed to run clock to zero |
+| `botPressureDepth` | 0.85 | How hard a shrinking per-move budget compresses think time; 0 = ignore own clock |
+| `botDeficitWeight` | 0.5 | How much being behind the opponent's clock hurries the bot; 0 = off |
 | `botWeaponizerEnabled` | false | Enable fast play when the opponent is low on clock |
 | `botWeaponizerTriggerMs` | 15000 | Opponent's *absolute* time remaining that activates it (not a lead) |
 | `botWeaponizerMinMs` | 0 | Floor on weaponizer move time; 0 = instant |
@@ -247,11 +289,11 @@ The familiarity multiplier currently applies to the `complexity` and `pace` path
 **4. Endgame acceleration / simplification recognition**
 The hustle attractor already scales think time globally, and the Hustler personality uses piece count to modulate temperature across game phases. But there's no specific model of the well-known human pattern of playing faster in simplified endgames with limited material. A piece-count-based familiarity curve (analogous to the opening depth curve but on the other end of the game) could model this: as material drops below ~8 pieces, bots above ~1600 ELO start to "know the theory" again and play faster K+R vs K endgames, pawn races, etc.
 
-**5. Time control awareness in complexity base**
-`botThinkCapMs()` already scales the upper bound to the time control. But the base pace (`botPace` slider) is set manually and doesn't know whether it's a 1-minute bullet or a 30-minute rapid. A bullet bot should default to much faster base pace than a rapid bot even before any other modifiers. Consider auto-initializing `botCplxBase` (or the effective pace) from the time control when a game starts.
+**5. Time control awareness in complexity base** — *largely addressed July 2026*
+The budget ceiling (Stage 3) now scales think time to the time control automatically: a bullet bot cannot spend 4 s a move regardless of what the base pace says. What remains optional is auto-initialising `botCplxBase` (or the effective pace) from the time control at game start, so the *base* is format-aware and not only its ceiling.
 
 ---
 
-*Last updated: July 2026. Code reference: `src/50-bot-engine.js` (`botThinkTime`, `botPremoveArm`, `botPremoveShouldArm`, `botPremoveTryFire`, `botPremoveBustTaxMs`, `openingFamiliarity`, `botEffectiveElo`, `botThinkCapMs`, `explorerConfidenceFromData`, `botPostMoveHook`), `src/10-app-shell.js` (state variables), `src/60-bot-ui.js` (config bridge, game-start resets).*
+*Last updated: July 2026 (budget-based time pressure). Code reference: `src/50-bot-engine.js` (`botThinkTime`, `botTimeBudgetSec`, `botBudgetPressure`, `botClockDeficit`, `botOppClockDeficit`, `botApplyClockCaps`, `botPremoveArm`, `botPremoveShouldArm`, `botPremoveTryFire`, `botPremoveBustTaxMs`, `openingFamiliarity`, `botEffectiveElo`, `botThinkCapMs`, `explorerConfidenceFromData`, `botPostMoveHook`), `src/10-app-shell.js` (state variables), `src/60-bot-ui.js` (config bridge, game-start resets).*
 
 *Note on the build: `blundermind.html` is a generated artifact assembled from `src/` by `build.js`, and `server.js` performs the same assembly in memory per request. Always edit `src/` — a hand-edited `blundermind.html` is overwritten on the next build and is not tracked by git.*

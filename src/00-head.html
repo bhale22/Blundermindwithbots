@@ -132,6 +132,17 @@ body{
 .turn-pill{font-size:7px;font-weight:500;padding:1px 6px;border-radius:8px;background:rgba(74,159,212,0.15);color:#2878b8;white-space:nowrap;border:0.5px solid rgba(74,159,212,0.3);}
 .turn-pill.check-pill{background:rgba(200,40,40,0.12);color:#c03030;border-color:rgba(200,40,40,0.3);}
 .player-box.in-check{border-color:rgba(180,40,40,0.6);}
+/* Board input row — fixed directly under the board in both orientations. */
+#boardInputRow{display:flex;justify-content:flex-end;align-items:center;
+  width:var(--board-size);box-sizing:border-box;}
+/* Move-commit mode chip. Tap target is padded well beyond the 7px text so it
+   is comfortably hittable with a thumb. */
+.commit-chip{font-size:7px;font-weight:600;padding:5px 10px;border-radius:8px;
+  background:var(--bg-panel2);color:var(--text-dim);white-space:nowrap;
+  border:0.5px solid var(--border);cursor:pointer;user-select:none;
+  font-family:inherit;line-height:1.4;transition:background 0.15s,color 0.15s,border-color 0.15s;}
+.commit-chip:hover{color:var(--text-secondary);border-color:var(--text-dim);}
+.commit-chip.on{background:rgba(74,200,120,0.15);color:#2e9e5b;border-color:rgba(74,200,120,0.4);}
 
 /* ── Canvas ───────────────────────────────────────────────────────────────── */
 canvas{
@@ -728,6 +739,33 @@ canvas{
 /* ── Guided tour: entry line + which-one picker ──────────────────────────
    Dashed and quiet on purpose. The cards above are what people came to
    click; this is the way back for someone who wants orientation first. */
+/* Cross-link back to the web versions. Shown only when running as an
+   installed app (see bmIsAppContext) — on the websites themselves the copy
+   would be circular, since that IS the browser-based version. */
+.web-note {
+  margin-top:14px;padding:12px 14px;border-radius:8px;
+  background:var(--bg-panel2);border:0.5px solid var(--border);text-align:left;
+}
+.web-note .wn-head {
+  font-size:9px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;
+  color:var(--text-dim);margin-bottom:6px;
+}
+.web-note .wn-body { font-size:11px;line-height:1.5;color:var(--text-secondary);margin:0 0 10px; }
+.web-note .wn-links { display:flex;flex-direction:column;gap:6px; }
+.web-note .wn-link {
+  display:flex;flex-direction:column;gap:1px;padding:8px 10px;border-radius:5px;
+  background:var(--bg-panel);border:0.5px solid var(--border);
+  text-decoration:none;transition:border-color 0.15s;
+}
+.web-note .wn-link:hover { border-color:var(--accent); }
+.web-note .wn-name { font-size:11.5px;font-weight:600;color:var(--accent); }
+.web-note .wn-desc { font-size:9.5px;color:var(--text-dim); }
+.landing-expert .web-note { background:#22262d;border-color:rgba(255,255,255,0.08); }
+.landing-expert .web-note .wn-link { background:#1a1e24;border-color:rgba(255,255,255,0.08); }
+.landing-expert .web-note .wn-link:hover { border-color:#c8922a; }
+.landing-expert .web-note .wn-name { color:#c8922a; }
+.landing-expert .web-note .wn-desc { color:#717a8a; }
+
 .landing-tour-btn {
   display:flex;align-items:center;gap:10px;
   padding:0 18px;min-height:44px;margin-bottom:14px;
@@ -1408,8 +1446,8 @@ body.pro-mode #proSide{
   font-family:'Segoe UI Symbol',sans-serif;color:var(--pt1);
 }
 .pro-meta{ flex:1;min-width:0; }
-.pro-name{ font-family:var(--pfu);font-size:12px;font-weight:500;color:var(--pt1); }
-.pro-rating{ font-family:var(--pfm);font-size:9px;color:var(--ptd);margin-top:1px;min-height:11px; }
+.pro-name{ font-family:var(--pfu);font-size:12px;font-weight:500;color:var(--pt1);height:15px; }
+.pro-rating{ font-family:var(--pfm);font-size:9px;color:var(--ptd);margin-top:1px;height:12px; }
 .pro-clock{
   font-family:var(--pfm);font-size:21px;font-weight:500;letter-spacing:0.04em;
   color:var(--pt2);padding:4px 12px;border-radius:4px;background:var(--pc);
@@ -1420,7 +1458,12 @@ body.pro-mode #proSide{
 .pro-card{ background:var(--pc-mid);border:0.5px solid var(--pbd);border-radius:5px; }
 .pro-card-hd{ padding:8px 11px;border-bottom:0.5px solid var(--pbd); }
 .pro-card-title{ font-family:var(--pfu);font-size:9px;font-weight:500;letter-spacing:0.14em;text-transform:uppercase;color:var(--pa); }
-.pro-moves{ flex:1;overflow-y:auto;max-height:188px;padding:3px 0;min-height:60px; }
+/* Fixed height, not a range. This used to be min-height:60px / max-height:188px
+   with flex:1, so the notation card grew as the game went on and pushed the
+   player clock below it steadily down the screen — movement in the corner of
+   the eye, right next to the board, on every single move. A constant height
+   costs some empty space early in a game and keeps everything below it still. */
+.pro-moves{ flex:none;height:188px;overflow-y:auto;padding:3px 0; }
 .pro-moves-empty{ font-family:var(--pfm);font-size:8.5px;color:var(--ptd);text-align:center;padding:14px 0; }
 .pro-mclick{ cursor:pointer;border-radius:2px; }
 .pro-mclick:hover{ background:rgba(200,146,42,0.18); }
@@ -1429,7 +1472,7 @@ body.pro-mode #proSide{
 .pro-mnum{ color:var(--ptd);font-size:9px;text-align:right;padding-right:9px; }
 .pro-mw,.pro-mb{ padding:4px 8px;color:var(--pt2); }
 .pro-mhi{ background:rgba(200,146,42,0.18);color:var(--pa)!important;border-radius:3px;font-weight:600; }
-.pro-mat{ font-size:11px;line-height:1.2;margin-top:1px; }
+.pro-mat{ font-size:11px;line-height:1.2;margin-top:1px;height:16px;overflow:hidden; }
 
 .pro-actions{ display:flex;gap:7px;align-items:stretch; }
 .pro-abtn{
@@ -1473,6 +1516,28 @@ body.pro-mode #proSide{
 
 /* Relocated chat, restyled for the pro column.
    Visibility stays governed by chatShow() — only shows during 2-player games. */
+/* Clock + commit chip as one stacked unit on the player's own panel. The
+   stack has a constant height, so the clock's position does not move. */
+.pro-clock-stack{ display:flex;flex-direction:column;align-items:stretch;gap:5px;flex-shrink:0; }
+body.pro-mode #proChipMount{ display:flex; }
+body.pro-mode #proChipMount .commit-chip{
+  width:100%;justify-content:center;text-align:center;
+  font-family:var(--pfu);font-size:8px;letter-spacing:0.06em;text-transform:uppercase;
+  background:var(--pc);border:0.5px solid var(--pbd);color:var(--ptd);padding:4px 6px;
+}
+body.pro-mode #proChipMount .commit-chip:hover{ border-color:var(--pbd-a);color:var(--pt2); }
+body.pro-mode #proChipMount .commit-chip.on{
+  background:var(--pc-mid);border-color:var(--pbd-a);color:var(--pa);
+}
+/* Empty in pro mode once the chip has been relocated — collapse it so it does
+   not leave a gap under the board. */
+body.pro-mode #boardInputRow{ display:none; }
+
+/* Long bot names and rating lines must not wrap: a second line would grow the
+   player row and move the clock, which is exactly what this layout guarantees
+   against. */
+.pro-name, .pro-rating, .pro-mat{ white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+
 body.pro-mode #proChatMount{ display:flex;flex-direction:column; }
 body.pro-mode #proChatMount #chatBox{
   width:auto;background:var(--pc-mid);border:0.5px solid var(--pbd);
@@ -1653,6 +1718,24 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <span class="ltb-chev">→</span>
   </button>
 
+  <!-- App-only cross-link to the web versions. `hidden` by default; revealed
+       by bmRevealWebNotes() when running as an installed app. -->
+  <div class="web-note" id="landingWebNote" hidden>
+    <div class="wn-head">Also on the web</div>
+    <p class="wn-body">This app is an adaptation of the browser-based version.
+      Some of the board visualizations have more room to breathe on a larger screen.</p>
+    <div class="wn-links">
+      <a class="wn-link" href="https://blundermindchess.com" target="_blank" rel="noopener">
+        <span class="wn-name">&#9823; Blundermindchess.com</span>
+        <span class="wn-desc">Visualization training board</span>
+      </a>
+      <a class="wn-link" href="https://buildabotchess.com" target="_blank" rel="noopener">
+        <span class="wn-name">&#9822; Buildabotchess.com</span>
+        <span class="wn-desc">Expert board &amp; bot builder</span>
+      </a>
+    </div>
+  </div>
+
   <!-- Which tour. Hidden until asked for; the two halves are the two things
        this site actually is, so the choice is the product's own split. -->
   <div class="landing-tour-pick" id="landingTourPick" hidden>
@@ -1781,6 +1864,15 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div id="board-canvas-wrap">
       <canvas id="cv" width="480" height="480"></canvas>
       <canvas id="ghostCanvas" width="480" height="480"></canvas>
+    </div>
+
+    <!-- Board input row. Deliberately NOT inside a player box: the turn pill is
+         re-parented between rightColW/rightColB every turn, and .board-flipped
+         swaps the two boxes top-to-bottom — either would make this chip jump
+         around mid-game. As a plain order-0 child it stays under the board in
+         both orientations. -->
+    <div id="boardInputRow">
+      <button class="commit-chip" id="commitModeChip" onclick="toggleCommitMode()">✋ Release to move</button>
     </div>
 
     <!-- PGN Replay controls (shown during replay) -->
@@ -2135,7 +2227,9 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="pro-moves" id="proMoves"><div class="pro-moves-empty">No moves yet</div></div>
     </div>
 
-    <!-- You (bottom of board) -->
+    <!-- You (bottom of board). The move-commit chip is mounted under this clock
+         in pro mode (proMountChip) — it belongs with the player's own controls
+         rather than floating under the board's corner. -->
     <div class="pro-player active" id="proPlayerBottom">
       <div class="pro-avatar" id="proAvatarBottom">♔</div>
       <div class="pro-meta">
@@ -2143,7 +2237,10 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <div class="pro-rating" id="proRatingBottom"></div>
         <div class="pro-mat" id="proMatBottom"></div>
       </div>
-      <div class="pro-clock" id="proClockBottom">—</div>
+      <div class="pro-clock-stack">
+        <div class="pro-clock" id="proClockBottom">—</div>
+        <div id="proChipMount"></div>
+      </div>
     </div>
 
     <!-- Game-over result (shown when checkmate / stalemate / resign / draw) -->
@@ -2216,6 +2313,22 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <button class="panel-close" onclick="closeAllPanels()">✕</button>
   </div>
   <div class="panel-body">
+    <!-- App-only, same as the landing note. -->
+    <div class="web-note" id="aboutWebNote" hidden style="margin-top:0;margin-bottom:14px;">
+      <div class="wn-head">Also on the web</div>
+      <p class="wn-body">This app is an adaptation of the browser-based version.
+        Some of the board visualizations have more room to breathe on a larger screen.</p>
+      <div class="wn-links">
+        <a class="wn-link" href="https://blundermindchess.com" target="_blank" rel="noopener">
+          <span class="wn-name">&#9823; Blundermindchess.com</span>
+          <span class="wn-desc">Visualization training board</span>
+        </a>
+        <a class="wn-link" href="https://buildabotchess.com" target="_blank" rel="noopener">
+          <span class="wn-name">&#9822; Buildabotchess.com</span>
+          <span class="wn-desc">Expert board &amp; bot builder</span>
+        </a>
+      </div>
+    </div>
     <p>Nearly all games of chess I play are decided on blundered pieces. I created this site in the hopes that I could see what it was like to play a game that was decided by strategy instead of blunders. I still blunder, but at least the number of blunders is reduced a bit when there is a big red circle around the queen when I hover it over my intended square. I still have no idea if this will translate to better board vision in &#8216;real&#8217; OTB games.</p>
     <p>I also struggle with &#8220;getting a grip on the board&#8221; (to steal a useful phrase from the <a href="https://www.youtube.com/watch?v=3jiJn8bjtYk" target="_blank" rel="noopener" style="color:var(--accent);">Chess Dojo</a>), so while my intent was to blundercheck moves so that I would see if I were hanging my queen, I&#8217;m finding that it is showing discovered attacks and potential forks that I didn&#8217;t see at all (you can probably infer my rating at this point). I think it could be a very helpful tool as long as it is used as a blundercheck to double check and provide immediate feedback after assessment and calculation, not as a blunder avoider that just circles some hanging pieces while potential moves are explored by dragging the pieces around.</p>
     <p>Also included in my numerous struggles is the ability to predict my opponent&#8217;s response, so I added a feature to show two potential responses by making two calls to Stockfish. I would like to do this with Maia, but running Maia3 on each potential move is too slow with my current set up &#8212; hopefully in the future. Currently the site does not include any engine analysis or indicators to show if a move is &#8220;good or bad&#8221; during game play or exploration. Each game can be downloaded and analyzed in <a href="https://lichess.org/paste" target="_blank" rel="noopener" style="color:var(--accent);">Lichess</a> or a website of your choice. Similarly, the PGN of any game can be uploaded and explored here.</p>
