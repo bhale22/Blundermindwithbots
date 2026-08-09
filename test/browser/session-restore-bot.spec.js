@@ -119,6 +119,54 @@ describe('session restore — timed bot game', { concurrency: 1 }, () => {
     assert.ok(bDrift <= 8, 'black clock drift ' + bDrift + ' (was ' + snap.clock.b + ', now ' + after.bl + ')');
   });
 
+  test('the bot personality survives the reload, not just its rating', async () => {
+    // botCollectConfig used to capture the rating, tab and colour but none of
+    // the Build-A-Bot personality, so a resumed game came back as a generic
+    // engine of the same strength — the opposite of the point for a site whose
+    // whole premise is the bot you built.
+    const p = await page.evaluate(() => ({
+      attractors: window._bcpAttractorValues,
+      budget: window._bcpCpBudget,
+      controls: window._bcpCustomControls,
+    }));
+    assert.ok(p, 'personality globals should exist after restore');
+
+    // Set a distinctive personality, snapshot it, and reload.
+    await page.evaluate(() => {
+      window._bcpAttractorValues = { hustle: 4, trade: -3 };
+      window._bcpCpBudget = 175;
+      window._bcpCpHardFloor = 220;
+      window._bcpCustomControls = [{ id: 'x1', name: 'push pawns', metric: 'pawnAdvance', phase: 'all', value: 3 }];
+      botMinProbPct = 12;
+      botDayLower = 20; botDayUpper = 80;
+      bmSessionSave();
+    });
+    const snap = await page.evaluate(() => JSON.parse(localStorage.getItem('bm_liveGame')));
+    assert.ok(snap.bot.config.personality, 'snapshot should carry a personality block');
+    assert.strictEqual(snap.bot.config.personality.attractorValues.hustle, 4);
+
+    await page.goto(server.baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#cv');
+    await page.waitForTimeout(2400);
+
+    const after = await page.evaluate(() => ({
+      attractors: window._bcpAttractorValues,
+      budget: window._bcpCpBudget,
+      hardFloor: window._bcpCpHardFloor,
+      controls: window._bcpCustomControls,
+      minProb: botMinProbPct,
+      dayLower: botDayLower, dayUpper: botDayUpper,
+    }));
+    assert.deepStrictEqual(after.attractors, { hustle: 4, trade: -3 }, 'attractors restored');
+    assert.strictEqual(after.budget, 175, 'CP budget restored');
+    assert.strictEqual(after.hardFloor, 220, 'hard floor restored');
+    assert.strictEqual(after.controls.length, 1, 'custom controls restored');
+    assert.strictEqual(after.controls[0].metric, 'pawnAdvance');
+    assert.strictEqual(after.minProb, 12, 'probability floor restored');
+    assert.strictEqual(after.dayLower, 20, 'move-quality band restored');
+    assert.strictEqual(after.dayUpper, 80);
+  });
+
   test('the bot resumes thinking and plays its move', async () => {
     await page.waitForTimeout(11000);
     const now = await page.evaluate(() => gameMovesAlgebraic.slice());

@@ -1066,6 +1066,32 @@ function botCollectConfig(configName, botNameVal) {
       mode: botOpeningMode,
       config: botOpeningConfig,
       frequencyPct: botOpeningFrequencyPct
+    },
+    // Personality: the attractors, CP budget and custom controls set by the
+    // Build-A-Bot panel. Without these a config records a bot's RATING but not
+    // the bot — a restored or reloaded Hustler came back as a generic engine of
+    // the same strength, which is the opposite of the point.
+    personality: {
+      attractorValues: (window._bcpAttractorValues && Object.keys(window._bcpAttractorValues).length)
+        ? window._bcpAttractorValues : null,
+      pieceValues:     (window._bcpPieceValues && Object.keys(window._bcpPieceValues).length)
+        ? window._bcpPieceValues : null,
+      cpBudget:        window._bcpCpBudget,
+      hardFloorCp:     window._bcpCpHardFloor,
+      customControls:  Array.isArray(window._bcpCustomControls) ? window._bcpCustomControls : [],
+      hustlerTempMode: !!window._bcpHustlerTempMode,
+      minProbPct:      (typeof botMinProbPct !== 'undefined') ? botMinProbPct : null,
+      dayLower:        (typeof botDayLower   !== 'undefined') ? botDayLower   : null,
+      dayUpper:        (typeof botDayUpper   !== 'undefined') ? botDayUpper   : null,
+      badDayMode:      (typeof botBadDayMode !== 'undefined') ? !!botBadDayMode : false,
+      maiaTempValue:   (typeof botMaiaTempValue !== 'undefined') ? botMaiaTempValue : null,
+      sfTempLevel:     (typeof botSfTempLevel   !== 'undefined') ? botSfTempLevel   : null,
+      pressureDepth:   (typeof botPressureDepth !== 'undefined') ? botPressureDepth : null,
+      deficitWeight:   (typeof botDeficitWeight !== 'undefined') ? botDeficitWeight : null,
+      behavBlink:       !!botBehavBlink,
+      behavReconsider:  !!botBehavReconsider,
+      behavClockMirror: !!botBehavClockMirror,
+      canFlag:          !!botCanFlag,
     }
   };
 }
@@ -1118,6 +1144,30 @@ function botApplyConfig(cfg) {
       if (cfg.timePressure) botSetTpBtn(cfg.timePressure);
       if (cfg.timeBehavior) botSetTimeBehavior(cfg.timeBehavior);
       if (cfg.pace) { _setVal('botPace', cfg.pace); _setTxt('botPaceVal', cfg.pace); }
+      // Restore the personality. Only keys actually present are applied, so a
+      // config written before this section existed leaves the live values alone
+      // rather than blanking the bot into a default engine.
+      if (cfg.personality) {
+        var _pz = cfg.personality;
+        if (_pz.attractorValues) window._bcpAttractorValues = _pz.attractorValues;
+        if (_pz.pieceValues)     window._bcpPieceValues     = _pz.pieceValues;
+        if (_pz.cpBudget    != null) window._bcpCpBudget    = _pz.cpBudget;
+        if (_pz.hardFloorCp != null) window._bcpCpHardFloor = _pz.hardFloorCp;
+        if (Array.isArray(_pz.customControls)) window._bcpCustomControls = _pz.customControls;
+        window._bcpHustlerTempMode = !!_pz.hustlerTempMode;
+        if (_pz.minProbPct != null) botMinProbPct = _pz.minProbPct;
+        if (_pz.dayLower   != null) botDayLower   = _pz.dayLower;
+        if (_pz.dayUpper   != null) botDayUpper   = _pz.dayUpper;
+        botBadDayMode = !!_pz.badDayMode;
+        if (_pz.maiaTempValue != null && typeof botMaiaTempValue !== 'undefined') botMaiaTempValue = _pz.maiaTempValue;
+        if (_pz.sfTempLevel   != null && typeof botSfTempLevel   !== 'undefined') botSfTempLevel   = _pz.sfTempLevel;
+        if (_pz.pressureDepth != null) botPressureDepth = _pz.pressureDepth;
+        if (_pz.deficitWeight != null) botDeficitWeight = _pz.deficitWeight;
+        if (_pz.behavBlink       !== undefined) botBehavBlink       = !!_pz.behavBlink;
+        if (_pz.behavReconsider  !== undefined) botBehavReconsider  = !!_pz.behavReconsider;
+        if (_pz.behavClockMirror !== undefined) botBehavClockMirror = !!_pz.behavClockMirror;
+        if (_pz.canFlag          !== undefined) botCanFlag          = !!_pz.canFlag;
+      }
       if (cfg.playerColor) botSetPlayerColor(cfg.playerColor);
       if (cfg.ghostPieces !== undefined) {
         var _gp = document.getElementById('cbGhostPieces');

@@ -3540,7 +3540,6 @@ let atkMap={};
 let promotionPending=null,gameOver=false;
 let previewBoard=null,previewAtk=null,previewEpSq=-1,previewCastling=null,premoveFrom=-1,premoveTo=-1;
 let hoverSq=-1;
-let lastClickSq=-1,lastClickTime=0;
 // ── Premove state ────────────────────────────────────────────
 let activePremove=null; // {from,to,promo} or null
 
