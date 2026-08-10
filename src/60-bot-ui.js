@@ -1255,8 +1255,12 @@ function landingSetShell(shell) {
 function _landingApplyShellStyle(s) {
   const ov = document.getElementById('landingOverlay');
   if (ov) ov.classList.toggle('landing-expert', s === 'pro');
-  document.querySelectorAll('.landing-shell-btn').forEach(b =>
-    b.classList.toggle('sel', b.dataset.shell === s));
+  document.querySelectorAll('.landing-shell-btn').forEach(b => {
+    const on = b.dataset.shell === s;
+    b.classList.toggle('sel', on);
+    // These are role="radio", so the state has to be exposed, not just drawn.
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
 }
 
 // Re-open the landing (Home), styled for the currently active shell.
