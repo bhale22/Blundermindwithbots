@@ -22,6 +22,10 @@
       offline. They fail, and the app already falls back to engine play.
 */
 
+// How long a navigation waits on the network before the cached shell wins.
+// Deliberately short: the fallback is a complete, playable app.
+const NAV_TIMEOUT_MS = 3000;
+
 const VERSION = 'v1';
 const SHELL   = 'bm-shell-'   + VERSION;
 const RUNTIME = 'bm-runtime-' + VERSION;
@@ -87,14 +91,30 @@ self.addEventListener('fetch', (e) => {
 
   // Navigations: network first so a deploy is picked up, cache as the fallback
   // so the app still opens on a plane.
+  //
+  // The network leg is on a timer, and that timer is the whole point. Plain
+  // airplane mode rejects instantly and the catch below runs — but a VPN
+  // installs routes for the entire address space, so when the underlying
+  // transport dies the tunnel is still "up" and packets just disappear into it.
+  // fetch() then hangs on connect instead of failing, and since respondWith()
+  // has already claimed the navigation, the user watches a blank screen for as
+  // long as the TCP stack keeps trying. Bound it and fall back to the cache.
+  //
+  // A slow-but-working network loses the freshness check and gets the cached
+  // shell — the right trade, since the cached shell is a fully working app and
+  // the next launch tries the network again.
   if (req.mode === 'navigate') {
     e.respondWith((async () => {
+      const ctrl  = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), NAV_TIMEOUT_MS);
       try {
-        const fresh = await fetch(req);
+        const fresh = await fetch(req, { signal: ctrl.signal });
+        clearTimeout(timer);
         const cache = await caches.open(SHELL);
         cache.put(req, fresh.clone());
         return fresh;
       } catch (err) {
+        clearTimeout(timer);
         return (await caches.match(req))
             || (await caches.match('/blundermind.html'))
             || (await caches.match('/'))
