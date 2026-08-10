@@ -1740,7 +1740,9 @@ window.addEventListener('message', function(e) {
   botStaleSeekMove    = (cfg.staleSeekFromMove  != null) ? +cfg.staleSeekFromMove  : 30;
   botStaleSeekCp      = (cfg.staleSeekCp        != null) ? +cfg.staleSeekCp        : 500;
 
-  // Time pressure curves (cvA = ELO degradation, cvB = distribution cutoff).
+  // Time pressure curves (cvA = ELO degradation, cvB = temperature ramp — it
+  // flattens the move distribution rather than cutting it off; see
+  // timePressureTempByThink).
   // Each mechanism has its own off flag (pressureOffA / pressureOffB); older
   // configs only carry the master pressureOff flag, which disables both.
   var _tpOffA = (cfg.pressureOffA != null) ? !!cfg.pressureOffA : !!cfg.pressureOff;

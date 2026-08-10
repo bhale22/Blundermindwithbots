@@ -1026,10 +1026,17 @@ function proSync(){
     const diff = mat.w - mat.b;
     const topMat  = document.getElementById('proMatTop');
     const botMat  = document.getElementById('proMatBottom');
-    if(topMat)  topMat.innerHTML  = (topIsWhite  ? diff  > 0 : diff  < 0) && typeof matAdvString==='function'
-      ? matAdvString(Math.abs(diff), topIsWhite ? mat.wPieces : mat.bPieces, topIsWhite ? mat.bPieces : mat.wPieces) : '';
-    if(botMat)  botMat.innerHTML  = (!topIsWhite ? diff  > 0 : diff  < 0) && typeof matAdvString==='function'
-      ? matAdvString(Math.abs(diff), !topIsWhite ? mat.wPieces : mat.bPieces, !topIsWhite ? mat.bPieces : mat.wPieces) : '';
+    // Same rule as the amateur boxes: glyphs on both sides, the number only on
+    // whoever is actually ahead. Showing the leader's surplus alone overstated
+    // every uneven trade — see matAdvString in 30-board-ui.js.
+    if(typeof matAdvString==='function'){
+      const topAhead = topIsWhite  ? diff > 0 : diff < 0;
+      const botAhead = !topIsWhite ? diff > 0 : diff < 0;
+      if(topMat) topMat.innerHTML = matAdvString(topAhead ? Math.abs(diff) : 0,
+        topIsWhite ? mat.wPieces : mat.bPieces, topIsWhite ? mat.bPieces : mat.wPieces);
+      if(botMat) botMat.innerHTML = matAdvString(botAhead ? Math.abs(diff) : 0,
+        !topIsWhite ? mat.wPieces : mat.bPieces, !topIsWhite ? mat.bPieces : mat.wPieces);
+    }
   }
   // Result bar and button state
   const resultBar = document.getElementById('proResultBar');
@@ -1195,6 +1202,8 @@ const TOURS = {
       body:'Resign, offer a draw, flip the board, or open the 🎨 style palette — where you can also switch back to the Training board. The ⚙ menu has more: a bot game, 2-player, save/load.' },
     { sel:'#proMoves', title:'Move list',
       body:'Your game notation updates here live as you play.' },
+    { sel:'#distPanel', title:'Maia move odds (optional)',
+      body:'Expand <b>📊 Maia move odds</b> to see the distribution a human of that rating would actually be choosing from — not the engine’s verdict on the best move, but how <i>spread</i> the choice was. A near-forced position shows one tall bar; a real decision shows several close together. It is <b>collapsed by default, and most of the time you will want it that way</b> — it answers a question <i>about</i> the position rather than helping you play it. Worth opening when you want to know how obvious your move really was.' },
   ],
 };
 

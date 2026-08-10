@@ -1711,17 +1711,30 @@ function computeMaterial(bd){
   return{w,b,wPieces,bPieces};
 }
 
-function matAdvString(diff, pieces, oppPieces){
-  if(diff===0) return '';
+// Glyphs for the piece TYPES this side has more of, plus the numeric lead when
+// `lead > 0`. Pass lead = 0 to show glyphs without a number.
+//
+// Both sides get glyphs; only the side that is actually ahead gets the "+N".
+// This used to render glyphs for the leading side only, which silently
+// overstated the lead after any uneven trade: the surplus is computed per piece
+// type and never accounted for the types that side was BEHIND on. Queen traded
+// for two rooks showed "♖♖ +1" — indistinguishable at a glance from being up
+// two whole rooks. A promoted queen while a pawn down showed "♕♙ +5", claiming
+// a pawn the player did not have. Showing the other side's surplus too makes
+// the trade legible: ♕ against ♖♖, with the +1 on whoever it belongs to.
+function matAdvString(lead, pieces, oppPieces){
   const surplus=[];
   for(const [pc,cnt] of Object.entries(pieces)){
     const extra=cnt-(oppPieces[pc]||0);
     for(let i=0;i<extra;i++) surplus.push(pc);
   }
+  if(!surplus.length && lead<=0) return '';
   surplus.sort((a,b)=>(PIECE_VALS[b]||0)-(PIECE_VALS[a]||0));
   const glyphs=surplus.map(p=>PIECE_GLYPHS[p]||'').join('');
   return `<span style="font-size:13px;color:var(--text-primary);">${glyphs}</span>`
-       + `<span style="font-size:9px;color:var(--text-secondary);margin-left:3px;">+${diff}</span>`;
+       + (lead>0
+           ? `<span style="font-size:9px;color:var(--text-secondary);margin-left:3px;">+${lead}</span>`
+           : '');
 }
 
 function updatePlayerBoxes(){
@@ -1733,8 +1746,11 @@ function updatePlayerBoxes(){
   // ── Material bars ────────────────────────────────────────────────
   const matW = document.getElementById('matW');
   const matB = document.getElementById('matB');
-  if(matW) matW.innerHTML = diff > 0 ? matAdvString(diff, mat.wPieces, mat.bPieces) : '';
-  if(matB) matB.innerHTML = diff < 0 ? matAdvString(-diff, mat.bPieces, mat.wPieces) : '';
+  // Both sides show what they are up in piece types; only the side actually
+  // ahead gets the numeric lead. See matAdvString for why showing one side
+  // alone misrepresented uneven trades.
+  if(matW) matW.innerHTML = matAdvString(diff > 0 ?  diff : 0, mat.wPieces, mat.bPieces);
+  if(matB) matB.innerHTML = matAdvString(diff < 0 ? -diff : 0, mat.bPieces, mat.wPieces);
 
   // ── Player names in multiplayer ──────────────────────────────────────────────
   const pNameW = document.querySelector('#playerBoxW .player-name');
