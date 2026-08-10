@@ -523,11 +523,15 @@ function openPanel(id) {
     // challenge vanishing and someone clicking Join on a room that is gone.
     mpLobbyRefreshTimer = setInterval(mpRefreshLobby, MP_LOBBY_POLL_MS);
   }
+  // The marker is redundant while the panel managing it is open.
+  if (typeof mpUpdateChallengeMarker === 'function') mpUpdateChallengeMarker();
 }
 function closeAllPanels() {
   document.querySelectorAll('.slide-panel').forEach(p => p.classList.remove('open'));
   document.getElementById('panelOverlay').classList.remove('open');
   clearInterval(mpLobbyRefreshTimer); // stop polling when panel closes
+  // Closing the 2-player panel is exactly when a standing offer goes invisible.
+  if (typeof mpUpdateChallengeMarker === 'function') mpUpdateChallengeMarker();
 }
 
 // ── Help content ──────────────────────────────────────────────────────
@@ -1791,6 +1795,44 @@ function mpSetMode(mode) {
   } else if (mode === 'ingame') {
     if (leaveRow) leaveRow.style.display = '';
   }
+  mpUpdateChallengeMarker();
+}
+
+// ── Standing-challenge marker ────────────────────────────────────────────────
+// A posted challenge is invisible once you leave the panel, so it is easy to
+// wander off and explore the board having forgotten it — and then have a game
+// begin without warning twenty minutes later. This says, on the board itself,
+// that an offer is still out, and gives it a way to be taken back.
+function mpUpdateChallengeMarker() {
+  const el = document.getElementById('mpChallengeMarker');
+  if (!el) return;
+  const standing = typeof _isPendingChallenge === 'function' && _isPendingChallenge();
+  // Redundant while the panel that manages it is open.
+  const panelOpen = !!document.getElementById('mpPanel')?.classList.contains('open');
+  const show = standing && !panelOpen;
+  el.hidden = !show;
+  if (!show) return;
+  const txt = el.querySelector('.mcm-txt');
+  if (txt) {
+    txt.textContent = (mpMode === 'lobby-waiting')
+      ? 'Open challenge posted — anyone can accept it'
+      : 'Private invite open — waiting for your friend';
+  }
+}
+
+// Take the offer back without disturbing whatever is on the board: someone who
+// has been exploring a position should not lose it to a housekeeping action.
+function mpWithdrawChallenge() {
+  if (typeof _isPendingChallenge !== 'function' || !_isPendingChallenge()) {
+    mpUpdateChallengeMarker();
+    return;
+  }
+  const open = (mpMode === 'lobby-waiting');
+  if (!confirm(open
+    ? 'Withdraw your open challenge? It comes off the board and nobody can accept it.'
+    : 'Cancel your private invite? The link and code stop working.')) return;
+  mpLeave(true);            // keepBoard — the position stays as it is
+  mpUpdateChallengeMarker();
 }
 
 /* ── Quick-setup pill bar ────────────────────────────────────────────────────
@@ -2592,7 +2634,11 @@ function mpMaybeLeave() {
   mpLeave();
 }
 
-function mpLeave() {
+// keepBoard: leave the room without resetting the position. Used when the user
+// withdraws a standing offer mid-exploration — they gave up the challenge, not
+// the board they were looking at. Every other caller is ending a game and wants
+// the reset, so the default is unchanged.
+function mpLeave(keepBoard) {
   _mpStopPresence();
   mpStopWaitForOpponent();
   mpSessionClear();          // deliberate leave: the seat is not coming back
@@ -2614,7 +2660,7 @@ function mpLeave() {
   mpSetMode('idle');
   const ga = document.getElementById('gameActions');
   if (ga) ga.style.display = 'none';
-  resetGame();
+  if (!keepBoard) resetGame();
 }
 
 // ── Game flow ────────────────────────────────────────────────────────────────
@@ -2702,8 +2748,17 @@ function mpReceiveMove(move, syncTimeW, syncTimeB) {
   if(activePremove) setTimeout(tryFirePremove, 50);
 }
 
+// True only when a real game is under way. mpRoomId alone is not enough: a room
+// also exists while a challenge is merely posted, and until someone accepts it
+// the board belongs entirely to its owner — free to explore with either colour,
+// and sending nothing to anybody.
+function mpInGame() {
+  return typeof mpRoomId !== 'undefined' && !!mpRoomId &&
+         typeof mpMode !== 'undefined' && mpMode === 'ingame';
+}
+
 function mpIsMyTurn() {
-  if (!mpRoomId) return true;
+  if (!mpInGame()) return true;
   return (turn === 'w' && mpRole === 'white') || (turn === 'b' && mpRole === 'black');
 }
 

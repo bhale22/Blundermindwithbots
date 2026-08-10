@@ -678,6 +678,12 @@ wss.on('connection', (ws) => {
     } else if (msg.type === 'move') {
       const room = rooms[ws.roomCode];
       if (!room) return;
+      // Nothing counts before both seats are taken. A room exists from the
+      // moment a challenge is posted, and its host is free to explore the board
+      // while waiting — those moves must not enter the game history, or the
+      // first reconnect after someone joins would rebuild the game from the
+      // host's idle shuffling.
+      if (!room.started) return;
       // Record before relaying. The clients still validate each other's moves;
       // this list exists so a reconnecting player can be rebuilt, and is only
       // ever replayed through the same legality checks on the client.

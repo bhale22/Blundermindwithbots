@@ -1244,7 +1244,12 @@ function landingDismiss() {
   const overlay = document.getElementById('landingOverlay');
   if (!overlay) return;
   overlay.classList.add('fade-out');
-  setTimeout(() => { overlay.style.display = 'none'; }, 420);
+  setTimeout(() => {
+    overlay.style.display = 'none';
+    // Home sits above the marker, so a standing challenge has to reappear once
+    // the landing is out of the way again.
+    if (typeof mpUpdateChallengeMarker === 'function') mpUpdateChallengeMarker();
+  }, 420);
 }
 
 // Choose the board experience from the landing: Beginner (amateur) or Expert (pro).

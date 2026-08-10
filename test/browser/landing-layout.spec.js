@@ -130,6 +130,63 @@ describe('landing page layout', { concurrency: 1 }, () => {
     await ctx.close();
   });
 
+  // The action cards were a centred flex row of fixed-width cards (617px) while
+  // the rows beneath carried their own max-width (760px), so everything below
+  // the actions overhung them and the board-style rule stuck out past the cards
+  // it belonged under. All three now sit on --landing-measure.
+  test('every row of the landing shares one measure', async () => {
+    for (const [label, viewport] of [
+      ['1366x768', { width: 1366, height: 768 }],
+      ['1920x1080', { width: 1920, height: 1080 }],
+    ]) {
+      const { ctx, page } = await open({ viewport });
+      const edges = await page.evaluate(() => {
+        const pick = (s) => {
+          const r = document.querySelector(s).getBoundingClientRect();
+          return { left: Math.round(r.left), right: Math.round(r.right) };
+        };
+        return {
+          cards: pick('.landing-cards'),
+          load: pick('.landing-load'),
+          style: pick('.landing-shell-pick'),
+        };
+      });
+      for (const k of ['load', 'style']) {
+        assert.ok(Math.abs(edges[k].left - edges.cards.left) <= 1,
+          label + ': .landing-' + k + ' left edge ' + edges[k].left +
+          ' does not line up with the cards at ' + edges.cards.left);
+        assert.ok(Math.abs(edges[k].right - edges.cards.right) <= 1,
+          label + ': .landing-' + k + ' right edge ' + edges[k].right +
+          ' does not line up with the cards at ' + edges.cards.right);
+      }
+      await ctx.close();
+    }
+  });
+
+  test('the board-style label is centred over its row', async () => {
+    const { ctx, page } = await open({ viewport: { width: 1366, height: 768 } });
+    assert.strictEqual(
+      await page.evaluate(() => getComputedStyle(document.getElementById('landingShellLbl')).textAlign),
+      'center');
+    await ctx.close();
+  });
+
+  test('the board-style options name the board and say what it does', async () => {
+    const { ctx, page } = await open({ viewport: { width: 1366, height: 768 } });
+    const opts = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('.landing-shell-btn')).map((b) => ({
+        shell: b.dataset.shell,
+        name: b.querySelector('.ls-name').textContent.trim(),
+        desc: b.querySelector('.ls-desc').textContent.trim(),
+      })));
+    const bm = opts.find((o) => o.shell === 'amateur');
+    assert.strictEqual(bm.name, 'Visualization Board');
+    assert.strictEqual(bm.desc, 'See your threats, forks, and hanging pieces.');
+    // Both read as a board, so the pair stays parallel.
+    assert.match(opts.find((o) => o.shell === 'pro').name, /Board$/);
+    await ctx.close();
+  });
+
   test('every launch card carries an explicit button', async () => {
     const { ctx, page } = await open({ viewport: { width: 1366, height: 768 } });
     const cards = await page.evaluate(() =>
