@@ -1083,6 +1083,21 @@ canvas{
 .tour-count { font-size:8px;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-dim);margin-bottom:5px; }
 .tour-title { font-size:14px;font-weight:700;color:var(--text-primary);margin-bottom:6px;line-height:1.25; }
 .tour-body { font-size:11px;line-height:1.55;color:var(--text-secondary,#aab4c6);margin-bottom:13px; }
+/* A copy of the control a step is about, shown when the spotlight is on the
+   board instead of on the button (phone). Decorative only — the real control is
+   in the drawer below. Sized up from the 8.5px it uses in the grid, which is
+   legible in a dense column but not as a single illustration. */
+.tour-replica { pointer-events:none;margin:0 0 9px;max-width:190px; }
+.tour-replica-lbl {
+  font-size:8px;letter-spacing:0.12em;text-transform:uppercase;
+  color:var(--text-dim);margin-bottom:4px;
+}
+.tour-replica .ib-main { font-size:11px;min-height:28px;padding:6px 10px;gap:5px;cursor:default; }
+.tour-replica .ib-dot { width:7px;height:7px; }
+.tour-replica .ib-pre span { font-size:8px; }
+/* The "?" opens help — meaningless on a copy, and a tap target that does
+   nothing is worse than no tap target. */
+.tour-replica .ib-help { display:none; }
 .tour-actions { display:flex;align-items:center;gap:8px; }
 .tour-btn { font-size:11px;padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);cursor:pointer;transition:all 0.15s; }
 .tour-btn:hover { border-color:var(--accent);color:var(--accent); }

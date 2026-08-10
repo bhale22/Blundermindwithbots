@@ -1416,6 +1416,49 @@ function endTour(completed){
 function tourNext(){ if(_tourIdx < _tourSteps.length - 1){ _tourIdx++; _renderTourStep(); } else endTour(true); }
 function tourPrev(){ if(_tourIdx > 0){ _tourIdx--; _renderTourStep(); } }
 
+// ── Phone: point the indicator steps at the board, not at the button ─────────
+// On a phone the board-vision controls sit in a drawer below the board, far
+// enough away that scrolling the button into view pushes the board off screen.
+// Every step from "Check threats" on describes an overlay drawn *on the board*,
+// so the user was reading a description of something they could not see.
+//
+// For those steps the spotlight goes to the board and a copy of the control
+// comes to the user, inside the panel. Desktop keeps pointing at the real
+// button — there both are on screen at once, and the real one is better.
+// Steps 4-6 introduce the grid itself rather than an overlay, and have no
+// `ind`, so they still point where they should.
+function _tourBoardFocus(step){
+  return !!(step && step.ind) &&
+         window.innerWidth <= 760 &&
+         !!document.getElementById('cv');
+}
+
+// A non-interactive copy of the control this step is about, in whatever state
+// the step just put it in — so the lit button in the panel matches the overlay
+// now on the board.
+function _tourControlReplica(step){
+  const src = step && step.sel ? document.querySelector(step.sel) : null;
+  if(!src) return '';
+  const clone = src.cloneNode(true);
+  // Ids would be duplicated into the document, and handlers would make a
+  // decorative copy clickable. Strip both.
+  clone.removeAttribute('id');
+  clone.removeAttribute('onclick');
+  clone.querySelectorAll('[id]').forEach(n => n.removeAttribute('id'));
+  clone.querySelectorAll('*').forEach(n => {
+    Array.from(n.attributes).forEach(a => { if(/^on/i.test(a.name)) n.removeAttribute(a.name); });
+  });
+  const wrap = document.createElement('div');
+  wrap.className = 'tour-replica';
+  wrap.setAttribute('aria-hidden', 'true');
+  const lbl = document.createElement('div');
+  lbl.className = 'tour-replica-lbl';
+  lbl.textContent = 'In Board vision settings:';
+  wrap.appendChild(lbl);
+  wrap.appendChild(clone);
+  return wrap.outerHTML;
+}
+
 function _renderTourStep(){
   const step = _tourSteps[_tourIdx];
   const ring = document.getElementById('tourRing');
@@ -1445,7 +1488,12 @@ function _renderTourStep(){
       _tourShowIndicator(null);    // earlier steps: keep the board free of overlays
     }
   }
-  const el = step.sel ? document.querySelector(step.sel) : null;
+  // Cloned after the indicator block above has lit the control, so the copy in
+  // the panel is in the same state as the overlay now on the board.
+  const boardFocus = _tourBoardFocus(step);
+  const el = boardFocus
+    ? document.getElementById('cv')
+    : (step.sel ? document.querySelector(step.sel) : null);
   let rect = null;
   if(el){ try{ el.scrollIntoView({block:'nearest'}); }catch(e){} rect = el.getBoundingClientRect(); }
   if(rect && rect.width > 0){
@@ -1461,7 +1509,8 @@ function _renderTourStep(){
   }
   const cEl = document.getElementById('tourCount'); if(cEl) cEl.textContent = (_tourIdx + 1) + ' / ' + _tourSteps.length;
   const tEl = document.getElementById('tourTitle'); if(tEl) tEl.textContent = step.title;
-  const bEl = document.getElementById('tourBody'); if(bEl) bEl.innerHTML = step.body;
+  const bEl = document.getElementById('tourBody');
+  if(bEl) bEl.innerHTML = (boardFocus ? _tourControlReplica(step) : '') + step.body;
   const pv = document.getElementById('tourPrev'); if(pv) pv.style.visibility = _tourIdx === 0 ? 'hidden' : 'visible';
   const nx = document.getElementById('tourNext'); if(nx) nx.textContent = (_tourIdx === _tourSteps.length - 1) ? 'Done ✓' : 'Next →';
   _positionTourPanel(rect);
