@@ -834,11 +834,19 @@ function _checkEngineReady(tab) {
 async function botStart() {
   // Guard: starting (or restarting) a game while one is in progress forfeits
   // it — online game OR an active bot game with moves already played.
-  if (typeof _isLiveGame === 'function' && _isLiveGame()) {
+  //
+  // A posted challenge counts too, even though nothing is being played. It used
+  // to slip through: post a challenge, go back to the board, start a bot game —
+  // then whenever someone accepted, the accept tore the bot game down mid-play.
+  // Requiring the challenge to be withdrawn first is what makes that impossible.
+  const _live    = typeof _isLiveGame === 'function' && _isLiveGame();
+  const _pending = typeof _isPendingChallenge === 'function' && _isPendingChallenge();
+  if (_live || _pending) {
     if (!confirmAbandonLiveGame('Start a new bot game')) return;
     // Tear down an online game; an active bot game is replaced below anyway
     if (typeof mpRoomId !== 'undefined' && mpRoomId) {
-      if (typeof mpWs !== 'undefined' && mpWs && mpWs.readyState === WebSocket.OPEN) {
+      // Only an actual game can be resigned — a standing offer is just withdrawn.
+      if (_live && typeof mpWs !== 'undefined' && mpWs && mpWs.readyState === WebSocket.OPEN) {
         try { mpWs.send(JSON.stringify({ type: 'resign' })); } catch(e) {}
       }
       if (typeof mpLeave === 'function') mpLeave();
@@ -1236,7 +1244,12 @@ function landingDismiss() {
   const overlay = document.getElementById('landingOverlay');
   if (!overlay) return;
   overlay.classList.add('fade-out');
-  setTimeout(() => { overlay.style.display = 'none'; }, 420);
+  setTimeout(() => {
+    overlay.style.display = 'none';
+    // Home sits above the marker, so a standing challenge has to reappear once
+    // the landing is out of the way again.
+    if (typeof mpUpdateChallengeMarker === 'function') mpUpdateChallengeMarker();
+  }, 420);
 }
 
 // Choose the board experience from the landing: Beginner (amateur) or Expert (pro).
@@ -1381,14 +1394,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (mpCard) {
       mpCard.style.opacity = '0.55';
       mpCard.title = 'Multiplayer requires the deployed server';
-      // Nested inside the existing blurb, not appended as a second
-      // .landing-card-desc: the phone layout is a grid with named areas, and a
-      // second element claiming grid-area:desc renders on top of the first.
-      var mpLocalNote = document.createElement('div');
-      mpLocalNote.style.cssText = 'color:#c06060;font-style:italic;margin-top:6px;';
-      mpLocalNote.textContent = 'Unavailable locally — requires the deployed server';
-      var mpDesc = mpCard.querySelector('.landing-card-desc');
-      (mpDesc || mpCard).appendChild(mpLocalNote);
+      // Say it in the call-to-action rather than adding an element. The phone
+      // layout is a grid with a named area per child; anything extra gets
+      // auto-placed into the 36px icon column and wraps to one word per line.
+      var mpGo = mpCard.querySelector('.landing-card-go');
+      if (mpGo) {
+        mpGo.textContent = 'Unavailable locally';
+        mpGo.style.background = 'transparent';
+        mpGo.style.color = '#c06060';
+        mpGo.style.fontStyle = 'italic';
+      }
     }
   }
   const cv3 = document.getElementById('cv');

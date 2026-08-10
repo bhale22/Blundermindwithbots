@@ -133,10 +133,13 @@ function tryFirePremove(){
   const resolvedPromo=promo||(p.piece==='P'&&(Math.floor(to/8)===0||Math.floor(to/8)===7)?'Q':null);
   executeMove(from,to,resolvedPromo);
   // Send after execute so clock state is current post-increment
-  if(typeof mpSendMove==='function'&&typeof mpRoomId!=='undefined'&&mpRoomId){
+  // Only inside a real game. A posted-but-unaccepted challenge also has a room,
+  // and relaying idle exploration into it corrupts the history the server keeps
+  // for reconnects.
+  if(typeof mpSendMove==='function'&&typeof mpInGame==='function'&&mpInGame()){
     mpSendMove(from,to,resolvedPromo||null);
   }
-  if(typeof mpUpdateTurnIndicator==='function'&&typeof mpRoomId!=='undefined'&&mpRoomId) mpUpdateTurnIndicator();
+  if(typeof mpUpdateTurnIndicator==='function'&&typeof mpInGame==='function'&&mpInGame()) mpUpdateTurnIndicator();
 }
 
 function tryCommit(from,to,promo){
@@ -158,10 +161,10 @@ function tryCommit(from,to,promo){
   }
   executeMove(from,to,promo||null);
   // Send after execute so clock state (clockTimeW/B) is current post-increment
-  if(typeof mpSendMove==='function'&&mpRoomId){
+  if(typeof mpSendMove==='function'&&typeof mpInGame==='function'&&mpInGame()){
     mpSendMove(from,to,promo||null);
   }
-  if(typeof mpUpdateTurnIndicator==='function'&&mpRoomId) mpUpdateTurnIndicator();
+  if(typeof mpUpdateTurnIndicator==='function'&&typeof mpInGame==='function'&&mpInGame()) mpUpdateTurnIndicator();
   return true;
 }
 
@@ -278,7 +281,7 @@ function getSq(pos){
   let c=Math.floor(pos.x*scale/SQ),r=Math.floor(pos.y*scale/SQ);
   // Flip for both multiplayer-black and bot-game-black (boardFlipped)
   const shouldFlip = (typeof boardFlipped!=='undefined'&&boardFlipped) ||
-                     (typeof mpRole!=='undefined'&&mpRole==='black'&&typeof mpRoomId!=='undefined'&&mpRoomId);
+                     (typeof mpRole!=='undefined'&&mpRole==='black'&&typeof mpInGame==='function'&&mpInGame());
   if(shouldFlip){c=7-c;r=7-r;}
   if(c>=0&&c<8&&r>=0&&r<8)return rcSq(r,c);return -1;
 }
@@ -291,7 +294,7 @@ function canvasToBoard(pos){
   let row=Math.max(0,Math.min(7,Math.floor(py/SQ)));
   // Flip for both multiplayer-black and bot-game-black (boardFlipped)
   const shouldFlip = (typeof boardFlipped!=='undefined'&&boardFlipped) ||
-                     (typeof mpRole!=='undefined'&&mpRole==='black'&&typeof mpRoomId!=='undefined'&&mpRoomId);
+                     (typeof mpRole!=='undefined'&&mpRole==='black'&&typeof mpInGame==='function'&&mpInGame());
   if(shouldFlip){col=7-col;row=7-row;}
   return rcSq(row,col);
 }
@@ -306,7 +309,9 @@ function getPromoChoice(pos){
 // In multiplayer, determined by mpRole. In bot games, determined by botPlayerColor.
 // In solo mode, returns the current turn (so any piece can be explored).
 function playerColor(){
-  if(typeof mpRoomId!=='undefined'&&mpRoomId&&typeof mpRole!=='undefined'&&mpRole)
+  // Gated on being in a game, not on holding a room: while a challenge is only
+  // posted, the board is the host's to explore with either colour.
+  if(typeof mpInGame==='function'&&mpInGame()&&typeof mpRole!=='undefined'&&mpRole)
     return mpRole==='white'?'w':'b';
   if(typeof botActive!=='undefined'&&botActive&&typeof botPlayerColor!=='undefined')
     return botPlayerColor==='white'?'w':'b';
@@ -659,7 +664,7 @@ function render(){
 
   ctx.clearRect(0,0,480,480);
   ctx.setLineDash([]); ctx.globalAlpha=1; ctx.shadowBlur=0; ctx.lineWidth=1; // reset state
-  const _boardFlipped = boardFlipped || (typeof mpRole!=='undefined'&&mpRole==='black'&&typeof mpRoomId!=='undefined'&&mpRoomId!==null);
+  const _boardFlipped = boardFlipped || (typeof mpRole!=='undefined'&&mpRole==='black'&&typeof mpInGame==='function'&&mpInGame());
 
   for(let r=0;r<8;r++)for(let c=0;c<8;c++){
     // For black: display row r,c → board square at mirrored position

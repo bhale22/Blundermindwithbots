@@ -59,6 +59,10 @@ body{
 
 /* ── CSS variables — default dark navy theme ─────────────────────────────── */
 :root{
+  /* One column width for every row of the landing page — action cards, the
+     load row and the board-style block all sit on it, so they stay aligned
+     with each other rather than each carrying its own max-width. */
+  --landing-measure:640px;
   --bg-page:#f0ede8;
   --bg-wrap:#e8e4de;
   --bg-panel:#e8e4de;
@@ -583,12 +587,12 @@ canvas{
    was a symptom, not the cause. It now sits below the actions, above a rule,
    with a section label and radio dots, and is deliberately not card-shaped. */
 .landing-shell-pick {
-  width:100%;max-width:760px;margin-bottom:18px;
+  width:100%;max-width:var(--landing-measure);margin-bottom:18px;
   border-top:1px solid var(--border);padding-top:14px;
 }
 .landing-shell-lbl {
   font-size:8.5px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;
-  color:var(--text-dim);margin-bottom:8px;text-align:left;
+  color:var(--text-dim);margin-bottom:8px;text-align:center;
 }
 .landing-shell-row { display:grid;grid-template-columns:1fr 1fr;gap:10px; }
 .landing-shell-btn {
@@ -626,7 +630,7 @@ canvas{
    height from its neighbours, so no two cards in the row lined up. */
 .landing-load {
   display:grid;grid-template-columns:1fr 1fr;gap:10px;
-  width:100%;max-width:760px;margin-bottom:20px;
+  width:100%;max-width:var(--landing-measure);margin-bottom:20px;
 }
 .landing-loadbtn {
   display:flex;align-items:center;justify-content:center;gap:7px;
@@ -750,11 +754,16 @@ canvas{
 .landing-expert .landing-card.green-card:hover,
 .landing-expert .landing-card.gold-card:hover { border-color:#c8922a;box-shadow:0 0 0 2px rgba(200,146,42,0.18); }
 .landing-expert .landing-card-title { color:#e8e6e0; }
-.landing-expert .landing-card-desc { color:#717a8a; }
 .landing-expert .landing-footer { color:#717a8a; }
+/* Three equal columns on one shared measure. This was a centred flex row of
+   fixed-width cards, so the block came out 617px wide while the rows beneath it
+   ran to 760px — every row below the actions overhung them, and the rule above
+   the board-style block stuck out past the cards it belonged under. Driving all
+   three off --landing-measure keeps them locked together whatever the card
+   width does later. */
 .landing-cards {
-  display:flex;flex-wrap:wrap;gap:16px;justify-content:center;
-  max-width:880px;margin-bottom:30px;
+  display:grid;grid-template-columns:repeat(3,1fr);gap:16px;
+  width:100%;max-width:var(--landing-measure);margin-bottom:30px;
   /* Equal height so the three CTAs sit on one line. The old split Load card
      made stretching look wrong; now that Load has moved to its own row, the
      three remaining cards are close enough in content for stretch to read as
@@ -763,7 +772,7 @@ canvas{
   align-items:stretch;
 }
 .landing-card {
-  width:195px;padding:24px 16px 20px;
+  width:auto;padding:24px 16px 20px;
   background:var(--bg-panel);border:1px solid var(--border);
   border-radius:10px;cursor:pointer;text-align:center;
   transition:border-color 0.2s,box-shadow 0.15s,transform 0.12s,background 0.25s,color 0.25s;
@@ -787,9 +796,6 @@ canvas{
 .landing-card-title {
   font-size:14px;font-weight:700;color:var(--text-primary);
   line-height:1.3;transition:color 0.25s ease;
-}
-.landing-card-desc {
-  font-size:11px;color:var(--text-dim);line-height:1.5;transition:color 0.25s ease;
 }
 /* Split card (Load Game / Load Bot): two stacked hit areas in one card. */
 .landing-card-split { padding:0;overflow:hidden;gap:0; }
@@ -914,9 +920,11 @@ canvas{
   .landing-title{ font-size:31px;text-align:center; }
   .landing-tagline{ font-size:13px;margin-bottom:14px;text-align:center; }
 
-  /* One column, one width — .landing-col is the shared measure. */
+  /* One column, one width. The three-column grid collapses to a single track;
+     the phone measure is narrower than the desktop one, so it is set here
+     rather than by overriding the variable. */
   .landing-cards{
-    flex-direction:column;flex-wrap:nowrap;
+    grid-template-columns:1fr;
     width:100%;max-width:420px;gap:8px;margin-bottom:12px;
   }
   .landing-shell-pick,.landing-load{ width:100%;max-width:420px; }
@@ -933,7 +941,6 @@ canvas{
   }
   .landing-card .landing-card-icon{ font-size:25px;flex:0 0 auto;margin:0; }
   .landing-card .landing-card-title{ font-size:13.5px; }
-  .landing-card .landing-card-desc{ font-size:10.5px; }
   /* The button collapses to a chevron: the whole row is already the tap target. */
   .landing-card-go{
     margin:0 0 0 auto;width:auto;flex:0 0 auto;padding:0 2px;
@@ -956,14 +963,17 @@ canvas{
   .landing-shell-btn{ padding:11px 14px;gap:4px; }
   .landing-shell-btn .ls-desc{ font-size:11px; }
 
-  /* Cards → icon-left rows. Grid rather than flex: icon, title and desc are
+  /* Cards → icon-left rows. Grid rather than flex: icon, title and action are
      flat siblings, and only grid can park the icon in a gutter spanning both
-     text rows without adding a wrapper element around the text. */
+     text rows without adding a wrapper element around the text.
+     Every child needs a named area. The go-text previously had none, so it was
+     auto-placed into a fresh implicit row *in the 36px icon column* — which is
+     why "Play a friend" came out one word per line. */
   .landing-card:not(.landing-card-split){
     display:grid;
     grid-template-columns:36px minmax(0,1fr);
     grid-template-areas:"icon title"
-                        "icon desc";
+                        "icon go";
     align-items:start;text-align:left;
     gap:3px 12px;padding:14px;
   }
@@ -971,7 +981,16 @@ canvas{
     grid-area:icon;font-size:27px;line-height:1.15;text-align:center;
   }
   .landing-card:not(.landing-card-split) .landing-card-title{ grid-area:title;font-size:14px; }
-  .landing-card:not(.landing-card-split) .landing-card-desc{ grid-area:desc;font-size:11.5px; }
+  /* The action reads as accent-coloured text, not a chevron: with the blurb
+     gone it is the only line saying what the card does. */
+  .landing-card:not(.landing-card-split) .landing-card-go{
+    grid-area:go;margin:0;width:auto;justify-self:start;padding:0;
+    background:transparent;color:var(--accent);
+    font-size:12px;font-weight:600;letter-spacing:0.02em;white-space:nowrap;
+  }
+  .landing-expert .landing-card:not(.landing-card-split) .landing-card-go{
+    background:transparent;color:#c8922a;
+  }
 
   /* Split card: the two halves sit side by side rather than stacked, so the
      card stays the same height as its neighbours. */
@@ -982,11 +1001,51 @@ canvas{
   .landing-card-split .landing-card-icon{ font-size:26px;flex:none; }
   .landing-card-split .landing-card-icon.small{ font-size:22px; }
   .landing-card-split .landing-card-title{ font-size:12.5px;width:auto;padding:0; }
-  .landing-card-split .landing-card-desc{ display:none; }
 
   /* Hover transforms are noise on touch — a tap shouldn't nudge the layout. */
   .landing-card:hover{ transform:none; }
   .landing-footer{ font-size:9.5px;line-height:1.6;max-width:300px; }
+}
+
+/* ── Standing-challenge marker ─────────────────────────────────────────────
+   Sits below #landingOverlay (5000) so pressing Home covers it rather than
+   letting it float over the landing page, and below the slide panels for the
+   same reason. */
+#mpChallengeMarker{
+  position:sticky;top:0;align-self:center;
+  z-index:4000;display:flex;align-items:center;gap:10px;
+  max-width:100%;margin-bottom:2px;
+  padding:7px 12px;border-radius:0 0 999px 999px;
+  background:#14161a;border:1px solid rgba(200,146,42,0.55);border-top:none;
+  box-shadow:0 4px 18px rgba(0,0,0,0.35);
+  font-family:system-ui,-apple-system,sans-serif;font-size:12px;color:#e8e6e0;
+}
+#mpChallengeMarker[hidden]{ display:none; }
+#mpChallengeMarker .mcm-txt{
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+/* A slow pulse: this is a standing state, not an alert demanding action. */
+#mpChallengeMarker .mcm-dot{
+  flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:#c8922a;
+  animation:mcmPulse 2.4s ease-in-out infinite;
+}
+@keyframes mcmPulse{ 0%,100%{ opacity:1; } 50%{ opacity:0.3; } }
+@media (prefers-reduced-motion:reduce){
+  #mpChallengeMarker .mcm-dot{ animation:none; }
+}
+#mpChallengeMarker .mcm-btn{
+  flex:0 0 auto;padding:3px 10px;border-radius:999px;cursor:pointer;
+  font-family:inherit;font-size:11px;
+  background:none;border:1px solid rgba(232,230,224,0.35);color:#e8e6e0;
+}
+#mpChallengeMarker .mcm-btn:hover{ border-color:#e8e6e0; }
+#mpChallengeMarker .mcm-withdraw{ border-color:rgba(208,80,80,0.5);color:#e08080; }
+#mpChallengeMarker .mcm-withdraw:hover{ border-color:#e08080; }
+@media(max-width:520px){
+  /* Keeps a 44px row on a phone; the wording shortens by ellipsis, not by
+     wrapping the bar into two lines over the board. */
+  #mpChallengeMarker{ font-size:11px;gap:7px;padding:6px 10px; }
+  #mpChallengeMarker .mcm-btn{ padding:5px 9px; }
 }
 
 /* ── Guided tour ──────────────────────────────────────────────────────────── */
@@ -1419,27 +1478,50 @@ canvas{
 }
 #mpPanel .mp-qs-editor.open{ display:block; }
 
-/* ── Anonymous-join confirm modal ── */
-#mpAnonPrompt{
+/* ── Confirm modals (anonymous join, post challenge) ── */
+#mpAnonPrompt,#mpPostConfirm{
   position:absolute;inset:0;background:rgba(0,0,0,0.72);
   display:none;align-items:center;justify-content:center;
   z-index:20;padding:20px;
 }
-#mpAnonPrompt.open{ display:flex; }
-#mpAnonPrompt .mp-anon-box{
+#mpAnonPrompt.open,#mpPostConfirm.open{ display:flex; }
+#mpAnonPrompt .mp-anon-box,#mpPostConfirm .mp-anon-box{
   background:var(--mp-carbon-mid);border:0.5px solid var(--mp-border-amber);
   border-radius:5px;padding:18px;max-width:300px;width:100%;
   box-shadow:0 12px 40px rgba(0,0,0,0.6);
 }
-#mpAnonPrompt .mp-anon-title{
+#mpAnonPrompt .mp-anon-title,#mpPostConfirm .mp-anon-title{
   font-family:var(--mp-font-u);font-size:11px;font-weight:500;
   letter-spacing:0.08em;text-transform:uppercase;color:var(--mp-amber);margin-bottom:8px;
 }
-#mpAnonPrompt .mp-anon-msg{
+#mpAnonPrompt .mp-anon-msg,#mpPostConfirm .mp-anon-msg{
   font-family:var(--mp-font-m);font-size:9px;color:var(--mp-text-2);
   line-height:1.6;margin-bottom:14px;
 }
-#mpAnonPrompt .mp-anon-btns{ display:flex;flex-direction:column;gap:7px; }
+#mpAnonPrompt .mp-anon-btns,#mpPostConfirm .mp-anon-btns{ display:flex;flex-direction:column;gap:7px; }
+
+/* The settings being committed to, as a plain label/value table. This is the
+   whole point of the modal — posting used to be instant, so a wrong time
+   control or colour was only discovered once an opponent had already joined. */
+#mpPostSummary{
+  border:0.5px solid var(--mp-border);border-radius:4px;
+  background:var(--mp-carbon-surface);padding:9px 10px;margin-bottom:13px;
+}
+#mpPostSummary .mp-ps-row{
+  display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+  padding:3px 0;
+}
+#mpPostSummary .mp-ps-row + .mp-ps-row{ border-top:0.5px solid rgba(255,255,255,0.05); }
+#mpPostSummary .mp-ps-k{
+  font-family:var(--mp-font-u);font-size:8.5px;font-weight:500;
+  letter-spacing:0.08em;text-transform:uppercase;color:var(--mp-text-dim);
+  flex:0 0 auto;
+}
+#mpPostSummary .mp-ps-v{
+  font-family:var(--mp-font-m);font-size:9.5px;color:var(--mp-text-1);
+  text-align:right;min-width:0;overflow-wrap:anywhere;
+}
+#mpPostSummary .mp-ps-v.dim{ color:var(--mp-text-dim);font-style:italic; }
 
 @media(max-width:520px){
   #mpPanel{ width:100vw; }
@@ -1484,7 +1566,6 @@ canvas{
 body.journal .landing-title{ font-family:'Fraunces',serif;font-style:italic;font-weight:500; }
 body.journal .landing-tagline{ font-family:'Spectral',serif;font-style:normal; }
 body.journal .landing-card-title{ font-family:'Fraunces',serif;font-style:italic;font-weight:500; }
-body.journal .landing-card-desc{ font-family:'Spectral',serif;font-size:12.5px;line-height:1.5; }
 body.journal .landing-shell-btn .ls-name{ font-family:'Fraunces',serif;font-style:italic; }
 body.journal .landing-shell-btn .ls-desc{ font-family:'Spectral',serif; }
 body.journal #site-name{ font-family:'Fraunces',serif;font-style:italic; }
@@ -1763,19 +1844,22 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
        lives below them. -->
   <div class="landing-cards">
 
+    <!-- Icon, name, and what the card does. No blurb: the descriptions
+         restated the button underneath them, and being static they went stale
+         the moment the board style changed — the Solo blurb promised hover
+         overlays that Expert deliberately does not draw. -->
+
     <!-- Solo / Explore -->
     <div class="landing-card" onclick="landingChoose('solo')">
       <div class="landing-card-icon">🔍</div>
       <div class="landing-card-title">Solo Play &amp; Explore</div>
-      <div class="landing-card-desc">Hover any piece to see what hangs, forks or falls — before you commit.</div>
       <div class="landing-card-go">Start exploring</div>
     </div>
 
     <!-- vs Bot -->
     <div class="landing-card green-card" onclick="landingChoose('bot')">
       <div class="landing-card-icon">🤖</div>
-      <div class="landing-card-title">Play or Build a Bot</div>
-      <div class="landing-card-desc">An opponent worth playing — one that panics on the clock, or never does.</div>
+      <div class="landing-card-title">Bot Builder</div>
       <div class="landing-card-go">Play a bot</div>
     </div>
 
@@ -1784,7 +1868,6 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div class="landing-card" onclick="landingChoose('mp')">
       <div class="landing-card-icon">⚔️</div>
       <div class="landing-card-title">&ldquo;Hang-Free&rdquo; 2-Player</div>
-      <div class="landing-card-desc">Both players get the overlays. Decided by strategy, not hung pieces.</div>
       <div class="landing-card-go">Play a friend</div>
     </div>
 
@@ -1808,8 +1891,8 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <span class="ls-dot" aria-hidden="true"></span>
         <span class="ls-txt">
           <span class="ls-brand">Blundermind</span>
-          <span class="ls-name">Visualization</span>
-          <span class="ls-desc">Threats, pins and hanging pieces, shown on the board.</span>
+          <span class="ls-name">Visualization Board</span>
+          <span class="ls-desc">See your threats, forks, and hanging pieces.</span>
         </span>
       </button>
       <button class="landing-shell-btn" data-shell="pro" role="radio" aria-checked="false"
@@ -1817,7 +1900,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <span class="ls-dot" aria-hidden="true"></span>
         <span class="ls-txt">
           <span class="ls-brand">Build-A-Bot</span>
-          <span class="ls-name">Expert</span>
+          <span class="ls-name">Expert Board</span>
           <span class="ls-desc">Clean tournament view — no overlays.</span>
         </span>
       </button>
@@ -1904,6 +1987,22 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 
 <!-- ── Page wrapper: aligns header and board column ──────────────────────── -->
 <div id="page-wrap">
+
+<!-- ── Standing-challenge marker ──────────────────────────────────────────────
+     Shown whenever an offer is still out and the 2-Player panel is closed.
+     Without it a posted challenge is invisible the moment you leave the panel,
+     and a game can begin unannounced while you are exploring.
+
+     In the flow at the top of the page and sticky, not fixed: a fixed bar sat
+     on top of the header buttons on a phone. Sticky keeps it in view while
+     scrolling without ever covering anything. Withdraw leaves the position
+     alone; only the offer is given up. -->
+<div id="mpChallengeMarker" hidden role="status">
+  <span class="mcm-dot" aria-hidden="true"></span>
+  <span class="mcm-txt">Open challenge posted — anyone can accept it</span>
+  <button class="mcm-btn" onclick="openPanel('mpPanel')">View</button>
+  <button class="mcm-btn mcm-withdraw" onclick="mpWithdrawChallenge()">Withdraw</button>
+</div>
 
 <!-- ── Site header ──────────────────────────────────────────────────────── -->
 <div id="site-header">
@@ -2420,6 +2519,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 
 <!-- ── Panel overlay ─────────────────────────────────────────────────────── -->
 <div class="panel-overlay" id="panelOverlay" onclick="closeAllPanels()"></div>
+
 
 <!-- ── About & Feedback panel ──────────────────────────────────── -->
 <div class="slide-panel" id="aboutFeedbackPanel">
@@ -3169,6 +3269,23 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="mp-anon-btns">
         <button class="mp-action-primary" onclick="mpAnonSaveJoin()">Save &amp; Join Game ▸</button>
         <button class="mp-action-secondary" onclick="mpAnonJoinAnon()">Join as Anonymous</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- (marker lives outside the panel — see #mpChallengeMarker near </body>) -->
+
+  <!-- Review before the challenge goes on the public board. Posting commits you
+       to a time control, a colour and a rating band that you cannot change once
+       an opponent accepts, so the settings are shown back before it happens. -->
+  <div id="mpPostConfirm">
+    <div class="mp-anon-box">
+      <div class="mp-anon-title">Post this challenge?</div>
+      <div class="mp-anon-msg">Anyone on the challenge board can accept this. It stays posted until someone joins or you withdraw it.</div>
+      <div id="mpPostSummary"></div>
+      <div class="mp-anon-btns">
+        <button class="mp-action-primary" onclick="mpPostConfirmGo()">Post Challenge ▸</button>
+        <button class="mp-action-secondary" onclick="mpPostConfirmCancel()">Cancel</button>
       </div>
     </div>
   </div>
