@@ -87,10 +87,21 @@ describe('ghost delay, tour launch, chip placement', { concurrency: 1 }, () => {
       'tour z-index (' + z.tour + ') must beat the landing overlay (' + z.landing + ')');
   });
 
-  test('starting the visualization tour from the landing actually shows a step', async () => {
+  test('starting the visualization tour leaves the landing and opens on the board', async () => {
     await load();
     await page.evaluate(() => landingStartTour('board'));
-    await page.waitForTimeout(900);
+    await page.waitForTimeout(1400);   // past the 420ms fade + 460ms start
+
+    // The point of the change: you end up looking at the board, not the page
+    // you just chose to leave.
+    assert.strictEqual(await H.landingVisible(page), false,
+      'the landing must be gone once the board tour starts');
+    assert.strictEqual(await page.evaluate(() => proMode), false,
+      'the visualization tour should put you on the Beginner board');
+    assert.ok(await page.evaluate(() => {
+      const r = document.getElementById('cv').getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    }), 'the board should be on screen');
 
     const state = await page.evaluate(() => {
       const panel = document.getElementById('tourPanel');
@@ -106,33 +117,27 @@ describe('ghost delay, tour launch, chip placement', { concurrency: 1 }, () => {
     });
     assert.strictEqual(state.active, true, 'tour should be running');
     assert.ok(state.steps > 1, 'tour should have steps: ' + state.steps);
+    assert.strictEqual(state.idx, 0, 'and it should open on its FIRST step');
     assert.ok(state.overlayShown, 'tour overlay should be displayed');
     assert.ok(state.panelOnScreen, 'tour panel should be laid out on screen');
     assert.match(state.title, /\S/, 'the first step should have a title');
 
-    // And it must be the topmost thing at its own centre, not covered by the
-    // landing — this is what "jumps back to the landing" actually looked like.
+    // Nothing may cover the panel at its own centre.
     const covered = await page.evaluate(() => {
       const panel = document.getElementById('tourPanel');
       const r = panel.getBoundingClientRect();
       const el = document.elementFromPoint(r.left + r.width / 2, r.top + 12);
       return !panel.contains(el);
     });
-    assert.strictEqual(covered, false, 'tour panel must not be covered by the landing overlay');
+    assert.strictEqual(covered, false, 'tour panel must not be covered by anything');
   });
 
-  test('the tour advances past the landing step', async () => {
+  test('the tour advances through its steps', async () => {
     await page.evaluate(() => tourNext());
     await page.waitForTimeout(700);
-    const after = await page.evaluate(() => ({
-      idx: _tourIdx,
-      active: _tourActive,
-      landingGone: getComputedStyle(document.getElementById('landingOverlay')).display === 'none'
-        || document.getElementById('landingOverlay').classList.contains('fade-out'),
-    }));
+    const after = await page.evaluate(() => ({ idx: _tourIdx, active: _tourActive }));
     assert.strictEqual(after.idx, 1, 'should be on the second step');
     assert.strictEqual(after.active, true);
-    assert.ok(after.landingGone, 'landing should step aside once the tour moves on');
     await page.evaluate(() => endTour());
   });
 

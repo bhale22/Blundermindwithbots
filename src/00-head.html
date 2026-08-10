@@ -12,6 +12,15 @@
      installs as Build-A-Bot and blundermindchess.com as Blundermind. -->
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#0e0f11">
+<!-- Tab favicon. Only a 192px PNG was declared before, so browsers downscaled
+     it to 16px themselves and the chimera turned to mush — and with no
+     /favicon.ico to find, some kept showing a stale cached icon instead. The
+     small sizes are cropped in (scripts/make-favicons.mjs) because icon-512's
+     padding is right for a launcher tile and wrong for a 16px tab. -->
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="16x16" href="/icons/icon-16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32.png">
+<link rel="icon" type="image/png" sizes="48x48" href="/icons/icon-48.png">
 <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <meta name="mobile-web-app-capable" content="yes">
@@ -2352,7 +2361,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 
     <hr>
     <h3>Privacy</h3>
-    <p>Blundermind collects no user data, uses no cookies, stores no game history, and tracks nothing. The board set up/configuration and customized bots can be downloaded and stored, then uploaded for future use.</p>
+    <p>Blundermind collects no user data, uses no cookies, and tracks nothing. Your game in progress and your settings are saved on your own device so you can close the tab and pick the game back up — that stays on your device, is never sent anywhere, and clearing your browser data removes it. The board set up/configuration and customized bots can be downloaded and stored, then uploaded for future use.</p>
     <hr>
     <h3>Feedback</h3>
     <p>Any problems with functionality would be helpful, but I would particularly love feedback on whether any features on this site seem to translate into improvement in &#8216;real&#8217; over-the-board play.</p>

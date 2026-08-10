@@ -1312,10 +1312,21 @@ function landingStartTour(which) {
     landingDismiss();
     setTimeout(function () { openBotModal(); startBotTour(); }, 340);
   } else {
-    // The landing deliberately stays up: the first step explains the board
-    // choice on the page that offers it. _renderTourStep() dismisses it as soon
-    // as the tour moves past that step, and brings it back on Back.
-    if (typeof startTour === 'function') startTour({ fromLanding: true });
+    // Mirror the bot branch: leave the landing, show the board this tour is
+    // about, then start on its first step.
+    //
+    // This used to keep the landing up and open with a step explaining the
+    // board choice. However well that reads on paper, in use it looks like the
+    // tour never started — you press "tour of the visualization board" and you
+    // are still staring at the landing page you just chose to leave. Raising
+    // the tour above the landing made the panel visible but did not fix the
+    // impression, because the landing is still what fills the screen.
+    if (typeof landingSetShell === 'function') landingSetShell('amateur');
+    landingDismiss();
+    // Past the landing's 420ms fade, so the tour opens on the board itself.
+    setTimeout(function () {
+      if (typeof startTour === 'function') startTour();
+    }, 460);
   }
 }
 
