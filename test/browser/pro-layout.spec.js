@@ -177,17 +177,17 @@ describe('pro shell layout stability', { concurrency: 1 }, () => {
     assert.strictEqual(now.bottomY, start.bottomY, 'clock moved when the chip toggled');
   });
 
-  test('switching back to the amateur shell returns the chip under the board', async () => {
+  test('switching back to the amateur shell moves the chip to that clock box', async () => {
     await page.evaluate(() => setShell('amateur'));
     await page.waitForTimeout(500);
     const back = await page.evaluate(() => {
       const chip = document.getElementById('commitModeChip');
       return {
-        inBoardRow: !!document.getElementById('boardInputRow').contains(chip),
+        inPlayerBox: !!document.getElementById('playerBoxW').contains(chip),
         visible: !!(chip && chip.offsetParent !== null),
       };
     });
-    assert.ok(back.inBoardRow, 'chip should return to the board input row');
+    assert.ok(back.inPlayerBox, 'chip should sit in the amateur player clock box');
     assert.ok(back.visible, 'chip should still be visible in the amateur shell');
     await page.evaluate(() => setShell('pro'));
     await page.waitForTimeout(400);

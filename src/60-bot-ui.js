@@ -1222,6 +1222,15 @@ botHybridSlots = [
 ];
 botRenderHybridSlots();
 
+// The move-odds panel is display:none in the markup and only revealed by
+// distUpdateVisibility(). That runs on shell switches and on new games, neither
+// of which happens on an ordinary first load — so on the visualization board
+// (the default) the panel stayed hidden until you toggled shells or started a
+// game. Sync it once at start-up.
+document.addEventListener('DOMContentLoaded', function () {
+  if (typeof distUpdateVisibility === 'function') distUpdateVisibility();
+});
+
 // ── Landing page logic ───────────────────────────────────────────────────────
 function landingDismiss() {
   const overlay = document.getElementById('landingOverlay');
@@ -1246,8 +1255,12 @@ function landingSetShell(shell) {
 function _landingApplyShellStyle(s) {
   const ov = document.getElementById('landingOverlay');
   if (ov) ov.classList.toggle('landing-expert', s === 'pro');
-  document.querySelectorAll('.landing-shell-btn').forEach(b =>
-    b.classList.toggle('sel', b.dataset.shell === s));
+  document.querySelectorAll('.landing-shell-btn').forEach(b => {
+    const on = b.dataset.shell === s;
+    b.classList.toggle('sel', on);
+    // These are role="radio", so the state has to be exposed, not just drawn.
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
 }
 
 // Re-open the landing (Home), styled for the currently active shell.
@@ -1312,10 +1325,21 @@ function landingStartTour(which) {
     landingDismiss();
     setTimeout(function () { openBotModal(); startBotTour(); }, 340);
   } else {
-    // The landing deliberately stays up: the first step explains the board
-    // choice on the page that offers it. _renderTourStep() dismisses it as soon
-    // as the tour moves past that step, and brings it back on Back.
-    if (typeof startTour === 'function') startTour({ fromLanding: true });
+    // Mirror the bot branch: leave the landing, show the board this tour is
+    // about, then start on its first step.
+    //
+    // This used to keep the landing up and open with a step explaining the
+    // board choice. However well that reads on paper, in use it looks like the
+    // tour never started — you press "tour of the visualization board" and you
+    // are still staring at the landing page you just chose to leave. Raising
+    // the tour above the landing made the panel visible but did not fix the
+    // impression, because the landing is still what fills the screen.
+    if (typeof landingSetShell === 'function') landingSetShell('amateur');
+    landingDismiss();
+    // Past the landing's 420ms fade, so the tour opens on the board itself.
+    setTimeout(function () {
+      if (typeof startTour === 'function') startTour();
+    }, 460);
   }
 }
 
@@ -1388,10 +1412,51 @@ let _distPreMove  = null;  // { board, turn, castling, epSq, fen } snapshot befo
 let _distLastUci  = null;  // uci of the move just played (may be outside Maia's top set)
 let _distSeq      = 0;     // guards against a stale async render overwriting a newer one
 
+// Visualization board only. This used to be Expert-board only, which had it
+// backwards on both counts: the Expert board's promise is a clean tournament
+// view, and this is the one piece of coaching chrome in a column that is
+// otherwise clocks, notation and game actions. Meanwhile everything on the
+// visualization board exists to show you what you did not see — and this is
+// the only instrument that closes that loop AFTER the move, which is exactly
+// where it belongs. Being retrospective, it also cannot pick your move for you.
+// Still off in multiplayer, where engine input undercuts human-vs-human play.
 function _distApplicable() {
   const pro  = (typeof proMode  !== 'undefined' && proMode);
   const inMp = (typeof mpRoomId !== 'undefined' && mpRoomId);
-  return pro && !inMp;
+  return !pro && !inMp;
+}
+
+// Which Maia rating the odds are read at.
+//
+// A fixed 1500 answered a question nobody asked when you are playing a 2200:
+// the odds that matter are the ones your ACTUAL opponent was drawing from. So
+// when the opponent is Maia-based, use its rating; fall back to 1500 for solo
+// exploration and for Stockfish opponents, which have no human rating band.
+function _distRefRating() {
+  try {
+    if (typeof botActive !== 'undefined' && botActive) {
+      const tab = (typeof botTab !== 'undefined') ? botTab : '';
+      if ((tab === 'maia3' || tab === 'maia' || tab === 'lcmaia' || tab === 'hybrid') &&
+          typeof maia3SelectedRating !== 'undefined' && maia3SelectedRating) {
+        return String(maia3SelectedRating);
+      }
+    }
+  } catch (e) {}
+  return '1500';
+}
+
+// Who actually made the move being shown. distCapturePreMove runs before the
+// board mutates, so _distPreMove.turn is the side that moved. The panel used to
+// say "You played" unconditionally — but it captures on EVERY move including
+// the bot's reply, so in a bot game the move on screen is usually the bot's.
+function _distMoverLabel() {
+  const mover = _distPreMove ? _distPreMove.turn : null;
+  if (!mover) return 'Last move';
+  if (typeof botActive !== 'undefined' && botActive && typeof botPlayerColor !== 'undefined') {
+    const human = botPlayerColor === 'white' ? 'w' : 'b';
+    return mover === human ? 'You played' : 'Bot played';
+  }
+  return 'Last move';   // solo exploration: both sides are the user
 }
 
 function distUpdateVisibility() {
@@ -1457,10 +1522,11 @@ async function distRefresh() {
   }
   const seq = ++_distSeq;
   if (hint) hint.textContent = 'Reading Maia…';
-  // Fixed reference rating so the odds read as "what a 1500 plays from here".
+  // Read at the opponent's own rating when that opponent is Maia — see
+  // _distRefRating. The caption names the rating so it is never a guess.
   let probs = null;
   try {
-    const saved = lcSelectedRating; lcSelectedRating = '1500';
+    const saved = lcSelectedRating; lcSelectedRating = _distRefRating();
     probs = await maia3GetMoveProbs(_distPreMove.fen);
     lcSelectedRating = saved;
   } catch (e) { probs = null; }
@@ -1513,15 +1579,18 @@ function distRender(probs) {
       '<span class="dist-bar-wrap"><span class="dist-bar" style="width:' + w + '%;opacity:0.5"></span></span>' +
       '<span class="dist-pct">' + pctTxt(otherP) + '</span></div>');
   }
-  // Played move outside the top set — show it explicitly so "you played X" always appears.
+  // Played move outside the top set — show it explicitly so the move that was
+  // actually played always appears, however unlikely Maia thought it was.
   if (playedEntry && !playedInTop) addRow(playedEntry[0], playedEntry[1], true, false);
   rows.innerHTML = html.join('');
   // Descriptive caption.
   if (hint) {
     if (playedEntry) {
-      hint.textContent = 'You played ' + _distUciToSan(playedEntry[0]) + ' — ' + pctTxt(playedEntry[1]) + ' of Maia 1500 moves here.';
+      hint.textContent = _distMoverLabel() + ' ' + _distUciToSan(playedEntry[0]) + ' — ' +
+        pctTxt(playedEntry[1]) + ' of Maia ' + _distRefRating() + ' moves here.';
     } else if (_distLastUci) {
-      hint.textContent = 'Your move was below Maia’s considered options here (<0.1%).';
+      hint.textContent = _distMoverLabel() + ' a move below Maia ' + _distRefRating() +
+        '’s considered options here (<0.1%).';
     } else {
       hint.textContent = '';
     }
@@ -1729,7 +1798,9 @@ window.addEventListener('message', function(e) {
   botStaleSeekMove    = (cfg.staleSeekFromMove  != null) ? +cfg.staleSeekFromMove  : 30;
   botStaleSeekCp      = (cfg.staleSeekCp        != null) ? +cfg.staleSeekCp        : 500;
 
-  // Time pressure curves (cvA = ELO degradation, cvB = distribution cutoff).
+  // Time pressure curves (cvA = ELO degradation, cvB = temperature ramp — it
+  // flattens the move distribution rather than cutting it off; see
+  // timePressureTempByThink).
   // Each mechanism has its own off flag (pressureOffA / pressureOffB); older
   // configs only carry the master pressureOff flag, which disables both.
   var _tpOffA = (cfg.pressureOffA != null) ? !!cfg.pressureOffA : !!cfg.pressureOff;

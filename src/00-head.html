@@ -12,14 +12,25 @@
      installs as Build-A-Bot and blundermindchess.com as Blundermind. -->
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#0e0f11">
+<!-- Tab favicon. Only a 192px PNG was declared before, so browsers downscaled
+     it to 16px themselves and the chimera turned to mush — and with no
+     /favicon.ico to find, some kept showing a stale cached icon instead. The
+     small sizes are cropped in (scripts/make-favicons.mjs) because icon-512's
+     padding is right for a launcher tile and wrong for a 16px tab. -->
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="16x16" href="/icons/icon-16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32.png">
+<link rel="icon" type="image/png" sizes="48x48" href="/icons/icon-48.png">
 <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Chakra+Petch:wght@300;400;500;600&family=Fraunces:ital,opsz,wght@1,9..144,500&family=Spectral:ital,wght@0,500&display=swap" rel="stylesheet">
+<!-- Self-hosted. Loading these from fonts.googleapis.com sent every visitor's
+     IP address to Google, which a Munich court held to breach the GDPR without
+     consent — and this site has European users. Regenerate with
+     scripts/fetch-fonts.mjs; see fonts/README.md. -->
+<link href="/fonts/fonts.css" rel="stylesheet">
 <style>
 /* ── Reset & base ─────────────────────────────────────────────────────────── */
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -132,12 +143,15 @@ body{
 .turn-pill{font-size:7px;font-weight:500;padding:1px 6px;border-radius:8px;background:rgba(74,159,212,0.15);color:#2878b8;white-space:nowrap;border:0.5px solid rgba(74,159,212,0.3);}
 .turn-pill.check-pill{background:rgba(200,40,40,0.12);color:#c03030;border-color:rgba(200,40,40,0.3);}
 .player-box.in-check{border-color:rgba(180,40,40,0.6);}
-/* Board input row — fixed directly under the board in both orientations. */
-#boardInputRow{display:flex;justify-content:flex-end;align-items:center;
-  width:var(--board-size);box-sizing:border-box;}
+/* The chip lives flush against the right edge of the player's own clock box.
+   .player-box is a fixed 32px row, so the chip sits IN the row rather than
+   under it — the mid-col (flex:1) absorbs the width, which keeps the chip
+   pinned right whether or not the turn pill is currently in this box. */
+.pb-chip-mount{ display:flex;align-items:center;flex-shrink:0;margin-left:2px; }
+.pb-chip-mount:empty{ display:none; }
 /* Move-commit mode chip. Tap target is padded well beyond the 7px text so it
    is comfortably hittable with a thumb. */
-.commit-chip{font-size:7px;font-weight:600;padding:5px 10px;border-radius:8px;
+.commit-chip{font-size:7px;font-weight:600;padding:5px 9px;border-radius:8px;
   background:var(--bg-panel2);color:var(--text-dim);white-space:nowrap;
   border:0.5px solid var(--border);cursor:pointer;user-select:none;
   font-family:inherit;line-height:1.4;transition:background 0.15s,color 0.15s,border-color 0.15s;}
@@ -563,25 +577,79 @@ canvas{
   font-size:15px;color:var(--text-dim);font-style:italic;
   margin-bottom:28px;letter-spacing:0.02em;
 }
+/* Board style is a SETTING, not a destination. It used to be styled with the
+   same card, size and radius as the launch cards and placed above them, so it
+   read as something you press to start playing — the selected-outline colour
+   was a symptom, not the cause. It now sits below the actions, above a rule,
+   with a section label and radio dots, and is deliberately not card-shaped. */
 .landing-shell-pick {
-  display:flex;gap:14px;margin-bottom:30px;flex-wrap:wrap;justify-content:center;
+  width:100%;max-width:760px;margin-bottom:18px;
+  border-top:1px solid var(--border);padding-top:14px;
 }
+.landing-shell-lbl {
+  font-size:8.5px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;
+  color:var(--text-dim);margin-bottom:8px;text-align:left;
+}
+.landing-shell-row { display:grid;grid-template-columns:1fr 1fr;gap:10px; }
 .landing-shell-btn {
-  display:flex;flex-direction:column;gap:5px;align-items:flex-start;text-align:left;
-  width:280px;padding:13px 16px;background:var(--bg-panel);
-  border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all 0.15s;
+  display:flex;gap:10px;align-items:flex-start;text-align:left;
+  width:100%;padding:10px 12px;background:transparent;
+  border:1px solid transparent;border-radius:8px;cursor:pointer;
+  transition:background 0.15s,border-color 0.15s;font-family:inherit;
 }
-.landing-shell-btn:hover { border-color:var(--accent); }
-.landing-shell-btn.sel {
-  border-color:var(--accent);box-shadow:0 0 0 2px rgba(74,159,212,0.18);
+.landing-shell-btn:hover { background:var(--bg-panel2); }
+.landing-shell-btn.sel { background:var(--bg-panel);border-color:var(--border); }
+/* The dot carries the selected state, so it reads as a choice among options
+   rather than as a highlighted button. */
+.ls-dot {
+  flex:0 0 auto;width:14px;height:14px;border-radius:50%;margin-top:3px;
+  border:2px solid var(--text-dim);
+  display:flex;align-items:center;justify-content:center;transition:border-color 0.15s;
 }
-.landing-shell-btn .ls-name { font-size:14px;font-weight:700;color:var(--text-primary); }
+.landing-shell-btn.sel .ls-dot { border-color:var(--accent); }
+.landing-shell-btn.sel .ls-dot::after {
+  content:'';width:6px;height:6px;border-radius:50%;background:var(--accent);
+}
+.ls-txt { display:flex;flex-direction:column;gap:1px;min-width:0; }
+.landing-shell-btn .ls-name { font-size:13px;font-weight:700;color:var(--text-primary); }
 /* Brand line above the board name — same font/size/weight as .ls-name, accent
    coloured, pulled tight so the two read as one two-line title. */
 .landing-shell-btn .ls-brand {
-  font-size:14px;font-weight:700;color:var(--accent);margin-bottom:-2px;
+  font-size:8.5px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;
+  color:var(--accent);
 }
-.landing-shell-btn .ls-desc { font-size:10.5px;color:var(--text-dim);line-height:1.45; }
+.landing-shell-btn .ls-desc { font-size:10px;color:var(--text-dim);line-height:1.4; }
+
+/* Secondary row: loading a saved game or bot is a side door, not a main path,
+   so it gets slim buttons rather than a card of its own. Splitting them out
+   also fixes the ragged action row — the old split Load card was a different
+   height from its neighbours, so no two cards in the row lined up. */
+.landing-load {
+  display:grid;grid-template-columns:1fr 1fr;gap:10px;
+  width:100%;max-width:760px;margin-bottom:20px;
+}
+.landing-loadbtn {
+  display:flex;align-items:center;justify-content:center;gap:7px;
+  padding:10px;border-radius:8px;font-family:inherit;font-size:11.5px;
+  background:var(--bg-panel2);border:1px solid var(--border);
+  color:var(--text-secondary);cursor:pointer;transition:border-color 0.15s,color 0.15s;
+}
+.landing-loadbtn:hover { border-color:var(--accent);color:var(--text-primary); }
+.landing-expert .landing-loadbtn { background:#1a1e24;border-color:rgba(255,255,255,0.08);color:#a8b0bd; }
+.landing-expert .landing-loadbtn:hover { border-color:#c8922a;color:#e8e6e0; }
+.landing-expert .landing-shell-btn.sel { background:#22262d;border-color:rgba(255,255,255,0.10); }
+.landing-expert .landing-shell-btn:hover { background:#1a1e24; }
+.landing-expert .landing-shell-pick { border-top-color:rgba(255,255,255,0.08); }
+
+/* The affordance the cards lacked: an explicit control saying this starts
+   something. Pinned to the bottom of the card so every card agrees where it
+   lives, which is what makes the row read as a row. */
+.landing-card-go {
+  margin-top:auto;width:100%;padding:7px 0;border-radius:6px;
+  font-size:11px;font-weight:700;letter-spacing:0.03em;
+  background:var(--accent);color:#fff;border:none;
+}
+.landing-expert .landing-card-go { background:#c8922a;color:#14161a; }
 
 /* ── Expert landing theme — carbon/amber palette + panel fonts (matches the
       Expert board & bot control panels). Applied when Expert Board is chosen. ── */
@@ -668,9 +736,13 @@ canvas{
 .landing-expert .landing-title .lt-accent { color:#c8922a; }
 .landing-expert .landing-shell-btn .ls-brand { color:#c8922a; }
 .landing-expert .landing-tagline { font-family:'DM Mono',monospace;color:#717a8a;font-style:normal;letter-spacing:0.06em; }
-.landing-expert .landing-shell-btn { background:#22262d;border-color:rgba(255,255,255,0.08); }
-.landing-expert .landing-shell-btn:hover { border-color:#c8922a; }
-.landing-expert .landing-shell-btn.sel { border-color:#c8922a;box-shadow:0 0 0 2px rgba(200,146,42,0.2); }
+/* Selection is carried by the dot, not by outlining the box — an outlined box
+   reads as a pressable target, which is what made these look launchable. */
+.landing-expert .landing-shell-btn { background:transparent;border-color:transparent; }
+.landing-expert .landing-shell-btn:hover { background:#1a1e24;border-color:transparent; }
+.landing-expert .landing-shell-btn.sel { background:#22262d;border-color:rgba(255,255,255,0.10);box-shadow:none; }
+.landing-expert .landing-shell-btn.sel .ls-dot{ border-color:#c8922a; }
+.landing-expert .landing-shell-btn.sel .ls-dot::after{ background:#c8922a; }
 .landing-expert .landing-shell-btn .ls-name { color:#e8e6e0; }
 .landing-expert .landing-shell-btn .ls-desc { color:#717a8a; }
 .landing-expert .landing-card { background:#22262d;border-color:rgba(255,255,255,0.08); }
@@ -683,10 +755,12 @@ canvas{
 .landing-cards {
   display:flex;flex-wrap:wrap;gap:16px;justify-content:center;
   max-width:880px;margin-bottom:30px;
-  /* Cards size to their own content. Stretching them to match the tallest —
-     the two-part Load card — left the short ones as mostly empty well once
-     the blurbs were cut down. */
-  align-items:flex-start;
+  /* Equal height so the three CTAs sit on one line. The old split Load card
+     made stretching look wrong; now that Load has moved to its own row, the
+     three remaining cards are close enough in content for stretch to read as
+     deliberate — and it keeps the row aligned when the 2-Player card grows by
+     a line locally. */
+  align-items:stretch;
 }
 .landing-card {
   width:195px;padding:24px 16px 20px;
@@ -838,15 +912,36 @@ canvas{
   .bab-mark .bab-pool{ opacity:0.7; }
 
   .landing-title{ font-size:31px;text-align:center; }
-  .landing-tagline{ font-size:13px;margin-bottom:20px;text-align:center; }
+  .landing-tagline{ font-size:13px;margin-bottom:14px;text-align:center; }
 
   /* One column, one width — .landing-col is the shared measure. */
-  .landing-shell-pick,.landing-cards{
+  .landing-cards{
     flex-direction:column;flex-wrap:nowrap;
-    width:100%;max-width:420px;gap:10px;
+    width:100%;max-width:420px;gap:8px;margin-bottom:12px;
   }
-  .landing-shell-pick{ margin-bottom:18px; }
-  .landing-cards{ margin-bottom:20px; }
+  .landing-shell-pick,.landing-load{ width:100%;max-width:420px; }
+  .landing-shell-pick{ margin-bottom:12px;padding-top:11px; }
+  .landing-load{ margin-bottom:12px;gap:8px; }
+  .landing-loadbtn{ padding:9px;font-size:11px; }
+  /* Three stacked cards in the old centred form ran off the fold. As compact
+     horizontal rows — icon, text, chevron — all three fit alongside the style
+     block and the tour entry without scrolling, which is the whole point of a
+     landing page. */
+  .landing-card{
+    flex-direction:row;align-items:center;text-align:left;
+    gap:12px;padding:10px 13px;
+  }
+  .landing-card .landing-card-icon{ font-size:25px;flex:0 0 auto;margin:0; }
+  .landing-card .landing-card-title{ font-size:13.5px; }
+  .landing-card .landing-card-desc{ font-size:10.5px; }
+  /* The button collapses to a chevron: the whole row is already the tap target. */
+  .landing-card-go{
+    margin:0 0 0 auto;width:auto;flex:0 0 auto;padding:0 2px;
+    background:transparent;color:var(--accent);font-size:18px;
+  }
+  .landing-expert .landing-card-go{ background:transparent;color:#c8922a; }
+  .landing-shell-row{ gap:8px; }
+  .landing-shell-btn .ls-desc{ display:none; }   /* name + dot carry it on a phone */
   /* Tour entry matches the shared column measure; the two options stack so
      each keeps a full-width 44px target. */
   .landing-tour-btn{ width:100%;max-width:420px;font-size:14px; }
@@ -895,7 +990,13 @@ canvas{
 }
 
 /* ── Guided tour ──────────────────────────────────────────────────────────── */
-#tourOverlay { position:fixed;inset:0;z-index:4500;pointer-events:none; }
+/* Above #landingOverlay (5000), not below it. The first step of the tour
+   started from the landing page deliberately keeps the landing up — it explains
+   the board choice on the page that offers it — but at 4500 the whole tour
+   rendered behind an opaque overlay. Nothing was visibly wrong: the tour was
+   running, you just could not see any of it, so picking "tour of the
+   visualization board" looked like it bounced straight back to the landing. */
+#tourOverlay { position:fixed;inset:0;z-index:5500;pointer-events:none; }
 #tourBackdrop { position:absolute;inset:0;background:rgba(0,0,0,0.5);pointer-events:none;display:none; }
 #tourRing {
   position:absolute;display:none;border-radius:8px;
@@ -1023,7 +1124,12 @@ canvas{
      there's one source of truth for the board's size rather than CSS and JS
      fighting through !important. */
   canvas{max-width:100%;height:auto;margin:0 auto;}
-  .player-box{max-width:100%;height:auto;min-height:36px;padding:4px 10px;}
+  /* Genuinely fixed, matching the `44 * 2 + 8` resizeBoard() already reserves
+     for these two boxes. With height:auto/min-height:36px the box grew by ~7px
+     whenever the turn pill was re-parented into it — and since the pill swaps
+     boxes every single move, both boxes changed height and the whole board
+     shifted up and down on every move. */
+  .player-box{max-width:100%;height:44px;min-height:44px;padding:4px 10px;}
   .player-name{font-size:12px;}
   .player-time{font-size:15px;}
   .hint-text{font-size:9px;}
@@ -1583,7 +1689,6 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
   body.pro-mode #board-canvas-wrap { order:2; }
   body.pro-mode #proPlayerBottom   { order:3; }
   body.pro-mode #replayControls    { order:4; }
-  body.pro-mode #distPanel         { order:5; }
   body.pro-mode #proNotationCard   { order:6; }
   body.pro-mode #proResultBar      { order:7; }
   body.pro-mode #proIdleActions    { order:8; }
@@ -1653,20 +1758,9 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <span class="lt-bab">Domo Arigato</span>
   </div>
 
-  <!-- Board experience: Beginner (full overlays) vs Expert (clean tournament look) -->
-  <div class="landing-shell-pick">
-    <button class="landing-shell-btn sel" data-shell="amateur" onclick="landingSetShell('amateur')">
-      <span class="ls-brand">Blundermind</span>
-      <span class="ls-name">🎓 Visualization Training Board</span>
-      <span class="ls-desc">Threats, pins and hanging pieces, shown on the board.</span>
-    </button>
-    <button class="landing-shell-btn" data-shell="pro" onclick="landingSetShell('pro')">
-      <span class="ls-brand">Build-A-Bot</span>
-      <span class="ls-name">♟ Expert Board</span>
-      <span class="ls-desc">Clean tournament view — no overlays.</span>
-    </button>
-  </div>
-
+  <!-- The three ways to start a game come first and carry explicit buttons, so
+       what launches something is never in doubt. Board style is a setting and
+       lives below them. -->
   <div class="landing-cards">
 
     <!-- Solo / Explore -->
@@ -1674,40 +1768,60 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="landing-card-icon">🔍</div>
       <div class="landing-card-title">Solo Play &amp; Explore</div>
       <div class="landing-card-desc">Hover any piece to see what hangs, forks or falls — before you commit.</div>
+      <div class="landing-card-go">Start exploring</div>
     </div>
 
     <!-- vs Bot -->
     <div class="landing-card green-card" onclick="landingChoose('bot')">
       <div class="landing-card-icon">🤖</div>
       <div class="landing-card-title">Play or Build a Bot</div>
-      <div class="landing-card-desc">Build an opponent worth playing — one that panics on the clock, or never does.</div>
+      <div class="landing-card-desc">An opponent worth playing — one that panics on the clock, or never does.</div>
+      <div class="landing-card-go">Play a bot</div>
     </div>
 
-    <!-- 2 Player -->
+    <!-- 2 Player. Kept as .landing-card with the mp onclick: the local-server
+         check finds it by that selector and dims it in place. -->
     <div class="landing-card" onclick="landingChoose('mp')">
       <div class="landing-card-icon">⚔️</div>
-      <div class="landing-card-title">&ldquo;Hang-Free&rdquo; 2-Player Online</div>
-      <div class="landing-card-desc">Both players get the overlays. Games decided by strategy, not hung pieces.</div>
+      <div class="landing-card-title">&ldquo;Hang-Free&rdquo; 2-Player</div>
+      <div class="landing-card-desc">Both players get the overlays. Decided by strategy, not hung pieces.</div>
+      <div class="landing-card-go">Play a friend</div>
     </div>
 
-    <!-- Load PGN / Bot config — split card. Layout lives in .landing-card-split
-         / .landing-split-half (not inline styles) so the mobile rules below can
-         re-flow it without fighting specificity. -->
-    <div class="landing-card gold-card landing-card-split">
-      <div class="landing-split-half" onclick="landingChoose('pgn')">
-        <div class="landing-card-icon">📂</div>
-        <div class="landing-card-title">Load a Saved Game</div>
-        <div class="landing-card-desc">Replay any PGN, move by move.</div>
-      </div>
-      <div class="landing-split-half" onclick="document.getElementById('landingBotConfigInput').click()">
-        <div class="landing-card-icon small">⚙️</div>
-        <div class="landing-card-title">Load a Saved Bot</div>
-        <div class="landing-card-desc">Restore a bot you built earlier.</div>
-      </div>
-      <input type="file" id="landingBotConfigInput" accept=".json" style="display:none"
-        onchange="landingLoadBotConfig(event)">
-    </div>
+  </div>
 
+  <!-- Loading a saved game or bot is a side door, not a main path. -->
+  <div class="landing-load">
+    <button class="landing-loadbtn" onclick="landingChoose('pgn')">📂 Load a saved game</button>
+    <button class="landing-loadbtn" onclick="document.getElementById('landingBotConfigInput').click()">⚙️ Load a saved bot</button>
+    <input type="file" id="landingBotConfigInput" accept=".json" style="display:none"
+      onchange="landingLoadBotConfig(event)">
+  </div>
+
+  <!-- Board experience: Beginner (full overlays) vs Expert (clean tournament
+       look). A setting, presented as one — radio dots, not pressable cards. -->
+  <div class="landing-shell-pick">
+    <div class="landing-shell-lbl" id="landingShellLbl">Board style — changes how the board looks, switch anytime</div>
+    <div class="landing-shell-row" role="radiogroup" aria-labelledby="landingShellLbl">
+      <button class="landing-shell-btn sel" data-shell="amateur" role="radio" aria-checked="true"
+        onclick="landingSetShell('amateur')">
+        <span class="ls-dot" aria-hidden="true"></span>
+        <span class="ls-txt">
+          <span class="ls-brand">Blundermind</span>
+          <span class="ls-name">Visualization</span>
+          <span class="ls-desc">Threats, pins and hanging pieces, shown on the board.</span>
+        </span>
+      </button>
+      <button class="landing-shell-btn" data-shell="pro" role="radio" aria-checked="false"
+        onclick="landingSetShell('pro')">
+        <span class="ls-dot" aria-hidden="true"></span>
+        <span class="ls-txt">
+          <span class="ls-brand">Build-A-Bot</span>
+          <span class="ls-name">Expert</span>
+          <span class="ls-desc">Clean tournament view — no overlays.</span>
+        </span>
+      </button>
+    </div>
   </div>
 
   <!-- One compact line rather than a fifth card: the tour is a helper, not a
@@ -1842,6 +1956,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <div class="mat-bar" id="matB"></div>
       </div>
       <div class="right-col" id="rightColB"></div>
+      <div class="pb-chip-mount" id="chipMountB"></div>
     </div>
 
     <!-- Clock time control panel (inline) -->
@@ -1866,12 +1981,10 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <canvas id="ghostCanvas" width="480" height="480"></canvas>
     </div>
 
-    <!-- Board input row. Deliberately NOT inside a player box: the turn pill is
-         re-parented between rightColW/rightColB every turn, and .board-flipped
-         swaps the two boxes top-to-bottom — either would make this chip jump
-         around mid-game. As a plain order-0 child it stays under the board in
-         both orientations. -->
-    <div id="boardInputRow">
+    <!-- The commit chip is mounted into the player's own clock box by
+         syncCommitChipMount(); this element only exists as its parking spot
+         before that first runs. -->
+    <div id="boardInputRow" hidden>
       <button class="commit-chip" id="commitModeChip" onclick="toggleCommitMode()">✋ Release to move</button>
     </div>
 
@@ -1902,6 +2015,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="right-col" id="rightColW">
         <div class="turn-pill" id="turnPill">▶ your move</div>
       </div>
+      <div class="pb-chip-mount" id="chipMountW"></div>
     </div>
 
     <!-- Chat bar — below white player box, only visible during 2-player games -->
@@ -1945,7 +2059,8 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       </div>
     </div><!-- end chatBox -->
 
-    <!-- Maia move-distribution panel — Expert board only, hidden in 2-player games -->
+    <!-- Maia move-distribution panel — visualization board only, hidden in
+         2-player games. See _distApplicable for why it is not on the Expert board. -->
     <div id="distPanel" style="display:none;flex-direction:column;
       width:var(--board-size);box-sizing:border-box;
       background:var(--bg-panel);border:0.5px solid var(--border);border-radius:5px;
@@ -2336,7 +2451,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 
     <hr>
     <h3>Privacy</h3>
-    <p>Blundermind collects no user data, uses no cookies, stores no game history, and tracks nothing. The board set up/configuration and customized bots can be downloaded and stored, then uploaded for future use.</p>
+    <p>Blundermind collects no user data, uses no cookies, and tracks nothing. Your game in progress and your settings are saved on your own device so you can close the tab and pick the game back up — that stays on your device, is never sent anywhere, and clearing your browser data removes it. The board set up/configuration and customized bots can be downloaded and stored, then uploaded for future use.</p>
     <hr>
     <h3>Feedback</h3>
     <p>Any problems with functionality would be helpful, but I would particularly love feedback on whether any features on this site seem to translate into improvement in &#8216;real&#8217; over-the-board play.</p>

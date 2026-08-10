@@ -899,20 +899,31 @@ function proRestoreBoard(){
   if(typeof indApply === 'function') indApply();   // recompute the amateur indicators
 }
 
-// The move-commit chip lives under the board in the amateur shell, which puts
-// it under the board's bottom-right corner in pro mode — visually stranded.
-// In pro mode it belongs with the player's own clock. Same relocate-on-switch
-// pattern as the chat box below.
-function proMountChip(){
+// The commit chip belongs with the player's OWN clock in both shells — it is a
+// control for your moves, so it sits where your time sits. That target moves:
+// the pro shell has its own panel, and in the amateur shell .board-flipped
+// swaps the two player boxes so "your" box is playerBoxB when you play Black.
+// Rather than hunt down every place the flip can change, this is called from
+// updatePlayerBoxes() (which already runs after every move and turn change)
+// and no-ops when the chip is already where it belongs.
+function syncCommitChipMount(){
   const chip = document.getElementById('commitModeChip');
-  const mount = document.getElementById('proChipMount');
-  if(chip && mount && chip.parentNode !== mount) mount.appendChild(chip);
+  if(!chip) return;
+  let mount;
+  if(typeof proMode !== 'undefined' && proMode){
+    mount = document.getElementById('proChipMount');
+  } else {
+    // The bottom box is the player's own. boardFlipped is set when the human
+    // plays Black, which moves playerBoxB to the bottom.
+    const flipped = (typeof boardFlipped !== 'undefined' && boardFlipped) ||
+                    (typeof mpRole !== 'undefined' && mpRole === 'black' &&
+                     typeof mpRoomId !== 'undefined' && mpRoomId);
+    mount = document.getElementById(flipped ? 'chipMountB' : 'chipMountW');
+  }
+  if(mount && chip.parentNode !== mount) mount.appendChild(chip);
 }
-function proUnmountChip(){
-  const chip = document.getElementById('commitModeChip');
-  const row = document.getElementById('boardInputRow');
-  if(chip && row && chip.parentNode !== row) row.appendChild(chip);
-}
+function proMountChip(){ syncCommitChipMount(); }
+function proUnmountChip(){ syncCommitChipMount(); }
 
 function proMountChat(){
   const chat = document.getElementById('chatBox');
@@ -1015,10 +1026,17 @@ function proSync(){
     const diff = mat.w - mat.b;
     const topMat  = document.getElementById('proMatTop');
     const botMat  = document.getElementById('proMatBottom');
-    if(topMat)  topMat.innerHTML  = (topIsWhite  ? diff  > 0 : diff  < 0) && typeof matAdvString==='function'
-      ? matAdvString(Math.abs(diff), topIsWhite ? mat.wPieces : mat.bPieces, topIsWhite ? mat.bPieces : mat.wPieces) : '';
-    if(botMat)  botMat.innerHTML  = (!topIsWhite ? diff  > 0 : diff  < 0) && typeof matAdvString==='function'
-      ? matAdvString(Math.abs(diff), !topIsWhite ? mat.wPieces : mat.bPieces, !topIsWhite ? mat.bPieces : mat.wPieces) : '';
+    // Same rule as the amateur boxes: glyphs on both sides, the number only on
+    // whoever is actually ahead. Showing the leader's surplus alone overstated
+    // every uneven trade — see matAdvString in 30-board-ui.js.
+    if(typeof matAdvString==='function'){
+      const topAhead = topIsWhite  ? diff > 0 : diff < 0;
+      const botAhead = !topIsWhite ? diff > 0 : diff < 0;
+      if(topMat) topMat.innerHTML = matAdvString(topAhead ? Math.abs(diff) : 0,
+        topIsWhite ? mat.wPieces : mat.bPieces, topIsWhite ? mat.bPieces : mat.wPieces);
+      if(botMat) botMat.innerHTML = matAdvString(botAhead ? Math.abs(diff) : 0,
+        !topIsWhite ? mat.wPieces : mat.bPieces, !topIsWhite ? mat.bPieces : mat.wPieces);
+    }
   }
   // Result bar and button state
   const resultBar = document.getElementById('proResultBar');
@@ -1116,6 +1134,17 @@ function bmRevealWebNotes(){
 }
 document.addEventListener('DOMContentLoaded', bmRevealWebNotes);
 
+// Start pulling the Maia model in the background on app launch, so a fresh
+// install can play a Maia bot without first hunting for a download button.
+// Deferred past load so it never competes with first paint or the engines the
+// user can already play against.
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    try { if(typeof maiaMaybePrefetch === 'function') maiaMaybePrefetch(); }
+    catch(e){ console.warn('maia prefetch', e); }
+  }, 2500);
+});
+
 // ══════════════════════════════════════════════════════════════════════════
 // GUIDED TOUR — spotlight overlay with per-shell step sequences. The overlay
 // is click-through (pointer-events:none) so users can jump straight into an
@@ -1125,6 +1154,8 @@ const TOURS = {
   amateur: [
     { sel:'#bottom-controls', title:'Start playing',
       body:'Play a bot, challenge a friend online, or just explore. You can click any button here right now — or keep touring.' },
+    { sel:'#commitModeChip', title:'How your moves get played',
+      body:'This chip sits with your clock and switches how a move is committed. <b>✋ Release to move</b> plays the move the moment you let go. <b>👆 Tap to confirm</b> instead <i>parks</i> the piece on the square with every overlay live, so you can take your finger off the board, read what the move actually does, and only then tap again to play it — or tap a different square to change your mind. On a phone your finger covers the very squares you moved there to read, so this is the difference between seeing the answer and guessing. Tap the chip to switch, even mid-game.' },
     { sel:'#botSidebarBtn', title:'Play vs Bots',
       body:'Build a custom opponent: pick an engine and rating, give it a personality, custom controls, an opening repertoire, and time-pressure behaviour.' },
     { sel:'.ind-grid', title:'Board-vision indicators', indSection:true,
@@ -1161,6 +1192,8 @@ const TOURS = {
       body:'Pressure or defence acting through another piece on the same line — the lines that matter once a blocker moves.' },
     { sel:'#soloGhostDepth', title:'Ghost moves',
       body:'Hover a destination square and the bot shows the most likely replies as faint “ghost” pieces — handy for training your calculation.' },
+    { sel:'#distPanel', title:'Maia move odds',
+      body:'Everything else here shows you the position <i>before</i> you commit. This closes the loop <i>after</i>: expand <b>📊 Maia move odds</b> and it shows the move just played, from the position it was played in, against how a real human pool weighted the options there — one tall bar means the move was near-forced, several close bars mean it was a genuine decision. Playing a Maia bot reads the odds at <b>that bot’s rating</b>, so it is your actual opponent’s judgement, not a generic one. <b>Collapsed by default</b>; it reviews the move behind you rather than helping with the one in front of you.' },
     { sel:'#btnTheme', title:'Style & board experience',
       body:'Colors, pieces, Carbon vs Journal format — and the board experience itself: switch between this Training board and the clean Expert board here, anytime.' },
     { sel:'#site-name', title:'Home',
@@ -1169,6 +1202,8 @@ const TOURS = {
   pro: [
     { sel:'#proSide', title:'The Expert board',
       body:'A clean tournament view — minimal chrome, live notation, and no coaching overlays.' },
+    { sel:'#commitModeChip', title:'How your moves get played',
+      body:'Under your clock: <b>✋ Release to move</b> plays the move as soon as you let go. <b>👆 Tap to confirm</b> parks the piece on the square first, so you can sit with the position for a moment — and take your finger off a touchscreen — before a second tap commits it. Tapping a different square moves the parked piece there instead. Worth having on for phone play and in time scrambles, where a mis-drop costs a game. Tap the chip to switch, even mid-game.' },
     { sel:'.pro-actions', title:'Board controls',
       body:'Resign, offer a draw, flip the board, or open the 🎨 style palette — where you can also switch back to the Training board. The ⚙ menu has more: a bot game, 2-player, save/load.' },
     { sel:'#proMoves', title:'Move list',

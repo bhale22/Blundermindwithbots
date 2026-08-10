@@ -39,10 +39,12 @@ const SHELL_URLS = [
 
 // Immutable-ish assets, cached the first time they're requested.
 const RUNTIME_PATHS = [
-  '/ort/', '/vendor/', '/data/', '/icons/',
+  '/ort/', '/vendor/', '/data/', '/icons/', '/fonts/',
   '/stockfish.js', '/stockfish.wasm', '/maia-worker.js',
 ];
-const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
+// Fonts are served from this origin now (see fonts/README.md), so they are
+// covered by RUNTIME_PATHS above and no cross-origin font host is contacted.
+const FONT_HOSTS = [];
 
 const isRuntimeAsset = (url) =>
   RUNTIME_PATHS.some((p) => p.endsWith('/') ? url.pathname.startsWith(p) : url.pathname === p);

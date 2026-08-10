@@ -154,14 +154,19 @@ function sfGhostGetMove(fen, depth, excludeUci, hypBoard, hypTurn, hypEp, hypCas
     }
 
     sfGhostWorker.postMessage(goCmd);
-    // 5s timeout (slightly longer since searchmoves can be slower)
+    // Timeout scaled to the work actually requested. A flat 5 s silently broke
+    // "SF Deep (depth 12)": on a phone that search — especially the second one,
+    // which passes searchmoves over every legal move but one — routinely runs
+    // past 5 s, the timeout resolved null, and no ghost was ever drawn. The
+    // setting looked like it did nothing.
+    var _budgetMs = Math.max(5000, Math.min(20000, depth * 1200)) * (excludeUci ? 1.6 : 1);
     setTimeout(() => {
       if (sfGhostPending === resolve) {
         sfGhostPending = null;
         sfGhostBestmovesOwed++; // engine still owes this search's bestmove
         resolve(null);
       }
-    }, 5000);
+    }, _budgetMs);
   });
 }
 
@@ -658,6 +663,33 @@ async function maiaEloTest() {
   }
 }
 
+// ── Model prefetch ───────────────────────────────────────────────────────────
+// The 44MB Maia download was a manual button the user had to find before any
+// Maia bot would work — so a fresh install could not play one at all until it
+// went looking. Installing the app IS the commitment, so fetch it in the
+// background on first launch and let Stockfish bots cover the wait.
+//
+// Deliberately NOT done on the open web: most visitors never open a Maia bot,
+// and pushing 44MB at everyone who lands on the page is both rude to them and
+// expensive to serve.
+var _maiaPrefetchArmed = false;
+var _maiaPrefetchTried = false;
+
+function maiaMaybePrefetch() {
+  if (_maiaPrefetchTried) return;
+  if (typeof bmIsAppContext !== 'function' || !bmIsAppContext()) return;
+  // Honour the platform's data preferences rather than assuming wifi.
+  try {
+    var c = navigator.connection;
+    if (c && (c.saveData || /^(slow-)?2g$/.test(c.effectiveType || ''))) return;
+  } catch (e) {}
+  _maiaPrefetchTried = true;
+  _maiaPrefetchArmed = true;
+  // maiaInit's cache check answers 'ready' (already have it) or 'no-cache',
+  // and the status handler starts the fetch on the latter.
+  maiaInit();
+}
+
 // Initialize the Maia worker
 function maiaInit() {
   if (_maiaWorker) return;
@@ -672,6 +704,12 @@ function maiaInit() {
         // left the panel's download overlay stuck on top of the Elometer until
         // some later push happened to correct it.
         _maiaReady = (msg.status === 'ready');
+        // First launch in the app and the model is not cached — start pulling
+        // it now rather than waiting for the user to find the button.
+        if (msg.status === 'no-cache' && _maiaPrefetchArmed) {
+          _maiaPrefetchArmed = false;
+          try { _maiaWorker.postMessage({ type: 'download' }); } catch (e) {}
+        }
         _maiaUpdateStatusUI();
         if (msg.status === 'ready') {
           // After a successful download (not just a cache hit on reload) request

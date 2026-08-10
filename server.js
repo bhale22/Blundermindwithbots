@@ -330,6 +330,30 @@ app.get('/sw.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'sw.js'));
 });
 
+// Browsers request /favicon.ico by default whether or not it is declared, so
+// serving one avoids a 404 on every cold load — and a 404 is part of why some
+// browsers kept showing a stale cached icon.
+app.get('/favicon.ico', (req, res) => {
+  const p = path.join(__dirname, 'favicon.ico');
+  if (!fs.existsSync(p)) { res.status(404).end(); return; }
+  res.setHeader('Content-Type', 'image/x-icon');
+  res.setHeader('Cache-Control', 'public, max-age=604800'); // 7 days
+  res.sendFile(p);
+});
+
+// Self-hosted fonts. These used to come from fonts.gstatic.com, which sent
+// every visitor's IP to Google — see fonts/README.md. Immutable content, so a
+// long cache is safe and keeps repeat loads free.
+app.get('/fonts/:file', (req, res) => {
+  const file = req.params.file;
+  if (!/^[\w.\-]+\.(woff2|css)$/.test(file)) { res.status(404).end(); return; }
+  const p = path.join(__dirname, 'fonts', file);
+  if (!fs.existsSync(p)) { res.status(404).end(); return; }
+  res.setHeader('Content-Type', file.endsWith('.css') ? 'text/css' : 'font/woff2');
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.sendFile(p);
+});
+
 app.get('/icons/:file', (req, res) => {
   if (!/^[\w.-]+\.png$/.test(req.params.file)) { res.status(404).end(); return; }
   const p = path.join(__dirname, 'icons', req.params.file);

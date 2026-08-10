@@ -129,6 +129,74 @@ describe('web cross-links', { concurrency: 1 }, () => {
     await ctx.close();
   });
 
+  test('the Maia model is NOT prefetched on the open web', async () => {
+    // 44MB pushed at every visitor who lands on the page would be rude to them
+    // and expensive to serve, and most never open a Maia bot.
+    const { ctx, page } = await openPage();
+    const r = await page.evaluate(() => {
+      let called = false;
+      const real = window.maiaInit;
+      maiaInit = () => { called = true; };
+      maiaMaybePrefetch();
+      maiaInit = real;
+      return { called, armed: _maiaPrefetchArmed, tried: _maiaPrefetchTried };
+    });
+    assert.strictEqual(r.called, false, 'must not touch the model on the web');
+    assert.strictEqual(r.armed, false);
+    await ctx.close();
+  });
+
+  test('in the app the model prefetch arms and starts', async () => {
+    const { ctx, page } = await openPage({ query: '?app=1' });
+    const r = await page.evaluate(() => {
+      let called = false;
+      const real = window.maiaInit;
+      maiaInit = () => { called = true; };
+      _maiaPrefetchTried = false;          // reset: the load hook may have run
+      maiaMaybePrefetch();
+      maiaInit = real;
+      return { called, armed: _maiaPrefetchArmed };
+    });
+    assert.strictEqual(r.called, true, 'installing is the commitment — fetch it');
+    assert.strictEqual(r.armed, true, 'armed so a no-cache reply starts the download');
+    await ctx.close();
+  });
+
+  test('the prefetch only ever runs once', async () => {
+    const { ctx, page } = await openPage({ query: '?app=1' });
+    const calls = await page.evaluate(() => {
+      let n = 0;
+      const real = window.maiaInit;
+      maiaInit = () => { n++; };
+      _maiaPrefetchTried = false;
+      maiaMaybePrefetch();
+      maiaMaybePrefetch();
+      maiaMaybePrefetch();
+      maiaInit = real;
+      return n;
+    });
+    assert.strictEqual(calls, 1, 'repeat calls must be no-ops');
+    await ctx.close();
+  });
+
+  test('the prefetch respects Save-Data', async () => {
+    const { ctx, page } = await openPage({ query: '?app=1' });
+    const called = await page.evaluate(() => {
+      let c = false;
+      const real = window.maiaInit;
+      maiaInit = () => { c = true; };
+      Object.defineProperty(navigator, 'connection', {
+        value: { saveData: true, effectiveType: '4g' }, configurable: true,
+      });
+      _maiaPrefetchTried = false;
+      maiaMaybePrefetch();
+      maiaInit = real;
+      return c;
+    });
+    assert.strictEqual(called, false, 'Save-Data means do not pull 44MB unasked');
+    await ctx.close();
+  });
+
   test('no page errors were raised throughout', () => {
     assert.deepStrictEqual(errs, []);
   });
