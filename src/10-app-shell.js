@@ -517,7 +517,11 @@ function openPanel(id) {
     if (typeof mpQsCloseAll === 'function') mpQsCloseAll();  // pills closed, values fresh
     mpRefreshLobby();
     clearInterval(mpLobbyRefreshTimer);
-    mpLobbyRefreshTimer = setInterval(mpRefreshLobby, 5000);
+    // 2s while the board is actually on screen. The server pushes a lobby_list
+    // the moment a challenge appears or is withdrawn, so this poll is only a
+    // backstop for a missed push — but it is the difference between a withdrawn
+    // challenge vanishing and someone clicking Join on a room that is gone.
+    mpLobbyRefreshTimer = setInterval(mpRefreshLobby, MP_LOBBY_POLL_MS);
   }
 }
 function closeAllPanels() {
@@ -1742,6 +1746,8 @@ let mpConnected = false;
 let mpOriginalRole = null;  // role as assigned by server (never changes per session)
 let mpCurrentTab = 'lobby';
 let mpLobbyRefreshTimer = null;
+// Only ticks while the 2-player panel is open, so it costs nothing when closed.
+const MP_LOBBY_POLL_MS = 2000;
 
 // ── Presence / heartbeat ─────────────────────────────────────────────────────
 let _mpPingTimer       = null;  // interval sending our ping to the server
@@ -1837,11 +1843,71 @@ function mpQsRefresh() {
 // Action buttons act immediately with the current pill settings.
 // Each confirms first if a game is in progress — starting a new online game
 // forfeits whatever is being played.
+// Posting is the one action here that becomes public and cannot be edited
+// afterwards, so it reviews first. Nothing is given up until the user confirms:
+// the abandon guard deliberately runs in mpPostConfirmGo() and not here, so
+// backing out of the review costs nothing.
 function mpStartPost() {
+  mpShowPostConfirm();
+}
+
+// Handles come from a text field and are shown in innerHTML, both here and in
+// every other player's challenge list. Escape at the point of interpolation.
+function mpEscape(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Label/value pairs describing exactly what is about to be posted.
+function mpPostSummaryRows() {
+  const name   = (document.getElementById('mpLobbyName')?.value || '').trim();
+  const rating = (document.getElementById('mpLobbyRating')?.value || '').trim();
+  const rows = [];
+  rows.push(['Handle', name || 'Anonymous', !name]);
+  rows.push(['Rating', rating ? rating + ' ' + mpRatingType : 'Unrated', !rating]);
+  // A rating band is meaningless without a rating to centre it on — say so
+  // rather than showing a filter that will not actually be applied.
+  rows.push(['Accepts',
+    !rating ? 'Anyone (no rating set)'
+    : mpRatingRange >= 9999 ? 'Any rating'
+    : 'Within ±' + mpRatingRange + ' of ' + rating,
+    !rating || mpRatingRange >= 9999]);
+  rows.push(['Time', mpBaseMin === 0 ? 'Untimed'
+    : mpBaseMin + ' min + ' + mpIncSec + ' sec', false]);
+  rows.push(['You play',
+    mpHostColor === 'white' ? 'White ♔'
+    : mpHostColor === 'black' ? 'Black ♚'
+    : 'Random — decided when someone joins',
+    mpHostColor !== 'white' && mpHostColor !== 'black']);
+  return rows;
+}
+
+function mpShowPostConfirm() {
+  const box = document.getElementById('mpPostSummary');
+  if (box) {
+    box.innerHTML = mpPostSummaryRows().map(([k, v, dim]) =>
+      '<div class="mp-ps-row"><span class="mp-ps-k">' + k + '</span>' +
+      '<span class="mp-ps-v' + (dim ? ' dim' : '') + '">' + mpEscape(v) + '</span></div>'
+    ).join('');
+  }
+  const el = document.getElementById('mpPostConfirm');
+  if (el) el.classList.add('open');
+}
+
+function mpHidePostConfirm() {
+  const el = document.getElementById('mpPostConfirm');
+  if (el) el.classList.remove('open');
+}
+
+function mpPostConfirmCancel() { mpHidePostConfirm(); }
+
+function mpPostConfirmGo() {
+  mpHidePostConfirm();
   if (!confirmAbandonLiveGame('Post an open challenge')) return;
   abandonLiveGameContexts();
   mpQsCloseAll(); mpPostChallenge();
 }
+
 function mpStartPrivateGame() {
   if (!confirmAbandonLiveGame('Start a private game')) return;
   abandonLiveGameContexts();
@@ -2285,9 +2351,12 @@ function mpRenderLobby(challenges) {
   if (empty) empty.style.display = 'none';
   if (count) count.textContent = '(' + challenges.length + ')';
   challenges.forEach(ch => {
-    const tcLabel = ch.tcLabel || (ch.tc && TIME_CONTROLS[ch.tc] ? TIME_CONTROLS[ch.tc].label : 'Untimed');
-    const nameStr = ch.name || 'Anonymous';
-    const ratingStr = ch.rating ? (' · ' + ch.rating + (ch.ratingType ? ' ' + ch.ratingType : '')) : '';
+    // Handle and time label originate on another player's machine. The server
+    // bounds their length but not their content, and both land in innerHTML
+    // here — on every client watching the board, not just the poster's.
+    const tcLabel = mpEscape(ch.tcLabel || (ch.tc && TIME_CONTROLS[ch.tc] ? TIME_CONTROLS[ch.tc].label : 'Untimed'));
+    const nameStr = mpEscape(ch.name || 'Anonymous');
+    const ratingStr = ch.rating ? (' · ' + Number(ch.rating) + (ch.ratingType ? ' ' + mpEscape(ch.ratingType) : '')) : '';
     const rangeStr = ch.ratingRange && ch.ratingRange < 9999 ? (' ±' + ch.ratingRange) : '';
     const row = document.createElement('div');
     row.className = 'mp-challenge-row';
@@ -3349,6 +3418,14 @@ function _exitReplayKeepBoard(){
 // Any control that would end a game in progress must confirm first. Returns
 // true when it is safe to proceed (no live game, or the user confirmed).
 function confirmAbandonLiveGame(actionLabel){
+  // A standing offer is checked first: it can coexist with a finished game, so
+  // the _isLiveGame() early-return below would otherwise wave it straight past.
+  if(typeof _isPendingChallenge==='function'&&_isPendingChallenge()&&!_isLiveGame()){
+    const open=(typeof mpMode!=='undefined'&&mpMode==='lobby-waiting');
+    return confirm((actionLabel||'Continue')+'? This will withdraw '+
+      (open?'your open challenge':'your private invite')+
+      ', and anyone about to accept it will find it gone.');
+  }
   if(typeof _isLiveGame!=='function'||!_isLiveGame()) return true;
   const isMp=typeof mpRoomId!=='undefined'&&mpRoomId;
   if(!isMp){
@@ -3367,7 +3444,11 @@ function confirmAbandonLiveGame(actionLabel){
 // confirmAbandonLiveGame() returned true.
 function abandonLiveGameContexts(){
   if(typeof mpRoomId!=='undefined'&&mpRoomId){
-    if(typeof gameOver!=='undefined'&&!gameOver&&
+    // Resign only a game actually under way. A room still waiting for an
+    // opponent has nobody to resign to — mpLeave() withdraws the offer, and
+    // the server drops the challenge off the board when the socket closes.
+    const _waiting=typeof _isPendingChallenge==='function'&&_isPendingChallenge();
+    if(!_waiting&&typeof gameOver!=='undefined'&&!gameOver&&
        typeof mpWs!=='undefined'&&mpWs&&mpWs.readyState===WebSocket.OPEN){
       try{ mpWs.send(JSON.stringify({type:'resign'})); }catch(e){}
     }
@@ -3506,6 +3587,17 @@ function _isLiveGame(){
     (typeof botActive!=='undefined'&&botActive)||
     (typeof mpRoomId!=='undefined'&&mpRoomId&&
      typeof mpMode!=='undefined'&&mpMode==='ingame'));
+}
+
+// An offer that is still standing: a challenge on the open board, or a private
+// room whose link has been shared. No game is running, but one can begin at any
+// moment without warning — the opponent's click, not ours, is what starts it.
+// That makes it a commitment, and it has to be given up deliberately rather
+// than silently overrun by a bot game that the accept would then abort.
+function _isPendingChallenge(){
+  return typeof mpRoomId!=='undefined'&&!!mpRoomId&&
+         typeof mpMode!=='undefined'&&
+         (mpMode==='lobby-waiting'||mpMode==='private-waiting');
 }
 
 // Simple SAN parser

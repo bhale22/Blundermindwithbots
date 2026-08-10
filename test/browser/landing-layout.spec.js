@@ -86,6 +86,50 @@ describe('landing page layout', { concurrency: 1 }, () => {
     await ctx.close();
   });
 
+  // On a phone the card is a grid with a named area per child. The go-text had
+  // no area, so it was auto-placed into the 36px icon column and came out one
+  // word per line — "Play / a / friend".
+  test('the call-to-action sits on one line on a phone', async () => {
+    for (const shell of ['amateur', 'pro']) {
+      const { ctx, page } = await open({ phone: true, shell });
+      const gos = await page.evaluate(() =>
+        Array.from(document.querySelectorAll('.landing-card .landing-card-go')).map((g) => {
+          const cs = getComputedStyle(g);
+          const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
+          return {
+            text: g.textContent.trim(),
+            lines: Math.round(g.getBoundingClientRect().height / lh),
+            // Must be beside the icon, not inside its 36px gutter.
+            width: Math.round(g.getBoundingClientRect().width),
+          };
+        }));
+      assert.strictEqual(gos.length, 3, shell + ': three cards');
+      for (const g of gos) {
+        assert.ok(g.lines <= 1,
+          shell + ': "' + g.text + '" wrapped onto ' + g.lines + ' lines');
+        assert.ok(g.width > 40,
+          shell + ': "' + g.text + '" is only ' + g.width + 'px wide — squeezed into the icon column');
+      }
+      await ctx.close();
+    }
+  });
+
+  // The blurbs restated the button below them, and being static they went stale
+  // whenever the board style changed: the Solo one promised hover overlays that
+  // Expert deliberately does not draw.
+  test('the cards carry no stale blurb', async () => {
+    const { ctx, page } = await open({ viewport: { width: 1366, height: 768 } });
+    const descs = await page.evaluate(() =>
+      document.querySelectorAll('.landing-card-desc').length);
+    assert.strictEqual(descs, 0, 'the per-card descriptions should be gone');
+    const titles = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('.landing-card-title')).map((t) => t.textContent.trim()));
+    assert.ok(titles.includes('Bot Builder'),
+      'the bot card should be "Bot Builder" — the action underneath already says "Play a bot"; got '
+        + JSON.stringify(titles));
+    await ctx.close();
+  });
+
   test('every launch card carries an explicit button', async () => {
     const { ctx, page } = await open({ viewport: { width: 1366, height: 768 } });
     const cards = await page.evaluate(() =>

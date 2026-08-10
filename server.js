@@ -512,9 +512,32 @@ setInterval(() => {
   }
 }, 60 * 1000);
 
+// Protocol-level heartbeat. Without one, a client that vanishes without a
+// clean close — a phone going to sleep, a tunnel dropping — leaves a half-open
+// socket that 'close' does not fire for until the OS TCP timeout, which can be
+// many minutes. For a lobby host that means a withdrawn-in-practice challenge
+// stays on everyone's board, and whoever clicks Join lands in a dead room.
+// Terminating the socket runs the normal close handler, which drops the
+// challenge and re-broadcasts the list.
+//
+// This does not shorten the resume grace for a game in progress: close() keeps
+// a started, unfinished room alive for MP_RESUME_GRACE_MS either way. It only
+// makes the disconnect *noticed* within ~60s instead of whenever TCP gives up.
+const WS_HEARTBEAT_MS = 30 * 1000;
+const wsHeartbeat = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) { try { ws.terminate(); } catch (e) {} return; }
+    ws.isAlive = false;
+    try { ws.ping(); } catch (e) {}
+  });
+}, WS_HEARTBEAT_MS);
+wss.on('close', () => clearInterval(wsHeartbeat));
+
 wss.on('connection', (ws) => {
   ws.roomCode = null;
   ws.role = null;
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
 
   ws.on('message', (data) => {
     let msg;
