@@ -1203,7 +1203,7 @@ const TOURS = {
     { sel:'#proMoves', title:'Move list',
       body:'Your game notation updates here live as you play.' },
     { sel:'#distPanel', title:'Maia move odds (optional)',
-      body:'Expand <b>📊 Maia move odds</b> to see the distribution a human of that rating would actually be choosing from — not the engine’s verdict on the best move, but how <i>spread</i> the choice was. A near-forced position shows one tall bar; a real decision shows several close together. It is <b>collapsed by default, and most of the time you will want it that way</b> — it answers a question <i>about</i> the position rather than helping you play it. Worth opening when you want to know how obvious your move really was.' },
+      body:'Expand <b>📊 Maia move odds</b> to look <i>back</i> at the move just played: from the position it was played in, how likely was it that a 1500-rated human would choose it? It is a review of the move behind you, not a read on the position in front of you — a near-forced position shows one tall bar, a real decision shows several close together. <b>Collapsed by default, and most of the time you will want it that way.</b>' },
   ],
 };
 
