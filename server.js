@@ -330,6 +330,19 @@ app.get('/sw.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'sw.js'));
 });
 
+// Self-hosted fonts. These used to come from fonts.gstatic.com, which sent
+// every visitor's IP to Google — see fonts/README.md. Immutable content, so a
+// long cache is safe and keeps repeat loads free.
+app.get('/fonts/:file', (req, res) => {
+  const file = req.params.file;
+  if (!/^[\w.\-]+\.(woff2|css)$/.test(file)) { res.status(404).end(); return; }
+  const p = path.join(__dirname, 'fonts', file);
+  if (!fs.existsSync(p)) { res.status(404).end(); return; }
+  res.setHeader('Content-Type', file.endsWith('.css') ? 'text/css' : 'font/woff2');
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.sendFile(p);
+});
+
 app.get('/icons/:file', (req, res) => {
   if (!/^[\w.-]+\.png$/.test(req.params.file)) { res.status(404).end(); return; }
   const p = path.join(__dirname, 'icons', req.params.file);
