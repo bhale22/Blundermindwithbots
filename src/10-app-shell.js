@@ -1154,6 +1154,8 @@ const TOURS = {
   amateur: [
     { sel:'#bottom-controls', title:'Start playing',
       body:'Play a bot, challenge a friend online, or just explore. You can click any button here right now — or keep touring.' },
+    { sel:'#commitModeChip', title:'How your moves get played',
+      body:'This chip sits with your clock and switches how a move is committed. <b>✋ Release to move</b> plays the move the moment you let go. <b>👆 Tap to confirm</b> instead <i>parks</i> the piece on the square with every overlay live, so you can take your finger off the board, read what the move actually does, and only then tap again to play it — or tap a different square to change your mind. On a phone your finger covers the very squares you moved there to read, so this is the difference between seeing the answer and guessing. Tap the chip to switch, even mid-game.' },
     { sel:'#botSidebarBtn', title:'Play vs Bots',
       body:'Build a custom opponent: pick an engine and rating, give it a personality, custom controls, an opening repertoire, and time-pressure behaviour.' },
     { sel:'.ind-grid', title:'Board-vision indicators', indSection:true,
@@ -1200,6 +1202,8 @@ const TOURS = {
   pro: [
     { sel:'#proSide', title:'The Expert board',
       body:'A clean tournament view — minimal chrome, live notation, and no coaching overlays.' },
+    { sel:'#commitModeChip', title:'How your moves get played',
+      body:'Under your clock: <b>✋ Release to move</b> plays the move as soon as you let go. <b>👆 Tap to confirm</b> parks the piece on the square first, so you can sit with the position for a moment — and take your finger off a touchscreen — before a second tap commits it. Tapping a different square moves the parked piece there instead. Worth having on for phone play and in time scrambles, where a mis-drop costs a game. Tap the chip to switch, even mid-game.' },
     { sel:'.pro-actions', title:'Board controls',
       body:'Resign, offer a draw, flip the board, or open the 🎨 style palette — where you can also switch back to the Training board. The ⚙ menu has more: a bot game, 2-player, save/load.' },
     { sel:'#proMoves', title:'Move list',

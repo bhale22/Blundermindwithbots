@@ -132,7 +132,56 @@ describe('ghost delay, tour launch, chip placement', { concurrency: 1 }, () => {
     assert.strictEqual(covered, false, 'tour panel must not be covered by anything');
   });
 
+  test('both tours cover the commit-mode chip, and spotlight it', async () => {
+    // The chip changes how every move is committed, so neither board should
+    // introduce itself without mentioning it.
+    for (const shell of ['amateur', 'pro']) {
+      await page.evaluate((sh) => {
+        try { localStorage.setItem('bm_shell', sh); } catch (e) {}
+      }, shell);
+      await load();
+      await H.dismissLanding(page);
+      await page.evaluate((sh) => { if (typeof setShell === 'function') setShell(sh); }, shell);
+      await page.waitForTimeout(400);
+
+      const found = await page.evaluate(() => {
+        startTour();
+        const i = _tourSteps.findIndex((s) => s.sel === '#commitModeChip');
+        if (i < 0) { endTour(); return null; }
+        _tourIdx = i; _renderTourStep();
+        return { idx: i, total: _tourSteps.length };
+      });
+      assert.ok(found, shell + ' tour has no commit-mode step');
+
+      // The ring is positioned asynchronously, so let it settle before reading.
+      await page.waitForTimeout(900);
+      const spot = await page.evaluate(() => {
+        const r = document.getElementById('tourRing').getBoundingClientRect();
+        const c = document.getElementById('commitModeChip').getBoundingClientRect();
+        return {
+          covers: r.left <= c.left + 2 && r.top <= c.top + 2 &&
+                  r.right >= c.right - 2 && r.bottom >= c.bottom - 2,
+          title: (document.getElementById('tourTitle') || {}).textContent || '',
+          body: (document.getElementById('tourBody') || {}).textContent || '',
+        };
+      });
+      assert.ok(spot.covers, shell + ': the spotlight does not land on the chip');
+      assert.match(spot.title, /\S/, shell + ': the step needs a title');
+      assert.match(spot.body, /Release to move/i, shell + ': should name the release mode');
+      assert.match(spot.body, /Tap to confirm/i, shell + ': should name the confirm mode');
+      await page.evaluate(() => endTour());
+    }
+    await page.evaluate(() => { try { localStorage.setItem('bm_shell', 'amateur'); } catch (e) {} });
+    await load();
+  });
+
   test('the tour advances through its steps', async () => {
+    await load();
+    await H.dismissLanding(page);
+    await page.evaluate(() => startTour());
+    await page.waitForTimeout(600);
+    assert.strictEqual(await page.evaluate(() => _tourIdx), 0, 'starts on the first step');
+
     await page.evaluate(() => tourNext());
     await page.waitForTimeout(700);
     const after = await page.evaluate(() => ({ idx: _tourIdx, active: _tourActive }));
