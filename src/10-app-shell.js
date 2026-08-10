@@ -1190,6 +1190,8 @@ const TOURS = {
       body:'Pressure or defence acting through another piece on the same line — the lines that matter once a blocker moves.' },
     { sel:'#soloGhostDepth', title:'Ghost moves',
       body:'Hover a destination square and the bot shows the most likely replies as faint “ghost” pieces — handy for training your calculation.' },
+    { sel:'#distPanel', title:'Maia move odds',
+      body:'Everything else here shows you the position <i>before</i> you commit. This closes the loop <i>after</i>: expand <b>📊 Maia move odds</b> and it shows the move just played, from the position it was played in, against how a real human pool weighted the options there — one tall bar means the move was near-forced, several close bars mean it was a genuine decision. Playing a Maia bot reads the odds at <b>that bot’s rating</b>, so it is your actual opponent’s judgement, not a generic one. <b>Collapsed by default</b>; it reviews the move behind you rather than helping with the one in front of you.' },
     { sel:'#btnTheme', title:'Style & board experience',
       body:'Colors, pieces, Carbon vs Journal format — and the board experience itself: switch between this Training board and the clean Expert board here, anytime.' },
     { sel:'#site-name', title:'Home',
@@ -1202,8 +1204,6 @@ const TOURS = {
       body:'Resign, offer a draw, flip the board, or open the 🎨 style palette — where you can also switch back to the Training board. The ⚙ menu has more: a bot game, 2-player, save/load.' },
     { sel:'#proMoves', title:'Move list',
       body:'Your game notation updates here live as you play.' },
-    { sel:'#distPanel', title:'Maia move odds (optional)',
-      body:'Expand <b>📊 Maia move odds</b> to look <i>back</i> at the move just played: from the position it was played in, how likely was it that a 1500-rated human would choose it? It is a review of the move behind you, not a read on the position in front of you — a near-forced position shows one tall bar, a real decision shows several close together. <b>Collapsed by default, and most of the time you will want it that way.</b>' },
   ],
 };
 

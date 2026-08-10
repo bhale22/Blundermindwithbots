@@ -1608,7 +1608,6 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
   body.pro-mode #board-canvas-wrap { order:2; }
   body.pro-mode #proPlayerBottom   { order:3; }
   body.pro-mode #replayControls    { order:4; }
-  body.pro-mode #distPanel         { order:5; }
   body.pro-mode #proNotationCard   { order:6; }
   body.pro-mode #proResultBar      { order:7; }
   body.pro-mode #proIdleActions    { order:8; }
@@ -1970,7 +1969,8 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       </div>
     </div><!-- end chatBox -->
 
-    <!-- Maia move-distribution panel — Expert board only, hidden in 2-player games -->
+    <!-- Maia move-distribution panel — visualization board only, hidden in
+         2-player games. See _distApplicable for why it is not on the Expert board. -->
     <div id="distPanel" style="display:none;flex-direction:column;
       width:var(--board-size);box-sizing:border-box;
       background:var(--bg-panel);border:0.5px solid var(--border);border-radius:5px;
