@@ -2559,6 +2559,19 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         </a>
       </div>
     </div>
+    <!-- Web-only, the mirror of aboutWebNote above: in the app this would be circular. -->
+    <div class="web-note" id="aboutAppNote" hidden style="margin-top:0;margin-bottom:14px;">
+      <div class="wn-head">There is an Android app</div>
+      <p class="wn-body">Blundermind is on the Play Store, but it is in closed testing and
+        not public yet &#8212; Google asks for a group of testers to use an app for a couple of
+        weeks before it can be released. It is the same board and the same bots, and once the
+        Maia model has downloaded it plays with no network at all.</p>
+      <p class="wn-body">If you would like to be one of the testers, say so in the feedback
+        box below and include the Google account email you use on the Play Store &#8212; I will
+        send you the opt-in link. On iPhone there is no app, but you can add this site to your
+        Home Screen and it behaves much the same.</p>
+    </div>
+
     <p>Nearly all games of chess I play are decided on blundered pieces. I created this site in the hopes that I could see what it was like to play a game that was decided by strategy instead of blunders. I still blunder, but at least the number of blunders is reduced a bit when there is a big red circle around the queen when I hover it over my intended square. I still have no idea if this will translate to better board vision in &#8216;real&#8217; OTB games.</p>
     <p>I also struggle with &#8220;getting a grip on the board&#8221; (to steal a useful phrase from the <a href="https://www.youtube.com/watch?v=3jiJn8bjtYk" target="_blank" rel="noopener" style="color:var(--accent);">Chess Dojo</a>), so while my intent was to blundercheck moves so that I would see if I were hanging my queen, I&#8217;m finding that it is showing discovered attacks and potential forks that I didn&#8217;t see at all (you can probably infer my rating at this point). I think it could be a very helpful tool as long as it is used as a blundercheck to double check and provide immediate feedback after assessment and calculation, not as a blunder avoider that just circles some hanging pieces while potential moves are explored by dragging the pieces around.</p>
     <p>Also included in my numerous struggles is the ability to predict my opponent&#8217;s response, so I added a feature to show two potential responses by making two calls to Stockfish. I would like to do this with Maia, but running Maia3 on each potential move is too slow with my current set up &#8212; hopefully in the future. Currently the site does not include any engine analysis or indicators to show if a move is &#8220;good or bad&#8221; during game play or exploration. Each game can be downloaded and analyzed in <a href="https://lichess.org/paste" target="_blank" rel="noopener" style="color:var(--accent);">Lichess</a> or a website of your choice. Similarly, the PGN of any game can be uploaded and explored here.</p>
@@ -2566,7 +2579,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 
     <hr>
     <h3>Privacy</h3>
-    <p>Blundermind collects no user data, uses no cookies, and tracks nothing. Your game in progress and your settings are saved on your own device so you can close the tab and pick the game back up — that stays on your device, is never sent anywhere, and clearing your browser data removes it. The board set up/configuration and customized bots can be downloaded and stored, then uploaded for future use.</p>
+    <p>Blundermind uses no cookies, no analytics and no tracking of any kind, and there are no accounts. Your game in progress and your settings are saved on your own device so you can close the tab and pick the game back up — that stays on your device, is never sent anywhere, and clearing your browser data removes it. The board set up/configuration and customized bots can be downloaded and stored, then uploaded for future use. The one thing that does leave your device is a feedback message, if you choose to write one below. Full details in the <a href="/privacy" target="_blank" rel="noopener" style="color:var(--accent);">privacy policy</a>.</p>
     <hr>
     <h3>Feedback</h3>
     <p>Any problems with functionality would be helpful, but I would particularly love feedback on whether any features on this site seem to translate into improvement in &#8216;real&#8217; over-the-board play.</p>

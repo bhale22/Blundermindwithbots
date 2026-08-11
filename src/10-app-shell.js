@@ -1133,12 +1133,17 @@ function bmIsAppContext(){
   }catch(e){ return false; }
 }
 
+// Two mirrored sets, and exactly one of them is ever shown. In the app: "this is
+// an adaptation of the web version." In a browser: "there is an app, and it is in
+// closed testing." Each would be circular in the other context.
 function bmRevealWebNotes(){
-  if(!bmIsAppContext()) return;
-  ['landingWebNote','aboutWebNote'].forEach(id => {
+  const inApp = bmIsAppContext();
+  const show = (ids) => ids.forEach(id => {
     const el = document.getElementById(id);
     if(el) el.hidden = false;
   });
+  if(inApp) show(['landingWebNote','aboutWebNote']);
+  else      show(['aboutAppNote']);
 }
 document.addEventListener('DOMContentLoaded', bmRevealWebNotes);
 
