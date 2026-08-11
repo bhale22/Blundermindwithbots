@@ -100,22 +100,26 @@ const MASTERS_CACHE_MAX = 5000; // ~a few MB; Map keeps insertion order → drop
 // Light per-IP rate limit so one client can't use us as an open Lichess proxy
 // (and get our server IP throttled upstream, breaking openings for everyone).
 // 60 upstream-bound requests/min is far above real gameplay; cache hits are free.
-const _mastersRate = new Map(); // ip → { count, windowStart }
-const MASTERS_RATE_LIMIT = 60, MASTERS_RATE_WINDOW = 60 * 1000;
-function mastersRateOk(ip) {
+// Shared by BOTH explorer proxies below — one budget per IP, not one each.
+const _explorerRate = new Map(); // ip → { count, windowStart }
+const EXPLORER_RATE_LIMIT = 60, EXPLORER_RATE_WINDOW = 60 * 1000;
+function explorerRateOk(ip) {
   const now = Date.now();
-  let r = _mastersRate.get(ip);
-  if (!r || now - r.windowStart > MASTERS_RATE_WINDOW) {
+  let r = _explorerRate.get(ip);
+  if (!r || now - r.windowStart > EXPLORER_RATE_WINDOW) {
     r = { count: 0, windowStart: now };
-    _mastersRate.set(ip, r);
+    _explorerRate.set(ip, r);
   }
-  if (_mastersRate.size > 10000) { // prune stale windows
-    for (const [k, v] of _mastersRate) {
-      if (now - v.windowStart > MASTERS_RATE_WINDOW) _mastersRate.delete(k);
+  if (_explorerRate.size > 10000) { // prune stale windows
+    for (const [k, v] of _explorerRate) {
+      if (now - v.windowStart > EXPLORER_RATE_WINDOW) _explorerRate.delete(k);
     }
   }
-  return ++r.count <= MASTERS_RATE_LIMIT;
+  return ++r.count <= EXPLORER_RATE_LIMIT;
 }
+
+const clientIp = (req) =>
+  req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || '?';
 
 app.get('/api/masters', (req, res) => {
   const play  = (req.query.play  || '').replace(/[^a-zA-Z0-9,]/g, '');
@@ -131,8 +135,7 @@ app.get('/api/masters', (req, res) => {
   }
 
   // Only misses (which hit the upstream) count against the rate limit
-  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || '?';
-  if (!mastersRateOk(ip)) {
+  if (!explorerRateOk(clientIp(req))) {
     return res.status(429).json({ error: 'Rate limited — try again in a minute' });
   }
 
@@ -163,6 +166,71 @@ app.get('/api/masters', (req, res) => {
   }).on('error', e => {
     console.error('Masters proxy fetch error:', e.message);
     res.status(502).json({ error: 'Masters proxy error', detail: e.message });
+  });
+});
+
+// ── Lichess player-games explorer proxy ──────────────────────────────────────
+// Unlike /masters, this endpoint DOES accept browser requests — which is how
+// the client came to call it directly, and why the privacy policy's promise
+// that "your IP address and identity are never shared with Lichess" had
+// quietly stopped being true. It goes through here for that reason alone.
+// Do not reintroduce a direct explorer.lichess.ovh call from the client.
+//
+// Queried two ways: by `fen` (a single position) and by `play` (a move list).
+const _lichessCache = new Map();
+const LICHESS_CACHE_TTL = 6 * 60 * 60 * 1000; // 6h — live stats drift, slowly
+const LICHESS_CACHE_MAX = 5000;
+
+app.get('/api/lichess', (req, res) => {
+  // FEN keeps letters/digits plus the '/', ' ' and '-' its fields are made of.
+  const fen     = (req.query.fen     || '').replace(/[^a-zA-Z0-9/ -]/g, '').slice(0, 100);
+  const play    = (req.query.play    || '').replace(/[^a-zA-Z0-9,]/g, '');
+  const ratings = (req.query.ratings || '').replace(/[^0-9,]/g, '');
+  const speeds  = (req.query.speeds  || '').replace(/[^a-z,]/g,  '');
+  const moves   = Math.min(parseInt(req.query.moves) || 10, 20);
+  if (!fen && !play) return res.status(400).json({ error: 'need fen or play' });
+
+  const cacheKey = [fen, play, ratings, speeds, moves].join('|');
+  const cached = _lichessCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < LICHESS_CACHE_TTL) {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'public, max-age=21600');
+    res.setHeader('X-Cache', 'HIT');
+    return res.send(cached.body);
+  }
+
+  if (!explorerRateOk(clientIp(req))) {
+    return res.status(429).json({ error: 'Rate limited — try again in a minute' });
+  }
+
+  const upstream = 'https://explorer.lichess.ovh/lichess?' +
+    (fen ? 'fen=' + encodeURIComponent(fen) : 'play=' + encodeURIComponent(play)) +
+    (ratings ? '&ratings=' + encodeURIComponent(ratings) : '') +
+    (speeds  ? '&speeds='  + encodeURIComponent(speeds)  : '') +
+    '&moves=' + moves + '&topGames=0&recentGames=0';
+
+  https.get(upstream, { headers: { 'User-Agent': 'Blundermind/1.0' } }, (upstream_res) => {
+    const chunks = [];
+    upstream_res.on('data', c => chunks.push(c));
+    upstream_res.on('end', () => {
+      const body = Buffer.concat(chunks);
+      if (upstream_res.statusCode === 200) {
+        if (_lichessCache.size >= LICHESS_CACHE_MAX) {
+          _lichessCache.delete(_lichessCache.keys().next().value); // evict oldest
+        }
+        _lichessCache.set(cacheKey, { body, ts: Date.now() });
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Cache-Control', 'public, max-age=21600');
+        res.setHeader('X-Cache', 'MISS');
+        res.send(body);
+      } else {
+        console.warn('Lichess proxy upstream error:', upstream_res.statusCode);
+        res.status(upstream_res.statusCode).send(body);
+      }
+    });
+  }).on('error', e => {
+    console.error('Lichess proxy fetch error:', e.message);
+    res.status(502).json({ error: 'Lichess proxy error', detail: e.message });
   });
 });
 

@@ -919,13 +919,28 @@ function lcFallbackLevel() {
   return el ? parseInt(el.value) || 5 : 5;
 }
 
+// Book lookups are best-effort — every caller below falls back to engine play
+// when one fails. That fallback only works if failure is PROMPT, so the network
+// leg is bounded explicitly: a VPN whose tunnel outlives its underlying
+// transport swallows requests rather than refusing them, and an unbounded fetch
+// here stalls the bot's move instead of degrading. Same reasoning as the
+// navigation timeout in sw.js.
+const BOOK_FETCH_TIMEOUT_MS = 4000;
+async function bookFetch(url) {
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), BOOK_FETCH_TIMEOUT_MS);
+  try { return await fetch(url, { signal: ctrl.signal }); }
+  finally { clearTimeout(timer); }
+}
+
 async function maiaGetMoveProbs(fen) {
   try {
     // Use the selected rating band only — filter to just those games for more authentic play
     var rating = lcSelectedRating || '1200';
-    var url = 'https://explorer.lichess.ovh/lichess?fen=' + encodeURIComponent(fen) +
-              '&ratings=' + rating + '&speeds=blitz,rapid,classical&moves=15';
-    var resp = await fetch(url);
+    // Proxied, never called direct — see the /api/lichess route in server.js.
+    var url = '/api/lichess?fen=' + encodeURIComponent(fen) +
+              '&ratings=' + encodeURIComponent(rating) + '&speeds=blitz,rapid,classical&moves=15';
+    var resp = await bookFetch(url);
     if (!resp.ok) throw new Error('Lichess API error ' + resp.status);
     var data = await resp.json();
     var moves = data.moves || [];
@@ -1091,17 +1106,18 @@ async function openingExplorerFetch(moveHistory) {
   async function fetchMasters() {
     const play = moveHistory.join(',');
     const url = '/api/masters?play=' + encodeURIComponent(play) + '&moves=10';
-    const resp = await fetch(url);
+    const resp = await bookFetch(url);
     if (!resp.ok) throw new Error('masters proxy ' + resp.status);
     return resp.json();
   }
 
   async function fetchLichess() {
     const play = moveHistory.join(',');
-    const url = 'https://explorer.lichess.ovh/lichess' +
+    // Proxied, never called direct — see the /api/lichess route in server.js.
+    const url = '/api/lichess' +
                 '?play=' + encodeURIComponent(play) +
-                '&speeds=blitz,rapid,classical&ratings=1200,1400,1600,1800&moves=10&topGames=0';
-    const resp = await fetch(url);
+                '&speeds=blitz,rapid,classical&ratings=1200,1400,1600,1800&moves=10';
+    const resp = await bookFetch(url);
     if (!resp.ok) throw new Error('lichess explorer ' + resp.status);
     return resp.json();
   }
