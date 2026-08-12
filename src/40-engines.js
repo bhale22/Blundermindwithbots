@@ -862,6 +862,29 @@ async function maia3GetMoveProbs(fen) {
 // ── Lichess Explorer API (was "Maia") ────────────────────────────────────────
 let lcSelectedRating = '1200'; // default rating band
 
+// lcSelectedRating is NOT always one of the buttons below. The time-pressure
+// curves overwrite it with continuous Elo (pressureEffectiveMaiaEloByThink,
+// pressureSlotEloByThink, _maia3GetMoveProbsAtElo all do `String(elo)`), which
+// is exactly right for Maia3 — it takes a float Elo — but the explorer's
+// `ratings` filter is a fixed ENUM. An off-enum value like 1487 is not clamped
+// upstream; it invalidates the filter. Everything going over the wire is
+// therefore mapped through here first.
+//
+// Each group is a FLOOR spanning up to the next one, so we snap DOWN into the
+// containing group: rounding 1390 to the nearest group would claim it plays
+// like 1400-1599. The top UI band is labelled "2200+", so it asks for 2200 AND
+// 2500 — 2200 alone would silently exclude every game above 2500.
+const LC_RATING_BUCKETS = [0, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2500];
+function lcRatingParam(elo) {
+  var n = parseInt(elo, 10);
+  if (!isFinite(n)) return '1200';
+  var b = LC_RATING_BUCKETS[0];
+  for (var i = 0; i < LC_RATING_BUCKETS.length; i++) {
+    if (n >= LC_RATING_BUCKETS[i]) b = LC_RATING_BUCKETS[i];
+  }
+  return b === 2200 ? '2200,2500' : String(b);
+}
+
 // Default SF fallback levels for each LC rating band
 var LC_FALLBACK_MAP = {
   '400':  1, '1000': 2, '1200': 2,
@@ -935,8 +958,9 @@ async function bookFetch(url) {
 
 async function maiaGetMoveProbs(fen) {
   try {
-    // Use the selected rating band only — filter to just those games for more authentic play
-    var rating = lcSelectedRating || '1200';
+    // Filter to the selected band only, for more authentic play. lcRatingParam
+    // maps continuous Elo onto the explorer's rating enum — see its comment.
+    var rating = lcRatingParam(lcSelectedRating);
     // Proxied, never called direct — see the /api/lichess route in server.js.
     var url = '/api/lichess?fen=' + encodeURIComponent(fen) +
               '&ratings=' + encodeURIComponent(rating) + '&speeds=blitz,rapid,classical&moves=15';

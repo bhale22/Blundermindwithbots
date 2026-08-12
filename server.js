@@ -97,6 +97,136 @@ const _mastersCache = new Map();
 const MASTERS_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 const MASTERS_CACHE_MAX = 5000; // ~a few MB; Map keeps insertion order → drop oldest
 
+// ── The explorer contract, pinned in one place ───────────────────────────────
+// Three things about this upstream changed under us, and each one fails
+// SILENTLY at the call site (no moves → bot quietly plays out of book), so all
+// three are pinned here instead of being spread across the two routes:
+//
+//  1. AUTHENTICATION IS NOW MANDATORY. Anonymous requests get a bare nginx
+//     "401 Authorization Required" — no JSON body, no WWW-Authenticate header.
+//     Lichess locked the explorer down after it was used as an attack vector.
+//  2. The documented hostname is now explorer.lichess.org. The old
+//     explorer.lichess.ovh still answers (identically, 401 included), but the
+//     spec names the .org one, so that is what we track.
+//  3. Rating groups are a fixed ENUM. An off-enum number is NOT clamped for
+//     you — it invalidates the filter — so nothing raw reaches the upstream.
+// Overridable so the proxy can be pointed at a local lila-openingexplorer (the
+// spec lists http://localhost:9002 as an alternate server) or at a stub in tests.
+const EXPLORER_HOST = (process.env.EXPLORER_HOST || 'https://explorer.lichess.org').replace(/\/$/, '');
+
+// A Lichess personal access token. No OAuth scope is needed: the explorer only
+// wants to know the request belongs to somebody. Create one with every checkbox
+// left unticked at https://lichess.org/account/oauth/token/create and set it in
+// the environment (on Railway, a service variable — never a committed file).
+const LICHESS_TOKEN = (process.env.LICHESS_TOKEN || '').trim();
+if (!LICHESS_TOKEN) {
+  console.warn('[explorer] LICHESS_TOKEN is not set — every opening-explorer ' +
+               'request will 401 and bots will play out of book from move 1.');
+}
+
+// Each group is a FLOOR spanning up to the next one: 1600 means 1600-1799, and
+// 2500 means 2500 and up. This is the complete legal set.
+const RATING_BUCKETS = [0, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2500];
+const SPEEDS = ['ultraBullet', 'bullet', 'blitz', 'rapid', 'classical', 'correspondence'];
+
+const clampInt = (v, lo, hi, dflt) => {
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt;
+};
+
+// FEN fields are letters, digits, '/', spaces, and the '-' that means "none".
+const cleanFen = (v) => (v || '').replace(/[^a-zA-Z0-9/ -]/g, '').slice(0, 100);
+
+// Masters dates are plain integer YEARS (the OTB database starts at 1952).
+// A malformed value is dropped rather than forwarded: a bad date filter makes
+// the upstream reject the whole query, which reads here as "no book moves".
+const yearParam = (v) => {
+  const n = parseInt(v, 10);
+  return (Number.isFinite(n) && n >= 1000 && n <= 3000) ? n : null;
+};
+
+// The Lichess-games database wants 'YYYY-MM' instead. A bare 'YYYY' is widened
+// to that year's edge so callers can think in whole years against BOTH
+// databases and let this layer speak each one's dialect.
+const monthParam = (v, endOfYear) => {
+  const s = String(v || '').trim();
+  let m = /^(\d{4})-(\d{2})$/.exec(s);
+  if (m) return (+m[2] >= 1 && +m[2] <= 12) ? s : null;
+  m = /^(\d{4})$/.exec(s);
+  return m ? m[1] + (endOfYear ? '-12' : '-01') : null;
+};
+
+// Snap DOWN to the containing group (1487 → 1400), because a group is a floor.
+// Callers hand us continuous Elo from the time-pressure curves, and rounding to
+// the NEAREST group would report a 1390 bot as playing 1400-1599 moves.
+const snapBucket = (n) => {
+  let b = RATING_BUCKETS[0];
+  for (const x of RATING_BUCKETS) if (n >= x) b = x;
+  return b;
+};
+const ratingsParam = (v) => {
+  const out = String(v || '').split(',')
+    .map(s => parseInt(s, 10)).filter(Number.isFinite).map(snapBucket);
+  return [...new Set(out)].sort((a, b) => a - b).join(',');
+};
+
+// Whitelist by exact name — note 'ultraBullet' is camelCase, so a lowercase-only
+// filter would silently drop it.
+const speedsParam = (v) => {
+  const out = String(v || '').split(',').map(s => s.trim()).filter(s => SPEEDS.includes(s));
+  return [...new Set(out)].join(',');
+};
+
+// One bounded upstream leg, shared by both routes. The timeout is explicit
+// because a hung socket would outlive the client's own 4s abort and hold the
+// request open long after anyone was still waiting for it.
+const EXPLORER_TIMEOUT_MS = 8000;
+function explorerGet(pathAndQuery, cb) {
+  let done = false;
+  const finish = (err, status, body) => { if (!done) { done = true; cb(err, status, body); } };
+  const agent = EXPLORER_HOST.startsWith('http://') ? http : https;
+  const req = agent.get(EXPLORER_HOST + pathAndQuery, {
+    headers: {
+      'User-Agent': 'Blundermind/1.0',
+      'Accept': 'application/json',
+      ...(LICHESS_TOKEN ? { Authorization: 'Bearer ' + LICHESS_TOKEN } : {})
+    }
+  }, (up) => {
+    const chunks = [];
+    up.on('data', c => chunks.push(c));
+    up.on('end', () => finish(null, up.statusCode, Buffer.concat(chunks)));
+  });
+  req.setTimeout(EXPLORER_TIMEOUT_MS, () => req.destroy(new Error('upstream timeout')));
+  req.on('error', e => finish(e));
+}
+
+// Shared tail for both routes: cache a 200, and translate upstream failures
+// into something diagnosable. A 401 in particular must never look like "this
+// position has no games" — that is exactly how a dead token hides for weeks.
+function sendExplorer(res, { cache, max, maxAge, cacheKey, label }) {
+  return (err, status, body) => {
+    if (err) {
+      console.error(`[explorer] ${label} fetch error:`, err.message);
+      return res.status(502).json({ error: 'Explorer proxy error', detail: err.message });
+    }
+    if (status === 200) {
+      if (cache.size >= max) cache.delete(cache.keys().next().value); // evict oldest
+      cache.set(cacheKey, { body, ts: Date.now() });
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Cache-Control', `public, max-age=${maxAge}`);
+      res.setHeader('X-Cache', 'MISS');
+      return res.send(body);
+    }
+    if (status === 401) {
+      console.error(`[explorer] ${label} upstream 401 — LICHESS_TOKEN is ` +
+                    (LICHESS_TOKEN ? 'set but rejected (expired or revoked?)' : 'MISSING'));
+      return res.status(502).json({ error: 'Explorer auth failed', tokenPresent: !!LICHESS_TOKEN });
+    }
+    console.warn(`[explorer] ${label} upstream error:`, status, body.toString('utf8').slice(0, 200));
+    return res.status(status).send(body);
+  };
+}
+
 // Light per-IP rate limit so one client can't use us as an open Lichess proxy
 // (and get our server IP throttled upstream, breaking openings for everyone).
 // 60 upstream-bound requests/min is far above real gameplay; cache hits are free.
@@ -121,12 +251,28 @@ function explorerRateOk(ip) {
 const clientIp = (req) =>
   req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || '?';
 
+// Query params: play (UCI list) and/or fen, moves, topGames, since, until.
+// `since`/`until` are YEARS here — this is the era filter (e.g. since=1990 to
+// skip a century of romantic-era gambits that no modern master plays).
 app.get('/api/masters', (req, res) => {
-  const play  = (req.query.play  || '').replace(/[^a-zA-Z0-9,]/g, '');
-  const moves = Math.min(parseInt(req.query.moves) || 10, 20);
-  const cacheKey = play + ':' + moves;
+  const play  = (req.query.play || '').replace(/[^a-zA-Z0-9,]/g, '');
+  const fen   = cleanFen(req.query.fen);
+  const moves = clampInt(req.query.moves, 1, 20, 10);
+  const top   = clampInt(req.query.topGames, 0, 15, 0);
+  const since = yearParam(req.query.since);
+  const until = yearParam(req.query.until);
+  if (!fen && !play) return res.status(400).json({ error: 'need fen or play' });
 
-  const cached = _mastersCache.get(cacheKey);
+  const query = '?' + [
+    fen ? 'fen=' + encodeURIComponent(fen) : null,
+    'play=' + encodeURIComponent(play),
+    'moves=' + moves,
+    'topGames=' + top,
+    since != null ? 'since=' + since : null,
+    until != null ? 'until=' + until : null
+  ].filter(Boolean).join('&');
+
+  const cached = _mastersCache.get(query);
   if (cached && Date.now() - cached.ts < MASTERS_CACHE_TTL) {
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Cache-Control', 'public, max-age=86400');
@@ -139,59 +285,52 @@ app.get('/api/masters', (req, res) => {
     return res.status(429).json({ error: 'Rate limited — try again in a minute' });
   }
 
-  const upstream = 'https://explorer.lichess.ovh/masters' +
-    '?play=' + encodeURIComponent(play) +
-    '&moves=' + moves +
-    '&topGames=0&recentGames=0';
-
-  https.get(upstream, { headers: { 'User-Agent': 'Blundermind/1.0' } }, (upstream_res) => {
-    const chunks = [];
-    upstream_res.on('data', c => chunks.push(c));
-    upstream_res.on('end', () => {
-      const body = Buffer.concat(chunks);
-      if (upstream_res.statusCode === 200) {
-        if (_mastersCache.size >= MASTERS_CACHE_MAX) {
-          _mastersCache.delete(_mastersCache.keys().next().value); // evict oldest
-        }
-        _mastersCache.set(cacheKey, { body, ts: Date.now() });
-        res.setHeader('Content-Type', 'application/json');
-        res.setHeader('Cache-Control', 'public, max-age=86400');
-        res.setHeader('X-Cache', 'MISS');
-        res.send(body);
-      } else {
-        console.warn('Masters proxy upstream error:', upstream_res.statusCode);
-        res.status(upstream_res.statusCode).send(body);
-      }
-    });
-  }).on('error', e => {
-    console.error('Masters proxy fetch error:', e.message);
-    res.status(502).json({ error: 'Masters proxy error', detail: e.message });
-  });
+  explorerGet('/masters' + query, sendExplorer(res, {
+    cache: _mastersCache, max: MASTERS_CACHE_MAX,
+    maxAge: 86400, cacheKey: query, label: 'masters'
+  }));
 });
 
 // ── Lichess player-games explorer proxy ──────────────────────────────────────
-// Unlike /masters, this endpoint DOES accept browser requests — which is how
-// the client came to call it directly, and why the privacy policy's promise
-// that "your IP address and identity are never shared with Lichess" had
-// quietly stopped being true. It goes through here for that reason alone.
-// Do not reintroduce a direct explorer.lichess.ovh call from the client.
+// This used to be called directly from the browser, which quietly broke the
+// privacy policy's promise that "your IP address and identity are never shared
+// with Lichess". It goes through here for that reason — and now for a second,
+// harder one: the upstream requires a bearer token, and a token shipped to the
+// browser is a published token. Do not reintroduce a direct explorer call from
+// the client; there is no way to authenticate one without leaking the secret.
 //
 // Queried two ways: by `fen` (a single position) and by `play` (a move list).
 const _lichessCache = new Map();
 const LICHESS_CACHE_TTL = 6 * 60 * 60 * 1000; // 6h — live stats drift, slowly
 const LICHESS_CACHE_MAX = 5000;
 
+// Query params: play and/or fen, ratings, speeds, moves, since, until.
+// `ratings` is snapped to the legal enum here, so callers may pass a raw Elo.
+// `since`/`until` accept 'YYYY-MM' or a bare 'YYYY' (widened to Jan/Dec).
 app.get('/api/lichess', (req, res) => {
-  // FEN keeps letters/digits plus the '/', ' ' and '-' its fields are made of.
-  const fen     = (req.query.fen     || '').replace(/[^a-zA-Z0-9/ -]/g, '').slice(0, 100);
-  const play    = (req.query.play    || '').replace(/[^a-zA-Z0-9,]/g, '');
-  const ratings = (req.query.ratings || '').replace(/[^0-9,]/g, '');
-  const speeds  = (req.query.speeds  || '').replace(/[^a-z,]/g,  '');
-  const moves   = Math.min(parseInt(req.query.moves) || 10, 20);
+  const fen     = cleanFen(req.query.fen);
+  const play    = (req.query.play || '').replace(/[^a-zA-Z0-9,]/g, '');
+  const ratings = ratingsParam(req.query.ratings);
+  const speeds  = speedsParam(req.query.speeds);
+  const moves   = clampInt(req.query.moves, 1, 20, 10);
+  const since   = monthParam(req.query.since, false);
+  const until   = monthParam(req.query.until, true);
   if (!fen && !play) return res.status(400).json({ error: 'need fen or play' });
 
-  const cacheKey = [fen, play, ratings, speeds, moves].join('|');
-  const cached = _lichessCache.get(cacheKey);
+  // fen and play compose: play continues FROM fen. Sending both when we have
+  // both is what lets the upstream still name the opening.
+  const query = '?' + [
+    fen ? 'fen=' + encodeURIComponent(fen) : null,
+    play ? 'play=' + encodeURIComponent(play) : null,
+    ratings ? 'ratings=' + ratings : null,
+    speeds ? 'speeds=' + speeds : null,
+    'moves=' + moves,
+    'topGames=0', 'recentGames=0',
+    since ? 'since=' + since : null,
+    until ? 'until=' + until : null
+  ].filter(Boolean).join('&');
+
+  const cached = _lichessCache.get(query);
   if (cached && Date.now() - cached.ts < LICHESS_CACHE_TTL) {
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Cache-Control', 'public, max-age=21600');
@@ -203,34 +342,31 @@ app.get('/api/lichess', (req, res) => {
     return res.status(429).json({ error: 'Rate limited — try again in a minute' });
   }
 
-  const upstream = 'https://explorer.lichess.ovh/lichess?' +
-    (fen ? 'fen=' + encodeURIComponent(fen) : 'play=' + encodeURIComponent(play)) +
-    (ratings ? '&ratings=' + encodeURIComponent(ratings) : '') +
-    (speeds  ? '&speeds='  + encodeURIComponent(speeds)  : '') +
-    '&moves=' + moves + '&topGames=0&recentGames=0';
+  explorerGet('/lichess' + query, sendExplorer(res, {
+    cache: _lichessCache, max: LICHESS_CACHE_MAX,
+    maxAge: 21600, cacheKey: query, label: 'lichess'
+  }));
+});
 
-  https.get(upstream, { headers: { 'User-Agent': 'Blundermind/1.0' } }, (upstream_res) => {
-    const chunks = [];
-    upstream_res.on('data', c => chunks.push(c));
-    upstream_res.on('end', () => {
-      const body = Buffer.concat(chunks);
-      if (upstream_res.statusCode === 200) {
-        if (_lichessCache.size >= LICHESS_CACHE_MAX) {
-          _lichessCache.delete(_lichessCache.keys().next().value); // evict oldest
-        }
-        _lichessCache.set(cacheKey, { body, ts: Date.now() });
-        res.setHeader('Content-Type', 'application/json');
-        res.setHeader('Cache-Control', 'public, max-age=21600');
-        res.setHeader('X-Cache', 'MISS');
-        res.send(body);
-      } else {
-        console.warn('Lichess proxy upstream error:', upstream_res.statusCode);
-        res.status(upstream_res.statusCode).send(body);
-      }
+// Health probe for the explorer leg. The 401 failure mode is invisible from the
+// app (no book moves just looks like a quiet bot), so there is one URL that
+// says plainly whether the token works: GET /api/explorer-health
+app.get('/api/explorer-health', (req, res) => {
+  explorerGet('/masters?play=e2e4&moves=1&topGames=0', (err, status, body) => {
+    if (err) return res.status(502).json({ ok: false, tokenPresent: !!LICHESS_TOKEN, error: err.message });
+    let moves = null;
+    try { moves = JSON.parse(body.toString('utf8')).moves?.length ?? null; } catch (_) {}
+    res.status(status === 200 ? 200 : 502).json({
+      ok: status === 200,
+      upstreamStatus: status,
+      tokenPresent: !!LICHESS_TOKEN,
+      host: EXPLORER_HOST,
+      movesReturned: moves,
+      hint: status === 401
+        ? (LICHESS_TOKEN ? 'Token was rejected — expired or revoked. Create a new one.'
+                         : 'Set LICHESS_TOKEN in the environment.')
+        : undefined
     });
-  }).on('error', e => {
-    console.error('Lichess proxy fetch error:', e.message);
-    res.status(502).json({ error: 'Lichess proxy error', detail: e.message });
   });
 });
 
