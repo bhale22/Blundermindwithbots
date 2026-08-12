@@ -1672,9 +1672,18 @@ function closeBotModal() {
   if (modal) modal.style.display = 'none';
 }
 
+// Pick the band BUTTON a continuous Elo belongs to. The bands are floors, not
+// points — the 1600 button plays 1600-1799 games, and 400 covers everything
+// below 1000 — so this snaps DOWN into the band that CONTAINS the rating.
+// Snapping to the nearest one instead answered a 1550 bot with 1600-1799 games:
+// a band it does not belong to, and one it can only have reached by rounding up
+// out of its own. Same floor-vs-nearest distinction lcRatingParam makes on the
+// wire; this is the UI half of it.
 function _snapToLcBand(elo) {
   const bands = [400, 1000, 1200, 1400, 1600, 1800, 2000, 2200];
-  return String(bands.reduce((p, c) => Math.abs(c - elo) < Math.abs(p - elo) ? c : p));
+  let band = bands[0];
+  for (const b of bands) if (elo >= b) band = b;
+  return String(band);
 }
 
 window.addEventListener('message', function(e) {

@@ -155,6 +155,59 @@ const legacy = await page.evaluate(() => {
 ok(legacy.differing === false, 'legacy bot with differing ELOs loads unlinked');
 ok(legacy.equal === true, 'legacy bot with equal ELOs loads linked');
 
+// ── App side: what a typed ELO actually asks Lichess for ────────────────────
+// The chain decides the number; _snapToLcBand picks the band button and
+// lcRatingParam turns that into the wire filter. Both halves must floor into
+// the band that CONTAINS the rating, or the panel promises a strength the
+// explorer never answers with.
+console.log('\nELO → band → wire parameter:');
+await page.goto(BASE + '/', { waitUntil: 'networkidle' });
+await page.waitForTimeout(800);
+await page.evaluate(() => landingChoose('solo'));
+await page.waitForTimeout(500);
+
+const band = (elo) => page.evaluate((e) => ({
+  button: _snapToLcBand(e),
+  wire:   lcRatingParam(_snapToLcBand(e)),
+}), elo);
+
+for (const [elo, wantBtn, wantWire, note] of [
+  [1550, '1400', '1400',      'the case that was rounding UP out of its own band'],
+  [1400, '1400', '1400',      'exactly on a boundary'],
+  [1599, '1400', '1400',      'top of the band'],
+  [1600, '1600', '1600',      'first rating of the next band'],
+  [1999, '1800', '1800',      'just under the boundary'],
+  [ 900, '400',  '0',         'below 1000 falls in the bottom band'],
+  [ 600, '400',  '0',         'the Elo floor'],
+  [2600, '2200', '2200,2500', 'the ceiling reaches the open-ended top band'],
+  [2200, '2200', '2200,2500', '"2200+" really means 2200 and above'],
+]) {
+  const got = await band(elo);
+  ok(got.button === wantBtn && got.wire === wantWire,
+     `${elo} → band ${got.button} → ratings=${got.wire}  · ${note}`);
+}
+
+// Every band button must survive the round trip to itself, or loading a bot
+// would quietly shift the band it was saved with.
+const stable = await page.evaluate(() =>
+  [400, 1000, 1200, 1400, 1600, 1800, 2000, 2200]
+    .filter((b) => _snapToLcBand(b) !== String(b)));
+ok(stable.length === 0, 'every band button maps to itself (' + (stable.join(',') || 'all stable') + ')');
+
+// And nothing may reach the wire off the enum.
+const legal = new Set(['0','1000','1200','1400','1600','1800','2000','2200','2500']);
+const offEnum = await page.evaluate(() => {
+  const bad = [];
+  for (let e = 600; e <= 2600; e += 1) {
+    const w = lcRatingParam(_snapToLcBand(e));
+    for (const part of w.split(',')) bad.push([e, part]);
+  }
+  return bad.filter(([, p]) => !['0','1000','1200','1400','1600','1800','2000','2200','2500'].includes(p));
+});
+ok(offEnum.length === 0,
+   'sweep 600-2600: every wire value is on the Lichess enum' +
+   (offEnum.length ? ' — got ' + JSON.stringify(offEnum.slice(0, 3)) : ''));
+
 console.log('\nerrors:', errors.length ? errors.join('\n  ') : 'none');
 console.log(pass + ' passed, ' + fail + ' failed');
 await browser.close();
