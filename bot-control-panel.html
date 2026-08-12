@@ -454,6 +454,33 @@ table.tg td.tg-inc-lbl{
 .dlbl::before,.dlbl::after{content:'';flex:1;height:0.5px;background:var(--border);}
 
 .ctrl{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+/* ── Chain link between two ELO boxes ──────────────────────────────────────
+   A bracket spanning both rows with a two-link chain on it. Linked: the links
+   touch and the bracket is solid. Broken: they pull apart and it goes dashed
+   and dim — the state has to be readable at a glance, without the tooltip. */
+.elo-chain-group{display:flex;align-items:stretch;gap:6px;}
+.elo-chain-rows{flex:1;min-width:0;}
+.elo-chain{
+  flex:0 0 auto;display:flex;align-items:center;
+  background:none;border:0;padding:0;margin:0;cursor:pointer;
+  color:var(--text-dim);transition:color .15s;
+}
+.elo-chain.linked{color:var(--amber);}
+.elo-chain:hover{color:var(--amber-bright);}
+.elo-chain:focus-visible{outline:1px solid var(--amber);outline-offset:2px;border-radius:3px;}
+.elo-chain-bracket{
+  width:7px;align-self:stretch;margin:7px 0;
+  border:1.5px solid currentColor;border-left:0;border-radius:0 4px 4px 0;
+  opacity:.5;transition:opacity .15s;
+}
+.elo-chain:not(.linked) .elo-chain-bracket{opacity:.16;border-style:dashed;}
+.elo-chain-icon{width:15px;height:24px;display:block;margin-left:-1px;}
+.elo-chain-icon .lk{
+  fill:none;stroke:currentColor;stroke-width:2.4;
+  transform-box:view-box;transform-origin:center;transition:transform .18s ease;
+}
+.elo-chain:not(.linked) .lk-a{transform:translateY(-3px);}
+.elo-chain:not(.linked) .lk-b{transform:translateY(3px);}
 .ctrl-lbl{font-family:var(--font-m);font-size:9.5px;letter-spacing:0.06em;color:var(--text-secondary);min-width:100px;text-transform:uppercase;}
 .ctrl-val{font-family:var(--font-m);font-size:11px;color:var(--amber-bright);min-width:46px;text-align:right;}
 /* .ctrl-val is also applied to <input type="number"> boxes, where the browser
@@ -2793,15 +2820,35 @@ body.fj .picon{font-weight:500;}
           <!-- LC + Maia sub-panel -->
           <div id="engine-sub-lcmaia" style="display:none;">
             <div class="dlbl"><span>LC + Maia 3</span></div>
-            <div class="ctrl">
-              <span class="ctrl-lbl">Lichess ELO</span>
-              <input type="number" min="600" max="2600" step="25" value="1200" id="lcmaia-lc-elo"
-                style="width:70px;padding:4px 6px;font-family:var(--font-m);font-size:11px;color:var(--amber-bright);background:var(--carbon-surface);border:0.5px solid var(--border-amber);border-radius:2px;text-align:center;outline:none;">
-            </div>
-            <div class="ctrl" style="margin-top:6px;">
-              <span class="ctrl-lbl">Maia 3 ELO</span>
-              <input type="number" min="600" max="2600" step="25" value="1500" id="lcmaia-maia-elo"
-                style="width:70px;padding:4px 6px;font-family:var(--font-m);font-size:11px;color:var(--amber-bright);background:var(--carbon-surface);border:0.5px solid var(--border-amber);border-radius:2px;text-align:center;outline:none;">
+            <!-- Two readings of one idea — "how strong is this opponent" — taken
+                 from the explorer's rating band and from Maia's own Elo. Joined
+                 by default, because wanting them apart is the rarer case. -->
+            <div class="elo-chain-group">
+              <div class="elo-chain-rows">
+                <div class="ctrl" style="margin-bottom:6px;">
+                  <span class="ctrl-lbl">Lichess ELO</span>
+                  <input type="number" min="600" max="2600" step="25" value="1200" id="lcmaia-lc-elo"
+                    oninput="onLcMaiaEloInput('lc')"
+                    style="width:70px;padding:4px 6px;font-family:var(--font-m);font-size:11px;color:var(--amber-bright);background:var(--carbon-surface);border:0.5px solid var(--border-amber);border-radius:2px;text-align:center;outline:none;">
+                </div>
+                <div class="ctrl" style="margin-bottom:0;">
+                  <span class="ctrl-lbl">Maia 3 ELO</span>
+                  <input type="number" min="600" max="2600" step="25" value="1500" id="lcmaia-maia-elo"
+                    oninput="onLcMaiaEloInput('maia')"
+                    style="width:70px;padding:4px 6px;font-family:var(--font-m);font-size:11px;color:var(--amber-bright);background:var(--carbon-surface);border:0.5px solid var(--border-amber);border-radius:2px;text-align:center;outline:none;">
+                </div>
+              </div>
+              <button type="button" id="lcmaia-chain" class="elo-chain linked"
+                      onclick="toggleLcMaiaChain()" aria-pressed="true"
+                      title="Linked — the two ELOs move together. Click to set them separately.">
+                <span class="elo-chain-bracket" aria-hidden="true"></span>
+                <svg class="elo-chain-icon" viewBox="0 0 20 34" aria-hidden="true">
+                  <!-- Offset horizontally as well as stacked: two rings on the
+                       same axis just read as a figure-8 at this size. -->
+                  <rect class="lk lk-a" x="2.5"  y="3"  width="9" height="15" rx="4.5"/>
+                  <rect class="lk lk-b" x="8.5" y="15" width="9" height="15" rx="4.5"/>
+                </svg>
+              </button>
             </div>
             <div class="ctrl-hint" style="margin-top:8px;">LC modes use the Lichess Open Explorer as an opening book; Maia 3 takes over when the book runs dry.</div>
             <!-- Maia model status / download -->
@@ -8177,6 +8224,7 @@ function getBotConfig(){
     lcsfElo:         parseInt(document.getElementById('lcsf-lc-elo')?.value || '2000'),
     lcMaiaLcElo:     parseInt(document.getElementById('lcmaia-lc-elo')?.value || '2000'),
     lcMaiaMaiaElo:   parseInt(document.getElementById('lcmaia-maia-elo')?.value || '1500'),
+    lcMaiaEloLinked: lcMaiaEloLinked,
     // Curve-implied max drop (base ELO − curve minimum): consumed by the SF
     // level-floor mapping and legacy readers. The ctrlA spline is what runs.
     timePressureMaxDrop: Math.max(0, Math.round(currentElo - ctrlA.reduce((m, p) => Math.min(m, +p.y), currentElo))),
@@ -8234,6 +8282,20 @@ function applyBotConfig(cfg){
   grp(() => setSFVariety(cfg.sfvar1 || 0, cfg.sfvar2 || 0));
   grp(() => {
     const set = (id, v) => { const el = document.getElementById(id); if(el && v != null) el.value = v; };
+    // Restore the chain before the values, so the switch never contradicts the
+    // numbers under it.
+    if(cfg.lcMaiaEloLinked != null){
+      lcMaiaEloLinked = !!cfg.lcMaiaEloLinked;
+    }else if(cfg.lcMaiaLcElo != null && cfg.lcMaiaMaiaElo != null){
+      // Saved before the chain existed, so infer it from the values themselves:
+      // a bot whose two ELOs were deliberately different must not load showing
+      // a joined chain over unequal numbers. Equal values land on joined, which
+      // is what the default would have given anyway.
+      lcMaiaEloLinked = (cfg.lcMaiaLcElo === cfg.lcMaiaMaiaElo);
+    }
+    _syncLcMaiaChainUi();
+    // Plain .value writes do not fire oninput, so the two boxes keep exactly
+    // the pair that was saved — the chain does not reconcile them on load.
     set('lcsf-lc-elo',    cfg.lcsfElo);
     set('lcmaia-lc-elo',  cfg.lcMaiaLcElo);
     set('lcmaia-maia-elo',cfg.lcMaiaMaiaElo);
@@ -9558,9 +9620,85 @@ function updateSpeedo(elo){
   eloTxt.textContent = elo;
 }
 
+/* ── LC + Maia ELO chain ──────────────────────────────────────────────────
+   In LC+Maia the explorer supplies the opening book and Maia takes over when
+   the book dries up, so there are two Elo numbers for what is usually one
+   intention. Chained by default; break it for the deliberate case (a strong
+   master-level book with a club-level middlegame, or the reverse).
+
+   Maia's box is NOT a second quantity — it is the Elometer, shown again where
+   it is used. Those two always track each other in both directions. The chain
+   only governs whether the LICHESS number follows along. */
+let lcMaiaEloLinked = true;
+
+// setElo writes the boxes and the boxes call setElo, so every writer passes
+// through this guard rather than relying on value-equality to stop the loop.
+let _eloSyncing = false;
+
+function syncLcMaiaFromElometer(elo){
+  if(_eloSyncing) return;
+  _eloSyncing = true;
+  const m = document.getElementById('lcmaia-maia-elo');
+  if(m) m.value = elo;
+  if(lcMaiaEloLinked){
+    const l = document.getElementById('lcmaia-lc-elo');
+    if(l) l.value = elo;
+  }
+  _eloSyncing = false;
+}
+
+function onLcMaiaEloInput(which){
+  if(_eloSyncing) return;
+  const src = document.getElementById(which === 'lc' ? 'lcmaia-lc-elo' : 'lcmaia-maia-elo');
+  if(!src) return;
+  const v = clampElo(parseInt(src.value, 10) || 1500);
+  if(lcMaiaEloLinked){
+    _eloSyncing = true;
+    const other = document.getElementById(which === 'lc' ? 'lcmaia-maia-elo' : 'lcmaia-lc-elo');
+    if(other) other.value = v;
+    _eloSyncing = false;
+  }
+  // Editing Maia's box moves the gauge because they are the same number.
+  // Editing the Lichess box only does so while the chain holds.
+  if(which === 'maia' || lcMaiaEloLinked) setElo(v);
+}
+
+function toggleLcMaiaChain(){
+  lcMaiaEloLinked = !lcMaiaEloLinked;
+  try{ localStorage.setItem('bm_lcmaiaEloLink', lcMaiaEloLinked ? '1' : '0'); }catch(e){}
+  // Re-joining adopts MAIA's value. The alternative — adopting the book's —
+  // would drag the Elometer to whatever the book happened to be set to, which
+  // is a bigger surprise than the book moving.
+  if(lcMaiaEloLinked){
+    const m = document.getElementById('lcmaia-maia-elo');
+    const l = document.getElementById('lcmaia-lc-elo');
+    if(m && l){ _eloSyncing = true; l.value = m.value; _eloSyncing = false; }
+  }
+  _syncLcMaiaChainUi();
+}
+
+function _syncLcMaiaChainUi(){
+  const btn = document.getElementById('lcmaia-chain');
+  if(!btn) return;
+  btn.classList.toggle('linked', lcMaiaEloLinked);
+  btn.setAttribute('aria-pressed', lcMaiaEloLinked ? 'true' : 'false');
+  btn.title = lcMaiaEloLinked
+    ? 'Linked — the two ELOs move together. Click to set them separately.'
+    : 'Unlinked — book and Maia are set separately. Click to re-join them.';
+}
+
+function _initLcMaiaChain(){
+  let stored = null;
+  try{ stored = localStorage.getItem('bm_lcmaiaEloLink'); }catch(e){}
+  lcMaiaEloLinked = (stored === null) ? true : (stored === '1');   // default joined
+  _syncLcMaiaChainUi();
+  if(lcMaiaEloLinked) syncLcMaiaFromElometer(currentElo);
+}
+
 function setElo(elo){
   currentElo = elo;
   updateSpeedo(elo);
+  syncLcMaiaFromElometer(elo);
   document.getElementById('elo-input').value = elo;
   document.getElementById('st-engine').textContent = `Maia 3 · ${elo}`;
   document.getElementById('qs-engine-pill').textContent = `Maia 3 · ${elo}`;
@@ -11906,6 +12044,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   foldHowMoves();
   onDaySlider(); // init dual-range fill
   _updateEnginePanelHeader();
+  _initLcMaiaChain();        // restore the ELO chain, then seed both boxes from the Elometer
   updatePersonalityGating(); // reflect the initial engine in the personality section
   initPts();
   setupDrag('cvA', ()=>ctrlA, reganEloA, true,  'tipA', ()=>scaleA);

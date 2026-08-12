@@ -402,6 +402,62 @@ function legalMovesFor(sq,bd,ep,cst){
 }
 function allLegalMoves(bd,col,ep,cst){const all=[];for(let s=0;s<64;s++)if(bd[s]&&bd[s].color===col)for(const t of legalMovesFor(s,bd,ep,cst))all.push({from:s,to:t});return all;}
 
+// ── Premove destinations ────────────────────────────────────────────────────
+// A premove is committed before the opponent has replied, so it CANNOT be
+// checked for legality: the position it will land in does not exist yet.
+// Chess.com and Lichess both resolve this optimistically — offer the squares a
+// piece could plausibly reach, then validate for real at fire time and discard
+// whatever failed. This generates that optimistic set.
+//
+// "Plausible" differs from "legal" in three ways, and each one is a move people
+// genuinely want to queue:
+//   • Enemy pieces are not blockers. They may move, so we slide THROUGH them
+//     and may land on them — that is the capture that isn't available yet.
+//   • Pawns may step diagonally onto an empty square. That is the recapture
+//     you are pre-committing to.
+//   • Check is not evaluated at all. Whether we end up in check depends on the
+//     opponent's move, which hasn't happened.
+// Own pieces ARE blockers: nothing can move them aside first, because any
+// earlier premove in the chain is already applied to the board passed in here.
+function premoveDests(sq,bd,cst){
+  const p=bd[sq];if(!p)return[];
+  const{r,c}=sqRC(sq);const col=p.color;const out=new Set();
+  const mine=(t)=>bd[t]&&bd[t].color===col;
+  const add=(rr,cc)=>{if(valid(rr,cc)){const t=rcSq(rr,cc);if(!mine(t))out.add(t);}};
+  const ray=(dr,dc)=>{
+    for(let rr=r+dr,cc=c+dc;valid(rr,cc);rr+=dr,cc+=dc){
+      const t=rcSq(rr,cc);
+      if(mine(t))break;   // our own piece stops the ray; an enemy one does not
+      out.add(t);
+    }
+  };
+  if(p.piece==='P'){
+    const d=col==='w'?-1:1,start=col==='w'?6:1;
+    add(r+d,c);
+    if(r===start&&valid(r+d,c)&&!mine(rcSq(r+d,c)))add(r+2*d,c);
+    add(r+d,c-1);add(r+d,c+1);
+  }else if(p.piece==='N'){
+    for(const[dr,dc]of[[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]])add(r+dr,c+dc);
+  }else if(p.piece==='K'){
+    for(const[dr,dc]of[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]])add(r+dr,c+dc);
+    // Castling rights and an empty path are knowable now; passing through check
+    // is not, so that part is left to fire-time validation.
+    if(c===4&&cst){
+      const rk=col==='w'?{K:cst.wK,Q:cst.wQ}:{K:cst.bK,Q:cst.bQ};
+      const rookAt=(cc)=>{const t=rcSq(r,cc);return bd[t]&&bd[t].piece==='R'&&bd[t].color===col;};
+      if(rk.K&&rookAt(7)&&!bd[rcSq(r,5)]&&!bd[rcSq(r,6)])out.add(rcSq(r,6));
+      if(rk.Q&&rookAt(0)&&!bd[rcSq(r,3)]&&!bd[rcSq(r,2)]&&!bd[rcSq(r,1)])out.add(rcSq(r,2));
+    }
+  }else{
+    const dirs=p.piece==='R'?[[-1,0],[1,0],[0,-1],[0,1]]
+              :p.piece==='B'?[[-1,-1],[-1,1],[1,-1],[1,1]]
+              :[[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
+    for(const[dr,dc]of dirs)ray(dr,dc);
+  }
+  out.delete(sq);
+  return[...out];
+}
+
 function applyMove(from,to,bd,ep,promo){
   const bd2={...bd},p=bd2[from];bd2[to]=p;delete bd2[from];
   if(p.piece==='P'&&to===ep)delete bd2[rcSq(Math.floor(from/8),to%8)];

@@ -2799,7 +2799,7 @@ function mpReceiveMove(move, syncTimeW, syncTimeB) {
   }
   mpUpdateTurnIndicator();
   // Fire queued premove if any
-  if(activePremove) setTimeout(tryFirePremove, 50);
+  if(premoveQueue.length) setTimeout(tryFirePremove, 50);
 }
 
 // True only when a real game is under way. mpRoomId alone is not enough: a room
@@ -3821,6 +3821,11 @@ let promotionPending=null,gameOver=false;
 let previewBoard=null,previewAtk=null,previewEpSq=-1,previewCastling=null,premoveFrom=-1,premoveTo=-1;
 let hoverSq=-1;
 // ── Premove state ────────────────────────────────────────────
-let activePremove=null; // {from,to,promo} or null
+// A QUEUE, not a single move: one entry is consumed per opponent reply, so a
+// player can pre-commit a whole sequence. That is Chess.com's model; Lichess
+// allows only one. Capped because a long chain is near-certain to break at some
+// link, and every queued move is another arrow the board has to carry.
+let premoveQueue=[];    // [{from,to,promo}] — index 0 fires next
+const PREMOVE_MAX=10;
 
 // ---- FEN ----
