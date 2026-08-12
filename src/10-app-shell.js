@@ -2571,13 +2571,6 @@ function mpCopyLink() {
   }).catch(() => { link.select(); document.execCommand('copy'); });
 }
 
-function mpShareDiscord() {
-  const link = document.getElementById('mpInviteLink');
-  if (!link) return;
-  const text = '♟ Join my Blundermind game: ' + link.value;
-  navigator.clipboard.writeText(text).then(() => mpShowStatus('Discord message copied — paste it in a DM!'));
-}
-
 function mpShareText() {
   const link = document.getElementById('mpInviteLink');
   if (!link) return;
@@ -2749,6 +2742,9 @@ function mpStartGame(tcKey) {
   if (ga) ga.style.display = 'flex';
   closeAllPanels();
   _mpStartPresence();
+  // Swap the pro column's idle actions for Resign/Draw NOW. Left to the next
+  // move, the column reflows one move into the game — see botStart.
+  if (typeof proSync === 'function') proSync();
 }
 
 function mpUpdateTurnIndicator() {
