@@ -7825,10 +7825,13 @@ function renderTC(){
   if(lc){ lc.textContent = cat.n; lc.className = 'tcm-live-cat badge-' + cat.c; }
 }
 
-/* renderTC + the curve rebuild that a clock change implies. */
+/* renderTC + the curve rebuild that a clock change implies. Also re-runs the
+   pressure section's enabled/greyed state, since whether there is a clock at
+   all is exactly what decides it. */
 function applyTC(){
   renderTC();
   initPts(); drawA(); drawB();
+  if(typeof _syncPressureOffUi === 'function') _syncPressureOffUi();
 }
 
 function selectTC(t, inc){
@@ -11019,6 +11022,21 @@ function _bdApply(){
    hints. Click-triggered (not hover): works on touch, and these are
    read-once-or-twice explanations, not tooltips. */
 const INFO_POPS = {
+  pressureUntimed: {
+    title: 'No clock, no time pressure',
+    body:
+      '<p>Both curves on this panel are functions of <b>how long the bot thought about ' +
+      'the move</b> — and think time is only ever scarce because a clock is running out. ' +
+      'This game is set to <b>Untimed</b>, so there is no pressure for either curve to ' +
+      'describe, and neither one is consulted while the bot plays.</p>' +
+      '<p>That is why they are greyed out rather than merely flat: a curve you could ' +
+      'still shape would be promising an effect it cannot have. The engine ignores both ' +
+      'curves in untimed play even if a bot you load was saved with them dragged into ' +
+      'shape under a time control.</p>' +
+      '<p><b>To use them, pick a time control</b> from the Time pill at the top of the ' +
+      'panel. The curves re-seed themselves around that clock — the ELO curve on the ' +
+      'Regan time-rating model for the new think-time budget — and become editable again.</p>',
+  },
   cpbudget: {
     title: 'Centipawn Budget & Hard Floor',
     body:
@@ -11548,9 +11566,17 @@ function syncMaxTempMark(){
     : 'Marker shows the game-start temperature (T ' + t0.toFixed(1)
       + '). Below it the ceiling has no effect.';
 }
+// True only when the selected clock can actually run out. Both curves are
+// functions of think time, and think time is only ever scarce because of a
+// clock — so with no clock there is no pressure for either to represent.
+function isTimedGame(){ return reganAnchorSec() > 0; }
+
 function sigB(t){
   const t0 = Math.max(0.1, +_currentTempValue || 1.0);
-  if(pressureOffB) return t0;
+  // Curve A already flattens for untimed play (see reganEloA). Curve B did not,
+  // so the panel showed temperature climbing as think time fell in a game with
+  // no clock — and exported that curve for the engine to act on.
+  if(pressureOffB || !isTimedGame()) return t0;
   const ceiling = Math.max(t0, maxTempCeiling());
   return +(t0 + (ceiling - t0) * _sigmoid(t)).toFixed(2);
 }
@@ -11870,29 +11896,42 @@ function _syncPressureOffUi(){
     { btn:'pressure-off-a', col:'tp-col-a', off:pressureOffA },
     { btn:'pressure-off-b', col:'tp-col-b', off:pressureOffB },
   ];
+  const untimed = !isTimedGame();
   states.forEach(s => {
     // Android-style switch: checked (thumb right) = mechanism ON
     const cb = document.getElementById(s.btn);
     if(cb) cb.checked = !s.off;
-    // Dim the chart + slider while off; the dlbl row (with the switch) stays live
+    // Dim the chart + slider while off, and equally while the clock is off —
+    // there is nothing for either curve to describe without one.
     const col = document.getElementById(s.col);
     if(col) col.querySelectorAll('.chart-box,.ctrl').forEach(el => {
-      el.style.opacity = s.off ? '0.45' : '';
+      el.style.opacity = (s.off || untimed) ? '0.45' : '';
+      // Untimed KEEPS pointer events: a grabbed curve that simply does not move
+      // teaches nothing, so the drag is caught and answered with the reason.
+      // The off switch is a real disable, so that one still swallows events.
       el.style.pointerEvents = s.off ? 'none' : '';
     });
   });
   const lbl = document.getElementById('pressure-off-lbl');
   if(lbl) lbl.textContent =
-    pressureOffA && pressureOffB ? 'OFF — bot plays at constant strength regardless of clock'
+    untimed ? 'No clock — neither curve runs. Pick a time control to use them.'
+    : pressureOffA && pressureOffB ? 'OFF — bot plays at constant strength regardless of clock'
     : pressureOffA ? 'Temperature escalation only — ELO stays constant'
     : pressureOffB ? 'ELO degradation only — sampling temperature stays at base'
     : 'Both curves active — bot degrades with clock';
   const st = document.getElementById('st-pressure');
   if(st) st.textContent =
-    pressureOffA && pressureOffB ? 'Off'
+    untimed ? 'Untimed'
+    : pressureOffA && pressureOffB ? 'Off'
     : pressureOffA ? 'Temp only'
     : pressureOffB ? 'ELO only'
     : 'Dual curve';
+}
+
+// Answer a drag on a curve that cannot do anything. Reuses the ⓘ popup the rest
+// of the panel explains itself with, rather than inventing a second mechanism.
+function pressureUntimedNote(){
+  if(typeof openInfoPop === 'function') openInfoPop('pressureUntimed');
 }
 function _setPressureOffA(off){
   pressureOffA = !!off;
@@ -11966,9 +12005,13 @@ function setupDrag(canvasId, getCtrl, getSigFn, isElo, tipId, getScale){
   }
 
   cv.addEventListener('mousedown', e=>{
+    // Untimed: the curve is inert, so say why instead of letting the user drag
+    // a shape that will never be consulted.
+    if(!isTimedGame()){ e.preventDefault(); pressureUntimedNote(); return; }
     const {cx,cy}=pt(e); drag=nearest(cx,cy); if(drag!==null) e.preventDefault();
   });
   cv.addEventListener('mousemove', e=>{
+    if(!isTimedGame()){ cv.style.cursor='help'; return; }
     const {cx,cy}=pt(e);
     if(drag!==null){ e.preventDefault(); doMove(cx,cy); }
     else { cv.style.cursor = nearest(cx,cy)!==null ? 'ns-resize' : 'crosshair'; }
@@ -11976,7 +12019,10 @@ function setupDrag(canvasId, getCtrl, getSigFn, isElo, tipId, getScale){
   function up(){ drag=null; const tip=document.getElementById(tipId); if(tip) tip.style.display='none'; }
   cv.addEventListener('mouseup', up);
   cv.addEventListener('mouseleave', up);
-  cv.addEventListener('touchstart', e=>{ const {cx,cy}=pt(e); drag=nearest(cx,cy); if(drag!==null) e.preventDefault(); },{passive:false});
+  cv.addEventListener('touchstart', e=>{
+    if(!isTimedGame()){ e.preventDefault(); pressureUntimedNote(); return; }
+    const {cx,cy}=pt(e); drag=nearest(cx,cy); if(drag!==null) e.preventDefault();
+  },{passive:false});
   cv.addEventListener('touchmove',  e=>{ if(drag===null)return; e.preventDefault(); const {cx,cy}=pt(e); doMove(cx,cy); },{passive:false});
   cv.addEventListener('touchend', up);
 }
@@ -12045,6 +12091,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   onDaySlider(); // init dual-range fill
   _updateEnginePanelHeader();
   _initLcMaiaChain();        // restore the ELO chain, then seed both boxes from the Elometer
+  _syncPressureOffUi();      // grey the curves out if the restored clock is Untimed
   updatePersonalityGating(); // reflect the initial engine in the personality section
   initPts();
   setupDrag('cvA', ()=>ctrlA, reganEloA, true,  'tipA', ()=>scaleA);

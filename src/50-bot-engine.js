@@ -38,6 +38,7 @@ function pressureEffectiveMaiaElo(clockMs) {
 // a clock/remaining-moves average.  A hustler taking 0.3 s sees heavy curve
 // degradation; a grinder taking 15 s sees little.
 function pressureEffectiveMaiaEloByThink(thinkSec) {
+  if (!_pressureClockActive()) return maia3SelectedRating;
   if (!botPressureCurveA || botPressureCurveA.length < 2) return maia3SelectedRating;
   const curveElo = evalPressureCurve(botPressureCurveA, thinkSec);
   if (curveElo === null) return maia3SelectedRating;
@@ -52,6 +53,7 @@ function pressureEffectiveMaiaEloByThink(thinkSec) {
 // slots' identity gap (e.g. Drunken Master stays "sharp half / wobbly half").
 function pressureSlotEloByThink(slotElo, thinkSec) {
   const clamped = Math.max(600, Math.min(2600, slotElo));
+  if (!_pressureClockActive()) return clamped;
   if (!botPressureCurveA || botPressureCurveA.length < 2) return clamped;
   const atThink = evalPressureCurve(botPressureCurveA, thinkSec);
   if (atThink === null) return clamped;
@@ -77,7 +79,24 @@ function pressureSlotEloByThink(slotElo, thinkSec) {
 // (whatever the user set the Max temp slider to when the config was saved),
 // not a hardcoded constant, since that slider is now adjustable.
 const TIME_PRESSURE_TEMP_CEILING_DEFAULT = 8;
+
+// Time pressure is pressure from a CLOCK. With no clock there is nothing to be
+// short of, so neither degradation curve may fire — however those curves were
+// shaped, and whether they were seeded, hand-dragged, or restored from a bot
+// saved under a time control. Without this the bot still degraded in untimed
+// games whenever it happened to answer quickly, since both curves are driven by
+// think time alone. The panel greys the curves out for untimed play; this is
+// the half that makes that true of what actually runs.
+//
+// An undefined clockControl means we are outside the app — the unit tests load
+// this file into a bare VM, where the curves are the subject under test — so
+// only an explicit 'untimed' suppresses them.
+function _pressureClockActive() {
+  return typeof clockControl === 'undefined' || clockControl !== 'untimed';
+}
+
 function timePressureTempByThink(baseTemp, thinkSec) {
+  if (!_pressureClockActive()) return baseTemp;
   const boostMult = { steady: 0.0, normal: 1.0, panicky: 2.5 }[botTimePressure] || 0;
   if (boostMult === 0) return baseTemp;
   let ceiling = baseTemp + TIME_PRESSURE_TEMP_CEILING_DEFAULT - 1; // fallback if no curve
