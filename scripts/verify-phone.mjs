@@ -36,10 +36,22 @@ async function openBuilder(page, shellIdx) {
   await page.waitForTimeout(900);
   const sb = await page.$$('.landing-shell-btn');
   if (sb[shellIdx]) { await sb[shellIdx].click(); await page.waitForTimeout(400); }
-  for (const c of await page.$$('.landing-card')) {
-    if ((await c.innerText()).toLowerCase().includes('build a bot')) { await c.click(); break; }
-  }
+  // Target the card by what it DOES, not what it says. Matching on the label
+  // ("build a bot") silently stopped selecting anything when the card was
+  // renamed to "Bot Builder / Play a bot": the modal never opened, and every
+  // assertion below then measured a zero-size iframe and failed for a reason
+  // that had nothing to do with what it was testing.
+  const botCard = await page.$('.landing-card[onclick*="landingChoose(\'bot\')"]');
+  if (!botCard) throw new Error('landing: no card dispatches landingChoose(\'bot\')');
+  await botCard.click();
   await page.waitForTimeout(2000);
+  // Fail here, loudly, rather than letting a closed modal masquerade as a
+  // dozen layout regressions.
+  const modalOpen = await page.evaluate(() => {
+    const ifr = document.querySelector('iframe[src*="bot-control-panel"]');
+    return !!ifr && ifr.getBoundingClientRect().height > 0;
+  });
+  if (!modalOpen) throw new Error('Bot Builder modal did not open — panel iframe has no layout');
   const f = page.frames().find(x => x.url().includes('bot-control-panel'));
   await f.evaluate(() => { const o = document.getElementById('botTourOverlay'); if (o) o.style.display = 'none'; });
   // Stockfish plays without the 87MB Maia download; Black for the human means
@@ -181,7 +193,13 @@ console.log('\nPHONE 390×844');
   await page.evaluate(() => closeAllPanels());
 
   console.log(' Training board (shell 0)');
-  const p2 = await ctx.newPage();
+  // A FRESH context, not another page in the one above. The Expert run started
+  // a real game, and a live game is snapshotted to localStorage so it can be
+  // resumed — a second page in the same context restored that game, skipped the
+  // landing entirely, and left the shell buttons present but invisible, so the
+  // click here hung for 30s against an element that was never going to appear.
+  const ctx0 = await ctxFor(390, 844, true);
+  const p2 = await ctx0.newPage();
   p2.on('dialog', d => d.accept());
   p2.on('pageerror', e => errs.push(e.message));
   await startGame(p2, await openBuilder(p2, 0));
