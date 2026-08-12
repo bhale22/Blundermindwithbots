@@ -976,6 +976,13 @@ async function botStart() {
   // Start clock if timed
   if (botSelectedTC && botSelectedTC !== 'untimed') clockStart();
 
+  // The pro column swaps its idle actions (73px) for Resign/Draw (39px) once a
+  // game is live, and proSync is what performs that swap. Without this call the
+  // swap waited for the first move — which reads as the board lurching one move
+  // into every game, and on a short viewport it genuinely moves it: the extra
+  // 73px overflows the page, and the reflow when it disappears shifts the board.
+  if (typeof proSync === 'function') proSync();
+
   // If bot plays White (human is Black), bot moves first
   const botColor = pc === 'white' ? 'b' : 'w';
   if (turn === botColor) {
@@ -1024,6 +1031,9 @@ function botStop() {
   // Hide the Resign/Draw row shown for bot games (MP manages it separately)
   var _gaEl2 = document.getElementById('gameActions');
   if (_gaEl2 && (typeof mpRoomId === 'undefined' || !mpRoomId)) _gaEl2.style.display = 'none';
+  // Same reason as botStart: the pro column's idle actions come back now, not
+  // whenever something else next happens to call proSync.
+  if (typeof proSync === 'function') proSync();
 }
 
 // ── Save / Load bot config ───────────────────────────────────────────────────
