@@ -3040,7 +3040,7 @@ function botPostMoveHook() {
     } else {
       // Player's turn — fire queued premove if any; also arm mirror timer
       botUserTurnStartMs = Date.now(); // start timing the human's current turn
-      if(activePremove) setTimeout(tryFirePremove, 50);
+      if(premoveQueue.length) setTimeout(tryFirePremove, 50);
       // Arm the bot's own premove for the reply it will make to this turn.
       // Async and non-blocking — the human can move at any point.
       if (typeof botPremoveArm === 'function') botPremoveArm();

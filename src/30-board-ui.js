@@ -108,31 +108,70 @@ function executeMove(from,to,promo){
 }
 
 // ── Premove helpers ─────────────────────────────────────────────────────
-function setPremove(from,to,promo){
-  activePremove={from,to,promo:promo||null};
-  selSq=-1;legalMoves=[];clearPreview();
-  atkMap=buildAtk(board);
-  render();
+function hasPremove(){return premoveQueue.length>0;}
+
+// The board as it will stand once every queued premove has played — the
+// position the NEXT premove is composed against. Only our own moves are
+// applied; the opponent's replies are unknown, so their pieces stay put.
+// Passing ep = -1 is deliberate: an en-passant right created by one of our own
+// queued moves cannot survive the opponent's reply in between.
+function premoveSpecState(){
+  let bd=board,cst=castling;
+  for(const pm of premoveQueue){
+    const p=bd[pm.from];
+    if(!p)break;                     // chain already broken; stop where it does
+    cst=updateCastling(pm.from,pm.to,p,cst);
+    bd=applyMove(pm.from,pm.to,bd,-1,pm.promo||'Q');
+  }
+  return{board:bd,castling:cst};
 }
+
+// Squares touched by the queue → how to paint them, and which link they are.
+function premoveSquareMap(){
+  const m=new Map();
+  premoveQueue.forEach((pm,i)=>{
+    if(!m.has(pm.from))m.set(pm.from,{kind:'from',n:i+1});
+    m.set(pm.to,{kind:'to',n:i+1});
+  });
+  return m;
+}
+
+function queuePremove(from,to,promo){
+  if(premoveQueue.length>=PREMOVE_MAX)return false;
+  premoveQueue.push({from,to,promo:promo||null});
+  selSq=-1;legalMoves=[];dragFrom=-1;dragMoved=false;
+  setAwaitingConfirm(false);clearPreview();
+  atkMap=buildAtk(board);render();
+  return true;
+}
+
+// Clearing is all-or-nothing. A chain is planned as a whole: the moves after a
+// discarded link were composed against a board that will never exist, so
+// keeping them would play something the user never actually intended.
 function cancelPremove(){
-  if(!activePremove)return;
-  activePremove=null;
+  if(!premoveQueue.length)return;
+  premoveQueue=[];
   selSq=-1;legalMoves=[];dragFrom=-1;dragMoved=false;setAwaitingConfirm(false);
   clearPreview();atkMap=buildAtk(board);render();
 }
+
+// Fires exactly ONE link per opponent reply, then leaves the rest queued.
 function tryFirePremove(){
-  if(!activePremove)return;
-  const{from,to,promo}=activePremove;
-  activePremove=null;
-  // Piece must still exist and be ours
+  if(!premoveQueue.length)return;
+  const{from,to,promo}=premoveQueue.shift();
+  const abort=()=>{
+    premoveQueue=[];
+    selSq=-1;legalMoves=[];clearPreview();atkMap=buildAtk(board);render();
+  };
+  // Now the position exists, so validate for real — against the true board,
+  // never the speculative one it was composed on.
   const p=board[from];
-  if(!p)return;
-  const legal=legalMovesFor(from,board,epSq,castling);
-  if(!legal.includes(to)){render();return;}
+  if(!p||p.color!==playerColor())return abort();
+  if(!legalMovesFor(from,board,epSq,castling).includes(to))return abort();
   // Pawn reaching back rank with no promo choice: auto-queen
   const resolvedPromo=promo||(p.piece==='P'&&(Math.floor(to/8)===0||Math.floor(to/8)===7)?'Q':null);
   executeMove(from,to,resolvedPromo);
-  // Send after execute so clock state is current post-increment
+  // Send after execute so clock state is current post-increment.
   // Only inside a real game. A posted-but-unaccepted challenge also has a room,
   // and relaying idle exploration into it corrupts the history the server keeps
   // for reconnects.
@@ -140,21 +179,25 @@ function tryFirePremove(){
     mpSendMove(from,to,resolvedPromo||null);
   }
   if(typeof mpUpdateTurnIndicator==='function'&&typeof mpInGame==='function'&&mpInGame()) mpUpdateTurnIndicator();
+  render();
 }
 
 function tryCommit(from,to,promo){
-  if(from<0||to<0||!legalMoves.includes(to))return false;
-  // If it is not our turn (multiplayer waiting, or bot thinking), queue a premove
+  if(from<0||to<0)return false;
+  // If it is not our turn (multiplayer waiting, or bot thinking), queue a premove.
+  // This branch is checked BEFORE legalMoves, because a premove is deliberately
+  // allowed to be illegal in the current position — see premoveDests.
   const notMyTurn=(typeof mpIsMyTurn==='function'&&!mpIsMyTurn());
   const botBusy=(botActive&&botThinking);
   if(notMyTurn||botBusy){
-    const p2=board[from];if(!p2)return false;
+    const st=premoveSpecState();
+    const p2=st.board[from];if(!p2)return false;
     // Only allow premove for the player's own pieces
-    const myColor=playerColor();
-    if(p2.color!==myColor)return false;
-    setPremove(from,to,promo);
-    return true;
+    if(p2.color!==playerColor())return false;
+    if(!premoveDests(from,st.board,st.castling).includes(to))return false;
+    return queuePremove(from,to,promo);
   }
+  if(!legalMoves.includes(to))return false;
   const p=board[from];if(!p)return false;
   if(p.piece==='P'&&(Math.floor(to/8)===0||Math.floor(to/8)===7)&&!promo){
     promotionPending={from,to,color:p.color};clearPreview();render();return true;
@@ -170,6 +213,13 @@ function tryCommit(from,to,promo){
 
 function startPreview(from,to){
   if(from<0||to<0)return;
+  // Exploration overlays describe the REAL position. A premove destination that
+  // is not legal YET — a pawn's diagonal onto an empty square, a slide through
+  // an enemy piece, a piece an earlier premove has already moved — would have us
+  // render consequences on a board that does not exist. Fall back to the identity
+  // preview instead, so the overlays stay honest about what is actually there.
+  if(to!==from&&isWaitingTurn()&&
+     (!board[from]||!legalMovesFor(from,board,epSq,castling).includes(to))) to=from;
   // Skip if same square as last preview — no need to recompute
   if(from===premoveFrom&&to===premoveTo&&previewBoard) {
     render(); return;
@@ -331,15 +381,21 @@ cv.addEventListener('mousedown',e=>{
   if(promotionPending){const ch=getPromoChoice(getEvtPos(e));if(ch){executeMove(promotionPending.from,promotionPending.to,ch);promotionPending=null;}return;}
   if(gameOver)return;
   const pos=getEvtPos(e);const sq=getSq(pos);if(sq<0)return;
-  // Any click while a premove is queued cancels it; player chooses afresh
-  if(activePremove){cancelPremove();return;}
   // Ghost precompute hook
   if (typeof ghostOnMouseDown === 'function') setTimeout(()=>ghostOnMouseDown(sq), 15);
 
   const waiting=isWaitingTurn();
   const myCol=playerColor();
+  // While waiting, the player composes against the speculative board, so a
+  // piece is picked up from wherever its earlier premoves will have left it.
+  const spec=waiting?premoveSpecState():null;
+  const inpBoard=spec?spec.board:board;
   // A square is selectable as "own" if it's our color (current-turn OR our color while waiting)
-  const isOwnPiece=board[sq]&&(board[sq].color===turn||(waiting&&board[sq].color===myCol));
+  const isOwnPiece=inpBoard[sq]&&(inpBoard[sq].color===turn||(waiting&&inpBoard[sq].color===myCol));
+  // Picking up one of our own pieces extends the chain; ANY other click clears
+  // it (as does right-click — see the contextmenu handler). Adding a link is the
+  // only thing that leaves the queue intact, so it cannot grow by accident.
+  if(hasPremove()&&!(waiting&&inpBoard[sq]&&inpBoard[sq].color===myCol)){cancelPremove();return;}
   // While waiting for opponent: clicking own pieces shows legal moves for preview/premove.
   // Clicking opponent pieces still shows exploration (opponent-move preview) as before.
   // Committing a move from own piece during opponent's turn will queue a premove.
@@ -390,8 +446,11 @@ cv.addEventListener('mousedown',e=>{
     if(selSq===sq){selSq=-1;legalMoves=[];clearPreview();atkMap=buildAtk(board);dragFrom=-1;dragMoved=false;render();}
     else{
       dragFrom=sq;dragStartPos=pos;dragMoved=false;mousePos=pos;
-      const pieceTurn=board[sq].color;
-      legalMoves=legalMovesFor(sq,board,epSq,castling);
+      // Composing a premove gets the optimistic destination set; a real move
+      // gets the strictly legal one.
+      legalMoves=(spec&&inpBoard[sq].color===myCol)
+        ? premoveDests(sq,spec.board,spec.castling)
+        : legalMovesFor(sq,board,epSq,castling);
       // Identity preview at selection time: overlays appear immediately and stay on.
       startPreview(sq,sq);
       selSq=sq; // startPreview clears selSq; restore it so hover exploration works
@@ -502,6 +561,15 @@ cv.addEventListener('mouseleave',()=>{
   render();
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){setAwaitingConfirm(false);cancelPremove();clearPreview();selSq=-1;legalMoves=[];hoverSq=-1;dragFrom=-1;dragMoved=false;atkMap=buildAtk(board);render();}});
+// Right-click clears the whole queue — the Chess.com gesture, and the only way
+// to abandon a chain without also picking a piece up. Touch has no equivalent,
+// which is why any non-composing tap clears it too (see mousedown).
+cv.addEventListener('contextmenu',e=>{
+  if(!hasPremove())return;
+  e.preventDefault();
+  cancelPremove();
+});
+
 cv.addEventListener('touchstart',e=>{e.preventDefault();const t=e.touches[0];cv.dispatchEvent(new MouseEvent('mousedown',{clientX:t.clientX,clientY:t.clientY,bubbles:true}));},{passive:false});
 cv.addEventListener('touchmove',e=>{e.preventDefault();const t=e.touches[0];cv.dispatchEvent(new MouseEvent('mousemove',{clientX:t.clientX,clientY:t.clientY,bubbles:true}));},{passive:false});
 cv.addEventListener('touchend',e=>{e.preventDefault();const t=e.changedTouches[0];cv.dispatchEvent(new MouseEvent('mouseup',{clientX:t.clientX,clientY:t.clientY,bubbles:true}));},{passive:false});
@@ -661,6 +729,17 @@ function render(){
   const dispAtk=previewAtk||atkMap;
   const isPreviewing=!!previewBoard;
   const isDragging=dragFrom>=0&&dragMoved;
+  const _pmMap=premoveQueue.length?premoveSquareMap():null;
+  // Squares the queue empties out. The origin ghost below is drawn at low alpha
+  // to say "this piece is leaving", but that only reads if the real piece is not
+  // still sitting underneath it at full opacity — otherwise a chain shows the
+  // same queen on two squares and neither looks provisional.
+  let _pmVacated=null;
+  if(_pmMap&&!isPreviewing){
+    const _sb=premoveSpecState().board;
+    _pmVacated=new Set();
+    for(const pm of premoveQueue) if(board[pm.from]&&!_sb[pm.from])_pmVacated.add(pm.from);
+  }
 
   ctx.clearRect(0,0,480,480);
   ctx.setLineDash([]); ctx.globalAlpha=1; ctx.shadowBlur=0; ctx.lineWidth=1; // reset state
@@ -674,8 +753,9 @@ function render(){
     if(!isPreviewing && (sq===lastMoveFrom||sq===lastMoveTo)){
       fill=light?'#cdd16e':'#aaa23a';
     }
-    if(activePremove&&sq===activePremove.from)fill=light?'#a8c8f8':'#6090d0';
-    else if(activePremove&&sq===activePremove.to)fill=light?'#90b8f0':'#4878c0';
+    if(_pmMap&&_pmMap.has(sq)){
+      fill=_pmMap.get(sq).kind==='from'?(light?'#a8c8f8':'#6090d0'):(light?'#90b8f0':'#4878c0');
+    }
     // A parked piece is still being composed, so its destination uses the
     // SELECTION yellow, not the preview green. Green here read as "this move
     // was played" — it is adjacent to the yellow-green last-move highlight —
@@ -1041,6 +1121,7 @@ function render(){
     try{
       const p=dispBoard[sq];
       if(!p||(sq===dragFrom&&isDragging))continue;
+      if(_pmVacated&&_pmVacated.has(sq))continue; // a queued premove takes it away
       if(sq===_ghostSq){ctx.save();ctx.globalAlpha=PARKED_ALPHA;}
       drawPieceUnder(sq,p,dispAtk,showLayers,showBull);
       if(sq===_ghostSq){ctx.restore();}
@@ -1050,6 +1131,7 @@ function render(){
     try{
       const p=dispBoard[sq];
       if(!p||(sq===dragFrom&&isDragging))continue;
+      if(_pmVacated&&_pmVacated.has(sq))continue; // a queued premove takes it away
       if(sq===_ghostSq){ctx.save();ctx.globalAlpha=PARKED_ALPHA;}
       drawPieceGlyph(sq,p,dispAtk,showNums);
       if(sq===_ghostSq){ctx.restore();}
@@ -1203,24 +1285,40 @@ function render(){
     }
     ctx.restore();
   }
-  // Draw queued premove: ghost on origin (dimmed) + ghost on destination (blue tint)
-  if(activePremove&&board[activePremove.from]){
-    const _pm=activePremove;const _pp=board[_pm.from];
-    const _pi=currentPieceSet!=='unicode'?pieceImgCache[currentPieceSet+_pp.color+_pp.piece]:null;
-    // Origin: dimmed piece
-    const{r:_fr,c:_fc}=sqCanvas(_pm.from);
-    ctx.save();ctx.globalAlpha=0.28;
-    if(_pi&&_pi.complete&&_pi.naturalWidth>0){ctx.drawImage(_pi,_fc*SQ+3,_fr*SQ+3,SQ-6,SQ-6);}
-    else{ctx.font=`${SQ-8}px serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle=_pp.color==='w'?'rgba(240,240,240,0.9)':'rgba(30,30,30,0.9)';ctx.fillText(UNI[_pp.color+_pp.piece],_fc*SQ+SQ/2,_fr*SQ+SQ/2+1);}
-    ctx.restore();
-    // Destination: blue-tinted piece
-    const{r:_tr,c:_tc}=sqCanvas(_pm.to);
-    ctx.save();ctx.globalAlpha=0.72;
-    if(_pi&&_pi.complete&&_pi.naturalWidth>0){
-      ctx.drawImage(_pi,_tc*SQ+3,_tr*SQ+3,SQ-6,SQ-6);
-      ctx.fillStyle='rgba(60,120,220,0.30)';ctx.fillRect(_tc*SQ+3,_tr*SQ+3,SQ-6,SQ-6);
-    }else{ctx.font=`${SQ-8}px serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='rgba(60,120,220,0.85)';ctx.fillText(UNI[_pp.color+_pp.piece],_tc*SQ+SQ/2,_tr*SQ+SQ/2+1);}
-    ctx.restore();
+  // Draw the queued chain: each link is a dimmed ghost on its origin and a
+  // blue-tinted one on its destination. Walk the speculative board as we go, so
+  // link 2 is drawn from wherever link 1 will have left the piece.
+  if(premoveQueue.length){
+    let _pb=board;
+    const _multi=premoveQueue.length>1;
+    premoveQueue.forEach((_pm,_i)=>{
+      const _pp=_pb[_pm.from];
+      if(!_pp)return;   // chain broke earlier; nothing sensible left to draw
+      const _pi=currentPieceSet!=='unicode'?pieceImgCache[currentPieceSet+_pp.color+_pp.piece]:null;
+      // Origin: dimmed piece
+      const{r:_fr,c:_fc}=sqCanvas(_pm.from);
+      ctx.save();ctx.globalAlpha=0.28;
+      if(_pi&&_pi.complete&&_pi.naturalWidth>0){ctx.drawImage(_pi,_fc*SQ+3,_fr*SQ+3,SQ-6,SQ-6);}
+      else{ctx.font=`${SQ-8}px serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle=_pp.color==='w'?'rgba(240,240,240,0.9)':'rgba(30,30,30,0.9)';ctx.fillText(UNI[_pp.color+_pp.piece],_fc*SQ+SQ/2,_fr*SQ+SQ/2+1);}
+      ctx.restore();
+      // Destination: blue-tinted piece
+      const{r:_tr,c:_tc}=sqCanvas(_pm.to);
+      ctx.save();ctx.globalAlpha=0.72;
+      if(_pi&&_pi.complete&&_pi.naturalWidth>0){
+        ctx.drawImage(_pi,_tc*SQ+3,_tr*SQ+3,SQ-6,SQ-6);
+        ctx.fillStyle='rgba(60,120,220,0.30)';ctx.fillRect(_tc*SQ+3,_tr*SQ+3,SQ-6,SQ-6);
+      }else{ctx.font=`${SQ-8}px serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='rgba(60,120,220,0.85)';ctx.fillText(UNI[_pp.color+_pp.piece],_tc*SQ+SQ/2,_tr*SQ+SQ/2+1);}
+      // Order badge — only once there is an order to be confused about.
+      if(_multi){
+        const _bx=_tc*SQ+SQ-11,_by=_tr*SQ+11;
+        ctx.beginPath();ctx.arc(_bx,_by,8,0,Math.PI*2);
+        ctx.fillStyle='rgba(30,70,150,0.92)';ctx.fill();
+        ctx.font='bold 11px system-ui, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillStyle='#fff';ctx.fillText(String(_i+1),_bx,_by+0.5);
+      }
+      ctx.restore();
+      _pb=applyMove(_pm.from,_pm.to,_pb,-1,_pm.promo||'Q');
+    });
   }
     if(isDragging&&dragFrom>=0){
     const p=board[dragFrom];if(p){
@@ -1409,7 +1507,7 @@ function drawPromoModal(){
 }
 
 function loadPos(idx){
-  gameOver=false;promotionPending=null;activePremove=null;selSq=-1;legalMoves=[];dragFrom=-1;dragMoved=false;hoverSq=-1;clearPreview();
+  gameOver=false;promotionPending=null;premoveQueue=[];selSq=-1;legalMoves=[];dragFrom=-1;dragMoved=false;hoverSq=-1;clearPreview();
   gameMovesAlgebraic=[];gameOverMsg="";
   board=parseFen(FENS[idx]);atkMap=buildAtk(board);
   // Reset draw tracking; the starting position counts as its first occurrence

@@ -2031,7 +2031,7 @@ function bmSessionRestore() {
     _gameStartFen      = snap.startFen  || null;
     _gameStartSans     = Array.isArray(snap.startSans) ? snap.startSans.slice() : [];
     gameOver = false; gameOverMsg = '';
-    promotionPending = null; activePremove = null;
+    promotionPending = null; premoveQueue = [];
     selSq = -1; legalMoves = []; dragFrom = -1; dragMoved = false; hoverSq = -1;
     clearPreview();
     setAwaitingConfirm(false);
