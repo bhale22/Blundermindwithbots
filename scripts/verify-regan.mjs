@@ -149,18 +149,28 @@ const seedPts = [];
   for (const x of xs) seedPts.push({ x: +x.toFixed(3), y: model(1500, 15, x) });
 }
 await postCfg({ ctrlA: seedPts, pressureOffA: false });
+// The curve only runs when a clock does. A fresh page sits at clockControl
+// 'untimed', so a time control has to be in force before the engine will
+// consult Curve A at all — see _pressureClockActive in 50-bot-engine.js.
 const eng = await page.evaluate(() => {
-  const saved = maia3SelectedRating; maia3SelectedRating = 1500;
+  const savedElo = maia3SelectedRating, savedClock = clockControl;
+  maia3SelectedRating = 1500;
+  clockControl = 'untimed';
+  const untimedElo = pressureEffectiveMaiaEloByThink(1);
+  clockControl = 'blitz5';
   const out = {
+    untimedElo,
     atAnchor: pressureEffectiveMaiaEloByThink(15),
     at5: pressureEffectiveMaiaEloByThink(5),
     at1: pressureEffectiveMaiaEloByThink(1),
     slotHi: pressureSlotEloByThink(2400, 5),
     slotLo: pressureSlotEloByThink(1800, 5),
   };
-  maia3SelectedRating = saved;
+  maia3SelectedRating = savedElo; clockControl = savedClock;
   return out;
 });
+ok(eng.untimedElo === 1500,
+   `engine: untimed ignores the curve entirely (${eng.untimedElo})`);
 ok(eng.atAnchor === 1500, 'engine: E0 at the anchor knot');
 ok(Math.abs(eng.at5 - model(1500, 15, 5)) <= 6, `engine: ≈model at 5 s (${eng.at5})`);
 ok(Math.abs(eng.at1 - model(1500, 15, 1)) <= 6, `engine: ≈model at 1 s (${eng.at1})`);
