@@ -208,6 +208,96 @@ describe('premove during the bot\'s turn', { concurrency: 1 }, () => {
       'the confirming tap should queue the premove');
   });
 
+  // ── The opponent replying mid-compose ────────────────────────────────────
+  // Composing a premove means holding a piece during the opponent's turn, so
+  // the reply routinely lands while the piece is still in the air. executeMove
+  // used to clear selSq/legalMoves/dragFrom for EVERY move, the opponent's
+  // included — the drop then arrived with no drag state, every branch of
+  // mouseup missed, and the piece snapped home even when the move was legal in
+  // the position that had just arrived. A short think time puts the reply
+  // inside the compose window nearly every move.
+
+  test('the bot replying mid-drag does not empty the player\'s hand', async () => {
+    await startInstantBotGame();
+    await holdBotOnMove();          // 1.e4 played, bot frozen on move
+
+    const e4 = await H.squareCentre(page, 4, 4);
+    const e5 = await H.squareCentre(page, 4, 5);
+    // Pick the e4 pawn up and hold it — mid-compose, button still down.
+    await page.mouse.move(e4.x, e4.y);
+    await page.mouse.down();
+    await page.mouse.move(e5.x, e5.y, { steps: 6 });
+    assert.strictEqual(await page.evaluate(() => dragFrom), 36, 'pawn should be held');
+
+    // The bot replies while the piece is in the air. Nc6 leaves e4-e5 legal.
+    await page.evaluate(() => { executeMove(1, 18); }); // Nb8-c6
+    const held = await page.evaluate(() => ({
+      dragFrom, selSq, dragMoved, turn,
+      nLegal: legalMoves.length, hasE5: legalMoves.includes(28),
+    }));
+    assert.strictEqual(held.turn, 'w', 'it is our move again');
+    assert.strictEqual(held.dragFrom, 36, 'the piece must still be in hand');
+    assert.strictEqual(held.hasE5, true,
+      'legalMoves should be re-derived for the position that just arrived');
+
+    // Complete the drop. It is legal now, so it must play — not snap back.
+    await page.mouse.up();
+    await releaseBot();
+    const moves = await page.evaluate(() => gameMovesAlgebraic.slice());
+    assert.deepStrictEqual(moves, ['e4', 'Nc6', 'e5'],
+      'the drop should have played e5, not been discarded: ' + moves.join(' '));
+  });
+
+  test('a selection survives the bot replying, so it can be moved at once', async () => {
+    await startInstantBotGame();
+    await holdBotOnMove();
+    // Tap-select the e4 pawn during the bot's turn, no drag.
+    await H.mouseDriver(page).tap(await H.squareCentre(page, 4, 4));
+    assert.strictEqual(await page.evaluate(() => selSq), 36, 'pawn should be selected');
+
+    await page.evaluate(() => { executeMove(1, 18); }); // bot replies
+    const after = await page.evaluate(() => ({
+      selSq, hasE5: legalMoves.includes(28), turn,
+    }));
+    await releaseBot();
+    assert.strictEqual(after.selSq, 36,
+      'the selection must survive the opponent\'s move');
+    assert.strictEqual(after.hasE5, true, 'and offer real legal moves');
+  });
+
+  test('a piece captured out from under the hand is released, not left holding air', async () => {
+    await startInstantBotGame();
+    // 1.e4 d5 — now the human is on move with a real capture available, and the
+    // bot's next reply can take on e4. Set the position directly for control.
+    await page.evaluate(() => {
+      executeMove(52, 36);  // e4
+      executeMove(11, 27);  // d5
+    });
+    await page.waitForTimeout(200);
+    await page.evaluate(() => {
+      window.__realSetTimeout = window.setTimeout;
+      window.setTimeout = function (fn) {
+        if (fn === botMakeMove) return 0;
+        return window.__realSetTimeout.apply(window, arguments);
+      };
+      executeMove(62, 45);  // Nf3 — hand the move back to the bot
+    });
+    // Hold the e4 pawn, then let the bot capture it: dxe4.
+    const e4 = await H.squareCentre(page, 4, 4);
+    await page.mouse.move(e4.x, e4.y);
+    await page.mouse.down();
+    await page.mouse.move(e4.x + 4, e4.y - 20, { steps: 3 });
+    assert.strictEqual(await page.evaluate(() => dragFrom), 36, 'e4 pawn held');
+
+    await page.evaluate(() => { executeMove(27, 36); }); // dxe4
+    const after = await page.evaluate(() => ({ dragFrom, selSq, nLegal: legalMoves.length }));
+    await page.mouse.up();
+    await releaseBot();
+    assert.strictEqual(after.dragFrom, -1, 'the captured piece must be released');
+    assert.strictEqual(after.selSq, -1, 'and deselected');
+    assert.strictEqual(after.nLegal, 0, 'with no stale destination set');
+  });
+
   test('no page errors were raised throughout', () => {
     assert.deepStrictEqual(errs, []);
   });

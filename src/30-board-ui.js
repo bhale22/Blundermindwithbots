@@ -76,7 +76,37 @@ function executeMove(from,to,promo){
   const _pins=computePins(board);pinnedWSquares=_pins.w;pinnedBSquares=_pins.b;
   lastMoveFrom=from; lastMoveTo=to; // record for last-move highlight
   playMoveSound(isCapture);
-  selSq=-1;legalMoves=[];clearPreview();hoverSq=-1;dragFrom=-1;dragMoved=false;
+  // ── Input state ───────────────────────────────────────────────────────────
+  // The OPPONENT moving must not tear a piece out of the player's hand.
+  //
+  // This line used to clear selSq/legalMoves/dragFrom/dragMoved for every move,
+  // the opponent's included. Composing a premove means holding a piece during
+  // the opponent's turn, so the bot's reply landing mid-compose wiped the drag:
+  // the drop then arrived with dragFrom = -1 and legalMoves = [], every branch
+  // of mouseup missed, and the piece snapped home — discarding a move that was
+  // legal in the position that had just arrived. A short think time makes the
+  // reply land inside the compose window nearly every time, which is why this
+  // read as "Maia at 1 s won't let me select" while Stockfish (which replies
+  // before the second interaction even starts) looked fine.
+  const _heldSq = dragFrom>=0 ? dragFrom : selSq;
+  const _ourMove = (typeof playerColor!=='function') || p.color===playerColor();
+  // Keep it only if the same piece is still ours and still standing there —
+  // the opponent may have just captured it or moved onto its square.
+  const _keepHeld = !_ourMove && _heldSq>=0 && board[_heldSq]
+                 && board[_heldSq].color===playerColor();
+  if(_keepHeld){
+    const _wasDrag=dragFrom>=0, _wasMoved=dragMoved;
+    // The set it was picked up with was premoveDests — speculative by design.
+    // The position it guessed at now exists, so re-derive it for real.
+    clearPreview();
+    legalMoves=legalMovesFor(_heldSq,board,epSq,castling);
+    startPreview(_heldSq,_heldSq);   // clears selSq; restored just below
+    selSq=_heldSq;
+    dragFrom=_wasDrag?_heldSq:-1;
+    dragMoved=_wasMoved;
+  }else{
+    selSq=-1;legalMoves=[];clearPreview();hoverSq=-1;dragFrom=-1;dragMoved=false;
+  }
   // Draw-rule bookkeeping
   halfmoveClock=(isCapture||isPawnMove)?0:halfmoveClock+1;
   const _pk=positionKey(board,turn,castling,epSq);

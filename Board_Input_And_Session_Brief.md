@@ -71,6 +71,21 @@ With think time set to **instant** the inference is often shorter than the 100 m
 
 One consequence to keep in mind: a piece picked up during the bot's turn carries the **optimistic** `premoveDests()` set, and the bot can reply while it is still held. `tryCommit()` therefore re-derives legality from the live board on the real-move path rather than trusting the captured `legalMoves` — `executeMove()` validates nothing, so a stale set would otherwise play an illegal move. This is the same reasoning as the parked-piece case in the notes above.
 
+### The opponent must not empty your hand
+
+*Code: the input-state block in `executeMove()`, `src/30-board-ui.js`.*
+
+Composing a premove means **holding a piece during the opponent's turn**, so the opponent's reply routinely lands while that piece is still in the air. `executeMove()` ended with a single unconditional line clearing `selSq`, `legalMoves`, `dragFrom`, `dragMoved` and the preview — for *every* move, the opponent's included.
+
+The drop then arrived with `dragFrom = -1` and `legalMoves = []`, every branch of the `mouseup` handler missed, and the piece snapped back to its origin — discarding a move that was **legal in the position that had just arrived**.
+
+Two things made this read as an engine problem rather than an input one:
+
+- **Think time sets how often it fires.** At a 1-second think time the reply lands inside the compose window nearly every time. Stockfish replies before the player's second interaction has even started, so the interaction happens on their own turn and never touches this path at all — hence "works with Stockfish, broken with Maia 3", which points at the wrong layer entirely.
+- **It also looks like a failure to *select*.** Tap a piece during the bot's turn, the bot replies a moment later, the selection is wiped — indistinguishable from the tap never having registered.
+
+`executeMove()` now keeps the held piece when the move being applied is not the player's own, and **re-derives `legalMoves` against the position that just arrived** — the set it was picked up with was `premoveDests()`, speculative by design, and the position it was guessing at now exists. The piece is released only when it is genuinely gone: captured, or the square taken. Solo play is unaffected, because `playerColor()` returns `turn` there and every move is the player's own.
+
 ### Premoves that are not legal yet
 
 The point of a premove is committing to a move the position does not allow *yet* — 1.e4 and then `exd5` parked while d5 is still empty. `premoveDests()` exists for exactly this, and two places used to throw those moves away:
@@ -146,7 +161,7 @@ These behaviours are invisible to the `vm`-based engine tests — they live in i
 |---|---|
 | `commit-mode.spec.js` | Park/commit/re-park/cancel with a mouse, plus a regression guard that release mode still plays on drop |
 | `commit-mode-touch.spec.js` | The same on an emulated phone with real CDP touch events — the case the feature exists for |
-| `premove-bot-turn.spec.js` | A premove queues for the whole of the bot's turn, including the 100 ms scheduling gap an instant think time hides in; not-yet-legal premoves (the pawn recapture) work in both commit modes; a stale destination set cannot play an illegal move |
+| `premove-bot-turn.spec.js` | A premove queues for the whole of the bot's turn, including the 100 ms scheduling gap an instant think time hides in; not-yet-legal premoves (the pawn recapture) work in both commit modes; the bot replying mid-drag leaves the piece in hand with a re-derived destination set, but a captured piece is released; a stale destination set cannot play an illegal move |
 | `clock-realtime.spec.js` | Hiding the tab does not refund the hidden stretch, a reload charges the time the app was closed, and a clock that expired while away loses on time |
 | `chip-position.spec.js` | The chip does not move on turn change, board flip, or both |
 | `pro-layout.spec.js` | Pro-shell clocks hold position across moves, material, long bot names and the result bar |
