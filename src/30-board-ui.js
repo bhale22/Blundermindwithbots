@@ -188,8 +188,7 @@ function tryCommit(from,to,promo){
   // This branch is checked BEFORE legalMoves, because a premove is deliberately
   // allowed to be illegal in the current position — see premoveDests.
   const notMyTurn=(typeof mpIsMyTurn==='function'&&!mpIsMyTurn());
-  const botBusy=(botActive&&botThinking);
-  if(notMyTurn||botBusy){
+  if(notMyTurn||botOnMove()){
     const st=premoveSpecState();
     const p2=st.board[from];if(!p2)return false;
     // Only allow premove for the player's own pieces
@@ -197,8 +196,13 @@ function tryCommit(from,to,promo){
     if(!premoveDests(from,st.board,st.castling).includes(to))return false;
     return queuePremove(from,to,promo);
   }
-  if(!legalMoves.includes(to))return false;
-  const p=board[from];if(!p)return false;
+  // Past this point it IS our turn, so the move plays for real — and it must be
+  // legal in the position as it stands NOW. `legalMoves` cannot be trusted for
+  // that: a piece picked up during the opponent's turn carries the optimistic
+  // premoveDests set, and the turn can flip back to us mid-drag when the bot
+  // replies. executeMove validates nothing, so check against the live board.
+  const p=board[from];if(!p||p.color!==turn)return false;
+  if(!legalMovesFor(from,board,epSq,castling).includes(to))return false;
   if(p.piece==='P'&&(Math.floor(to/8)===0||Math.floor(to/8)===7)&&!promo){
     promotionPending={from,to,color:p.color};clearPreview();render();return true;
   }
@@ -372,8 +376,23 @@ function playerColor(){
 // it's not their turn (for exploration and premove queuing).
 function isWaitingTurn(){
   if(typeof mpIsMyTurn==='function'&&typeof mpRoomId!=='undefined'&&mpRoomId) return !mpIsMyTurn();
-  if(typeof botActive!=='undefined'&&botActive&&typeof botThinking!=='undefined'&&botThinking) return true;
-  return false;
+  return botOnMove();
+}
+
+// True for the WHOLE of the bot's turn — keyed on whose move it is, never on
+// botThinking. The bot's turn is wider than its inference at both ends:
+// botPostMoveHook schedules botMakeMove on a 100 ms timer, the book and
+// bot-premove paths clear botThinking before they call executeMove, and
+// botStart waits 800 ms before the opening move. At an "instant" think time
+// the inference can be shorter than the 100 ms gap sitting in front of it, so
+// gating on botThinking refused a premove for most of the bot's turn —
+// including the instant right after the player releases their own move, which
+// is exactly when a speed player premoves.
+function botOnMove(){
+  if(typeof botActive==='undefined'||!botActive)return false;
+  if(typeof gameOver!=='undefined'&&gameOver)return false;
+  if(typeof botPlayerColor==='undefined')return false;
+  return turn===(botPlayerColor==='white'?'b':'w');
 }
 
 cv.addEventListener('mousedown',e=>{

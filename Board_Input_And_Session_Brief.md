@@ -57,6 +57,20 @@ The chip is **not** in a player box. Two things move those: `updatePlayerBoxes()
 - **Amateur shell:** `#boardInputRow`, a plain order-0 child directly under the board — stable in both orientations.
 - **Pro shell:** relocated into the player's own clock panel (`#proChipMount`, inside `#proPlayerBottom`) by `proMountChip()`, using the same relocate-on-shell-switch pattern as the chat box. `#boardInputRow` is hidden in pro mode.
 
+### When a premove is accepted
+
+`isWaitingTurn()` decides whether a piece can be picked up and composed against the speculative board, and `tryCommit()` uses the same rule to decide whether a drop queues a premove or plays a move. Against a bot that rule is `botOnMove()` — **whose turn it is**, not whether the engine is mid-inference.
+
+The distinction is the whole feature. `botThinking` is only true while `botMakeMove()` is actually computing, and the bot's turn is wider than that at both ends:
+
+- `botPostMoveHook()` schedules `botMakeMove` on a **100 ms timer**, so the flag is false for the first tenth of a second of every bot turn — precisely when a speed player, having just released their own move, reaches for the next one.
+- The opening-book and bot-premove paths clear the flag *before* calling `executeMove`.
+- `botStart()` waits 800 ms before the bot's opening move.
+
+With think time set to **instant** the inference is often shorter than the 100 ms gap sitting in front of it, so gating on `botThinking` refused the premove for most of the bot's turn and accepted it only in a window of a few tens of milliseconds. It read as premove being broken rather than as a timing bug, because the successful case was rare enough to look like luck.
+
+One consequence to keep in mind: a piece picked up during the bot's turn carries the **optimistic** `premoveDests()` set, and the bot can reply while it is still held. `tryCommit()` therefore re-derives legality from the live board on the real-move path rather than trusting the captured `legalMoves` — `executeMove()` validates nothing, so a stale set would otherwise play an illegal move. This is the same reasoning as the parked-piece case in the notes above.
+
 ---
 
 ## Part 2 — Session persistence
@@ -111,6 +125,7 @@ These behaviours are invisible to the `vm`-based engine tests — they live in i
 |---|---|
 | `commit-mode.spec.js` | Park/commit/re-park/cancel with a mouse, plus a regression guard that release mode still plays on drop |
 | `commit-mode-touch.spec.js` | The same on an emulated phone with real CDP touch events — the case the feature exists for |
+| `premove-bot-turn.spec.js` | A premove queues for the whole of the bot's turn, including the 100 ms scheduling gap an instant think time hides in, and a stale destination set cannot play an illegal move |
 | `chip-position.spec.js` | The chip does not move on turn change, board flip, or both |
 | `pro-layout.spec.js` | Pro-shell clocks hold position across moves, material, long bot names and the result bar |
 | `session-restore.spec.js` | Snapshot, background, reload, resume; "Start fresh"; finished games not resumable |
@@ -121,6 +136,6 @@ These behaviours are invisible to the `vm`-based engine tests — they live in i
 
 ---
 
-*Last updated: July 2026. Code reference: `src/30-board-ui.js` (commit modes, parked rendering), `src/10-app-shell.js` (mp session, resume, opponent-away grace, pro mounts), `src/60-bot-ui.js` (single-player snapshot, config bridge), `server.js` (room state, seat tokens, resume protocol).*
+*Last updated: August 2026 (premove window keyed on the bot's turn). Code reference: `src/30-board-ui.js` (commit modes, parked rendering, `isWaitingTurn`, `botOnMove`, `tryCommit`), `src/10-app-shell.js` (mp session, resume, opponent-away grace, pro mounts), `src/60-bot-ui.js` (single-player snapshot, config bridge), `server.js` (room state, seat tokens, resume protocol).*
 
 *Note on the build: `blundermind.html` is a generated artifact assembled from `src/` by `build.js`, and `server.js` performs the same assembly in memory per request. Always edit `src/` — a hand-edited `blundermind.html` is overwritten on the next build and is not tracked by git.*
