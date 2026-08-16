@@ -1680,21 +1680,45 @@ function clockStop() {
   clockActive = false;
 }
 
-function clockTick() {
+// One step of the running clock. The ANCHOR is the source of truth, never the
+// previous displayed value, so a step that arrives late — a throttled timer, a
+// tab that was hidden, a laptop that slept — charges the whole elapsed wall
+// time rather than a single interval's worth.
+function _clockStep() {
+  if(!clockActive || gameOver) { clockStop(); return; }
+  const elapsed    = Math.floor((Date.now() - _clockAnchorMs) / 1000);
+  const remaining  = Math.max(0, _clockAnchorSec - elapsed);
+  if(turn === 'w') clockTimeW = remaining;
+  else             clockTimeB = remaining;
+  if(remaining === 0) { clockStop(); clockTimeout(turn); return; }
+  clockUpdateDisplay();
+}
+
+// Restart the repaint interval WITHOUT moving the anchor, so any time that
+// passed while it was not running is charged on the very first step.
+function _clockRunInterval() {
   if(clockInterval) clearInterval(clockInterval);
-  // Anchor to absolute wall-clock time so the clock stays accurate even if the
-  // tab is hidden (browsers throttle setInterval when a tab is not visible).
+  clockInterval = setInterval(_clockStep, 250);
+}
+
+function clockTick() {
+  // Re-anchoring means "a new turn starts now". Only call this when that is
+  // true — clockResume() is the entry point for picking the timer back up.
   _clockAnchorMs  = Date.now();
   _clockAnchorSec = turn === 'w' ? clockTimeW : clockTimeB;
-  clockInterval = setInterval(()=>{
-    if(!clockActive || gameOver) { clockStop(); return; }
-    const elapsed    = Math.floor((Date.now() - _clockAnchorMs) / 1000);
-    const remaining  = Math.max(0, _clockAnchorSec - elapsed);
-    if(turn === 'w') clockTimeW = remaining;
-    else             clockTimeB = remaining;
-    if(remaining === 0) { clockStop(); clockTimeout(turn); return; }
-    clockUpdateDisplay();
-  }, 250);
+  _clockRunInterval();
+}
+
+// Pick the clock back up after the repaint timer was stopped (tab hidden, OS
+// sleep) WITHOUT refunding the gap: the player was still on move throughout, so
+// the anchor stands and the first step charges every second that passed.
+function clockResume() {
+  if(gameOver || clockControl === 'untimed') return;
+  if(clockTimeW <= 0 || clockTimeB <= 0) return;
+  if(!_clockAnchorMs) { clockStart(); return; } // never anchored — a fresh turn
+  clockActive = true;
+  _clockRunInterval();
+  _clockStep();   // charge the hidden stretch immediately, don't wait 250 ms
 }
 
 function clockAfterMove() {
@@ -3815,6 +3839,13 @@ const DRAG_THRESHOLD=6;
 let atkMap={};
 let promotionPending=null,gameOver=false;
 let previewBoard=null,previewAtk=null,previewEpSq=-1,previewCastling=null,premoveFrom=-1,premoveTo=-1;
+// True when premoveFrom/premoveTo describe a move the board has NOT applied to
+// previewBoard, because it is not legal yet — a pawn recapture onto a square
+// that is still empty, a slide through a piece the opponent is about to move.
+// The squares stay truthful (confirm mode parks on them; the highlights point
+// at them); this flag is what stops the exploration overlays from reasoning
+// about a position that does not exist. See startPreview().
+let previewCollapsed=false;
 let hoverSq=-1;
 // ── Premove state ────────────────────────────────────────────
 // A QUEUE, not a single move: one entry is consumed per opponent reply, so a

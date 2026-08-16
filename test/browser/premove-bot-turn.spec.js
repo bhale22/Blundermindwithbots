@@ -139,6 +139,75 @@ describe('premove during the bot\'s turn', { concurrency: 1 }, () => {
     assert.strictEqual(res.e2, 'P', 'the pawn on e2 should be untouched');
   });
 
+  // ── Premoves that are not legal YET ──────────────────────────────────────
+  // The whole point of a premove is committing to a move the position does not
+  // allow yet: 1.e4 and then exd5 parked while d5 is still empty. These are the
+  // ones bullet is played on, and both commit modes have to accept them.
+
+  // Freeze the bot on move so the interaction can be driven at human speed.
+  async function holdBotOnMove() {
+    await page.evaluate(() => {
+      window.__realSetTimeout = window.setTimeout;
+      window.setTimeout = function (fn) {
+        if (fn === botMakeMove) return 0;
+        return window.__realSetTimeout.apply(window, arguments);
+      };
+      executeMove(52, 36); // 1.e4 — the pawn is on e4 (36), d5 (27) is empty
+    });
+  }
+  const releaseBot = () => page.evaluate(() => { window.setTimeout = window.__realSetTimeout; });
+
+  test('release mode: a pawn recapture onto an empty square premoves', async () => {
+    await startInstantBotGame();
+    await holdBotOnMove();
+    await H.mouseDriver(page).drag(
+      await H.squareCentre(page, 4, 4), await H.squareCentre(page, 3, 5));
+    const st = await page.evaluate(() => ({
+      queue: premoveQueue.slice(), moves: gameMovesAlgebraic.slice(),
+    }));
+    await releaseBot();
+    assert.deepStrictEqual(st.moves, ['e4'], 'the bot must still be on move');
+    assert.deepStrictEqual(st.queue, [{ from: 36, to: 27, promo: null }],
+      'exd5 should queue even though d5 is empty');
+  });
+
+  test('confirm mode: the same premove parks on d5 and the tap confirms it', async () => {
+    await startInstantBotGame();
+    await page.evaluate(() => setCommitMode('confirm'));
+    await holdBotOnMove();
+    const mouse = H.mouseDriver(page);
+    const e4 = await H.squareCentre(page, 4, 4);
+    const d5 = await H.squareCentre(page, 3, 5);
+
+    await mouse.tap(e4);
+    assert.strictEqual(await page.evaluate(() => selSq), 36, 'e4 pawn should select');
+    assert.ok(await page.evaluate(() => legalMoves.includes(27)),
+      'd5 should be offered as a premove destination');
+
+    await mouse.tap(d5);
+    const parked = await page.evaluate(() => ({
+      awaiting: awaitingConfirm, from: premoveFrom, to: premoveTo,
+      collapsed: previewCollapsed,
+    }));
+    // premoveTo used to collapse back to the origin here, so the confirming tap
+    // never matched and the piece re-parked forever.
+    assert.strictEqual(parked.awaiting, true, 'piece should be parked');
+    assert.strictEqual(parked.to, 27, 'it must be parked on d5, not back on e4');
+    assert.strictEqual(parked.collapsed, true,
+      'the preview board stays honest — the pawn is not on d5 yet');
+
+    await mouse.tap(d5);
+    const st = await page.evaluate(() => ({
+      queue: premoveQueue.slice(), awaiting: awaitingConfirm,
+      moves: gameMovesAlgebraic.slice(),
+    }));
+    await releaseBot();
+    assert.strictEqual(st.awaiting, false, 'confirm should clear the parked flag');
+    assert.deepStrictEqual(st.moves, ['e4'], 'nothing should have been played for real');
+    assert.deepStrictEqual(st.queue, [{ from: 36, to: 27, promo: null }],
+      'the confirming tap should queue the premove');
+  });
+
   test('no page errors were raised throughout', () => {
     assert.deepStrictEqual(errs, []);
   });
