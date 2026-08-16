@@ -1156,6 +1156,14 @@ window.addEventListener('load', () => {
     try { if(typeof maiaMaybePrefetch === 'function') maiaMaybePrefetch(); }
     catch(e){ console.warn('maia prefetch', e); }
   }, 2500);
+  // Build id in the About panel. server.js injects window.__BM_BUILD as the
+  // content hash of this very page, so it answers "is this device running the
+  // deploy I just made, or a shell the service worker cached weeks ago?" —
+  // which is otherwise unanswerable on a phone with no devtools.
+  try {
+    const el = document.getElementById('buildStamp');
+    if (el && window.__BM_BUILD) el.textContent = window.__BM_BUILD;
+  } catch(e){}
 });
 
 // ══════════════════════════════════════════════════════════════════════════

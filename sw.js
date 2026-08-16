@@ -26,6 +26,11 @@
 // Deliberately short: the fallback is a complete, playable app.
 const NAV_TIMEOUT_MS = 3000;
 
+// PLACEHOLDER. server.js rewrites this line on the way out, substituting the
+// assembled page's content hash, so every deploy gets its own shell cache and
+// `activate` drops the previous one. Keep the literal shape
+// `const VERSION = '...';` — the substitution is a regex and warns if it stops
+// matching. A hardcoded version here means devices can pin an old app forever.
 const VERSION = 'v1';
 const SHELL   = 'bm-shell-'   + VERSION;
 const RUNTIME = 'bm-runtime-' + VERSION;

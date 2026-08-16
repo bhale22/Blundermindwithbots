@@ -36,6 +36,27 @@ const { assemble, SRC_PARTS, SRC_DIR } = require('./build.js');
 let htmlCache = null;
 let htmlEtag  = null;
 let htmlStamp = null;
+let htmlBuildId = null;   // content hash of the assembled page; see stampBuild()
+
+// Stamp the build id into the page. Two things depend on it:
+//   • the service worker's cache version (see /sw.js), so a deploy actually
+//     invalidates a shell a device cached earlier;
+//   • a line in the About panel, so "which build is this phone running?" is
+//     answerable without devtools. That question cost two rounds of chasing a
+//     bug that had already been fixed but had not reached the device.
+function stampBuild(buf) {
+  htmlBuildId = crypto.createHash('md5').update(buf).digest('hex').slice(0, 12);
+  const tag = '<meta name="bm-build" content="' + htmlBuildId + '">' +
+              '<script>window.__BM_BUILD=' + JSON.stringify(htmlBuildId) + ';</script>';
+  const s = buf.toString('utf8');
+  // Fail loudly rather than silently shipping an unstamped page: a build id
+  // that never changes is exactly the failure this exists to prevent.
+  if (s.indexOf('</head>') === -1) {
+    console.warn('stampBuild: no </head> found — page served without a build stamp');
+    return buf;
+  }
+  return Buffer.from(s.replace('</head>', tag + '</head>'), 'utf8');
+}
 
 function loadHtml() {
   let stamp, read;
@@ -48,10 +69,11 @@ function loadHtml() {
     read = () => fs.readFileSync(filePath);
   }
   if (htmlStamp === stamp) return; // unchanged
-  htmlCache = read();
+  htmlCache = stampBuild(Buffer.from(read()));
   htmlStamp = stamp;
   htmlEtag  = '"'  + crypto.createHash('md5').update(htmlCache).digest('hex') + '"';
-  console.log('HTML cached', (htmlCache.length/1024).toFixed(0), 'KB, ETag:', htmlEtag);
+  console.log('HTML cached', (htmlCache.length/1024).toFixed(0), 'KB, build:', htmlBuildId,
+              'ETag:', htmlEtag);
 }
 loadHtml();
 
@@ -527,11 +549,35 @@ app.get('/.well-known/assetlinks.json', (req, res) => {
 
 // Must be served from the root for its scope to cover the whole app, and must
 // never be cached hard or a bad worker becomes very hard to replace.
+//
+// The shell cache is keyed on the worker's VERSION, and sw.js ships with a
+// placeholder. Substituting the page's own content hash here is what makes a
+// deploy reach a device that already installed the worker: the script bytes
+// change, so the browser reinstalls it, `activate` drops every bm-* cache that
+// is not the new one, and the stale shell goes with it.
+//
+// Without this, VERSION was a hardcoded 'v1' that no deploy ever changed. The
+// navigate handler is network-first so a healthy load still refreshed the
+// shell — but its 3 s timeout falls back to cache, and a phone on a slow link
+// fetching a ~1 MB document crosses that easily. Once that happened the device
+// could keep replaying the old app indefinitely.
+let swCache = null, swStamp = null;
 app.get('/sw.js', (req, res) => {
+  loadHtml(); // make sure htmlBuildId reflects the current src/
+  if (swStamp !== htmlBuildId) {
+    const src = fs.readFileSync(path.join(__dirname, 'sw.js'), 'utf8');
+    const out = src.replace(/const VERSION = '[^']*';/,
+                            "const VERSION = '" + htmlBuildId + "';");
+    if (out === src) {
+      console.warn('sw.js: VERSION placeholder not found — shell cache will not rotate');
+    }
+    swCache = out;
+    swStamp = htmlBuildId;
+  }
   res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Service-Worker-Allowed', '/');
-  res.sendFile(path.join(__dirname, 'sw.js'));
+  res.send(swCache);
 });
 
 // Browsers request /favicon.ico by default whether or not it is declared, so
