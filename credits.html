@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Credits &amp; Licences — Blundermind &amp; Build-A-Bot Chess</title>
+<meta name="description" content="The projects, research and free software that Blundermind and Build-A-Bot Chess are built on, with full licence information.">
+<meta name="theme-color" content="#0e0f11">
+<style>
+  :root{
+    --bg:#0e0f11; --panel:#16181c; --border:#2a2e35;
+    --text:#e8e6e3; --dim:#a8b0bd; --accent:#5ad490;
+  }
+  @media(prefers-color-scheme:light){
+    :root{
+      --bg:#fbfbfa; --panel:#ffffff; --border:#dcdcd8;
+      --text:#1b1c1e; --dim:#55595f; --accent:#12784a;
+    }
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; padding:32px 20px 72px;
+    background:var(--bg); color:var(--text);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-text-size-adjust:100%;
+  }
+  main{max-width:44rem; margin:0 auto;}
+  h1{font-size:26px; line-height:1.25; margin:0 0 6px;}
+  h2{font-size:18px; margin:34px 0 10px; color:var(--text);}
+  .sub{color:var(--dim); font-size:14px; margin:0 0 28px;}
+  p,li{color:var(--text);}
+  a{color:var(--accent);}
+  ul{padding-left:22px; margin:10px 0;}
+  li{margin:6px 0;}
+  .card{
+    background:var(--panel); border:1px solid var(--border);
+    border-radius:10px; padding:16px 18px; margin:22px 0;
+  }
+  .card h2{margin-top:0;}
+  .card ul{margin-bottom:0;}
+  .cite{color:var(--dim); font-size:14px; font-style:italic;}
+  footer{
+    margin-top:40px; padding-top:18px;
+    border-top:1px solid var(--border); color:var(--dim); font-size:14px;
+  }
+  code{
+    background:var(--panel); border:1px solid var(--border);
+    border-radius:4px; padding:1px 5px; font-size:0.9em;
+  }
+  .tbl-wrap{overflow-x:auto;}
+  table{
+    border-collapse:collapse; width:100%; font-size:14px; margin:14px 0;
+  }
+  th,td{
+    text-align:left; padding:7px 10px; vertical-align:top;
+    border-bottom:1px solid var(--border);
+  }
+  th{color:var(--dim); font-weight:600;}
+</style>
+</head>
+<body>
+<main>
+
+<h1>Built on other people's work</h1>
+<p class="sub">
+  Covers <strong>blundermindchess.com</strong>, <strong>buildabotchess.com</strong>
+  and the <strong>Blundermind</strong> Android app.<br>
+  Published by Kelpdog · Last updated 17 August 2026
+</p>
+
+<p>
+  Blundermind exists because a remarkable amount of world-class chess software and
+  research is free — free to use, free to study, and free to build on. This page
+  credits that work and records every licence. If you think something here is
+  incomplete or wrongly attributed, please say so through the feedback box in the
+  app and it will be fixed.
+</p>
+
+<div class="card">
+  <h2>Maia — the human-like opponents</h2>
+  <p>
+    The neural-network opponents come from the <strong>Maia Chess</strong> project at the
+    <a href="https://csslab.cs.toronto.edu/" target="_blank" rel="noopener">Computational Social Science Lab</a>,
+    University of Toronto. Maia is trained to predict the moves a human of a given rating
+    would actually play, rather than the objectively best move — which is what makes a
+    Maia bot feel like an opponent instead of a calculator.
+  </p>
+  <p>
+    Blundermind runs a browser-ready conversion of the <strong>Maia&nbsp;3</strong> network
+    (exported to ONNX and simplified for in-browser inference). Maia&nbsp;3 is released by
+    CSSLab under the <strong>AGPL-3.0</strong> licence; the converted network ships under the
+    same licence, with the original model at
+    <a href="https://github.com/CSSLab/maia3" target="_blank" rel="noopener">github.com/CSSLab/maia3</a>
+    and Blundermind's own source linked below.
+  </p>
+  <p>
+    Project site: <a href="https://www.maiachess.com/" target="_blank" rel="noopener">maiachess.com</a>
+  </p>
+  <p class="cite">
+    Monroe, Eilender, Chalmers, Tang &amp; Anderson —
+    <em>Chessformer: A Unified Architecture for Chess Modeling</em>, ICLR 2026.<br>
+    McIlroy-Young, Sen, Kleinberg &amp; Anderson —
+    <em>Aligning Superhuman AI with Human Behavior: Chess as a Model System</em>, KDD 2020.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Stockfish — the analytical engine</h2>
+  <p>
+    The engine behind the ghost-move previews, the engine-calculated bot controls and the
+    non-Maia bot levels is <a href="https://stockfishchess.org/" target="_blank" rel="noopener">Stockfish</a>,
+    free software under the <strong>GNU General Public License v3</strong>. Blundermind ships
+    <strong>Stockfish.js&nbsp;18</strong> (the single-threaded lite WASM build) from the
+    <a href="https://github.com/nmrugg/stockfish.js" target="_blank" rel="noopener">stockfish.js</a>
+    port, which is based on
+    <a href="https://github.com/official-stockfish/Stockfish" target="_blank" rel="noopener">official Stockfish</a>
+    by T.&nbsp;Romstad, M.&nbsp;Costalba, J.&nbsp;Kiiski, G.&nbsp;Linscott and other contributors,
+    with the NNUE evaluation network <code>nn-9067e33176e</code> by Linmiao&nbsp;Xu.
+  </p>
+  <p>
+    In line with the GPL, Blundermind's complete corresponding source — including the
+    exact Stockfish build it ships — is public:
+    <a href="https://github.com/bhale22/Blundermindwithbots" target="_blank" rel="noopener">github.com/bhale22/Blundermindwithbots</a>.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Lichess — opening data</h2>
+  <p>
+    Opening statistics come from the <a href="https://lichess.org/" target="_blank" rel="noopener">Lichess</a>
+    opening explorer and games database, and the opening names are from the
+    community-maintained <a href="https://github.com/lichess-org/chess-openings" target="_blank" rel="noopener">lichess-org/chess-openings</a>
+    dataset (public domain, CC0). Lichess is a free, ad-free, open-source non-profit and the
+    reason a project like this one can exist at all.
+    <a href="https://lichess.org/patron" target="_blank" rel="noopener">Support them</a>.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Prof. Kenneth Regan — time and rating</h2>
+  <p>
+    The time-pressure model — how a bot's effective strength degrades as its clock runs
+    down — is seeded on Prof. Kenneth Regan's (University at Buffalo) published data on
+    rating loss across time controls. His work on modelling human move choice as a
+    function of rating, and on intrinsic performance ratings, is the intellectual
+    groundwork for the idea that an engine can be conditioned to play <em>like</em> a
+    given strength rather than merely <em>at</em> it.
+  </p>
+  <p class="cite">
+    Regan &amp; Haworth — <em>Intrinsic Chess Ratings</em>, AAAI 2011.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Chess Dojo — a phrase that named the problem</h2>
+  <p>
+    The phrase <em>"getting a grip on the board"</em> is
+    <a href="https://www.chessdojo.club/" target="_blank" rel="noopener">Chess Dojo</a>'s,
+    and it named a problem I had been failing to articulate. Much of the overlay design
+    exists because of it.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Pieces, fonts and runtime</h2>
+  <ul>
+    <li><strong>Staunton pieces</strong> — from the <code>react-chess-pieces</code> package (ISC licence).</li>
+    <li><strong>Alternative piece set</strong> — by <a href="https://rhosgfx.itch.io/" target="_blank" rel="noopener">RhosGFX</a> (CC0, public domain).</li>
+    <li><strong>Fonts</strong> — Chakra Petch, Cormorant Garamond, DM Mono, Fraunces and Spectral, all under the SIL Open Font License 1.1 (the licence text ships with the site).</li>
+    <li><strong>ONNX Runtime Web</strong> — Microsoft's in-browser inference runtime that executes the Maia network (MIT licence).</li>
+  </ul>
+</div>
+
+<h2>Full licence manifest</h2>
+<div class="tbl-wrap">
+<table>
+  <tr><th>Component</th><th>Version / detail</th><th>Licence</th><th>Source</th></tr>
+  <tr><td>Stockfish.js</td><td>18, lite single-thread WASM</td><td>GPL-3.0</td><td><a href="https://github.com/nmrugg/stockfish.js" target="_blank" rel="noopener">nmrugg/stockfish.js</a></td></tr>
+  <tr><td>Stockfish NNUE net</td><td><code>nn-9067e33176e</code> by Linmiao Xu</td><td>GPL-3.0 (with Stockfish)</td><td><a href="https://tests.stockfishchess.org/" target="_blank" rel="noopener">stockfishchess.org</a></td></tr>
+  <tr><td>Maia 3 network</td><td>ONNX conversion, simplified</td><td>AGPL-3.0</td><td><a href="https://github.com/CSSLab/maia3" target="_blank" rel="noopener">CSSLab/maia3</a></td></tr>
+  <tr><td>ONNX Runtime Web</td><td>1.23.0</td><td>MIT</td><td><a href="https://github.com/microsoft/onnxruntime" target="_blank" rel="noopener">microsoft/onnxruntime</a></td></tr>
+  <tr><td>Opening names (<code>eco.tsv</code>)</td><td>—</td><td>CC0 (public domain)</td><td><a href="https://github.com/lichess-org/chess-openings" target="_blank" rel="noopener">lichess-org/chess-openings</a></td></tr>
+  <tr><td>Opening statistics</td><td>live API</td><td>Lichess opening explorer</td><td><a href="https://lichess.org/" target="_blank" rel="noopener">lichess.org</a></td></tr>
+  <tr><td>Staunton pieces</td><td>react-chess-pieces</td><td>ISC</td><td><a href="https://www.npmjs.com/package/react-chess-pieces" target="_blank" rel="noopener">npm</a></td></tr>
+  <tr><td>Alternative pieces</td><td>RhosGFX</td><td>CC0 (public domain)</td><td><a href="https://rhosgfx.itch.io/" target="_blank" rel="noopener">rhosgfx.itch.io</a></td></tr>
+  <tr><td>Fonts</td><td>Chakra Petch · Cormorant Garamond · DM Mono · Fraunces · Spectral</td><td>SIL OFL 1.1</td><td><a href="https://fonts.google.com/" target="_blank" rel="noopener">Google Fonts</a></td></tr>
+  <tr><td>Server</td><td>Express · ws</td><td>MIT</td><td><a href="https://www.npmjs.com/" target="_blank" rel="noopener">npm</a></td></tr>
+</table>
+</div>
+
+<div class="card">
+  <h2>Blundermind's own licence</h2>
+  <p>
+    Blundermind itself is free software under the
+    <strong>GNU General Public License v3 (or later)</strong>. The complete source —
+    the training board, the bot engine, the multiplayer server, everything — is at
+    <a href="https://github.com/bhale22/Blundermindwithbots" target="_blank" rel="noopener">github.com/bhale22/Blundermindwithbots</a>.
+    You are free to run it, study it, change it and share it under the same terms.
+  </p>
+</div>
+
+<footer>
+  <a href="/">← Back to the board</a> · <a href="/privacy">Privacy policy</a>
+</footer>
+
+</main>
+</body>
+</html>

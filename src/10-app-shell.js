@@ -203,7 +203,7 @@ window.addEventListener('resize', resizeBoard);
 
 // ═══════════════════════════════════════════════════════════════════
 // BLUNDERMIND — Complete chess engine + UI
-// © 2026 Blundermind. All rights reserved.
+// © 2026 Blundermind — free software, GPL-3.0-or-later; see LICENSE and /credits.
 // ═══════════════════════════════════════════════════════════════════
 
 // ── Piece set data ──────────────────────────────────────────────────

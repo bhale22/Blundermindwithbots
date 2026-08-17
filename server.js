@@ -209,7 +209,8 @@ function explorerGet(pathAndQuery, cb) {
   const agent = EXPLORER_HOST.startsWith('http://') ? http : https;
   const req = agent.get(EXPLORER_HOST + pathAndQuery, {
     headers: {
-      'User-Agent': 'Blundermind/1.0',
+      // Lichess asks API clients for a descriptive User-Agent with contact info.
+      'User-Agent': 'Blundermind/1.0 (+https://blundermindchess.com; bbrownhale@gmail.com)',
       'Accept': 'application/json',
       ...(LICHESS_TOKEN ? { Authorization: 'Bearer ' + LICHESS_TOKEN } : {})
     }
@@ -492,6 +493,19 @@ app.get('/privacy', (req, res) => {
   // Short cache: a policy needs to be correctable quickly, and it is 5 KB.
   res.setHeader('Cache-Control', 'public, max-age=3600');
   res.sendFile(path.join(__dirname, 'privacy.html'));
+});
+
+// ── Credits & licences ──────────────────────────────────────────────────────
+// The GPL notice for Stockfish, the AGPL notice for the Maia 3 network, and
+// attribution for everything else the site is built on. Distributing those
+// components obliges us to carry their notices somewhere users can reach —
+// this page is that place, and the app footer links to it. Same URL shape as
+// /privacy: one canonical path, .html redirected for people who type it.
+app.get('/credits.html', (req, res) => res.redirect(301, '/credits'));
+app.get('/credits', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.sendFile(path.join(__dirname, 'credits.html'));
 });
 
 // ── Digital Asset Links — proves this domain and the Android app are ours ───
