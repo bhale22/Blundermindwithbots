@@ -46,6 +46,20 @@
     background:var(--panel); border:1px solid var(--border);
     border-radius:4px; padding:1px 5px; font-size:0.9em;
   }
+  label{display:block; font-size:14px; color:var(--dim); margin:12px 0 5px;}
+  textarea,input[type=email]{
+    width:100%; background:var(--bg); color:var(--text);
+    border:1px solid var(--border); border-radius:6px;
+    padding:9px 11px; font:inherit; font-size:15px;
+  }
+  textarea{min-height:110px; resize:vertical;}
+  button{
+    margin-top:14px; padding:9px 18px; background:var(--accent); color:var(--bg);
+    border:0; border-radius:6px; font:inherit; font-size:15px; font-weight:600;
+    cursor:pointer;
+  }
+  button:hover{opacity:.9;}
+  .sent{color:var(--accent); margin-top:10px;}
 </style>
 </head>
 <body>
@@ -113,7 +127,8 @@
 
 <h2>Feedback you send us</h2>
 <p>
-  If you use the feedback box, the message you type is delivered to us by
+  If you use the feedback box in the app, or the contact form at the bottom of this page,
+  the message you type is delivered to us by
   <a href="https://formspree.io" rel="noopener">Formspree</a>, a third-party form service,
   and arrives as an email. We read it and reply if you've asked us to.
 </p>
@@ -159,14 +174,47 @@
   what the app does with data will be described here rather than quietly reworded.
 </p>
 
-<footer>
+<div class="card" id="contact">
+  <h2>Getting in touch</h2>
   <p>
-    Questions about this policy or about privacy generally:<br>
-    <a href="mailto:bbrownhale@gmail.com">bbrownhale@gmail.com</a>
+    Questions about this policy, about privacy generally, or about anything else on the
+    site — send them here. This is the same form as the feedback box in the app, and it
+    reaches us without either of us having to publish an email address.
   </p>
+  <form id="contactForm" action="https://formspree.io/f/mojrdakw" method="POST">
+    <label for="cfMsg">Your message</label>
+    <textarea id="cfMsg" name="message" required></textarea>
+    <label for="cfEmail">Your email — only if you would like a reply (optional)</label>
+    <input type="email" id="cfEmail" name="email" autocomplete="email">
+    <input type="hidden" name="_subject" value="Blundermind — contact via privacy page">
+    <button type="submit">Send</button>
+  </form>
+  <p class="sent" id="cfThanks" style="display:none;">Thank you — message received.</p>
+</div>
+
+<footer>
   <p>Kelpdog · <a href="/">Back to Blundermind</a> · <a href="/credits">Credits &amp; licences</a></p>
 </footer>
 
 </main>
+
+<script>
+// Without this the plain form POST still works — Formspree accepts it and shows
+// its own confirmation page. This only keeps the reader on the policy instead.
+(function(){
+  var f = document.getElementById('contactForm');
+  if (!f || !window.fetch || !window.FormData) return;
+  f.addEventListener('submit', function(e){
+    e.preventDefault();
+    fetch(f.action, { method:'POST', headers:{ 'Accept':'application/json' }, body:new FormData(f) })
+      .then(function(r){
+        if (!r.ok) throw new Error('rejected');
+        f.style.display = 'none';
+        document.getElementById('cfThanks').style.display = 'block';
+      })
+      .catch(function(){ alert('Could not send right now — please try again later.'); });
+  });
+})();
+</script>
 </body>
 </html>
