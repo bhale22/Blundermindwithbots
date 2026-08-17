@@ -76,7 +76,37 @@ function executeMove(from,to,promo){
   const _pins=computePins(board);pinnedWSquares=_pins.w;pinnedBSquares=_pins.b;
   lastMoveFrom=from; lastMoveTo=to; // record for last-move highlight
   playMoveSound(isCapture);
-  selSq=-1;legalMoves=[];clearPreview();hoverSq=-1;dragFrom=-1;dragMoved=false;
+  // ── Input state ───────────────────────────────────────────────────────────
+  // The OPPONENT moving must not tear a piece out of the player's hand.
+  //
+  // This line used to clear selSq/legalMoves/dragFrom/dragMoved for every move,
+  // the opponent's included. Composing a premove means holding a piece during
+  // the opponent's turn, so the bot's reply landing mid-compose wiped the drag:
+  // the drop then arrived with dragFrom = -1 and legalMoves = [], every branch
+  // of mouseup missed, and the piece snapped home — discarding a move that was
+  // legal in the position that had just arrived. A short think time makes the
+  // reply land inside the compose window nearly every time, which is why this
+  // read as "Maia at 1 s won't let me select" while Stockfish (which replies
+  // before the second interaction even starts) looked fine.
+  const _heldSq = dragFrom>=0 ? dragFrom : selSq;
+  const _ourMove = (typeof playerColor!=='function') || p.color===playerColor();
+  // Keep it only if the same piece is still ours and still standing there —
+  // the opponent may have just captured it or moved onto its square.
+  const _keepHeld = !_ourMove && _heldSq>=0 && board[_heldSq]
+                 && board[_heldSq].color===playerColor();
+  if(_keepHeld){
+    const _wasDrag=dragFrom>=0, _wasMoved=dragMoved;
+    // The set it was picked up with was premoveDests — speculative by design.
+    // The position it guessed at now exists, so re-derive it for real.
+    clearPreview();
+    legalMoves=legalMovesFor(_heldSq,board,epSq,castling);
+    startPreview(_heldSq,_heldSq);   // clears selSq; restored just below
+    selSq=_heldSq;
+    dragFrom=_wasDrag?_heldSq:-1;
+    dragMoved=_wasMoved;
+  }else{
+    selSq=-1;legalMoves=[];clearPreview();hoverSq=-1;dragFrom=-1;dragMoved=false;
+  }
   // Draw-rule bookkeeping
   halfmoveClock=(isCapture||isPawnMove)?0:halfmoveClock+1;
   const _pk=positionKey(board,turn,castling,epSq);
@@ -188,8 +218,7 @@ function tryCommit(from,to,promo){
   // This branch is checked BEFORE legalMoves, because a premove is deliberately
   // allowed to be illegal in the current position — see premoveDests.
   const notMyTurn=(typeof mpIsMyTurn==='function'&&!mpIsMyTurn());
-  const botBusy=(botActive&&botThinking);
-  if(notMyTurn||botBusy){
+  if(notMyTurn||botOnMove()){
     const st=premoveSpecState();
     const p2=st.board[from];if(!p2)return false;
     // Only allow premove for the player's own pieces
@@ -197,8 +226,13 @@ function tryCommit(from,to,promo){
     if(!premoveDests(from,st.board,st.castling).includes(to))return false;
     return queuePremove(from,to,promo);
   }
-  if(!legalMoves.includes(to))return false;
-  const p=board[from];if(!p)return false;
+  // Past this point it IS our turn, so the move plays for real — and it must be
+  // legal in the position as it stands NOW. `legalMoves` cannot be trusted for
+  // that: a piece picked up during the opponent's turn carries the optimistic
+  // premoveDests set, and the turn can flip back to us mid-drag when the bot
+  // replies. executeMove validates nothing, so check against the live board.
+  const p=board[from];if(!p||p.color!==turn)return false;
+  if(!legalMovesFor(from,board,epSq,castling).includes(to))return false;
   if(p.piece==='P'&&(Math.floor(to/8)===0||Math.floor(to/8)===7)&&!promo){
     promotionPending={from,to,color:p.color};clearPreview();render();return true;
   }
@@ -216,16 +250,22 @@ function startPreview(from,to){
   // Exploration overlays describe the REAL position. A premove destination that
   // is not legal YET — a pawn's diagonal onto an empty square, a slide through
   // an enemy piece, a piece an earlier premove has already moved — would have us
-  // render consequences on a board that does not exist. Fall back to the identity
-  // preview instead, so the overlays stay honest about what is actually there.
-  if(to!==from&&isWaitingTurn()&&
-     (!board[from]||!legalMovesFor(from,board,epSq,castling).includes(to))) to=from;
+  // render consequences on a board that does not exist. Preview the identity
+  // board instead, so the overlays stay honest about what is actually there.
+  //
+  // What we must NOT do is rewrite `to` itself. premoveFrom/premoveTo are not
+  // only the preview anchor: confirm mode parks a piece on them and matches the
+  // confirming tap against premoveTo. Collapsing it to the origin made every
+  // not-yet-legal premove unconfirmable — the tap never matched, so it re-parked
+  // forever. That is precisely the pawn recapture a bullet player premoves.
+  const collapsed = (to!==from&&isWaitingTurn()&&
+    (!board[from]||!legalMovesFor(from,board,epSq,castling).includes(to)));
   // Skip if same square as last preview — no need to recompute
-  if(from===premoveFrom&&to===premoveTo&&previewBoard) {
+  if(from===premoveFrom&&to===premoveTo&&previewBoard&&collapsed===previewCollapsed) {
     render(); return;
   }
   let bd2;
-  if(to===from){
+  if(collapsed||to===from){
     // Identity preview: piece held over its own square. Evaluate the board
     // exactly as it stands so the exploration overlays stay on until the
     // piece is committed back (click / drop on origin).
@@ -239,7 +279,7 @@ function startPreview(from,to){
       ? (from+to)>>1 : -1;
     previewCastling = updateCastling(from,to,movingPiece,castling);
   }
-  previewBoard=bd2;previewAtk=buildAtk(bd2);
+  previewBoard=bd2;previewAtk=buildAtk(bd2);previewCollapsed=collapsed;
   const pp=computePins(bd2);previewPinsW=pp.w;previewPinsB=pp.b;
   premoveFrom=from;premoveTo=to;selSq=-1;
   if(typeof indRefreshPremoveUI==='function') indRefreshPremoveUI();
@@ -256,7 +296,7 @@ function startPreview(from,to){
   });
 }
 function clearPreview(){
-  previewBoard=null;previewAtk=null;premoveFrom=-1;premoveTo=-1;
+  previewBoard=null;previewAtk=null;premoveFrom=-1;premoveTo=-1;previewCollapsed=false;
   previewPinsW=new Set();previewPinsB=new Set();
   previewEpSq=-1;previewCastling=null;
   currentlyPreviewing=false;
@@ -372,8 +412,23 @@ function playerColor(){
 // it's not their turn (for exploration and premove queuing).
 function isWaitingTurn(){
   if(typeof mpIsMyTurn==='function'&&typeof mpRoomId!=='undefined'&&mpRoomId) return !mpIsMyTurn();
-  if(typeof botActive!=='undefined'&&botActive&&typeof botThinking!=='undefined'&&botThinking) return true;
-  return false;
+  return botOnMove();
+}
+
+// True for the WHOLE of the bot's turn — keyed on whose move it is, never on
+// botThinking. The bot's turn is wider than its inference at both ends:
+// botPostMoveHook schedules botMakeMove on a 100 ms timer, the book and
+// bot-premove paths clear botThinking before they call executeMove, and
+// botStart waits 800 ms before the opening move. At an "instant" think time
+// the inference can be shorter than the 100 ms gap sitting in front of it, so
+// gating on botThinking refused a premove for most of the bot's turn —
+// including the instant right after the player releases their own move, which
+// is exactly when a speed player premoves.
+function botOnMove(){
+  if(typeof botActive==='undefined'||!botActive)return false;
+  if(typeof gameOver!=='undefined'&&gameOver)return false;
+  if(typeof botPlayerColor==='undefined')return false;
+  return turn===(botPlayerColor==='white'?'b':'w');
 }
 
 cv.addEventListener('mousedown',e=>{
@@ -422,12 +477,14 @@ cv.addEventListener('mousedown',e=>{
     if(sq===premoveTo){
       const f=premoveFrom,t=premoveTo;
       setAwaitingConfirm(false);
-      // A parked piece can sit for a while, and in multiplayer the position
-      // can change underneath it. Re-derive legality from the live board
-      // rather than trusting the list captured when it was picked up.
-      if(board[f]) legalMoves=legalMovesFor(f,board,epSq,castling);
-      if(board[f]&&legalMoves.includes(t)) tryCommit(f,t);
-      else{selSq=-1;legalMoves=[];clearPreview();atkMap=buildAtk(board);render();}
+      // A parked piece can sit for a while, and the position can change
+      // underneath it — the opponent replies in multiplayer, the bot replies
+      // here. So legality is re-derived rather than trusting the list captured
+      // when the piece was picked up; tryCommit does exactly that, against the
+      // live board for a real move and against the speculative one for a
+      // premove. Checking strict legality HERE instead threw away every premove
+      // that is not legal yet, which is most of the ones worth making.
+      if(!tryCommit(f,t)){selSq=-1;legalMoves=[];clearPreview();atkMap=buildAtk(board);render();}
       return;
     }
     if(sq!==premoveFrom&&legalMoves.includes(sq)){
@@ -1200,7 +1257,9 @@ function render(){
   // Checks both CURRENT opponent forks (already forking the destination square)
   // AND NEXT-MOVE opponent forks (opponent can move somewhere to fork premoveTo next turn)
   // Both cases are already in oppForkData since it's computed on previewBoard
-  if (previewBoard && premoveTo >= 0) {
+  // previewCollapsed means the piece is NOT on premoveTo in previewBoard — the
+  // premove is not legal yet — so the fork data says nothing about landing there.
+  if (previewBoard && premoveTo >= 0 && !previewCollapsed) {
     const oppForkData = (turn === 'w') ? forkDataB : forkDataW;
     // Opponent's forks are always "danger" colors for the active player
     const oppAccent   = 'rgba(220,50,50,0.92)'; // red = opponent safe fork danger
@@ -2676,24 +2735,29 @@ setTimeout(function() {
 }, 200);
 
 // Keep the clock counting against real elapsed wall-clock time across tab
-// hide/show (including OS sleep) — setInterval is suspended while hidden,
-// so we stop the interval but must still charge the hidden player for the
-// time that actually passed, or resuming would silently refund it.
+// hide/show (including OS sleep). A hidden tab's setInterval is throttled to
+// roughly once a minute, so the repaint timer is worth stopping — but the
+// ANCHOR must survive, because the player is still on move and still on the
+// clock the whole time they are away.
+//
+// This used to call clockStop() on hide and clockStart() on show. clockStart()
+// re-anchors, which silently refunded every second spent hidden: alt-tabbing
+// out of a 1+0 bullet game paused your clock, and in multiplayer the refunded
+// value was then sent to the opponent as authoritative.
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
+    // Charge up to this instant so the saved snapshot and the display are
+    // right, then park the timer. _clockAnchorMs deliberately stays put.
     if (typeof clockActive !== 'undefined' && clockActive) {
       const elapsed   = Math.floor((Date.now() - _clockAnchorMs) / 1000);
       const remaining = Math.max(0, _clockAnchorSec - elapsed);
       if (turn === 'w') clockTimeW = remaining; else clockTimeB = remaining;
-      clockStop();
-      if (remaining === 0) clockTimeout(turn);
+      if (clockInterval) { clearInterval(clockInterval); clockInterval = null; }
+      if (remaining === 0) { clockStop(); clockTimeout(turn); }
       else clockUpdateDisplay();
     }
   } else {
-    if (typeof clockControl !== 'undefined' && clockControl !== 'untimed'
-        && !gameOver && clockTimeW > 0 && clockTimeB > 0) {
-      clockStart();
-    }
+    if (typeof clockResume === 'function') clockResume();
   }
 });
 

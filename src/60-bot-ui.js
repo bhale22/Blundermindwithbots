@@ -2042,6 +2042,18 @@ function bmSessionRestore() {
 
     // Position. parseFen sets turn/castling/epSq as a side effect.
     board = parseFen(snap.fen);
+    // Charge the player who was on move for the time the app was gone. The
+    // snapshot records when it was written, so this is real elapsed time, not
+    // a guess — without it, closing the tab was a free pause, which is exactly
+    // what a clock is supposed to prevent. Applied AFTER parseFen because that
+    // is what sets `turn`.
+    if (snap.clock && snap.clock.control !== 'untimed' && typeof snap.ts === 'number') {
+      const awaySec = Math.max(0, Math.floor((Date.now() - snap.ts) / 1000));
+      if (awaySec > 0) {
+        if (turn === 'w') clockTimeW = Math.max(0, clockTimeW - awaySec);
+        else              clockTimeB = Math.max(0, clockTimeB - awaySec);
+      }
+    }
     halfmoveClock      = snap.halfmoveClock || 0;
     positionCounts     = snap.positionCounts || {};
     gameMovesAlgebraic = Array.isArray(snap.moves) ? snap.moves.slice() : [];
@@ -2084,9 +2096,15 @@ function bmSessionRestore() {
     if (typeof landingDismiss === 'function') landingDismiss();
 
     // Resume the clock only for a timed game that still has time on both sides.
-    // Time spent backgrounded is not charged — the same policy the existing
-    // visibilitychange handler already applies to an ordinary tab switch.
-    if (clockControl !== 'untimed' && clockTimeW > 0 && clockTimeB > 0) clockStart();
+    // Time spent away IS charged (see the deduction above), so a game left long
+    // enough comes back already lost on time rather than silently paused —
+    // which is what a clock means. Declare that here rather than leaving a
+    // playable board sitting at 0:00.
+    if (clockControl !== 'untimed') {
+      if (clockTimeW <= 0)      clockTimeout('w');
+      else if (clockTimeB <= 0) clockTimeout('b');
+      else                      clockStart();
+    }
 
     // If it is the bot's move, let it play. The delay matches botStart's, and
     // gives the engines a moment to come back up after the reload.

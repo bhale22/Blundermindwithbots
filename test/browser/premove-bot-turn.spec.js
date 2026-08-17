@@ -1,0 +1,304 @@
+// Premoving against a bot, at speed-chess timings.
+//
+// The bug this guards: premove composition used to be gated on `botThinking`,
+// which is only true while the engine is actually computing. The bot's TURN is
+// wider than that — botPostMoveHook schedules botMakeMove on a 100 ms timer,
+// and the book/bot-premove paths clear the flag before executeMove. With think
+// time set to "instant" the inference can be shorter than the 100 ms gap in
+// front of it, so most of the bot's turn silently refused premoves, the moment
+// right after the player released their own move very much included.
+//
+// The decisive assertions are synchronous: run in the same tick as the human's
+// move, before any timer can fire. That is the worst case, and the one a speed
+// player hits every single move.
+const { test, before, after, describe } = require('node:test');
+const assert = require('node:assert');
+const { chromium } = require('playwright');
+const H = require('./_harness');
+
+describe('premove during the bot\'s turn', { concurrency: 1 }, () => {
+  let server, browser, ctx, page;
+  const errs = [];
+
+  before(async () => {
+    server = await H.startServer();
+    browser = await chromium.launch();
+    ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+    page = await ctx.newPage();
+    page.on('pageerror', (e) => errs.push(e.message));
+  });
+
+  after(async () => {
+    if (browser) await browser.close();
+    H.stopServer(server);
+  });
+
+  // A genuinely fresh game. The saved-session restore is per-origin and would
+  // otherwise hand the next test the previous one's position, mid-game.
+  async function startInstantBotGame() {
+    await page.goto(server.baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
+    await page.goto(server.baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#cv');
+    await page.waitForTimeout(2500);
+    await H.dismissLanding(page);
+    await page.evaluate(() => {
+      botSetPlayerColor('white');
+      botSetTC('blitz3');
+      maia3SetRating(1700);
+      botSetTab('maia3');
+      botSetTimeBehavior('instant');
+      botStart();
+    });
+    await page.waitForTimeout(1500);
+    assert.ok(await page.evaluate(() => botActive), 'bot game should be active');
+    assert.deepStrictEqual(await page.evaluate(() => gameMovesAlgebraic.slice()), [],
+      'game should start empty');
+  }
+
+  test('the bot owns the move the instant the human move lands', async () => {
+    await startInstantBotGame();
+    // Same tick as executeMove: botMakeMove has not run, so botThinking is
+    // still false. The board must nonetheless treat this as the bot's turn.
+    const s = await page.evaluate(() => {
+      executeMove(52, 36); // e4
+      return { thinking: botThinking, turn, waiting: isWaitingTurn(), onMove: botOnMove() };
+    });
+    assert.strictEqual(s.turn, 'b', 'turn should have flipped to the bot');
+    assert.strictEqual(s.thinking, false, 'botThinking is not set yet — that is the point');
+    assert.strictEqual(s.onMove, true, 'botOnMove() should be true');
+    assert.strictEqual(s.waiting, true, 'isWaitingTurn() must be true in the scheduling gap');
+  });
+
+  test('a premove queues in that gap and plays on the bot\'s reply', async () => {
+    await startInstantBotGame();
+    // Queue and read back in one tick — with an instant bot the queue drains
+    // within ~200 ms, so a second round trip would race the reply.
+    const q = await page.evaluate(() => {
+      executeMove(52, 36);                  // e4
+      const ok = tryCommit(62, 45);         // Nf3, premoved in the same tick
+      return { ok, queue: premoveQueue.slice() };
+    });
+    assert.strictEqual(q.ok, true, 'tryCommit should queue the premove');
+    assert.deepStrictEqual(q.queue, [{ from: 62, to: 45, promo: null }],
+      'the premove should be sitting in the queue');
+
+    await page.waitForTimeout(6000);
+    const moves = await page.evaluate(() => gameMovesAlgebraic.slice());
+    assert.ok(moves.length >= 3, 'bot replied and the premove fired: ' + moves.join(' '));
+    assert.strictEqual(moves[0], 'e4');
+    assert.strictEqual(moves[2], 'Nf3', 'the premove should be move 3: ' + moves.join(' '));
+    assert.deepStrictEqual(await page.evaluate(() => premoveQueue.slice()), [],
+      'queue should be drained');
+  });
+
+  test('a premove queues through the real drag path during the bot\'s turn', async () => {
+    await startInstantBotGame();
+    const mouse = H.mouseDriver(page);
+    // A drag takes longer than an instant bot's whole turn, so hold the bot on
+    // move for the duration — otherwise the drop lands on our own turn again
+    // and the test would be exercising an ordinary move.
+    await page.evaluate(() => {
+      window.__realSetTimeout = window.setTimeout;
+      window.setTimeout = function (fn) {
+        if (fn === botMakeMove) return 0; // never let the bot think
+        return window.__realSetTimeout.apply(window, arguments);
+      };
+      executeMove(52, 36); // e4
+    });
+    await mouse.drag(await H.squareCentre(page, 6, 1), await H.squareCentre(page, 5, 3));
+    const after = await page.evaluate(() => ({
+      queue: premoveQueue.slice(), moves: gameMovesAlgebraic.slice(),
+    }));
+    await page.evaluate(() => { window.setTimeout = window.__realSetTimeout; });
+
+    assert.deepStrictEqual(after.moves, ['e4'], 'the bot must still be on move');
+    assert.deepStrictEqual(after.queue, [{ from: 62, to: 45, promo: null }],
+      'dragging g1->f3 during the bot\'s turn should queue a premove');
+  });
+
+  test('a drop that is illegal on the live board is refused, not played', async () => {
+    // A piece picked up during the bot's turn carries the optimistic
+    // premoveDests set. If the bot replies mid-drag the turn is ours again and
+    // that set is wrong — executeMove validates nothing, so tryCommit must.
+    await startInstantBotGame();
+    const res = await page.evaluate(() => {
+      // Ke1 (60) to e2 (52) is in no legal set — e2 holds our own pawn — but a
+      // stale legalMoves offers it. It is our turn, so this is the real-move
+      // path, not the premove one.
+      legalMoves = [52];
+      const before = turn;
+      const played = tryCommit(60, 52);
+      return { played, before, after: turn,
+        moves: gameMovesAlgebraic.slice(), e2: board[52] ? board[52].piece : null };
+    });
+    assert.strictEqual(res.before, 'w', 'should be the human\'s turn for this case');
+    assert.strictEqual(res.played, false, 'illegal move must be refused');
+    assert.strictEqual(res.after, 'w', 'the turn must not have flipped');
+    assert.deepStrictEqual(res.moves, [], 'nothing should have been played');
+    assert.strictEqual(res.e2, 'P', 'the pawn on e2 should be untouched');
+  });
+
+  // ── Premoves that are not legal YET ──────────────────────────────────────
+  // The whole point of a premove is committing to a move the position does not
+  // allow yet: 1.e4 and then exd5 parked while d5 is still empty. These are the
+  // ones bullet is played on, and both commit modes have to accept them.
+
+  // Freeze the bot on move so the interaction can be driven at human speed.
+  async function holdBotOnMove() {
+    await page.evaluate(() => {
+      window.__realSetTimeout = window.setTimeout;
+      window.setTimeout = function (fn) {
+        if (fn === botMakeMove) return 0;
+        return window.__realSetTimeout.apply(window, arguments);
+      };
+      executeMove(52, 36); // 1.e4 — the pawn is on e4 (36), d5 (27) is empty
+    });
+  }
+  const releaseBot = () => page.evaluate(() => { window.setTimeout = window.__realSetTimeout; });
+
+  test('release mode: a pawn recapture onto an empty square premoves', async () => {
+    await startInstantBotGame();
+    await holdBotOnMove();
+    await H.mouseDriver(page).drag(
+      await H.squareCentre(page, 4, 4), await H.squareCentre(page, 3, 5));
+    const st = await page.evaluate(() => ({
+      queue: premoveQueue.slice(), moves: gameMovesAlgebraic.slice(),
+    }));
+    await releaseBot();
+    assert.deepStrictEqual(st.moves, ['e4'], 'the bot must still be on move');
+    assert.deepStrictEqual(st.queue, [{ from: 36, to: 27, promo: null }],
+      'exd5 should queue even though d5 is empty');
+  });
+
+  test('confirm mode: the same premove parks on d5 and the tap confirms it', async () => {
+    await startInstantBotGame();
+    await page.evaluate(() => setCommitMode('confirm'));
+    await holdBotOnMove();
+    const mouse = H.mouseDriver(page);
+    const e4 = await H.squareCentre(page, 4, 4);
+    const d5 = await H.squareCentre(page, 3, 5);
+
+    await mouse.tap(e4);
+    assert.strictEqual(await page.evaluate(() => selSq), 36, 'e4 pawn should select');
+    assert.ok(await page.evaluate(() => legalMoves.includes(27)),
+      'd5 should be offered as a premove destination');
+
+    await mouse.tap(d5);
+    const parked = await page.evaluate(() => ({
+      awaiting: awaitingConfirm, from: premoveFrom, to: premoveTo,
+      collapsed: previewCollapsed,
+    }));
+    // premoveTo used to collapse back to the origin here, so the confirming tap
+    // never matched and the piece re-parked forever.
+    assert.strictEqual(parked.awaiting, true, 'piece should be parked');
+    assert.strictEqual(parked.to, 27, 'it must be parked on d5, not back on e4');
+    assert.strictEqual(parked.collapsed, true,
+      'the preview board stays honest — the pawn is not on d5 yet');
+
+    await mouse.tap(d5);
+    const st = await page.evaluate(() => ({
+      queue: premoveQueue.slice(), awaiting: awaitingConfirm,
+      moves: gameMovesAlgebraic.slice(),
+    }));
+    await releaseBot();
+    assert.strictEqual(st.awaiting, false, 'confirm should clear the parked flag');
+    assert.deepStrictEqual(st.moves, ['e4'], 'nothing should have been played for real');
+    assert.deepStrictEqual(st.queue, [{ from: 36, to: 27, promo: null }],
+      'the confirming tap should queue the premove');
+  });
+
+  // ── The opponent replying mid-compose ────────────────────────────────────
+  // Composing a premove means holding a piece during the opponent's turn, so
+  // the reply routinely lands while the piece is still in the air. executeMove
+  // used to clear selSq/legalMoves/dragFrom for EVERY move, the opponent's
+  // included — the drop then arrived with no drag state, every branch of
+  // mouseup missed, and the piece snapped home even when the move was legal in
+  // the position that had just arrived. A short think time puts the reply
+  // inside the compose window nearly every move.
+
+  test('the bot replying mid-drag does not empty the player\'s hand', async () => {
+    await startInstantBotGame();
+    await holdBotOnMove();          // 1.e4 played, bot frozen on move
+
+    const e4 = await H.squareCentre(page, 4, 4);
+    const e5 = await H.squareCentre(page, 4, 5);
+    // Pick the e4 pawn up and hold it — mid-compose, button still down.
+    await page.mouse.move(e4.x, e4.y);
+    await page.mouse.down();
+    await page.mouse.move(e5.x, e5.y, { steps: 6 });
+    assert.strictEqual(await page.evaluate(() => dragFrom), 36, 'pawn should be held');
+
+    // The bot replies while the piece is in the air. Nc6 leaves e4-e5 legal.
+    await page.evaluate(() => { executeMove(1, 18); }); // Nb8-c6
+    const held = await page.evaluate(() => ({
+      dragFrom, selSq, dragMoved, turn,
+      nLegal: legalMoves.length, hasE5: legalMoves.includes(28),
+    }));
+    assert.strictEqual(held.turn, 'w', 'it is our move again');
+    assert.strictEqual(held.dragFrom, 36, 'the piece must still be in hand');
+    assert.strictEqual(held.hasE5, true,
+      'legalMoves should be re-derived for the position that just arrived');
+
+    // Complete the drop. It is legal now, so it must play — not snap back.
+    await page.mouse.up();
+    await releaseBot();
+    const moves = await page.evaluate(() => gameMovesAlgebraic.slice());
+    assert.deepStrictEqual(moves, ['e4', 'Nc6', 'e5'],
+      'the drop should have played e5, not been discarded: ' + moves.join(' '));
+  });
+
+  test('a selection survives the bot replying, so it can be moved at once', async () => {
+    await startInstantBotGame();
+    await holdBotOnMove();
+    // Tap-select the e4 pawn during the bot's turn, no drag.
+    await H.mouseDriver(page).tap(await H.squareCentre(page, 4, 4));
+    assert.strictEqual(await page.evaluate(() => selSq), 36, 'pawn should be selected');
+
+    await page.evaluate(() => { executeMove(1, 18); }); // bot replies
+    const after = await page.evaluate(() => ({
+      selSq, hasE5: legalMoves.includes(28), turn,
+    }));
+    await releaseBot();
+    assert.strictEqual(after.selSq, 36,
+      'the selection must survive the opponent\'s move');
+    assert.strictEqual(after.hasE5, true, 'and offer real legal moves');
+  });
+
+  test('a piece captured out from under the hand is released, not left holding air', async () => {
+    await startInstantBotGame();
+    // 1.e4 d5 — now the human is on move with a real capture available, and the
+    // bot's next reply can take on e4. Set the position directly for control.
+    await page.evaluate(() => {
+      executeMove(52, 36);  // e4
+      executeMove(11, 27);  // d5
+    });
+    await page.waitForTimeout(200);
+    await page.evaluate(() => {
+      window.__realSetTimeout = window.setTimeout;
+      window.setTimeout = function (fn) {
+        if (fn === botMakeMove) return 0;
+        return window.__realSetTimeout.apply(window, arguments);
+      };
+      executeMove(62, 45);  // Nf3 — hand the move back to the bot
+    });
+    // Hold the e4 pawn, then let the bot capture it: dxe4.
+    const e4 = await H.squareCentre(page, 4, 4);
+    await page.mouse.move(e4.x, e4.y);
+    await page.mouse.down();
+    await page.mouse.move(e4.x + 4, e4.y - 20, { steps: 3 });
+    assert.strictEqual(await page.evaluate(() => dragFrom), 36, 'e4 pawn held');
+
+    await page.evaluate(() => { executeMove(27, 36); }); // dxe4
+    const after = await page.evaluate(() => ({ dragFrom, selSq, nLegal: legalMoves.length }));
+    await page.mouse.up();
+    await releaseBot();
+    assert.strictEqual(after.dragFrom, -1, 'the captured piece must be released');
+    assert.strictEqual(after.selSq, -1, 'and deselected');
+    assert.strictEqual(after.nLegal, 0, 'with no stale destination set');
+  });
+
+  test('no page errors were raised throughout', () => {
+    assert.deepStrictEqual(errs, []);
+  });
+});
