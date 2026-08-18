@@ -3453,10 +3453,10 @@ body.fj .picon{font-weight:500;}
                 Halving think time ≈ −100 ELO at rapid pace, steeper in blitz
               </div>
               <div style="margin-top:7px;font-family:var(--font-m);font-size:8px;line-height:1.6;color:var(--text-dim);">
-                Power-law fit described by IM <a href="https://cse.buffalo.edu/~regan/" target="_blank" rel="noopener" style="color:var(--amber);">Kenneth Regan</a>&rsquo;s
-                rating-loss vs time-control data, from his
+                Degradation curve based on fit shown by IM Professor <a href="https://cse.buffalo.edu/~regan/" target="_blank" rel="noopener" style="color:var(--amber);">Kenneth Regan</a>
+                describing ELO as a function of time-control, during his
                 <a href="https://www.youtube.com/watch?v=UsEIBzm5msU" target="_blank" rel="noopener" style="color:var(--amber);">Perpetual Chess Podcast</a>
-                interview with Ben Johnson.
+                interview with Ben Johnson. 
               </div>
             </div>
           </div>
@@ -3467,7 +3467,8 @@ body.fj .picon{font-weight:500;}
           <div class="formula-title">How time pressure simulation works</div>
           <div class="formula-body" style="text-align:left;line-height:1.75;">
             The bot simulates a rated player under time pressure using two complementary mechanisms:<br>
-            <span style="color:var(--amber);">▸ ELO reduction</span> — Maia is called at a lower ELO as think time shrinks. The curve starts on variation of Regan&rsquo;s power-law fit (note that the correlation described by Regan correlates ELO performance as a function of time control for an entire game, not a function of time taken for an individual move) — full ELO at the time control&rsquo;s nominal pace (base/60 + increment seconds per move), degrading below it — and every point is draggable if you want a different shape.<br>
+            <span style="color:var(--amber);">▸ ELO reduction</span> — Full credit to Professor Regan for his work, full blame to me for extrapolating his data-based findings based on full games under different time controls to this unsubstantiated estimation of ELO drop for individual moves under different time constraints.  
+            Maia is called at a lower ELO as think time shrinks under time pressure: full ELO at the time control’s nominal pace (base/60 + increment seconds per move), degrading below it following the curve shown above —every point is draggable if you want a shape different from the formula<br>
             <span style="color:#5dade2;">▸ Temperature escalation</span> — ELO stays fixed but sampling temperature rises as think time shrinks, flattening Maia's move probabilities toward uniform without ever reordering them: a near-forced move stays the near-certain pick, while a genuine toss-up becomes far less predictable (instinctive, less creative play — typical of a strong player with no time to calculate). A quick engine check ensures a degraded pick never improves on Maia's top choice.<br>
             Each curve has its own <strong>ON/OFF</strong> toggle next to its title, so you can run either mechanism alone, both together, or switch both off for constant strength regardless of clock.
           </div>
