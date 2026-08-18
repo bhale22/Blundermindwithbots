@@ -1129,6 +1129,20 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 
 /* ══ 2-COLUMN PANEL LAYOUT ══ */
 .panel-2col{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;}
+/* Grid items default to min-width:auto, so any child with a wide min-content —
+   a canvas carrying an explicit pixel width, the Centipawmeter's label scale —
+   holds its own 1fr track open and the two columns stop being equal. The phone
+   rules further down already do this; it has to hold at every width, not just
+   narrow ones, or a mis-sized chart drags the whole row out of proportion. */
+.panel-2col > *{min-width:0;}
+/* The two time-pressure charts read as one instrument, so they have to stay
+   mirror images. Their titles are different lengths and wrap to different line
+   counts as the panel narrows, which alone would leave one box taller than the
+   other. Stretching both columns to the tallest and letting each chart box grow
+   into that height keeps the boxes identical whatever the text does. */
+.tp-2col{align-items:stretch;}
+.tp-2col > div{display:flex;flex-direction:column;}
+.tp-2col .chart-box{flex:1;}
 /* Was an inline style on the Strategy & Piece Focus grid, which outranked the
    phone layer's one-column rule — that tab stayed two columns on a handset,
    giving its sliders 186px and 133px. As a class it can be overridden. */
@@ -3376,7 +3390,7 @@ body.fj .picon{font-weight:500;}
         </div>
 
         <!-- 2-col chart area -->
-        <div class="panel-2col">
+        <div class="panel-2col tp-2col">
           <!-- LEFT: ELO degradation curve -->
           <div id="tp-col-a">
             <div class="dlbl"><span>ELO degradation — drag points</span><label class="tog" title="ELO degradation under time pressure — on/off"><input type="checkbox" id="pressure-off-a" checked onchange="_setPressureOffA(!this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
@@ -11723,12 +11737,21 @@ function initPtsB(){
 function initPts(){ initPtsA(); initPtsB(); }
 
 // ── Canvas width helper ───────────────────────────────────────────────────────
+// Returns 0 when the chart has no layout yet — hidden section, or the whole
+// panel still inside the app's display:none modal. This used to answer 600,
+// which looked harmless and was not: drawCurve writes the number it is given
+// into cv.style.width, so a chart measured while hidden became a hard 600px
+// canvas. That pixel width is then the grid item's min-content, holding its
+// 1fr track open at 600px so every later measurement agreed with it and the
+// two columns never returned to equal — self-consistent and permanently wrong.
+// Reporting 0 makes drawCurve skip instead; scheduleDraw() and the resize
+// handler redraw once the section is genuinely on screen.
 function getW(id){
   const el = document.getElementById(id);
-  if(!el) return 600;
+  if(!el) return 0;
   const box = el.closest('.chart-box');
-  let w = box ? box.clientWidth - 24 : el.offsetWidth;
-  return Math.floor(w > 80 ? w : 600);
+  const w = box ? box.clientWidth - 24 : el.offsetWidth;
+  return w > 80 ? Math.floor(w) : 0;
 }
 
 // ── Catmull-Rom spline: data-space point evaluator ───────────────────────────
