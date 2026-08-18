@@ -210,9 +210,9 @@ function explorerGet(pathAndQuery, cb) {
   const req = agent.get(EXPLORER_HOST + pathAndQuery, {
     headers: {
       // Lichess asks API clients for a descriptive User-Agent they can reach us
-      // through. The URL is a contact form rather than an address so that no
-      // mailbox is published here — this string ships in the public source.
-      'User-Agent': 'Blundermind/1.0 (+https://blundermindchess.com/privacy#contact)',
+      // through. This is the project mailbox, not a personal one — it ships in
+      // the public source, so it has to be an address we can afford to publish.
+      'User-Agent': 'Blundermind/1.0 (+https://blundermindchess.com; blundermindchess@gmail.com)',
       'Accept': 'application/json',
       ...(LICHESS_TOKEN ? { Authorization: 'Bearer ' + LICHESS_TOKEN } : {})
     }
