@@ -17,7 +17,7 @@
   "maskableIconUrl": "https://blundermindchess.com/icons/icon-maskable-512.png",
   "splashScreenFadeOutDuration": 300,
   "signingKey": {
-    "path": "C:\\Users\\bbrow\\Documents\\GitHub\\Blundermindwithbots\\android\\android.keystore",
+    "path": "./android.keystore",
     "alias": "android"
   },
   "appVersionName": "4",

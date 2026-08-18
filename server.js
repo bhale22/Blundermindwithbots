@@ -687,8 +687,11 @@ const rooms = {};
 // short enough that abandoned games do not accumulate.
 const MP_RESUME_GRACE_MS = 15 * 60 * 1000;
 
+// Seat tokens authorise resuming a game, so they must not be guessable.
+// Math.random() is xorshift128+ — fast, but predictable from a short observed
+// run, and the source is public, so the format is no longer a secret.
 function mpToken() {
-  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+  return crypto.randomBytes(24).toString('base64url');
 }
 
 // A seat is claimed once someone has occupied it, whether or not they are
@@ -799,7 +802,32 @@ const wsHeartbeat = setInterval(() => {
 }, WS_HEARTBEAT_MS);
 wss.on('close', () => clearInterval(wsHeartbeat));
 
-wss.on('connection', (ws) => {
+// Room creation is the one unauthenticated write a socket can make, and every
+// room costs memory until the sweep above collects it. `leaveCurrentRoom` already
+// stops ONE socket hoarding rooms, but nothing stopped a script opening a new
+// socket per room. Two ceilings, in the same shape as the explorer limiter:
+// a per-IP rate (a human makes a handful of games a minute, never 20) and a
+// global cap so the process degrades by refusing new rooms rather than by
+// exhausting memory.
+const _createRate = new Map(); // ip -> { count, windowStart }
+const MP_CREATE_LIMIT = 20, MP_CREATE_WINDOW = 60 * 1000, MP_MAX_ROOMS = 5000;
+function createRateOk(ip) {
+  const now = Date.now();
+  let r = _createRate.get(ip);
+  if (!r || now - r.windowStart > MP_CREATE_WINDOW) {
+    r = { count: 0, windowStart: now };
+    _createRate.set(ip, r);
+  }
+  if (_createRate.size > 10000) { // prune stale windows
+    for (const [k, v] of _createRate) {
+      if (now - v.windowStart > MP_CREATE_WINDOW) _createRate.delete(k);
+    }
+  }
+  return ++r.count <= MP_CREATE_LIMIT;
+}
+
+wss.on('connection', (ws, req) => {
+  ws.ip = clientIp(req);
   ws.roomCode = null;
   ws.role = null;
   ws.isAlive = true;
@@ -811,6 +839,15 @@ wss.on('connection', (ws) => {
     if (!msg || typeof msg !== 'object' || Array.isArray(msg)) return;
 
     if (msg.type === 'create') {
+      if (!createRateOk(ws.ip)) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Too many games created — try again in a minute' }));
+        return;
+      }
+      if (Object.keys(rooms).length >= MP_MAX_ROOMS) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Server is at capacity — try again shortly' }));
+        console.warn('[mp] room cap reached, refusing create');
+        return;
+      }
       leaveCurrentRoom(ws); // creating again replaces any room this socket holds
       const code = generateRoomCode();
       const isLobby = !!msg.lobby;

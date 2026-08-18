@@ -23,8 +23,8 @@ for. Fail that check and the app still works but shows a URL bar.
 ## Prerequisites on this machine — all present
 
     Node          v24
-    JDK 17        C:\Users\bbrow\.bubblewrap\jdk-17.0.20+8   (Temurin — 21 is rejected)
-    Android SDK   C:\Users\bbrow\AppData\Local\Android\sdk   (build-tools 36.1.0)
+    JDK 17        %USERPROFILE%\.bubblewrap\jdk-17.0.20+8   (Temurin — 21 is rejected)
+    Android SDK   %USERPROFILE%\AppData\Local\Android\sdk   (build-tools 36.1.0)
 
 These are already recorded in `~/.bubblewrap/config.json`, so Bubblewrap no
 longer asks. Getting there needed three non-obvious fixes — all written up in
