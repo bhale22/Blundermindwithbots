@@ -713,7 +713,7 @@ function maiaInit() {
         _maiaUpdateStatusUI();
         if (msg.status === 'ready') {
           // After a successful download (not just a cache hit on reload) request
-          // persistent storage so the browser won't evict the 87 MB model.
+          // persistent storage so the browser won't evict the 44 MB model.
           // Only call persist() once — it's a no-op if already granted.
           if (navigator.storage && navigator.storage.persist) {
             navigator.storage.persist().catch(function(){});
@@ -799,7 +799,7 @@ function _maiaUpdateStatusUI() {
   if (statusEl)  { statusEl.textContent  = txt; statusEl.style.color  = clr; }
   if (statusEl3) { statusEl3.textContent = txt; statusEl3.style.color = clr; }
   var disabled = (_maiaStatus === 'downloading' || _maiaStatus === 'ready');
-  var btnTxt = _maiaStatus === 'ready' ? '✓ Model ready' : 'Download Maia3 (~87MB)';
+  var btnTxt = _maiaStatus === 'ready' ? '✓ Model ready' : 'Download Maia3 (~44MB)';
   if (btn)  { btn.disabled  = disabled; btn.textContent  = btnTxt; }
   if (btn3) { btn3.disabled = disabled; btn3.textContent = btnTxt; }
   // Enable/dim Maia row tabs based on model readiness

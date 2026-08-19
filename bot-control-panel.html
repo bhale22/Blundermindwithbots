@@ -8729,7 +8729,7 @@ function bcpMaiaSetStatus(status, ready, progress){
   const checking = (status === 'idle' || status === 'loading');
   const done     = ready || status === 'downloading' || checking;
   document.querySelectorAll('.bcp-maia-dl-btn').forEach(function(btn){
-    btn.textContent   = ready ? '✓ Model ready' : (checking ? 'Checking…' : 'Download (~87 MB)');
+    btn.textContent   = ready ? '✓ Model ready' : (checking ? 'Checking…' : 'Download (~44 MB)');
     btn.disabled      = done;
     btn.style.opacity = done ? '0.5' : '1';
     btn.style.cursor  = done ? 'default' : 'pointer';
@@ -8742,7 +8742,7 @@ function bcpMaiaSetStatus(status, ready, progress){
     var card = document.querySelector('#engine-mode-grid .mcard[data-engine="' + eng + '"]');
     if(card){
       card.style.opacity = ready ? '' : '0.6';
-      card.title = ready ? '' : 'Maia 3 model not downloaded — select to download (~87 MB)';
+      card.title = ready ? '' : 'Maia 3 model not downloaded — select to download (~44 MB)';
     }
   });
 }

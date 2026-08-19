@@ -158,6 +158,23 @@
   infrastructure operation and is governed by their privacy policy.
 </p>
 
+<h2>Counting downloads</h2>
+<p>
+  The Maia neural network is a large file — about 44&nbsp;MB — and how often it is
+  actually downloaded is something we need to know to run the site within its hosting
+  budget. Our server therefore keeps four running totals for that one file: how many
+  times it was sent in full, abandoned part-way, requested in pieces, and skipped
+  because the visitor already had it.
+</p>
+<p>
+  That is the entire record. It counts transfers of a file, not people: no address, no
+  identifier, no timestamp and no history is attached to any of it, and there is no way
+  to tell from those four numbers who downloaded anything or when. Nothing is written to
+  disk, and the totals reset to zero every time the server restarts. They are visible to
+  anyone at <a href="/api/model-stats">/api/model-stats</a> — there is nothing in them
+  worth hiding.
+</p>
+
 <h2>Children</h2>
 <p>
   These apps are suitable for all ages. Playing requires no account and collects no
