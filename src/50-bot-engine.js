@@ -2381,7 +2381,7 @@ function ghostTopMoves(probs) {
 }
 
 // Dropdown onchange — when Maia is picked, start the worker (cache check only;
-// the 87MB download stays an explicit user action in the bot panel) and show
+// the 44MB download stays an explicit user action in the bot panel) and show
 // a hint if the model isn't available yet.
 function ghostModeChanged() {
   clearGhostPieces();

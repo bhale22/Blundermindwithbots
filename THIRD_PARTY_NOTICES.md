@@ -14,7 +14,7 @@ at `/credits`.
 | Maia 3 network | `models/maia3_simplified.onnx`, `data/all_moves_maia3*.json` | CSSLab Maia 3 checkpoint, exported to ONNX (PyTorch 2.11) and run through onnx-simplifier | AGPL-3.0 | https://github.com/CSSLab/maia3 · https://www.maiachess.com/ |
 | ONNX Runtime Web | `ort/` | 1.23.0 | MIT | https://github.com/microsoft/onnxruntime |
 | Opening names | `data/eco.tsv` | tsv of ECO code / name / PGN | CC0-1.0 | https://github.com/lichess-org/chess-openings |
-| Staunton piece set | inlined SVG in `src/10-app-shell.js` | from the `react-chess-pieces` package | ISC | https://www.npmjs.com/package/react-chess-pieces |
+| Staunton piece set | inlined SVG in `src/10-app-shell.js` | from the `react-chess-pieces` package, by nikfrank | ISC | https://github.com/nikfrank/react-chess-pieces/tree/master/src · https://www.npmjs.com/package/react-chess-pieces |
 | Alternative piece set | inlined SVG | by RhosGFX | CC0-1.0 | https://rhosgfx.itch.io/ |
 | Fonts | `fonts/` | Chakra Petch, Cormorant Garamond, DM Mono, Fraunces, Spectral | SIL OFL 1.1 (`fonts/OFL.txt`) | https://fonts.google.com/ |
 

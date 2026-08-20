@@ -77,6 +77,24 @@ function loadHtml() {
 }
 loadHtml();
 
+// ── Maia model download counter ──────────────────────────────────────────────
+// The model is the only asset here big enough to matter, so "has anyone actually
+// taken it?" is a real operational question — and one the traffic graph answers
+// badly, because four ordinary first-time visitors pulling the shell, Stockfish
+// and the fonts come to about the same number of bytes as one model download.
+//
+// Deliberately aggregate and in-memory: four integers, no address, no identifier,
+// no per-event timestamp, nothing written to disk, and the whole thing resets on
+// restart. That keeps it consistent with the privacy policy — this counts
+// transfers of one file, not people.
+const modelStats = {
+  completed:   0,   // whole file sent
+  aborted:     0,   // connection closed mid-body
+  partial:     0,   // Range request — a resumed or chunked fetch
+  revalidated: 0,   // 304, the client already had it
+  since: new Date().toISOString(),
+};
+
 // Serve Maia3 model and support files
 app.get('/models/:file', (req, res) => {
   const file = req.params.file;
@@ -85,6 +103,28 @@ app.get('/models/:file', (req, res) => {
   if (!require('fs').existsSync(p)) { res.status(404).end(); return; }
   res.setHeader('Content-Type', 'application/octet-stream');
   res.setHeader('Cache-Control', 'public, max-age=2592000'); // 30 days
+  // 'close' fires however the response ended, so an abandoned download stays
+  // distinguishable from a finished one: writableFinished is false when the
+  // socket went away mid-body. Listening on 'finish' alone would miss that, and
+  // would also count a 304 revalidation as a fresh download.
+  const ranged = !!req.headers.range;
+  res.on('close', () => {
+    // Express answers HEAD through the GET handler: headers, no body. It looks
+    // exactly like a finished download here, so anything that probes the URL
+    // for its size would otherwise inflate the tally.
+    if (req.method === 'HEAD') return;
+    if (res.statusCode === 304) { modelStats.revalidated++; return; }
+    if (ranged || res.statusCode === 206) { modelStats.partial++; return; }
+    if (res.writableFinished && res.statusCode === 200) {
+      modelStats.completed++;
+      console.log('[model] ' + file + ' sent in full — ' + modelStats.completed +
+                  ' completed since ' + modelStats.since);
+    } else {
+      modelStats.aborted++;
+      console.log('[model] ' + file + ' abandoned mid-download — ' + modelStats.aborted +
+                  ' abandoned since ' + modelStats.since);
+    }
+  });
   res.sendFile(p);
 });
 
@@ -395,6 +435,14 @@ app.get('/api/explorer-health', (req, res) => {
   });
 });
 
+// The model tally (see modelStats). Aggregate counts only — there is nothing
+// per-visitor to expose here, which is the point.
+app.get('/api/model-stats', (req, res) => {
+  let modelBytes = null;
+  try { modelBytes = fs.statSync(path.join(__dirname, 'models', 'maia3_simplified.onnx')).size; } catch (_) {}
+  res.json({ ...modelStats, modelBytes });
+});
+
 app.get('/maia-worker.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
   res.setHeader('Cache-Control', 'public, max-age=86400');
@@ -687,8 +735,11 @@ const rooms = {};
 // short enough that abandoned games do not accumulate.
 const MP_RESUME_GRACE_MS = 15 * 60 * 1000;
 
+// Seat tokens authorise resuming a game, so they must not be guessable.
+// Math.random() is xorshift128+ — fast, but predictable from a short observed
+// run, and the source is public, so the format is no longer a secret.
 function mpToken() {
-  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+  return crypto.randomBytes(24).toString('base64url');
 }
 
 // A seat is claimed once someone has occupied it, whether or not they are
@@ -799,7 +850,32 @@ const wsHeartbeat = setInterval(() => {
 }, WS_HEARTBEAT_MS);
 wss.on('close', () => clearInterval(wsHeartbeat));
 
-wss.on('connection', (ws) => {
+// Room creation is the one unauthenticated write a socket can make, and every
+// room costs memory until the sweep above collects it. `leaveCurrentRoom` already
+// stops ONE socket hoarding rooms, but nothing stopped a script opening a new
+// socket per room. Two ceilings, in the same shape as the explorer limiter:
+// a per-IP rate (a human makes a handful of games a minute, never 20) and a
+// global cap so the process degrades by refusing new rooms rather than by
+// exhausting memory.
+const _createRate = new Map(); // ip -> { count, windowStart }
+const MP_CREATE_LIMIT = 20, MP_CREATE_WINDOW = 60 * 1000, MP_MAX_ROOMS = 5000;
+function createRateOk(ip) {
+  const now = Date.now();
+  let r = _createRate.get(ip);
+  if (!r || now - r.windowStart > MP_CREATE_WINDOW) {
+    r = { count: 0, windowStart: now };
+    _createRate.set(ip, r);
+  }
+  if (_createRate.size > 10000) { // prune stale windows
+    for (const [k, v] of _createRate) {
+      if (now - v.windowStart > MP_CREATE_WINDOW) _createRate.delete(k);
+    }
+  }
+  return ++r.count <= MP_CREATE_LIMIT;
+}
+
+wss.on('connection', (ws, req) => {
+  ws.ip = clientIp(req);
   ws.roomCode = null;
   ws.role = null;
   ws.isAlive = true;
@@ -811,6 +887,15 @@ wss.on('connection', (ws) => {
     if (!msg || typeof msg !== 'object' || Array.isArray(msg)) return;
 
     if (msg.type === 'create') {
+      if (!createRateOk(ws.ip)) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Too many games created — try again in a minute' }));
+        return;
+      }
+      if (Object.keys(rooms).length >= MP_MAX_ROOMS) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Server is at capacity — try again shortly' }));
+        console.warn('[mp] room cap reached, refusing create');
+        return;
+      }
       leaveCurrentRoom(ws); // creating again replaces any room this socket holds
       const code = generateRoomCode();
       const isLobby = !!msg.lobby;

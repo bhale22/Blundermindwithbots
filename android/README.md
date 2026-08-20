@@ -27,8 +27,8 @@ against the live site:
 `~/.bubblewrap/config.json` is seeded with verified paths, so `init` will not
 ask about the JDK or SDK:
 
-    JDK 17        C:/Users/bbrow/.bubblewrap/jdk-17.0.20+8   (Temurin — see below)
-    Android SDK   C:/Users/bbrow/AppData/Local/Android/sdk   (build-tools 36.1.0)
+    JDK 17        %USERPROFILE%/.bubblewrap/jdk-17.0.20+8   (Temurin — see below)
+    Android SDK   %USERPROFILE%/AppData/Local/Android/sdk   (build-tools 36.1.0)
 
 **Done — the apex serves HTTPS.** Fixed Aug 3: the leftover Namecheap parking A
 record was replaced with an `ALIAS @ → 9v820w00.up.railway.app`, and the domain
@@ -74,17 +74,18 @@ moves and Android Studio is unaffected:
 
 **2. Bubblewrap 1.25 requires JDK 17 exactly.** It reads `<jdk>/release` and
 insists on `JAVA_VERSION="17.0`; Android Studio ships JDK 21, which it rejects.
-Temurin 17 is installed at `C:/Users/bbrow/.bubblewrap/jdk-17.0.20+8`.
+Temurin 17 is installed at `%USERPROFILE%/.bubblewrap/jdk-17.0.20+8`.
 
 **3. It wants build-tools `36.1.0`**, which wasn't installed (35.0.0 and 36.0.0
 were). Pre-installed so `build` doesn't stop to run `sdkmanager` interactively.
 
 `~/.bubblewrap/config.json` — note **forward slashes**, backslashes are invalid
-JSON escapes:
+JSON escapes. These must be real absolute paths; environment variables are not
+expanded here, so substitute your own home directory:
 
     {
-      "jdkPath": "C:/Users/bbrow/.bubblewrap/jdk-17.0.20+8",
-      "androidSdkPath": "C:/Users/bbrow/AppData/Local/Android/sdk"
+      "jdkPath": "C:/Users/<you>/.bubblewrap/jdk-17.0.20+8",
+      "androidSdkPath": "C:/Users/<you>/AppData/Local/Android/sdk"
     }
 
 ## Two decisions, both settled

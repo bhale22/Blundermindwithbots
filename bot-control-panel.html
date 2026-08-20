@@ -508,6 +508,10 @@ input.ctrl-val[type=number]::-webkit-inner-spin-button{
   -webkit-appearance:none;margin:0;
 }
 .ctrl-hint{font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);margin-top:2px;line-height:1.4;}
+/* The two time-pressure columns sit side by side, so their hints must reserve
+   the same height or the charts stop bottom-aligning when one wraps and the
+   other does not. Two lines is the most either has ever needed. */
+#tp-col-a .ctrl-hint,#tp-col-b .ctrl-hint{min-height:21px;}
 /* Slider with printed endpoint scale (fixed track, labels under each end) */
 .slider-scale-wrap{flex:1;display:flex;flex-direction:column;min-width:0;}
 .slider-scale-wrap input[type=range]{width:100%;flex:none;}
@@ -1125,6 +1129,20 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 
 /* ══ 2-COLUMN PANEL LAYOUT ══ */
 .panel-2col{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;}
+/* Grid items default to min-width:auto, so any child with a wide min-content —
+   a canvas carrying an explicit pixel width, the Centipawmeter's label scale —
+   holds its own 1fr track open and the two columns stop being equal. The phone
+   rules further down already do this; it has to hold at every width, not just
+   narrow ones, or a mis-sized chart drags the whole row out of proportion. */
+.panel-2col > *{min-width:0;}
+/* The two time-pressure charts read as one instrument, so they have to stay
+   mirror images. Their titles are different lengths and wrap to different line
+   counts as the panel narrows, which alone would leave one box taller than the
+   other. Stretching both columns to the tallest and letting each chart box grow
+   into that height keeps the boxes identical whatever the text does. */
+.tp-2col{align-items:stretch;}
+.tp-2col > div{display:flex;flex-direction:column;}
+.tp-2col .chart-box{flex:1;}
 /* Was an inline style on the Strategy & Piece Focus grid, which outranked the
    phone layer's one-column rule — that tab stayed two columns on a handset,
    giving its sliders 186px and 133px. As a class it can be overridden. */
@@ -3372,7 +3390,7 @@ body.fj .picon{font-weight:500;}
         </div>
 
         <!-- 2-col chart area -->
-        <div class="panel-2col">
+        <div class="panel-2col tp-2col">
           <!-- LEFT: ELO degradation curve -->
           <div id="tp-col-a">
             <div class="dlbl"><span>ELO degradation — drag points</span><label class="tog" title="ELO degradation under time pressure — on/off"><input type="checkbox" id="pressure-off-a" checked onchange="_setPressureOffA(!this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
@@ -3390,7 +3408,17 @@ body.fj .picon{font-weight:500;}
               <canvas id="cvA" style="width:100%;cursor:ns-resize;"></canvas>
               <div class="ctip" id="tipA"></div>
             </div>
-            <div class="ctrl" id="ctrl-drop" style="margin-top:12px;"><span class="ctrl-lbl">Max ELO drop</span><input type="range" id="r-drop" min="0" max="600" step="25" value="300" oninput="sv(this,'v-drop',v=>v+' ELO');initPtsA();drawA()"><span class="ctrl-val" id="v-drop">300 ELO</span></div>
+            <!-- max is set from the base ELO by syncDropRange() so the track
+                 always ends exactly at the 600 floor — see that function. -->
+            <div class="ctrl" id="ctrl-drop" style="margin-top:12px;">
+              <span class="ctrl-lbl">Max ELO drop</span>
+              <span class="slider-scale-wrap">
+                <input type="range" id="r-drop" min="0" max="900" step="25" value="300" oninput="sv(this,'v-drop',v=>v+' ELO');syncDropHint();initPtsA();drawA()">
+                <span class="slider-scale"><span>0</span><span id="drop-scale-max">900</span></span>
+              </span>
+              <span class="ctrl-val" id="v-drop">300 ELO</span>
+            </div>
+            <div class="ctrl-hint" id="drop-hint"></div>
           </div>
           <!-- RIGHT: Temperature curve -->
           <div id="tp-col-b">
@@ -3453,10 +3481,10 @@ body.fj .picon{font-weight:500;}
                 Halving think time ≈ −100 ELO at rapid pace, steeper in blitz
               </div>
               <div style="margin-top:7px;font-family:var(--font-m);font-size:8px;line-height:1.6;color:var(--text-dim);">
-                Power-law fit described by IM <a href="https://cse.buffalo.edu/~regan/" target="_blank" rel="noopener" style="color:var(--amber);">Kenneth Regan</a>&rsquo;s
-                rating-loss vs time-control data, from his
+                Degradation curve based on fit shown by IM Professor <a href="https://cse.buffalo.edu/~regan/" target="_blank" rel="noopener" style="color:var(--amber);">Kenneth Regan</a>
+                describing ELO as a function of time-control, during his
                 <a href="https://www.youtube.com/watch?v=UsEIBzm5msU" target="_blank" rel="noopener" style="color:var(--amber);">Perpetual Chess Podcast</a>
-                interview with Ben Johnson.
+                interview with Ben Johnson. 
               </div>
             </div>
           </div>
@@ -3467,7 +3495,8 @@ body.fj .picon{font-weight:500;}
           <div class="formula-title">How time pressure simulation works</div>
           <div class="formula-body" style="text-align:left;line-height:1.75;">
             The bot simulates a rated player under time pressure using two complementary mechanisms:<br>
-            <span style="color:var(--amber);">▸ ELO reduction</span> — Maia is called at a lower ELO as think time shrinks. The curve starts on variation of Regan&rsquo;s power-law fit (note that the correlation described by Regan correlates ELO performance as a function of time control for an entire game, not a function of time taken for an individual move) — full ELO at the time control&rsquo;s nominal pace (base/60 + increment seconds per move), degrading below it — and every point is draggable if you want a different shape.<br>
+            <span style="color:var(--amber);">▸ ELO reduction</span> — Full credit to Professor Regan for his work, full blame to me for extrapolating his data-based findings based on full games under different time controls to this unsubstantiated estimation of ELO drop for individual moves under different time constraints.  
+            Maia is called at a lower ELO as think time shrinks under time pressure: full ELO at the time control’s nominal pace (base/60 + increment seconds per move), degrading below it following the curve shown above —every point is draggable if you want a shape different from the formula<br>
             <span style="color:#5dade2;">▸ Temperature escalation</span> — ELO stays fixed but sampling temperature rises as think time shrinks, flattening Maia's move probabilities toward uniform without ever reordering them: a near-forced move stays the near-certain pick, while a genuine toss-up becomes far less predictable (instinctive, less creative play — typical of a strong player with no time to calculate). A quick engine check ensures a degraded pick never improves on Maia's top choice.<br>
             Each curve has its own <strong>ON/OFF</strong> toggle next to its title, so you can run either mechanism alone, both together, or switch both off for constant strength regardless of clock.
           </div>
@@ -8329,7 +8358,16 @@ function applyBotConfig(cfg){
   });
   // Max ELO drop caps Curve A's floor + reseeds; the saved ctrlA spline is
   // reapplied in the curve-restore step below, so this only sets the framing.
-  grp(() => { if(cfg.timePressureMaxDrop != null) _setRange('r-drop', Math.max(0, Math.min(600, cfg.timePressureMaxDrop))); });
+  grp(() => {
+    if(cfg.timePressureMaxDrop == null) return;
+    // setElo above has already sized the track for this bot's base ELO, so clamp
+    // to that rather than a fixed 600 — otherwise a deep drop saved by a strong
+    // bot would be truncated on load. Sizing first also matters because
+    // assigning .value on a range input clamps it against the current max.
+    syncDropRange();
+    const mx = +document.getElementById('r-drop')?.max || 0;
+    _setRange('r-drop', Math.max(0, Math.min(mx, cfg.timePressureMaxDrop)));
+  });
   // Max temp caps Curve B's ceiling + reseeds, same pattern as r-drop above.
   // Clamped to the slider's own 0–8 range. Bots saved under the old 1–15
   // slider land at 8, which is the ceiling the curve was already using.
@@ -8691,7 +8729,7 @@ function bcpMaiaSetStatus(status, ready, progress){
   const checking = (status === 'idle' || status === 'loading');
   const done     = ready || status === 'downloading' || checking;
   document.querySelectorAll('.bcp-maia-dl-btn').forEach(function(btn){
-    btn.textContent   = ready ? '✓ Model ready' : (checking ? 'Checking…' : 'Download (~87 MB)');
+    btn.textContent   = ready ? '✓ Model ready' : (checking ? 'Checking…' : 'Download (~44 MB)');
     btn.disabled      = done;
     btn.style.opacity = done ? '0.5' : '1';
     btn.style.cursor  = done ? 'default' : 'pointer';
@@ -8704,7 +8742,7 @@ function bcpMaiaSetStatus(status, ready, progress){
     var card = document.querySelector('#engine-mode-grid .mcard[data-engine="' + eng + '"]');
     if(card){
       card.style.opacity = ready ? '' : '0.6';
-      card.title = ready ? '' : 'Maia 3 model not downloaded — select to download (~87 MB)';
+      card.title = ready ? '' : 'Maia 3 model not downloaded — select to download (~44 MB)';
     }
   });
 }
@@ -9708,7 +9746,9 @@ function setElo(elo){
   document.getElementById('tp-elo-display').textContent = elo;
   document.getElementById('pS0').textContent = elo;
   _updateEnginePanelHeader();
-  // Re-anchor pressure curves to new ELO
+  // Re-anchor pressure curves to new ELO. The drop track is resized first: its
+  // max is a function of this ELO, and initPtsA seeds the curve from its value.
+  syncDropRange();
   initPts(); drawA(); drawB();
   // Refresh the Engine-panel recommendation readout (display only — the
   // Budget/Floor themselves never move unless the user acts)
@@ -11566,6 +11606,39 @@ function syncMaxTempMark(){
     : 'Marker shows the game-start temperature (T ' + t0.toFixed(1)
       + '). Below it the ceiling has no effect.';
 }
+// ── Max ELO drop: range follows the base ELO ─────────────────────────────────
+// The curve floors at 600 (initPtsA, drawA and the drag y-range all clamp
+// there), so the largest drop that can ever do anything is base − 600. A fixed
+// 600-point track therefore lied at both ends: a 2600 bot could only be taken
+// to 2000, well short of the floor, while a 900 bot had two thirds of a track
+// that initPtsA silently swallowed. Pinning max to base − 600 makes every
+// position on the track reachable, and lets a strong bot be degraded all the
+// way down — a 2600 player with one second left is not a 2000 player.
+function syncDropRange(){
+  const inp = document.getElementById('r-drop');
+  if(!inp) return;
+  const e0  = Math.max(600, Math.min(currentElo, 2600));
+  const max = Math.max(0, e0 - 600);
+  inp.max = String(max);
+  // Assigning .max clamps .value itself, but the label needs to follow it.
+  if(+inp.value > max) inp.value = String(max);
+  const sc = document.getElementById('drop-scale-max');
+  if(sc) sc.textContent = max.toLocaleString();
+  const vl = document.getElementById('v-drop');
+  if(vl) vl.textContent = inp.value + ' ELO';
+  syncDropHint();
+}
+
+function syncDropHint(){
+  const hint = document.getElementById('drop-hint');
+  if(!hint) return;
+  const e0    = Math.max(600, Math.min(currentElo, 2600));
+  const floor = Math.max(600, e0 - gv('r-drop'));
+  hint.textContent = floor <= 600
+    ? 'At full drop the bot bottoms out at 600 ELO, the floor of Maia’s range.'
+    : 'Lowest this bot plays when its clock is nearly gone: ' + floor + ' ELO.';
+}
+
 // True only when the selected clock can actually run out. Both curves are
 // functions of think time, and think time is only ever scarce because of a
 // clock — so with no clock there is no pressure for either to represent.
@@ -11630,7 +11703,19 @@ function initPtsA(){
   // given ELO/anchor regardless of this slider.
   const e0 = Math.max(600, Math.min(currentElo, 2600));
   const floor = Math.max(600, e0 - gv('r-drop'));
-  const seedY = t => Math.max(floor, reganEloA(t));
+  // Regan's fit falls only so far. At a typical time control a 2600 bot bottoms
+  // out near 1700, so clamping at `floor` stopped doing anything the moment the
+  // slider asked for more depth than the model itself has — the deep end of the
+  // track was inert and the only way down was dragging all eight knots by hand.
+  // Past the model's reach we keep its SHAPE and scale the dive to land on the
+  // requested floor: the same curve, taken further than the data goes. That is
+  // the honest description of a 2600 player with one second left, who is not
+  // playing 1700 chess either.
+  const reganMin = reganEloA(X_MIN);
+  const span     = e0 - reganMin;
+  const seedY    = (span > 1 && floor < reganMin)
+    ? t => Math.round(e0 - (e0 - reganEloA(t)) * (e0 - floor) / span)
+    : t => Math.max(floor, reganEloA(t));
   const anchorRaw = reganAnchorSec();
   if(anchorRaw <= 0){
     // Untimed → flat at E0; spread knots log-uniformly like Curve B
@@ -11652,12 +11737,21 @@ function initPtsB(){
 function initPts(){ initPtsA(); initPtsB(); }
 
 // ── Canvas width helper ───────────────────────────────────────────────────────
+// Returns 0 when the chart has no layout yet — hidden section, or the whole
+// panel still inside the app's display:none modal. This used to answer 600,
+// which looked harmless and was not: drawCurve writes the number it is given
+// into cv.style.width, so a chart measured while hidden became a hard 600px
+// canvas. That pixel width is then the grid item's min-content, holding its
+// 1fr track open at 600px so every later measurement agreed with it and the
+// two columns never returned to equal — self-consistent and permanently wrong.
+// Reporting 0 makes drawCurve skip instead; scheduleDraw() and the resize
+// handler redraw once the section is genuinely on screen.
 function getW(id){
   const el = document.getElementById(id);
-  if(!el) return 600;
+  if(!el) return 0;
   const box = el.closest('.chart-box');
-  let w = box ? box.clientWidth - 24 : el.offsetWidth;
-  return Math.floor(w > 80 ? w : 600);
+  const w = box ? box.clientWidth - 24 : el.offsetWidth;
+  return w > 80 ? Math.floor(w) : 0;
 }
 
 // ── Catmull-Rom spline: data-space point evaluator ───────────────────────────
@@ -12080,6 +12174,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
   renderPersonalities();
   renderHybridSlots();
   initSpeedo();
+  // setElo resizes the drop track, but it does not run on a default boot —
+  // markup alone can't size a track that depends on the starting ELO.
+  syncDropRange();
   initStyleGauge();
   initRadarInteraction();      // interactive cp-budget gauge
   updateAttrCpDisplays(); // populate attractor cp allocations

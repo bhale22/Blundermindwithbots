@@ -76,7 +76,7 @@
   <h2>The short version</h2>
   <ul>
     <li>There are <strong>no accounts</strong>. You never give us a name, email or password to play.</li>
-    <li>There is <strong>no advertising, no analytics and no third-party tracking</strong> of any kind.</li>
+    <li>There is <strong>no analytics and no third-party tracking</strong> of any kind.</li>
     <li>There is <strong>no database</strong>. We have nowhere to keep personal information, and we don't.</li>
     <li>We do not sell, rent or share your information. There is nothing to sell.</li>
     <li>The <strong>only</strong> thing you can send us is a feedback message, and only if you choose to write one.</li>
@@ -97,7 +97,8 @@
 
 <h2>Playing against the computer</h2>
 <p>
-  The chess engines run entirely on your device. Your moves are not sent anywhere when
+  The chess engines run entirely on your device. If using Lichess database during openings,
+  the position is submitted to Lichess (see below). Otherwise moves are not sent anywhere when
   you play a bot, and the app works with no network connection at all.
 </p>
 
@@ -114,6 +115,7 @@
 <p>
   Chat is not moderated or reviewed, because it is not stored. Please treat anything you
   type as visible to the person you're playing.
+  Likewise, two-player games are not moderated and there is no cheat detection.
 </p>
 
 <h2>The openings database</h2>
@@ -156,12 +158,29 @@
   infrastructure operation and is governed by their privacy policy.
 </p>
 
+<h2>Counting downloads</h2>
+<p>
+  The Maia neural network is a large file — about 44&nbsp;MB — and how often it is
+  actually downloaded is something we need to know to run the site within its hosting
+  budget. Our server therefore keeps four running totals for that one file: how many
+  times it was sent in full, abandoned part-way, requested in pieces, and skipped
+  because the visitor already had it.
+</p>
+<p>
+  That is the entire record. It counts transfers of a file, not people: no address, no
+  identifier, no timestamp and no history is attached to any of it, and there is no way
+  to tell from those four numbers who downloaded anything or when. Nothing is written to
+  disk, and the totals reset to zero every time the server restarts. They are visible to
+  anyone at <a href="/api/model-stats">/api/model-stats</a> — there is nothing in them
+  worth hiding.
+</p>
+
 <h2>Children</h2>
 <p>
   These apps are suitable for all ages. Playing requires no account and collects no
   personal information from anyone, including children. The single exception is the
   optional feedback box described above, which contains only what the sender chooses to
-  type — we ask that children not send us personal details, and we delete any that arrive.
+  type — we ask that children not send us personal details, and we will delete any that arrive.
 </p>
 
 <h2>Your rights</h2>
@@ -182,10 +201,12 @@
 <div class="card" id="contact">
   <h2>Getting in touch</h2>
   <p>
-    Questions about this policy, about privacy generally, or about anything else on the
+    This policy was AI generated, and while I have tried to assure its accuracy, I would be more than 
+    a little shocked if it were ideal. Questions about this policy, about privacy generally, or about anything else on the
     site — email <a href="mailto:blundermindchess@gmail.com">blundermindchess@gmail.com</a>.
     That is the best route if you want to attach a screenshot or a PGN, or if you would
-    like a reply you can keep track of.
+    like a reply you can keep track of. If you notice anything incomplete or incorrect on this 
+    policy, please let me know.  
   </p>
   <p>
     Or use the form below — the same one as the feedback box in the app. It reaches us
