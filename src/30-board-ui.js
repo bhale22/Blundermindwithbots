@@ -44,6 +44,32 @@ function toggleBoardSettings(){
   btn.setAttribute('aria-expanded', open ? 'true' : 'false');
   try{ localStorage.setItem('bm_bvOpen', open ? '1' : '0'); }catch(e){}
 }
+// The nine secondary overlays. Closed on a first visit and remembered after
+// that: they are the ones a beginner has no use for yet, and leaving them open
+// by default is what made the panel read as a wall of switches.
+function toggleMoreVis(){
+  const box = document.getElementById('vz-more');
+  const btn = document.getElementById('vz-toggle');
+  if(!box || !btn) return;
+  const open = !box.classList.contains('open');
+  box.classList.toggle('open', open);
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  const t = btn.querySelector('.bv-t');
+  if(t) t.textContent = (open ? '−' : '＋') + ' More visualizations';
+  try{ localStorage.setItem('bm_vzOpen', open ? '1' : '0'); }catch(e){}
+}
+function loadMoreVisPref(){
+  const box = document.getElementById('vz-more');
+  const btn = document.getElementById('vz-toggle');
+  if(!box || !btn) return;
+  let open = false;
+  try{ open = localStorage.getItem('bm_vzOpen') === '1'; }catch(e){}
+  box.classList.toggle('open', open);
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  const t = btn.querySelector('.bv-t');
+  if(t) t.textContent = (open ? '−' : '＋') + ' More visualizations';
+}
+
 function loadBoardSettingsPref(){
   const box = document.getElementById('board-settings');
   const btn = document.getElementById('bv-toggle');
@@ -1661,7 +1687,20 @@ function _resignRowVisible() {
   return !!(ga && ga.offsetParent !== null);
 }
 
+// Buttons that start or replace a game have no business being on screen while
+// one is running: "vs Bot" restarts, "2-Player" abandons, "Load game" throws the
+// position away, and each is one mis-tap from losing a game in progress. They
+// come straight back the moment it ends, which is when they are wanted again.
+function updateGameStartBtns() {
+  const live = (typeof _isLiveGame === 'function') ? _isLiveGame() : false;
+  ['botSidebarBtn', 'mpSidebarBtn', 'btnLoadPgn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = live ? 'none' : '';
+  });
+}
+
 function updateActionBtn() {
+  updateGameStartBtns();
   const btn = document.getElementById('resignBtn');
   if (!btn) return;
   // Explore is offered whenever a game just ended — drop into solo explore
@@ -2722,6 +2761,7 @@ if (!localStorage.getItem('bm_pieceSet')) { currentPieceSet = 'staunton'; }
 loadPrefs();
 loadSoundPref();
 loadBoardSettingsPref();
+loadMoreVisPref();
 loadPos(0);
 resizeBoard();
 

@@ -210,19 +210,13 @@ canvas{
 .sep{height:0.5px;background:var(--border);margin:2px 0;flex-shrink:0;}
 
 /* ── Indicator grid ───────────────────────────────────────────────────────── */
-/* One column, not two.
-   The state word costs ~48px of every row (chip + gap), and the sidebar is
-   270px — so a 2-column grid left each button 133px, of which roughly 41px
-   reached the label. Measured: 12 of the 13 labels overflowed by 28-90px and
-   `overflow:hidden` silently ate the state chip on every one of them. Nothing
-   short of gutting the labels fits three elements and 13px type into 133px, and
-   short labels are the opposite of what a beginner needs. Full width gives the
-   label ~178px (~27 chars at 13px); the longest, "X-ray pressure/threats", is 22.
-   The cost is height: ~440px expanded, against ~236px before. That is why this
-   block wants to sit behind the "Board vision settings" disclosure on desktop
-   the way it already does on phones. */
-.ind-grid{display:flex;flex-direction:column;gap:2px;width:100%;}
-.ind-col{display:flex;flex-direction:column;gap:2px;width:100%;min-width:0;}
+/* Two columns, row-major, so the paired overlays sit beside their opposite
+   number ("My forks" next to "Fork threats"). CSS grid rather than two flex
+   columns: the flex version was column-major, which cannot express a pair
+   without leaving a hole, and .ib-span lets a lone item take the full width.
+   The phone rule further down collapses this to one column. */
+.ind-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px;width:100%;}
+.ib-span{grid-column:1/-1;}
 
 /* ── Indicator button ─────────────────────────────────────────── */
 /* One button per indicator, carrying all three states. It used to be a split
@@ -234,11 +228,11 @@ canvas{
    gives back is what pays for 8.5px → 13px type at the same block height. */
 .ib{display:flex;flex-direction:column;gap:0px;user-select:none;width:100%;}
 .ib-main{
-  padding:6px 8px;display:flex;align-items:center;gap:7px;
-  font-size:13px;font-weight:500;color:var(--text-secondary);
+  padding:5px 7px;display:flex;align-items:center;gap:6px;
+  font-size:11.5px;font-weight:400;color:var(--text-dim);
   cursor:pointer;background:var(--bg-panel2);
   border-radius:4px;border:0.5px solid var(--border2);
-  width:100%;text-align:left;min-height:32px;
+  width:100%;text-align:left;min-height:34px;
   transition:background 0.1s,color 0.1s,border-color 0.12s,box-shadow 0.12s;
   position:relative;white-space:nowrap;overflow:hidden;
   /* Hold-to-peek is a first-class gesture here, so the browser must not treat a
@@ -266,20 +260,13 @@ canvas{
    what makes the column read as aligned. */
 .ib-lbl{
   flex:1 1 auto;min-width:0;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  /* Wraps to a second line rather than truncating. At 133px a column cannot
+     hold "X-ray pressure/threats" on one line at any legible size, and the
+     honest choice is two lines of the real name over one line of a name that
+     has been cut down until a beginner cannot tell what it means. */
+  white-space:normal;line-height:1.2;overflow-wrap:break-word;
 }
 
-/* State word: off / exp / on. Fixed min-width so the chips form a clean right
-   edge down the column instead of ragging with the word length. */
-.ib-state{
-  flex:0 0 auto;
-  min-width:34px;text-align:center;
-  font-size:10px;font-weight:700;letter-spacing:0.03em;
-  padding:2px 4px;border-radius:3px;
-  border:0.5px solid var(--border2);
-  background:transparent;color:var(--text-dim);
-  transition:background 0.1s,color 0.1s,border-color 0.12s;
-}
 
 /* The three states are tinted fills on the light panel, not dark slabs. These
    rules carried a near-black gradient (#0a2015) left over from the dark navy
@@ -295,7 +282,11 @@ canvas{
   color:#14713c;border-color:#22a85a;
   box-shadow:0 0 0 1.5px rgba(34,168,90,0.18);
 }
-.ib.on .ib-state{background:#22a85a;border-color:#1c8f4c;color:#fff;}
+/* Weight is what separates a live indicator from a dead one. The word chip
+   that used to say so cost ~48px of every row, which is what forced a single
+   column; dropping it buys the second column back. Bold + tint reads as "this
+   is drawing something" at a glance, and the two hues say which mode. */
+.ib.on .ib-main,.ib.pre .ib-main{font-weight:700;}
 
 /* Exploration-only. Given its own hue rather than a paler green: against
    always-on it has to be distinguishable at a glance, not on inspection. This
@@ -304,7 +295,6 @@ canvas{
   background:rgba(90,104,200,0.10);
   color:#3a44a0;border-color:rgba(90,104,200,0.55);
 }
-.ib.pre .ib-state{background:rgba(90,104,200,0.16);border-color:rgba(90,104,200,0.5);color:#3a44a0;}
 
 /* Peeking. This colour is the contract: while it shows, the press is a peek and
    nothing will stick when you let go. The state word keeps reading the resting
@@ -314,7 +304,6 @@ canvas{
   color:#15597f;border-color:#2b7fb8;
   box-shadow:0 0 0 1.5px rgba(74,159,212,0.25);
 }
-.ib.pressing .ib-state{background:rgba(74,159,212,0.22);border-color:#2b7fb8;color:#15597f;}
 
 /* Color dot in button */
 .ib-dot{width:6px;height:6px;border-radius:50%;display:inline-block;flex-shrink:0;}
@@ -1218,6 +1207,48 @@ canvas{
 #board-settings{display:contents;}
 #bv-toggle{display:none;}
 
+/* ── Sidebar disclosure / launcher rows ──────────────────────────────────────
+   #bs-open opens the Board settings panel; #vz-toggle folds the nine secondary
+   overlays. Same shape so they read as one row of controls, and both are full
+   44px targets — they are the two things a first-time visitor is most likely
+   to reach for. */
+#bs-open,#vz-toggle{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  width:100%;min-height:34px;padding:7px 10px;margin:2px 0;
+  background:var(--bg-panel);border:0.5px solid var(--border);border-radius:6px;
+  color:var(--text-secondary);font-size:12px;font-weight:600;
+  font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;
+}
+#bs-open:hover,#vz-toggle:hover{border-color:var(--accent);color:var(--text-primary);}
+#vz-toggle .bv-c{font-size:11px;transition:transform 0.2s;}
+#vz-toggle[aria-expanded="true"] .bv-c{transform:rotate(180deg);}
+#vz-toggle[aria-expanded="true"]{border-color:var(--accent);color:var(--text-primary);}
+#vz-more{display:none;}
+#vz-more.open{display:block;}
+.vz-ghost{margin-top:4px;}
+.vz-ghost .s-row{padding:6px 2px;border-bottom:none;border-top:0.5px solid var(--border2);}
+.vz-ghost .s-lbl{
+  font-size:11.5px;text-transform:none;letter-spacing:0;
+  color:var(--text-dim);white-space:normal;
+}
+.vz-ghost select{font-size:11px;padding:3px 4px;}
+
+/* Panel groups in Board settings */
+.bs-group{margin-bottom:14px;}
+.bs-head{
+  font-size:10px;letter-spacing:0.1em;text-transform:uppercase;
+  color:var(--text-dim);font-weight:700;margin-bottom:2px;
+}
+#boardSettingsPanel .s-row{padding:9px 0;flex-wrap:nowrap;}
+#boardSettingsPanel .s-lbl{
+  font-size:13px;text-transform:none;letter-spacing:0;
+  color:var(--text-secondary);white-space:normal;
+  flex:1 1 auto;min-width:0;
+}
+#boardSettingsPanel .s-row label{flex:0 0 auto;}
+#boardSettingsPanel .s-row label{font-size:13px;gap:6px;}
+#boardSettingsPanel .s-row label input{width:15px;height:15px;}
+
 @media(max-width:760px){
   /* ── Board first, and as large as the screen allows ──
      The board is the reason someone opened the page; on a phone it should be
@@ -1293,6 +1324,7 @@ canvas{
   .ctrl-row{gap:6px;}
   /* Indicator cards go 1-up so their labels stop truncating */
   .ind-grid{grid-template-columns:1fr;}
+  #bs-open,#vz-toggle{min-height:44px;font-size:13px;}
 }
 
 /* Short viewports (landscape phones): cap the board by height, not width, and
@@ -2262,23 +2294,117 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
          the sidebar's own flex layout is completely unchanged. -->
     <button type="button" id="bv-toggle" aria-expanded="false" aria-controls="board-settings"
             onclick="toggleBoardSettings()">
-      <span class="bv-t">⚙ Board vision settings</span>
+      <span class="bv-t">⚙ Board vision</span>
       <span class="bv-c">▾</span>
     </button>
     <div id="board-settings">
 
-    <!-- Settings -->
-    <div class="s-row">
-      <span class="s-lbl">🔊 Move sounds:</span>
-      <span class="s-spacer"></span>
-      <label><input type="checkbox" id="cbSound" onchange="saveSoundPref()"> On</label>
+    <!-- Preferences, not overlays — they live in their own panel now. -->
+    <button type="button" id="bs-open" onclick="openPanel('boardSettingsPanel')">
+      <span class="bv-t">⚙ Board settings</span>
+      <span class="bv-c">›</span>
+    </button>
+
+    <!-- ── Core four: always on the visualization board ──────────────────
+         The overlays that answer "can this be taken" — the reason someone
+         opened a training board at all. They are not behind a disclosure
+         because a beginner should never have to find them. -->
+    <div class="ind-grid">
+      <div class="ib" id="ib-threats">
+          <button class="ib-main" onmousedown="ibMainDown('threats',event)" onmouseup="ibMainUp('threats')" onmouseleave="ibMainCancel('threats')" ontouchstart="ibMainDown('threats',event)" ontouchend="ibMainUp('threats')" ontouchcancel="ibMainCancel('threats')">
+            <span class="ib-icon"><span class="ib-dot ib-dot2" style="background:#e03535;"></span><span class="ib-dot ib-dot2" style="background:#1eb446;"></span></span><span class="ib-lbl">Threats &amp; Captures</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('threats',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-counts">
+          <button class="ib-main" onmousedown="ibMainDown('counts',event)" onmouseup="ibMainUp('counts')" onmouseleave="ibMainCancel('counts')" ontouchstart="ibMainDown('counts',event)" ontouchend="ibMainUp('counts')" ontouchcancel="ibMainCancel('counts')">
+            <span class="ib-icon"><span class="ib-dot ib-dot2" style="background:#22a85a;"></span><span class="ib-dot ib-dot2" style="background:#e03535;"></span></span><span class="ib-lbl">Threat/Def. counts</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('counts',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-unprotected">
+          <button class="ib-main" onmousedown="ibMainDown('unprotected',event)" onmouseup="ibMainUp('unprotected')" onmouseleave="ibMainCancel('unprotected')" ontouchstart="ibMainDown('unprotected',event)" ontouchend="ibMainUp('unprotected')" ontouchcancel="ibMainCancel('unprotected')">
+            <span class="ib-icon"><span class="ib-dot" style="background:#e03535;"></span></span><span class="ib-lbl">Unprotected</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('unprotected',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-pins">
+          <button class="ib-main" onmousedown="ibMainDown('pins',event)" onmouseup="ibMainUp('pins')" onmouseleave="ibMainCancel('pins')" ontouchstart="ibMainDown('pins',event)" ontouchend="ibMainUp('pins')" ontouchcancel="ibMainCancel('pins')">
+            <span class="ib-icon"><span class="ib-dot" style="background:#9b59b6;"></span></span><span class="ib-lbl">Pins</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('pins',event)">?</span>
+          </button>
+        </div>
     </div>
-    <div class="s-row">
-      <span class="s-lbl">Show legal moves:</span>
-      <span class="s-spacer"></span>
-      <label><input type="checkbox" id="cbLegalToggle" checked onchange="render()"> On</label>
-    </div>
-    <div class="s-row" id="ghostRow">
+
+    <!-- ── Everything else, folded away ──────────────────────────────────
+         Nine overlays plus ghost replies. Real once you are looking for
+         them, noise on a first visit — an x-ray pressure toggle means
+         nothing to someone still learning what hangs. Closed by default;
+         the choice is remembered. -->
+    <button type="button" id="vz-toggle" aria-expanded="false" aria-controls="vz-more"
+            onclick="toggleMoreVis()">
+      <span class="bv-t">＋ More visualizations</span>
+      <span class="bv-c">▾</span>
+    </button>
+    <div id="vz-more">
+      <div class="ind-grid">
+      <div class="ib ib-span" id="ib-checkthreats">
+          <button class="ib-main" onmousedown="ibMainDown('checkthreats',event)" onmouseup="ibMainUp('checkthreats')" onmouseleave="ibMainCancel('checkthreats')" ontouchstart="ibMainDown('checkthreats',event)" ontouchend="ibMainUp('checkthreats')" ontouchcancel="ibMainCancel('checkthreats')">
+            <span class="ib-icon"><span class="ib-dot" style="background:#e03535;"></span></span><span class="ib-lbl">Check threats</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('checkthreats',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-discoveredself">
+          <button class="ib-main" onmousedown="ibMainDown('discoveredself',event)" onmouseup="ibMainUp('discoveredself')" onmouseleave="ibMainCancel('discoveredself')" ontouchstart="ibMainDown('discoveredself',event)" ontouchend="ibMainUp('discoveredself')" ontouchcancel="ibMainCancel('discoveredself')">
+            <span class="ib-icon"><span class="ib-dot" style="background:#a050dc;"></span></span><span class="ib-lbl">My disc. attacks</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredself',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-discoveredopp">
+          <button class="ib-main" onmousedown="ibMainDown('discoveredopp',event)" onmouseup="ibMainUp('discoveredopp')" onmouseleave="ibMainCancel('discoveredopp')" ontouchstart="ibMainDown('discoveredopp',event)" ontouchend="ibMainUp('discoveredopp')" ontouchcancel="ibMainCancel('discoveredopp')">
+            <span class="ib-icon"><span class="ib-dot" style="background:#dc8200;"></span></span><span class="ib-lbl">Opp. disc. threats</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredopp',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-forksw">
+          <button class="ib-main" onmousedown="ibMainDown('forksw',event)" onmouseup="ibMainUp('forksw')" onmouseleave="ibMainCancel('forksw')" ontouchstart="ibMainDown('forksw',event)" ontouchend="ibMainUp('forksw')" ontouchcancel="ibMainCancel('forksw')">
+            <span class="ib-icon"><span class="ib-dot" style="background:#f0c040;"></span></span><span class="ib-lbl">My forks/skewers</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksw',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-forksb">
+          <button class="ib-main" onmousedown="ibMainDown('forksb',event)" onmouseup="ibMainUp('forksb')" onmouseleave="ibMainCancel('forksb')" ontouchstart="ibMainDown('forksb',event)" ontouchend="ibMainUp('forksb')" ontouchcancel="ibMainCancel('forksb')">
+            <span class="ib-icon"><span class="ib-dot" style="background:#e040c0;"></span></span><span class="ib-lbl">Fork/skewer threats</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksb',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-weakb">
+          <button class="ib-main" onmousedown="ibMainDown('weakb',event)" onmouseup="ibMainUp('weakb')" onmouseleave="ibMainCancel('weakb')" ontouchstart="ibMainDown('weakb',event)" ontouchend="ibMainUp('weakb')" ontouchcancel="ibMainCancel('weakb')">
+            <span class="ib-icon"><span class="ib-sq"></span></span><span class="ib-lbl">Opp. weak squares</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakb',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-weakw">
+          <button class="ib-main" onmousedown="ibMainDown('weakw',event)" onmouseup="ibMainUp('weakw')" onmouseleave="ibMainCancel('weakw')" ontouchstart="ibMainDown('weakw',event)" ontouchend="ibMainUp('weakw')" ontouchcancel="ibMainCancel('weakw')">
+            <span class="ib-icon"><span class="ib-sq"></span></span><span class="ib-lbl">My weak squares</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakw',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-xray">
+          <button class="ib-main" onmousedown="ibMainDown('xray',event)" onmouseup="ibMainUp('xray')" onmouseleave="ibMainCancel('xray')" ontouchstart="ibMainDown('xray',event)" ontouchend="ibMainUp('xray')" ontouchcancel="ibMainCancel('xray')">
+            <span class="ib-icon"><span class="ib-dot" style="background:#8080ff;"></span></span><span class="ib-lbl">X-ray pressure</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('xray',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-overloaded">
+          <button class="ib-main" onmousedown="ibMainDown('overloaded',event)" onmouseup="ibMainUp('overloaded')" onmouseleave="ibMainCancel('overloaded')" ontouchstart="ibMainDown('overloaded',event)" ontouchend="ibMainUp('overloaded')" ontouchcancel="ibMainCancel('overloaded')">
+            <span class="ib-icon"><span class="ib-dot" style="background:#c8a000;"></span></span><span class="ib-lbl">Overloaded</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('overloaded',event)">?</span>
+          </button>
+        </div>
+      </div>
+      <div class="vz-ghost">
+        <div class="s-row" id="ghostRow">
       <span class="s-lbl">👻 Ghost responses:<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('ghostresponses',event)" style="margin-left:3px;">?</span></span>
       <span class="s-spacer"></span>
       <select id="soloGhostDepth" onchange="ghostModeChanged()" style="font-size:8px;padding:1px 3px;border:0.5px solid var(--border);border-radius:3px;background:var(--bg-panel2);color:var(--text-secondary);">
@@ -2289,132 +2415,17 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <option value="maia">Maia (2600 + 1500)</option>
       </select>
     </div>
-    <div id="ghostMpNote" style="display:none;font-size:7.5px;color:#c0a060;padding:0 2px 4px;">
+        <div id="ghostMpNote" style="display:none;font-size:7.5px;color:#c0a060;padding:0 2px 4px;">
       ⚔ Inactive &amp; unavailable during 2-player games — engine hints would undercut human-vs-human play.
     </div>
     <div id="ghostMaiaHint" style="display:none;font-size:7.5px;color:#c0a060;padding:0 2px 4px;">
       Maia3 model not downloaded — ghosts use Stockfish until you download it in the 🤖 vs Bot panel.
     </div>
-    <div class="s-row">
-      <span class="s-lbl">Batteries in threat counts:<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('batteriessetting',event)" style="margin-left:3px;">?</span></span>
-      <span class="s-spacer"></span>
-      <label><input type="checkbox" id="cbBattery" onchange="rebuildAtk()"> On</label>
-    </div>
-    <div class="s-row">
-      <span class="s-lbl">Influence on move exploration:</span>
-      <span class="s-spacer"></span>
-      <label><input type="checkbox" id="cbInfluenceToggle" checked onchange="render()"> On</label>
-    </div>
-    <div class="s-row">
-      <span class="s-lbl">Include queen pins:<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('queenpinssetting',event)" style="margin-left:3px;">?</span></span>
-      <span class="s-spacer"></span>
-      <label><input type="checkbox" id="cbQPins" onchange="rebuildAtk()"> On</label>
-    </div>
-
-
-    <div class="sep"></div>
-
-    <!-- Indicator grid -->
-    <div class="ind-grid">
-      <div class="ind-col">
-        <div class="ib" id="ib-checkthreats">
-          <button class="ib-main" onmousedown="ibMainDown('checkthreats',event)" onmouseup="ibMainUp('checkthreats')" onmouseleave="ibMainCancel('checkthreats')" ontouchstart="ibMainDown('checkthreats',event)" ontouchend="ibMainUp('checkthreats')" ontouchcancel="ibMainCancel('checkthreats')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#e03535;"></span></span><span class="ib-lbl">Check threats</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('checkthreats',event)">?</span>
-            <span class="ib-state"></span>
-          </button>
-        </div>
-        <div class="ib" id="ib-threats">
-          <button class="ib-main" onmousedown="ibMainDown('threats',event)" onmouseup="ibMainUp('threats')" onmouseleave="ibMainCancel('threats')" ontouchstart="ibMainDown('threats',event)" ontouchend="ibMainUp('threats')" ontouchcancel="ibMainCancel('threats')">
-            <span class="ib-icon"><span class="ib-dot ib-dot2" style="background:#e03535;"></span><span class="ib-dot ib-dot2" style="background:#1eb446;"></span></span><span class="ib-lbl">Threats &amp; Captures</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('threats',event)">?</span>
-            <span class="ib-state"></span>
-          </button>
-        </div>
-        <div class="ib" id="ib-counts">
-          <button class="ib-main" onmousedown="ibMainDown('counts',event)" onmouseup="ibMainUp('counts')" onmouseleave="ibMainCancel('counts')" ontouchstart="ibMainDown('counts',event)" ontouchend="ibMainUp('counts')" ontouchcancel="ibMainCancel('counts')">
-            <span class="ib-icon"><span class="ib-dot ib-dot2" style="background:#22a85a;"></span><span class="ib-dot ib-dot2" style="background:#e03535;"></span></span><span class="ib-lbl">Threat/Def. counts</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('counts',event)">?</span>
-            <span class="ib-state"></span>
-          </button>
-        </div>
-        <div class="ib" id="ib-unprotected">
-          <button class="ib-main" onmousedown="ibMainDown('unprotected',event)" onmouseup="ibMainUp('unprotected')" onmouseleave="ibMainCancel('unprotected')" ontouchstart="ibMainDown('unprotected',event)" ontouchend="ibMainUp('unprotected')" ontouchcancel="ibMainCancel('unprotected')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#e03535;"></span></span><span class="ib-lbl">Unprotected</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('unprotected',event)">?</span>
-            <span class="ib-state"></span>
-          </button>
-        </div>
-        <div class="ib" id="ib-pins">
-          <button class="ib-main" onmousedown="ibMainDown('pins',event)" onmouseup="ibMainUp('pins')" onmouseleave="ibMainCancel('pins')" ontouchstart="ibMainDown('pins',event)" ontouchend="ibMainUp('pins')" ontouchcancel="ibMainCancel('pins')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#9b59b6;"></span></span><span class="ib-lbl">Pins</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('pins',event)">?</span>
-            <span class="ib-state"></span>
-          </button>
-        </div>
-        <div class="ib" id="ib-forksw">
-          <button class="ib-main" onmousedown="ibMainDown('forksw',event)" onmouseup="ibMainUp('forksw')" onmouseleave="ibMainCancel('forksw')" ontouchstart="ibMainDown('forksw',event)" ontouchend="ibMainUp('forksw')" ontouchcancel="ibMainCancel('forksw')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#f0c040;"></span></span><span class="ib-lbl">My forks &amp; skewers</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksw',event)">?</span>
-            <span class="ib-state"></span>
-          </button>
-        </div>
-        <div class="ib" id="ib-forksb">
-          <button class="ib-main" onmousedown="ibMainDown('forksb',event)" onmouseup="ibMainUp('forksb')" onmouseleave="ibMainCancel('forksb')" ontouchstart="ibMainDown('forksb',event)" ontouchend="ibMainUp('forksb')" ontouchcancel="ibMainCancel('forksb')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#e040c0;"></span></span><span class="ib-lbl">Fork &amp; skewer threats</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksb',event)">?</span>
-            <span class="ib-state"></span>
-          </button>
-        </div>
       </div>
-      <div class="ind-col">
-        <div class="ib" id="ib-overloaded">
-          <button class="ib-main" onmousedown="ibMainDown('overloaded',event)" onmouseup="ibMainUp('overloaded')" onmouseleave="ibMainCancel('overloaded')" ontouchstart="ibMainDown('overloaded',event)" ontouchend="ibMainUp('overloaded')" ontouchcancel="ibMainCancel('overloaded')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#c8a000;"></span></span><span class="ib-lbl">Overloaded</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('overloaded',event)">?</span>
-            <span class="ib-state"></span>
-          </button>
-        </div>
-        <div class="ib" id="ib-discoveredopp">
-          <button class="ib-main" onmousedown="ibMainDown('discoveredopp',event)" onmouseup="ibMainUp('discoveredopp')" onmouseleave="ibMainCancel('discoveredopp')" ontouchstart="ibMainDown('discoveredopp',event)" ontouchend="ibMainUp('discoveredopp')" ontouchcancel="ibMainCancel('discoveredopp')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#dc8200;"></span></span><span class="ib-lbl">Opp. disc. threats</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredopp',event)">?</span>
-            <span class="ib-state"></span>
-          </button>
-        </div>
-        <div class="ib" id="ib-discoveredself">
-          <button class="ib-main" onmousedown="ibMainDown('discoveredself',event)" onmouseup="ibMainUp('discoveredself')" onmouseleave="ibMainCancel('discoveredself')" ontouchstart="ibMainDown('discoveredself',event)" ontouchend="ibMainUp('discoveredself')" ontouchcancel="ibMainCancel('discoveredself')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#a050dc;"></span></span><span class="ib-lbl">My disc. attacks</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredself',event)">?</span>
-            <span class="ib-state"></span>
-          </button>
-        </div>
-        <div class="ib" id="ib-weakw">
-          <button class="ib-main" onmousedown="ibMainDown('weakw',event)" onmouseup="ibMainUp('weakw')" onmouseleave="ibMainCancel('weakw')" ontouchstart="ibMainDown('weakw',event)" ontouchend="ibMainUp('weakw')" ontouchcancel="ibMainCancel('weakw')">
-            <span class="ib-icon"><span class="ib-sq"></span></span><span class="ib-lbl">My weak squares</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakw',event)">?</span>
-            <span class="ib-state"></span>
-          </button>
-        </div>
-        <div class="ib" id="ib-weakb">
-          <button class="ib-main" onmousedown="ibMainDown('weakb',event)" onmouseup="ibMainUp('weakb')" onmouseleave="ibMainCancel('weakb')" ontouchstart="ibMainDown('weakb',event)" ontouchend="ibMainUp('weakb')" ontouchcancel="ibMainCancel('weakb')">
-            <span class="ib-icon"><span class="ib-sq"></span></span><span class="ib-lbl">Opp. weak squares</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakb',event)">?</span>
-            <span class="ib-state"></span>
-          </button>
-        </div>
-        <div class="ib" id="ib-xray">
-          <button class="ib-main" onmousedown="ibMainDown('xray',event)" onmouseup="ibMainUp('xray')" onmouseleave="ibMainCancel('xray')" ontouchstart="ibMainDown('xray',event)" ontouchend="ibMainUp('xray')" ontouchcancel="ibMainCancel('xray')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#8080ff;"></span></span><span class="ib-lbl">X-ray pressure/threats</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('xray',event)">?</span>
-            <span class="ib-state"></span>
-          </button>
-        </div>
-        <div style="margin-top:4px;">
-          <button class="ctrl-btn danger-btn" id="btnClearAll" onclick="clearAllSelections()" style="width:100%;font-size:8.5px;">✕ Clear all</button>
-        </div>
-      </div>
-    </div><!-- end ind-grid -->
+    </div>
+    <div style="margin-top:5px;">
+      <button class="ctrl-btn danger-btn" id="btnClearAll" onclick="clearAllSelections()" style="width:100%;font-size:11px;">✕ Clear all</button>
+    </div>
     <!-- Peek / Hide / Show All — larger, below the indicator columns -->
     <div style="display:flex;gap:5px;margin-top:5px;">
       <button id="btnHideShow" class="ctrl-btn util-btn"
@@ -2453,7 +2464,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <button class="ctrl-btn util-btn" id="exploreBtn" onclick="enterExploreMode()" style="display:none;border-color:rgba(74,159,212,0.45);color:#4a9fd4;">🔍 Explore</button>
         <button class="ctrl-btn util-btn" id="reviewBtn" onclick="startReplayOfCurrentGame()" style="display:none;border-color:rgba(74,159,212,0.45);color:#4a9fd4;" title="Step through the finished game — and restart play from any position">⏪ Review</button>
         <button class="ctrl-btn util-btn" onclick="openBotModal()" style="border-color:rgba(90,212,144,0.4);color:#5ad490;" id="botSidebarBtn">🤖 vs Bot</button>
-        <button class="ctrl-btn util-btn" onclick="openPanel('mpPanel')">⚔ 2-Player</button>
+        <button class="ctrl-btn util-btn" id="mpSidebarBtn" onclick="openPanel('mpPanel')">⚔ 2-Player</button>
       </div>
       <!-- Row 2: utilities -->
       <div class="ctrl-row">
@@ -3354,6 +3365,55 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 </div>
 
 <!-- ── Theme panel ────────────────────────────────────────────────────────── -->
+<!-- ── Board settings ────────────────────────────────────────────────────────
+     The four preferences that are not overlays: how the board sounds and
+     behaves, and two switches that change how threat counts are computed.
+     They used to sit in the sidebar above the indicators, where they read as
+     four more visualization toggles and were the first thing a new visitor
+     hit. Nothing here is touched mid-game, so a panel is the right home.
+
+     "Batteries in threat counts" is here on the same logic as queen pins:
+     both change what counts as an attacker rather than what gets drawn. -->
+<div class="slide-panel" id="boardSettingsPanel">
+  <div class="panel-header">
+    <span class="panel-title">⚙ Board settings</span>
+    <button class="panel-close" onclick="closeAllPanels()">✕</button>
+  </div>
+  <div class="panel-body">
+    <div class="bs-group">
+      <div class="bs-head">Board</div>
+      <div class="s-row">
+        <span class="s-lbl">🔊 Move sounds:</span>
+        <span class="s-spacer"></span>
+        <label><input type="checkbox" id="cbSound" onchange="saveSoundPref()"> On</label>
+      </div>
+      <div class="s-row">
+        <span class="s-lbl">Show legal moves:</span>
+        <span class="s-spacer"></span>
+        <label><input type="checkbox" id="cbLegalToggle" checked onchange="render()"> On</label>
+      </div>
+      <div class="s-row">
+        <span class="s-lbl">Show influence while exploring:</span>
+        <span class="s-spacer"></span>
+        <label><input type="checkbox" id="cbInfluenceToggle" checked onchange="render()"> On</label>
+      </div>
+    </div>
+    <div class="bs-group">
+      <div class="bs-head">What counts as a threat</div>
+      <div class="s-row">
+        <span class="s-lbl">Batteries in threat counts:<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('batteriessetting',event)" style="margin-left:4px;">?</span></span>
+        <span class="s-spacer"></span>
+        <label><input type="checkbox" id="cbBattery" onchange="rebuildAtk()"> On</label>
+      </div>
+      <div class="s-row">
+        <span class="s-lbl">Include queen pins:<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('queenpinssetting',event)" style="margin-left:4px;">?</span></span>
+        <span class="s-spacer"></span>
+        <label><input type="checkbox" id="cbQPins" onchange="rebuildAtk()"> On</label>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="slide-panel" id="themePanel">
   <div class="panel-header">
     <span class="panel-title">Theme &amp; Pieces</span>
