@@ -210,71 +210,123 @@ canvas{
 .sep{height:0.5px;background:var(--border);margin:2px 0;flex-shrink:0;}
 
 /* ── Indicator grid ───────────────────────────────────────────────────────── */
-.ind-grid{display:flex;flex-direction:row;gap:4px;width:100%;}
-.ind-col{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;}
+/* One column, not two.
+   The state word costs ~48px of every row (chip + gap), and the sidebar is
+   270px — so a 2-column grid left each button 133px, of which roughly 41px
+   reached the label. Measured: 12 of the 13 labels overflowed by 28-90px and
+   `overflow:hidden` silently ate the state chip on every one of them. Nothing
+   short of gutting the labels fits three elements and 13px type into 133px, and
+   short labels are the opposite of what a beginner needs. Full width gives the
+   label ~178px (~27 chars at 13px); the longest, "X-ray pressure/threats", is 22.
+   The cost is height: ~440px expanded, against ~236px before. That is why this
+   block wants to sit behind the "Board vision settings" disclosure on desktop
+   the way it already does on phones. */
+.ind-grid{display:flex;flex-direction:column;gap:2px;width:100%;}
+.ind-col{display:flex;flex-direction:column;gap:2px;width:100%;min-width:0;}
 
-/* ── Indicator button ─────────────────────────────────────────────────────── */
+/* ── Indicator button ─────────────────────────────────────────── */
+/* One button per indicator, carrying all three states. It used to be a split
+   control: the main button plus a 10px "Show During Exploration" strip under
+   it, repeated 13 times at 6px type. That strip existed only because the main
+   button could not show the difference between off and exploration-only — the
+   two resting styles differed by a 0.5px border at 25% opacity. Naming the
+   state in words removes the reason for the strip, and the ~10px per row it
+   gives back is what pays for 8.5px → 13px type at the same block height. */
 .ib{display:flex;flex-direction:column;gap:0px;user-select:none;width:100%;}
 .ib-main{
-  padding:5px 8px;display:flex;align-items:center;gap:4px;
-  font-size:8.5px;font-weight:500;color:var(--text-dim);
+  padding:6px 8px;display:flex;align-items:center;gap:7px;
+  font-size:13px;font-weight:500;color:var(--text-secondary);
   cursor:pointer;background:var(--bg-panel2);
-  border-radius:4px 4px 0 0;border:0.5px solid var(--border2);
-  width:100%;text-align:left;min-height:22px;
+  border-radius:4px;border:0.5px solid var(--border2);
+  width:100%;text-align:left;min-height:32px;
   transition:background 0.1s,color 0.1s,border-color 0.12s,box-shadow 0.12s;
   position:relative;white-space:nowrap;overflow:hidden;
+  /* Hold-to-peek is a first-class gesture here, so the browser must not treat a
+     long press as a callout/selection or steal it for a scroll on slight drift. */
+  touch-action:manipulation;-webkit-touch-callout:none;
 }
-.ib-main .ib-dot-status{margin-left:auto;}
 .ib-main:hover{border-color:var(--border);color:var(--text-secondary);}
+/* The peek only arms after IB_HOLD_MS; :active covers the gap so a plain click
+   still feels like it landed. */
+.ib-main:active{background:var(--bg-panel);}
+
+/* Fixed-width icon slot. Every label starts at the same x whether the indicator
+   carries one dot or a stacked pair, which is the whole point of stacking the
+   paired ones rather than setting them side by side. */
+.ib-icon{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:2px;width:8px;flex:0 0 8px;
+}
+
+/* The label is the only element allowed to give ground. Everything else is
+   flex:0 0 auto, so a long name truncates with an ellipsis instead of shoving
+   the help mark and the state word out through `overflow:hidden` — which is
+   exactly what happened when the label was a bare text node. Growing to fill
+   also pins "?" and the state chip to the right edge on every row, which is
+   what makes the column read as aligned. */
+.ib-lbl{
+  flex:1 1 auto;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+
+/* State word: off / exp / on. Fixed min-width so the chips form a clean right
+   edge down the column instead of ragging with the word length. */
+.ib-state{
+  flex:0 0 auto;
+  min-width:34px;text-align:center;
+  font-size:10px;font-weight:700;letter-spacing:0.03em;
+  padding:2px 4px;border-radius:3px;
+  border:0.5px solid var(--border2);
+  background:transparent;color:var(--text-dim);
+  transition:background 0.1s,color 0.1s,border-color 0.12s;
+}
+
+/* The three states are tinted fills on the light panel, not dark slabs. These
+   rules carried a near-black gradient (#0a2015) left over from the dark navy
+   theme named in the stale comment on :root — the palette there is light, and a
+   full-width row of near-black was fine as a 133px chip but reads as a bar of
+   ink once the button spans the sidebar.
+
+   Always-on: green, the accent used for live/active everywhere else, and the
+   only state whose chip is a solid fill — it is the strongest state and should
+   look it. */
 .ib.on .ib-main{
-  background:linear-gradient(135deg,#0a2015,#081a10);
-  color:#5ad490;border-color:#22a85a;
-  box-shadow:0 0 0 1.5px rgba(34,168,90,0.25);
+  background:rgba(34,168,90,0.14);
+  color:#14713c;border-color:#22a85a;
+  box-shadow:0 0 0 1.5px rgba(34,168,90,0.18);
 }
-/* Exploration-only (pre) mode: subtle dim highlight, clearly different from always-on */
+.ib.on .ib-state{background:#22a85a;border-color:#1c8f4c;color:#fff;}
+
+/* Exploration-only. Given its own hue rather than a paler green: against
+   always-on it has to be distinguishable at a glance, not on inspection. This
+   is the pair that used to differ by a 0.5px border at 25% opacity. */
 .ib.pre .ib-main{
-  background:var(--bg-panel2);
-  color:var(--text-secondary);
-  border-color:rgba(34,168,90,0.25);
+  background:rgba(90,104,200,0.10);
+  color:#3a44a0;border-color:rgba(90,104,200,0.55);
 }
-.ib.pre .ib-dot-status{display:block;background:rgba(34,168,90,0.4);}
+.ib.pre .ib-state{background:rgba(90,104,200,0.16);border-color:rgba(90,104,200,0.5);color:#3a44a0;}
+
+/* Peeking. This colour is the contract: while it shows, the press is a peek and
+   nothing will stick when you let go. The state word keeps reading the resting
+   state throughout, which is what makes that promise legible. */
 .ib.pressing .ib-main{
-  background:linear-gradient(135deg,#0d2a3a,#0a1f30);
-  color:#6ad4f4;border-color:#4a9fd4;
-  box-shadow:0 0 0 1.5px rgba(74,159,212,0.3);
+  background:rgba(74,159,212,0.18);
+  color:#15597f;border-color:#2b7fb8;
+  box-shadow:0 0 0 1.5px rgba(74,159,212,0.25);
 }
-.ib-dot-status{width:5px;height:5px;border-radius:50%;margin-left:auto;flex-shrink:0;display:none;}
-.ib.on .ib-dot-status{display:block;background:#22a85a;}
-.ib.pressing .ib-dot-status{display:block;background:#4a9fd4;}
-/* Sub-button: Show During Exploration */
-.ib-pre{
-  display:flex;align-items:center;justify-content:center;
-  padding:0 4px;height:10px;
-  border-radius:0 0 4px 4px;
-  border:0.5px solid var(--border2);border-top:none;
-  background:var(--bg-panel2);cursor:pointer;width:100%;
-  transition:all 0.1s;
-}
-.ib-main{border-radius:4px 4px 0 0 !important;}
-.ib-hold-lbl{border-radius:0 0 4px 4px;border:0.5px solid var(--border2);border-top:none;background:var(--bg-panel2);}
-.ib-pre span{font-size:6px;color:var(--text-dim);letter-spacing:0.02em;white-space:nowrap;}
-.ib-pre.active{border-color:#2a3060;background:#131830;}
-.ib-pre.active span{color:#7080e0;font-weight:700;}
-/* Hold-only label for forksw */
-.ib-hold-lbl{
-  display:flex;align-items:center;justify-content:center;
-  padding:0 4px;height:10px;
-  font-size:6px;color:var(--text-dim);font-style:italic;
-  letter-spacing:0.03em;opacity:0.5;
-}
+.ib.pressing .ib-state{background:rgba(74,159,212,0.22);border-color:#2b7fb8;color:#15597f;}
+
 /* Color dot in button */
 .ib-dot{width:6px;height:6px;border-radius:50%;display:inline-block;flex-shrink:0;}
 .ib-sq{width:6px;height:6px;border-radius:1px;background:#b0c8e0;opacity:0.4;display:inline-block;flex-shrink:0;}
 /* Question mark help trigger */
 .ib-help{
-  margin-left:auto;
-  font-size:8px;color:var(--text-dim);cursor:pointer;
-  width:13px;height:13px;border-radius:50%;
+  /* The label flexes to fill, so there is no free space for margin-left:auto to
+     eat; "?" is pinned right by the label instead. Sized up with everything
+     else — an 8px glyph next to a 13px label read as a speck, and 16px is a
+     more honest tap target. */
+  font-size:10px;color:var(--text-dim);cursor:pointer;
+  width:16px;height:16px;border-radius:50%;
   display:inline-flex;align-items:center;justify-content:center;
   flex-shrink:0;
   transition:color 0.1s,background 0.1s;
@@ -1085,16 +1137,14 @@ canvas{
 .tour-body { font-size:11px;line-height:1.55;color:var(--text-secondary,#aab4c6);margin-bottom:13px; }
 /* A copy of the control a step is about, shown when the spotlight is on the
    board instead of on the button (phone). Decorative only — the real control is
-   in the drawer below. Sized up from the 8.5px it uses in the grid, which is
-   legible in a dense column but not as a single illustration. */
-.tour-replica { pointer-events:none;margin:0 0 9px;max-width:190px; }
+   in the drawer below. It inherits the grid's 13px and only needs the cursor
+   neutralised; it used to be sized UP from 8.5px, which would now shrink it. */
+.tour-replica { pointer-events:none;margin:0 0 9px;max-width:210px; }
 .tour-replica-lbl {
   font-size:8px;letter-spacing:0.12em;text-transform:uppercase;
   color:var(--text-dim);margin-bottom:4px;
 }
-.tour-replica .ib-main { font-size:11px;min-height:28px;padding:6px 10px;gap:5px;cursor:default; }
-.tour-replica .ib-dot { width:7px;height:7px; }
-.tour-replica .ib-pre span { font-size:8px; }
+.tour-replica .ib-main { cursor:default; }
 /* The "?" opens help — meaningless on a copy, and a tap target that does
    nothing is worse than no tap target. */
 .tour-replica .ib-help { display:none; }
@@ -2268,110 +2318,97 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div class="ind-grid">
       <div class="ind-col">
         <div class="ib" id="ib-checkthreats">
-          <button class="ib-main" onmousedown="ibMainDown('checkthreats',event)" onmouseup="ibMainUp('checkthreats')" onmouseleave="ibMainUp('checkthreats')" ontouchstart="ibMainDown('checkthreats',event)" ontouchend="ibMainUp('checkthreats')">
-            <span class="ib-dot" style="background:#e03535;"></span>Check threats
+          <button class="ib-main" onmousedown="ibMainDown('checkthreats',event)" onmouseup="ibMainUp('checkthreats')" onmouseleave="ibMainCancel('checkthreats')" ontouchstart="ibMainDown('checkthreats',event)" ontouchend="ibMainUp('checkthreats')" ontouchcancel="ibMainCancel('checkthreats')">
+            <span class="ib-icon"><span class="ib-dot" style="background:#e03535;"></span></span><span class="ib-lbl">Check threats</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('checkthreats',event)">?</span>
-            <span class="ib-dot-status"></span>
+            <span class="ib-state"></span>
           </button>
-          <div class="ib-pre" id="pre-checkthreats" onclick="ibTogglePre('checkthreats')"><span>Show During Exploration</span></div>
         </div>
         <div class="ib" id="ib-threats">
-          <button class="ib-main" onmousedown="ibMainDown('threats',event)" onmouseup="ibMainUp('threats')" onmouseleave="ibMainUp('threats')" ontouchstart="ibMainDown('threats',event)" ontouchend="ibMainUp('threats')">
-            <span class="ib-dot" style="background:#e03535;margin-right:1px;"></span><span class="ib-dot" style="background:#1eb446;margin-right:3px;"></span>Threats &amp; Captures
+          <button class="ib-main" onmousedown="ibMainDown('threats',event)" onmouseup="ibMainUp('threats')" onmouseleave="ibMainCancel('threats')" ontouchstart="ibMainDown('threats',event)" ontouchend="ibMainUp('threats')" ontouchcancel="ibMainCancel('threats')">
+            <span class="ib-icon"><span class="ib-dot ib-dot2" style="background:#e03535;"></span><span class="ib-dot ib-dot2" style="background:#1eb446;"></span></span><span class="ib-lbl">Threats &amp; Captures</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('threats',event)">?</span>
-            <span class="ib-dot-status"></span>
+            <span class="ib-state"></span>
           </button>
-          <div class="ib-pre" id="pre-threats" onclick="ibTogglePre('threats')"><span>Show During Exploration</span></div>
         </div>
         <div class="ib" id="ib-counts">
-          <button class="ib-main" onmousedown="ibMainDown('counts',event)" onmouseup="ibMainUp('counts')" onmouseleave="ibMainUp('counts')" ontouchstart="ibMainDown('counts',event)" ontouchend="ibMainUp('counts')">
-            <span class="ib-dot" style="background:#22a85a;margin-right:1px;"></span><span class="ib-dot" style="background:#e03535;margin-right:3px;"></span>Threat/Def. counts
+          <button class="ib-main" onmousedown="ibMainDown('counts',event)" onmouseup="ibMainUp('counts')" onmouseleave="ibMainCancel('counts')" ontouchstart="ibMainDown('counts',event)" ontouchend="ibMainUp('counts')" ontouchcancel="ibMainCancel('counts')">
+            <span class="ib-icon"><span class="ib-dot ib-dot2" style="background:#22a85a;"></span><span class="ib-dot ib-dot2" style="background:#e03535;"></span></span><span class="ib-lbl">Threat/Def. counts</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('counts',event)">?</span>
-            <span class="ib-dot-status"></span>
+            <span class="ib-state"></span>
           </button>
-          <div class="ib-pre" id="pre-counts" onclick="ibTogglePre('counts')"><span>Show During Exploration</span></div>
         </div>
         <div class="ib" id="ib-unprotected">
-          <button class="ib-main" onmousedown="ibMainDown('unprotected',event)" onmouseup="ibMainUp('unprotected')" onmouseleave="ibMainUp('unprotected')" ontouchstart="ibMainDown('unprotected',event)" ontouchend="ibMainUp('unprotected')">
-            <span class="ib-dot" style="background:#e03535;"></span>Unprotected
+          <button class="ib-main" onmousedown="ibMainDown('unprotected',event)" onmouseup="ibMainUp('unprotected')" onmouseleave="ibMainCancel('unprotected')" ontouchstart="ibMainDown('unprotected',event)" ontouchend="ibMainUp('unprotected')" ontouchcancel="ibMainCancel('unprotected')">
+            <span class="ib-icon"><span class="ib-dot" style="background:#e03535;"></span></span><span class="ib-lbl">Unprotected</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('unprotected',event)">?</span>
-            <span class="ib-dot-status"></span>
+            <span class="ib-state"></span>
           </button>
-          <div class="ib-pre" id="pre-unprotected" onclick="ibTogglePre('unprotected')"><span>Show During Exploration</span></div>
         </div>
         <div class="ib" id="ib-pins">
-          <button class="ib-main" onmousedown="ibMainDown('pins',event)" onmouseup="ibMainUp('pins')" onmouseleave="ibMainUp('pins')" ontouchstart="ibMainDown('pins',event)" ontouchend="ibMainUp('pins')">
-            <span class="ib-dot" style="background:#9b59b6;"></span>Pins
+          <button class="ib-main" onmousedown="ibMainDown('pins',event)" onmouseup="ibMainUp('pins')" onmouseleave="ibMainCancel('pins')" ontouchstart="ibMainDown('pins',event)" ontouchend="ibMainUp('pins')" ontouchcancel="ibMainCancel('pins')">
+            <span class="ib-icon"><span class="ib-dot" style="background:#9b59b6;"></span></span><span class="ib-lbl">Pins</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('pins',event)">?</span>
-            <span class="ib-dot-status"></span>
+            <span class="ib-state"></span>
           </button>
-          <div class="ib-pre" id="pre-pins" onclick="ibTogglePre('pins')"><span>Show During Exploration</span></div>
         </div>
         <div class="ib" id="ib-forksw">
-          <button class="ib-main" onmousedown="ibMainDown('forksw',event)" onmouseup="ibMainUp('forksw')" onmouseleave="ibMainUp('forksw')" ontouchstart="ibMainDown('forksw',event)" ontouchend="ibMainUp('forksw')">
-            <span class="ib-dot" style="background:#f0c040;"></span>My forks &amp; skewers
+          <button class="ib-main" onmousedown="ibMainDown('forksw',event)" onmouseup="ibMainUp('forksw')" onmouseleave="ibMainCancel('forksw')" ontouchstart="ibMainDown('forksw',event)" ontouchend="ibMainUp('forksw')" ontouchcancel="ibMainCancel('forksw')">
+            <span class="ib-icon"><span class="ib-dot" style="background:#f0c040;"></span></span><span class="ib-lbl">My forks &amp; skewers</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksw',event)">?</span>
-            <span class="ib-dot-status"></span>
+            <span class="ib-state"></span>
           </button>
-          <div class="ib-pre" id="pre-forksw" onclick="ibTogglePre('forksw')"><span>Show During Exploration</span></div>
         </div>
         <div class="ib" id="ib-forksb">
-          <button class="ib-main" onmousedown="ibMainDown('forksb',event)" onmouseup="ibMainUp('forksb')" onmouseleave="ibMainUp('forksb')" ontouchstart="ibMainDown('forksb',event)" ontouchend="ibMainUp('forksb')">
-            <span class="ib-dot" style="background:#e040c0;"></span>Fork &amp; skewer threats
+          <button class="ib-main" onmousedown="ibMainDown('forksb',event)" onmouseup="ibMainUp('forksb')" onmouseleave="ibMainCancel('forksb')" ontouchstart="ibMainDown('forksb',event)" ontouchend="ibMainUp('forksb')" ontouchcancel="ibMainCancel('forksb')">
+            <span class="ib-icon"><span class="ib-dot" style="background:#e040c0;"></span></span><span class="ib-lbl">Fork &amp; skewer threats</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksb',event)">?</span>
-            <span class="ib-dot-status"></span>
+            <span class="ib-state"></span>
           </button>
-          <div class="ib-pre" id="pre-forksb" onclick="ibTogglePre('forksb')"><span>Show During Exploration</span></div>
         </div>
       </div>
       <div class="ind-col">
         <div class="ib" id="ib-overloaded">
-          <button class="ib-main" onmousedown="ibMainDown('overloaded',event)" onmouseup="ibMainUp('overloaded')" onmouseleave="ibMainUp('overloaded')" ontouchstart="ibMainDown('overloaded',event)" ontouchend="ibMainUp('overloaded')">
-            <span class="ib-dot" style="background:#c8a000;"></span>Overloaded
+          <button class="ib-main" onmousedown="ibMainDown('overloaded',event)" onmouseup="ibMainUp('overloaded')" onmouseleave="ibMainCancel('overloaded')" ontouchstart="ibMainDown('overloaded',event)" ontouchend="ibMainUp('overloaded')" ontouchcancel="ibMainCancel('overloaded')">
+            <span class="ib-icon"><span class="ib-dot" style="background:#c8a000;"></span></span><span class="ib-lbl">Overloaded</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('overloaded',event)">?</span>
-            <span class="ib-dot-status"></span>
+            <span class="ib-state"></span>
           </button>
-          <div class="ib-pre" id="pre-overloaded" onclick="ibTogglePre('overloaded')"><span>Show During Exploration</span></div>
         </div>
         <div class="ib" id="ib-discoveredopp">
-          <button class="ib-main" onmousedown="ibMainDown('discoveredopp',event)" onmouseup="ibMainUp('discoveredopp')" onmouseleave="ibMainUp('discoveredopp')" ontouchstart="ibMainDown('discoveredopp',event)" ontouchend="ibMainUp('discoveredopp')">
-            <span class="ib-dot" style="background:#dc8200;"></span>Opp. disc. threats
+          <button class="ib-main" onmousedown="ibMainDown('discoveredopp',event)" onmouseup="ibMainUp('discoveredopp')" onmouseleave="ibMainCancel('discoveredopp')" ontouchstart="ibMainDown('discoveredopp',event)" ontouchend="ibMainUp('discoveredopp')" ontouchcancel="ibMainCancel('discoveredopp')">
+            <span class="ib-icon"><span class="ib-dot" style="background:#dc8200;"></span></span><span class="ib-lbl">Opp. disc. threats</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredopp',event)">?</span>
-            <span class="ib-dot-status"></span>
+            <span class="ib-state"></span>
           </button>
-          <div class="ib-pre" id="pre-discoveredopp" onclick="ibTogglePre('discoveredopp')"><span>Show During Exploration</span></div>
         </div>
         <div class="ib" id="ib-discoveredself">
-          <button class="ib-main" onmousedown="ibMainDown('discoveredself',event)" onmouseup="ibMainUp('discoveredself')" onmouseleave="ibMainUp('discoveredself')" ontouchstart="ibMainDown('discoveredself',event)" ontouchend="ibMainUp('discoveredself')">
-            <span class="ib-dot" style="background:#a050dc;"></span>My disc. attacks
+          <button class="ib-main" onmousedown="ibMainDown('discoveredself',event)" onmouseup="ibMainUp('discoveredself')" onmouseleave="ibMainCancel('discoveredself')" ontouchstart="ibMainDown('discoveredself',event)" ontouchend="ibMainUp('discoveredself')" ontouchcancel="ibMainCancel('discoveredself')">
+            <span class="ib-icon"><span class="ib-dot" style="background:#a050dc;"></span></span><span class="ib-lbl">My disc. attacks</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredself',event)">?</span>
-            <span class="ib-dot-status"></span>
+            <span class="ib-state"></span>
           </button>
-          <div class="ib-pre" id="pre-discoveredself" onclick="ibTogglePre('discoveredself')"><span>Show During Exploration</span></div>
         </div>
         <div class="ib" id="ib-weakw">
-          <button class="ib-main" onmousedown="ibMainDown('weakw',event)" onmouseup="ibMainUp('weakw')" onmouseleave="ibMainUp('weakw')" ontouchstart="ibMainDown('weakw',event)" ontouchend="ibMainUp('weakw')">
-            <span class="ib-sq"></span>My weak squares
+          <button class="ib-main" onmousedown="ibMainDown('weakw',event)" onmouseup="ibMainUp('weakw')" onmouseleave="ibMainCancel('weakw')" ontouchstart="ibMainDown('weakw',event)" ontouchend="ibMainUp('weakw')" ontouchcancel="ibMainCancel('weakw')">
+            <span class="ib-icon"><span class="ib-sq"></span></span><span class="ib-lbl">My weak squares</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakw',event)">?</span>
-            <span class="ib-dot-status"></span>
+            <span class="ib-state"></span>
           </button>
-          <div class="ib-pre" id="pre-weakw" onclick="ibTogglePre('weakw')"><span>Show During Exploration</span></div>
         </div>
         <div class="ib" id="ib-weakb">
-          <button class="ib-main" onmousedown="ibMainDown('weakb',event)" onmouseup="ibMainUp('weakb')" onmouseleave="ibMainUp('weakb')" ontouchstart="ibMainDown('weakb',event)" ontouchend="ibMainUp('weakb')">
-            <span class="ib-sq"></span>Opp. weak squares
+          <button class="ib-main" onmousedown="ibMainDown('weakb',event)" onmouseup="ibMainUp('weakb')" onmouseleave="ibMainCancel('weakb')" ontouchstart="ibMainDown('weakb',event)" ontouchend="ibMainUp('weakb')" ontouchcancel="ibMainCancel('weakb')">
+            <span class="ib-icon"><span class="ib-sq"></span></span><span class="ib-lbl">Opp. weak squares</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakb',event)">?</span>
-            <span class="ib-dot-status"></span>
+            <span class="ib-state"></span>
           </button>
-          <div class="ib-pre" id="pre-weakb" onclick="ibTogglePre('weakb')"><span>Show During Exploration</span></div>
         </div>
         <div class="ib" id="ib-xray">
-          <button class="ib-main" onmousedown="ibMainDown('xray',event)" onmouseup="ibMainUp('xray')" onmouseleave="ibMainUp('xray')" ontouchstart="ibMainDown('xray',event)" ontouchend="ibMainUp('xray')">
-            <span class="ib-dot" style="background:#8080ff;"></span>X-ray pressure/threats
+          <button class="ib-main" onmousedown="ibMainDown('xray',event)" onmouseup="ibMainUp('xray')" onmouseleave="ibMainCancel('xray')" ontouchstart="ibMainDown('xray',event)" ontouchend="ibMainUp('xray')" ontouchcancel="ibMainCancel('xray')">
+            <span class="ib-icon"><span class="ib-dot" style="background:#8080ff;"></span></span><span class="ib-lbl">X-ray pressure/threats</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('xray',event)">?</span>
-            <span class="ib-dot-status"></span>
+            <span class="ib-state"></span>
           </button>
-          <div class="ib-pre" id="pre-xray" onclick="ibTogglePre('xray')"><span>Show During Exploration</span></div>
         </div>
         <div style="margin-top:4px;">
           <button class="ctrl-btn danger-btn" id="btnClearAll" onclick="clearAllSelections()" style="width:100%;font-size:8.5px;">✕ Clear all</button>

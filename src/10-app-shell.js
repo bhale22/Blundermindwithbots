@@ -651,8 +651,8 @@ function indActive(key) {
     if(el&&!el.checked) return false;
     return !!previewBoard||currentlyPreviewing;
   }
-  if(ind.pressing) return true;
-  if(ind.on) return true;
+  // Resting visibility — what the indicator's saved state alone would draw.
+  //
   // "Show During Exploration" (pre) indicators stay active for the whole
   // exploration, INCLUDING while the piece is dragged off its origin square.
   // That is the point of beginner/visualization mode: the overlays are
@@ -662,8 +662,15 @@ function indActive(key) {
   // The dragged piece itself is drawn as a separate translucent glyph
   // following the cursor, so the circle sits on the board, not on the
   // carried piece.
-  if(ind.pre&&(!!previewBoard||currentlyPreviewing)) return true;
-  return false;
+  let vis = false;
+  if(ind.on) vis = true;
+  else if(ind.pre&&(!!previewBoard||currentlyPreviewing)) vis = true;
+  // A held button INVERTS that, it does not force it on. Forcing it on made the
+  // gesture a no-op for anything already showing, which is exactly the case
+  // where you want the opposite — "what does this board look like WITHOUT this
+  // overlay". Peek and un-peek are the same gesture, resolved by current state.
+  if(ind.pressing) vis = !vis;
+  return vis;
 }
 
 function ibPress(key,e){
@@ -687,15 +694,16 @@ function ibTogglePre(key){
 }
 function ibUpdateUI(key){
   const ind=IND[key]; if(!ind) return;
-  // Keep the "Show During Exploration" (pre) button highlight in sync with the
-  // variable first, so it always matches even if the main button is absent.
-  const preBtn=document.getElementById('pre-'+key);
-  if(preBtn) preBtn.classList.toggle('active',ind.pre);
   const el=document.getElementById('ib-'+key); if(!el) return;
   el.classList.remove('on','pre','pressing');
   if(ind.pressing) el.classList.add('pressing');
   else if(ind.on) el.classList.add('on');  // always-on: full green
-  else if(ind.pre) el.classList.add('pre'); // preview mode: persistent subtle highlight + status dot
+  else if(ind.pre) el.classList.add('pre'); // exploration-only
+  // The word tracks the SAVED state only, never `pressing` — a peek deliberately
+  // leaves it alone, so the button keeps telling you what you will still have
+  // once you let go.
+  const st=el.querySelector('.ib-state');
+  if(st) st.textContent = ind.on ? 'on' : (ind.pre ? 'exp' : 'off');
 }
 function ibRefreshAll(){Object.keys(IND).forEach(k=>ibUpdateUI(k));}
 
@@ -714,13 +722,30 @@ function indMode(key, mode, e){
   indApply();
 }
 
-// Main button click handler (toggle on/off)
-// Attached via onclick on ib-main elements — but we need to avoid
-// firing during hold. Use a threshold: < 200ms = click, >= 200ms = hold
+// ── Indicator button gestures ─────────────────────────────────────────
+// Two gestures on one target, separated by time:
+//
+//   click        advance the cycle  off → exp → on → off
+//   hold ≥350ms  peek: invert the overlay while held, revert on release
+//
+// This replaced a split control where the cycle was on DOUBLE-click and a
+// single click did nothing persistent at all — it only armed the double-click
+// timer. The most obvious gesture on the panel's primary control was a no-op,
+// so a first click looked like a flash and a broken button. Single click now
+// owns the cycle, and the double-click path is gone.
+//
+// The peek arms on a timer rather than on mousedown so that `.ib.pressing`
+// (cyan) means exactly one thing: this press is a peek and nothing will stick.
+// If it lit on every mousedown it would carry no information. :active covers
+// the sub-threshold gap so a plain click still feels responsive.
+const IB_HOLD_MS = 350;
 const ibPressTime = {};
-const ibLastClick = {};
+const ibHoldTimer = {};
+const ibHeld      = {};
+
 function ibMainDown(key,e){
   if(e) e.preventDefault();
+  if(!IND[key]) return;
   // If hide is locked, any IND button press releases it and restores state
   if(typeof hideShowLocked!=='undefined'&&hideShowLocked&&!hideShowPeeking){
     hideShowLocked=false;
@@ -728,36 +753,50 @@ function ibMainDown(key,e){
     updateHideShowBtn();
   }
   ibPressTime[key] = Date.now();
-  ibPress(key,e);
+  ibHeld[key] = false;
+  clearTimeout(ibHoldTimer[key]);
+  ibHoldTimer[key] = setTimeout(function(){
+    ibHeld[key] = true;
+    ibPress(key);              // sets pressing → indActive() inverts → repaint
+  }, IB_HOLD_MS);
 }
+
 function ibMainUp(key){
-  const dt = Date.now() - (ibPressTime[key]||0);
-  ibRelease(key);
-  if(dt < 250) {
-    const now = Date.now();
-    const sinceLastClick = now - (ibLastClick[key]||0);
-    if(sinceLastClick < 400) {
-      // Double click cycles: off(pre-only) → always-on → truly-off → off(pre-only)…
-      // Key invariant: once a user explicitly turns an indicator OFF, it is
-      // completely off (pre=false too). "Off means off."
-      if(!IND[key].on && IND[key].pre){
-        // preview-only → always-on
-        IND[key].on = true; IND[key].pre = true;
-      } else if(IND[key].on){
-        // always-on → truly off
-        IND[key].on = false; IND[key].pre = false;
-      } else {
-        // truly-off → preview-only (re-enable preview without always-on)
-        IND[key].on = false; IND[key].pre = true;
-      }
-      ibLastClick[key] = 0; // reset so next click starts fresh
-    } else {
-      // Single click = just a peek (press/release already handled)
-      ibLastClick[key] = now;
-    }
-    ibUpdateUI(key);
-    indApply();
+  if(!IND[key]) return;
+  clearTimeout(ibHoldTimer[key]);
+  if(ibHeld[key]){
+    // It was a peek. Put the board back exactly as it was and change nothing.
+    ibHeld[key] = false;
+    ibRelease(key);
+    return;
   }
+  ibCycle(key);
+}
+
+// Pointer left the button, or the touch was stolen (scroll, call, app switch).
+// Must cancel, never commit: dragging off a control is how people back out of
+// a press, and a stolen touch would otherwise leave `pressing` stuck on.
+function ibMainCancel(key){
+  if(!IND[key]) return;
+  clearTimeout(ibHoldTimer[key]);
+  if(ibHeld[key]){
+    ibHeld[key] = false;
+    ibRelease(key);
+  }
+}
+
+// off → exp → on → off. Monotonically more visible until it resets, which is
+// what makes it learnable without a legend.
+//
+// Key invariant, unchanged: once a user explicitly turns an indicator OFF it is
+// completely off (pre=false too). "Off means off."
+function ibCycle(key){
+  const ind = IND[key]; if(!ind) return;
+  if(!ind.on && !ind.pre)     { ind.on = false; ind.pre = true;  }  // off → exp
+  else if(!ind.on && ind.pre) { ind.on = true;  ind.pre = true;  }  // exp → on
+  else                        { ind.on = false; ind.pre = false; }  // on  → off
+  ibUpdateUI(key);
+  indApply();
 }
 
 // ── Board square color helper ─────────────────────────────────────────
@@ -1182,7 +1221,7 @@ const TOURS = {
     { sel:'.ind-grid', title:'Board-vision indicators', indSection:true,
       body:'These overlays draw what a stronger player sees — threats, pins, forks and more. We’ll light each one up on a sample position so you can see exactly what it does.' },
     { sel:'#ib-threats', title:'Three ways to show an indicator', indSection:true, modes:'threats',
-      body:'Watch this button cycle through its three modes — <b>Off</b> (grey) → <b>Show during exploration</b> (only while you drag a piece) → <b>Always-on</b> (green). Single-click any indicator to peek, double-click to keep it on.' },
+      body:'Every indicator button carries three states, and the word on its right says which one it is in. Watch it cycle: <b>off</b> — <b>exp</b>, drawn only while you explore a move — <b>on</b>, drawn all the time. <b>Click</b> to step through them. Or <b>press and hold</b> to peek: the overlay flips on if it was off (and off if it was on) for as long as you hold, then goes straight back. While the button is blue, nothing you are doing will stick.' },
     { sel:'.ind-grid', title:'How to train with these', indSection:true,
       body:'Best habit: <b>look first and try to spot it yourself</b> — plan your move and picture the threats and replies in your head. <i>Then</i> switch an indicator on as instant feedback to catch anything you missed.' },
     { sel:'#ib-checkthreats', title:'Check threats', indSection:true, ind:'checkthreats',
@@ -1274,7 +1313,7 @@ function _tourShowIndicator(key){
 }
 function _tourCycleModes(key){
   if(typeof IND === 'undefined' || !IND[key]) return;
-  const seq = [ {on:false,pre:false}, {on:false,pre:true}, {on:true,pre:false} ]; // off → premove → always-on
+  const seq = [ {on:false,pre:false}, {on:false,pre:true}, {on:true,pre:true} ]; // off → exp → on, matching ibCycle
   let i = 0;
   const apply = () => {
     IND[key].on = seq[i].on; IND[key].pre = seq[i].pre; IND[key].pressing = false;
