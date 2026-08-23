@@ -972,11 +972,18 @@ function render(){
       ctx.restore();
       ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.strokeRect(x+1,y+1,SQ-2,SQ-2);
     };
-    weakSquaresW.forEach(sq=>{
+    // Which set is "mine" was reported the wrong way round on the board, so
+    // the pair is swapped here to match the buttons: ib-weakb is the one
+    // labelled "My weak sq." and it draws in the mine colour, hatched down-
+    // right; ib-weakw is "Opp. weak sq." and draws teal, hatched up-right.
+    // NOTE: neither set consults which colour the human is playing, so this
+    // reads correctly for a player of White. Following the seat is a separate
+    // change and wants its own look.
+    weakSquaresB.forEach(sq=>{
       if(bothWeak.has(sq)) paint(sq,P.weakBothFill,P.weakBothStroke,[1,-1]);
       else                 paint(sq,P.weakMineFill,P.weakMineStroke,[1]);
     });
-    weakSquaresB.forEach(sq=>{
+    weakSquaresW.forEach(sq=>{
       if(bothWeak.has(sq)) return;
       paint(sq,P.weakTheirsFill,P.weakTheirsStroke,[-1]);
     });

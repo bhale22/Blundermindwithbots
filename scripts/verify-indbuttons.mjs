@@ -72,23 +72,50 @@ ok('threats dots share an x', stacked['ib-threats'].sameX === true);
 ok('counts dots stacked vertically', stacked['ib-counts'].stacked === true, JSON.stringify(stacked['ib-counts']));
 ok('counts dots share an x', stacked['ib-counts'].sameX === true);
 
-// Weight is what replaced the word chip, so it has to actually differ.
-const weights = await page.evaluate(() => {
+// State used to be carried partly by font weight, which re-measured the label
+// and could rewrap it - "My disc. attacks" went from one line to two the moment
+// it was selected, and the button grew under the cursor. Weight is gone; what
+// has to hold now is that NOTHING about the box or the label moves between the
+// three states.
+const geom = await page.evaluate(() => {
   const out = {};
-  for (const k of ['threats', 'counts', 'pins']) {
+  for (const k of ['threats', 'counts', 'pins', 'discoveredself', 'weakb']) {
+    const btn = document.querySelector('#ib-' + k + ' .ib-main');
+    const lbl = document.querySelector('#ib-' + k + ' .ib-lbl');
     const set = (on, pre) => { IND[k].on = on; IND[k].pre = pre; ibUpdateUI(k); };
-    const read = () => parseInt(getComputedStyle(document.querySelector('#ib-' + k + ' .ib-main')).fontWeight, 10);
+    const read = () => {
+      const r = btn.getBoundingClientRect(), l = lbl.getBoundingClientRect();
+      return [Math.round(r.width), Math.round(r.height),
+              Math.round(l.top - r.top), Math.round(l.height),
+              getComputedStyle(lbl).fontWeight].join('/');
+    };
     set(false, false); const off = read();
     set(false, true);  const exp = read();
     set(true, true);   const on  = read();
-    out[k] = { off, exp, on };
+    set(false, true);
+    out[k] = { off, exp, on, stable: off === exp && exp === on };
   }
   return out;
 });
-ok('off is regular weight', Object.values(weights).every(w => w.off <= 500), JSON.stringify(weights));
-ok('exp is bold', Object.values(weights).every(w => w.exp >= 700));
-ok('on is bold', Object.values(weights).every(w => w.on >= 700));
-ok('active states are heavier than off', Object.values(weights).every(w => w.exp > w.off && w.on > w.off));
+ok('button geometry is identical in all three states',
+   Object.values(geom).every(g => g.stable), JSON.stringify(geom));
+ok('weight never changes with state',
+   Object.values(geom).every(g => g.off.split('/')[4] === g.on.split('/')[4]));
+
+// Every label must sit on ONE line and must not be clipped, or the panel is
+// back to reflowing the moment a name gets long.
+const oneLine = await page.evaluate(() => {
+  const bad = [];
+  document.querySelectorAll('.ind-grid .ib-lbl, .ghost-row .ib-lbl').forEach(l => {
+    const lh = parseFloat(getComputedStyle(l).lineHeight);
+    const lines = Math.round(l.getBoundingClientRect().height / lh);
+    if (lines > 1 || l.scrollWidth > l.clientWidth + 1)
+      bad.push(l.textContent.trim() + ' (' + lines + ' lines' +
+               (l.scrollWidth > l.clientWidth + 1 ? ', clipped' : '') + ')');
+  });
+  return bad;
+});
+ok('every label fits one line without clipping', oneLine.length === 0, oneLine.join('; '));
 
 // on and exp share a weight, so hue has to carry the difference between them.
 // .ib-main transitions colour, and getComputedStyle mid-transition reports the
@@ -213,7 +240,7 @@ const grouping = await page.evaluate(([core, extra]) => {
 
 ok('the four core overlays are in the first group', grouping.coreInFirst);
 ok('the other nine are in the second group', grouping.extraInSecond);
-ok('both groups are named', grouping.heads.length === 3, grouping.heads.join(' | '));
+ok('both groups are named', grouping.heads.length === 2, grouping.heads.join(' | '));
 ok('the disclosure is gone entirely', grouping.noFold);
 ok('every overlay is visible without opening anything', KEYS.length === 13, String(KEYS.length));
 ok('ghost replies is a button', grouping.ghostBtn);
@@ -242,15 +269,15 @@ const pairs = await page.evaluate(() => {
     xray:  same('ib-xray', 'ib-overloaded'),
     mineLeftDisc:  mineLeft('ib-discoveredself', 'ib-discoveredopp'),
     mineLeftForks: mineLeft('ib-forksw', 'ib-forksb'),
-    mineLeftWeak:  mineLeft('ib-weakw', 'ib-weakb'),
+    mineLeftWeak:  mineLeft('ib-weakb', 'ib-weakw'),
     // Forks come before discovered attacks; weak squares come last.
     forksAboveDisc: t('ib-forksw').top < t('ib-discoveredself').top,
-    weakBelowXray:  t('ib-weakw').top > t('ib-xray').top,
+    weakBelowXray:  t('ib-weakb').top > t('ib-xray').top,
     checkSpans: t('ib-checkthreats').width > t('ib-forksw').width * 1.8,
     // The two weak-square chips used to be the same colour, which said the two
     // overlays were the same thing.
-    weakChips: [getComputedStyle(document.querySelector('#ib-weakw .ib-sq')).backgroundColor,
-                getComputedStyle(document.querySelector('#ib-weakb .ib-sq')).backgroundColor],
+    weakChips: [getComputedStyle(document.querySelector('#ib-weakb .ib-sq')).backgroundColor,
+                getComputedStyle(document.querySelector('#ib-weakw .ib-sq')).backgroundColor],
     maxClip: Math.max(...[...document.querySelectorAll('.ind-grid .ib-main')]
       .map(b => b.scrollWidth - b.clientWidth)),
   };
@@ -307,6 +334,25 @@ const floor = await page.evaluate(() => {
   return { before, during, delta: Math.abs(during - before) };
 });
 ok('starting a game does not shift the floor', floor.delta === 0, floor.delta + 'px');
+
+console.log('\n9e   It fits a real laptop screen');
+// A 1366x768 laptop is ~600px of page once the browser's chrome is gone. That
+// is the case that has to fit, and the one that was failing.
+for (const [vw, vh] of [[1440, 900], [1366, 660], [1366, 600], [1280, 560]]) {
+  await page.setViewportSize({ width: vw, height: vh });
+  await page.waitForTimeout(350);
+  const fit = await page.evaluate(() => {
+    const last = document.querySelector('.secondary-row').getBoundingClientRect();
+    return {
+      overflow: document.documentElement.scrollHeight - window.innerHeight,
+      offscreen: Math.round(last.bottom - window.innerHeight),
+    };
+  });
+  ok(vw + 'x' + vh + ': no page scroll', fit.overflow <= 0, fit.overflow + 'px over');
+  ok(vw + 'x' + vh + ': last row on screen', fit.offscreen <= 0, fit.offscreen + 'px below');
+}
+await page.setViewportSize({ width: 1440, height: 900 });
+await page.waitForTimeout(300);
 
 console.log('\n10   Game-start buttons hide during a live game');
 const live = await page.evaluate(() => {

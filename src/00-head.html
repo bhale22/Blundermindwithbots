@@ -175,7 +175,9 @@ canvas{
   box-sizing:border-box;
 }
 
-/* ── Sidebar ──────────────────────────────────────────────────────────────── */
+/* NOTE: the gap here is overridden by the clamp in the "Floor anchor" block
+   further down, which scales it with the viewport. Change it there, not here.
+   ── Sidebar ──────────────────────────────────────────────────────────────── */
 #sidebar{
   flex:1;
   min-width:200px;
@@ -228,11 +230,16 @@ canvas{
    gives back is what pays for 8.5px → 13px type at the same block height. */
 .ib{display:flex;flex-direction:column;gap:0px;user-select:none;width:100%;}
 .ib-main{
-  padding:5px 7px;display:flex;align-items:center;gap:6px;
-  font-size:11.5px;font-weight:400;color:var(--text-dim);
+  padding:4px 7px;display:flex;align-items:center;gap:6px;
+  font-size:11px;font-weight:400;color:var(--text-dim);
   cursor:pointer;background:var(--bg-panel2);
   border-radius:4px;border:0.5px solid var(--border2);
-  width:100%;text-align:left;min-height:34px;
+  /* A FIXED height, not a floor. The box must not resize when the indicator
+     changes state, and it must not resize when the label happens to be long:
+     both are what made the panel feel unstable to use. The height tracks the
+     viewport the same way the board does, because a 768px laptop screen is
+     about 600px of actual page once browser chrome is taken out. */
+  width:100%;text-align:left;height:var(--ib-h);min-height:0;
   transition:background 0.1s,color 0.1s,border-color 0.12s,box-shadow 0.12s;
   position:relative;white-space:nowrap;overflow:hidden;
   /* Hold-to-peek is a first-class gesture here, so the browser must not treat a
@@ -260,11 +267,12 @@ canvas{
    what makes the column read as aligned. */
 .ib-lbl{
   flex:1 1 auto;min-width:0;
-  /* Wraps to a second line rather than truncating. At 133px a column cannot
-     hold "X-ray pressure/threats" on one line at any legible size, and the
-     honest choice is two lines of the real name over one line of a name that
-     has been cut down until a beginner cannot tell what it means. */
-  white-space:normal;line-height:1.2;overflow-wrap:break-word;
+  /* One line, always. The names above were shortened until every one fits the
+     81px a column actually gives at 11px BOLD — measured, not guessed — so
+     the text cannot rewrap when the state changes. The previous rule allowed a
+     second line, and "My disc. attacks" duly jumped from one line to two the
+     moment it was selected and went bold. */
+  white-space:nowrap;line-height:1.2;overflow:hidden;text-overflow:ellipsis;
 }
 
 
@@ -282,11 +290,10 @@ canvas{
   color:#14713c;border-color:#22a85a;
   box-shadow:0 0 0 1.5px rgba(34,168,90,0.18);
 }
-/* Weight is what separates a live indicator from a dead one. The word chip
-   that used to say so cost ~48px of every row, which is what forced a single
-   column; dropping it buys the second column back. Bold + tint reads as "this
-   is drawing something" at a glance, and the two hues say which mode. */
-.ib.on .ib-main,.ib.pre .ib-main{font-weight:700;}
+/* State is carried by tint and border colour alone. Weight used to help, but a
+   weight change re-measures the text, and a label sitting near the column width
+   would rewrap the instant it was selected — the box growing under the cursor
+   mid-click. Tint, border and the key at the top of the panel say enough. */
 
 /* Exploration-only. Given its own hue rather than a paler green: against
    always-on it has to be distinguishable at a glance, not on inspection. This
@@ -1229,17 +1236,17 @@ canvas{
    above ever change, they must change here too or the key stops being true. */
 .ind-key{
   background:var(--bg-panel);border:0.5px solid var(--border2);border-radius:6px;
-  padding:6px 8px;display:flex;flex-direction:column;gap:4px;margin:2px 0;
+  padding:4px 6px;display:flex;flex-direction:column;gap:3px;margin:1px 0;
   flex-shrink:0;
 }
 .ind-key-t{
-  font-size:9.5px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;
-  color:var(--text-dim);
+  font-size:9px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;
+  color:var(--text-dim);line-height:1.3;
 }
 .ind-key-row{display:flex;align-items:center;gap:5px;}
 .ind-key-row span{
-  flex:1;font-size:9.5px;font-weight:700;text-align:center;line-height:1.15;
-  padding:4px 2px;border-radius:3px;
+  flex:1;font-size:9px;font-weight:700;text-align:center;line-height:1.15;
+  padding:3px 2px;border-radius:3px;
   border:0.5px solid var(--border);background:var(--bg-panel2);color:var(--text-dim);
 }
 .ind-key-row .k-exp{background:rgba(90,104,200,0.10);border-color:rgba(90,104,200,0.55);color:#3a44a0;}
@@ -1288,12 +1295,15 @@ canvas{
    relying on a title tooltip nobody hovers long enough to see.
    Named .ind-utils, not .util-row: that class already exists further up for
    the about/feedback strip and the two would collide. */
-.ind-utils{display:flex;gap:3px;margin-top:4px;flex-shrink:0;}
-.ind-utils .ctrl-btn{flex:1;padding:7px 3px;font-size:11px;font-weight:600;}
+.ind-utils{display:flex;gap:3px;margin-top:3px;flex-shrink:0;}
+.ind-utils .ctrl-btn{
+  flex:1;padding:0 3px;font-size:10.5px;font-weight:600;
+  height:var(--util-h);min-height:0;
+}
 .ind-utils .hold-btn{border-style:dashed;}
 .hold-note{
-  font-size:9.5px;color:var(--text-dim);text-align:center;
-  line-height:1.3;padding:2px 0 0;flex-shrink:0;
+  font-size:9px;color:var(--text-dim);text-align:center;
+  line-height:1.25;padding:2px 0 0;flex-shrink:0;
 }
 
 /* ── Weak-square swatches ───────────────────────────────────────────────────
@@ -1308,11 +1318,17 @@ canvas{
    of six identical buttons. The two starters get their own row, taller and
    tinted; Theme/Load/Save drop to a quiet secondary row. The separator carries
    real space so the two groups do not read as one block. */
-.floor-sep{height:1px;background:var(--border);margin:11px 0 10px;flex-shrink:0;}
+/* The gap that separates the overlay utilities from the game buttons. It gives
+   ground first when the viewport is short, before any control does. */
+.floor-sep{
+  height:1px;background:var(--border);flex-shrink:0;
+  margin:clamp(6px,1.5vh,12px) 0 clamp(5px,1.3vh,11px);
+}
 .play-row{display:flex;gap:3px;flex-shrink:0;align-items:stretch;}
 .play-row .ctrl-btn{flex:1;text-align:center;}
 .play-btn{
-  font-size:12.5px;font-weight:700;line-height:1.2;padding:10px 4px;
+  font-size:12px;font-weight:700;line-height:1.2;padding:0 4px;
+  height:var(--play-h);min-height:0;
   background:rgba(90,212,144,0.16);border:1.5px solid #4aab74;color:#1d6b41;
 }
 .play-btn:hover{background:rgba(90,212,144,0.26);border-color:#3d9463;}
@@ -1323,12 +1339,13 @@ canvas{
    must not shout over the two game starters; updateActionBtn() swaps it to
    .reset-btn for Resign, and by then the starters are hidden anyway. */
 .play-row #resignBtn,.play-row #exploreBtn,.play-row #reviewBtn{
-  font-size:11px;font-weight:600;padding:7px 3px;
+  font-size:10.5px;font-weight:600;padding:0 3px;height:var(--play-h);min-height:0;
 }
-.play-row #resignBtn.reset-btn{font-size:12.5px;font-weight:700;padding:10px 4px;}
+.play-row #resignBtn.reset-btn{font-size:12px;font-weight:700;}
 .secondary-row{display:flex;gap:3px;margin-top:3px;flex-shrink:0;}
 .secondary-row .ctrl-btn{
-  flex:1;text-align:center;font-size:10.5px;font-weight:600;padding:6px 2px;
+  flex:1;text-align:center;font-size:10px;font-weight:600;padding:0 2px;
+  height:var(--sec-h);min-height:0;
   background:transparent;color:var(--text-dim);
 }
 .secondary-row .ctrl-btn:hover{background:var(--bg-panel);color:var(--text-secondary);}
@@ -1341,8 +1358,65 @@ canvas{
    A spacer rather than margin-top:auto because #gameActions and
    #bottom-controls are siblings: two auto margins would split the free space
    between them and open a gap whenever a game is running. */
-#sidebar{align-self:stretch;}
-.sb-spacer{flex:1 1 auto;min-height:6px;}
+/* Every control height in the column comes from here. The board already sizes
+   itself to the viewport; the sidebar did not, so on a 768px screen — about
+   600px of page once the browser's own chrome is gone — the column stayed at
+   its full height and pushed the bottom three rows off the bottom. These track
+   the viewport too, and the clamps stop them shrinking past readable. */
+#sidebar{
+  align-self:stretch;
+  --ib-h:clamp(27px,4.2vh,36px);
+  --util-h:clamp(25px,3.7vh,32px);
+  --play-h:clamp(28px,4.6vh,38px);
+  --sec-h:clamp(23px,3.4vh,29px);
+  gap:clamp(2px,0.55vh,4px);
+}
+.sb-spacer{flex:1 1 auto;min-height:4px;}
+
+/* ── Short viewports ─────────────────────────────────────────
+   A 1366x768 laptop is about 600px of page once the browser's tab strip,
+   address bar and the OS taskbar are taken out. That is the case that has to
+   fit, not the 768. Below 700px of viewport the column gives back its
+   breathing room rather than its controls: tighter gaps, the settings caption
+   moves up beside its title instead of below it, and the hold caption goes
+   because the state key at the top already says "hold to peek". */
+@media (max-height:700px){
+  .ind-grid{gap:2px;}
+  .bv-head{padding-top:0;margin-top:0;}
+  .hold-note{display:none;}
+  /* Board settings collapses to one line, keeping every word. */
+  #bs-open{min-height:0;height:var(--play-h);padding:4px 9px;margin:2px 0;}
+  #bs-open .bs-txt{flex-direction:row;align-items:baseline;gap:6px;overflow:hidden;}
+  #bs-open .bs-t1{flex:0 0 auto;font-size:12px;}
+  #bs-open .bs-t2{
+    margin-top:0;font-size:8.5px;flex:1 1 auto;min-width:0;
+    overflow:hidden;text-overflow:ellipsis;
+  }
+  #bs-open .bs-ico{font-size:13px;}
+}
+
+/* Smaller again. Past this point the column is choosing between a legible
+   control and a visible one, and visible wins — a button below the fold is
+   worth nothing at all. */
+@media (max-height:565px){
+  #sidebar{--ib-h:25px;--util-h:24px;--play-h:26px;--sec-h:22px;}
+  .ind-key{padding:3px 5px;gap:2px;}
+  .ind-key-t{font-size:8px;}
+  .ind-key-row span{font-size:8.5px;padding:2px 1px;}
+}
+
+
+/* A row inside Board settings that opens another panel. Theme lives here now:
+   it is set once and then forgotten, which is what everything else behind this
+   button has in common, and the sidebar needed the row back. */
+.bs-link{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  width:100%;min-height:40px;padding:8px 10px;margin-top:2px;
+  background:var(--bg-panel2);border:0.5px solid var(--border);border-radius:6px;
+  color:var(--text-secondary);font-family:inherit;font-size:12.5px;font-weight:600;
+  cursor:pointer;text-align:left;
+}
+.bs-link:hover{border-color:var(--accent);color:var(--text-primary);}
 
 /* Panel groups in Board settings */
 .bs-group{margin-bottom:14px;}
@@ -2422,7 +2496,6 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
          Three states, previously conveyed by background hue and nothing else.
          The chips are the button styles themselves, so the key cannot drift
          out of date without someone noticing it looks wrong. -->
-    <div class="bv-head">Board vision</div>
     <div class="ind-key">
       <div class="ind-key-t">Tap to cycle · hold to peek</div>
       <div class="ind-key-row">
@@ -2437,13 +2510,13 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div class="ind-grid">
       <div class="ib" id="ib-threats">
           <button class="ib-main" onmousedown="ibMainDown('threats',event)" onmouseup="ibMainUp('threats')" onmouseleave="ibMainCancel('threats')" ontouchstart="ibMainDown('threats',event)" ontouchend="ibMainUp('threats')" ontouchcancel="ibMainCancel('threats')">
-            <span class="ib-icon"><span class="ib-dot ib-dot2" style="background:#e03535;"></span><span class="ib-dot ib-dot2" style="background:#1eb446;"></span></span><span class="ib-lbl">Threats &amp; Captures</span>
+            <span class="ib-icon"><span class="ib-dot ib-dot2" style="background:#e03535;"></span><span class="ib-dot ib-dot2" style="background:#1eb446;"></span></span><span class="ib-lbl">Threats &amp; capt.</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('threats',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-counts">
           <button class="ib-main" onmousedown="ibMainDown('counts',event)" onmouseup="ibMainUp('counts')" onmouseleave="ibMainCancel('counts')" ontouchstart="ibMainDown('counts',event)" ontouchend="ibMainUp('counts')" ontouchcancel="ibMainCancel('counts')">
-            <span class="ib-icon"><span class="ib-dot ib-dot2" style="background:#22a85a;"></span><span class="ib-dot ib-dot2" style="background:#e03535;"></span></span><span class="ib-lbl">Threat/Def. counts</span>
+            <span class="ib-icon"><span class="ib-dot ib-dot2" style="background:#22a85a;"></span><span class="ib-dot ib-dot2" style="background:#e03535;"></span></span><span class="ib-lbl">Threat/def.</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('counts',event)">?</span>
           </button>
         </div>
@@ -2490,25 +2563,25 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         </div>
       <div class="ib" id="ib-forksw">
           <button class="ib-main" onmousedown="ibMainDown('forksw',event)" onmouseup="ibMainUp('forksw')" onmouseleave="ibMainCancel('forksw')" ontouchstart="ibMainDown('forksw',event)" ontouchend="ibMainUp('forksw')" ontouchcancel="ibMainCancel('forksw')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#f0c040;"></span></span><span class="ib-lbl">My forks/skewers</span>
+            <span class="ib-icon"><span class="ib-dot" style="background:#f0c040;"></span></span><span class="ib-lbl">My forks</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksw',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-forksb">
           <button class="ib-main" onmousedown="ibMainDown('forksb',event)" onmouseup="ibMainUp('forksb')" onmouseleave="ibMainCancel('forksb')" ontouchstart="ibMainDown('forksb',event)" ontouchend="ibMainUp('forksb')" ontouchcancel="ibMainCancel('forksb')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#e040c0;"></span></span><span class="ib-lbl">Fork/skewer threats</span>
+            <span class="ib-icon"><span class="ib-dot" style="background:#e040c0;"></span></span><span class="ib-lbl">Opp. forks</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksb',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-discoveredself">
           <button class="ib-main" onmousedown="ibMainDown('discoveredself',event)" onmouseup="ibMainUp('discoveredself')" onmouseleave="ibMainCancel('discoveredself')" ontouchstart="ibMainDown('discoveredself',event)" ontouchend="ibMainUp('discoveredself')" ontouchcancel="ibMainCancel('discoveredself')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#a050dc;"></span></span><span class="ib-lbl">My disc. attacks</span>
+            <span class="ib-icon"><span class="ib-dot" style="background:#a050dc;"></span></span><span class="ib-lbl">My disc.</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredself',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-discoveredopp">
           <button class="ib-main" onmousedown="ibMainDown('discoveredopp',event)" onmouseup="ibMainUp('discoveredopp')" onmouseleave="ibMainCancel('discoveredopp')" ontouchstart="ibMainDown('discoveredopp',event)" ontouchend="ibMainUp('discoveredopp')" ontouchcancel="ibMainCancel('discoveredopp')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#dc8200;"></span></span><span class="ib-lbl">Opp. disc. threats</span>
+            <span class="ib-icon"><span class="ib-dot" style="background:#dc8200;"></span></span><span class="ib-lbl">Opp. disc.</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredopp',event)">?</span>
           </button>
         </div>
@@ -2524,16 +2597,16 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('overloaded',event)">?</span>
           </button>
         </div>
-      <div class="ib" id="ib-weakw">
-          <button class="ib-main" onmousedown="ibMainDown('weakw',event)" onmouseup="ibMainUp('weakw')" onmouseleave="ibMainCancel('weakw')" ontouchstart="ibMainDown('weakw',event)" ontouchend="ibMainUp('weakw')" ontouchcancel="ibMainCancel('weakw')">
-            <span class="ib-icon"><span class="ib-sq ib-sq-mine"></span></span><span class="ib-lbl">My weak squares</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakw',event)">?</span>
-          </button>
-        </div>
       <div class="ib" id="ib-weakb">
           <button class="ib-main" onmousedown="ibMainDown('weakb',event)" onmouseup="ibMainUp('weakb')" onmouseleave="ibMainCancel('weakb')" ontouchstart="ibMainDown('weakb',event)" ontouchend="ibMainUp('weakb')" ontouchcancel="ibMainCancel('weakb')">
-            <span class="ib-icon"><span class="ib-sq ib-sq-theirs"></span></span><span class="ib-lbl">Opp. weak squares</span>
+            <span class="ib-icon"><span class="ib-sq ib-sq-mine"></span></span><span class="ib-lbl">My weak sq.</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakb',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-weakw">
+          <button class="ib-main" onmousedown="ibMainDown('weakw',event)" onmouseup="ibMainUp('weakw')" onmouseleave="ibMainCancel('weakw')" ontouchstart="ibMainDown('weakw',event)" ontouchend="ibMainUp('weakw')" ontouchcancel="ibMainCancel('weakw')">
+            <span class="ib-icon"><span class="ib-sq ib-sq-theirs"></span></span><span class="ib-lbl">Opp. weak sq.</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakw',event)">?</span>
           </button>
         </div>
     </div>
@@ -2611,7 +2684,6 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <button class="ctrl-btn play-btn mp" id="mpSidebarBtn" onclick="openPanel('mpPanel')">⚔ 2-Player</button>
       </div>
       <div class="secondary-row">
-        <button class="ctrl-btn util-btn" id="btnTheme" onclick="openPanel('themePanel')">🎨 Theme</button>
         <button class="ctrl-btn util-btn" id="btnLoadPgn" onclick="document.getElementById('pgnFileInput').click()">▶ Load</button>
         <input type="file" id="pgnFileInput" accept=".pgn" style="display:none" onchange="loadPgnFile(event)">
         <button class="ctrl-btn util-btn" id="btnSavePgn" onclick="savePgn()">↓ Save</button>
@@ -3523,6 +3595,12 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <button class="panel-close" onclick="closeAllPanels()">✕</button>
   </div>
   <div class="panel-body">
+    <div class="bs-group">
+      <div class="bs-head">Appearance</div>
+      <button type="button" class="bs-link" id="btnTheme" onclick="openPanel('themePanel')">
+        <span>🎨 Theme &amp; pieces</span><span>›</span>
+      </button>
+    </div>
     <div class="bs-group">
       <div class="bs-head">Board</div>
       <div class="s-row">

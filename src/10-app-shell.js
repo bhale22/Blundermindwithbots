@@ -696,7 +696,7 @@ function ibUpdateUI(key){
   const ind=IND[key]; if(!ind) return;
   const el=document.getElementById('ib-'+key); if(!el) return;
   el.classList.remove('on','pre','pressing');
-  if(ind.pressing) el.classList.add('pressing');
+  if(ind.pressing && ibHeld[key]) el.classList.add('pressing');
   else if(ind.on) el.classList.add('on');  // always-on: full green
   else if(ind.pre) el.classList.add('pre'); // exploration-only
   // The word tracks the SAVED state only, never `pressing` — a peek deliberately
@@ -738,6 +738,9 @@ function indMode(key, mode, e){
 // (cyan) means exactly one thing: this press is a peek and nothing will stick.
 // If it lit on every mousedown it would carry no information. :active covers
 // the sub-threshold gap so a plain click still feels responsive.
+// How long a press has to last before it counts as a peek rather than a click.
+// The overlay itself flips on mousedown either way; this is only the line
+// between "you clicked it" and "you are holding it to look".
 const IB_HOLD_MS = 350;
 const ibPressTime = {};
 const ibHoldTimer = {};
@@ -755,21 +758,33 @@ function ibMainDown(key,e){
   ibPressTime[key] = Date.now();
   ibHeld[key] = false;
   clearTimeout(ibHoldTimer[key]);
+  // The board flips NOW, on press, not after a 350ms wait. Holding used to feel
+  // broken because nothing happened for a third of a second, and a third of a
+  // second is a long time when you are asking "what does this square look like
+  // without the overlay". The timer no longer decides whether to draw the peek;
+  // it only decides when to LABEL the press as one, which keeps the cyan chip
+  // meaning exactly what it meant before: this press will not stick.
+  IND[key].pressing = true;
+  indApply();
   ibHoldTimer[key] = setTimeout(function(){
     ibHeld[key] = true;
-    ibPress(key);              // sets pressing → indActive() inverts → repaint
+    ibUpdateUI(key);           // cyan appears; the board is already showing it
   }, IB_HOLD_MS);
 }
 
 function ibMainUp(key){
   if(!IND[key]) return;
   clearTimeout(ibHoldTimer[key]);
-  if(ibHeld[key]){
-    // It was a peek. Put the board back exactly as it was and change nothing.
-    ibHeld[key] = false;
-    ibRelease(key);
+  const held = ibHeld[key];
+  ibHeld[key] = false;
+  IND[key].pressing = false;
+  if(held){
+    // Long press: it was a peek. Put the board back and change nothing.
+    ibUpdateUI(key);
+    indApply();
     return;
   }
+  // Short press: undo the optimistic peek and treat it as the click it was.
   ibCycle(key);
 }
 
@@ -779,9 +794,11 @@ function ibMainUp(key){
 function ibMainCancel(key){
   if(!IND[key]) return;
   clearTimeout(ibHoldTimer[key]);
-  if(ibHeld[key]){
-    ibHeld[key] = false;
-    ibRelease(key);
+  ibHeld[key] = false;
+  if(IND[key].pressing){
+    IND[key].pressing = false;
+    ibUpdateUI(key);
+    indApply();
   }
 }
 
@@ -1254,8 +1271,8 @@ const TOURS = {
       body:'Hover a destination square and the bot shows the most likely replies as faint “ghost” pieces — handy for training your calculation.' },
     { sel:'#distPanel', title:'Maia move odds',
       body:'Everything else here shows you the position <i>before</i> you commit. This closes the loop <i>after</i>: expand <b>📊 Maia move odds</b> and it shows the move just played, from the position it was played in, against how a real human pool weighted the options there — one tall bar means the move was near-forced, several close bars mean it was a genuine decision. Playing a Maia bot reads the odds at <b>that bot’s rating</b>, so it is your actual opponent’s judgement, not a generic one. <b>Collapsed by default</b>; it reviews the move behind you rather than helping with the one in front of you.' },
-    { sel:'#btnTheme', title:'Style & board experience',
-      body:'Colors, pieces, Carbon vs Journal format — and the board experience itself: switch between this Training board and the clean Expert board here, anytime.' },
+    { sel:'#bs-open', title:'Board settings & appearance',
+      body:'Sound, legal-move dots and the two rules that decide what counts as a threat live here — and so does <b>Theme & pieces</b>: colors, piece sets, Carbon vs Journal format, and the switch between this Training board and the clean Expert board.' },
     { sel:'#site-name', title:'Home',
       body:'Click the Blundermind logo anytime to return Home and switch between the Beginner and Expert boards.' },
   ],
