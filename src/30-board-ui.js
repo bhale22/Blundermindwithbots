@@ -44,31 +44,10 @@ function toggleBoardSettings(){
   btn.setAttribute('aria-expanded', open ? 'true' : 'false');
   try{ localStorage.setItem('bm_bvOpen', open ? '1' : '0'); }catch(e){}
 }
-// The nine secondary overlays. Closed on a first visit and remembered after
-// that: they are the ones a beginner has no use for yet, and leaving them open
-// by default is what made the panel read as a wall of switches.
-function toggleMoreVis(){
-  const box = document.getElementById('vz-more');
-  const btn = document.getElementById('vz-toggle');
-  if(!box || !btn) return;
-  const open = !box.classList.contains('open');
-  box.classList.toggle('open', open);
-  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-  const t = btn.querySelector('.bv-t');
-  if(t) t.textContent = (open ? '−' : '＋') + ' More visualizations';
-  try{ localStorage.setItem('bm_vzOpen', open ? '1' : '0'); }catch(e){}
-}
-function loadMoreVisPref(){
-  const box = document.getElementById('vz-more');
-  const btn = document.getElementById('vz-toggle');
-  if(!box || !btn) return;
-  let open = false;
-  try{ open = localStorage.getItem('bm_vzOpen') === '1'; }catch(e){}
-  box.classList.toggle('open', open);
-  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-  const t = btn.querySelector('.bv-t');
-  if(t) t.textContent = (open ? '−' : '＋') + ' More visualizations';
-}
+// The nine secondary overlays used to live behind a disclosure here. They are
+// shown outright now: the sidebar had ~500px of unused height on a laptop, so
+// the fold saved nothing, and opening it shifted every control below it by
+// 237px. toggleMoreVis()/loadMoreVisPref() went with it.
 
 function loadBoardSettingsPref(){
   const box = document.getElementById('board-settings');
@@ -671,7 +650,9 @@ const PALETTES={
     pin:'rgba(180,0,180,0.92)',
     bull1:'rgba(0,0,0,0.72)', bull2:'rgba(0,0,0,0.36)',
     checkFill:'rgba(230,60,0,0.42)', checkStroke:'rgba(255,100,0,0.95)',
-    weakFill:'rgba(0,200,80,0.35)', weakStroke:'rgba(0,160,60,0.8)',
+    weakMineFill:'rgba(168,28,48,0.30)',   weakMineStroke:'rgba(140,18,38,0.95)',
+    weakTheirsFill:'rgba(20,125,140,0.28)',weakTheirsStroke:'rgba(12,100,115,0.95)',
+    weakBothFill:'rgba(120,60,150,0.30)',  weakBothStroke:'rgba(100,45,130,0.95)',
   },
   highcontrast:{
     hanging:'rgba(255,0,0,1)', hangingFill:'rgba(255,0,0,0.25)',
@@ -681,7 +662,9 @@ const PALETTES={
     pin:'rgba(200,0,200,1)',
     bull1:'rgba(0,0,0,0.9)', bull2:'rgba(0,0,0,0.5)',
     checkFill:'rgba(255,50,0,0.55)', checkStroke:'rgba(255,100,0,1)',
-    weakFill:'rgba(0,230,80,0.5)', weakStroke:'rgba(0,180,50,1)',
+    weakMineFill:'rgba(190,0,30,0.42)',    weakMineStroke:'rgba(150,0,20,1)',
+    weakTheirsFill:'rgba(0,120,150,0.40)', weakTheirsStroke:'rgba(0,90,120,1)',
+    weakBothFill:'rgba(120,0,160,0.40)',   weakBothStroke:'rgba(90,0,130,1)',
   },
   colorblind:{
     // Deuteranopia-friendly: blues/oranges instead of red/green
@@ -692,7 +675,9 @@ const PALETTES={
     pin:'rgba(204,121,167,1)',
     bull1:'rgba(0,0,0,0.75)', bull2:'rgba(0,0,0,0.38)',
     checkFill:'rgba(230,159,0,0.45)', checkStroke:'rgba(230,159,0,0.95)',
-    weakFill:'rgba(86,180,233,0.4)', weakStroke:'rgba(0,114,178,0.85)',
+    weakMineFill:'rgba(213,94,0,0.30)',    weakMineStroke:'rgba(170,70,0,0.95)',
+    weakTheirsFill:'rgba(0,114,178,0.28)', weakTheirsStroke:'rgba(0,90,145,0.95)',
+    weakBothFill:'rgba(120,60,150,0.30)',  weakBothStroke:'rgba(100,45,130,0.95)',
   },
   pastel:{
     hanging:'rgba(220,80,80,0.9)', hangingFill:'rgba(255,150,150,0.2)',
@@ -702,7 +687,9 @@ const PALETTES={
     pin:'rgba(200,100,200,0.85)',
     bull1:'rgba(60,60,60,0.65)', bull2:'rgba(60,60,60,0.32)',
     checkFill:'rgba(255,160,80,0.4)', checkStroke:'rgba(255,130,50,0.9)',
-    weakFill:'rgba(100,220,140,0.35)', weakStroke:'rgba(60,180,100,0.75)',
+    weakMineFill:'rgba(200,90,105,0.28)',  weakMineStroke:'rgba(175,65,80,0.88)',
+    weakTheirsFill:'rgba(90,165,180,0.26)',weakTheirsStroke:'rgba(60,135,150,0.88)',
+    weakBothFill:'rgba(160,110,185,0.28)', weakBothStroke:'rgba(130,85,155,0.88)',
   },
 };
 let currentPalette=PALETTES.default;
@@ -952,24 +939,46 @@ function render(){
   // weakSquaresW = empty squares black has no attackers on = safe for white
   // weakSquaresB = empty squares white has no attackers on = safe for black
   if(showingWeakSquares){
-    // Red = your weak squares (opponent can use), Blue = opponent's weak squares (you can use)
-    // Purple = weak for both players
+    // A weak square is territory, not a piece in trouble, and it used to be
+    // painted in the colours that mean "hanging" and "contested" — a 15% wash
+    // that vanished on the brown squares and collided with the threat
+    // vocabulary on the light ones. Three things changed:
+    //   1. the palette is actually read (every PALETTE defined weakFill and
+    //      weakStroke, and this block ignored all of them — the colourblind
+    //      palette did nothing here at all);
+    //   2. the wash is deep enough to darken #b58863, not just tint it;
+    //   3. direction carries the side — hatched down-right for yours, up-right
+    //      for theirs, crossed where both are weak — so hue is no longer the
+    //      only channel and the overlay survives colour-blind vision.
+    const P = currentPalette;
     const bothWeak = new Set([...weakSquaresW].filter(sq=>weakSquaresB.has(sq)));
-    weakSquaresW.forEach(sq=>{
+    const paint = (sq, fill, stroke, dirs) => {
       const{r,c}=sqCanvas(sq);const x=c*SQ,y=r*SQ;
-      if(bothWeak.has(sq)){
-        ctx.fillStyle='rgba(180,60,220,0.18)';ctx.fillRect(x,y,SQ,SQ);
-        ctx.strokeStyle='rgba(180,60,220,0.60)';ctx.lineWidth=1.5;ctx.strokeRect(x+1,y+1,SQ-2,SQ-2);
-      } else {
-        ctx.fillStyle='rgba(220,50,50,0.15)';ctx.fillRect(x,y,SQ,SQ);
-        ctx.strokeStyle='rgba(220,50,50,0.50)';ctx.lineWidth=1.5;ctx.strokeRect(x+1,y+1,SQ-2,SQ-2);
-      }
+      ctx.fillStyle=fill;ctx.fillRect(x,y,SQ,SQ);
+      ctx.save();
+      ctx.beginPath();ctx.rect(x,y,SQ,SQ);ctx.clip();
+      ctx.strokeStyle=stroke;ctx.lineWidth=1.5;ctx.globalAlpha=0.55;
+      const step=Math.max(6,Math.round(SQ/7));
+      dirs.forEach(d=>{
+        // d=1 draws down-right, d=-1 up-right. Sweeping the offset over twice
+        // the square width is what keeps both diagonals covering the corners.
+        for(let o=-SQ;o<=SQ*2;o+=step){
+          ctx.beginPath();
+          if(d===1){ ctx.moveTo(x+o,y); ctx.lineTo(x+o-SQ,y+SQ); }
+          else     { ctx.moveTo(x+o,y); ctx.lineTo(x+o+SQ,y+SQ); }
+          ctx.stroke();
+        }
+      });
+      ctx.restore();
+      ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.strokeRect(x+1,y+1,SQ-2,SQ-2);
+    };
+    weakSquaresW.forEach(sq=>{
+      if(bothWeak.has(sq)) paint(sq,P.weakBothFill,P.weakBothStroke,[1,-1]);
+      else                 paint(sq,P.weakMineFill,P.weakMineStroke,[1]);
     });
     weakSquaresB.forEach(sq=>{
       if(bothWeak.has(sq)) return;
-      const{r,c}=sqCanvas(sq);const x=c*SQ,y=r*SQ;
-      ctx.fillStyle='rgba(40,120,220,0.15)';ctx.fillRect(x,y,SQ,SQ);
-      ctx.strokeStyle='rgba(40,120,220,0.50)';ctx.lineWidth=1.5;ctx.strokeRect(x+1,y+1,SQ-2,SQ-2);
+      paint(sq,P.weakTheirsFill,P.weakTheirsStroke,[-1]);
     });
   }
 
@@ -2761,7 +2770,7 @@ if (!localStorage.getItem('bm_pieceSet')) { currentPieceSet = 'staunton'; }
 loadPrefs();
 loadSoundPref();
 loadBoardSettingsPref();
-loadMoreVisPref();
+if(typeof ghostSyncUI === "function") ghostSyncUI();
 loadPos(0);
 resizeBoard();
 

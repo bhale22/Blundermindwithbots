@@ -38,14 +38,13 @@ const FOLDED = ['checkthreats', 'discoveredself', 'discoveredopp', 'forksw',
 const KEYS = await page.evaluate(() =>
   [...document.querySelectorAll('.ind-grid .ib')].map(e => e.id.replace(/^ib-/, '')));
 
-// Read the default fold state before anything touches it, then open the fold so
-// the folded nine have real geometry - a display:none element measures zero.
-const foldClosedOnLoad = await page.evaluate(() =>
-  !document.getElementById('vz-more').classList.contains('open'));
-const sidebarClosedH = await page.evaluate(() =>
-  Math.round(document.getElementById('sidebar').getBoundingClientRect().height));
-await page.evaluate(() => document.getElementById('vz-more').classList.add('open'));
-await page.waitForTimeout(150);
+// There is no fold any more, so nothing has to be opened for the nine to have
+// geometry. What matters instead is that the column still fits one screen and
+// that the floor stays put, which is what the checks below measure.
+const contentBottom = await page.evaluate(() =>
+  Math.round(document.querySelector('.hold-note').getBoundingClientRect().bottom));
+const pageScrolls = await page.evaluate(() =>
+  document.documentElement.scrollHeight > window.innerHeight + 2);
 
 console.log('\n1-4  Structure');
 ok('13 indicators present', KEYS.length === 13, String(KEYS.length));
@@ -181,36 +180,77 @@ await page.evaluate(k => { IND[k].on = false; IND[k].pre = true; ibUpdateUI(k); 
 }
 
 console.log('\n9    Grouping');
-const grouping = await page.evaluate(([core, folded]) => {
-  const fold = document.getElementById('vz-more');
+const grouping = await page.evaluate(([core, extra]) => {
+  const grids = [...document.querySelectorAll('.ind-grid')];
+  const heads = [...document.querySelectorAll('.bv-head')].map(e => e.textContent.trim());
+  const inGrid = (g, k) => g.contains(document.getElementById('ib-' + k));
   return {
-    coreOutside: core.every(k => !fold.contains(document.getElementById('ib-' + k))),
-    foldedInside: folded.every(k => fold.contains(document.getElementById('ib-' + k))),
-    ghostFolded: fold.contains(document.getElementById('ghostRow')),
+    heads,
+    coreInFirst:  grids[0] && core.every(k => inGrid(grids[0], k)),
+    extraInSecond: grids[1] && extra.every(k => inGrid(grids[1], k)),
+    noFold: !document.getElementById('vz-more') && !document.getElementById('vz-toggle'),
+    // Ghost is an overlay-shaped toggle now, paired with its depth selector.
+    ghostBtn: !!document.querySelector('#ib-ghost .ib-main'),
+    ghostSel: !!document.getElementById('soloGhostDepth'),
+    ghostOutsideGrid: !!document.getElementById('ib-ghost') &&
+      !document.querySelector('.ind-grid').contains(document.getElementById('ib-ghost')),
+    // The state key replaces the word chip that used to name each state.
+    keyChips: [...document.querySelectorAll('.ind-key-row span')].map(e => e.textContent.trim()),
+    // Settings sits BETWEEN the two groups, not above them.
+    settingsBetween: (() => {
+      const bs = document.getElementById('bs-open');
+      if (!bs || grids.length < 2) return false;
+      const y = bs.getBoundingClientRect().top;
+      return y > grids[0].getBoundingClientRect().top &&
+             y < grids[1].getBoundingClientRect().top;
+    })(),
+    settingsCaption: (document.querySelector('#bs-open .bs-t2') || {}).textContent || '',
     settingsInPanel: ['cbSound', 'cbLegalToggle', 'cbInfluenceToggle', 'cbBattery', 'cbQPins']
       .every(id => document.getElementById('boardSettingsPanel').contains(document.getElementById(id))),
     cols: getComputedStyle(document.querySelector('.ind-grid')).gridTemplateColumns.split(' ').length,
   };
 }, [CORE, FOLDED]);
 
-ok('the four core overlays are always out', grouping.coreOutside);
-ok('the other nine are inside the fold', grouping.foldedInside);
-ok('the fold is closed on a first visit', foldClosedOnLoad);
-ok('ghost responses sits in the fold', grouping.ghostFolded);
-ok('all five settings moved into the panel', grouping.settingsInPanel);
+ok('the four core overlays are in the first group', grouping.coreInFirst);
+ok('the other nine are in the second group', grouping.extraInSecond);
+ok('both groups are named', grouping.heads.length === 3, grouping.heads.join(' | '));
+ok('the disclosure is gone entirely', grouping.noFold);
+ok('every overlay is visible without opening anything', KEYS.length === 13, String(KEYS.length));
+ok('ghost replies is a button', grouping.ghostBtn);
+ok('ghost keeps its depth selector', grouping.ghostSel);
+ok('ghost sits outside the overlay grid', grouping.ghostOutsideGrid);
+ok('the state key names all three states', grouping.keyChips.length === 3,
+   grouping.keyChips.join(' / '));
+ok('board settings sits between the two groups', grouping.settingsBetween);
+ok('the settings button says what is inside', /[Ss]ound/.test(grouping.settingsCaption),
+   grouping.settingsCaption);
+ok('all five settings stayed in the panel', grouping.settingsInPanel);
 ok('two columns', grouping.cols === 2, grouping.cols + ' cols');
-ok('default sidebar under 400px', sidebarClosedH < 400, sidebarClosedH + 'px');
+ok('everything fits one screen without scrolling', !pageScrolls);
+ok('controls end above the fold line', contentBottom < 700, contentBottom + 'px');
 
-// Pairs must sit side by side - the point of a row-major grid.
+// Pairs must sit side by side - the point of a row-major grid. Mine is always
+// the left of a pair now; weak squares used to be the one exception.
 const pairs = await page.evaluate(() => {
   const t = id => document.getElementById(id).getBoundingClientRect();
   const same = (a, b) => Math.abs(t(a).top - t(b).top) < 2 && t(a).left !== t(b).left;
+  const mineLeft = (mine, theirs) => t(mine).left < t(theirs).left;
   return {
     disc:  same('ib-discoveredself', 'ib-discoveredopp'),
     forks: same('ib-forksw', 'ib-forksb'),
-    weak:  same('ib-weakb', 'ib-weakw'),
+    weak:  same('ib-weakw', 'ib-weakb'),
     xray:  same('ib-xray', 'ib-overloaded'),
+    mineLeftDisc:  mineLeft('ib-discoveredself', 'ib-discoveredopp'),
+    mineLeftForks: mineLeft('ib-forksw', 'ib-forksb'),
+    mineLeftWeak:  mineLeft('ib-weakw', 'ib-weakb'),
+    // Forks come before discovered attacks; weak squares come last.
+    forksAboveDisc: t('ib-forksw').top < t('ib-discoveredself').top,
+    weakBelowXray:  t('ib-weakw').top > t('ib-xray').top,
     checkSpans: t('ib-checkthreats').width > t('ib-forksw').width * 1.8,
+    // The two weak-square chips used to be the same colour, which said the two
+    // overlays were the same thing.
+    weakChips: [getComputedStyle(document.querySelector('#ib-weakw .ib-sq')).backgroundColor,
+                getComputedStyle(document.querySelector('#ib-weakb .ib-sq')).backgroundColor],
     maxClip: Math.max(...[...document.querySelectorAll('.ind-grid .ib-main')]
       .map(b => b.scrollWidth - b.clientWidth)),
   };
@@ -219,21 +259,54 @@ ok('My/Opp discovered sit side by side', pairs.disc);
 ok('forks pair side by side', pairs.forks);
 ok('weak squares pair side by side', pairs.weak);
 ok('x-ray / overloaded pair side by side', pairs.xray);
+ok('mine is on the left of every pair',
+   pairs.mineLeftDisc && pairs.mineLeftForks && pairs.mineLeftWeak);
+ok('discovered attacks sit below forks/skewers', pairs.forksAboveDisc);
+ok('weak squares sit below x-ray/overloaded', pairs.weakBelowXray);
 ok('check threats spans the full width', pairs.checkSpans);
+ok('the two weak-square chips differ', pairs.weakChips[0] !== pairs.weakChips[1],
+   pairs.weakChips.join(' vs '));
 ok('nothing clips out of any button', pairs.maxClip === 0, 'worst ' + pairs.maxClip + 'px');
 
-// The real toggle (not the class poke above) must persist the choice.
-await page.evaluate(() => document.getElementById('vz-more').classList.remove('open'));
-await page.click('#vz-toggle');
-await page.waitForTimeout(200);
-ok('opening the fold is remembered', await page.evaluate(() => {
-  try { return localStorage.getItem('bm_vzOpen') === '1'; } catch (e) { return false; }
+console.log('\n9b   Ghost button and selector are one value');
+const gs = async () => page.evaluate(() => ({
+  sel: document.getElementById('soloGhostDepth').value,
+  on: document.getElementById('ib-ghost').classList.contains('on'),
+  disabled: document.getElementById('soloGhostDepth').disabled,
 }));
-await page.click('#vz-toggle');
-await page.waitForTimeout(200);
-ok('closing it again is remembered', await page.evaluate(() => {
-  try { return localStorage.getItem('bm_vzOpen') === '0'; } catch (e) { return false; }
-}));
+const g0 = await gs();
+await page.click('#ib-ghost .ib-main'); await page.waitForTimeout(150);
+const g1 = await gs();
+await page.click('#ib-ghost .ib-main'); await page.waitForTimeout(150);
+const g2 = await gs();
+ok('button starts on with a depth chosen', g0.on && g0.sel !== '0', JSON.stringify(g0));
+ok('turning it off drops the selector to Off', !g1.on && g1.sel === '0', JSON.stringify(g1));
+ok('the selector greys out while off', g1.disabled);
+ok('turning it back on restores the depth', g2.on && g2.sel === g0.sel, JSON.stringify(g2));
+
+console.log('\n9c   Show all actually shows');
+const showAll = await page.evaluate(() => {
+  showAllDown(null);
+  const keys = Object.keys(IND);
+  // `influence` needs an in-progress exploration, so it can never be active on
+  // a static board - every other indicator must be.
+  const dead = keys.filter(k => k !== 'influence' && !indActive(k));
+  showAllUp();
+  return dead;
+});
+ok('holding Show all activates every overlay', showAll.length === 0, showAll.join(','));
+
+console.log('\n9d   The floor does not move');
+const floor = await page.evaluate(() => {
+  const y = () => Math.round(document.querySelector('.secondary-row').getBoundingClientRect().top);
+  const before = y();
+  const real = _isLiveGame;
+  _isLiveGame = () => true; updateGameStartBtns();
+  const during = y();
+  _isLiveGame = real; updateGameStartBtns();
+  return { before, during, delta: Math.abs(during - before) };
+});
+ok('starting a game does not shift the floor', floor.delta === 0, floor.delta + 'px');
 
 console.log('\n10   Game-start buttons hide during a live game');
 const live = await page.evaluate(() => {

@@ -1221,7 +1221,7 @@ const TOURS = {
     { sel:'.ind-grid', title:'Board-vision indicators', indSection:true,
       body:'These overlays draw what a stronger player sees — threats, pins, forks and more. We’ll light each one up on a sample position so you can see exactly what it does.' },
     { sel:'#ib-threats', title:'Three ways to show an indicator', indSection:true, modes:'threats',
-      body:'Every indicator button carries three states, and the word on its right says which one it is in. Watch it cycle: <b>off</b> — <b>exp</b>, drawn only while you explore a move — <b>on</b>, drawn all the time. <b>Click</b> to step through them. Or <b>press and hold</b> to peek: the overlay flips on if it was off (and off if it was on) for as long as you hold, then goes straight back. While the button is blue, nothing you are doing will stick.' },
+      body:'Every indicator button carries three states, and its colour says which one it is in — the key at the top of this panel spells them out. Watch it cycle: <b>off</b> — <b>while exploring</b>, drawn only while you explore a move — <b>always on</b>, drawn all the time. <b>Click</b> to step through them. Or <b>press and hold</b> to peek: the overlay flips on if it was off (and off if it was on) for as long as you hold, then goes straight back. While the button is blue, nothing you are doing will stick.' },
     { sel:'.ind-grid', title:'How to train with these', indSection:true,
       body:'Best habit: <b>look first and try to spot it yourself</b> — plan your move and picture the threats and replies in your head. <i>Then</i> switch an indicator on as instant feedback to catch anything you missed.' },
     { sel:'#ib-checkthreats', title:'Check threats', indSection:true, ind:'checkthreats',
@@ -3199,6 +3199,45 @@ function peekUp(){
   ibRefreshAll(); indApply();
 }
 
+// ── Ghost replies toggle — button and selector are one value ─────────────
+// The selector alone gave no hint that ghosts were a board overlay like any
+// other, and "Off" buried in a dropdown is not a state anyone reads at a
+// glance. The button now carries the state; the selector carries the depth.
+// Turning the button off parks the depth so switching back restores the choice
+// rather than snapping to a default.
+let _ghostLastDepth = '8';
+
+function ghostIsOn(){
+  const sel = document.getElementById('soloGhostDepth');
+  return !!sel && sel.value !== '0';
+}
+
+// Paint the button from the selector, never the other way round: the selector
+// is the value ghostMode() already reads, so it stays the single source.
+function ghostSyncUI(){
+  const sel = document.getElementById('soloGhostDepth');
+  const el  = document.getElementById('ib-ghost');
+  if(!sel) return;
+  const on = sel.value !== '0';
+  if(el) el.classList.toggle('on', on);
+  sel.disabled = !on;
+  const btn = el && el.querySelector('.ib-main');
+  if(btn) btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+
+function ghostToggle(){
+  const sel = document.getElementById('soloGhostDepth');
+  if(!sel) return;
+  if(sel.value !== '0'){
+    _ghostLastDepth = sel.value;
+    sel.value = '0';
+  } else {
+    sel.value = (_ghostLastDepth === '0') ? '8' : _ghostLastDepth;
+  }
+  ghostSyncUI();
+  if(typeof ghostModeChanged === 'function') ghostModeChanged();
+}
+
 // ── Show All button — hold to see board with every indicator active ──────────
 let showAllActive = false;
 let showAllSavedStates = {};
@@ -3212,11 +3251,15 @@ function showAllDown(e){
   Object.keys(IND).forEach(k=>{
     showAllSavedStates[k] = {on:IND[k].on, pre:IND[k].pre, pressing:IND[k].pressing};
   });
-  // Set ALL indicators fully on — pressing:true forces fork/discovered renders
+  // Set ALL indicators fully on. `pressing` must stay FALSE: indActive()
+  // treats it as an inversion, not a force-on ("A held button INVERTS that, it
+  // does not force it on"), so setting it here turned every overlay on and then
+  // immediately back off — every button lit cyan and the board drew nothing.
+  // on:true alone is what makes an indicator render.
   Object.keys(IND).forEach(k=>{
     IND[k].on = true;
     IND[k].pre = true;
-    IND[k].pressing = true;
+    IND[k].pressing = false;
   });
   // Also turn on all checkboxes (battery, queen pins, etc.)
   ['cbBattery','cbQPins','cbEnPassant','cbInfluenceToggle'].forEach(id=>{

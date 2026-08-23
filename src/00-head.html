@@ -1207,31 +1207,142 @@ canvas{
 #board-settings{display:contents;}
 #bv-toggle{display:none;}
 
-/* ── Sidebar disclosure / launcher rows ──────────────────────────────────────
-   #bs-open opens the Board settings panel; #vz-toggle folds the nine secondary
-   overlays. Same shape so they read as one row of controls, and both are full
-   44px targets — they are the two things a first-time visitor is most likely
-   to reach for. */
-#bs-open,#vz-toggle{
-  display:flex;align-items:center;justify-content:space-between;gap:8px;
-  width:100%;min-height:34px;padding:7px 10px;margin:2px 0;
-  background:var(--bg-panel);border:0.5px solid var(--border);border-radius:6px;
-  color:var(--text-secondary);font-size:12px;font-weight:600;
-  font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;
+/* ── Sidebar group headings ─────────────────────────────────────────────────
+   The overlay grid had no title of its own, which is why the Board settings
+   launcher sitting above it read as its heading. Naming the groups fixes that,
+   and splitting thirteen buttons into "the four to start with" and "the rest"
+   does the job the collapsed disclosure used to do — without hiding anything,
+   and without a control that shifts the column when it opens. */
+.bv-head{
+  display:flex;align-items:center;gap:6px;
+  font-size:10px;font-weight:700;letter-spacing:0.11em;text-transform:uppercase;
+  color:var(--text-dim);padding:2px 1px 0;margin-top:2px;flex-shrink:0;
 }
-#bs-open:hover,#vz-toggle:hover{border-color:var(--accent);color:var(--text-primary);}
-#vz-toggle .bv-c{font-size:11px;transition:transform 0.2s;}
-#vz-toggle[aria-expanded="true"] .bv-c{transform:rotate(180deg);}
-#vz-toggle[aria-expanded="true"]{border-color:var(--accent);color:var(--text-primary);}
-#vz-more{display:none;}
-#vz-more.open{display:block;}
-.vz-ghost{margin-top:4px;}
-.vz-ghost .s-row{padding:6px 2px;border-bottom:none;border-top:0.5px solid var(--border2);}
-.vz-ghost .s-lbl{
-  font-size:11.5px;text-transform:none;letter-spacing:0;
-  color:var(--text-dim);white-space:normal;
+.bv-head::after{content:"";flex:1;height:1px;background:var(--border2);}
+.bv-head.sub{font-size:9px;letter-spacing:0.09em;font-weight:600;opacity:0.85;}
+
+/* ── Indicator state key ────────────────────────────────────────────────────
+   Every indicator carries three states and the only thing that ever said so
+   was a word chip, dropped further up this file to buy back the second column.
+   Colour on its own is not a legend. These three chips ARE the button styles,
+   sitting at the top of the group they describe — so if the state colours
+   above ever change, they must change here too or the key stops being true. */
+.ind-key{
+  background:var(--bg-panel);border:0.5px solid var(--border2);border-radius:6px;
+  padding:6px 8px;display:flex;flex-direction:column;gap:4px;margin:2px 0;
+  flex-shrink:0;
 }
-.vz-ghost select{font-size:11px;padding:3px 4px;}
+.ind-key-t{
+  font-size:9.5px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;
+  color:var(--text-dim);
+}
+.ind-key-row{display:flex;align-items:center;gap:5px;}
+.ind-key-row span{
+  flex:1;font-size:9.5px;font-weight:700;text-align:center;line-height:1.15;
+  padding:4px 2px;border-radius:3px;
+  border:0.5px solid var(--border);background:var(--bg-panel2);color:var(--text-dim);
+}
+.ind-key-row .k-exp{background:rgba(90,104,200,0.10);border-color:rgba(90,104,200,0.55);color:#3a44a0;}
+.ind-key-row .k-on{background:rgba(34,168,90,0.14);border-color:#22a85a;color:#14713c;}
+
+/* ── Board settings launcher ────────────────────────────────────────────────
+   Moved out of the top of the column and re-sited between the two overlay
+   groups, where it no longer reads as their heading. Two lines: the name, and
+   what is behind it. Sound is the setting a beginner is most likely to go
+   hunting for, and nothing on the old button said it was in there. */
+#bs-open{
+  display:flex;align-items:center;gap:9px;width:100%;text-align:left;
+  min-height:38px;padding:7px 10px;margin:3px 0;
+  background:var(--bg-panel2);border:1px solid var(--border);border-radius:6px;
+  color:var(--text-primary);font-family:inherit;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;flex-shrink:0;
+}
+#bs-open:hover{border-color:var(--accent);}
+#bs-open .bs-ico{font-size:15px;line-height:1;flex-shrink:0;}
+#bs-open .bs-txt{flex:1;min-width:0;display:flex;flex-direction:column;}
+#bs-open .bs-t1{display:block;font-size:12.5px;font-weight:700;line-height:1.2;}
+#bs-open .bs-t2{
+  display:block;font-size:9.5px;font-weight:400;line-height:1.3;margin-top:2px;
+  color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+#bs-open .bs-car{font-size:13px;color:var(--text-dim);flex-shrink:0;}
+
+/* ── Ghost replies ──────────────────────────────────────────────────────────
+   The same button as every overlay beside it, because it is one more thing
+   that draws on the board — but with two states rather than three: it either
+   runs or it does not. The depth selector sits alongside, and the two are two
+   views of one value. ghostToggle() keeps them in step in both directions. */
+.ghost-row{display:flex;gap:3px;align-items:stretch;margin-top:3px;flex-shrink:0;}
+.ghost-row .ib{flex:1.25;}
+#soloGhostDepth{
+  flex:1;min-width:0;font-family:inherit;font-size:10px;padding:3px 4px;
+  border:0.5px solid var(--border);border-radius:5px;
+  background:var(--bg-panel2);color:var(--text-secondary);cursor:pointer;
+}
+#soloGhostDepth:disabled{opacity:0.55;cursor:default;}
+
+/* ── Indicator utility row ──────────────────────────────────────────────────
+   Clear, Hide, Peek and Show all read as one family. Three of the four do
+   nothing at all on a click — they act only while held — and the dashed
+   border plus one line of caption is what makes that gesture visible without
+   relying on a title tooltip nobody hovers long enough to see.
+   Named .ind-utils, not .util-row: that class already exists further up for
+   the about/feedback strip and the two would collide. */
+.ind-utils{display:flex;gap:3px;margin-top:4px;flex-shrink:0;}
+.ind-utils .ctrl-btn{flex:1;padding:7px 3px;font-size:11px;font-weight:600;}
+.ind-utils .hold-btn{border-style:dashed;}
+.hold-note{
+  font-size:9.5px;color:var(--text-dim);text-align:center;
+  line-height:1.3;padding:2px 0 0;flex-shrink:0;
+}
+
+/* ── Weak-square swatches ───────────────────────────────────────────────────
+   Both weak-square buttons used to carry the same pale blue chip, so the
+   panel could not tell you the two overlays differ. These track the board
+   colours set in 30-board-ui.js — change one, change the other. */
+.ib-sq.ib-sq-mine{background:#a81c30;opacity:0.85;}
+.ib-sq.ib-sq-theirs{background:#147d8c;opacity:0.85;}
+
+/* ── Floor ──────────────────────────────────────────────────────────────────
+   Starting a game is what a visitor without one wants, and it used to be one
+   of six identical buttons. The two starters get their own row, taller and
+   tinted; Theme/Load/Save drop to a quiet secondary row. The separator carries
+   real space so the two groups do not read as one block. */
+.floor-sep{height:1px;background:var(--border);margin:11px 0 10px;flex-shrink:0;}
+.play-row{display:flex;gap:3px;flex-shrink:0;align-items:stretch;}
+.play-row .ctrl-btn{flex:1;text-align:center;}
+.play-btn{
+  font-size:12.5px;font-weight:700;line-height:1.2;padding:10px 4px;
+  background:rgba(90,212,144,0.16);border:1.5px solid #4aab74;color:#1d6b41;
+}
+.play-btn:hover{background:rgba(90,212,144,0.26);border-color:#3d9463;}
+.play-btn.mp{background:rgba(74,159,212,0.14);border-color:#3f8cc0;color:#1a5d88;}
+.play-btn.mp:hover{background:rgba(74,159,212,0.24);border-color:#33780f00;}
+/* The dynamic action slot shares the primary row but only deserves primary
+   weight when it IS the primary action. Idle it says "Training Tips", which
+   must not shout over the two game starters; updateActionBtn() swaps it to
+   .reset-btn for Resign, and by then the starters are hidden anyway. */
+.play-row #resignBtn,.play-row #exploreBtn,.play-row #reviewBtn{
+  font-size:11px;font-weight:600;padding:7px 3px;
+}
+.play-row #resignBtn.reset-btn{font-size:12.5px;font-weight:700;padding:10px 4px;}
+.secondary-row{display:flex;gap:3px;margin-top:3px;flex-shrink:0;}
+.secondary-row .ctrl-btn{
+  flex:1;text-align:center;font-size:10.5px;font-weight:600;padding:6px 2px;
+  background:transparent;color:var(--text-dim);
+}
+.secondary-row .ctrl-btn:hover{background:var(--bg-panel);color:var(--text-secondary);}
+
+/* ── Floor anchor ───────────────────────────────────────────────────────────
+   On a laptop the column is far taller than its contents — measured at 508px
+   of slack against a board running to y=872. Letting the floor float meant
+   anything that grew above it pushed the game buttons down. This spacer eats
+   the slack instead, so growth above is absorbed and nothing below moves.
+   A spacer rather than margin-top:auto because #gameActions and
+   #bottom-controls are siblings: two auto margins would split the free space
+   between them and open a gap whenever a game is running. */
+#sidebar{align-self:stretch;}
+.sb-spacer{flex:1 1 auto;min-height:6px;}
 
 /* Panel groups in Board settings */
 .bs-group{margin-bottom:14px;}
@@ -1324,7 +1435,15 @@ canvas{
   .ctrl-row{gap:6px;}
   /* Indicator cards go 1-up so their labels stop truncating */
   .ind-grid{grid-template-columns:1fr;}
-  #bs-open,#vz-toggle{min-height:44px;font-size:13px;}
+  #bs-open{min-height:48px;}
+  /* Thirteen always-visible overlays is a much taller stack at one column
+     than four was. The phone keeps its own #bv-toggle drawer around the
+     whole region, so this only has to stay thumb-sized, not compact. */
+  .ind-utils .ctrl-btn,.play-row .ctrl-btn,.secondary-row .ctrl-btn{min-height:42px;}
+  .ghost-row .ib-main{min-height:42px;}
+  /* The overlay buttons were 34px even when only four of them showed. There
+     are thirteen now, and they are the primary control on the panel. */
+  .ind-grid .ib-main{min-height:44px;}
 }
 
 /* Short viewports (landscape phones): cap the board by height, not width, and
@@ -2299,16 +2418,22 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     </button>
     <div id="board-settings">
 
-    <!-- Preferences, not overlays — they live in their own panel now. -->
-    <button type="button" id="bs-open" onclick="openPanel('boardSettingsPanel')">
-      <span class="bv-t">⚙ Board settings</span>
-      <span class="bv-c">›</span>
-    </button>
+    <!-- ── State key ────────────────────────────────────────────────────────
+         Three states, previously conveyed by background hue and nothing else.
+         The chips are the button styles themselves, so the key cannot drift
+         out of date without someone noticing it looks wrong. -->
+    <div class="bv-head">Board vision</div>
+    <div class="ind-key">
+      <div class="ind-key-t">Tap to cycle · hold to peek</div>
+      <div class="ind-key-row">
+        <span>Off</span><span class="k-exp">While exploring</span><span class="k-on">Always on</span>
+      </div>
+    </div>
 
-    <!-- ── Core four: always on the visualization board ──────────────────
+    <!-- ── Core four ────────────────────────────────────────────────────────
          The overlays that answer "can this be taken" — the reason someone
-         opened a training board at all. They are not behind a disclosure
-         because a beginner should never have to find them. -->
+         opened a training board at all. -->
+    <div class="bv-head sub">Start with these</div>
     <div class="ind-grid">
       <div class="ib" id="ib-threats">
           <button class="ib-main" onmousedown="ibMainDown('threats',event)" onmouseup="ibMainUp('threats')" onmouseleave="ibMainCancel('threats')" ontouchstart="ibMainDown('threats',event)" ontouchend="ibMainUp('threats')" ontouchcancel="ibMainCancel('threats')">
@@ -2336,34 +2461,31 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         </div>
     </div>
 
-    <!-- ── Everything else, folded away ──────────────────────────────────
-         Nine overlays plus ghost replies. Real once you are looking for
-         them, noise on a first visit — an x-ray pressure toggle means
-         nothing to someone still learning what hangs. Closed by default;
-         the choice is remembered. -->
-    <button type="button" id="vz-toggle" aria-expanded="false" aria-controls="vz-more"
-            onclick="toggleMoreVis()">
-      <span class="bv-t">＋ More visualizations</span>
-      <span class="bv-c">▾</span>
+    <!-- Preferences, not overlays. Sited between the two groups rather than
+         above them: at the top it read as the overlay grid's heading. It is
+         also the row a beginner hunts for — sound lives behind it — so the
+         caption names what is inside instead of making them guess. -->
+    <button type="button" id="bs-open" onclick="openPanel('boardSettingsPanel')">
+      <span class="bs-ico">⚙</span>
+      <span class="bs-txt">
+        <span class="bs-t1">Board settings</span>
+        <span class="bs-t2">Sound · legal moves · threat rules</span>
+      </span>
+      <span class="bs-car">›</span>
     </button>
-    <div id="vz-more">
-      <div class="ind-grid">
+
+    <!-- ── The other nine ───────────────────────────────────────────────────
+         These used to sit behind a disclosure, which bought nothing — the
+         column has ~500px of slack on a laptop — and cost a 237px shift of
+         everything below it every time someone opened it. Shown outright, one
+         matched pair per row: mine on the left, the opponent's on the right,
+         so the grid teaches the symmetry rather than hiding it. -->
+    <div class="bv-head sub">When you're ready</div>
+    <div class="ind-grid">
       <div class="ib ib-span" id="ib-checkthreats">
           <button class="ib-main" onmousedown="ibMainDown('checkthreats',event)" onmouseup="ibMainUp('checkthreats')" onmouseleave="ibMainCancel('checkthreats')" ontouchstart="ibMainDown('checkthreats',event)" ontouchend="ibMainUp('checkthreats')" ontouchcancel="ibMainCancel('checkthreats')">
             <span class="ib-icon"><span class="ib-dot" style="background:#e03535;"></span></span><span class="ib-lbl">Check threats</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('checkthreats',event)">?</span>
-          </button>
-        </div>
-      <div class="ib" id="ib-discoveredself">
-          <button class="ib-main" onmousedown="ibMainDown('discoveredself',event)" onmouseup="ibMainUp('discoveredself')" onmouseleave="ibMainCancel('discoveredself')" ontouchstart="ibMainDown('discoveredself',event)" ontouchend="ibMainUp('discoveredself')" ontouchcancel="ibMainCancel('discoveredself')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#a050dc;"></span></span><span class="ib-lbl">My disc. attacks</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredself',event)">?</span>
-          </button>
-        </div>
-      <div class="ib" id="ib-discoveredopp">
-          <button class="ib-main" onmousedown="ibMainDown('discoveredopp',event)" onmouseup="ibMainUp('discoveredopp')" onmouseleave="ibMainCancel('discoveredopp')" ontouchstart="ibMainDown('discoveredopp',event)" ontouchend="ibMainUp('discoveredopp')" ontouchcancel="ibMainCancel('discoveredopp')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#dc8200;"></span></span><span class="ib-lbl">Opp. disc. threats</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredopp',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-forksw">
@@ -2378,16 +2500,16 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksb',event)">?</span>
           </button>
         </div>
-      <div class="ib" id="ib-weakb">
-          <button class="ib-main" onmousedown="ibMainDown('weakb',event)" onmouseup="ibMainUp('weakb')" onmouseleave="ibMainCancel('weakb')" ontouchstart="ibMainDown('weakb',event)" ontouchend="ibMainUp('weakb')" ontouchcancel="ibMainCancel('weakb')">
-            <span class="ib-icon"><span class="ib-sq"></span></span><span class="ib-lbl">Opp. weak squares</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakb',event)">?</span>
+      <div class="ib" id="ib-discoveredself">
+          <button class="ib-main" onmousedown="ibMainDown('discoveredself',event)" onmouseup="ibMainUp('discoveredself')" onmouseleave="ibMainCancel('discoveredself')" ontouchstart="ibMainDown('discoveredself',event)" ontouchend="ibMainUp('discoveredself')" ontouchcancel="ibMainCancel('discoveredself')">
+            <span class="ib-icon"><span class="ib-dot" style="background:#a050dc;"></span></span><span class="ib-lbl">My disc. attacks</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredself',event)">?</span>
           </button>
         </div>
-      <div class="ib" id="ib-weakw">
-          <button class="ib-main" onmousedown="ibMainDown('weakw',event)" onmouseup="ibMainUp('weakw')" onmouseleave="ibMainCancel('weakw')" ontouchstart="ibMainDown('weakw',event)" ontouchend="ibMainUp('weakw')" ontouchcancel="ibMainCancel('weakw')">
-            <span class="ib-icon"><span class="ib-sq"></span></span><span class="ib-lbl">My weak squares</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakw',event)">?</span>
+      <div class="ib" id="ib-discoveredopp">
+          <button class="ib-main" onmousedown="ibMainDown('discoveredopp',event)" onmouseup="ibMainUp('discoveredopp')" onmouseleave="ibMainCancel('discoveredopp')" ontouchstart="ibMainDown('discoveredopp',event)" ontouchend="ibMainUp('discoveredopp')" ontouchcancel="ibMainCancel('discoveredopp')">
+            <span class="ib-icon"><span class="ib-dot" style="background:#dc8200;"></span></span><span class="ib-lbl">Opp. disc. threats</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredopp',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-xray">
@@ -2402,12 +2524,32 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('overloaded',event)">?</span>
           </button>
         </div>
+      <div class="ib" id="ib-weakw">
+          <button class="ib-main" onmousedown="ibMainDown('weakw',event)" onmouseup="ibMainUp('weakw')" onmouseleave="ibMainCancel('weakw')" ontouchstart="ibMainDown('weakw',event)" ontouchend="ibMainUp('weakw')" ontouchcancel="ibMainCancel('weakw')">
+            <span class="ib-icon"><span class="ib-sq ib-sq-mine"></span></span><span class="ib-lbl">My weak squares</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakw',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-weakb">
+          <button class="ib-main" onmousedown="ibMainDown('weakb',event)" onmouseup="ibMainUp('weakb')" onmouseleave="ibMainCancel('weakb')" ontouchstart="ibMainDown('weakb',event)" ontouchend="ibMainUp('weakb')" ontouchcancel="ibMainCancel('weakb')">
+            <span class="ib-icon"><span class="ib-sq ib-sq-theirs"></span></span><span class="ib-lbl">Opp. weak squares</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakb',event)">?</span>
+          </button>
+        </div>
+    </div>
+
+    <!-- Ghost replies: the same button as the overlays beside it, because it
+         is one more thing that draws on the board. Two states, not three —
+         it runs or it does not — with the depth selector alongside. The two
+         are two views of one value; ghostToggle() keeps them in step. -->
+    <div class="ghost-row">
+      <div class="ib" id="ib-ghost">
+        <button class="ib-main" onclick="ghostToggle()">
+          <span class="ib-icon"><span class="ib-dot" style="background:#7a8fa8;"></span></span><span class="ib-lbl">👻 Ghost replies</span>
+          <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('ghostresponses',event)">?</span>
+        </button>
       </div>
-      <div class="vz-ghost">
-        <div class="s-row" id="ghostRow">
-      <span class="s-lbl">👻 Ghost responses:<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('ghostresponses',event)" style="margin-left:3px;">?</span></span>
-      <span class="s-spacer"></span>
-      <select id="soloGhostDepth" onchange="ghostModeChanged()" style="font-size:8px;padding:1px 3px;border:0.5px solid var(--border);border-radius:3px;background:var(--bg-panel2);color:var(--text-secondary);">
+      <select id="soloGhostDepth" onchange="ghostModeChanged()" aria-label="Ghost reply engine and depth">
         <option value="0">Off</option>
         <option value="4">SF Fast (depth 4)</option>
         <option value="8" selected>SF Medium (depth 8)</option>
@@ -2415,36 +2557,34 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <option value="maia">Maia (2600 + 1500)</option>
       </select>
     </div>
-        <div id="ghostMpNote" style="display:none;font-size:7.5px;color:#c0a060;padding:0 2px 4px;">
+    <div id="ghostMpNote" style="display:none;font-size:7.5px;color:#c0a060;padding:0 2px 4px;">
       ⚔ Inactive &amp; unavailable during 2-player games — engine hints would undercut human-vs-human play.
     </div>
     <div id="ghostMaiaHint" style="display:none;font-size:7.5px;color:#c0a060;padding:0 2px 4px;">
       Maia3 model not downloaded — ghosts use Stockfish until you download it in the 🤖 vs Bot panel.
     </div>
-      </div>
-    </div>
-    <div style="margin-top:5px;">
-      <button class="ctrl-btn danger-btn" id="btnClearAll" onclick="clearAllSelections()" style="width:100%;font-size:11px;">✕ Clear all</button>
-    </div>
-    <!-- Peek / Hide / Show All — larger, below the indicator columns -->
-    <div style="display:flex;gap:5px;margin-top:5px;">
-      <button id="btnHideShow" class="ctrl-btn util-btn"
-        style="flex:1;padding:7px 4px;font-size:9px;font-weight:600;"
+
+    <!-- Clear / Hide / Peek / Show all read as one family. The last three do
+         nothing on a click — they act only while held — so they carry a
+         dashed border and the caption below says so in words. -->
+    <div class="ind-utils">
+      <button class="ctrl-btn danger-btn" id="btnClearAll" onclick="clearAllSelections()">✕ Clear</button>
+      <button id="btnHideShow" class="ctrl-btn util-btn hold-btn"
         onmousedown="hideShowDown(event)" onmouseup="hideShowUp()" onmouseleave="hideShowUp()"
         title="Hold to peek · Double-click to toggle">👁 Hide</button>
-      <button id="btnPeek" class="ctrl-btn util-btn"
-        style="flex:1;padding:7px 4px;font-size:9px;font-weight:600;"
+      <button id="btnPeek" class="ctrl-btn util-btn hold-btn"
         onmousedown="peekDown(event)" onmouseup="peekUp()" onmouseleave="peekUp()"
         title="Hold to see selected exploration indicators">👁 Peek</button>
-      <button id="btnShowAll" class="ctrl-btn util-btn"
-        style="flex:1;padding:7px 4px;font-size:9px;font-weight:600;"
+      <button id="btnShowAll" class="ctrl-btn util-btn hold-btn"
         onmousedown="showAllDown(event)" onmouseup="showAllUp()" onmouseleave="showAllUp()"
         title="Hold to see every indicator active">⊞ Show all</button>
     </div>
-
-    <div class="sep"></div>
+    <div class="hold-note">Hold the dashed buttons — they spring back on release.</div>
 
     </div><!-- end #board-settings -->
+
+    <!-- Eats the column's spare height so the floor below never floats. -->
+    <div class="sb-spacer"></div>
 
     <!-- Draw/Resign (multiplayer only) -->
     <div id="gameActions">
@@ -2455,23 +2595,26 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     </div>
 
     <!-- Chat is in the board area inline for multiplayer -->
-    <!-- Bottom controls -->
+    <!-- ── Floor ────────────────────────────────────────────────────────────
+         Starting a game was one of six identical buttons. The two starters now
+         own a primary row; Theme/Load/Save drop to a quiet secondary one. The
+         dynamic action slot (Training Tips -> Resign -> Rematch) shares the
+         primary row, and updateGameStartBtns() hides the starters mid-game, so
+         the slot is what stays loud exactly when it is the thing to do. -->
     <div id="bottom-controls">
-      <!-- Row 1: game flow — dynamic action slot (Resign / Rematch? / Training
-           Tips), Explore (shown only when a game just ended), game starters -->
-      <div class="ctrl-row">
+      <div class="floor-sep"></div>
+      <div class="play-row">
         <button class="ctrl-btn util-btn" id="resignBtn" onclick="openHelp('howto')">🎯 Training Tips</button>
         <button class="ctrl-btn util-btn" id="exploreBtn" onclick="enterExploreMode()" style="display:none;border-color:rgba(74,159,212,0.45);color:#4a9fd4;">🔍 Explore</button>
         <button class="ctrl-btn util-btn" id="reviewBtn" onclick="startReplayOfCurrentGame()" style="display:none;border-color:rgba(74,159,212,0.45);color:#4a9fd4;" title="Step through the finished game — and restart play from any position">⏪ Review</button>
-        <button class="ctrl-btn util-btn" onclick="openBotModal()" style="border-color:rgba(90,212,144,0.4);color:#5ad490;" id="botSidebarBtn">🤖 vs Bot</button>
-        <button class="ctrl-btn util-btn" id="mpSidebarBtn" onclick="openPanel('mpPanel')">⚔ 2-Player</button>
+        <button class="ctrl-btn play-btn" onclick="openBotModal()" id="botSidebarBtn">🤖 Play vs Bot</button>
+        <button class="ctrl-btn play-btn mp" id="mpSidebarBtn" onclick="openPanel('mpPanel')">⚔ 2-Player</button>
       </div>
-      <!-- Row 2: utilities -->
-      <div class="ctrl-row">
-        <button class="ctrl-btn util-btn" id="btnTheme" onclick="openPanel('themePanel')">🎨 Theme &amp; Pieces</button>
-        <button class="ctrl-btn util-btn" id="btnLoadPgn" onclick="document.getElementById('pgnFileInput').click()">▶ Load game</button>
+      <div class="secondary-row">
+        <button class="ctrl-btn util-btn" id="btnTheme" onclick="openPanel('themePanel')">🎨 Theme</button>
+        <button class="ctrl-btn util-btn" id="btnLoadPgn" onclick="document.getElementById('pgnFileInput').click()">▶ Load</button>
         <input type="file" id="pgnFileInput" accept=".pgn" style="display:none" onchange="loadPgnFile(event)">
-        <button class="ctrl-btn util-btn" id="btnSavePgn" onclick="savePgn()">↓ Save game</button>
+        <button class="ctrl-btn util-btn" id="btnSavePgn" onclick="savePgn()">↓ Save</button>
       </div>
       <div class="util-row" style="display:none;"></div>
     </div>
