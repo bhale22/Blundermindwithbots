@@ -1446,16 +1446,29 @@ function render(){
   } catch(e){ console.warn('Indicator render error:',e); }
   // (no canvas flip to restore)
   // Draw rank/file labels in screen coords (after restore so not flipped)
-  ctx.font='9px sans-serif';ctx.fillStyle='rgba(0,0,0,0.3)';
+  // Coordinates were 9px at 30% black: about 2.9:1 on a light square and
+  // 1.9:1 on a dark one, both under the 4.5:1 AA floor — on the one label a
+  // beginner leans on most. A white halo under a near-black glyph reads on
+  // either square shade, so a single colour pair works across the whole board.
+  // textAlign is set explicitly because the piece-drawing paths above leave it
+  // on 'center', which this block used to inherit by accident.
+  ctx.save();
+  ctx.font='600 11px system-ui,-apple-system,"Segoe UI",sans-serif';
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  ctx.lineWidth=2.5; ctx.lineJoin='round'; ctx.miterLimit=2;
+  ctx.strokeStyle='rgba(255,255,255,0.85)';
+  ctx.fillStyle='rgba(0,0,0,0.85)';
+  const _coord=(t,x,y)=>{ ctx.strokeText(t,x,y); ctx.fillText(t,x,y); };
   for(let i=0;i<8;i++){
     if(_boardFlipped){
-      ctx.fillText(String.fromCharCode(97+7-i),(480-((i+1)*SQ))+3,7*SQ+SQ-3);
-      ctx.fillText(i+1,480-SQ+3,i*SQ+11);
+      _coord(String.fromCharCode(97+7-i),(480-((i+1)*SQ))+4,7*SQ+SQ-4);
+      _coord(String(i+1),480-SQ+4,i*SQ+14);
     } else {
-      ctx.fillText(String.fromCharCode(97+i),i*SQ+3,7*SQ+SQ-3);
-      ctx.fillText(8-i,3,i*SQ+11);
+      _coord(String.fromCharCode(97+i),i*SQ+4,7*SQ+SQ-4);
+      _coord(String(8-i),4,i*SQ+14);
     }
   }
+  ctx.restore();
   if(promotionPending)drawPromoModal();
 }
 

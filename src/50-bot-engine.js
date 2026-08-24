@@ -236,7 +236,9 @@ async function botConsiderDrawOffer() {
   _botDrawConsidering = true;
   try {
     _botDrawToast('🤖 The bot is considering your draw offer…');
-    const adv = await botPerceivedAdvantageCp();
+    const adv = botDrawUseObjectiveEval
+      ? await botEvalAdvantageCp()      // objective: Skill 20, depth 12
+      : await botPerceivedAdvantageCp(); // strength-scaled, with noise
     if (gameOver || !botActive) return;
     // About to flag itself → takes the half point from far better positions
     const margin = botDrawAcceptMargin + (_botDesperateForDraw() ? 200 : 0);

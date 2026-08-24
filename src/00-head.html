@@ -312,9 +312,50 @@ canvas{
   box-shadow:0 0 0 1.5px rgba(74,159,212,0.25);
 }
 
+/* Missing-Maia notice. This was 7.5px dim-amber body text sitting under a
+   dropdown — the same weight as a footnote, for the one thing standing between
+   the user and half the bots on the site. It reads as an alert now, and
+   carries the download itself rather than sending them to find the panel. */
+.maia-alert{
+  background:rgba(200,146,42,0.12);
+  border:1px solid rgba(200,146,42,0.55);
+  border-left-width:3px;
+  border-radius:4px;
+  padding:8px 10px;margin:2px 0 6px;
+  display:flex;flex-direction:column;gap:5px;
+}
+.maia-alert-h{font-size:11px;font-weight:700;color:#8a5d10;letter-spacing:0.01em;}
+.maia-alert-b{font-size:10px;line-height:1.45;color:var(--text-secondary);}
+.maia-alert-btn{
+  align-self:flex-start;
+  background:rgba(200,146,42,0.9);
+  border:1px solid rgba(140,100,20,0.9);
+  border-radius:4px;
+  color:#1a1408;font-family:inherit;font-size:10.5px;font-weight:700;
+  padding:5px 10px;cursor:pointer;
+}
+.maia-alert-btn:hover{background:rgba(215,160,50,1);}
+.maia-alert-btn:disabled{opacity:0.55;cursor:default;}
+.maia-alert-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+
 /* Color dot in button */
-.ib-dot{width:6px;height:6px;border-radius:50%;display:inline-block;flex-shrink:0;}
-.ib-sq{width:6px;height:6px;border-radius:1px;background:#b0c8e0;opacity:0.4;display:inline-block;flex-shrink:0;}
+.ib-dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0;}
+/* Redundant coding. Thirteen overlays separated by colour alone is a
+   paired-associate memory task stacked on top of the chess task, and it fails
+   outright for red-green colour deficiency. Shape now carries the family too,
+   so the grouping survives with no colour at all. Applied by indicator id so
+   the markup stays untouched and the whole mapping is legible in one place:
+     circle   attack / defence counts   triangle-up   forks
+     diamond  line motifs (pin, x-ray)  triangle-down discovered attacks
+     square   square / piece weakness                                        */
+#ib-pins .ib-dot, #ib-xray .ib-dot{ border-radius:1px; transform:rotate(45deg); }
+#ib-forksw .ib-dot, #ib-forksb .ib-dot{
+  border-radius:0; clip-path:polygon(50% 0, 100% 100%, 0 100%); }
+#ib-discoveredself .ib-dot, #ib-discoveredopp .ib-dot{
+  border-radius:0; clip-path:polygon(0 0, 100% 0, 50% 100%); }
+#ib-unprotected .ib-dot, #ib-overloaded .ib-dot{ border-radius:1px; }
+/* (#ib-weakw / #ib-weakb already carry .ib-sq — a square by construction.) */
+.ib-sq{width:7px;height:7px;border-radius:1px;background:#b0c8e0;opacity:0.4;display:inline-block;flex-shrink:0;}
 /* Question mark help trigger */
 .ib-help{
   /* The label flexes to fill, so there is no free space for margin-left:auto to
@@ -1204,7 +1245,13 @@ canvas{
 .hybrid-slot input[type=number] { width:42px;font-size:9px;padding:2px 4px;background:var(--bg-panel);border:0.5px solid var(--border);border-radius:3px;color:var(--text-primary);text-align:center; }
 .hybrid-slot .rm-btn { font-size:10px;cursor:pointer;background:none;border:none;color:var(--text-dim);padding:0 2px;line-height:1; }
 /* Ghost piece canvas overlay */
-#ghostCanvas { position:absolute;top:0;left:0;pointer-events:none;border-radius:4px; }
+/* The bare canvas{} rule above gives BOTH canvases a 1px border. The ghost is
+   an overlay and must never paint one of its own: when the board was centred at
+   narrow widths this left a second, offset outline sitting behind the real
+   board. Transparent rather than border:0 so the border-box geometry still
+   matches the main canvas exactly and the overlay stays in register. */
+#ghostCanvas { position:absolute;top:0;left:0;pointer-events:none;border-radius:4px;
+               border-color:transparent; }
 #board-canvas-wrap { position:relative;display:inline-block;flex-shrink:0; }
 
 /* ── Board-vision settings drawer ──────────────────────────────────────────
@@ -1533,14 +1580,19 @@ canvas{
   /* Explicit order for EVERY child of #app. Ordering only some of them left
      #proSide at the default 0, which floated the pro notation panel and its
      action buttons above the board and pushed the board off the bottom. */
-  #board-col{width:100%;min-width:0;order:1;}
+  /* Centre the whole board unit as a group. The canvas used to centre itself
+     with margin:0 auto, which moved ONLY the main canvas — #ghostCanvas is
+     absolutely positioned at left:0, and the player boxes are plain flex items,
+     so both stayed pinned left while the board floated right. Centring the flex
+     column instead keeps board, ghost layer and clocks locked together. */
+  #board-col{width:100%;min-width:0;order:1;align-items:center;}
   #proSide{width:100%;min-width:0;max-width:100%;order:2;}
   #sidebar{min-width:0;width:100%;max-width:100%;order:3;}
   /* resizeBoard() sizes the canvas and player boxes inline (it knows the
      available height); these just cap them to the column and centre them, so
      there's one source of truth for the board's size rather than CSS and JS
      fighting through !important. */
-  canvas{max-width:100%;height:auto;margin:0 auto;}
+  canvas{max-width:100%;height:auto;}
   /* Genuinely fixed, matching the `44 * 2 + 8` resizeBoard() already reserves
      for these two boxes. With height:auto/min-height:36px the box grew by ~7px
      whenever the turn pill was re-parented into it — and since the pill swaps
@@ -2557,17 +2609,10 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
   <!-- RIGHT: sidebar -->
   <div id="sidebar">
 
-    <!-- Board-vision settings + indicator cards.
-         On a phone these are ~450px of configuration sitting between the board
-         and the game buttons, which pushed the board off screen. They collapse
-         behind #bv-toggle there; on desktop the wrapper is display:contents so
-         the sidebar's own flex layout is completely unchanged. -->
-    <button type="button" id="bv-toggle" aria-expanded="false" aria-controls="board-settings"
-            onclick="toggleBoardSettings()">
-      <span class="bv-t">⚙ Board vision</span>
-      <span class="bv-c">▾</span>
-    </button>
-    <div id="board-settings">
+    <!-- Always visible, on every screen size: start a game, and the four
+         overlays that answer "can this be taken". Everything past these is
+         secondary and lives behind #bv-toggle below (a phone-only disclosure;
+         on desktop #board-settings is display:contents and nothing folds). -->
 
     <!-- ── State key ────────────────────────────────────────────────────────
          Three states, previously conveyed by background hue and nothing else.
@@ -2625,10 +2670,20 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         </div>
     </div>
 
-    <!-- Preferences, not overlays. Sited between the two groups rather than
-         above them: at the top it read as the overlay grid's heading. It is
-         also the row a beginner hunts for — sound lives behind it — so the
-         caption names what is inside instead of making them guess. -->
+    <!-- Everything below is the second layer: preferences, the nine further
+         overlays, ghost replies and the hold-to-peek utilities. On a phone it
+         folds behind this toggle so the board, the start button and the core
+         four are what a first visit actually lands on. -->
+    <button type="button" id="bv-toggle" aria-expanded="false" aria-controls="board-settings"
+            onclick="toggleBoardSettings()">
+      <span class="bv-t">⚙ More board vision</span>
+      <span class="bv-c">▾</span>
+    </button>
+    <div id="board-settings">
+
+    <!-- Preferences, not overlays. Sited at the top of the second layer: it is
+         the row a beginner hunts for — sound lives behind it — so the caption
+         names what is inside instead of making them guess. -->
     <button type="button" id="bs-open" onclick="openPanel('boardSettingsPanel')">
       <span class="bs-ico">⚙</span>
       <span class="bs-txt">
@@ -2722,8 +2777,15 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div id="ghostMpNote" style="display:none;font-size:7.5px;color:#c0a060;padding:0 2px 4px;">
       ⚔ Inactive &amp; unavailable during 2-player games — engine hints would undercut human-vs-human play.
     </div>
-    <div id="ghostMaiaHint" style="display:none;font-size:7.5px;color:#c0a060;padding:0 2px 4px;">
-      Maia3 model not downloaded — ghosts use Stockfish until you download it in the 🤖 vs Bot panel.
+    <div id="ghostMaiaHint" style="display:none;">
+      <div class="maia-alert">
+        <div class="maia-alert-h">⚠ Maia3 model not downloaded</div>
+        <div class="maia-alert-b">Maia is what makes ghosts and the Maia bots feel human. Until it
+          is downloaded, every one of them quietly falls back to Stockfish.</div>
+        <button type="button" class="maia-alert-btn" onclick="maiaDownloadModel()">
+          ↓ Download Maia3 (~44 MB) — one time
+        </button>
+      </div>
     </div>
 
     <!-- Clear / Hide / Peek / Show all read as one family. The last three do

@@ -1827,6 +1827,9 @@ window.addEventListener('message', function(e) {
   // Draw behaviour + stalemate seeking (desperation)
   botAcceptDraws      = !!cfg.acceptDraws;
   botDrawAcceptMargin = (cfg.drawAcceptMarginCp != null) ? +cfg.drawAcceptMarginCp : 50;
+  // A bot built in the panel judges draws at its own strength unless it says
+  // otherwise, so loading one clears the quick-start override.
+  botDrawUseObjectiveEval = !!cfg.drawUseObjectiveEval;
   botOfferDraws       = !!cfg.offerDraws;
   botOfferDrawThresh  = (cfg.offerDrawThreshCp  != null) ? +cfg.offerDrawThreshCp  : 50;
   botOfferDrawMove    = (cfg.offerDrawFromMove  != null) ? +cfg.offerDrawFromMove  : 20;
