@@ -1,5 +1,7 @@
 function botSetTab(tab) {
   botTab = tab;
+  // The quick-start block names the bot it will start; a tab change renames it.
+  setTimeout(function(){ if (typeof quickBotSync === 'function') quickBotSync(); }, 0);
   ['sf','maia3','maia','lcsf','hybrid'].forEach(t => {
     var btn   = document.getElementById('btab-'+t);
     var panel = document.getElementById('bpanel-'+t);
@@ -966,7 +968,7 @@ async function botStart() {
   const sideBtn  = document.getElementById('botSidebarBtn');
   if (startBtn) startBtn.textContent = '↺ Restart Bot Game';
   if (stopBtn)  stopBtn.style.display = '';
-  if (sideBtn)  { sideBtn.textContent = '🤖 Bot Active'; sideBtn.style.borderColor = '#22a85a'; }
+  if (sideBtn)  { sideBtn.style.borderColor = '#22a85a'; }
   var bsEl = document.getElementById('botStatus');
   if (bsEl) bsEl.textContent = 'You play ' + (pc === 'white' ? 'White ♔' : 'Black ♚') +
     (botSelectedTC !== 'untimed' ? ' · ' + botSelectedTC : '');
@@ -1026,7 +1028,7 @@ function botStop() {
   const sideBtn  = document.getElementById('botSidebarBtn');
   if (startBtn) startBtn.textContent = '▶ Start Game vs Bot';
   if (stopBtn)  stopBtn.style.display = 'none';
-  if (sideBtn)  { sideBtn.textContent = '🤖 vs Bot'; sideBtn.style.borderColor = 'rgba(90,212,144,0.4)'; }
+  if (sideBtn)  { sideBtn.style.borderColor = ''; }
   document.getElementById('botStatus').textContent = '';
   // Hide the Resign/Draw row shown for bot games (MP manages it separately)
   var _gaEl2 = document.getElementById('gameActions');
@@ -2088,7 +2090,7 @@ function bmSessionRestore() {
       const sideBtn  = document.getElementById('botSidebarBtn');
       if (startBtn) startBtn.textContent = '↺ Restart Bot Game';
       if (stopBtn)  stopBtn.style.display = '';
-      if (sideBtn)  { sideBtn.textContent = '🤖 Bot Active'; sideBtn.style.borderColor = '#22a85a'; }
+      if (sideBtn)  { sideBtn.style.borderColor = '#22a85a'; }
     }
 
     updatePlayerBoxes();

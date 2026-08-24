@@ -1233,8 +1233,10 @@ const TOURS = {
       body:'Play a bot, challenge a friend online, or just explore. You can click any button here right now — or keep touring.' },
     { sel:'#commitModeChip', title:'How your moves get played',
       body:'This chip sits with your clock and switches how a move is committed. <b>✋ Release to move</b> plays the move the moment you let go. <b>👆 Tap to confirm</b> instead <i>parks</i> the piece on the square with every overlay live, so you can take your finger off the board, read what the move actually does, and only then tap again to play it — or tap a different square to change your mind. On a phone your finger covers the very squares you moved there to read, so this is the difference between seeing the answer and guessing. Tap the chip to switch, even mid-game.' },
-    { sel:'#botSidebarBtn', title:'Play vs Bots',
-      body:'Build a custom opponent: pick an engine and rating, give it a personality, custom controls, an opening repertoire, and time-pressure behaviour.' },
+    { sel:'#quickBot', title:'Start a game',
+      body:'The fastest way in: this starts a game against the bot it names. Change the opponent with the dropdown beside it — Stockfish 1 is the gentlest, 20 the strongest — or pick <b>Custom</b> to build your own in the Bot Builder.' },
+    { sel:'#botSidebarBtn', title:'Bot Builder',
+      body:'Build a custom opponent: pick an engine and rating, give it a personality, custom controls, an opening repertoire, and time-pressure behaviour. Whatever you build here becomes the bot the Start button plays.' },
     { sel:'.ind-grid', title:'Board-vision indicators', indSection:true,
       body:'These overlays draw what a stronger player sees — threats, pins, forks and more. We’ll light each one up on a sample position so you can see exactly what it does.' },
     { sel:'#ib-threats', title:'Three ways to show an indicator', indSection:true, modes:'threats',
@@ -3214,6 +3216,75 @@ function peekUp(){
   const btn=document.getElementById('btnPeek');
   if(btn){btn.style.borderColor='';btn.style.color='';}
   ibRefreshAll(); indApply();
+}
+
+// ── Quick start vs bot ───────────────────────────────────────────
+// Starting a game used to mean opening the builder, reading five engine tabs
+// and finding the Start button inside. Most visitors want one opponent, once,
+// and a level they can nudge. This is that: the button starts, the select
+// chooses, and Custom hands off to the builder for everyone who wants more.
+//
+// The select does not hold the state — botTab and the builder's own #sfLevel
+// slider do. This reads them, so a bot made in the builder shows up here
+// correctly instead of the two disagreeing.
+const QUICK_SF_MIN = 1, QUICK_SF_MAX = 20, QUICK_SF_DEFAULT = 1;
+
+function quickBotFillLevels(){
+  const g = document.getElementById('quickBotLevels');
+  if(!g || g.children.length) return;
+  for(let i = QUICK_SF_MIN; i <= QUICK_SF_MAX; i++){
+    const o = document.createElement('option');
+    o.value = String(i);
+    o.textContent = 'Stockfish ' + i;
+    g.appendChild(o);
+  }
+}
+
+// Paint the block from whatever the bot config currently is.
+function quickBotSync(){
+  const sel  = document.getElementById('quickBotSel');
+  const name = document.getElementById('quickBotName');
+  if(!sel) return;
+  quickBotFillLevels();
+  const lvlEl = document.getElementById('sfLevel');
+  const lvl = lvlEl ? (parseInt(lvlEl.value, 10) || QUICK_SF_DEFAULT) : QUICK_SF_DEFAULT;
+  // Plain Stockfish at a level the select can express is the only case the
+  // select can represent; anything built in the builder reads as Custom.
+  const plainSf = (typeof botTab === 'undefined' || botTab === 'sf') &&
+                  lvl >= QUICK_SF_MIN && lvl <= QUICK_SF_MAX;
+  sel.value = plainSf ? String(lvl) : 'custom';
+  if(name){
+    let n = '';
+    try{ n = (typeof botGenerateName === 'function') ? botGenerateName() : ''; }catch(e){}
+    name.textContent = n || ('Stockfish ' + lvl);
+  }
+}
+
+function quickBotPick(v){
+  if(v === 'custom'){
+    // The select is a view, not the value: put it back and let the builder be
+    // the thing that decides. Reopening it on every change would be a trap.
+    quickBotSync();
+    if(typeof openBotModal === 'function') openBotModal();
+    return;
+  }
+  const lvl = Math.max(QUICK_SF_MIN, Math.min(QUICK_SF_MAX, parseInt(v, 10) || QUICK_SF_DEFAULT));
+  if(typeof botSetTab === 'function') botSetTab('sf');
+  const lvlEl = document.getElementById('sfLevel');
+  if(lvlEl){
+    lvlEl.value = lvl;
+    const out = document.getElementById('sfLevelVal');
+    if(out) out.textContent = lvl;
+  }
+  // A level chosen here replaces any custom name the builder was carrying,
+  // otherwise the block would announce "Panicky Hybrid Bot" and start SF 3.
+  const nameEl = document.getElementById('botNameInput');
+  if(nameEl) nameEl.value = '';
+  quickBotSync();
+}
+
+function quickBotStart(){
+  if(typeof botStart === 'function') botStart();
 }
 
 // ── Ghost replies toggle — button and selector are one value ─────────────

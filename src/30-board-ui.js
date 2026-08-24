@@ -1715,58 +1715,76 @@ function updateGameStartBtns() {
   });
 }
 
-function updateActionBtn() {
-  updateGameStartBtns();
-  const btn = document.getElementById('resignBtn');
-  if (!btn) return;
-  // Explore is offered whenever a game just ended — drop into solo explore
-  // mode on the final position instead of resetting for a rematch.
-  const exploreBtn = document.getElementById('exploreBtn');
-  if (exploreBtn) exploreBtn.style.display = gameOver ? '' : 'none';
-  // Review: step back through the finished game and restart play anywhere
-  const reviewBtn = document.getElementById('reviewBtn');
-  if (reviewBtn) reviewBtn.style.display =
-    (gameOver && typeof gameMovesAlgebraic !== 'undefined' &&
-     gameMovesAlgebraic.length > 0 && !inReplay) ? '' : 'none';
+// One row, five buttons. While a game is live it carries Offer draw and
+// Resign; the moment the game ends the SAME row carries Rematch and Review,
+// because that is where the player's eyes already are. Nothing moves — only
+// which of the five is on screen changes.
+//
+// Training Tips used to share this slot and is now a permanent button on the
+// floor, so this control has one job and can simply hide when idle.
+function syncActionRow() {
+  const ga      = document.getElementById('gameActions');
+  const drawBtn = document.querySelector('#gameActions .draw-btn');
+  const resBtn  = document.querySelector('#gameActions .resign-btn');
+  const btn     = document.getElementById('resignBtn');
+  const review  = document.getElementById('reviewBtn');
+  const explore = document.getElementById('exploreBtn');
+  if (!ga || !btn) return;
+
+  const inGame  = _gameInProgress();
+  const isSolo  = !(typeof botActive !== 'undefined' && botActive) &&
+                  !(typeof mpRoomId !== 'undefined' && mpRoomId &&
+                    typeof mpMode !== 'undefined' && mpMode === 'ingame');
+  const canReview = gameOver && typeof gameMovesAlgebraic !== 'undefined' &&
+                    gameMovesAlgebraic.length > 0 && !inReplay;
+
+  const show = (el, on) => { if (el) el.style.display = on ? '' : 'none'; };
+
   if (gameOver) {
-    btn.textContent = '↺ Rematch?';
-    btn.className = 'ctrl-btn';
-    btn.style.borderColor = 'var(--accent)'; btn.style.color = 'var(--accent)';
+    show(drawBtn, false); show(resBtn, false);
+    btn.textContent = '\u21ba Rematch?';
+    btn.className = 'gbtn rematch-btn';
     btn.onclick = () => {
       if (typeof mpRoomId !== 'undefined' && mpRoomId) mpOfferRematch();
       else if (typeof botActive !== 'undefined' && botActive) botStart();
       else resetGame();
     };
-  } else if (_gameInProgress()) {
-    const _isSolo = !(typeof botActive !== 'undefined' && botActive) &&
-                    !(typeof mpRoomId !== 'undefined' && mpRoomId &&
-                      typeof mpMode !== 'undefined' && mpMode === 'ingame');
-    if (_isSolo) {
-      btn.textContent = '↺ Reset';
-      btn.className = 'ctrl-btn';
-      btn.style.borderColor = ''; btn.style.color = '';
-      btn.onclick = resetGame;
-    } else if (_resignRowVisible()) {
-      // #gameActions carries Resign — with Offer draw beside it — for exactly
-      // these games, so this slot was drawing a SECOND Resign one row below
-      // the first. Hand the slot back to the tips it holds when idle; a phone
-      // gets a 44px row back and nobody has to pick between two Resigns.
-      btn.textContent = '🎯 Training Tips';
-      btn.className = 'ctrl-btn util-btn';
-      btn.style.borderColor = ''; btn.style.color = '';
-      btn.onclick = () => openHelp('howto');
-    } else {
-      btn.textContent = '⚑ Resign';
-      btn.className = 'ctrl-btn reset-btn';
-      btn.style.borderColor = ''; btn.style.color = '';
-      btn.onclick = resignOrReset;
-    }
+    show(btn, true);
+    show(review, canReview);
+    show(explore, true);
+  } else if (inGame && isSolo) {
+    // Solo exploration: nothing to resign, but a reset is worth reaching for.
+    show(drawBtn, false); show(resBtn, false);
+    btn.textContent = '\u21ba Reset';
+    btn.className = 'gbtn';
+    btn.onclick = resetGame;
+    show(btn, true);
+    show(review, false); show(explore, false);
+  } else if (inGame) {
+    // Bot or online game running: Draw and Resign own the row.
+    show(drawBtn, true); show(resBtn, true);
+    show(btn, false); show(review, false); show(explore, false);
   } else {
-    btn.textContent = '🎯 Training Tips';
-    btn.className = 'ctrl-btn util-btn';
-    btn.style.borderColor = ''; btn.style.color = '';
-    btn.onclick = () => openHelp('howto');
+    // Idle. Draw and Resign have to be hidden explicitly: something upstream
+    // sets the row to display:flex on load, and leaving these two alone meant
+    // an empty board offered you a resignation.
+    show(drawBtn, false); show(resBtn, false);
+    show(btn, false); show(review, false); show(explore, false);
   }
+
+  // The row exists only when it has something in it. Any visible child keeps
+  // it up; none, and it collapses so the floor does not carry a dead gap.
+  const any = [drawBtn, resBtn, btn, review, explore]
+    .some(el => el && el.style.display !== 'none');
+  ga.style.display = any ? 'flex' : 'none';
+}
+
+function updateActionBtn() {
+  updateGameStartBtns();
+  syncActionRow();
+  // The quick-start block names the bot it will start, so it has to follow any
+  // change the builder made while this was last off screen.
+  if (typeof quickBotSync === 'function') quickBotSync();
 }
 
 // Legacy entry point — many callers still announce game end through this.
@@ -2778,6 +2796,9 @@ loadPrefs();
 loadSoundPref();
 loadBoardSettingsPref();
 if(typeof ghostSyncUI === "function") ghostSyncUI();
+// Stockfish 1 is where a first visit should start: the quick block applies it
+// rather than inheriting the builder's own default of 8.
+if(typeof quickBotPick === "function") quickBotPick(String(QUICK_SF_DEFAULT));
 loadPos(0);
 resizeBoard();
 
