@@ -1272,29 +1272,36 @@ canvas{
    block: the button carries the action and names the opponent it will start,
    the select changes that opponent without opening anything. Custom hands off
    to the builder, which is where a real bot gets made. */
+/* Stacked, not side by side: the launch action is the single most important
+   control in the column, so it gets a full-width row of its own and the two
+   things that qualify it — which bot, which colour — sit under it as one row
+   of settings. The old shape gave the button 1.45fr of a shared row and the
+   name a 9px subtitle, which read as a label rather than a call to action. */
 .quick-bot{
-  display:flex;align-items:stretch;gap:0;width:100%;flex-shrink:0;
+  display:flex;flex-direction:column;align-items:stretch;gap:0;
+  width:100%;flex-shrink:0;
   border:1.5px solid #4aab74;border-radius:6px;overflow:hidden;
-  background:rgba(90,212,144,0.16);margin-bottom:2px;
+  background:rgba(90,212,144,0.16);
+  /* Separates the launch block from the visualization controls under it —
+     they are different kinds of thing and were reading as one stack. */
+  margin-bottom:11px;
 }
 .qb-go{
-  flex:1.45;min-width:0;display:flex;flex-direction:column;justify-content:center;
-  gap:1px;padding:5px 8px;border:0;background:transparent;color:#1d6b41;
-  font-family:inherit;cursor:pointer;text-align:left;
+  width:100%;display:flex;align-items:center;justify-content:center;
+  padding:9px 8px;border:0;background:transparent;color:#1d6b41;
+  font-family:inherit;cursor:pointer;text-align:center;
   -webkit-tap-highlight-color:transparent;
 }
 .qb-go:hover{background:rgba(90,212,144,0.22);}
 .qb-go:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
-.qb-t1{font-size:12px;font-weight:700;line-height:1.15;white-space:nowrap;}
-.qb-t2{
-  font-size:9px;font-weight:600;line-height:1.2;color:#2f7a52;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-}
+.qb-t1{font-size:15px;font-weight:700;line-height:1.15;white-space:nowrap;}
+.qb-row{display:flex;align-items:stretch;border-top:1px solid rgba(74,171,116,0.55);}
 .qb-sel{
-  flex:1;min-width:0;border:0;border-left:1px solid rgba(74,171,116,0.55);
-  border-radius:0;background:transparent;color:#1d6b41;
-  font-family:inherit;font-size:10px;font-weight:600;padding:2px 3px;cursor:pointer;
+  flex:1;min-width:0;border:0;border-radius:0;
+  background:transparent;color:#1d6b41;
+  font-family:inherit;font-size:11px;font-weight:600;padding:4px 3px;cursor:pointer;
 }
+.qb-row .qb-sel + .qb-sel{border-left:1px solid rgba(74,171,116,0.55);}
 .qb-sel:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
 
 /* ── Indicator state key ────────────────────────────────────────────────────
@@ -1352,12 +1359,12 @@ canvas{
    button beside a dropdown read as two unrelated things sharing a row. The
    whole block tints when ghosts are on, exactly like an overlay button. */
 .ghost-one{
-  /* Stacked, not side by side. .ib sets flex-direction:column and that turns
-     out to be the right shape here: the name reads as the button and the depth
-     sits under it as that button's setting, which is what "one control" should
-     look like. Side by side left the select too narrow to read its own options.
+  /* One line, side by side. This is an optional extra rather than a core
+     overlay, so it should occupy one row like every other indicator and not
+     two — the stacked shape gave it the visual weight of a section. The depth
+     select is legible at this width now that the label beside it is short.
      Stated explicitly so it survives any change to .ib. */
-  display:flex;flex-direction:column;align-items:stretch;
+  display:flex;flex-direction:row;align-items:stretch;
   width:100%;margin-top:3px;flex-shrink:0;
   border:0.5px solid var(--border2);border-radius:4px;overflow:hidden;
   background:var(--bg-panel2);
@@ -1497,14 +1504,16 @@ canvas{
   #bs-open .bs-ico{font-size:13px;}
 }
 
-/* Tier 2 — the quick-start block loses its second line (the select beside it
-   already names the same bot), and the state key loses its heading, since the
-   three chips are self-describing once you have read them once. */
+/* Tier 2 — the quick-start button gives back its generous padding and a
+   little of its size (it stays the largest thing in the column either way),
+   and the state key loses its heading, since the three chips are
+   self-describing once you have read them once. */
 @media (max-height:640px){
   #sidebar{--ib-h:25px;--util-h:24px;--play-h:27px;--sec-h:23px;}
-  .quick-bot .qb-t2{display:none;}
-  .quick-bot .qb-go{padding:4px 8px;}
-  .quick-bot .qb-t1{font-size:11.5px;}
+  .quick-bot{margin-bottom:7px;}
+  .quick-bot .qb-go{padding:5px 8px;}
+  .quick-bot .qb-t1{font-size:13px;}
+  .qb-row .qb-sel{font-size:10px;padding:3px 3px;}
   .ind-key{padding:3px 5px;gap:2px;}
   .ind-key-t{display:none;}
   .ind-key-row span{font-size:8.5px;padding:2px 1px;}
@@ -2614,19 +2623,19 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div class="quick-bot" id="quickBot">
       <button type="button" class="qb-go" id="quickStartBtn" onclick="quickBotStart()">
         <span class="qb-t1">▶ Start Game vs Bot</span>
-        <span class="qb-t2" id="quickBotName">Stockfish 1</span>
       </button>
-      <select class="qb-sel" id="quickBotSel" onchange="quickBotPick(this.value)"
-              aria-label="Choose the opponent">
-        <optgroup label="Stockfish level" id="quickBotLevels"></optgroup>
-        <option value="custom">Custom…</option>
-      </select>
-    </div>
-
-    <div class="ind-key">
-      <div class="ind-key-t">Tap to cycle · hold to peek</div>
-      <div class="ind-key-row">
-        <span>Off</span><span class="k-exp">While exploring</span><span class="k-on">Always on</span>
+      <div class="qb-row">
+        <select class="qb-sel" id="quickBotSel" onchange="quickBotPick(this.value)"
+                aria-label="Choose the opponent">
+          <optgroup label="Stockfish level" id="quickBotLevels"></optgroup>
+          <option value="builder">Open Bot-Builder…</option>
+        </select>
+        <select class="qb-sel" id="quickBotColor" onchange="botSetPlayerColor(this.value)"
+                aria-label="Choose which colour you play">
+          <option value="random">Play as Random</option>
+          <option value="white">Play as White</option>
+          <option value="black">Play as Black</option>
+        </select>
       </div>
     </div>
 
@@ -2659,6 +2668,17 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('pins',event)">?</span>
           </button>
         </div>
+    </div>
+
+    <!-- The state key sits UNDER the group it describes, not above it. Above
+         the core four it read as their heading; here it reads as the legend
+         for the buttons you have just met, and it is the last thing before
+         the second layer folds away. -->
+    <div class="ind-key">
+      <div class="ind-key-t">Tap to cycle · hold to peek</div>
+      <div class="ind-key-row">
+        <span>Off</span><span class="k-exp">While exploring</span><span class="k-on">Always on</span>
+      </div>
     </div>
 
     <!-- Everything below is the second layer: preferences, the nine further
@@ -2758,9 +2778,9 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
           <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('ghostresponses',event)">?</span>
         </button>
       <select id="soloGhostDepth" onchange="ghostModeChanged()" aria-label="Ghost reply engine and depth">
-        <option value="0">Off</option>
+        <option value="0" selected>Off</option>
         <option value="4">SF Fast (depth 4)</option>
-        <option value="8" selected>SF Medium (depth 8)</option>
+        <option value="8">SF Medium (depth 8)</option>
         <option value="12">SF Deep (depth 12)</option>
         <option value="maia">Maia (2600 + 1500)</option>
       </select>
@@ -3752,7 +3772,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="s-row">
         <span class="s-lbl">🔊 Move sounds:</span>
         <span class="s-spacer"></span>
-        <label><input type="checkbox" id="cbSound" onchange="saveSoundPref()"> On</label>
+        <label><input type="checkbox" id="cbSound" onchange="saveSoundPref()" checked> On</label>
       </div>
       <div class="s-row">
         <span class="s-lbl">Show legal moves:</span>
@@ -3770,7 +3790,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="s-row">
         <span class="s-lbl">Batteries in threat counts:<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('batteriessetting',event)" style="margin-left:4px;">?</span></span>
         <span class="s-spacer"></span>
-        <label><input type="checkbox" id="cbBattery" onchange="rebuildAtk()"> On</label>
+        <label><input type="checkbox" id="cbBattery" onchange="rebuildAtk()" checked> On</label>
       </div>
       <div class="s-row">
         <span class="s-lbl">Include queen pins:<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('queenpinssetting',event)" style="margin-left:4px;">?</span></span>

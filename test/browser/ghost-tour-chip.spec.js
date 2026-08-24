@@ -190,10 +190,22 @@ describe('ghost delay, tour launch, chip placement', { concurrency: 1 }, () => {
     await page.evaluate(() => endTour());
   });
 
+  // Ghost replies default to OFF, so anything exercising ghost mechanics has
+  // to turn them on first. Driving the select (not an internal flag) keeps the
+  // tests going through the same path a user does.
+  async function enableGhosts(depth = '8') {
+    await page.evaluate((d) => {
+      const sel = document.getElementById('soloGhostDepth');
+      sel.value = d;
+      ghostSyncUI();
+    }, depth);
+  }
+
   // ── Ghost delay ───────────────────────────────────────────────────────────
   test('ghost replies wait before drawing, so indicators can be read first', async () => {
     await load();
     await H.dismissLanding(page);
+    await enableGhosts();
     assert.strictEqual(await page.evaluate(() => GHOST_DELAY_MS), 1500,
       'the delay should be 1.5s');
 
@@ -239,6 +251,7 @@ describe('ghost delay, tour launch, chip placement', { concurrency: 1 }, () => {
     // Parking releases both dragFrom and selSq while the preview stays live, so
     // the ghost hook has to fall back to the preview origin or the ghosts died
     // the moment the piece was placed.
+    await enableGhosts();
     await page.evaluate(() => setCommitMode('confirm'));
     const kept = await page.evaluate(() => {
       selSq = -1; dragFrom = -1;

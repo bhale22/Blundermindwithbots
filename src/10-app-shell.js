@@ -13,6 +13,13 @@ let mpStartSans     = [];
 // These let variables must be declared before loadPos()/render() runs at startup.
 let botActive = false;
 let botPlayerColor = 'white';
+// The PREFERENCE, which is the only place 'random' is allowed to live.
+// botPlayerColor itself stays a concrete colour at all times, because
+// everything downstream of it — board flip, clocks, ghost gating, SAN sides —
+// reads it directly and has no meaning for 'random'. botStart() re-rolls from
+// this, so Random is random every game rather than once when the menu was
+// last touched (which is what the old resolve-on-click behaviour gave).
+let botColorPref = 'random';
 let botTab = 'sf';
 let botTimePressure = 'steady';
 let botSelectedTC = 'untimed';
@@ -3310,25 +3317,45 @@ function quickBotFillLevels(){
 // Paint the block from whatever the bot config currently is.
 function quickBotSync(){
   const sel  = document.getElementById('quickBotSel');
-  const name = document.getElementById('quickBotName');
   if(!sel) return;
   quickBotFillLevels();
   const lvlEl = document.getElementById('sfLevel');
   const lvl = lvlEl ? (parseInt(lvlEl.value, 10) || QUICK_SF_DEFAULT) : QUICK_SF_DEFAULT;
   // Plain Stockfish at a level the select can express is the only case the
-  // select can represent; anything built in the builder reads as Custom.
+  // select can state directly.
   const plainSf = (typeof botTab === 'undefined' || botTab === 'sf') &&
                   QUICK_SF_LEVELS.includes(lvl);
-  sel.value = plainSf ? String(lvl) : 'custom';
-  if(name){
+  const CUR = '__current';
+  if(plainSf){
+    const old = sel.querySelector('option[value="'+CUR+'"]');
+    if(old) old.remove();
+    sel.value = String(lvl);
+  } else {
+    // A bot built in the panel has no level to sit on. Give it its own option
+    // carrying its name — otherwise the select would rest on "Open
+    // Bot-Builder…", which names an action rather than the opponent, and
+    // would misreport what pressing Start is about to play.
     let n = '';
     try{ n = (typeof botGenerateName === 'function') ? botGenerateName() : ''; }catch(e){}
-    name.textContent = n || ('Stockfish ' + lvl);
+    let cur = sel.querySelector('option[value="'+CUR+'"]');
+    if(!cur){
+      cur = document.createElement('option');
+      cur.value = CUR;
+      sel.insertBefore(cur, sel.firstChild);
+    }
+    cur.textContent = n || 'Custom bot';
+    sel.value = CUR;
+  }
+  const csel = document.getElementById('quickBotColor');
+  if(csel && typeof botColorPref !== 'undefined' && csel.value !== botColorPref){
+    csel.value = botColorPref;
   }
 }
 
 function quickBotPick(v){
-  if(v === 'custom'){
+  // Re-selecting the bot already loaded is a no-op, not a reason to rebuild it.
+  if(v === '__current'){ quickBotSync(); return; }
+  if(v === 'builder'){
     // The select is a view, not the value: put it back and let the builder be
     // the thing that decides. Reopening it on every change would be a trap.
     quickBotSync();

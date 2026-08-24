@@ -616,10 +616,18 @@ function botSetTimeBehavior(val) {
 }
 
 function botSetPlayerColor(col) {
-  botPlayerColor = col === 'random' ? (Math.random() < 0.5 ? 'white' : 'black') : col;
+  if (!['white','black','random'].includes(col)) col = 'random';
+  botColorPref = col;
+  // Keep botPlayerColor concrete even while the preference says random, so
+  // anything that reads it before a game starts still gets a real colour.
+  // botStart() does the authoritative roll.
+  if (col !== 'random') botPlayerColor = col;
   ['white','black','random'].forEach(v => {
-    document.getElementById('pcolor-'+v).classList.toggle('active', v === col);
+    const el = document.getElementById('pcolor-'+v);
+    if (el) el.classList.toggle('active', v === col);
   });
+  const sel = document.getElementById('quickBotColor');
+  if (sel && sel.value !== col) sel.value = col;
 }
 
 // Hybrid slot management
@@ -883,7 +891,7 @@ async function botStart() {
   // Apply player color FIRST so boardFlipped is correct before resetGame renders.
   // Always resolve 'random' here and write it back so all downstream code that
   // reads botPlayerColor (botClockMs, botPostMoveHook, playerColor, etc.) is consistent.
-  let pc = botPlayerColor;
+  let pc = (typeof botColorPref !== 'undefined') ? botColorPref : botPlayerColor;
   if (pc === 'random') pc = Math.random() < 0.5 ? 'white' : 'black';
   botPlayerColor = pc;
   boardFlipped = (pc === 'black');
