@@ -231,7 +231,14 @@ canvas{
 .ib{display:flex;flex-direction:column;gap:0px;user-select:none;width:100%;}
 .ib-main{
   padding:4px 7px;display:flex;align-items:center;gap:6px;
-  font-size:11px;font-weight:400;color:var(--text-dim);
+  /* 13px, up from 11: dropping the icon slot returned 8px of chip plus its 6px
+     gap, and the label is the only thing in this row that carries meaning, so
+     it gets the space. 13 is the measured ceiling, not a guess — with every
+     button forced into its bold "on" state (the state that used to push a name
+     into an ellipsis) the tightest label, "Threats & capt.", keeps 7.9px of
+     headroom at 13px but only 1.1px at 14px, which would not survive a
+     different font fallback. */
+  font-size:13px;font-weight:400;color:var(--text-dim);
   cursor:pointer;background:var(--bg-panel2);
   border-radius:4px;border:0.5px solid var(--border2);
   /* A FIXED height, not a floor. The box must not resize when the indicator
@@ -251,13 +258,15 @@ canvas{
    still feels like it landed. */
 .ib-main:active{background:var(--bg-panel);}
 
-/* Fixed-width icon slot. Every label starts at the same x whether the indicator
-   carries one dot or a stacked pair, which is the whole point of stacking the
-   paired ones rather than setting them side by side. */
-.ib-icon{
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:2px;width:8px;flex:0 0 8px;
-}
+/* The coloured dots that used to sit here are gone. They read as a legend
+   mapping a button to its overlay colour, and they were not one: "My forks"
+   carried a static yellow chip while the fork overlay actually renders green
+   or orange depending on whose turn it is, plus blue or amber for a contested
+   fork — and the pins chip's purple appears nowhere in the board rendering at
+   all. No single swatch CAN stand for those, because the board colour is
+   dynamic and encodes turn and safety. A cue that looks like a key but is not
+   one costs a lookup and returns nothing, so the label carries the meaning
+   alone now — and the 14px the slot gave back pays for the larger type.  */
 
 /* The label is the only element allowed to give ground. Everything else is
    flex:0 0 auto, so a long name truncates with an ellipsis instead of shoving
@@ -338,24 +347,6 @@ canvas{
 .maia-alert-btn:disabled{opacity:0.55;cursor:default;}
 .maia-alert-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
 
-/* Color dot in button */
-.ib-dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0;}
-/* Redundant coding. Thirteen overlays separated by colour alone is a
-   paired-associate memory task stacked on top of the chess task, and it fails
-   outright for red-green colour deficiency. Shape now carries the family too,
-   so the grouping survives with no colour at all. Applied by indicator id so
-   the markup stays untouched and the whole mapping is legible in one place:
-     circle   attack / defence counts   triangle-up   forks
-     diamond  line motifs (pin, x-ray)  triangle-down discovered attacks
-     square   square / piece weakness                                        */
-#ib-pins .ib-dot, #ib-xray .ib-dot{ border-radius:1px; transform:rotate(45deg); }
-#ib-forksw .ib-dot, #ib-forksb .ib-dot{
-  border-radius:0; clip-path:polygon(50% 0, 100% 100%, 0 100%); }
-#ib-discoveredself .ib-dot, #ib-discoveredopp .ib-dot{
-  border-radius:0; clip-path:polygon(0 0, 100% 0, 50% 100%); }
-#ib-unprotected .ib-dot, #ib-overloaded .ib-dot{ border-radius:1px; }
-/* (#ib-weakw / #ib-weakb already carry .ib-sq — a square by construction.) */
-.ib-sq{width:7px;height:7px;border-radius:1px;background:#b0c8e0;opacity:0.4;display:inline-block;flex-shrink:0;}
 /* Question mark help trigger */
 .ib-help{
   /* The label flexes to fill, so there is no free space for margin-left:auto to
@@ -2646,25 +2637,25 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div class="ind-grid">
       <div class="ib" id="ib-threats">
           <button class="ib-main" onmousedown="ibMainDown('threats',event)" onmouseup="ibMainUp('threats')" onmouseleave="ibMainCancel('threats')" ontouchstart="ibMainDown('threats',event)" ontouchend="ibMainUp('threats')" ontouchcancel="ibMainCancel('threats')">
-            <span class="ib-icon"><span class="ib-dot ib-dot2" style="background:#e03535;"></span><span class="ib-dot ib-dot2" style="background:#1eb446;"></span></span><span class="ib-lbl">Threats &amp; capt.</span>
+            <span class="ib-lbl">Threats &amp; capt.</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('threats',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-counts">
           <button class="ib-main" onmousedown="ibMainDown('counts',event)" onmouseup="ibMainUp('counts')" onmouseleave="ibMainCancel('counts')" ontouchstart="ibMainDown('counts',event)" ontouchend="ibMainUp('counts')" ontouchcancel="ibMainCancel('counts')">
-            <span class="ib-icon"><span class="ib-dot ib-dot2" style="background:#22a85a;"></span><span class="ib-dot ib-dot2" style="background:#e03535;"></span></span><span class="ib-lbl">Threat/def.</span>
+            <span class="ib-lbl">Threat/def.</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('counts',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-unprotected">
           <button class="ib-main" onmousedown="ibMainDown('unprotected',event)" onmouseup="ibMainUp('unprotected')" onmouseleave="ibMainCancel('unprotected')" ontouchstart="ibMainDown('unprotected',event)" ontouchend="ibMainUp('unprotected')" ontouchcancel="ibMainCancel('unprotected')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#e03535;"></span></span><span class="ib-lbl">Unprotected</span>
+            <span class="ib-lbl">Unprotected</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('unprotected',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-pins">
           <button class="ib-main" onmousedown="ibMainDown('pins',event)" onmouseup="ibMainUp('pins')" onmouseleave="ibMainCancel('pins')" ontouchstart="ibMainDown('pins',event)" ontouchend="ibMainUp('pins')" ontouchcancel="ibMainCancel('pins')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#9b59b6;"></span></span><span class="ib-lbl">Pins</span>
+            <span class="ib-lbl">Pins</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('pins',event)">?</span>
           </button>
         </div>
@@ -2703,55 +2694,55 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div class="ind-grid">
       <div class="ib ib-span" id="ib-checkthreats">
           <button class="ib-main" onmousedown="ibMainDown('checkthreats',event)" onmouseup="ibMainUp('checkthreats')" onmouseleave="ibMainCancel('checkthreats')" ontouchstart="ibMainDown('checkthreats',event)" ontouchend="ibMainUp('checkthreats')" ontouchcancel="ibMainCancel('checkthreats')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#e03535;"></span></span><span class="ib-lbl">Check threats</span>
+            <span class="ib-lbl">Check threats</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('checkthreats',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-forksw">
           <button class="ib-main" onmousedown="ibMainDown('forksw',event)" onmouseup="ibMainUp('forksw')" onmouseleave="ibMainCancel('forksw')" ontouchstart="ibMainDown('forksw',event)" ontouchend="ibMainUp('forksw')" ontouchcancel="ibMainCancel('forksw')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#f0c040;"></span></span><span class="ib-lbl">My forks</span>
+            <span class="ib-lbl">My forks</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksw',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-forksb">
           <button class="ib-main" onmousedown="ibMainDown('forksb',event)" onmouseup="ibMainUp('forksb')" onmouseleave="ibMainCancel('forksb')" ontouchstart="ibMainDown('forksb',event)" ontouchend="ibMainUp('forksb')" ontouchcancel="ibMainCancel('forksb')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#e040c0;"></span></span><span class="ib-lbl">Opp. forks</span>
+            <span class="ib-lbl">Opp. forks</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksb',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-discoveredself">
           <button class="ib-main" onmousedown="ibMainDown('discoveredself',event)" onmouseup="ibMainUp('discoveredself')" onmouseleave="ibMainCancel('discoveredself')" ontouchstart="ibMainDown('discoveredself',event)" ontouchend="ibMainUp('discoveredself')" ontouchcancel="ibMainCancel('discoveredself')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#a050dc;"></span></span><span class="ib-lbl">My disc.</span>
+            <span class="ib-lbl">My disc.</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredself',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-discoveredopp">
           <button class="ib-main" onmousedown="ibMainDown('discoveredopp',event)" onmouseup="ibMainUp('discoveredopp')" onmouseleave="ibMainCancel('discoveredopp')" ontouchstart="ibMainDown('discoveredopp',event)" ontouchend="ibMainUp('discoveredopp')" ontouchcancel="ibMainCancel('discoveredopp')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#dc8200;"></span></span><span class="ib-lbl">Opp. disc.</span>
+            <span class="ib-lbl">Opp. disc.</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredopp',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-xray">
           <button class="ib-main" onmousedown="ibMainDown('xray',event)" onmouseup="ibMainUp('xray')" onmouseleave="ibMainCancel('xray')" ontouchstart="ibMainDown('xray',event)" ontouchend="ibMainUp('xray')" ontouchcancel="ibMainCancel('xray')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#8080ff;"></span></span><span class="ib-lbl">X-ray pressure</span>
+            <span class="ib-lbl">X-ray pressure</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('xray',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-overloaded">
           <button class="ib-main" onmousedown="ibMainDown('overloaded',event)" onmouseup="ibMainUp('overloaded')" onmouseleave="ibMainCancel('overloaded')" ontouchstart="ibMainDown('overloaded',event)" ontouchend="ibMainUp('overloaded')" ontouchcancel="ibMainCancel('overloaded')">
-            <span class="ib-icon"><span class="ib-dot" style="background:#c8a000;"></span></span><span class="ib-lbl">Overloaded</span>
+            <span class="ib-lbl">Overloaded</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('overloaded',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-weakb">
           <button class="ib-main" onmousedown="ibMainDown('weakb',event)" onmouseup="ibMainUp('weakb')" onmouseleave="ibMainCancel('weakb')" ontouchstart="ibMainDown('weakb',event)" ontouchend="ibMainUp('weakb')" ontouchcancel="ibMainCancel('weakb')">
-            <span class="ib-icon"><span class="ib-sq ib-sq-mine"></span></span><span class="ib-lbl">My weak sq.</span>
+            <span class="ib-lbl">My weak sq.</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakb',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-weakw">
           <button class="ib-main" onmousedown="ibMainDown('weakw',event)" onmouseup="ibMainUp('weakw')" onmouseleave="ibMainCancel('weakw')" ontouchstart="ibMainDown('weakw',event)" ontouchend="ibMainUp('weakw')" ontouchcancel="ibMainCancel('weakw')">
-            <span class="ib-icon"><span class="ib-sq ib-sq-theirs"></span></span><span class="ib-lbl">Opp. weak sq.</span>
+            <span class="ib-lbl">Opp. weak sq.</span>
             <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakw',event)">?</span>
           </button>
         </div>
@@ -2763,7 +2754,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
          are two views of one value; ghostToggle() keeps them in step. -->
     <div class="ib ghost-one" id="ib-ghost">
         <button class="ib-main" onclick="ghostToggle()">
-          <span class="ib-icon"><span class="ib-dot" style="background:#7a8fa8;"></span></span><span class="ib-lbl">👻 Ghost replies</span>
+          <span class="ib-lbl">👻 Ghost replies</span>
           <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('ghostresponses',event)">?</span>
         </button>
       <select id="soloGhostDepth" onchange="ghostModeChanged()" aria-label="Ghost reply engine and depth">
