@@ -777,12 +777,12 @@ let _alertDirectAtk = null;
 function syncGhostCanvas() {
   const mainCv = document.getElementById('cv');
   if (!ghostCv || !mainCv) return;
-  // IMPORTANT: assigning to canvas.width/height clears it even if value unchanged.
-  // Only resize when dimensions actually differ.
-  if (ghostCv.width  !== mainCv.width)  ghostCv.width  = mainCv.width;
-  if (ghostCv.height !== mainCv.height) ghostCv.height = mainCv.height;
-  const wStr = mainCv.style.width  || mainCv.width  + 'px';
-  const hStr = mainCv.style.height || mainCv.height + 'px';
+  // The backing store and transform for BOTH canvases are owned by
+  // syncBoardRaster() (10-app-shell.js) so the two can never disagree.
+  // Assigning ghostCv.width here as well would clear the ghost layer and
+  // silently drop its scale transform. Only the CSS size is mirrored here.
+  const wStr = mainCv.style.width  || BOARD_LOGICAL + 'px';
+  const hStr = mainCv.style.height || BOARD_LOGICAL + 'px';
   if (ghostCv.style.width  !== wStr) ghostCv.style.width  = wStr;
   if (ghostCv.style.height !== hStr) ghostCv.style.height = hStr;
 }

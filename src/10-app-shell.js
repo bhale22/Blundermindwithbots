@@ -146,6 +146,57 @@ let botUserTurnStartMs   = null; // wall-clock ms when the human's current turn 
 
 
 // ── Board sizing ──────────────────────────────────────────────────────
+// Every board drawing routine works in a fixed 480x480 LOGICAL space (SQ = 60),
+// and the pointer math in 30-board-ui.js maps CSS pixels back through the same
+// 480. syncBoardRaster() preserves that contract exactly: only the canvas
+// BACKING STORE grows, with a matching scale transform, so nothing that draws
+// or hit-tests has to change.
+//
+// Why: the canvas was pinned at 480x480 while CSS stretched it up to 900px, so
+// on a 718px board at dpr 2 the finished bitmap was resampled ~3x. That is
+// destructive for this piece set specifically -- Cburnett white pieces are a
+// white fill (1.29:1 against a light square) whose entire figure-ground
+// separation is a 1.5-unit outline stroke, i.e. 1.8px in logical space. The
+// upscale smeared the one feature carrying the shape.
+const BOARD_LOGICAL = 480;
+// Caps the backing store at ~16MB/canvas -- dpr is clamped to 2 because the
+// visible gain from 2->3 is small and the memory cost is 2.25x on phones.
+const BOARD_MAX_RASTER = 2048;
+
+function _applyCanvasRaster(canvasEl, cssPx) {
+  if (!canvasEl) return false;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const target = Math.min(BOARD_MAX_RASTER,
+                          Math.max(BOARD_LOGICAL, Math.round(cssPx * dpr)));
+  // Assigning width/height CLEARS the canvas and resets the transform, so only
+  // assign on a real change -- but re-apply the transform unconditionally,
+  // since any assignment anywhere would have dropped it.
+  let changed = false;
+  if (canvasEl.width !== target || canvasEl.height !== target) {
+    canvasEl.width = target; canvasEl.height = target; changed = true;
+  }
+  const c = canvasEl.getContext('2d');
+  if (c) {
+    const s = target / BOARD_LOGICAL;
+    c.setTransform(s, 0, 0, s, 0, 0);
+    c.imageSmoothingQuality = 'high';
+  }
+  return changed;
+}
+
+// Returns true when a backing store actually changed size -- callers must
+// re-render in that case, because the resize cleared the canvas.
+function syncBoardRaster() {
+  const cv = document.getElementById('cv');
+  if (!cv) return false;
+  const cssPx = parseFloat(cv.style.width)
+             || cv.getBoundingClientRect().width
+             || BOARD_LOGICAL;
+  const a = _applyCanvasRaster(cv, cssPx);
+  const b = _applyCanvasRaster(document.getElementById('ghostCanvas'), cssPx);
+  return a || b;
+}
+
 function resizeBoard() {
   const pageWrap = document.getElementById('page-wrap');
   const wrapW = pageWrap ? pageWrap.clientWidth : (window.innerWidth - 40);
@@ -198,6 +249,9 @@ function resizeBoard() {
   });
   document.documentElement.style.setProperty('--board-size', bpx);
 
+  // Match the raster to the new CSS size. This clears the canvas when it
+  // changes, so re-render -- resizeBoard() previously never had to.
+  if (syncBoardRaster() && typeof render === 'function') render();
 }
 window.addEventListener('resize', resizeBoard);
 

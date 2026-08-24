@@ -2537,7 +2537,10 @@ function _drawGhost(bd, fromSq, toSq, alpha, outlineColor) {
   var origAlpha = destAlpha * 0.4;
   var outline   = outlineColor || 'rgba(74,159,212,0.85)';
 
-  var SQ  = ghostCv.width / 8;
+  // Logical space, NOT ghostCv.width -- the backing store is now the device
+  // resolution (up to 2048) while the ghost context carries a matching scale
+  // transform, so deriving SQ from the raster would draw pieces ~3x oversized.
+  var SQ  = BOARD_LOGICAL / 8;
 
   function sqXY(sq) {
     var r = Math.floor(sq / 8), c = sq % 8;
