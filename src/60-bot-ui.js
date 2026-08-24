@@ -1,5 +1,7 @@
 function botSetTab(tab) {
   botTab = tab;
+  // The quick-start block names the bot it will start; a tab change renames it.
+  setTimeout(function(){ if (typeof quickBotSync === 'function') quickBotSync(); }, 0);
   ['sf','maia3','maia','lcsf','hybrid'].forEach(t => {
     var btn   = document.getElementById('btab-'+t);
     var panel = document.getElementById('bpanel-'+t);
@@ -614,10 +616,18 @@ function botSetTimeBehavior(val) {
 }
 
 function botSetPlayerColor(col) {
-  botPlayerColor = col === 'random' ? (Math.random() < 0.5 ? 'white' : 'black') : col;
+  if (!['white','black','random'].includes(col)) col = 'random';
+  botColorPref = col;
+  // Keep botPlayerColor concrete even while the preference says random, so
+  // anything that reads it before a game starts still gets a real colour.
+  // botStart() does the authoritative roll.
+  if (col !== 'random') botPlayerColor = col;
   ['white','black','random'].forEach(v => {
-    document.getElementById('pcolor-'+v).classList.toggle('active', v === col);
+    const el = document.getElementById('pcolor-'+v);
+    if (el) el.classList.toggle('active', v === col);
   });
+  const sel = document.getElementById('quickBotColor');
+  if (sel && sel.value !== col) sel.value = col;
 }
 
 // Hybrid slot management
@@ -881,7 +891,7 @@ async function botStart() {
   // Apply player color FIRST so boardFlipped is correct before resetGame renders.
   // Always resolve 'random' here and write it back so all downstream code that
   // reads botPlayerColor (botClockMs, botPostMoveHook, playerColor, etc.) is consistent.
-  let pc = botPlayerColor;
+  let pc = (typeof botColorPref !== 'undefined') ? botColorPref : botPlayerColor;
   if (pc === 'random') pc = Math.random() < 0.5 ? 'white' : 'black';
   botPlayerColor = pc;
   boardFlipped = (pc === 'black');
@@ -966,7 +976,7 @@ async function botStart() {
   const sideBtn  = document.getElementById('botSidebarBtn');
   if (startBtn) startBtn.textContent = '↺ Restart Bot Game';
   if (stopBtn)  stopBtn.style.display = '';
-  if (sideBtn)  { sideBtn.textContent = '🤖 Bot Active'; sideBtn.style.borderColor = '#22a85a'; }
+  if (sideBtn)  { sideBtn.style.borderColor = '#22a85a'; }
   var bsEl = document.getElementById('botStatus');
   if (bsEl) bsEl.textContent = 'You play ' + (pc === 'white' ? 'White ♔' : 'Black ♚') +
     (botSelectedTC !== 'untimed' ? ' · ' + botSelectedTC : '');
@@ -1026,7 +1036,7 @@ function botStop() {
   const sideBtn  = document.getElementById('botSidebarBtn');
   if (startBtn) startBtn.textContent = '▶ Start Game vs Bot';
   if (stopBtn)  stopBtn.style.display = 'none';
-  if (sideBtn)  { sideBtn.textContent = '🤖 vs Bot'; sideBtn.style.borderColor = 'rgba(90,212,144,0.4)'; }
+  if (sideBtn)  { sideBtn.style.borderColor = ''; }
   document.getElementById('botStatus').textContent = '';
   // Hide the Resign/Draw row shown for bot games (MP manages it separately)
   var _gaEl2 = document.getElementById('gameActions');
@@ -1825,6 +1835,9 @@ window.addEventListener('message', function(e) {
   // Draw behaviour + stalemate seeking (desperation)
   botAcceptDraws      = !!cfg.acceptDraws;
   botDrawAcceptMargin = (cfg.drawAcceptMarginCp != null) ? +cfg.drawAcceptMarginCp : 50;
+  // A bot built in the panel judges draws at its own strength unless it says
+  // otherwise, so loading one clears the quick-start override.
+  botDrawUseObjectiveEval = !!cfg.drawUseObjectiveEval;
   botOfferDraws       = !!cfg.offerDraws;
   botOfferDrawThresh  = (cfg.offerDrawThreshCp  != null) ? +cfg.offerDrawThreshCp  : 50;
   botOfferDrawMove    = (cfg.offerDrawFromMove  != null) ? +cfg.offerDrawFromMove  : 20;
@@ -2088,7 +2101,7 @@ function bmSessionRestore() {
       const sideBtn  = document.getElementById('botSidebarBtn');
       if (startBtn) startBtn.textContent = '↺ Restart Bot Game';
       if (stopBtn)  stopBtn.style.display = '';
-      if (sideBtn)  { sideBtn.textContent = '🤖 Bot Active'; sideBtn.style.borderColor = '#22a85a'; }
+      if (sideBtn)  { sideBtn.style.borderColor = '#22a85a'; }
     }
 
     updatePlayerBoxes();

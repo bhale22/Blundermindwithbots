@@ -44,6 +44,11 @@ function toggleBoardSettings(){
   btn.setAttribute('aria-expanded', open ? 'true' : 'false');
   try{ localStorage.setItem('bm_bvOpen', open ? '1' : '0'); }catch(e){}
 }
+// The nine secondary overlays used to live behind a disclosure here. They are
+// shown outright now: the sidebar had ~500px of unused height on a laptop, so
+// the fold saved nothing, and opening it shifted every control below it by
+// 237px. toggleMoreVis()/loadMoreVisPref() went with it.
+
 function loadBoardSettingsPref(){
   const box = document.getElementById('board-settings');
   const btn = document.getElementById('bv-toggle');
@@ -645,7 +650,9 @@ const PALETTES={
     pin:'rgba(180,0,180,0.92)',
     bull1:'rgba(0,0,0,0.72)', bull2:'rgba(0,0,0,0.36)',
     checkFill:'rgba(230,60,0,0.42)', checkStroke:'rgba(255,100,0,0.95)',
-    weakFill:'rgba(0,200,80,0.35)', weakStroke:'rgba(0,160,60,0.8)',
+    weakMineFill:'rgba(168,28,48,0.30)',   weakMineStroke:'rgba(140,18,38,0.95)',
+    weakTheirsFill:'rgba(20,125,140,0.28)',weakTheirsStroke:'rgba(12,100,115,0.95)',
+    weakBothFill:'rgba(120,60,150,0.30)',  weakBothStroke:'rgba(100,45,130,0.95)',
   },
   highcontrast:{
     hanging:'rgba(255,0,0,1)', hangingFill:'rgba(255,0,0,0.25)',
@@ -655,7 +662,9 @@ const PALETTES={
     pin:'rgba(200,0,200,1)',
     bull1:'rgba(0,0,0,0.9)', bull2:'rgba(0,0,0,0.5)',
     checkFill:'rgba(255,50,0,0.55)', checkStroke:'rgba(255,100,0,1)',
-    weakFill:'rgba(0,230,80,0.5)', weakStroke:'rgba(0,180,50,1)',
+    weakMineFill:'rgba(190,0,30,0.42)',    weakMineStroke:'rgba(150,0,20,1)',
+    weakTheirsFill:'rgba(0,120,150,0.40)', weakTheirsStroke:'rgba(0,90,120,1)',
+    weakBothFill:'rgba(120,0,160,0.40)',   weakBothStroke:'rgba(90,0,130,1)',
   },
   colorblind:{
     // Deuteranopia-friendly: blues/oranges instead of red/green
@@ -666,7 +675,9 @@ const PALETTES={
     pin:'rgba(204,121,167,1)',
     bull1:'rgba(0,0,0,0.75)', bull2:'rgba(0,0,0,0.38)',
     checkFill:'rgba(230,159,0,0.45)', checkStroke:'rgba(230,159,0,0.95)',
-    weakFill:'rgba(86,180,233,0.4)', weakStroke:'rgba(0,114,178,0.85)',
+    weakMineFill:'rgba(213,94,0,0.30)',    weakMineStroke:'rgba(170,70,0,0.95)',
+    weakTheirsFill:'rgba(0,114,178,0.28)', weakTheirsStroke:'rgba(0,90,145,0.95)',
+    weakBothFill:'rgba(120,60,150,0.30)',  weakBothStroke:'rgba(100,45,130,0.95)',
   },
   pastel:{
     hanging:'rgba(220,80,80,0.9)', hangingFill:'rgba(255,150,150,0.2)',
@@ -676,7 +687,9 @@ const PALETTES={
     pin:'rgba(200,100,200,0.85)',
     bull1:'rgba(60,60,60,0.65)', bull2:'rgba(60,60,60,0.32)',
     checkFill:'rgba(255,160,80,0.4)', checkStroke:'rgba(255,130,50,0.9)',
-    weakFill:'rgba(100,220,140,0.35)', weakStroke:'rgba(60,180,100,0.75)',
+    weakMineFill:'rgba(200,90,105,0.28)',  weakMineStroke:'rgba(175,65,80,0.88)',
+    weakTheirsFill:'rgba(90,165,180,0.26)',weakTheirsStroke:'rgba(60,135,150,0.88)',
+    weakBothFill:'rgba(160,110,185,0.28)', weakBothStroke:'rgba(130,85,155,0.88)',
   },
 };
 let currentPalette=PALETTES.default;
@@ -764,12 +777,12 @@ let _alertDirectAtk = null;
 function syncGhostCanvas() {
   const mainCv = document.getElementById('cv');
   if (!ghostCv || !mainCv) return;
-  // IMPORTANT: assigning to canvas.width/height clears it even if value unchanged.
-  // Only resize when dimensions actually differ.
-  if (ghostCv.width  !== mainCv.width)  ghostCv.width  = mainCv.width;
-  if (ghostCv.height !== mainCv.height) ghostCv.height = mainCv.height;
-  const wStr = mainCv.style.width  || mainCv.width  + 'px';
-  const hStr = mainCv.style.height || mainCv.height + 'px';
+  // The backing store and transform for BOTH canvases are owned by
+  // syncBoardRaster() (10-app-shell.js) so the two can never disagree.
+  // Assigning ghostCv.width here as well would clear the ghost layer and
+  // silently drop its scale transform. Only the CSS size is mirrored here.
+  const wStr = mainCv.style.width  || BOARD_LOGICAL + 'px';
+  const hStr = mainCv.style.height || BOARD_LOGICAL + 'px';
   if (ghostCv.style.width  !== wStr) ghostCv.style.width  = wStr;
   if (ghostCv.style.height !== hStr) ghostCv.style.height = hStr;
 }
@@ -926,24 +939,53 @@ function render(){
   // weakSquaresW = empty squares black has no attackers on = safe for white
   // weakSquaresB = empty squares white has no attackers on = safe for black
   if(showingWeakSquares){
-    // Red = your weak squares (opponent can use), Blue = opponent's weak squares (you can use)
-    // Purple = weak for both players
+    // A weak square is territory, not a piece in trouble, and it used to be
+    // painted in the colours that mean "hanging" and "contested" — a 15% wash
+    // that vanished on the brown squares and collided with the threat
+    // vocabulary on the light ones. Three things changed:
+    //   1. the palette is actually read (every PALETTE defined weakFill and
+    //      weakStroke, and this block ignored all of them — the colourblind
+    //      palette did nothing here at all);
+    //   2. the wash is deep enough to darken #b58863, not just tint it;
+    //   3. direction carries the side — hatched down-right for yours, up-right
+    //      for theirs, crossed where both are weak — so hue is no longer the
+    //      only channel and the overlay survives colour-blind vision.
+    const P = currentPalette;
     const bothWeak = new Set([...weakSquaresW].filter(sq=>weakSquaresB.has(sq)));
-    weakSquaresW.forEach(sq=>{
+    const paint = (sq, fill, stroke, dirs) => {
       const{r,c}=sqCanvas(sq);const x=c*SQ,y=r*SQ;
-      if(bothWeak.has(sq)){
-        ctx.fillStyle='rgba(180,60,220,0.18)';ctx.fillRect(x,y,SQ,SQ);
-        ctx.strokeStyle='rgba(180,60,220,0.60)';ctx.lineWidth=1.5;ctx.strokeRect(x+1,y+1,SQ-2,SQ-2);
-      } else {
-        ctx.fillStyle='rgba(220,50,50,0.15)';ctx.fillRect(x,y,SQ,SQ);
-        ctx.strokeStyle='rgba(220,50,50,0.50)';ctx.lineWidth=1.5;ctx.strokeRect(x+1,y+1,SQ-2,SQ-2);
-      }
-    });
+      ctx.fillStyle=fill;ctx.fillRect(x,y,SQ,SQ);
+      ctx.save();
+      ctx.beginPath();ctx.rect(x,y,SQ,SQ);ctx.clip();
+      ctx.strokeStyle=stroke;ctx.lineWidth=1.5;ctx.globalAlpha=0.55;
+      const step=Math.max(6,Math.round(SQ/7));
+      dirs.forEach(d=>{
+        // d=1 draws down-right, d=-1 up-right. Sweeping the offset over twice
+        // the square width is what keeps both diagonals covering the corners.
+        for(let o=-SQ;o<=SQ*2;o+=step){
+          ctx.beginPath();
+          if(d===1){ ctx.moveTo(x+o,y); ctx.lineTo(x+o-SQ,y+SQ); }
+          else     { ctx.moveTo(x+o,y); ctx.lineTo(x+o+SQ,y+SQ); }
+          ctx.stroke();
+        }
+      });
+      ctx.restore();
+      ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.strokeRect(x+1,y+1,SQ-2,SQ-2);
+    };
+    // Which set is "mine" was reported the wrong way round on the board, so
+    // the pair is swapped here to match the buttons: ib-weakb is the one
+    // labelled "My weak sq." and it draws in the mine colour, hatched down-
+    // right; ib-weakw is "Opp. weak sq." and draws teal, hatched up-right.
+    // NOTE: neither set consults which colour the human is playing, so this
+    // reads correctly for a player of White. Following the seat is a separate
+    // change and wants its own look.
     weakSquaresB.forEach(sq=>{
+      if(bothWeak.has(sq)) paint(sq,P.weakBothFill,P.weakBothStroke,[1,-1]);
+      else                 paint(sq,P.weakMineFill,P.weakMineStroke,[1]);
+    });
+    weakSquaresW.forEach(sq=>{
       if(bothWeak.has(sq)) return;
-      const{r,c}=sqCanvas(sq);const x=c*SQ,y=r*SQ;
-      ctx.fillStyle='rgba(40,120,220,0.15)';ctx.fillRect(x,y,SQ,SQ);
-      ctx.strokeStyle='rgba(40,120,220,0.50)';ctx.lineWidth=1.5;ctx.strokeRect(x+1,y+1,SQ-2,SQ-2);
+      paint(sq,P.weakTheirsFill,P.weakTheirsStroke,[-1]);
     });
   }
 
@@ -1404,16 +1446,29 @@ function render(){
   } catch(e){ console.warn('Indicator render error:',e); }
   // (no canvas flip to restore)
   // Draw rank/file labels in screen coords (after restore so not flipped)
-  ctx.font='9px sans-serif';ctx.fillStyle='rgba(0,0,0,0.3)';
+  // Coordinates were 9px at 30% black: about 2.9:1 on a light square and
+  // 1.9:1 on a dark one, both under the 4.5:1 AA floor — on the one label a
+  // beginner leans on most. A white halo under a near-black glyph reads on
+  // either square shade, so a single colour pair works across the whole board.
+  // textAlign is set explicitly because the piece-drawing paths above leave it
+  // on 'center', which this block used to inherit by accident.
+  ctx.save();
+  ctx.font='600 11px system-ui,-apple-system,"Segoe UI",sans-serif';
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  ctx.lineWidth=2.5; ctx.lineJoin='round'; ctx.miterLimit=2;
+  ctx.strokeStyle='rgba(255,255,255,0.85)';
+  ctx.fillStyle='rgba(0,0,0,0.85)';
+  const _coord=(t,x,y)=>{ ctx.strokeText(t,x,y); ctx.fillText(t,x,y); };
   for(let i=0;i<8;i++){
     if(_boardFlipped){
-      ctx.fillText(String.fromCharCode(97+7-i),(480-((i+1)*SQ))+3,7*SQ+SQ-3);
-      ctx.fillText(i+1,480-SQ+3,i*SQ+11);
+      _coord(String.fromCharCode(97+7-i),(480-((i+1)*SQ))+4,7*SQ+SQ-4);
+      _coord(String(i+1),480-SQ+4,i*SQ+14);
     } else {
-      ctx.fillText(String.fromCharCode(97+i),i*SQ+3,7*SQ+SQ-3);
-      ctx.fillText(8-i,3,i*SQ+11);
+      _coord(String.fromCharCode(97+i),i*SQ+4,7*SQ+SQ-4);
+      _coord(String(8-i),4,i*SQ+14);
     }
   }
+  ctx.restore();
   if(promotionPending)drawPromoModal();
 }
 
@@ -1661,57 +1716,88 @@ function _resignRowVisible() {
   return !!(ga && ga.offsetParent !== null);
 }
 
-function updateActionBtn() {
-  const btn = document.getElementById('resignBtn');
-  if (!btn) return;
-  // Explore is offered whenever a game just ended — drop into solo explore
-  // mode on the final position instead of resetting for a rematch.
-  const exploreBtn = document.getElementById('exploreBtn');
-  if (exploreBtn) exploreBtn.style.display = gameOver ? '' : 'none';
-  // Review: step back through the finished game and restart play anywhere
-  const reviewBtn = document.getElementById('reviewBtn');
-  if (reviewBtn) reviewBtn.style.display =
-    (gameOver && typeof gameMovesAlgebraic !== 'undefined' &&
-     gameMovesAlgebraic.length > 0 && !inReplay) ? '' : 'none';
+// Buttons that start or replace a game have no business being on screen while
+// one is running: "vs Bot" restarts, "2-Player" abandons, "Load game" throws the
+// position away, and each is one mis-tap from losing a game in progress. They
+// come straight back the moment it ends, which is when they are wanted again.
+function updateGameStartBtns() {
+  const live = (typeof _isLiveGame === 'function') ? _isLiveGame() : false;
+  ['botSidebarBtn', 'mpSidebarBtn', 'btnLoadPgn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = live ? 'none' : '';
+  });
+}
+
+// One row, five buttons. While a game is live it carries Offer draw and
+// Resign; the moment the game ends the SAME row carries Rematch and Review,
+// because that is where the player's eyes already are. Nothing moves — only
+// which of the five is on screen changes.
+//
+// Training Tips used to share this slot and is now a permanent button on the
+// floor, so this control has one job and can simply hide when idle.
+function syncActionRow() {
+  const ga      = document.getElementById('gameActions');
+  const drawBtn = document.querySelector('#gameActions .draw-btn');
+  const resBtn  = document.querySelector('#gameActions .resign-btn');
+  const btn     = document.getElementById('resignBtn');
+  const review  = document.getElementById('reviewBtn');
+  const explore = document.getElementById('exploreBtn');
+  if (!ga || !btn) return;
+
+  const inGame  = _gameInProgress();
+  const isSolo  = !(typeof botActive !== 'undefined' && botActive) &&
+                  !(typeof mpRoomId !== 'undefined' && mpRoomId &&
+                    typeof mpMode !== 'undefined' && mpMode === 'ingame');
+  const canReview = gameOver && typeof gameMovesAlgebraic !== 'undefined' &&
+                    gameMovesAlgebraic.length > 0 && !inReplay;
+
+  const show = (el, on) => { if (el) el.style.display = on ? '' : 'none'; };
+
   if (gameOver) {
-    btn.textContent = '↺ Rematch?';
-    btn.className = 'ctrl-btn';
-    btn.style.borderColor = 'var(--accent)'; btn.style.color = 'var(--accent)';
+    show(drawBtn, false); show(resBtn, false);
+    btn.textContent = '\u21ba Rematch?';
+    btn.className = 'gbtn rematch-btn';
     btn.onclick = () => {
       if (typeof mpRoomId !== 'undefined' && mpRoomId) mpOfferRematch();
       else if (typeof botActive !== 'undefined' && botActive) botStart();
       else resetGame();
     };
-  } else if (_gameInProgress()) {
-    const _isSolo = !(typeof botActive !== 'undefined' && botActive) &&
-                    !(typeof mpRoomId !== 'undefined' && mpRoomId &&
-                      typeof mpMode !== 'undefined' && mpMode === 'ingame');
-    if (_isSolo) {
-      btn.textContent = '↺ Reset';
-      btn.className = 'ctrl-btn';
-      btn.style.borderColor = ''; btn.style.color = '';
-      btn.onclick = resetGame;
-    } else if (_resignRowVisible()) {
-      // #gameActions carries Resign — with Offer draw beside it — for exactly
-      // these games, so this slot was drawing a SECOND Resign one row below
-      // the first. Hand the slot back to the tips it holds when idle; a phone
-      // gets a 44px row back and nobody has to pick between two Resigns.
-      btn.textContent = '🎯 Training Tips';
-      btn.className = 'ctrl-btn util-btn';
-      btn.style.borderColor = ''; btn.style.color = '';
-      btn.onclick = () => openHelp('howto');
-    } else {
-      btn.textContent = '⚑ Resign';
-      btn.className = 'ctrl-btn reset-btn';
-      btn.style.borderColor = ''; btn.style.color = '';
-      btn.onclick = resignOrReset;
-    }
+    show(btn, true);
+    show(review, canReview);
+    show(explore, true);
+  } else if (inGame && isSolo) {
+    // Solo exploration: nothing to resign, but a reset is worth reaching for.
+    show(drawBtn, false); show(resBtn, false);
+    btn.textContent = '\u21ba Reset';
+    btn.className = 'gbtn';
+    btn.onclick = resetGame;
+    show(btn, true);
+    show(review, false); show(explore, false);
+  } else if (inGame) {
+    // Bot or online game running: Draw and Resign own the row.
+    show(drawBtn, true); show(resBtn, true);
+    show(btn, false); show(review, false); show(explore, false);
   } else {
-    btn.textContent = '🎯 Training Tips';
-    btn.className = 'ctrl-btn util-btn';
-    btn.style.borderColor = ''; btn.style.color = '';
-    btn.onclick = () => openHelp('howto');
+    // Idle. Draw and Resign have to be hidden explicitly: something upstream
+    // sets the row to display:flex on load, and leaving these two alone meant
+    // an empty board offered you a resignation.
+    show(drawBtn, false); show(resBtn, false);
+    show(btn, false); show(review, false); show(explore, false);
   }
+
+  // The row exists only when it has something in it. Any visible child keeps
+  // it up; none, and it collapses so the floor does not carry a dead gap.
+  const any = [drawBtn, resBtn, btn, review, explore]
+    .some(el => el && el.style.display !== 'none');
+  ga.style.display = any ? 'flex' : 'none';
+}
+
+function updateActionBtn() {
+  updateGameStartBtns();
+  syncActionRow();
+  // The quick-start block names the bot it will start, so it has to follow any
+  // change the builder made while this was last off screen.
+  if (typeof quickBotSync === 'function') quickBotSync();
 }
 
 // Legacy entry point — many callers still announce game end through this.
@@ -2722,6 +2808,10 @@ if (!localStorage.getItem('bm_pieceSet')) { currentPieceSet = 'staunton'; }
 loadPrefs();
 loadSoundPref();
 loadBoardSettingsPref();
+if(typeof ghostSyncUI === "function") ghostSyncUI();
+// Stockfish 1 is where a first visit should start: the quick block applies it
+// rather than inheriting the builder's own default of 8.
+if(typeof quickBotPick === "function") quickBotPick(String(QUICK_SF_DEFAULT));
 loadPos(0);
 resizeBoard();
 

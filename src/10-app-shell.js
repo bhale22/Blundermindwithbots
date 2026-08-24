@@ -13,6 +13,13 @@ let mpStartSans     = [];
 // These let variables must be declared before loadPos()/render() runs at startup.
 let botActive = false;
 let botPlayerColor = 'white';
+// The PREFERENCE, which is the only place 'random' is allowed to live.
+// botPlayerColor itself stays a concrete colour at all times, because
+// everything downstream of it — board flip, clocks, ghost gating, SAN sides —
+// reads it directly and has no meaning for 'random'. botStart() re-rolls from
+// this, so Random is random every game rather than once when the menu was
+// last touched (which is what the old resolve-on-click behaviour gave).
+let botColorPref = 'random';
 let botTab = 'sf';
 let botTimePressure = 'steady';
 let botSelectedTC = 'untimed';
@@ -127,6 +134,12 @@ let botWeaponizerMinMs   = 0;     // floor (ms) on weaponizer move time; 0 = ins
 // ── Draw behaviour ───────────────────────────────────────────────────────────
 let botAcceptDraws      = false;  // bot accepts draw offers when not clearly ahead
 let botDrawAcceptMargin = 50;     // accept if bot's advantage ≤ this many cp (engine eval)
+// Which eval the accept decision reads. A built bot judges the position at its
+// OWN strength (botPerceivedAdvantageCp), noise and all — that is the point of
+// a personality, and at 600 ELO the noise is ~700cp, so the answer is close to
+// a coin flip. A quick-start Stockfish has no personality to honour, so it
+// reads the objective eval instead and the 400cp promise actually holds.
+let botDrawUseObjectiveEval = false;
 let botOfferDraws       = false;  // bot proactively offers draws in level positions
 let botOfferDrawThresh  = 50;     // |advantage| ≤ this cp → position counts as level
 let botOfferDrawMove    = 20;     // no offers before this full-move number
@@ -146,6 +159,57 @@ let botUserTurnStartMs   = null; // wall-clock ms when the human's current turn 
 
 
 // ── Board sizing ──────────────────────────────────────────────────────
+// Every board drawing routine works in a fixed 480x480 LOGICAL space (SQ = 60),
+// and the pointer math in 30-board-ui.js maps CSS pixels back through the same
+// 480. syncBoardRaster() preserves that contract exactly: only the canvas
+// BACKING STORE grows, with a matching scale transform, so nothing that draws
+// or hit-tests has to change.
+//
+// Why: the canvas was pinned at 480x480 while CSS stretched it up to 900px, so
+// on a 718px board at dpr 2 the finished bitmap was resampled ~3x. That is
+// destructive for this piece set specifically -- Cburnett white pieces are a
+// white fill (1.29:1 against a light square) whose entire figure-ground
+// separation is a 1.5-unit outline stroke, i.e. 1.8px in logical space. The
+// upscale smeared the one feature carrying the shape.
+const BOARD_LOGICAL = 480;
+// Caps the backing store at ~16MB/canvas -- dpr is clamped to 2 because the
+// visible gain from 2->3 is small and the memory cost is 2.25x on phones.
+const BOARD_MAX_RASTER = 2048;
+
+function _applyCanvasRaster(canvasEl, cssPx) {
+  if (!canvasEl) return false;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const target = Math.min(BOARD_MAX_RASTER,
+                          Math.max(BOARD_LOGICAL, Math.round(cssPx * dpr)));
+  // Assigning width/height CLEARS the canvas and resets the transform, so only
+  // assign on a real change -- but re-apply the transform unconditionally,
+  // since any assignment anywhere would have dropped it.
+  let changed = false;
+  if (canvasEl.width !== target || canvasEl.height !== target) {
+    canvasEl.width = target; canvasEl.height = target; changed = true;
+  }
+  const c = canvasEl.getContext('2d');
+  if (c) {
+    const s = target / BOARD_LOGICAL;
+    c.setTransform(s, 0, 0, s, 0, 0);
+    c.imageSmoothingQuality = 'high';
+  }
+  return changed;
+}
+
+// Returns true when a backing store actually changed size -- callers must
+// re-render in that case, because the resize cleared the canvas.
+function syncBoardRaster() {
+  const cv = document.getElementById('cv');
+  if (!cv) return false;
+  const cssPx = parseFloat(cv.style.width)
+             || cv.getBoundingClientRect().width
+             || BOARD_LOGICAL;
+  const a = _applyCanvasRaster(cv, cssPx);
+  const b = _applyCanvasRaster(document.getElementById('ghostCanvas'), cssPx);
+  return a || b;
+}
+
 function resizeBoard() {
   const pageWrap = document.getElementById('page-wrap');
   const wrapW = pageWrap ? pageWrap.clientWidth : (window.innerWidth - 40);
@@ -198,6 +262,9 @@ function resizeBoard() {
   });
   document.documentElement.style.setProperty('--board-size', bpx);
 
+  // Match the raster to the new CSS size. This clears the canvas when it
+  // changes, so re-render -- resizeBoard() previously never had to.
+  if (syncBoardRaster() && typeof render === 'function') render();
 }
 window.addEventListener('resize', resizeBoard);
 
@@ -651,8 +718,8 @@ function indActive(key) {
     if(el&&!el.checked) return false;
     return !!previewBoard||currentlyPreviewing;
   }
-  if(ind.pressing) return true;
-  if(ind.on) return true;
+  // Resting visibility — what the indicator's saved state alone would draw.
+  //
   // "Show During Exploration" (pre) indicators stay active for the whole
   // exploration, INCLUDING while the piece is dragged off its origin square.
   // That is the point of beginner/visualization mode: the overlays are
@@ -662,8 +729,15 @@ function indActive(key) {
   // The dragged piece itself is drawn as a separate translucent glyph
   // following the cursor, so the circle sits on the board, not on the
   // carried piece.
-  if(ind.pre&&(!!previewBoard||currentlyPreviewing)) return true;
-  return false;
+  let vis = false;
+  if(ind.on) vis = true;
+  else if(ind.pre&&(!!previewBoard||currentlyPreviewing)) vis = true;
+  // A held button INVERTS that, it does not force it on. Forcing it on made the
+  // gesture a no-op for anything already showing, which is exactly the case
+  // where you want the opposite — "what does this board look like WITHOUT this
+  // overlay". Peek and un-peek are the same gesture, resolved by current state.
+  if(ind.pressing) vis = !vis;
+  return vis;
 }
 
 function ibPress(key,e){
@@ -687,15 +761,16 @@ function ibTogglePre(key){
 }
 function ibUpdateUI(key){
   const ind=IND[key]; if(!ind) return;
-  // Keep the "Show During Exploration" (pre) button highlight in sync with the
-  // variable first, so it always matches even if the main button is absent.
-  const preBtn=document.getElementById('pre-'+key);
-  if(preBtn) preBtn.classList.toggle('active',ind.pre);
   const el=document.getElementById('ib-'+key); if(!el) return;
   el.classList.remove('on','pre','pressing');
-  if(ind.pressing) el.classList.add('pressing');
+  if(ind.pressing && ibHeld[key]) el.classList.add('pressing');
   else if(ind.on) el.classList.add('on');  // always-on: full green
-  else if(ind.pre) el.classList.add('pre'); // preview mode: persistent subtle highlight + status dot
+  else if(ind.pre) el.classList.add('pre'); // exploration-only
+  // The word tracks the SAVED state only, never `pressing` — a peek deliberately
+  // leaves it alone, so the button keeps telling you what you will still have
+  // once you let go.
+  const st=el.querySelector('.ib-state');
+  if(st) st.textContent = ind.on ? 'on' : (ind.pre ? 'exp' : 'off');
 }
 function ibRefreshAll(){Object.keys(IND).forEach(k=>ibUpdateUI(k));}
 
@@ -714,13 +789,33 @@ function indMode(key, mode, e){
   indApply();
 }
 
-// Main button click handler (toggle on/off)
-// Attached via onclick on ib-main elements — but we need to avoid
-// firing during hold. Use a threshold: < 200ms = click, >= 200ms = hold
+// ── Indicator button gestures ─────────────────────────────────────────
+// Two gestures on one target, separated by time:
+//
+//   click        advance the cycle  off → exp → on → off
+//   hold ≥350ms  peek: invert the overlay while held, revert on release
+//
+// This replaced a split control where the cycle was on DOUBLE-click and a
+// single click did nothing persistent at all — it only armed the double-click
+// timer. The most obvious gesture on the panel's primary control was a no-op,
+// so a first click looked like a flash and a broken button. Single click now
+// owns the cycle, and the double-click path is gone.
+//
+// The peek arms on a timer rather than on mousedown so that `.ib.pressing`
+// (cyan) means exactly one thing: this press is a peek and nothing will stick.
+// If it lit on every mousedown it would carry no information. :active covers
+// the sub-threshold gap so a plain click still feels responsive.
+// How long a press has to last before it counts as a peek rather than a click.
+// The overlay itself flips on mousedown either way; this is only the line
+// between "you clicked it" and "you are holding it to look".
+const IB_HOLD_MS = 350;
 const ibPressTime = {};
-const ibLastClick = {};
+const ibHoldTimer = {};
+const ibHeld      = {};
+
 function ibMainDown(key,e){
   if(e) e.preventDefault();
+  if(!IND[key]) return;
   // If hide is locked, any IND button press releases it and restores state
   if(typeof hideShowLocked!=='undefined'&&hideShowLocked&&!hideShowPeeking){
     hideShowLocked=false;
@@ -728,36 +823,64 @@ function ibMainDown(key,e){
     updateHideShowBtn();
   }
   ibPressTime[key] = Date.now();
-  ibPress(key,e);
+  ibHeld[key] = false;
+  clearTimeout(ibHoldTimer[key]);
+  // The board flips NOW, on press, not after a 350ms wait. Holding used to feel
+  // broken because nothing happened for a third of a second, and a third of a
+  // second is a long time when you are asking "what does this square look like
+  // without the overlay". The timer no longer decides whether to draw the peek;
+  // it only decides when to LABEL the press as one, which keeps the cyan chip
+  // meaning exactly what it meant before: this press will not stick.
+  IND[key].pressing = true;
+  indApply();
+  ibHoldTimer[key] = setTimeout(function(){
+    ibHeld[key] = true;
+    ibUpdateUI(key);           // cyan appears; the board is already showing it
+  }, IB_HOLD_MS);
 }
+
 function ibMainUp(key){
-  const dt = Date.now() - (ibPressTime[key]||0);
-  ibRelease(key);
-  if(dt < 250) {
-    const now = Date.now();
-    const sinceLastClick = now - (ibLastClick[key]||0);
-    if(sinceLastClick < 400) {
-      // Double click cycles: off(pre-only) → always-on → truly-off → off(pre-only)…
-      // Key invariant: once a user explicitly turns an indicator OFF, it is
-      // completely off (pre=false too). "Off means off."
-      if(!IND[key].on && IND[key].pre){
-        // preview-only → always-on
-        IND[key].on = true; IND[key].pre = true;
-      } else if(IND[key].on){
-        // always-on → truly off
-        IND[key].on = false; IND[key].pre = false;
-      } else {
-        // truly-off → preview-only (re-enable preview without always-on)
-        IND[key].on = false; IND[key].pre = true;
-      }
-      ibLastClick[key] = 0; // reset so next click starts fresh
-    } else {
-      // Single click = just a peek (press/release already handled)
-      ibLastClick[key] = now;
-    }
+  if(!IND[key]) return;
+  clearTimeout(ibHoldTimer[key]);
+  const held = ibHeld[key];
+  ibHeld[key] = false;
+  IND[key].pressing = false;
+  if(held){
+    // Long press: it was a peek. Put the board back and change nothing.
+    ibUpdateUI(key);
+    indApply();
+    return;
+  }
+  // Short press: undo the optimistic peek and treat it as the click it was.
+  ibCycle(key);
+}
+
+// Pointer left the button, or the touch was stolen (scroll, call, app switch).
+// Must cancel, never commit: dragging off a control is how people back out of
+// a press, and a stolen touch would otherwise leave `pressing` stuck on.
+function ibMainCancel(key){
+  if(!IND[key]) return;
+  clearTimeout(ibHoldTimer[key]);
+  ibHeld[key] = false;
+  if(IND[key].pressing){
+    IND[key].pressing = false;
     ibUpdateUI(key);
     indApply();
   }
+}
+
+// off → exp → on → off. Monotonically more visible until it resets, which is
+// what makes it learnable without a legend.
+//
+// Key invariant, unchanged: once a user explicitly turns an indicator OFF it is
+// completely off (pre=false too). "Off means off."
+function ibCycle(key){
+  const ind = IND[key]; if(!ind) return;
+  if(!ind.on && !ind.pre)     { ind.on = false; ind.pre = true;  }  // off → exp
+  else if(!ind.on && ind.pre) { ind.on = true;  ind.pre = true;  }  // exp → on
+  else                        { ind.on = false; ind.pre = false; }  // on  → off
+  ibUpdateUI(key);
+  indApply();
 }
 
 // ── Board square color helper ─────────────────────────────────────────
@@ -1177,12 +1300,14 @@ const TOURS = {
       body:'Play a bot, challenge a friend online, or just explore. You can click any button here right now — or keep touring.' },
     { sel:'#commitModeChip', title:'How your moves get played',
       body:'This chip sits with your clock and switches how a move is committed. <b>✋ Release to move</b> plays the move the moment you let go. <b>👆 Tap to confirm</b> instead <i>parks</i> the piece on the square with every overlay live, so you can take your finger off the board, read what the move actually does, and only then tap again to play it — or tap a different square to change your mind. On a phone your finger covers the very squares you moved there to read, so this is the difference between seeing the answer and guessing. Tap the chip to switch, even mid-game.' },
-    { sel:'#botSidebarBtn', title:'Play vs Bots',
-      body:'Build a custom opponent: pick an engine and rating, give it a personality, custom controls, an opening repertoire, and time-pressure behaviour.' },
+    { sel:'#quickBot', title:'Start a game',
+      body:'The fastest way in: this starts a game against the bot it names. Change the opponent with the dropdown beside it — Stockfish 1 is the gentlest, 20 the strongest — or pick <b>Custom</b> to build your own in the Bot Builder.' },
+    { sel:'#botSidebarBtn', title:'Bot Builder',
+      body:'Build a custom opponent: pick an engine and rating, give it a personality, custom controls, an opening repertoire, and time-pressure behaviour. Whatever you build here becomes the bot the Start button plays.' },
     { sel:'.ind-grid', title:'Board-vision indicators', indSection:true,
       body:'These overlays draw what a stronger player sees — threats, pins, forks and more. We’ll light each one up on a sample position so you can see exactly what it does.' },
     { sel:'#ib-threats', title:'Three ways to show an indicator', indSection:true, modes:'threats',
-      body:'Watch this button cycle through its three modes — <b>Off</b> (grey) → <b>Show during exploration</b> (only while you drag a piece) → <b>Always-on</b> (green). Single-click any indicator to peek, double-click to keep it on.' },
+      body:'Every indicator button carries three states, and its colour says which one it is in — the key at the top of this panel spells them out. Watch it cycle: <b>off</b> — <b>while exploring</b>, drawn only while you explore a move — <b>always on</b>, drawn all the time. <b>Click</b> to step through them. Or <b>press and hold</b> to peek: the overlay flips on if it was off (and off if it was on) for as long as you hold, then goes straight back. While the button is blue, nothing you are doing will stick.' },
     { sel:'.ind-grid', title:'How to train with these', indSection:true,
       body:'Best habit: <b>look first and try to spot it yourself</b> — plan your move and picture the threats and replies in your head. <i>Then</i> switch an indicator on as instant feedback to catch anything you missed.' },
     { sel:'#ib-checkthreats', title:'Check threats', indSection:true, ind:'checkthreats',
@@ -1215,8 +1340,8 @@ const TOURS = {
       body:'Hover a destination square and the bot shows the most likely replies as faint “ghost” pieces — handy for training your calculation.' },
     { sel:'#distPanel', title:'Maia move odds',
       body:'Everything else here shows you the position <i>before</i> you commit. This closes the loop <i>after</i>: expand <b>📊 Maia move odds</b> and it shows the move just played, from the position it was played in, against how a real human pool weighted the options there — one tall bar means the move was near-forced, several close bars mean it was a genuine decision. Playing a Maia bot reads the odds at <b>that bot’s rating</b>, so it is your actual opponent’s judgement, not a generic one. <b>Collapsed by default</b>; it reviews the move behind you rather than helping with the one in front of you.' },
-    { sel:'#btnTheme', title:'Style & board experience',
-      body:'Colors, pieces, Carbon vs Journal format — and the board experience itself: switch between this Training board and the clean Expert board here, anytime.' },
+    { sel:'#bs-open', title:'Board settings & appearance',
+      body:'Sound, legal-move dots and the two rules that decide what counts as a threat live here — and so does <b>Theme & pieces</b>: colors, piece sets, Carbon vs Journal format, and the switch between this Training board and the clean Expert board.' },
     { sel:'#site-name', title:'Home',
       body:'Click the Blundermind logo anytime to return Home and switch between the Beginner and Expert boards.' },
   ],
@@ -1274,7 +1399,7 @@ function _tourShowIndicator(key){
 }
 function _tourCycleModes(key){
   if(typeof IND === 'undefined' || !IND[key]) return;
-  const seq = [ {on:false,pre:false}, {on:false,pre:true}, {on:true,pre:false} ]; // off → premove → always-on
+  const seq = [ {on:false,pre:false}, {on:false,pre:true}, {on:true,pre:true} ]; // off → exp → on, matching ibCycle
   let i = 0;
   const apply = () => {
     IND[key].on = seq[i].on; IND[key].pre = seq[i].pre; IND[key].pressing = false;
@@ -3160,6 +3285,149 @@ function peekUp(){
   ibRefreshAll(); indApply();
 }
 
+// ── Quick start vs bot ───────────────────────────────────────────
+// Starting a game used to mean opening the builder, reading five engine tabs
+// and finding the Start button inside. Most visitors want one opponent, once,
+// and a level they can nudge. This is that: the button starts, the select
+// chooses, and Custom hands off to the builder for everyone who wants more.
+//
+// The select does not hold the state — botTab and the builder's own #sfLevel
+// slider do. This reads them, so a bot made in the builder shows up here
+// correctly instead of the two disagreeing.
+const QUICK_SF_MIN = 1, QUICK_SF_MAX = 20, QUICK_SF_DEFAULT = 1;
+
+// Twenty entries made the picker a wall of near-identical numbers. The steps
+// that actually change how a game feels are the low ones, so 1-10 stay
+// individually pickable and 15/20 stand in for "strong" and "full strength".
+// Any other level (one built in the builder) still runs — quickBotSync just
+// shows it as Custom, since the select cannot express it.
+const QUICK_SF_LEVELS = [1,2,3,4,5,6,7,8,9,10,15,20];
+
+function quickBotFillLevels(){
+  const g = document.getElementById('quickBotLevels');
+  if(!g || g.children.length) return;
+  for(const i of QUICK_SF_LEVELS){
+    const o = document.createElement('option');
+    o.value = String(i);
+    o.textContent = 'Stockfish ' + i;
+    g.appendChild(o);
+  }
+}
+
+// Paint the block from whatever the bot config currently is.
+function quickBotSync(){
+  const sel  = document.getElementById('quickBotSel');
+  if(!sel) return;
+  quickBotFillLevels();
+  const lvlEl = document.getElementById('sfLevel');
+  const lvl = lvlEl ? (parseInt(lvlEl.value, 10) || QUICK_SF_DEFAULT) : QUICK_SF_DEFAULT;
+  // Plain Stockfish at a level the select can express is the only case the
+  // select can state directly.
+  const plainSf = (typeof botTab === 'undefined' || botTab === 'sf') &&
+                  QUICK_SF_LEVELS.includes(lvl);
+  const CUR = '__current';
+  if(plainSf){
+    const old = sel.querySelector('option[value="'+CUR+'"]');
+    if(old) old.remove();
+    sel.value = String(lvl);
+  } else {
+    // A bot built in the panel has no level to sit on. Give it its own option
+    // carrying its name — otherwise the select would rest on "Open
+    // Bot-Builder…", which names an action rather than the opponent, and
+    // would misreport what pressing Start is about to play.
+    let n = '';
+    try{ n = (typeof botGenerateName === 'function') ? botGenerateName() : ''; }catch(e){}
+    let cur = sel.querySelector('option[value="'+CUR+'"]');
+    if(!cur){
+      cur = document.createElement('option');
+      cur.value = CUR;
+      sel.insertBefore(cur, sel.firstChild);
+    }
+    cur.textContent = n || 'Custom bot';
+    sel.value = CUR;
+  }
+  const csel = document.getElementById('quickBotColor');
+  if(csel && typeof botColorPref !== 'undefined' && csel.value !== botColorPref){
+    csel.value = botColorPref;
+  }
+}
+
+function quickBotPick(v){
+  // Re-selecting the bot already loaded is a no-op, not a reason to rebuild it.
+  if(v === '__current'){ quickBotSync(); return; }
+  if(v === 'builder'){
+    // The select is a view, not the value: put it back and let the builder be
+    // the thing that decides. Reopening it on every change would be a trap.
+    quickBotSync();
+    if(typeof openBotModal === 'function') openBotModal();
+    return;
+  }
+  const lvl = Math.max(QUICK_SF_MIN, Math.min(QUICK_SF_MAX, parseInt(v, 10) || QUICK_SF_DEFAULT));
+  if(typeof botSetTab === 'function') botSetTab('sf');
+  const lvlEl = document.getElementById('sfLevel');
+  if(lvlEl){
+    lvlEl.value = lvl;
+    const out = document.getElementById('sfLevelVal');
+    if(out) out.textContent = lvl;
+  }
+  // Quick-start Stockfish is the casual opponent, so it takes a draw readily:
+  // accept unless it is genuinely winning. 400cp is roughly a clear piece up —
+  // below that a beginner offering a draw gets one rather than a stonewall.
+  // Set here, on the same fields the builder writes, so a bot built in the
+  // panel keeps whatever draw behaviour it was configured with.
+  botAcceptDraws          = true;
+  botDrawAcceptMargin     = 400;
+  botDrawUseObjectiveEval = true;
+  // A level chosen here replaces any custom name the builder was carrying,
+  // otherwise the block would announce "Panicky Hybrid Bot" and start SF 3.
+  const nameEl = document.getElementById('botNameInput');
+  if(nameEl) nameEl.value = '';
+  quickBotSync();
+}
+
+function quickBotStart(){
+  if(typeof botStart === 'function') botStart();
+}
+
+// ── Ghost replies toggle — button and selector are one value ─────────────
+// The selector alone gave no hint that ghosts were a board overlay like any
+// other, and "Off" buried in a dropdown is not a state anyone reads at a
+// glance. The button now carries the state; the selector carries the depth.
+// Turning the button off parks the depth so switching back restores the choice
+// rather than snapping to a default.
+let _ghostLastDepth = '8';
+
+function ghostIsOn(){
+  const sel = document.getElementById('soloGhostDepth');
+  return !!sel && sel.value !== '0';
+}
+
+// Paint the button from the selector, never the other way round: the selector
+// is the value ghostMode() already reads, so it stays the single source.
+function ghostSyncUI(){
+  const sel = document.getElementById('soloGhostDepth');
+  const el  = document.getElementById('ib-ghost');
+  if(!sel) return;
+  const on = sel.value !== '0';
+  if(el) el.classList.toggle('on', on);
+  sel.disabled = !on;
+  const btn = el && el.querySelector('.ib-main');
+  if(btn) btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+
+function ghostToggle(){
+  const sel = document.getElementById('soloGhostDepth');
+  if(!sel) return;
+  if(sel.value !== '0'){
+    _ghostLastDepth = sel.value;
+    sel.value = '0';
+  } else {
+    sel.value = (_ghostLastDepth === '0') ? '8' : _ghostLastDepth;
+  }
+  ghostSyncUI();
+  if(typeof ghostModeChanged === 'function') ghostModeChanged();
+}
+
 // ── Show All button — hold to see board with every indicator active ──────────
 let showAllActive = false;
 let showAllSavedStates = {};
@@ -3173,11 +3441,15 @@ function showAllDown(e){
   Object.keys(IND).forEach(k=>{
     showAllSavedStates[k] = {on:IND[k].on, pre:IND[k].pre, pressing:IND[k].pressing};
   });
-  // Set ALL indicators fully on — pressing:true forces fork/discovered renders
+  // Set ALL indicators fully on. `pressing` must stay FALSE: indActive()
+  // treats it as an inversion, not a force-on ("A held button INVERTS that, it
+  // does not force it on"), so setting it here turned every overlay on and then
+  // immediately back off — every button lit cyan and the board drew nothing.
+  // on:true alone is what makes an indicator render.
   Object.keys(IND).forEach(k=>{
     IND[k].on = true;
     IND[k].pre = true;
-    IND[k].pressing = true;
+    IND[k].pressing = false;
   });
   // Also turn on all checkboxes (battery, queen pins, etc.)
   ['cbBattery','cbQPins','cbEnPassant','cbInfluenceToggle'].forEach(id=>{

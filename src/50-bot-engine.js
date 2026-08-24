@@ -236,7 +236,9 @@ async function botConsiderDrawOffer() {
   _botDrawConsidering = true;
   try {
     _botDrawToast('🤖 The bot is considering your draw offer…');
-    const adv = await botPerceivedAdvantageCp();
+    const adv = botDrawUseObjectiveEval
+      ? await botEvalAdvantageCp()      // objective: Skill 20, depth 12
+      : await botPerceivedAdvantageCp(); // strength-scaled, with noise
     if (gameOver || !botActive) return;
     // About to flag itself → takes the half point from far better positions
     const margin = botDrawAcceptMargin + (_botDesperateForDraw() ? 200 : 0);
@@ -2537,7 +2539,10 @@ function _drawGhost(bd, fromSq, toSq, alpha, outlineColor) {
   var origAlpha = destAlpha * 0.4;
   var outline   = outlineColor || 'rgba(74,159,212,0.85)';
 
-  var SQ  = ghostCv.width / 8;
+  // Logical space, NOT ghostCv.width -- the backing store is now the device
+  // resolution (up to 2048) while the ghost context carries a matching scale
+  // transform, so deriving SQ from the raster would draw pieces ~3x oversized.
+  var SQ  = BOARD_LOGICAL / 8;
 
   function sqXY(sq) {
     var r = Math.floor(sq / 8), c = sq % 8;

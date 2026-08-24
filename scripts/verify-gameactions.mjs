@@ -68,8 +68,19 @@ console.log('\nPhone — 390x844');
   const { ctx, page, picked } = await shell(390, 844, true);
   ok('Visualization shell reachable from the landing page', picked);
 
+  // The row is game-only now: idle it holds nothing and collapses, and at the
+  // end of a game the same slot carries Rematch and Review instead. Put the
+  // page into a live game before asserting the row is there to measure.
+  ok('the row is empty and collapsed before a game starts',
+     await page.evaluate(() => {
+       botActive = false; updateActionBtn();
+       return document.getElementById('gameActions').getBoundingClientRect().height === 0;
+     }));
+  await page.evaluate(() => { botActive = true; updateActionBtn(); });
+  await page.waitForTimeout(200);
+
   const a = await rects(page);
-  ok('Resign / Offer draw is rendered', a.ga && a.ga.h > 0,
+  ok('Resign / Offer draw is rendered once a game is live', a.ga && a.ga.h > 0,
      a.ga ? 'height ' + a.ga.h : 'missing');
   ok('sits below the clock', a.ga && a.clock && a.ga.top >= a.clock.bottom - 1,
      a.ga && a.clock ? `ga.top ${a.ga.top.toFixed(0)} vs clock.bottom ${a.clock.bottom.toFixed(0)}` : 'missing');
@@ -92,11 +103,31 @@ console.log('\nPhone — 390x844');
      b.ga ? 'ga.bottom ' + b.ga.bottom.toFixed(0) : 'missing');
 
   // Buttons stay a real tap target once moved.
+  // The row carries five buttons now - Draw/Resign while a game is live, and
+  // Rematch/Review/Explore once it ends - with only the applicable ones shown.
+  // Measure what is actually on screen, not the hidden ones.
   const tap = await page.evaluate(() =>
     [...document.querySelectorAll('#gameActions .gbtn')]
+      .filter(el => el.offsetParent !== null)
       .map(el => Math.round(el.getBoundingClientRect().height)));
-  ok('both buttons are >= 42px tall', tap.length === 2 && tap.every(h => h >= 42),
+  ok('every visible button is >= 42px tall', tap.length >= 2 && tap.every(h => h >= 42),
      JSON.stringify(tap));
+
+  // End of game: the same slot must hand over to Rematch / Review.
+  const endRow = await page.evaluate(() => {
+    gameOver = true;
+    if (typeof gameMovesAlgebraic !== 'undefined') gameMovesAlgebraic = ['e4', 'e5'];
+    updateActionBtn();
+    const vis = [...document.querySelectorAll('#gameActions .gbtn')]
+      .filter(el => el.offsetParent !== null).map(el => el.textContent.trim());
+    gameOver = false; botActive = false;
+    if (typeof gameMovesAlgebraic !== 'undefined') gameMovesAlgebraic = [];
+    updateActionBtn();
+    return vis;
+  });
+  ok('Rematch and Review take the Draw/Resign slot at the end',
+     endRow.some(t => /Rematch/.test(t)) && endRow.some(t => /Review/.test(t)),
+     endRow.join(' | '));
 
   await ctx.close();
 }
@@ -112,12 +143,16 @@ console.log('\nDesktop — 1440x900 (must be unchanged)');
   ok('order is not applied at desktop width',
      await page.evaluate(() => getComputedStyle(document.getElementById('gameActions')).order === '0'),
      await page.evaluate(() => getComputedStyle(document.getElementById('gameActions')).order));
-  ok('Resign / Offer draw still sits below the settings rows',
+  // The settings checkboxes this used to measure against moved into the Board
+  // settings panel, so #board-settings .s-row matches nothing any more. The
+  // intent survives: the action row belongs BELOW the board-vision controls,
+  // never above them. Measure against the last control that is actually there.
+  ok('Resign / Offer draw still sits below the board-vision controls',
      await page.evaluate(() => {
        const ga = document.getElementById('gameActions').getBoundingClientRect();
-       const rows = [...document.querySelectorAll('#board-settings .s-row')];
-       if (!rows.length) return false;
-       return ga.top >= rows[rows.length - 1].getBoundingClientRect().top;
+       const utils = document.querySelector('.ind-utils');
+       if (!utils) return false;
+       return ga.top >= utils.getBoundingClientRect().top;
      }));
   await ctx.close();
 }

@@ -175,7 +175,9 @@ canvas{
   box-sizing:border-box;
 }
 
-/* ── Sidebar ──────────────────────────────────────────────────────────────── */
+/* NOTE: the gap here is overridden by the clamp in the "Floor anchor" block
+   further down, which scales it with the viewport. Change it there, not here.
+   ── Sidebar ──────────────────────────────────────────────────────────────── */
 #sidebar{
   flex:1;
   min-width:200px;
@@ -210,71 +212,149 @@ canvas{
 .sep{height:0.5px;background:var(--border);margin:2px 0;flex-shrink:0;}
 
 /* ── Indicator grid ───────────────────────────────────────────────────────── */
-.ind-grid{display:flex;flex-direction:row;gap:4px;width:100%;}
-.ind-col{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;}
+/* Two columns, row-major, so the paired overlays sit beside their opposite
+   number ("My forks" next to "Fork threats"). CSS grid rather than two flex
+   columns: the flex version was column-major, which cannot express a pair
+   without leaving a hole, and .ib-span lets a lone item take the full width.
+   The phone rule further down collapses this to one column. */
+.ind-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px;width:100%;}
+.ib-span{grid-column:1/-1;}
 
-/* ── Indicator button ─────────────────────────────────────────────────────── */
+/* ── Indicator button ─────────────────────────────────────────── */
+/* One button per indicator, carrying all three states. It used to be a split
+   control: the main button plus a 10px "Show During Exploration" strip under
+   it, repeated 13 times at 6px type. That strip existed only because the main
+   button could not show the difference between off and exploration-only — the
+   two resting styles differed by a 0.5px border at 25% opacity. Naming the
+   state in words removes the reason for the strip, and the ~10px per row it
+   gives back is what pays for 8.5px → 13px type at the same block height. */
 .ib{display:flex;flex-direction:column;gap:0px;user-select:none;width:100%;}
 .ib-main{
-  padding:5px 8px;display:flex;align-items:center;gap:4px;
-  font-size:8.5px;font-weight:500;color:var(--text-dim);
+  padding:4px 7px;display:flex;align-items:center;gap:6px;
+  /* 13px, up from 11: dropping the icon slot returned 8px of chip plus its 6px
+     gap, and the label is the only thing in this row that carries meaning, so
+     it gets the space. 13 is the measured ceiling, not a guess — with every
+     button forced into its bold "on" state (the state that used to push a name
+     into an ellipsis) the tightest label, "Threats & capt.", keeps 7.9px of
+     headroom at 13px but only 1.1px at 14px, which would not survive a
+     different font fallback. */
+  font-size:13px;font-weight:400;color:var(--text-dim);
   cursor:pointer;background:var(--bg-panel2);
-  border-radius:4px 4px 0 0;border:0.5px solid var(--border2);
-  width:100%;text-align:left;min-height:22px;
+  border-radius:4px;border:0.5px solid var(--border2);
+  /* A FIXED height, not a floor. The box must not resize when the indicator
+     changes state, and it must not resize when the label happens to be long:
+     both are what made the panel feel unstable to use. The height tracks the
+     viewport the same way the board does, because a 768px laptop screen is
+     about 600px of actual page once browser chrome is taken out. */
+  width:100%;text-align:left;height:var(--ib-h);min-height:0;
   transition:background 0.1s,color 0.1s,border-color 0.12s,box-shadow 0.12s;
   position:relative;white-space:nowrap;overflow:hidden;
+  /* Hold-to-peek is a first-class gesture here, so the browser must not treat a
+     long press as a callout/selection or steal it for a scroll on slight drift. */
+  touch-action:manipulation;-webkit-touch-callout:none;
 }
-.ib-main .ib-dot-status{margin-left:auto;}
 .ib-main:hover{border-color:var(--border);color:var(--text-secondary);}
+/* The peek only arms after IB_HOLD_MS; :active covers the gap so a plain click
+   still feels like it landed. */
+.ib-main:active{background:var(--bg-panel);}
+
+/* The coloured dots that used to sit here are gone. They read as a legend
+   mapping a button to its overlay colour, and they were not one: "My forks"
+   carried a static yellow chip while the fork overlay actually renders green
+   or orange depending on whose turn it is, plus blue or amber for a contested
+   fork — and the pins chip's purple appears nowhere in the board rendering at
+   all. No single swatch CAN stand for those, because the board colour is
+   dynamic and encodes turn and safety. A cue that looks like a key but is not
+   one costs a lookup and returns nothing, so the label carries the meaning
+   alone now — and the 14px the slot gave back pays for the larger type.  */
+
+/* The label is the only element allowed to give ground. Everything else is
+   flex:0 0 auto, so a long name truncates with an ellipsis instead of shoving
+   the help mark and the state word out through `overflow:hidden` — which is
+   exactly what happened when the label was a bare text node. Growing to fill
+   also pins "?" and the state chip to the right edge on every row, which is
+   what makes the column read as aligned. */
+.ib-lbl{
+  flex:1 1 auto;min-width:0;
+  /* One line, always. The names above were shortened until every one fits the
+     81px a column actually gives at 11px BOLD — measured, not guessed — so
+     the text cannot rewrap when the state changes. The previous rule allowed a
+     second line, and "My disc. attacks" duly jumped from one line to two the
+     moment it was selected and went bold. */
+  white-space:nowrap;line-height:1.2;overflow:hidden;text-overflow:ellipsis;
+}
+
+
+/* The three states are tinted fills on the light panel, not dark slabs. These
+   rules carried a near-black gradient (#0a2015) left over from the dark navy
+   theme named in the stale comment on :root — the palette there is light, and a
+   full-width row of near-black was fine as a 133px chip but reads as a bar of
+   ink once the button spans the sidebar.
+
+   Always-on: green, the accent used for live/active everywhere else, and the
+   only state whose chip is a solid fill — it is the strongest state and should
+   look it. */
 .ib.on .ib-main{
-  background:linear-gradient(135deg,#0a2015,#081a10);
-  color:#5ad490;border-color:#22a85a;
-  box-shadow:0 0 0 1.5px rgba(34,168,90,0.25);
+  background:rgba(34,168,90,0.14);
+  color:#14713c;border-color:#22a85a;
+  box-shadow:0 0 0 1.5px rgba(34,168,90,0.18);
 }
-/* Exploration-only (pre) mode: subtle dim highlight, clearly different from always-on */
+/* State is carried by tint and border colour alone. Weight used to help, but a
+   weight change re-measures the text, and a label sitting near the column width
+   would rewrap the instant it was selected — the box growing under the cursor
+   mid-click. Tint, border and the key at the top of the panel say enough. */
+
+/* Exploration-only. Given its own hue rather than a paler green: against
+   always-on it has to be distinguishable at a glance, not on inspection. This
+   is the pair that used to differ by a 0.5px border at 25% opacity. */
 .ib.pre .ib-main{
-  background:var(--bg-panel2);
-  color:var(--text-secondary);
-  border-color:rgba(34,168,90,0.25);
+  background:rgba(90,104,200,0.10);
+  color:#3a44a0;border-color:rgba(90,104,200,0.55);
 }
-.ib.pre .ib-dot-status{display:block;background:rgba(34,168,90,0.4);}
+
+/* Peeking. This colour is the contract: while it shows, the press is a peek and
+   nothing will stick when you let go. The state word keeps reading the resting
+   state throughout, which is what makes that promise legible. */
 .ib.pressing .ib-main{
-  background:linear-gradient(135deg,#0d2a3a,#0a1f30);
-  color:#6ad4f4;border-color:#4a9fd4;
-  box-shadow:0 0 0 1.5px rgba(74,159,212,0.3);
+  background:rgba(74,159,212,0.18);
+  color:#15597f;border-color:#2b7fb8;
+  box-shadow:0 0 0 1.5px rgba(74,159,212,0.25);
 }
-.ib-dot-status{width:5px;height:5px;border-radius:50%;margin-left:auto;flex-shrink:0;display:none;}
-.ib.on .ib-dot-status{display:block;background:#22a85a;}
-.ib.pressing .ib-dot-status{display:block;background:#4a9fd4;}
-/* Sub-button: Show During Exploration */
-.ib-pre{
-  display:flex;align-items:center;justify-content:center;
-  padding:0 4px;height:10px;
-  border-radius:0 0 4px 4px;
-  border:0.5px solid var(--border2);border-top:none;
-  background:var(--bg-panel2);cursor:pointer;width:100%;
-  transition:all 0.1s;
+
+/* Missing-Maia notice. This was 7.5px dim-amber body text sitting under a
+   dropdown — the same weight as a footnote, for the one thing standing between
+   the user and half the bots on the site. It reads as an alert now, and
+   carries the download itself rather than sending them to find the panel. */
+.maia-alert{
+  background:rgba(200,146,42,0.12);
+  border:1px solid rgba(200,146,42,0.55);
+  border-left-width:3px;
+  border-radius:4px;
+  padding:8px 10px;margin:2px 0 6px;
+  display:flex;flex-direction:column;gap:5px;
 }
-.ib-main{border-radius:4px 4px 0 0 !important;}
-.ib-hold-lbl{border-radius:0 0 4px 4px;border:0.5px solid var(--border2);border-top:none;background:var(--bg-panel2);}
-.ib-pre span{font-size:6px;color:var(--text-dim);letter-spacing:0.02em;white-space:nowrap;}
-.ib-pre.active{border-color:#2a3060;background:#131830;}
-.ib-pre.active span{color:#7080e0;font-weight:700;}
-/* Hold-only label for forksw */
-.ib-hold-lbl{
-  display:flex;align-items:center;justify-content:center;
-  padding:0 4px;height:10px;
-  font-size:6px;color:var(--text-dim);font-style:italic;
-  letter-spacing:0.03em;opacity:0.5;
+.maia-alert-h{font-size:11px;font-weight:700;color:#8a5d10;letter-spacing:0.01em;}
+.maia-alert-b{font-size:10px;line-height:1.45;color:var(--text-secondary);}
+.maia-alert-btn{
+  align-self:flex-start;
+  background:rgba(200,146,42,0.9);
+  border:1px solid rgba(140,100,20,0.9);
+  border-radius:4px;
+  color:#1a1408;font-family:inherit;font-size:10.5px;font-weight:700;
+  padding:5px 10px;cursor:pointer;
 }
-/* Color dot in button */
-.ib-dot{width:6px;height:6px;border-radius:50%;display:inline-block;flex-shrink:0;}
-.ib-sq{width:6px;height:6px;border-radius:1px;background:#b0c8e0;opacity:0.4;display:inline-block;flex-shrink:0;}
+.maia-alert-btn:hover{background:rgba(215,160,50,1);}
+.maia-alert-btn:disabled{opacity:0.55;cursor:default;}
+.maia-alert-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+
 /* Question mark help trigger */
 .ib-help{
-  margin-left:auto;
-  font-size:8px;color:var(--text-dim);cursor:pointer;
-  width:13px;height:13px;border-radius:50%;
+  /* The label flexes to fill, so there is no free space for margin-left:auto to
+     eat; "?" is pinned right by the label instead. Sized up with everything
+     else — an 8px glyph next to a 13px label read as a speck, and 16px is a
+     more honest tap target. */
+  font-size:10px;color:var(--text-dim);cursor:pointer;
+  width:16px;height:16px;border-radius:50%;
   display:inline-flex;align-items:center;justify-content:center;
   flex-shrink:0;
   transition:color 0.1s,background 0.1s;
@@ -1085,16 +1165,14 @@ canvas{
 .tour-body { font-size:11px;line-height:1.55;color:var(--text-secondary,#aab4c6);margin-bottom:13px; }
 /* A copy of the control a step is about, shown when the spotlight is on the
    board instead of on the button (phone). Decorative only — the real control is
-   in the drawer below. Sized up from the 8.5px it uses in the grid, which is
-   legible in a dense column but not as a single illustration. */
-.tour-replica { pointer-events:none;margin:0 0 9px;max-width:190px; }
+   in the drawer below. It inherits the grid's 13px and only needs the cursor
+   neutralised; it used to be sized UP from 8.5px, which would now shrink it. */
+.tour-replica { pointer-events:none;margin:0 0 9px;max-width:210px; }
 .tour-replica-lbl {
   font-size:8px;letter-spacing:0.12em;text-transform:uppercase;
   color:var(--text-dim);margin-bottom:4px;
 }
-.tour-replica .ib-main { font-size:11px;min-height:28px;padding:6px 10px;gap:5px;cursor:default; }
-.tour-replica .ib-dot { width:7px;height:7px; }
-.tour-replica .ib-pre span { font-size:8px; }
+.tour-replica .ib-main { cursor:default; }
 /* The "?" opens help — meaningless on a copy, and a tap target that does
    nothing is worse than no tap target. */
 .tour-replica .ib-help { display:none; }
@@ -1158,7 +1236,13 @@ canvas{
 .hybrid-slot input[type=number] { width:42px;font-size:9px;padding:2px 4px;background:var(--bg-panel);border:0.5px solid var(--border);border-radius:3px;color:var(--text-primary);text-align:center; }
 .hybrid-slot .rm-btn { font-size:10px;cursor:pointer;background:none;border:none;color:var(--text-dim);padding:0 2px;line-height:1; }
 /* Ghost piece canvas overlay */
-#ghostCanvas { position:absolute;top:0;left:0;pointer-events:none;border-radius:4px; }
+/* The bare canvas{} rule above gives BOTH canvases a 1px border. The ghost is
+   an overlay and must never paint one of its own: when the board was centred at
+   narrow widths this left a second, offset outline sitting behind the real
+   board. Transparent rather than border:0 so the border-box geometry still
+   matches the main canvas exactly and the overlay stays in register. */
+#ghostCanvas { position:absolute;top:0;left:0;pointer-events:none;border-radius:4px;
+               border-color:transparent; }
 #board-canvas-wrap { position:relative;display:inline-block;flex-shrink:0; }
 
 /* ── Board-vision settings drawer ──────────────────────────────────────────
@@ -1167,6 +1251,312 @@ canvas{
    is hidden. The mobile rules below are what give it behaviour. */
 #board-settings{display:contents;}
 #bv-toggle{display:none;}
+
+/* ── Sidebar group headings ─────────────────────────────────────────────────
+   The overlay grid had no title of its own, which is why the Board settings
+   launcher sitting above it read as its heading. Naming the groups fixes that,
+   and splitting thirteen buttons into "the four to start with" and "the rest"
+   does the job the collapsed disclosure used to do — without hiding anything,
+   and without a control that shifts the column when it opens. */
+.bv-head{
+  display:flex;align-items:center;gap:6px;
+  font-size:10px;font-weight:700;letter-spacing:0.11em;text-transform:uppercase;
+  color:var(--text-dim);padding:2px 1px 0;margin-top:2px;flex-shrink:0;
+}
+.bv-head::after{content:"";flex:1;height:1px;background:var(--border2);}
+.bv-head.sub{font-size:9px;letter-spacing:0.09em;font-weight:600;opacity:0.85;}
+
+/* ── Quick start vs bot ─────────────────────────────────────────────────────
+   The first thing in the column, because "play a game" is what most visitors
+   came to do and it used to be one of six equal buttons near the floor. One
+   block: the button carries the action and names the opponent it will start,
+   the select changes that opponent without opening anything. Custom hands off
+   to the builder, which is where a real bot gets made. */
+/* Stacked, not side by side: the launch action is the single most important
+   control in the column, so it gets a full-width row of its own and the two
+   things that qualify it — which bot, which colour — sit under it as one row
+   of settings. The old shape gave the button 1.45fr of a shared row and the
+   name a 9px subtitle, which read as a label rather than a call to action. */
+.quick-bot{
+  display:flex;flex-direction:column;align-items:stretch;gap:0;
+  width:100%;flex-shrink:0;
+  border:1.5px solid #4aab74;border-radius:6px;overflow:hidden;
+  background:rgba(90,212,144,0.16);
+  /* Separates the launch block from the visualization controls under it —
+     they are different kinds of thing and were reading as one stack. */
+  margin-bottom:11px;
+}
+.qb-go{
+  width:100%;display:flex;align-items:center;justify-content:center;
+  padding:9px 8px;border:0;background:transparent;color:#1d6b41;
+  font-family:inherit;cursor:pointer;text-align:center;
+  -webkit-tap-highlight-color:transparent;
+}
+.qb-go:hover{background:rgba(90,212,144,0.22);}
+.qb-go:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
+.qb-t1{font-size:15px;font-weight:700;line-height:1.15;white-space:nowrap;}
+.qb-row{display:flex;align-items:stretch;border-top:1px solid rgba(74,171,116,0.55);}
+.qb-sel{
+  flex:1;min-width:0;border:0;border-radius:0;
+  background:transparent;color:#1d6b41;
+  font-family:inherit;font-size:11px;font-weight:600;padding:4px 3px;cursor:pointer;
+}
+.qb-row .qb-sel + .qb-sel{border-left:1px solid rgba(74,171,116,0.55);}
+.qb-sel:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
+
+/* ── Indicator state key ────────────────────────────────────────────────────
+   Every indicator carries three states and the only thing that ever said so
+   was a word chip, dropped further up this file to buy back the second column.
+   Colour on its own is not a legend. These three chips ARE the button styles,
+   sitting at the top of the group they describe — so if the state colours
+   above ever change, they must change here too or the key stops being true. */
+.ind-key{
+  background:var(--bg-panel);border:0.5px solid var(--border2);border-radius:6px;
+  padding:4px 6px;display:flex;flex-direction:column;gap:3px;margin:1px 0;
+  flex-shrink:0;
+}
+.ind-key-t{
+  font-size:9px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;
+  color:var(--text-dim);line-height:1.3;
+}
+.ind-key-row{display:flex;align-items:center;gap:5px;}
+.ind-key-row span{
+  flex:1;font-size:9px;font-weight:700;text-align:center;line-height:1.15;
+  padding:3px 2px;border-radius:3px;
+  border:0.5px solid var(--border);background:var(--bg-panel2);color:var(--text-dim);
+}
+.ind-key-row .k-exp{background:rgba(90,104,200,0.10);border-color:rgba(90,104,200,0.55);color:#3a44a0;}
+.ind-key-row .k-on{background:rgba(34,168,90,0.14);border-color:#22a85a;color:#14713c;}
+
+/* ── Board settings launcher ────────────────────────────────────────────────
+   Moved out of the top of the column and re-sited between the two overlay
+   groups, where it no longer reads as their heading. Two lines: the name, and
+   what is behind it. Sound is the setting a beginner is most likely to go
+   hunting for, and nothing on the old button said it was in there. */
+#bs-open{
+  display:flex;align-items:center;gap:9px;width:100%;text-align:left;
+  min-height:38px;padding:7px 10px;margin:3px 0;
+  background:var(--bg-panel2);border:1px solid var(--border);border-radius:6px;
+  color:var(--text-primary);font-family:inherit;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;flex-shrink:0;
+}
+#bs-open:hover{border-color:var(--accent);}
+#bs-open .bs-ico{font-size:15px;line-height:1;flex-shrink:0;}
+#bs-open .bs-txt{flex:1;min-width:0;display:flex;flex-direction:column;}
+#bs-open .bs-t1{display:block;font-size:12.5px;font-weight:700;line-height:1.2;}
+#bs-open .bs-t2{
+  display:block;font-size:9.5px;font-weight:400;line-height:1.3;margin-top:2px;
+  color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+#bs-open .bs-car{font-size:13px;color:var(--text-dim);flex-shrink:0;}
+
+/* ── Ghost replies ──────────────────────────────────────────────────────────
+   The same button as every overlay beside it, because it is one more thing
+   that draws on the board — but with two states rather than three: it either
+   runs or it does not. The depth selector sits alongside, and the two are two
+   views of one value. ghostToggle() keeps them in step in both directions. */
+/* One control, not two. The label and the depth are the same decision, and a
+   button beside a dropdown read as two unrelated things sharing a row. The
+   whole block tints when ghosts are on, exactly like an overlay button. */
+.ghost-one{
+  /* One line, side by side. This is an optional extra rather than a core
+     overlay, so it should occupy one row like every other indicator and not
+     two — the stacked shape gave it the visual weight of a section. The depth
+     select is legible at this width now that the label beside it is short.
+     Stated explicitly so it survives any change to .ib. */
+  display:flex;flex-direction:row;align-items:stretch;
+  width:100%;margin-top:3px;flex-shrink:0;
+  border:0.5px solid var(--border2);border-radius:4px;overflow:hidden;
+  background:var(--bg-panel2);
+  transition:background 0.1s,border-color 0.12s,box-shadow 0.12s;
+}
+.ghost-one .ib-main{
+  flex:1.15;min-width:0;border:0;border-radius:0;background:transparent;
+  height:var(--ib-h);
+}
+.ghost-one.on{
+  background:rgba(34,168,90,0.14);border-color:#22a85a;
+  box-shadow:0 0 0 1.5px rgba(34,168,90,0.18);
+}
+.ghost-one.on .ib-main{background:transparent;color:#14713c;}
+#soloGhostDepth{
+  flex:1;min-width:0;font-family:inherit;font-size:10px;
+  border:0;border-left:0.5px solid var(--border2);border-radius:0;
+  background:transparent;color:var(--text-secondary);cursor:pointer;padding:2px 3px;
+}
+.ghost-one.on #soloGhostDepth{color:#14713c;border-left-color:rgba(34,168,90,0.45);}
+#soloGhostDepth:disabled{opacity:0.55;cursor:default;}
+
+/* ── Indicator utility row ──────────────────────────────────────────────────
+   Clear, Hide, Peek and Show all read as one family. Three of the four do
+   nothing at all on a click — they act only while held — and the dashed
+   border plus one line of caption is what makes that gesture visible without
+   relying on a title tooltip nobody hovers long enough to see.
+   Named .ind-utils, not .util-row: that class already exists further up for
+   the about/feedback strip and the two would collide. */
+.ind-utils{display:flex;gap:3px;margin-top:3px;flex-shrink:0;}
+.ind-utils .ctrl-btn{
+  flex:1;padding:0 3px;font-size:10.5px;font-weight:600;
+  height:var(--util-h);min-height:0;
+}
+.ind-utils .hold-btn{border-style:dashed;}
+.hold-note{
+  font-size:9px;color:var(--text-dim);text-align:center;
+  line-height:1.25;padding:2px 0 0;flex-shrink:0;
+}
+
+/* ── Weak-square swatches ───────────────────────────────────────────────────
+   Both weak-square buttons used to carry the same pale blue chip, so the
+   panel could not tell you the two overlays differ. These track the board
+   colours set in 30-board-ui.js — change one, change the other. */
+.ib-sq.ib-sq-mine{background:#a81c30;opacity:0.85;}
+.ib-sq.ib-sq-theirs{background:#147d8c;opacity:0.85;}
+
+/* ── Game action slot ───────────────────────────────────────────────────────
+   One row, five buttons, only the ones that apply on screen. While a game is
+   live it carries Offer draw and Resign; the moment it ends the same slot
+   carries Rematch and Review, which is where a player is already looking. */
+#gameActions .game-row{display:flex;gap:3px;flex-wrap:nowrap;}
+#gameActions .gbtn{flex:1;min-width:0;white-space:nowrap;}
+#gameActions .rematch-btn{border-color:var(--accent);color:var(--accent);}
+#gameActions .review-btn{border-color:rgba(74,159,212,0.45);color:#4a9fd4;}
+
+/* ── Floor ──────────────────────────────────────────────────────────────────
+   Starting a game is what a visitor without one wants, and it used to be one
+   of six identical buttons. The two starters get their own row, taller and
+   tinted; Theme/Load/Save drop to a quiet secondary row. The separator carries
+   real space so the two groups do not read as one block. */
+/* The gap that separates the overlay utilities from the game buttons. It gives
+   ground first when the viewport is short, before any control does. */
+.floor-sep{
+  height:1px;background:var(--border);flex-shrink:0;
+  margin:clamp(6px,1.5vh,12px) 0 clamp(5px,1.3vh,11px);
+}
+.play-row{display:flex;gap:3px;flex-shrink:0;align-items:stretch;}
+.play-row .ctrl-btn{flex:1;text-align:center;}
+.play-btn{
+  font-size:12px;font-weight:700;line-height:1.2;padding:0 4px;
+  height:var(--play-h);min-height:0;
+  background:rgba(90,212,144,0.16);border:1.5px solid #4aab74;color:#1d6b41;
+}
+.play-btn:hover{background:rgba(90,212,144,0.26);border-color:#3d9463;}
+.play-btn.mp{background:rgba(74,159,212,0.14);border-color:#3f8cc0;color:#1a5d88;}
+.play-btn.mp:hover{background:rgba(74,159,212,0.24);border-color:#33780f00;}
+/* The dynamic action slot shares the primary row but only deserves primary
+   weight when it IS the primary action. Idle it says "Training Tips", which
+   must not shout over the two game starters; updateActionBtn() swaps it to
+   .reset-btn for Resign, and by then the starters are hidden anyway. */
+.play-row #resignBtn,.play-row #exploreBtn,.play-row #reviewBtn{
+  font-size:10.5px;font-weight:600;padding:0 3px;height:var(--play-h);min-height:0;
+}
+.play-row #resignBtn.reset-btn{font-size:12px;font-weight:700;}
+.secondary-row{display:flex;gap:3px;margin-top:3px;flex-shrink:0;}
+.secondary-row .ctrl-btn{
+  flex:1;text-align:center;font-size:10px;font-weight:600;padding:0 2px;
+  height:var(--sec-h);min-height:0;
+  background:transparent;color:var(--text-dim);
+}
+.secondary-row .ctrl-btn:hover{background:var(--bg-panel);color:var(--text-secondary);}
+
+/* ── Floor anchor ───────────────────────────────────────────────────────────
+   On a laptop the column is far taller than its contents — measured at 508px
+   of slack against a board running to y=872. Letting the floor float meant
+   anything that grew above it pushed the game buttons down. This spacer eats
+   the slack instead, so growth above is absorbed and nothing below moves.
+   A spacer rather than margin-top:auto because #gameActions and
+   #bottom-controls are siblings: two auto margins would split the free space
+   between them and open a gap whenever a game is running. */
+/* Every control height in the column comes from here. The board already sizes
+   itself to the viewport; the sidebar did not, so on a 768px screen — about
+   600px of page once the browser's own chrome is gone — the column stayed at
+   its full height and pushed the bottom three rows off the bottom. These track
+   the viewport too, and the clamps stop them shrinking past readable. */
+#sidebar{
+  align-self:stretch;
+  --ib-h:clamp(27px,4.2vh,36px);
+  --util-h:clamp(25px,3.7vh,32px);
+  --play-h:clamp(28px,4.6vh,38px);
+  --sec-h:clamp(23px,3.4vh,29px);
+  gap:clamp(2px,0.55vh,4px);
+}
+.sb-spacer{flex:1 1 auto;min-height:4px;}
+
+/* ── Short viewports ─────────────────────────────────────────
+   A 1366x768 laptop is about 600px of page once the browser's tab strip,
+   address bar and the OS taskbar are taken out. That is the case that has to
+   fit, not the 768. Three tiers, each giving back breathing room before it
+   gives back anything a person needs to read. Ordered loosest to tightest so
+   the later ones simply win on source order. */
+
+/* Tier 1 — tighter spacing, captions fold onto their titles. */
+@media (max-height:780px){
+  .ind-grid{gap:2px;}
+  .bv-head{padding-top:0;margin-top:0;}
+  .hold-note{display:none;}
+  /* Board settings collapses to one line, keeping every word. */
+  #bs-open{min-height:0;height:var(--play-h);padding:4px 9px;margin:2px 0;}
+  #bs-open .bs-txt{flex-direction:row;align-items:baseline;gap:6px;overflow:hidden;}
+  #bs-open .bs-t1{flex:0 0 auto;font-size:12px;}
+  #bs-open .bs-t2{
+    margin-top:0;font-size:8.5px;flex:1 1 auto;min-width:0;
+    overflow:hidden;text-overflow:ellipsis;
+  }
+  #bs-open .bs-ico{font-size:13px;}
+}
+
+/* Tier 2 — the quick-start button gives back its generous padding and a
+   little of its size (it stays the largest thing in the column either way),
+   and the state key loses its heading, since the three chips are
+   self-describing once you have read them once. */
+@media (max-height:640px){
+  #sidebar{--ib-h:25px;--util-h:24px;--play-h:27px;--sec-h:23px;}
+  .quick-bot{margin-bottom:7px;}
+  .quick-bot .qb-go{padding:5px 8px;}
+  .quick-bot .qb-t1{font-size:13px;}
+  .qb-row .qb-sel{font-size:10px;padding:3px 3px;}
+  .ind-key{padding:3px 5px;gap:2px;}
+  .ind-key-t{display:none;}
+  .ind-key-row span{font-size:8.5px;padding:2px 1px;}
+}
+
+/* Tier 3 — past this point the column is choosing between a legible control
+   and a visible one, and visible wins: a button below the fold is worth
+   nothing at all. The group headings go; the Board settings row still sits
+   between the two groups and keeps them apart. */
+@media (max-height:565px){
+  #sidebar{--ib-h:23px;--util-h:22px;--play-h:25px;--sec-h:21px;}
+  .bv-head.sub{display:none;}
+  .ind-grid{gap:1px;}
+  .floor-sep{margin:4px 0 3px;}
+}
+
+/* A row inside Board settings that opens another panel. Theme lives here now:
+   it is set once and then forgotten, which is what everything else behind this
+   button has in common, and the sidebar needed the row back. */
+.bs-link{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  width:100%;min-height:40px;padding:8px 10px;margin-top:2px;
+  background:var(--bg-panel2);border:0.5px solid var(--border);border-radius:6px;
+  color:var(--text-secondary);font-family:inherit;font-size:12.5px;font-weight:600;
+  cursor:pointer;text-align:left;
+}
+.bs-link:hover{border-color:var(--accent);color:var(--text-primary);}
+
+/* Panel groups in Board settings */
+.bs-group{margin-bottom:14px;}
+.bs-head{
+  font-size:10px;letter-spacing:0.1em;text-transform:uppercase;
+  color:var(--text-dim);font-weight:700;margin-bottom:2px;
+}
+#boardSettingsPanel .s-row{padding:9px 0;flex-wrap:nowrap;}
+#boardSettingsPanel .s-lbl{
+  font-size:13px;text-transform:none;letter-spacing:0;
+  color:var(--text-secondary);white-space:normal;
+  flex:1 1 auto;min-width:0;
+}
+#boardSettingsPanel .s-row label{flex:0 0 auto;}
+#boardSettingsPanel .s-row label{font-size:13px;gap:6px;}
+#boardSettingsPanel .s-row label input{width:15px;height:15px;}
 
 @media(max-width:760px){
   /* ── Board first, and as large as the screen allows ──
@@ -1190,14 +1580,19 @@ canvas{
   /* Explicit order for EVERY child of #app. Ordering only some of them left
      #proSide at the default 0, which floated the pro notation panel and its
      action buttons above the board and pushed the board off the bottom. */
-  #board-col{width:100%;min-width:0;order:1;}
+  /* Centre the whole board unit as a group. The canvas used to centre itself
+     with margin:0 auto, which moved ONLY the main canvas — #ghostCanvas is
+     absolutely positioned at left:0, and the player boxes are plain flex items,
+     so both stayed pinned left while the board floated right. Centring the flex
+     column instead keeps board, ghost layer and clocks locked together. */
+  #board-col{width:100%;min-width:0;order:1;align-items:center;}
   #proSide{width:100%;min-width:0;max-width:100%;order:2;}
   #sidebar{min-width:0;width:100%;max-width:100%;order:3;}
   /* resizeBoard() sizes the canvas and player boxes inline (it knows the
      available height); these just cap them to the column and centre them, so
      there's one source of truth for the board's size rather than CSS and JS
      fighting through !important. */
-  canvas{max-width:100%;height:auto;margin:0 auto;}
+  canvas{max-width:100%;height:auto;}
   /* Genuinely fixed, matching the `44 * 2 + 8` resizeBoard() already reserves
      for these two boxes. With height:auto/min-height:36px the box grew by ~7px
      whenever the turn pill was re-parented into it — and since the pill swaps
@@ -1243,6 +1638,15 @@ canvas{
   .ctrl-row{gap:6px;}
   /* Indicator cards go 1-up so their labels stop truncating */
   .ind-grid{grid-template-columns:1fr;}
+  #bs-open{min-height:48px;}
+  /* Thirteen always-visible overlays is a much taller stack at one column
+     than four was. The phone keeps its own #bv-toggle drawer around the
+     whole region, so this only has to stay thumb-sized, not compact. */
+  .ind-utils .ctrl-btn,.play-row .ctrl-btn,.secondary-row .ctrl-btn{min-height:42px;}
+  .ghost-row .ib-main{min-height:42px;}
+  /* The overlay buttons were 34px even when only four of them showed. There
+     are thirteen now, and they are the primary control on the panel. */
+  .ind-grid .ib-main{min-height:44px;}
 }
 
 /* Short viewports (landscape phones): cap the board by height, not width, and
@@ -2205,36 +2609,178 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
   <!-- RIGHT: sidebar -->
   <div id="sidebar">
 
-    <!-- Board-vision settings + indicator cards.
-         On a phone these are ~450px of configuration sitting between the board
-         and the game buttons, which pushed the board off screen. They collapse
-         behind #bv-toggle there; on desktop the wrapper is display:contents so
-         the sidebar's own flex layout is completely unchanged. -->
+    <!-- Always visible, on every screen size: start a game, and the four
+         overlays that answer "can this be taken". Everything past these is
+         secondary and lives behind #bv-toggle below (a phone-only disclosure;
+         on desktop #board-settings is display:contents and nothing folds). -->
+
+    <!-- ── State key ────────────────────────────────────────────────────────
+         Three states, previously conveyed by background hue and nothing else.
+         The chips are the button styles themselves, so the key cannot drift
+         out of date without someone noticing it looks wrong. -->
+    <!-- Quick start. Names the bot it will start, and changes it without
+         opening anything; Custom hands off to the builder. -->
+    <div class="quick-bot" id="quickBot">
+      <button type="button" class="qb-go" id="quickStartBtn" onclick="quickBotStart()">
+        <span class="qb-t1">▶ Start Game vs Bot</span>
+      </button>
+      <div class="qb-row">
+        <select class="qb-sel" id="quickBotSel" onchange="quickBotPick(this.value)"
+                aria-label="Choose the opponent">
+          <optgroup label="Stockfish level" id="quickBotLevels"></optgroup>
+          <option value="builder">Open Bot-Builder…</option>
+        </select>
+        <select class="qb-sel" id="quickBotColor" onchange="botSetPlayerColor(this.value)"
+                aria-label="Choose which colour you play">
+          <option value="random">Play as Random</option>
+          <option value="white">Play as White</option>
+          <option value="black">Play as Black</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- ── Core four ────────────────────────────────────────────────────────
+         The overlays that answer "can this be taken" — the reason someone
+         opened a training board at all. -->
+    <div class="bv-head sub">Start with these</div>
+    <div class="ind-grid">
+      <div class="ib" id="ib-threats">
+          <button class="ib-main" onmousedown="ibMainDown('threats',event)" onmouseup="ibMainUp('threats')" onmouseleave="ibMainCancel('threats')" ontouchstart="ibMainDown('threats',event)" ontouchend="ibMainUp('threats')" ontouchcancel="ibMainCancel('threats')">
+            <span class="ib-lbl">Threats &amp; capt.</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('threats',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-counts">
+          <button class="ib-main" onmousedown="ibMainDown('counts',event)" onmouseup="ibMainUp('counts')" onmouseleave="ibMainCancel('counts')" ontouchstart="ibMainDown('counts',event)" ontouchend="ibMainUp('counts')" ontouchcancel="ibMainCancel('counts')">
+            <span class="ib-lbl">Threat/def.</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('counts',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-unprotected">
+          <button class="ib-main" onmousedown="ibMainDown('unprotected',event)" onmouseup="ibMainUp('unprotected')" onmouseleave="ibMainCancel('unprotected')" ontouchstart="ibMainDown('unprotected',event)" ontouchend="ibMainUp('unprotected')" ontouchcancel="ibMainCancel('unprotected')">
+            <span class="ib-lbl">Unprotected</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('unprotected',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-pins">
+          <button class="ib-main" onmousedown="ibMainDown('pins',event)" onmouseup="ibMainUp('pins')" onmouseleave="ibMainCancel('pins')" ontouchstart="ibMainDown('pins',event)" ontouchend="ibMainUp('pins')" ontouchcancel="ibMainCancel('pins')">
+            <span class="ib-lbl">Pins</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('pins',event)">?</span>
+          </button>
+        </div>
+    </div>
+
+    <!-- The state key sits UNDER the group it describes, not above it. Above
+         the core four it read as their heading; here it reads as the legend
+         for the buttons you have just met, and it is the last thing before
+         the second layer folds away. -->
+    <div class="ind-key">
+      <div class="ind-key-t">Tap to cycle · hold to peek</div>
+      <div class="ind-key-row">
+        <span>Off</span><span class="k-exp">While exploring</span><span class="k-on">Always on</span>
+      </div>
+    </div>
+
+    <!-- Everything below is the second layer: preferences, the nine further
+         overlays, ghost replies and the hold-to-peek utilities. On a phone it
+         folds behind this toggle so the board, the start button and the core
+         four are what a first visit actually lands on. -->
     <button type="button" id="bv-toggle" aria-expanded="false" aria-controls="board-settings"
             onclick="toggleBoardSettings()">
-      <span class="bv-t">⚙ Board vision settings</span>
+      <span class="bv-t">⚙ More board vision</span>
       <span class="bv-c">▾</span>
     </button>
     <div id="board-settings">
 
-    <!-- Settings -->
-    <div class="s-row">
-      <span class="s-lbl">🔊 Move sounds:</span>
-      <span class="s-spacer"></span>
-      <label><input type="checkbox" id="cbSound" onchange="saveSoundPref()"> On</label>
+    <!-- Preferences, not overlays. Sited at the top of the second layer: it is
+         the row a beginner hunts for — sound lives behind it — so the caption
+         names what is inside instead of making them guess. -->
+    <button type="button" id="bs-open" onclick="openPanel('boardSettingsPanel')">
+      <span class="bs-ico">⚙</span>
+      <span class="bs-txt">
+        <span class="bs-t1">Board settings</span>
+        <span class="bs-t2">Sound · legal moves · threat rules</span>
+      </span>
+      <span class="bs-car">›</span>
+    </button>
+
+    <!-- ── The other nine ───────────────────────────────────────────────────
+         These used to sit behind a disclosure, which bought nothing — the
+         column has ~500px of slack on a laptop — and cost a 237px shift of
+         everything below it every time someone opened it. Shown outright, one
+         matched pair per row: mine on the left, the opponent's on the right,
+         so the grid teaches the symmetry rather than hiding it. -->
+    <div class="bv-head sub">When you're ready</div>
+    <div class="ind-grid">
+      <div class="ib ib-span" id="ib-checkthreats">
+          <button class="ib-main" onmousedown="ibMainDown('checkthreats',event)" onmouseup="ibMainUp('checkthreats')" onmouseleave="ibMainCancel('checkthreats')" ontouchstart="ibMainDown('checkthreats',event)" ontouchend="ibMainUp('checkthreats')" ontouchcancel="ibMainCancel('checkthreats')">
+            <span class="ib-lbl">Check threats</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('checkthreats',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-forksw">
+          <button class="ib-main" onmousedown="ibMainDown('forksw',event)" onmouseup="ibMainUp('forksw')" onmouseleave="ibMainCancel('forksw')" ontouchstart="ibMainDown('forksw',event)" ontouchend="ibMainUp('forksw')" ontouchcancel="ibMainCancel('forksw')">
+            <span class="ib-lbl">My forks</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksw',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-forksb">
+          <button class="ib-main" onmousedown="ibMainDown('forksb',event)" onmouseup="ibMainUp('forksb')" onmouseleave="ibMainCancel('forksb')" ontouchstart="ibMainDown('forksb',event)" ontouchend="ibMainUp('forksb')" ontouchcancel="ibMainCancel('forksb')">
+            <span class="ib-lbl">Opp. forks</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksb',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-discoveredself">
+          <button class="ib-main" onmousedown="ibMainDown('discoveredself',event)" onmouseup="ibMainUp('discoveredself')" onmouseleave="ibMainCancel('discoveredself')" ontouchstart="ibMainDown('discoveredself',event)" ontouchend="ibMainUp('discoveredself')" ontouchcancel="ibMainCancel('discoveredself')">
+            <span class="ib-lbl">My disc.</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredself',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-discoveredopp">
+          <button class="ib-main" onmousedown="ibMainDown('discoveredopp',event)" onmouseup="ibMainUp('discoveredopp')" onmouseleave="ibMainCancel('discoveredopp')" ontouchstart="ibMainDown('discoveredopp',event)" ontouchend="ibMainUp('discoveredopp')" ontouchcancel="ibMainCancel('discoveredopp')">
+            <span class="ib-lbl">Opp. disc.</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredopp',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-xray">
+          <button class="ib-main" onmousedown="ibMainDown('xray',event)" onmouseup="ibMainUp('xray')" onmouseleave="ibMainCancel('xray')" ontouchstart="ibMainDown('xray',event)" ontouchend="ibMainUp('xray')" ontouchcancel="ibMainCancel('xray')">
+            <span class="ib-lbl">X-ray pressure</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('xray',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-overloaded">
+          <button class="ib-main" onmousedown="ibMainDown('overloaded',event)" onmouseup="ibMainUp('overloaded')" onmouseleave="ibMainCancel('overloaded')" ontouchstart="ibMainDown('overloaded',event)" ontouchend="ibMainUp('overloaded')" ontouchcancel="ibMainCancel('overloaded')">
+            <span class="ib-lbl">Overloaded</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('overloaded',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-weakb">
+          <button class="ib-main" onmousedown="ibMainDown('weakb',event)" onmouseup="ibMainUp('weakb')" onmouseleave="ibMainCancel('weakb')" ontouchstart="ibMainDown('weakb',event)" ontouchend="ibMainUp('weakb')" ontouchcancel="ibMainCancel('weakb')">
+            <span class="ib-lbl">My weak sq.</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakb',event)">?</span>
+          </button>
+        </div>
+      <div class="ib" id="ib-weakw">
+          <button class="ib-main" onmousedown="ibMainDown('weakw',event)" onmouseup="ibMainUp('weakw')" onmouseleave="ibMainCancel('weakw')" ontouchstart="ibMainDown('weakw',event)" ontouchend="ibMainUp('weakw')" ontouchcancel="ibMainCancel('weakw')">
+            <span class="ib-lbl">Opp. weak sq.</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakw',event)">?</span>
+          </button>
+        </div>
     </div>
-    <div class="s-row">
-      <span class="s-lbl">Show legal moves:</span>
-      <span class="s-spacer"></span>
-      <label><input type="checkbox" id="cbLegalToggle" checked onchange="render()"> On</label>
-    </div>
-    <div class="s-row" id="ghostRow">
-      <span class="s-lbl">👻 Ghost responses:<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('ghostresponses',event)" style="margin-left:3px;">?</span></span>
-      <span class="s-spacer"></span>
-      <select id="soloGhostDepth" onchange="ghostModeChanged()" style="font-size:8px;padding:1px 3px;border:0.5px solid var(--border);border-radius:3px;background:var(--bg-panel2);color:var(--text-secondary);">
-        <option value="0">Off</option>
+
+    <!-- Ghost replies: the same button as the overlays beside it, because it
+         is one more thing that draws on the board. Two states, not three —
+         it runs or it does not — with the depth selector alongside. The two
+         are two views of one value; ghostToggle() keeps them in step. -->
+    <div class="ib ghost-one" id="ib-ghost">
+        <button class="ib-main" onclick="ghostToggle()">
+          <span class="ib-lbl">👻 Ghost replies</span>
+          <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('ghostresponses',event)">?</span>
+        </button>
+      <select id="soloGhostDepth" onchange="ghostModeChanged()" aria-label="Ghost reply engine and depth">
+        <option value="0" selected>Off</option>
         <option value="4">SF Fast (depth 4)</option>
-        <option value="8" selected>SF Medium (depth 8)</option>
+        <option value="8">SF Medium (depth 8)</option>
         <option value="12">SF Deep (depth 12)</option>
         <option value="maia">Maia (2600 + 1500)</option>
       </select>
@@ -2242,188 +2788,71 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div id="ghostMpNote" style="display:none;font-size:7.5px;color:#c0a060;padding:0 2px 4px;">
       ⚔ Inactive &amp; unavailable during 2-player games — engine hints would undercut human-vs-human play.
     </div>
-    <div id="ghostMaiaHint" style="display:none;font-size:7.5px;color:#c0a060;padding:0 2px 4px;">
-      Maia3 model not downloaded — ghosts use Stockfish until you download it in the 🤖 vs Bot panel.
-    </div>
-    <div class="s-row">
-      <span class="s-lbl">Batteries in threat counts:<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('batteriessetting',event)" style="margin-left:3px;">?</span></span>
-      <span class="s-spacer"></span>
-      <label><input type="checkbox" id="cbBattery" onchange="rebuildAtk()"> On</label>
-    </div>
-    <div class="s-row">
-      <span class="s-lbl">Influence on move exploration:</span>
-      <span class="s-spacer"></span>
-      <label><input type="checkbox" id="cbInfluenceToggle" checked onchange="render()"> On</label>
-    </div>
-    <div class="s-row">
-      <span class="s-lbl">Include queen pins:<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('queenpinssetting',event)" style="margin-left:3px;">?</span></span>
-      <span class="s-spacer"></span>
-      <label><input type="checkbox" id="cbQPins" onchange="rebuildAtk()"> On</label>
-    </div>
-
-
-    <div class="sep"></div>
-
-    <!-- Indicator grid -->
-    <div class="ind-grid">
-      <div class="ind-col">
-        <div class="ib" id="ib-checkthreats">
-          <button class="ib-main" onmousedown="ibMainDown('checkthreats',event)" onmouseup="ibMainUp('checkthreats')" onmouseleave="ibMainUp('checkthreats')" ontouchstart="ibMainDown('checkthreats',event)" ontouchend="ibMainUp('checkthreats')">
-            <span class="ib-dot" style="background:#e03535;"></span>Check threats
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('checkthreats',event)">?</span>
-            <span class="ib-dot-status"></span>
-          </button>
-          <div class="ib-pre" id="pre-checkthreats" onclick="ibTogglePre('checkthreats')"><span>Show During Exploration</span></div>
-        </div>
-        <div class="ib" id="ib-threats">
-          <button class="ib-main" onmousedown="ibMainDown('threats',event)" onmouseup="ibMainUp('threats')" onmouseleave="ibMainUp('threats')" ontouchstart="ibMainDown('threats',event)" ontouchend="ibMainUp('threats')">
-            <span class="ib-dot" style="background:#e03535;margin-right:1px;"></span><span class="ib-dot" style="background:#1eb446;margin-right:3px;"></span>Threats &amp; Captures
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('threats',event)">?</span>
-            <span class="ib-dot-status"></span>
-          </button>
-          <div class="ib-pre" id="pre-threats" onclick="ibTogglePre('threats')"><span>Show During Exploration</span></div>
-        </div>
-        <div class="ib" id="ib-counts">
-          <button class="ib-main" onmousedown="ibMainDown('counts',event)" onmouseup="ibMainUp('counts')" onmouseleave="ibMainUp('counts')" ontouchstart="ibMainDown('counts',event)" ontouchend="ibMainUp('counts')">
-            <span class="ib-dot" style="background:#22a85a;margin-right:1px;"></span><span class="ib-dot" style="background:#e03535;margin-right:3px;"></span>Threat/Def. counts
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('counts',event)">?</span>
-            <span class="ib-dot-status"></span>
-          </button>
-          <div class="ib-pre" id="pre-counts" onclick="ibTogglePre('counts')"><span>Show During Exploration</span></div>
-        </div>
-        <div class="ib" id="ib-unprotected">
-          <button class="ib-main" onmousedown="ibMainDown('unprotected',event)" onmouseup="ibMainUp('unprotected')" onmouseleave="ibMainUp('unprotected')" ontouchstart="ibMainDown('unprotected',event)" ontouchend="ibMainUp('unprotected')">
-            <span class="ib-dot" style="background:#e03535;"></span>Unprotected
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('unprotected',event)">?</span>
-            <span class="ib-dot-status"></span>
-          </button>
-          <div class="ib-pre" id="pre-unprotected" onclick="ibTogglePre('unprotected')"><span>Show During Exploration</span></div>
-        </div>
-        <div class="ib" id="ib-pins">
-          <button class="ib-main" onmousedown="ibMainDown('pins',event)" onmouseup="ibMainUp('pins')" onmouseleave="ibMainUp('pins')" ontouchstart="ibMainDown('pins',event)" ontouchend="ibMainUp('pins')">
-            <span class="ib-dot" style="background:#9b59b6;"></span>Pins
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('pins',event)">?</span>
-            <span class="ib-dot-status"></span>
-          </button>
-          <div class="ib-pre" id="pre-pins" onclick="ibTogglePre('pins')"><span>Show During Exploration</span></div>
-        </div>
-        <div class="ib" id="ib-forksw">
-          <button class="ib-main" onmousedown="ibMainDown('forksw',event)" onmouseup="ibMainUp('forksw')" onmouseleave="ibMainUp('forksw')" ontouchstart="ibMainDown('forksw',event)" ontouchend="ibMainUp('forksw')">
-            <span class="ib-dot" style="background:#f0c040;"></span>My forks &amp; skewers
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksw',event)">?</span>
-            <span class="ib-dot-status"></span>
-          </button>
-          <div class="ib-pre" id="pre-forksw" onclick="ibTogglePre('forksw')"><span>Show During Exploration</span></div>
-        </div>
-        <div class="ib" id="ib-forksb">
-          <button class="ib-main" onmousedown="ibMainDown('forksb',event)" onmouseup="ibMainUp('forksb')" onmouseleave="ibMainUp('forksb')" ontouchstart="ibMainDown('forksb',event)" ontouchend="ibMainUp('forksb')">
-            <span class="ib-dot" style="background:#e040c0;"></span>Fork &amp; skewer threats
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksb',event)">?</span>
-            <span class="ib-dot-status"></span>
-          </button>
-          <div class="ib-pre" id="pre-forksb" onclick="ibTogglePre('forksb')"><span>Show During Exploration</span></div>
-        </div>
+    <div id="ghostMaiaHint" style="display:none;">
+      <div class="maia-alert">
+        <div class="maia-alert-h">⚠ Maia3 model not downloaded</div>
+        <div class="maia-alert-b">Maia is what makes ghosts and the Maia bots feel human. Until it
+          is downloaded, every one of them quietly falls back to Stockfish.</div>
+        <button type="button" class="maia-alert-btn" onclick="maiaDownloadModel()">
+          ↓ Download Maia3 (~44 MB) — one time
+        </button>
       </div>
-      <div class="ind-col">
-        <div class="ib" id="ib-overloaded">
-          <button class="ib-main" onmousedown="ibMainDown('overloaded',event)" onmouseup="ibMainUp('overloaded')" onmouseleave="ibMainUp('overloaded')" ontouchstart="ibMainDown('overloaded',event)" ontouchend="ibMainUp('overloaded')">
-            <span class="ib-dot" style="background:#c8a000;"></span>Overloaded
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('overloaded',event)">?</span>
-            <span class="ib-dot-status"></span>
-          </button>
-          <div class="ib-pre" id="pre-overloaded" onclick="ibTogglePre('overloaded')"><span>Show During Exploration</span></div>
-        </div>
-        <div class="ib" id="ib-discoveredopp">
-          <button class="ib-main" onmousedown="ibMainDown('discoveredopp',event)" onmouseup="ibMainUp('discoveredopp')" onmouseleave="ibMainUp('discoveredopp')" ontouchstart="ibMainDown('discoveredopp',event)" ontouchend="ibMainUp('discoveredopp')">
-            <span class="ib-dot" style="background:#dc8200;"></span>Opp. disc. threats
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredopp',event)">?</span>
-            <span class="ib-dot-status"></span>
-          </button>
-          <div class="ib-pre" id="pre-discoveredopp" onclick="ibTogglePre('discoveredopp')"><span>Show During Exploration</span></div>
-        </div>
-        <div class="ib" id="ib-discoveredself">
-          <button class="ib-main" onmousedown="ibMainDown('discoveredself',event)" onmouseup="ibMainUp('discoveredself')" onmouseleave="ibMainUp('discoveredself')" ontouchstart="ibMainDown('discoveredself',event)" ontouchend="ibMainUp('discoveredself')">
-            <span class="ib-dot" style="background:#a050dc;"></span>My disc. attacks
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredself',event)">?</span>
-            <span class="ib-dot-status"></span>
-          </button>
-          <div class="ib-pre" id="pre-discoveredself" onclick="ibTogglePre('discoveredself')"><span>Show During Exploration</span></div>
-        </div>
-        <div class="ib" id="ib-weakw">
-          <button class="ib-main" onmousedown="ibMainDown('weakw',event)" onmouseup="ibMainUp('weakw')" onmouseleave="ibMainUp('weakw')" ontouchstart="ibMainDown('weakw',event)" ontouchend="ibMainUp('weakw')">
-            <span class="ib-sq"></span>My weak squares
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakw',event)">?</span>
-            <span class="ib-dot-status"></span>
-          </button>
-          <div class="ib-pre" id="pre-weakw" onclick="ibTogglePre('weakw')"><span>Show During Exploration</span></div>
-        </div>
-        <div class="ib" id="ib-weakb">
-          <button class="ib-main" onmousedown="ibMainDown('weakb',event)" onmouseup="ibMainUp('weakb')" onmouseleave="ibMainUp('weakb')" ontouchstart="ibMainDown('weakb',event)" ontouchend="ibMainUp('weakb')">
-            <span class="ib-sq"></span>Opp. weak squares
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakb',event)">?</span>
-            <span class="ib-dot-status"></span>
-          </button>
-          <div class="ib-pre" id="pre-weakb" onclick="ibTogglePre('weakb')"><span>Show During Exploration</span></div>
-        </div>
-        <div class="ib" id="ib-xray">
-          <button class="ib-main" onmousedown="ibMainDown('xray',event)" onmouseup="ibMainUp('xray')" onmouseleave="ibMainUp('xray')" ontouchstart="ibMainDown('xray',event)" ontouchend="ibMainUp('xray')">
-            <span class="ib-dot" style="background:#8080ff;"></span>X-ray pressure/threats
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('xray',event)">?</span>
-            <span class="ib-dot-status"></span>
-          </button>
-          <div class="ib-pre" id="pre-xray" onclick="ibTogglePre('xray')"><span>Show During Exploration</span></div>
-        </div>
-        <div style="margin-top:4px;">
-          <button class="ctrl-btn danger-btn" id="btnClearAll" onclick="clearAllSelections()" style="width:100%;font-size:8.5px;">✕ Clear all</button>
-        </div>
-      </div>
-    </div><!-- end ind-grid -->
-    <!-- Peek / Hide / Show All — larger, below the indicator columns -->
-    <div style="display:flex;gap:5px;margin-top:5px;">
-      <button id="btnHideShow" class="ctrl-btn util-btn"
-        style="flex:1;padding:7px 4px;font-size:9px;font-weight:600;"
+    </div>
+
+    <!-- Clear / Hide / Peek / Show all read as one family. The last three do
+         nothing on a click — they act only while held — so they carry a
+         dashed border and the caption below says so in words. -->
+    <div class="ind-utils">
+      <button class="ctrl-btn danger-btn" id="btnClearAll" onclick="clearAllSelections()">✕ Clear</button>
+      <button id="btnHideShow" class="ctrl-btn util-btn hold-btn"
         onmousedown="hideShowDown(event)" onmouseup="hideShowUp()" onmouseleave="hideShowUp()"
         title="Hold to peek · Double-click to toggle">👁 Hide</button>
-      <button id="btnPeek" class="ctrl-btn util-btn"
-        style="flex:1;padding:7px 4px;font-size:9px;font-weight:600;"
+      <button id="btnPeek" class="ctrl-btn util-btn hold-btn"
         onmousedown="peekDown(event)" onmouseup="peekUp()" onmouseleave="peekUp()"
         title="Hold to see selected exploration indicators">👁 Peek</button>
-      <button id="btnShowAll" class="ctrl-btn util-btn"
-        style="flex:1;padding:7px 4px;font-size:9px;font-weight:600;"
+      <button id="btnShowAll" class="ctrl-btn util-btn hold-btn"
         onmousedown="showAllDown(event)" onmouseup="showAllUp()" onmouseleave="showAllUp()"
         title="Hold to see every indicator active">⊞ Show all</button>
     </div>
-
-    <div class="sep"></div>
+    <div class="hold-note">Hold the dashed buttons — they spring back on release.</div>
 
     </div><!-- end #board-settings -->
+
+    <!-- Eats the column's spare height so the floor below never floats. -->
+    <div class="sb-spacer"></div>
 
     <!-- Draw/Resign (multiplayer only) -->
     <div id="gameActions">
       <div class="game-row">
         <button class="gbtn draw-btn" onclick="offerDraw()">½ Offer draw</button>
         <button class="gbtn resign-btn" onclick="resign()">⚑ Resign</button>
+        <!-- The end-of-game pair lands in this same row. syncActionRow() owns
+             which of the five is on screen at any moment. -->
+        <button class="gbtn rematch-btn" id="resignBtn" style="display:none;">↺ Rematch?</button>
+        <button class="gbtn review-btn" id="reviewBtn" onclick="startReplayOfCurrentGame()" style="display:none;"
+                title="Step through the finished game — and restart play from any position">⏪ Review</button>
+        <button class="gbtn review-btn" id="exploreBtn" onclick="enterExploreMode()" style="display:none;">🔍 Explore</button>
       </div>
     </div>
 
     <!-- Chat is in the board area inline for multiplayer -->
-    <!-- Bottom controls -->
+    <!-- ── Floor ────────────────────────────────────────────────────────────
+         Starting a game was one of six identical buttons. The two starters now
+         own a primary row; Theme/Load/Save drop to a quiet secondary one. The
+         dynamic action slot (Training Tips -> Resign -> Rematch) shares the
+         primary row, and updateGameStartBtns() hides the starters mid-game, so
+         the slot is what stays loud exactly when it is the thing to do. -->
     <div id="bottom-controls">
-      <!-- Row 1: game flow — dynamic action slot (Resign / Rematch? / Training
-           Tips), Explore (shown only when a game just ended), game starters -->
-      <div class="ctrl-row">
-        <button class="ctrl-btn util-btn" id="resignBtn" onclick="openHelp('howto')">🎯 Training Tips</button>
-        <button class="ctrl-btn util-btn" id="exploreBtn" onclick="enterExploreMode()" style="display:none;border-color:rgba(74,159,212,0.45);color:#4a9fd4;">🔍 Explore</button>
-        <button class="ctrl-btn util-btn" id="reviewBtn" onclick="startReplayOfCurrentGame()" style="display:none;border-color:rgba(74,159,212,0.45);color:#4a9fd4;" title="Step through the finished game — and restart play from any position">⏪ Review</button>
-        <button class="ctrl-btn util-btn" onclick="openBotModal()" style="border-color:rgba(90,212,144,0.4);color:#5ad490;" id="botSidebarBtn">🤖 vs Bot</button>
-        <button class="ctrl-btn util-btn" onclick="openPanel('mpPanel')">⚔ 2-Player</button>
+      <div class="floor-sep"></div>
+      <div class="play-row">
+        <button class="ctrl-btn play-btn" onclick="openBotModal()" id="botSidebarBtn">🤖 Bot Builder</button>
+        <button class="ctrl-btn play-btn mp" id="mpSidebarBtn" onclick="openPanel('mpPanel')">⚔ 2-Player</button>
       </div>
-      <!-- Row 2: utilities -->
-      <div class="ctrl-row">
-        <button class="ctrl-btn util-btn" id="btnTheme" onclick="openPanel('themePanel')">🎨 Theme &amp; Pieces</button>
-        <button class="ctrl-btn util-btn" id="btnLoadPgn" onclick="document.getElementById('pgnFileInput').click()">▶ Load game</button>
+      <div class="secondary-row">
+        <button class="ctrl-btn util-btn" id="btnTips" onclick="openHelp('howto')">🎯 Training Tips</button>
+        <button class="ctrl-btn util-btn" id="btnLoadPgn" onclick="document.getElementById('pgnFileInput').click()">▶ Load</button>
         <input type="file" id="pgnFileInput" accept=".pgn" style="display:none" onchange="loadPgnFile(event)">
-        <button class="ctrl-btn util-btn" id="btnSavePgn" onclick="savePgn()">↓ Save game</button>
+        <button class="ctrl-btn util-btn" id="btnSavePgn" onclick="savePgn()">↓ Save</button>
       </div>
       <div class="util-row" style="display:none;"></div>
     </div>
@@ -3317,6 +3746,61 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 </div>
 
 <!-- ── Theme panel ────────────────────────────────────────────────────────── -->
+<!-- ── Board settings ────────────────────────────────────────────────────────
+     The four preferences that are not overlays: how the board sounds and
+     behaves, and two switches that change how threat counts are computed.
+     They used to sit in the sidebar above the indicators, where they read as
+     four more visualization toggles and were the first thing a new visitor
+     hit. Nothing here is touched mid-game, so a panel is the right home.
+
+     "Batteries in threat counts" is here on the same logic as queen pins:
+     both change what counts as an attacker rather than what gets drawn. -->
+<div class="slide-panel" id="boardSettingsPanel">
+  <div class="panel-header">
+    <span class="panel-title">⚙ Board settings</span>
+    <button class="panel-close" onclick="closeAllPanels()">✕</button>
+  </div>
+  <div class="panel-body">
+    <div class="bs-group">
+      <div class="bs-head">Appearance</div>
+      <button type="button" class="bs-link" id="btnTheme" onclick="openPanel('themePanel')">
+        <span>🎨 Theme &amp; pieces</span><span>›</span>
+      </button>
+    </div>
+    <div class="bs-group">
+      <div class="bs-head">Board</div>
+      <div class="s-row">
+        <span class="s-lbl">🔊 Move sounds:</span>
+        <span class="s-spacer"></span>
+        <label><input type="checkbox" id="cbSound" onchange="saveSoundPref()" checked> On</label>
+      </div>
+      <div class="s-row">
+        <span class="s-lbl">Show legal moves:</span>
+        <span class="s-spacer"></span>
+        <label><input type="checkbox" id="cbLegalToggle" checked onchange="render()"> On</label>
+      </div>
+      <div class="s-row">
+        <span class="s-lbl">Show influence while exploring:</span>
+        <span class="s-spacer"></span>
+        <label><input type="checkbox" id="cbInfluenceToggle" checked onchange="render()"> On</label>
+      </div>
+    </div>
+    <div class="bs-group">
+      <div class="bs-head">What counts as a threat</div>
+      <div class="s-row">
+        <span class="s-lbl">Batteries in threat counts:<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('batteriessetting',event)" style="margin-left:4px;">?</span></span>
+        <span class="s-spacer"></span>
+        <label><input type="checkbox" id="cbBattery" onchange="rebuildAtk()" checked> On</label>
+      </div>
+      <div class="s-row">
+        <span class="s-lbl">Include queen pins:<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('queenpinssetting',event)" style="margin-left:4px;">?</span></span>
+        <span class="s-spacer"></span>
+        <label><input type="checkbox" id="cbQPins" onchange="rebuildAtk()"> On</label>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="slide-panel" id="themePanel">
   <div class="panel-header">
     <span class="panel-title">Theme &amp; Pieces</span>
