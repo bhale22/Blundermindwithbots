@@ -1301,41 +1301,22 @@ const TOURS = {
     { sel:'#commitModeChip', title:'How your moves get played',
       body:'This chip sits with your clock and switches how a move is committed. <b>✋ Release to move</b> plays the move the moment you let go. <b>👆 Tap to confirm</b> instead <i>parks</i> the piece on the square with every overlay live, so you can take your finger off the board, read what the move actually does, and only then tap again to play it — or tap a different square to change your mind. On a phone your finger covers the very squares you moved there to read, so this is the difference between seeing the answer and guessing. Tap the chip to switch, even mid-game.' },
     { sel:'#quickBot', title:'Start a game',
-      body:'The fastest way in: this starts a game against the bot it names. Change the opponent with the dropdown beside it — Stockfish 1 is the gentlest, 20 the strongest — or pick <b>Custom</b> to build your own in the Bot Builder.' },
+      body:'The fastest way in. The row underneath sets the two things that matter: which opponent — Stockfish 1 is the gentlest, 20 the strongest — and which colour you play. <b>Play as Random</b> re-rolls every game. Pick <b>Open Bot-Builder…</b> from the same list to build your own instead.' },
+    { sel:'#mpSidebarBtn', title:'Play a friend',
+      body:'Two people, one board, over the internet. <b>Inviting a friend with a private link is the recommended way</b> — you know who you are playing. You can post an open challenge instead if you would rather take on a stranger. Either way it runs on the honour system: there is <b>no cheat detection</b>, and once a move is committed there are <b>no take-backs</b>.' },
     { sel:'#botSidebarBtn', title:'Bot Builder',
-      body:'Build a custom opponent: pick an engine and rating, give it a personality, custom controls, an opening repertoire, and time-pressure behaviour. Whatever you build here becomes the bot the Start button plays.' },
+      body:'Build an opponent rather than pick one. Choose the engine — including <b>Maia-3</b>, which is trained on human games and blunders like a person instead of like a weakened engine — then set a rating, an opening repertoire, and how it behaves under time pressure. Give it a personality and a name, and you get opponents like <i>Attacky McTackerson</i>. Whatever you build becomes the bot the Start button plays.' },
     { sel:'.ind-grid', title:'Board-vision indicators', indSection:true,
       body:'These overlays draw what a stronger player sees — threats, pins, forks and more. We’ll light each one up on a sample position so you can see exactly what it does.' },
     { sel:'#ib-threats', title:'Three ways to show an indicator', indSection:true, modes:'threats',
       body:'Every indicator button carries three states, and its colour says which one it is in — the key at the top of this panel spells them out. Watch it cycle: <b>off</b> — <b>while exploring</b>, drawn only while you explore a move — <b>always on</b>, drawn all the time. <b>Click</b> to step through them. Or <b>press and hold</b> to peek: the overlay flips on if it was off (and off if it was on) for as long as you hold, then goes straight back. While the button is blue, nothing you are doing will stick.' },
     { sel:'.ind-grid', title:'How to train with these', indSection:true,
       body:'Best habit: <b>look first and try to spot it yourself</b> — plan your move and picture the threats and replies in your head. <i>Then</i> switch an indicator on as instant feedback to catch anything you missed.' },
-    { sel:'#ib-checkthreats', title:'Check threats', indSection:true, ind:'checkthreats',
-      body:'Squares where a check could be delivered next move — and the pieces that could give it. Spot perpetuals and king-hunt ideas.' },
-    { sel:'#ib-threats', title:'Threats & captures', indSection:true, ind:'threats',
-      body:'Red rings mark your pieces that are attacked. It flags hanging pieces and what can be captured right now — the #1 way to stop getting blundermined.' },
-    { sel:'#ib-counts', title:'Threat / defender counts', indSection:true, ind:'counts',
-      body:'For each piece, how many attackers vs defenders it has. When attackers outnumber defenders, something’s about to fall.' },
-    { sel:'#ib-unprotected', title:'Unprotected pieces', indSection:true, ind:'unprotected',
-      body:'Pieces with no defender at all — loose pieces that drop to a single tactic.' },
-    { sel:'#ib-pins', title:'Pins', indSection:true, ind:'pins',
-      body:'Pieces pinned to a more valuable piece (or the king) behind them — they can’t safely move off the line.' },
-    { sel:'#ib-forksw', title:'My forks & skewers', indSection:true, ind:'forksw',
-      body:'Squares where one of your pieces could fork or skewer two enemy pieces at once.' },
-    { sel:'#ib-forksb', title:'Fork & skewer threats', indSection:true, ind:'forksb',
-      body:'The same, but against you — where the opponent could fork or skewer your pieces.' },
-    { sel:'#ib-overloaded', title:'Overloaded defenders', indSection:true, ind:'overloaded',
-      body:'A piece doing too many defensive jobs at once. Remove or distract it and one of its charges falls.' },
-    { sel:'#ib-discoveredopp', title:'Opponent discovered threats', indSection:true, ind:'discoveredopp',
-      body:'Moves that would unveil an attack from a piece hiding behind the one that moves — easy to miss.' },
-    { sel:'#ib-discoveredself', title:'My discovered attacks', indSection:true, ind:'discoveredself',
-      body:'Your own discovered-attack chances — move the front piece and the one behind springs to life.' },
-    { sel:'#ib-weakw', title:'My weak squares', indSection:true, ind:'weakw',
-      body:'Holes in your own camp that no pawn can defend — squares the opponent would love to plant a piece on.' },
-    { sel:'#ib-weakb', title:'Opponent weak squares', indSection:true, ind:'weakb',
-      body:'Holes in their camp — outpost squares where your knight or bishop can sit untouchable.' },
-    { sel:'#ib-xray', title:'X-ray pressure', indSection:true, ind:'xray',
-      body:'Pressure or defence acting through another piece on the same line — the lines that matter once a blocker moves.' },
+    // One step the visitor drives, replacing thirteen they had to sit through.
+    // Reading a paragraph per overlay is the slow way round, and it made the
+    // tour long enough that people skipped it before reaching anything else.
+    { sel:'.ind-grid', title:'Try them yourself', indSection:true, explore:true,
+      body:'Thirteen overlays — and the fast way to learn them is to press one. <b>Any button in the highlighted panel</b> switches fully on, the board shows what it draws, and its explanation appears here. Go in any order, try as many as you like, then press Next when you have had enough.' },
     { sel:'#soloGhostDepth', title:'Ghost moves',
       body:'Hover a destination square and the bot shows the most likely replies as faint “ghost” pieces — handy for training your calculation.' },
     { sel:'#distPanel', title:'Maia move odds',
@@ -1389,6 +1370,89 @@ function _tourEnsureDemo(){
   _tourLoadFen(_TOUR_DEMO_FEN);
   _tourDidDemo = true;
 }
+// ── Interactive overlay step ────────────────────────────────────────────────
+// The visitor presses the real buttons and reads the real board. Two things
+// have to be true for that to work: the board must NOT be dimmed (it is the
+// thing being demonstrated), and a press has to produce something visible at
+// once — a normal press cycles off → while-exploring, which draws nothing
+// until you start exploring a move, so during the tour we switch the pressed
+// overlay fully on instead.
+let _tourExploring = false, _tourTried = null;
+
+function _tourExploreStop(){
+  _tourExploring = false;
+  document.querySelectorAll('.ind-grid.tour-invite')
+    .forEach(g => g.classList.remove('tour-invite'));
+}
+
+function _tourExploreStart(){
+  _tourExploring = true;
+  _tourTried = new Set();
+  document.querySelectorAll('.ind-grid')
+    .forEach(g => g.classList.add('tour-invite'));
+  _tourShowIndicator(null);
+}
+
+// The chips have to be in the body the moment the step opens, not only after
+// the first pick, or there is nothing to tap on a phone.
+function _tourExploreSeedBody(step){
+  const b = document.getElementById('tourBody');
+  if(b) b.innerHTML = _tourExploreChips(null) + step.body;
+}
+
+// Total overlays offered, so the counter matches what is on screen.
+function _tourExploreTotal(){
+  return document.querySelectorAll('.ind-grid .ib-main').length;
+}
+
+// One chip per overlay, built from the real buttons so the labels can never
+// drift. Tapping a chip does exactly what pressing the button does.
+function _tourExploreChips(active){
+  const out = [];
+  document.querySelectorAll('.ind-grid .ib').forEach(box => {
+    const key = box.id ? box.id.replace(/^ib-/, '') : '';
+    const lbl = box.querySelector('.ib-lbl');
+    if(!key || !lbl) return;
+    const tried = _tourTried && _tourTried.has(key);
+    out.push('<button type="button" class="tour-chip' +
+      (key === active ? ' on' : '') + (tried ? ' tried' : '') +
+      '" data-ind="' + key + '">' + lbl.textContent.trim() + '</button>');
+  });
+  return '<div class="tour-chips">' + out.join('') + '</div>';
+}
+
+// Delegated so it survives every re-render of the panel body.
+document.addEventListener('click', function(e){
+  if(!_tourExploring || !e.target.closest) return;
+  const chip = e.target.closest('.tour-chip');
+  if(!chip) return;
+  e.preventDefault();
+  _tourExplorePick(chip.dataset.ind);
+});
+
+// Called from the capture-phase click handler when a real indicator button is
+// pressed during the explore step.
+function _tourExplorePick(key){
+  if(!_tourExploring || !key) return;
+  if(_tourTried) _tourTried.add(key);
+  _tourShowIndicator(key);           // one at a time, fully on, so it is legible
+  const h = (typeof HELP !== 'undefined') ? HELP[key] : null;
+  const t = document.getElementById('tourTitle');
+  const b = document.getElementById('tourBody');
+  if(t) t.textContent = h ? h.title : 'Overlay';
+  if(b){
+    const tried = _tourTried ? _tourTried.size : 0;
+    const total = _tourExploreTotal();
+    b.innerHTML = _tourExploreChips(key) + (h ? h.body : '') +
+      '<p style="opacity:0.75;margin-top:8px;">Tried ' + tried + ' of ' + total +
+      ' — pick another, or Next when you are done.</p>';
+  }
+  // Help bodies vary a lot in length, and the dock is measured from the panel's
+  // own height — so it has to be re-measured AFTER the new text is in, or a
+  // long one pushes Back/Next off the bottom of the screen.
+  if(typeof _positionTourPanel === 'function') _positionTourPanel(null);
+}
+
 function _tourShowIndicator(key){
   if(typeof IND === 'undefined') return;
   Object.keys(IND).forEach(k => { IND[k].on = false; IND[k].pressing = false; });
@@ -1413,6 +1477,7 @@ function _tourCycleModes(key){
 }
 function _tourRestoreBoard(){
   if(_tourModeTimer){ clearInterval(_tourModeTimer); _tourModeTimer = null; }
+  _tourExploreStop();
   if(_tourSavedInd && typeof IND !== 'undefined'){
     Object.keys(_tourSavedInd).forEach(k => { if(IND[k]){ IND[k].on=_tourSavedInd[k].on; IND[k].pre=_tourSavedInd[k].pre; IND[k].pressing=_tourSavedInd[k].pressing; } });
   }
@@ -1566,7 +1631,7 @@ function tourPrev(){ if(_tourIdx > 0){ _tourIdx--; _renderTourStep(); } }
 // Steps 4-6 introduce the grid itself rather than an overlay, and have no
 // `ind`, so they still point where they should.
 function _tourBoardFocus(step){
-  return !!(step && step.ind) &&
+  return !!(step && (step.ind || step.explore)) &&
          window.innerWidth <= 760 &&
          !!document.getElementById('cv');
 }
@@ -1616,9 +1681,11 @@ function _renderTourStep(){
   // Indicator demo (Beginner shell): show each overlay on a sample position.
   if(_tourModeTimer){ clearInterval(_tourModeTimer); _tourModeTimer = null; }
   if(_tourShell === 'amateur'){
+    if(step.explore !== true) _tourExploreStop();
     if(step.indSection){
       _tourEnsureDemo();
-      if(step.modes) _tourCycleModes(step.modes);
+      if(step.explore) _tourExploreStart();
+      else if(step.modes) _tourCycleModes(step.modes);
       else _tourShowIndicator(step.ind || null);
     } else if(_tourDidDemo){
       _tourRestoreBoard();         // left the indicator section — restore the board
@@ -1634,7 +1701,13 @@ function _renderTourStep(){
     : (step.sel ? document.querySelector(step.sel) : null);
   let rect = null;
   if(el){ try{ el.scrollIntoView({block:'nearest'}); }catch(e){} rect = el.getBoundingClientRect(); }
+  const _tp = document.getElementById('tourPanel');
+  if(_tp){
+    _tp.classList.toggle('tour-explore', !!step.explore);
+    if(!step.explore) _tp.style.maxHeight = '';   // inline cap is explore-only
+  }
   if(rect && rect.width > 0){
+    ring.classList.toggle('tour-nodim', !!step.indSection);
     ring.style.display = 'block';
     ring.style.top = (rect.top - 6) + 'px';
     ring.style.left = (rect.left - 6) + 'px';
@@ -1648,7 +1721,10 @@ function _renderTourStep(){
   const cEl = document.getElementById('tourCount'); if(cEl) cEl.textContent = (_tourIdx + 1) + ' / ' + _tourSteps.length;
   const tEl = document.getElementById('tourTitle'); if(tEl) tEl.textContent = step.title;
   const bEl = document.getElementById('tourBody');
-  if(bEl) bEl.innerHTML = (boardFocus ? _tourControlReplica(step) : '') + step.body;
+  if(bEl){
+    if(step.explore) _tourExploreSeedBody(step);
+    else bEl.innerHTML = (boardFocus ? _tourControlReplica(step) : '') + step.body;
+  }
   const pv = document.getElementById('tourPrev'); if(pv) pv.style.visibility = _tourIdx === 0 ? 'hidden' : 'visible';
   const nx = document.getElementById('tourNext'); if(nx) nx.textContent = (_tourIdx === _tourSteps.length - 1) ? 'Done ✓' : 'Next →';
   _positionTourPanel(rect);
@@ -1659,6 +1735,28 @@ function _positionTourPanel(rect){
   if(!panel) return;
   const pw = panel.offsetWidth || 288, ph = panel.offsetHeight || 170;
   const vw = window.innerWidth, vh = window.innerHeight, gap = 14;
+  // Docked bottom-left for the interactive step: the sidebar has to stay
+  // clickable end to end, and the board's lower-left is the quietest place to
+  // put a card while overlays are being read on the rest of it.
+  if(panel.classList.contains('tour-explore')){
+    const cv = document.getElementById('cv');
+    const cb = cv ? cv.getBoundingClientRect() : null;
+    // Narrow: the board is spotlighted above, so sit strictly BELOW it and
+    // take only the room that is left. A panel describing an overlay must not
+    // cover the overlay — with thirteen chips and a long help body it would
+    // otherwise grow straight over the position.
+    if(vw <= 760 && cb && cb.width > 0){
+      const top = Math.min(cb.bottom + gap, vh - 120);
+      panel.style.left = gap + 'px';
+      panel.style.top  = top + 'px';
+      panel.style.maxHeight = Math.max(110, vh - top - gap) + 'px';
+      return;
+    }
+    panel.style.maxHeight = '';
+    panel.style.left = gap + 'px';
+    panel.style.top  = Math.max(gap, vh - panel.offsetHeight - gap) + 'px';
+    return;
+  }
   if(!(rect && rect.width > 0)){
     panel.style.top = Math.max(gap, (vh - ph) / 2) + 'px';
     panel.style.left = Math.max(gap, (vw - pw) / 2) + 'px';
@@ -1725,6 +1823,21 @@ function maybeAutoTour(){
 document.addEventListener('click', function(e){
   if(!_tourActive) return;
   if(e.target.closest && e.target.closest('#tourPanel')) return;
+  // During the explore step the indicator panel is part of the tour, not
+  // "outside" it: pressing a button is the step. Everything else still ends it.
+  if(_tourExploring && e.target.closest){
+    const btn = e.target.closest('.ind-grid .ib-main');
+    if(btn){
+      // The "?" opens the full help panel and should keep doing that.
+      if(e.target.closest('.ib-help')) return;
+      const box = btn.closest('.ib');
+      const key = box && box.id ? box.id.replace(/^ib-/, '') : null;
+      // After ibMainUp has done its own cycling, so the tour's "fully on" wins.
+      setTimeout(() => _tourExplorePick(key), 0);
+      return;
+    }
+    if(e.target.closest('#board-canvas-wrap')) return;   // reading the board
+  }
   endTour();
 }, true);
 window.addEventListener('resize', function(){ if(_tourActive) _renderTourStep(); });

@@ -1151,6 +1151,62 @@ canvas{
   pointer-events:none;
   transition:top 0.25s ease,left 0.25s ease,width 0.25s ease,height 0.25s ease;
 }
+/* The dimming is that 9999px shadow, which darkens everything the ring is not
+   around — including the board. On a step whose whole point is an overlay
+   DRAWN ON THE BOARD, that put the position under 50% black and the pieces
+   read as washed out. Keep the glow, drop the blackout. */
+#tourRing.tour-nodim{ box-shadow:0 0 16px 3px rgba(74,159,212,0.75); }
+
+/* The overlays, brought into the panel. On a phone the real grid is far below
+   the board and you cannot watch both; these put the whole step within reach
+   of the board it is demonstrating. Tried ones stay marked so it is obvious
+   what is left. */
+.tour-chips{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 10px;}
+.tour-chip{
+  font-family:inherit;font-size:10.5px;font-weight:600;line-height:1;
+  padding:5px 7px;border-radius:4px;cursor:pointer;
+  border:1px solid var(--border,#3a4450);
+  background:var(--bg-panel2,#1a1e24);color:var(--text-secondary,#aab4c0);
+  transition:background 0.12s,border-color 0.12s,color 0.12s;
+}
+.tour-chip:hover{border-color:var(--accent,#4a9fd4);color:var(--accent,#4a9fd4);}
+.tour-chip:focus-visible{outline:2px solid var(--accent,#4a9fd4);outline-offset:2px;}
+.tour-chip.tried{opacity:0.62;}
+.tour-chip.on{
+  background:rgba(34,168,90,0.16);border-color:#22a85a;color:#14713c;opacity:1;
+}
+
+/* Help bodies run to several paragraphs, and the panel is docked over the
+   board during the interactive step, so it has to stay bounded rather than
+   grow until it covers the position being demonstrated. */
+/* Capped, and the BODY is what scrolls — not the whole panel. Scrolling the
+   panel pushed Skip / Back / Next off the bottom, so the step could be entered
+   and never left. Title and buttons stay put; only the help text moves. */
+#tourPanel.tour-explore{
+  max-height:min(52vh,420px);
+  display:flex;flex-direction:column;overflow:hidden;
+  transform:none;
+}
+#tourPanel.tour-explore .tour-body{
+  flex:1 1 auto;min-height:0;overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+}
+#tourPanel.tour-explore .tour-actions{flex:0 0 auto;}
+
+/* "These are the buttons — press one." Used only while the tour is on its
+   interactive step; nothing is dimmed, so the invitation has to be the thing
+   that draws the eye. */
+.ind-grid.tour-invite{
+  outline:2px solid var(--accent,#4a9fd4);outline-offset:3px;border-radius:6px;
+  animation:tourInvite 1.8s ease-in-out infinite;
+}
+@keyframes tourInvite{
+  0%,100%{ outline-color:rgba(74,159,212,0.9); }
+  50%    { outline-color:rgba(74,159,212,0.25); }
+}
+@media (prefers-reduced-motion: reduce){
+  .ind-grid.tour-invite{ animation:none; }
+}
 #tourPanel,#tourOutro {
   position:absolute;top:50%;left:50%;width:288px;max-width:calc(100vw - 24px);
   background:var(--bg-panel,#14161a);border:1px solid var(--accent,#4a9fd4);
@@ -2553,7 +2609,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div id="welcomeCard" hidden>
         <button type="button" class="wc-x" onclick="welcomeDismiss()"
                 aria-label="Dismiss">&times;</button>
-        <div class="wc-h">New here?</div>
+        <div class="wc-h">Welcome to Blundermind!</div>
         <p class="wc-b">This is a chess board that shows you what you are missing —
           threats, forks and hanging pieces. Move a piece to begin, or:</p>
         <div class="wc-opts">

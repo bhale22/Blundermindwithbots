@@ -1,11 +1,18 @@
 // On a phone the board-vision controls live in a drawer below the board, far
 // enough away that scrolling a button into view pushes the board off screen.
-// Every tour step from "Check threats" on describes an overlay drawn on the
-// board, so the tour was describing something the user could not see.
+// The overlay part of the tour describes things DRAWN ON THE BOARD, so without
+// care the tour describes something the user cannot see.
 //
-// Those steps now spotlight the board and bring a copy of the control into the
-// panel. Desktop is unchanged: there the board and the controls are both on
-// screen, and pointing at the real button is better than a picture of it.
+// That part of the tour is now one interactive step: the visitor presses the
+// overlays themselves, in any order. The guarantees below are the same ones
+// the old per-indicator steps had, restated for that step —
+//
+//   1. On a phone the spotlight is on the BOARD, the whole board is in view,
+//      and the panel does not cover the thing it is describing.
+//   2. The controls come to the panel, because the real grid is off screen —
+//      as inert chips carrying no ids and no handlers.
+//   3. The panel's own buttons stay reachable, so the step can be left.
+//   4. Desktop still points at the real controls, which are on screen there.
 const { test, before, after, describe } = require('node:test');
 const assert = require('node:assert');
 const { chromium } = require('playwright');
@@ -39,25 +46,28 @@ describe('board tour on a phone', { concurrency: 1 }, () => {
     return { ctx, page };
   }
 
-  // Walk to the first step whose target is the named indicator.
-  async function stepTo(page, ind) {
+  // Walk to the interactive overlay step by stepping, not by jumping, so the
+  // ordinary Next path is what gets exercised.
+  async function stepToExplore(page) {
     for (let i = 0; i < 30; i++) {
-      const cur = await page.evaluate(() => {
-        const s = _tourSteps[_tourIdx];
-        return { ind: s.ind || null, idx: _tourIdx, last: _tourIdx === _tourSteps.length - 1 };
-      });
-      if (cur.ind === ind) return cur.idx;
+      const cur = await page.evaluate(() => ({
+        explore: !!_tourSteps[_tourIdx].explore,
+        idx: _tourIdx,
+        last: _tourIdx === _tourSteps.length - 1,
+      }));
+      if (cur.explore) return cur.idx;
       if (cur.last) break;
       await page.evaluate(() => tourNext());
-      await page.waitForTimeout(450);
+      await page.waitForTimeout(420);
     }
-    throw new Error('never reached the "' + ind + '" step');
+    throw new Error('never reached the interactive overlay step');
   }
 
   const geometry = (page) => page.evaluate(() => {
     const ring = document.getElementById('tourRing').getBoundingClientRect();
     const cv = document.getElementById('cv').getBoundingClientRect();
     const panel = document.getElementById('tourPanel').getBoundingClientRect();
+    const next = document.getElementById('tourNext').getBoundingClientRect();
     const ov = (a, b) =>
       Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) *
       Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
@@ -66,14 +76,16 @@ describe('board tour on a phone', { concurrency: 1 }, () => {
                    Math.abs(ring.left - (cv.left - 6)) < 4,
       boardOnScreen: cv.top > -4 && cv.bottom <= window.innerHeight + 4,
       panelOverBoard: Math.round(ov(panel, cv)),
-      replica: !!document.querySelector('#tourBody .tour-replica'),
-      replicaText: (document.querySelector('#tourBody .tour-replica') || {}).textContent || '',
+      nextReachable: next.bottom <= window.innerHeight + 1 && next.top >= 0,
+      chips: document.querySelectorAll('.tour-chip').length,
+      dimmed: getComputedStyle(document.getElementById('tourRing'))
+                .boxShadow.includes('9999'),
     };
   });
 
-  test('an indicator step spotlights the board, not the far-away button', async () => {
+  test('the overlay step spotlights the board, not the far-away grid', async () => {
     const { ctx, page } = await openTour({ phone: true });
-    await stepTo(page, 'checkthreats');
+    await stepToExplore(page);
     const g = await geometry(page);
     assert.strictEqual(g.ringOnBoard, true, 'the spotlight should be on the board');
     assert.strictEqual(g.boardOnScreen, true, 'the whole board should be in view');
@@ -82,79 +94,111 @@ describe('board tour on a phone', { concurrency: 1 }, () => {
     await ctx.close();
   });
 
-  test('the control comes to the panel, showing the state it is being described in', async () => {
+  test('the board is never blacked out on a step that is about the board', async () => {
     const { ctx, page } = await openTour({ phone: true });
-    await stepTo(page, 'threats');
+    await stepToExplore(page);
     const g = await geometry(page);
-    assert.strictEqual(g.replica, true, 'a copy of the control should be in the panel');
-    assert.match(g.replicaText, /Threats/i, 'it should be the control for this step');
-    // Lit, matching the overlay now drawn on the board.
-    assert.strictEqual(
-      await page.evaluate(() =>
-        document.querySelector('#tourBody .tour-replica .ib').classList.contains('on')),
-      true, 'the copy should show the control switched on');
+    // The ring dims by casting a 9999px shadow outward. On a step whose whole
+    // point is an overlay drawn on the board, that put the position under 50%
+    // black and the pieces read as washed out.
+    assert.strictEqual(g.dimmed, false, 'the board must stay lit while it is being demonstrated');
     await ctx.close();
   });
 
-  test('the copy is inert — no duplicated ids, no handlers', async () => {
+  test('the controls come to the panel, and pressing one lights it', async () => {
     const { ctx, page } = await openTour({ phone: true });
-    await stepTo(page, 'pins');
+    await stepToExplore(page);
+    const before = await geometry(page);
+    assert.ok(before.chips >= 10, 'expected a chip per overlay, got ' + before.chips);
+
+    await page.locator('.tour-chip[data-ind="pins"]').click();
+    await page.waitForTimeout(500);
+    const after = await page.evaluate(() => ({
+      active: _tourActive,
+      title: document.getElementById('tourTitle').textContent,
+      lit: Object.keys(IND).filter((k) => IND[k].on),
+      chipOn: document.querySelectorAll('.tour-chip.on').length,
+      tried: _tourTried ? _tourTried.size : 0,
+    }));
+    assert.strictEqual(after.active, true, 'pressing a control must not end the tour');
+    assert.match(after.title, /pin/i, 'the panel should describe what was pressed');
+    assert.deepStrictEqual(after.lit, ['pins'], 'exactly the pressed overlay should be drawn');
+    assert.strictEqual(after.chipOn, 1, 'the pressed chip should read as active');
+    assert.strictEqual(after.tried, 1);
+    await ctx.close();
+  });
+
+  test('the chips are inert — no duplicated ids, no handlers', async () => {
+    const { ctx, page } = await openTour({ phone: true });
+    await stepToExplore(page);
     const bad = await page.evaluate(() => {
-      const r = document.querySelector('#tourBody .tour-replica');
-      const withId = Array.from(r.querySelectorAll('[id]')).map((n) => n.id);
-      const withHandler = Array.from(r.querySelectorAll('*')).filter((n) =>
-        Array.from(n.attributes).some((a) => /^on/i.test(a.name))).length;
-      return { withId, withHandler, rootId: r.querySelector('.ib').id || null };
+      const chips = Array.from(document.querySelectorAll('.tour-chip'));
+      return {
+        withId: chips.filter((n) => n.id).map((n) => n.id),
+        withHandler: chips.filter((n) =>
+          Array.from(n.attributes).some((a) => /^on/i.test(a.name))).length,
+        realStillUnique: document.querySelectorAll('#ib-pins').length,
+      };
     });
     assert.deepStrictEqual(bad.withId, [], 'ids must not be duplicated into the document');
-    assert.strictEqual(bad.withHandler, 0, 'the copy must carry no event handlers');
-    assert.strictEqual(bad.rootId, null);
-    // The real control is still the only #ib-pins in the page.
-    assert.strictEqual(await page.evaluate(() => document.querySelectorAll('#ib-pins').length), 1);
+    assert.strictEqual(bad.withHandler, 0, 'the chips must carry no inline handlers');
+    assert.strictEqual(bad.realStillUnique, 1, 'the real control is still the only #ib-pins');
     await ctx.close();
   });
 
-  test('every overlay step gets the same treatment, and only those steps', async () => {
+  test('the step can be left — Next stays reachable however long the help is', async () => {
     const { ctx, page } = await openTour({ phone: true });
-    const seen = [];
-    for (let i = 0; i < 30; i++) {
-      seen.push(await page.evaluate(() => {
-        const s = _tourSteps[_tourIdx];
-        return {
-          title: s.title, ind: s.ind || null,
-          replica: !!document.querySelector('#tourBody .tour-replica'),
-        };
-      }));
-      if (await page.evaluate(() => _tourIdx === _tourSteps.length - 1)) break;
-      await page.evaluate(() => tourNext());
-      await page.waitForTimeout(400);
-    }
-    const overlay = seen.filter((s) => s.ind);
-    assert.ok(overlay.length >= 10, 'expected the full set of overlay steps, got ' + overlay.length);
-    for (const s of overlay) {
-      assert.strictEqual(s.replica, true, '"' + s.title + '" should carry a control copy');
-    }
-    // The steps that introduce the grid itself point at the grid, as before.
-    for (const s of seen.filter((x) => !x.ind)) {
-      assert.strictEqual(s.replica, false,
-        '"' + s.title + '" is not about an overlay and should not show a copy');
-    }
+    await stepToExplore(page);
+    // "threats" carries one of the longest help bodies, which is what used to
+    // push the panel's own buttons off the bottom of the screen.
+    await page.evaluate(() => _tourExplorePick('threats'));
+    await page.waitForTimeout(500);
+    const g = await geometry(page);
+    assert.strictEqual(g.nextReachable, true, 'Next must stay on screen');
+    assert.strictEqual(g.panelOverBoard, 0, 'and the panel must still clear the board');
+    await page.locator('#tourNext').click();
+    await page.waitForTimeout(500);
+    assert.strictEqual(await page.evaluate(() => !!_tourSteps[_tourIdx].explore), false,
+      'Next should advance past the interactive step');
+    assert.strictEqual(await page.evaluate(() => _tourExploring), false,
+      'leaving the step should stop explore mode');
     await ctx.close();
   });
 
-  test('desktop still points at the real control', async () => {
+  test('leaving the tour clears the invitation outline', async () => {
+    const { ctx, page } = await openTour({ phone: true });
+    await stepToExplore(page);
+    assert.ok(await page.evaluate(() => document.querySelectorAll('.ind-grid.tour-invite').length > 0),
+      'the grids should be inviting a press during the step');
+    await page.evaluate(() => endTour());
+    await page.waitForTimeout(400);
+    assert.strictEqual(
+      await page.evaluate(() => document.querySelectorAll('.ind-grid.tour-invite').length), 0,
+      'the outline must not survive the tour');
+    await ctx.close();
+  });
+
+  test('desktop points at the real controls', async () => {
     const { ctx, page } = await openTour({ phone: false });
-    await stepTo(page, 'checkthreats');
+    await stepToExplore(page);
     const g = await geometry(page);
-    assert.strictEqual(g.replica, false,
-      'on desktop the real button is on screen — a picture of it would be worse');
-    assert.strictEqual(g.ringOnBoard, false, 'the spotlight should be on the button');
-    const onButton = await page.evaluate(() => {
+    assert.strictEqual(g.ringOnBoard, false,
+      'on desktop the real grid is on screen, so that is what to point at');
+    const onGrid = await page.evaluate(() => {
       const ring = document.getElementById('tourRing').getBoundingClientRect();
-      const b = document.getElementById('ib-checkthreats').getBoundingClientRect();
-      return Math.abs(ring.top - (b.top - 6)) < 4 && Math.abs(ring.left - (b.left - 6)) < 4;
+      const grid = document.querySelector('.ind-grid').getBoundingClientRect();
+      return Math.abs(ring.top - (grid.top - 6)) < 4 && Math.abs(ring.left - (grid.left - 6)) < 4;
     });
-    assert.strictEqual(onButton, true, 'the ring should sit on #ib-checkthreats');
+    assert.strictEqual(onGrid, true, 'the ring should sit on the indicator grid');
+    // And the real buttons drive the step, not just the chips.
+    await page.locator('#ib-unprotected .ib-main').click();
+    await page.waitForTimeout(550);
+    const after = await page.evaluate(() => ({
+      active: _tourActive,
+      lit: Object.keys(IND).filter((k) => IND[k].on),
+    }));
+    assert.strictEqual(after.active, true, 'pressing the real button must not end the tour');
+    assert.deepStrictEqual(after.lit, ['unprotected']);
     await ctx.close();
   });
 
