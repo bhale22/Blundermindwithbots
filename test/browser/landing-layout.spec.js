@@ -1,8 +1,10 @@
-// The landing page is the first impression, and two things about it are
-// requirements rather than preferences:
+// The landing is Home now rather than the front door — a first visit goes
+// straight to the board — but it is still where someone lands when they click
+// the wordmark, and both requirements below still hold for it. These tests
+// therefore OPEN it (landingShow) instead of expecting it on load.
 //
 //   1. It must fit on one screen. Anything below the fold is effectively
-//      invisible to a first-time visitor.
+//      invisible.
 //   2. What launches a game must be distinguishable from what is merely a
 //      setting. The board-style tiles used to be styled exactly like the launch
 //      cards and sat above them, so they read as destinations.
@@ -45,6 +47,13 @@ describe('landing page layout', { concurrency: 1 }, () => {
       }, opts.shell);
     }
     await page.goto(server.baseUrl, { waitUntil: 'domcontentloaded' });
+    // The overlay is display:none until Home is opened, so waitForSelector
+    // (which waits for VISIBILITY) would sit here until it timed out.
+    await page.waitForSelector('#landingOverlay', { state: 'attached' });
+    await page.evaluate(() => {
+      if (typeof welcomeDismiss === 'function') welcomeDismiss();
+      if (typeof landingShow === 'function') landingShow();
+    });
     await page.waitForSelector('#landingOverlay');
     await page.waitForTimeout(1500);
     return { ctx, page };

@@ -610,7 +610,14 @@ canvas{
    no scrollbar can reach it. That put the title and the two board-choice panels
    ~490px above the top of a phone screen, permanently unreachable. min-height
    on the inner keeps the centred look whenever the content does fit. */
+/* Hidden on load. The landing is Home now, not the door: it is reached by
+   clicking the wordmark, and landingShow() sets an explicit display to open
+   it. It used to cover the board on EVERY visit — not just the first — and
+   the main thing it asked (board style) is already answered by bm_shell,
+   which is domain-defaulted and persisted, so it was interrupting to ask a
+   question it had already stored the answer to. */
 #landingOverlay {
+  display:none;
   position:fixed;top:0;left:0;width:100%;height:100%;
   background:var(--bg-page);
   z-index:5000;
@@ -1243,6 +1250,46 @@ canvas{
    matches the main canvas exactly and the overlay stays in register. */
 #ghostCanvas { position:absolute;top:0;left:0;pointer-events:none;border-radius:4px;
                border-color:transparent; }
+
+/* ── First-visit welcome ────────────────────────────────────────────────────
+   Deliberately NOT a modal. It has no backdrop and does not cover the whole
+   board, because the point of landing on the board is that the board is
+   usable — a card you must dismiss before playing is the same interstitial
+   in a smaller box. Anything outside it goes straight to the canvas. */
+#welcomeCard{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  z-index:40;width:min(88%,340px);
+  background:var(--bg-panel);border:1.5px solid var(--accent);border-radius:8px;
+  box-shadow:0 6px 28px -8px rgba(10,25,40,0.45);
+  padding:14px 15px 13px;
+  transition:opacity 0.25s ease, transform 0.25s ease;
+}
+#welcomeCard[hidden]{display:none;}
+#welcomeCard.fade-out{opacity:0;transform:translate(-50%,-46%);pointer-events:none;}
+.wc-x{
+  position:absolute;top:5px;right:7px;width:22px;height:22px;line-height:1;
+  border:0;background:transparent;color:var(--text-dim);font-size:17px;
+  cursor:pointer;border-radius:4px;
+}
+.wc-x:hover{color:var(--text-primary);background:var(--bg-panel2);}
+.wc-h{font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:5px;}
+.wc-b{font-size:11.5px;line-height:1.5;color:var(--text-secondary);margin:0 0 11px;}
+.wc-opts{display:flex;gap:6px;}
+.wc-opt{
+  flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:8px 4px;border:1px solid var(--border);border-radius:6px;
+  background:var(--bg-panel2);color:var(--text-secondary);
+  font-family:inherit;font-size:10.5px;font-weight:600;cursor:pointer;
+  transition:border-color 0.12s,color 0.12s,background 0.12s;
+}
+.wc-opt:hover{border-color:var(--accent);color:var(--accent);background:var(--bg-panel);}
+.wc-opt:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.wc-i{font-size:16px;line-height:1;}
+.wc-t{white-space:nowrap;}
+@media(max-width:420px){
+  #welcomeCard{width:92%;padding:12px 12px 11px;}
+  .wc-t{font-size:9.5px;white-space:normal;text-align:center;}
+}
 #board-canvas-wrap { position:relative;display:inline-block;flex-shrink:0; }
 
 /* ── Board-vision settings drawer ──────────────────────────────────────────
@@ -2497,6 +2544,27 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div id="board-canvas-wrap">
       <canvas id="cv" width="480" height="480"></canvas>
       <canvas id="ghostCanvas" width="480" height="480"></canvas>
+
+      <!-- First visit only, and it does not gate anything: the board behind it
+           is live, so a piece can be dragged straight away and that dismisses
+           it. Shown once ever (bm_welcomed), which the full landing never
+           was. Sits inside the canvas wrapper so it tracks the board at every
+           size without a second source of geometry. -->
+      <div id="welcomeCard" hidden>
+        <button type="button" class="wc-x" onclick="welcomeDismiss()"
+                aria-label="Dismiss">&times;</button>
+        <div class="wc-h">New here?</div>
+        <p class="wc-b">This is a chess board that shows you what you are missing —
+          threats, forks and hanging pieces. Move a piece to begin, or:</p>
+        <div class="wc-opts">
+          <button type="button" class="wc-opt" onclick="welcomeChoose('bot')">
+            <span class="wc-i">&#129302;</span><span class="wc-t">Play a bot</span></button>
+          <button type="button" class="wc-opt" onclick="welcomeChoose('mp')">
+            <span class="wc-i">&#9876;</span><span class="wc-t">Play a friend</span></button>
+          <button type="button" class="wc-opt" onclick="welcomeChoose('tour')">
+            <span class="wc-i">&#129517;</span><span class="wc-t">Guided tour</span></button>
+        </div>
+      </div>
     </div>
 
     <!-- The commit chip is mounted into the player's own clock box by
@@ -2948,6 +3016,15 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
   <span><em>Stop getting blundermined.</em></span>
   <span class="footer-sep">·</span>
   <span style="font-size:8px;color:#304050;">Built on Stockfish, Maia &amp; Lichess — <a href="/credits" style="color:inherit;text-decoration:underline;">credits &amp; licences</a></span>
+  <span class="footer-sep">·</span>
+  <!-- The two sites are one codebase and each other's only signpost. This used
+       to surface only inside the landing's app-only "Also on the web" note, so
+       on the web neither domain mentioned the other at all. -->
+  <span class="footer-sites">
+    <a href="https://blundermindchess.com" rel="noopener">&#9823; Blundermindchess.com</a>
+    <span class="footer-sep">·</span>
+    <a href="https://buildabotchess.com" rel="noopener">&#9822; Buildabotchess.com</a>
+  </span>
 </div>
 
 <!-- ── Promotion modal ───────────────────────────────────────────────────── -->

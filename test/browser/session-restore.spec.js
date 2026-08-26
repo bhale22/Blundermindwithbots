@@ -84,13 +84,16 @@ describe('session restore', { concurrency: 1 }, () => {
     assert.strictEqual(await page.locator('#bm-session-toast').count(), 1);
   });
 
-  test('"Start fresh" clears the snapshot and returns to the landing', async () => {
+  test('"Start fresh" clears the snapshot and reopens on a clean board', async () => {
     await page.locator('#bm-session-toast button').click();
     await page.waitForTimeout(600);
     assert.strictEqual(await snapshot(), null, 'snapshot should be cleared');
 
     await load();
-    assert.strictEqual(await H.landingVisible(page), true, 'landing should be shown again');
+    // The landing is Home now, not the entry point, so "start fresh" means a
+    // clean BOARD rather than a return to the chooser.
+    assert.strictEqual(await H.landingVisible(page), false,
+      'a fresh load should open the board, not the landing');
     assert.strictEqual((await moves()).length, 0, 'board should be back to the start');
   });
 

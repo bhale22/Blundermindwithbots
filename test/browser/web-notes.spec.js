@@ -96,6 +96,12 @@ describe('web cross-links', { concurrency: 1 }, () => {
 
   test('the landing note is actually on screen, not just un-hidden', async () => {
     const { ctx, page } = await openPage({ query: '?app=1' });
+    // This note lives inside the landing, which is Home now rather than the
+    // entry point — so open it before asking whether the note is laid out.
+    // (The same two links are also in the footer on every screen now, which is
+    // what a web visitor sees; this covers the in-app surface.)
+    await page.evaluate(() => { if (typeof landingShow === 'function') landingShow(); });
+    await page.waitForTimeout(300);
     const box = await page.locator('#landingWebNote').boundingBox();
     assert.ok(box && box.width > 0 && box.height > 0, 'landing note should be laid out');
     // It lives inside the landing overlay, so dismissing the landing hides it.

@@ -2814,6 +2814,10 @@ if(typeof ghostSyncUI === "function") ghostSyncUI();
 if(typeof quickBotPick === "function") quickBotPick(String(QUICK_SF_DEFAULT));
 loadPos(0);
 resizeBoard();
+// After resizeBoard, so the card is placed over a board that is already at its
+// final size. The landing no longer opens on load; this is what a first-time
+// visitor meets instead.
+if(typeof welcomeInit === "function") welcomeInit();
 
 // Start the Maia worker shortly after page load so it can detect any cached
 // model in IndexedDB and update the status UI before the user opens the bot

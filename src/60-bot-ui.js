@@ -1296,14 +1296,57 @@ function _landingApplyShellStyle(s) {
   });
 }
 
+// ── First-visit welcome ─────────────────────────────────────────────────────
+// Replaces the landing as the thing a first-time visitor meets. Three rules
+// make it a card rather than a gate: the board behind it is live, ANY board
+// interaction dismisses it, and it is shown exactly once ever. The landing
+// used to reappear on every single visit — bm_shell already stored the only
+// choice it really asked about — so "once" is the actual fix here.
+function welcomeDismiss() {
+  try { localStorage.setItem('bm_welcomed', '1'); } catch (e) {}
+  const card = document.getElementById('welcomeCard');
+  if (!card || card.hidden) return;
+  card.classList.add('fade-out');
+  setTimeout(() => { if (card.parentNode) card.remove(); }, 260);
+}
+
+function welcomeChoose(mode) {
+  welcomeDismiss();
+  // Past the card's own fade, so the panel does not open underneath it.
+  setTimeout(() => {
+    if (mode === 'bot')       { if (typeof openBotModal === 'function') openBotModal(); }
+    else if (mode === 'mp')   { if (typeof openPanel === 'function') openPanel('mpPanel'); }
+    else if (mode === 'tour') { if (typeof startTour === 'function') startTour(); }
+  }, 280);
+}
+
+function welcomeInit() {
+  const card = document.getElementById('welcomeCard');
+  if (!card) return;
+  // One flag, read inside the guard: where storage is blocked this throws and
+  // the card simply shows, which is the right way to fail for a greeting.
+  let seen = null;
+  try { seen = localStorage.getItem('bm_welcomed'); } catch (e) {}
+  if (seen === '1') { card.remove(); return; }
+  card.hidden = false;
+  // Capture phase and passive: this only watches for the first touch of the
+  // board, it must never swallow or delay the move that dismissed it.
+  const cv = document.getElementById('cv');
+  if (cv) {
+    const go = () => welcomeDismiss();
+    cv.addEventListener('mousedown',  go, { once: true, capture: true });
+    cv.addEventListener('touchstart', go, { once: true, capture: true, passive: true });
+  }
+}
+
 // Re-open the landing (Home), styled for the currently active shell.
 function landingShow() {
   const ov = document.getElementById('landingOverlay');
   if (!ov) return;
-  // Clear the inline display rather than setting one: the overlay is a plain
-  // block scroll container now (.landing-inner does the centring), so hardcoding
-  // 'flex' here would re-open Home in a different layout than a fresh load.
-  ov.style.display = '';
+  // An explicit display, because the stylesheet now hides the overlay by
+  // default (it is no longer the entry point). Block, not flex: .landing-inner
+  // does the centring and the overlay itself is a plain scroll container.
+  ov.style.display = 'block';
   // force reflow so the fade-in transition re-runs after removing fade-out
   void ov.offsetWidth;
   ov.classList.remove('fade-out');
