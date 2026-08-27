@@ -427,7 +427,8 @@ canvas{
 .ctrl-btn:hover{border-color:var(--accent);color:var(--text-primary);}
 .ctrl-btn.reset-btn{border-color:rgba(110,44,0,0.6);color:#c07840;}
 .ctrl-btn.reset-btn:hover{border-color:#e07820;}
-.ctrl-btn.danger-btn{border-color:rgba(110,26,26,0.6);color:#c06060;}
+.ctrl-btn.danger-btn{border-color:var(--st-danger-bd,rgba(110,26,26,0.6));
+  color:var(--st-danger,#c06060);}
 .ctrl-btn.danger-btn:hover{border-color:#e04040;}
 .ctrl-btn.util-btn{border-color:var(--border2);}
 .ctrl-spacer{flex:1;}
@@ -1550,8 +1551,12 @@ canvas{
   border:1.5px solid var(--st-go-bd,#4aab74);color:var(--st-go-fg,#1d6b41);
 }
 .play-btn:hover{background:rgba(90,212,144,0.26);border-color:#3d9463;}
-.play-btn.mp{background:rgba(74,159,212,0.14);border-color:#3f8cc0;color:#1a5d88;}
-.play-btn.mp:hover{background:rgba(74,159,212,0.24);border-color:#33780f00;}
+.play-btn.mp{background:var(--st-mp-bg,rgba(74,159,212,0.14));
+  border-color:var(--st-mp-bd,#3f8cc0);color:var(--st-mp-fg,#1a5d88);}
+/* The hover border was #33780f00 — eight hex digits, so alpha 00: the border
+   vanished on hover instead of strengthening. */
+.play-btn.mp:hover{background:var(--st-mp-hv,rgba(74,159,212,0.24));
+  border-color:var(--st-mp-bd,#3f8cc0);}
 /* The dynamic action slot shares the primary row but only deserves primary
    weight when it IS the primary action. Idle it says "Training Tips", which
    must not shout over the two game starters; updateActionBtn() swaps it to

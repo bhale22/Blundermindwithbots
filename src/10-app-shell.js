@@ -445,21 +445,21 @@ const BOARD_THEMES = {
   highcontrast: {light:'#ffffff', dark:'#404040', name:'Hi-contrast', texture:false},
 };
 const BG_THEMES = {
-  light:      {bg:'#f0ede8', panel:'#e8e4de', panel2:'#dedad4', border:'#c8c4bc', border2:'#d8d4cc', text:'#1a1a1a', textDim:'#706860', textSec:'#504840', name:'Warm white'},
-  lightblue:  {bg:'#e8eef4', panel:'#dde4ec', panel2:'#d0dae4', border:'#b8c8d8', border2:'#cad4e0', text:'#1a2530', textDim:'#506070', textSec:'#405060', name:'Cool blue'},
-  lightgreen: {bg:'#e8f0e8', panel:'#dce8dc', panel2:'#d0e0d0', border:'#b0c8b0', border2:'#c4d8c4', text:'#1a2a1a', textDim:'#507050', textSec:'#406040', name:'Sage'},
-  lighttan:   {bg:'#f4efe0', panel:'#ece7d8', panel2:'#e4dece', border:'#d0c8b0', border2:'#dcd4c0', text:'#2a2010', textDim:'#706040', textSec:'#584830', name:'Parchment'},
-  lightgray:  {bg:'#f0f0f0', panel:'#e8e8e8', panel2:'#e0e0e0', border:'#c8c8c8', border2:'#d4d4d4', text:'#1a1a1a', textDim:'#606060', textSec:'#484848', name:'Silver'},
+  light:      {bg:'#f0ede8', panel:'#e8e4de', panel2:'#dedad4', border:'#c8c4bc', border2:'#d8d4cc', text:'#1a1a1a', textDim:'#5c564f', textSec:'#504840', name:'Warm white'},
+  lightblue:  {bg:'#e8eef4', panel:'#dde4ec', panel2:'#d0dae4', border:'#b8c8d8', border2:'#cad4e0', text:'#1a2530', textDim:'#495766', textSec:'#405060', name:'Cool blue'},
+  lightgreen: {bg:'#e8f0e8', panel:'#dce8dc', panel2:'#d0e0d0', border:'#b0c8b0', border2:'#c4d8c4', text:'#1a2a1a', textDim:'#435e43', textSec:'#406040', name:'Sage'},
+  lighttan:   {bg:'#f4efe0', panel:'#ece7d8', panel2:'#e4dece', border:'#d0c8b0', border2:'#dcd4c0', text:'#2a2010', textDim:'#66573a', textSec:'#584830', name:'Parchment'},
+  lightgray:  {bg:'#f0f0f0', panel:'#e8e8e8', panel2:'#e0e0e0', border:'#c8c8c8', border2:'#d4d4d4', text:'#1a1a1a', textDim:'#5a5a5a', textSec:'#484848', name:'Silver'},
   // The "Field Journal" paper palette from bot_config_restyle_brief.md as a
   // regular background theme, with its terracotta accent carried alongside so
   // the bot panel picks it up (themes without `accent` use the amber default).
-  clay:       {bg:'#f2e3d3', panel:'#f8eee1', panel2:'#e9d7c1', border:'#d3bfa4', border2:'#e0cfb8', text:'#3d2a22', textDim:'#6b5646', textSec:'#4a3226', name:'Clay',
+  clay:       {bg:'#f2e3d3', panel:'#f8eee1', panel2:'#e9d7c1', border:'#d3bfa4', border2:'#e0cfb8', text:'#3d2a22', textDim:'#665243', textSec:'#4a3226', name:'Clay',
                accent:{main:'#b3644f', bright:'#c97a63', dim:'#8a4a3a', glow:'rgba(179,100,79,0.1)', glowS:'rgba(179,100,79,0.22)', border:'rgba(179,100,79,0.4)'}},
-  navy:       {bg:'#1a1a2e', panel:'#0d1b2a', panel2:'#060f18', border:'#2a3a4a', border2:'#1a2a3a', text:'#c8d8e8', textDim:'#506070', textSec:'#8090a0', name:'Navy'},
-  green:      {bg:'#0d1a0d', panel:'#0a1a0a', panel2:'#060e06', border:'#1a3a1a', border2:'#0f220f', text:'#c0dcc0', textDim:'#4a6a4a', textSec:'#70a070', name:'Forest'},
-  charcoal:   {bg:'#1a1a1a', panel:'#111111', panel2:'#080808', border:'#333333', border2:'#222222', text:'#d0d0d0', textDim:'#505050', textSec:'#909090', name:'Charcoal'},
-  burgundy:   {bg:'#1f0d0d', panel:'#150808', panel2:'#0a0404', border:'#3a1a1a', border2:'#220d0d', text:'#dcc0c0', textDim:'#6a4040', textSec:'#a07070', name:'Burgundy'},
-  slate:      {bg:'#0d1520', panel:'#0a1018', panel2:'#060a10', border:'#1a2a3a', border2:'#101820', text:'#c0ccd8', textDim:'#405060', textSec:'#708090', name:'Slate'},
+  navy:       {bg:'#1a1a2e', panel:'#0d1b2a', panel2:'#060f18', border:'#2a3a4a', border2:'#1a2a3a', text:'#c8d8e8', textDim:'#8294a6', textSec:'#8594a3', name:'Navy'},
+  green:      {bg:'#0d1a0d', panel:'#0a1a0a', panel2:'#060e06', border:'#1a3a1a', border2:'#0f220f', text:'#c0dcc0', textDim:'#719c71', textSec:'#70a070', name:'Forest'},
+  charcoal:   {bg:'#1a1a1a', panel:'#111111', panel2:'#080808', border:'#333333', border2:'#222222', text:'#d0d0d0', textDim:'#8f8f8f', textSec:'#909090', name:'Charcoal'},
+  burgundy:   {bg:'#1f0d0d', panel:'#150808', panel2:'#0a0404', border:'#3a1a1a', border2:'#220d0d', text:'#dcc0c0', textDim:'#b38181', textSec:'#ad8484', name:'Burgundy'},
+  slate:      {bg:'#0d1520', panel:'#0a1018', panel2:'#060a10', border:'#1a2a3a', border2:'#101820', text:'#c0ccd8', textDim:'#7d93a8', textSec:'#84929f', name:'Slate'},
 };
 let currentBoardTheme = 'blue';
 let currentBgTheme = 'lightblue';
@@ -503,6 +503,13 @@ function applyBgTheme(name) {
     '--st-go-bd'  : _lt ? '#4aab74'                 : '#3fae74',
     '--st-go-bg'  : _lt ? 'rgba(90,212,144,0.16)'   : 'rgba(90,212,144,0.13)',
     '--st-go-hv'  : _lt ? 'rgba(90,212,144,0.22)'   : 'rgba(90,212,144,0.22)',
+    // 2-Player carries the blue half of the same pair.
+    '--st-mp-fg'  : _lt ? '#1a5d88'                 : '#7fc4ee',
+    '--st-mp-bd'  : _lt ? '#3f8cc0'                 : '#4a9fd4',
+    '--st-mp-bg'  : _lt ? 'rgba(74,159,212,0.14)'   : 'rgba(74,159,212,0.16)',
+    '--st-mp-hv'  : _lt ? 'rgba(74,159,212,0.24)'   : 'rgba(74,159,212,0.26)',
+    '--st-danger'  : _lt ? '#993d3d'                : '#c06060',
+    '--st-danger-bd': _lt ? 'rgba(153,61,61,0.55)'  : 'rgba(110,26,26,0.6)',
   };
   Object.keys(V).forEach(k => root.style.setProperty(k, V[k]));
   document.querySelectorAll('#bgSwatches .swatch').forEach(s =>
