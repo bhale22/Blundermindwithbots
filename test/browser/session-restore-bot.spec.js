@@ -101,14 +101,19 @@ describe('session restore — timed bot game', { concurrency: 1 }, () => {
     const after = await page.evaluate(() => ({
       playerColor: botPlayerColor, tab: botTab, control: clockControl,
       w: clockTimeW, bl: clockTimeB, rating: maia3SelectedRating,
-      sidebar: (document.getElementById('botSidebarBtn') || {}).textContent || 'Bot Active',
+      sidebarActive: (() => {
+        const b = document.getElementById('botSidebarBtn');
+        return b ? getComputedStyle(b).borderColor : null;
+      })(),
     }));
 
     assert.strictEqual(after.playerColor, 'white', 'human colour');
     assert.strictEqual(after.tab, 'maia3', 'engine tab');
     assert.strictEqual(after.rating, 1700, 'bot rating');
     assert.strictEqual(after.control, snap.clock.control, 'time control');
-    assert.match(after.sidebar, /Bot Active/);
+    // rgb(34, 168, 90) === #22a85a, the "a bot game is live" green.
+    assert.strictEqual(after.sidebarActive, 'rgb(34, 168, 90)',
+      'the sidebar button should be marked active after a restore');
 
     // The clock legitimately keeps ticking once restored, so allow a little
     // drift. What matters is that it is near the burnt-down value and NOT the

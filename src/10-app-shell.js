@@ -509,6 +509,9 @@ function applyBgTheme(name) {
     '--st-mp-bg'  : _lt ? 'rgba(74,159,212,0.14)'   : 'rgba(74,159,212,0.16)',
     '--st-mp-hv'  : _lt ? 'rgba(74,159,212,0.24)'   : 'rgba(74,159,212,0.26)',
     '--st-danger'  : _lt ? '#993d3d'                : '#c06060',
+    // The wordmark accent. #4a9fd4 is tuned for a dark header and drops to
+    // 2.3-2.6:1 on the paper themes.
+    '--st-word-accent': _lt ? '#1d6a99'             : '#4a9fd4',
     '--st-danger-bd': _lt ? 'rgba(153,61,61,0.55)'  : 'rgba(110,26,26,0.6)',
   };
   Object.keys(V).forEach(k => root.style.setProperty(k, V[k]));
