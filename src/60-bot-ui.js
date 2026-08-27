@@ -1261,6 +1261,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // ── Landing page logic ───────────────────────────────────────────────────────
 function landingDismiss() {
+  // However they leave it — a card, the tour, Skip — the landing has now been
+  // seen, and the next visit opens on the board.
+  try { localStorage.setItem('bm_landingSeen', '1'); } catch (e) {}
   const overlay = document.getElementById('landingOverlay');
   if (!overlay) return;
   overlay.classList.add('fade-out');

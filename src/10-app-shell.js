@@ -485,6 +485,26 @@ function applyBgTheme(name) {
   root.style.setProperty('--text-primary',   t.text);
   root.style.setProperty('--text-secondary', t.textSec);
   root.style.setProperty('--text-dim',       t.textDim);
+  // Indicator/launch state colours. These were authored as single hardcoded
+  // values for a LIGHT panel — a #14713c label on Slate's #0a1018 panel
+  // measured 1.97:1, and the "while exploring" blue 1.69:1, against a 4.5:1
+  // floor. The tint has to flip with the panel it sits on, so it lives here
+  // with the rest of the theme rather than being frozen into the stylesheet.
+  const _lt = _isLightTheme(t);
+  const V = {
+    '--st-on-fg'  : _lt ? '#0d5a2e'                 : '#5ad490',
+    '--st-on-bd'  : _lt ? '#22a85a'                 : '#3fae74',
+    '--st-on-bg'  : _lt ? 'rgba(34,168,90,0.14)'    : 'rgba(90,212,144,0.14)',
+    '--st-on-ring': _lt ? 'rgba(34,168,90,0.18)'    : 'rgba(90,212,144,0.20)',
+    '--st-exp-fg' : _lt ? '#3a44a0'                 : '#9fb0ff',
+    '--st-exp-bd' : _lt ? 'rgba(90,104,200,0.55)'   : 'rgba(150,162,255,0.60)',
+    '--st-exp-bg' : _lt ? 'rgba(90,104,200,0.10)'   : 'rgba(120,134,255,0.13)',
+    '--st-go-fg'  : _lt ? '#175838'                 : '#5ad490',
+    '--st-go-bd'  : _lt ? '#4aab74'                 : '#3fae74',
+    '--st-go-bg'  : _lt ? 'rgba(90,212,144,0.16)'   : 'rgba(90,212,144,0.13)',
+    '--st-go-hv'  : _lt ? 'rgba(90,212,144,0.22)'   : 'rgba(90,212,144,0.22)',
+  };
+  Object.keys(V).forEach(k => root.style.setProperty(k, V[k]));
   document.querySelectorAll('#bgSwatches .swatch').forEach(s =>
     s.classList.toggle('active', s.dataset.theme === name));
   localStorage.setItem('bm_bgTheme', name);

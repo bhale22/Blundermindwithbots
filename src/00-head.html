@@ -295,9 +295,9 @@ canvas{
    only state whose chip is a solid fill — it is the strongest state and should
    look it. */
 .ib.on .ib-main{
-  background:rgba(34,168,90,0.14);
-  color:#14713c;border-color:#22a85a;
-  box-shadow:0 0 0 1.5px rgba(34,168,90,0.18);
+  background:var(--st-on-bg,rgba(34,168,90,0.14));
+  color:var(--st-on-fg,#14713c);border-color:var(--st-on-bd,#22a85a);
+  box-shadow:0 0 0 1.5px var(--st-on-ring,rgba(34,168,90,0.18));
 }
 /* State is carried by tint and border colour alone. Weight used to help, but a
    weight change re-measures the text, and a label sitting near the column width
@@ -308,8 +308,8 @@ canvas{
    always-on it has to be distinguishable at a glance, not on inspection. This
    is the pair that used to differ by a 0.5px border at 25% opacity. */
 .ib.pre .ib-main{
-  background:rgba(90,104,200,0.10);
-  color:#3a44a0;border-color:rgba(90,104,200,0.55);
+  background:var(--st-exp-bg,rgba(90,104,200,0.10));
+  color:var(--st-exp-fg,#3a44a0);border-color:var(--st-exp-bd,rgba(90,104,200,0.55));
 }
 
 /* Peeking. This colour is the contract: while it shows, the press is a peek and
@@ -841,6 +841,9 @@ canvas{
 .landing-expert .landing-card.green-card:hover,
 .landing-expert .landing-card.gold-card:hover { border-color:#c8922a;box-shadow:0 0 0 2px rgba(200,146,42,0.18); }
 .landing-expert .landing-card-title { color:#e8e6e0; }
+.lg-bab{ display:none; }
+.landing-expert .lg-bm{ display:none; }
+.landing-expert .lg-bab{ display:inline; }
 .landing-expert .landing-footer { color:#717a8a; }
 /* Three equal columns on one shared measure. This was a centred flex row of
    fixed-width cards, so the block came out 617px wide while the rows beneath it
@@ -1173,7 +1176,8 @@ canvas{
 .tour-chip:focus-visible{outline:2px solid var(--accent,#4a9fd4);outline-offset:2px;}
 .tour-chip.tried{opacity:0.62;}
 .tour-chip.on{
-  background:rgba(34,168,90,0.16);border-color:#22a85a;color:#14713c;opacity:1;
+  background:var(--st-on-bg,rgba(34,168,90,0.16));border-color:var(--st-on-bd,#22a85a);
+  color:var(--st-on-fg,#14713c);opacity:1;
 }
 
 /* Help bodies run to several paragraphs, and the panel is docked over the
@@ -1383,25 +1387,25 @@ canvas{
 .quick-bot{
   display:flex;flex-direction:column;align-items:stretch;gap:0;
   width:100%;flex-shrink:0;
-  border:1.5px solid #4aab74;border-radius:6px;overflow:hidden;
-  background:rgba(90,212,144,0.16);
+  border:1.5px solid var(--st-go-bd,#4aab74);border-radius:6px;overflow:hidden;
+  background:var(--st-go-bg,rgba(90,212,144,0.16));
   /* Separates the launch block from the visualization controls under it —
      they are different kinds of thing and were reading as one stack. */
   margin-bottom:11px;
 }
 .qb-go{
   width:100%;display:flex;align-items:center;justify-content:center;
-  padding:9px 8px;border:0;background:transparent;color:#1d6b41;
+  padding:9px 8px;border:0;background:transparent;color:var(--st-go-fg,#1d6b41);
   font-family:inherit;cursor:pointer;text-align:center;
   -webkit-tap-highlight-color:transparent;
 }
-.qb-go:hover{background:rgba(90,212,144,0.22);}
+.qb-go:hover{background:var(--st-go-hv,rgba(90,212,144,0.22));}
 .qb-go:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
 .qb-t1{font-size:15px;font-weight:700;line-height:1.15;white-space:nowrap;}
 .qb-row{display:flex;align-items:stretch;border-top:1px solid rgba(74,171,116,0.55);}
 .qb-sel{
   flex:1;min-width:0;border:0;border-radius:0;
-  background:transparent;color:#1d6b41;
+  background:transparent;color:var(--st-go-fg,#1d6b41);
   font-family:inherit;font-size:11px;font-weight:600;padding:4px 3px;cursor:pointer;
 }
 .qb-row .qb-sel + .qb-sel{border-left:1px solid rgba(74,171,116,0.55);}
@@ -1428,8 +1432,10 @@ canvas{
   padding:3px 2px;border-radius:3px;
   border:0.5px solid var(--border);background:var(--bg-panel2);color:var(--text-dim);
 }
-.ind-key-row .k-exp{background:rgba(90,104,200,0.10);border-color:rgba(90,104,200,0.55);color:#3a44a0;}
-.ind-key-row .k-on{background:rgba(34,168,90,0.14);border-color:#22a85a;color:#14713c;}
+.ind-key-row .k-exp{background:var(--st-exp-bg,rgba(90,104,200,0.10));
+  border-color:var(--st-exp-bd,rgba(90,104,200,0.55));color:var(--st-exp-fg,#3a44a0);}
+.ind-key-row .k-on{background:var(--st-on-bg,rgba(34,168,90,0.14));
+  border-color:var(--st-on-bd,#22a85a);color:var(--st-on-fg,#14713c);}
 
 /* ── Board settings launcher ────────────────────────────────────────────────
    Moved out of the top of the column and re-sited between the two overlay
@@ -1478,16 +1484,16 @@ canvas{
   height:var(--ib-h);
 }
 .ghost-one.on{
-  background:rgba(34,168,90,0.14);border-color:#22a85a;
-  box-shadow:0 0 0 1.5px rgba(34,168,90,0.18);
+  background:var(--st-on-bg,rgba(34,168,90,0.14));border-color:var(--st-on-bd,#22a85a);
+  box-shadow:0 0 0 1.5px var(--st-on-ring,rgba(34,168,90,0.18));
 }
-.ghost-one.on .ib-main{background:transparent;color:#14713c;}
+.ghost-one.on .ib-main{background:transparent;color:var(--st-on-fg,#14713c);}
 #soloGhostDepth{
   flex:1;min-width:0;font-family:inherit;font-size:10px;
   border:0;border-left:0.5px solid var(--border2);border-radius:0;
   background:transparent;color:var(--text-secondary);cursor:pointer;padding:2px 3px;
 }
-.ghost-one.on #soloGhostDepth{color:#14713c;border-left-color:rgba(34,168,90,0.45);}
+.ghost-one.on #soloGhostDepth{color:var(--st-on-fg,#14713c);border-left-color:var(--st-on-bd,rgba(34,168,90,0.45));}
 #soloGhostDepth:disabled{opacity:0.55;cursor:default;}
 
 /* ── Indicator utility row ──────────────────────────────────────────────────
@@ -1540,7 +1546,8 @@ canvas{
 .play-btn{
   font-size:12px;font-weight:700;line-height:1.2;padding:0 4px;
   height:var(--play-h);min-height:0;
-  background:rgba(90,212,144,0.16);border:1.5px solid #4aab74;color:#1d6b41;
+  background:var(--st-go-bg,rgba(90,212,144,0.16));
+  border:1.5px solid var(--st-go-bd,#4aab74);color:var(--st-go-fg,#1d6b41);
 }
 .play-btn:hover{background:rgba(90,212,144,0.26);border-color:#3d9463;}
 .play-btn.mp{background:rgba(74,159,212,0.14);border-color:#3f8cc0;color:#1a5d88;}
@@ -2382,7 +2389,10 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div class="landing-card green-card" onclick="landingChoose('bot')">
       <div class="landing-card-icon">🤖</div>
       <div class="landing-card-title">Bot Builder</div>
-      <div class="landing-card-go">Play a bot</div>
+      <!-- Build-a-Bot arrives here to BUILD, not to pick a stock opponent, so
+           the card names that. Same dual-label pattern as the wordmark. -->
+      <div class="landing-card-go"><span class="lg-bm">Play a bot</span><span
+           class="lg-bab">Create custom bot</span></div>
     </div>
 
     <!-- 2 Player. Kept as .landing-card with the mp onclick: the local-server
@@ -2495,6 +2505,16 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     try { ls.setItem('bm_shell', s); } catch(e) {}   // storage blocked → session-only default
   }
   window.__bmShell = s;
+  // The landing is the first impression and nothing else — a returning visitor
+  // has already made the one choice it asks about (it is stored in bm_shell),
+  // so they go straight to the board. Decided here, inline and before paint,
+  // so there is no flash of the landing on a return visit.
+  var seenLanding = null;
+  try { seenLanding = ls.getItem('bm_landingSeen'); } catch(e) {}
+  if (seenLanding !== '1') {
+    var _lov = document.getElementById('landingOverlay');
+    if (_lov) _lov.style.display = 'block';
+  }
   if (s === 'pro') {
     var lo = document.getElementById('landingOverlay');
     if (lo) {
@@ -2601,26 +2621,6 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <canvas id="cv" width="480" height="480"></canvas>
       <canvas id="ghostCanvas" width="480" height="480"></canvas>
 
-      <!-- First visit only, and it does not gate anything: the board behind it
-           is live, so a piece can be dragged straight away and that dismisses
-           it. Shown once ever (bm_welcomed), which the full landing never
-           was. Sits inside the canvas wrapper so it tracks the board at every
-           size without a second source of geometry. -->
-      <div id="welcomeCard" hidden>
-        <button type="button" class="wc-x" onclick="welcomeDismiss()"
-                aria-label="Dismiss">&times;</button>
-        <div class="wc-h">Welcome to Blundermind!</div>
-        <p class="wc-b">This is a chess board that shows you what you are missing —
-          threats, forks and hanging pieces. Move a piece to begin, or:</p>
-        <div class="wc-opts">
-          <button type="button" class="wc-opt" onclick="welcomeChoose('bot')">
-            <span class="wc-i">&#129302;</span><span class="wc-t">Play a bot</span></button>
-          <button type="button" class="wc-opt" onclick="welcomeChoose('mp')">
-            <span class="wc-i">&#9876;</span><span class="wc-t">Play a friend</span></button>
-          <button type="button" class="wc-opt" onclick="welcomeChoose('tour')">
-            <span class="wc-i">&#129517;</span><span class="wc-t">Guided tour</span></button>
-        </div>
-      </div>
     </div>
 
     <!-- The commit chip is mounted into the player's own clock box by
