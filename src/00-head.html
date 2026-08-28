@@ -94,26 +94,20 @@ body{
 
 /* ── Site header ──────────────────────────────────────────────────────────── */
 #site-header{
-  display:flex;align-items:center;gap:10px;
+  display:flex;align-items:baseline;gap:10px;
   width:100%;padding:2px 0 4px;
   flex-shrink:0;
   justify-content:center;
 }
+/* The buttons are not text and have no baseline worth sharing — centre them
+   against the row instead, or baseline alignment drags them down by their
+   own label's descender. */
+#site-header #headerBtnGroup{ align-self:center; }
 #site-name{
   font-size:18px;font-weight:600;color:var(--text-primary);
   letter-spacing:-0.02em;
 }
 #site-name .sn-accent{color:var(--st-word-accent,#4a9fd4);}
-/* The chimera that is the app icon and the Play banner, at wordmark size.
-   icon-192, NOT one of the cropped small sizes: those are cropped hard for a
-   16px browser tab, and at 20px beside 18px text the crop shows a fragment of
-   the knight rather than the mark. The full tile keeps knight-in-front-of-pawn
-   readable. Rounded because it is a tile with its own ground — square, it read
-   as a clipped image sitting against the text rather than a badge. */
-.sn-chimera{
-  width:21px;height:21px;vertical-align:-4px;margin-right:6px;
-  border-radius:4px;
-}
 /* Header wordmark and tagline follow the shell, same two-span swap as the
    landing: Blundermind on the Visualization board, Build-A-Bot Chess on the
    Expert one. Pro overrides live in the PRO SHELL block below. */
@@ -2577,7 +2571,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 
 <!-- ── Site header ──────────────────────────────────────────────────────── -->
 <div id="site-header">
-  <span id="site-name" onclick="landingShow()" style="cursor:pointer;" title="Home — choose board experience"><span class="sn-bm">♟ Blunder<span class="sn-accent">mind</span></span><span class="sn-bab"><img class="sn-chimera" src="/icons/icon-192.png" alt="" width="192" height="192">Blundermind <span class="sn-accent">Build-a-Bot</span></span></span>
+  <span id="site-name" onclick="landingShow()" style="cursor:pointer;" title="Home — choose board experience"><span class="sn-bm">♟ Blunder<span class="sn-accent">mind</span></span><span class="sn-bab">♞ Blundermind <span class="sn-accent">Build-a-Bot</span></span></span>
   <span id="site-tagline"><span class="sn-bm">Stop getting blundermined.</span><span class="sn-bab">Domo Arigato</span></span>
   <div id="headerBtnGroup" style="display:flex;gap:8px;align-items:center;flex-shrink:0;margin-left:20px;">
     <button id="tourBtn" onclick="startTour()"
