@@ -2112,14 +2112,47 @@ let _mpPingTimer       = null;  // interval sending our ping to the server
 let _mpPresenceTimer   = null;  // interval checking opponent last-seen time
 let _mpLastOpponentPing = 0;    // Date.now() of last opponent_ping received
 
-// Warn browser-close/navigate while in a live game
+// Warn browser-close/navigate while in a live game. Skipped for a navigation
+// that bmConfirmLeaveSite() has already asked about — that dialog names the
+// game being forfeited, which the browser's generic one cannot, so stacking
+// both only makes the visitor answer the same question twice.
+let _bmLeaveConfirmed = false;
 window.addEventListener('beforeunload', e => {
+  if (_bmLeaveConfirmed) return;
   if (typeof mpRoomId !== 'undefined' && mpRoomId &&
       typeof gameOver !== 'undefined' && !gameOver) {
     e.preventDefault();
     e.returnValue = '';
   }
 });
+
+// ── Leaving for the other site ───────────────────────────────────────────────
+// The two cross-site links in the footer navigate away IN PLACE, which ends
+// whatever is on the board. beforeunload did not cover it: that guard only
+// fires for an online game, so a bot game — or a standing challenge — was
+// thrown away silently on a mis-click. Route the links through the same
+// confirmation every other game-ending control uses, and actually resign an
+// online game on the way out rather than leaving the opponent staring at a
+// clock. Returns false to cancel the navigation.
+function bmConfirmLeaveSite(e, siteName) {
+  if (typeof confirmAbandonLiveGame !== 'function') return true;
+  if (!confirmAbandonLiveGame('Go to ' + (siteName || 'the other site'))) {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    return false;
+  }
+  // Confirmed. Tear down an online game so the opponent is told, then let the
+  // navigation run without the browser asking a second time.
+  if (typeof abandonLiveGameContexts === 'function' &&
+      typeof mpRoomId !== 'undefined' && mpRoomId) {
+    try { abandonLiveGameContexts(); } catch (err) {}
+  }
+  _bmLeaveConfirmed = true;
+  // If the navigation does not actually happen (blocked popup, cancelled load),
+  // the browser's own guard has to come back — otherwise one declined trip to
+  // the other site would leave the rest of the session unprotected.
+  setTimeout(function(){ _bmLeaveConfirmed = false; }, 4000);
+  return true;
+}
 
 // ── Panel flow helpers — replace old tab system ──────────────────────────────
 // "mode" is 'idle' | 'private-waiting' | 'join' | 'lobby-waiting' | 'ingame'
@@ -3446,22 +3479,38 @@ const QUICK_SF_MIN = 1, QUICK_SF_MAX = 20, QUICK_SF_DEFAULT = 1;
 // shows it as Custom, since the select cannot express it.
 const QUICK_SF_LEVELS = [1,2,3,4,5,6,7,8,9,10,15,20];
 
+// Fills BOTH level lists: the sidebar's quick-start block and the first-visit
+// welcome panel's mirror of it. One list, so the two can never offer different
+// opponents.
 function quickBotFillLevels(){
-  const g = document.getElementById('quickBotLevels');
-  if(!g || g.children.length) return;
-  for(const i of QUICK_SF_LEVELS){
-    const o = document.createElement('option');
-    o.value = String(i);
-    o.textContent = 'Stockfish ' + i;
-    g.appendChild(o);
-  }
+  ['quickBotLevels','bmwBotLevels'].forEach(function(id){
+    const g = document.getElementById(id);
+    if(!g || g.children.length) return;
+    for(const i of QUICK_SF_LEVELS){
+      const o = document.createElement('option');
+      o.value = String(i);
+      o.textContent = 'Stockfish ' + i;
+      g.appendChild(o);
+    }
+  });
 }
 
 // Paint the block from whatever the bot config currently is.
 function quickBotSync(){
-  const sel  = document.getElementById('quickBotSel');
-  if(!sel) return;
   quickBotFillLevels();
+  // The welcome panel shows the same two selects as the sidebar block, so both
+  // are painted from the same config here — the panel can never announce an
+  // opponent the block would then contradict.
+  document.querySelectorAll('#quickBotSel, #bmwBotSel').forEach(_quickBotPaintSel);
+  if(typeof botColorPref === 'undefined') return;
+  document.querySelectorAll('#quickBotColor, #bmwBotColor').forEach(function(c){
+    if(c.value !== botColorPref) c.value = botColorPref;
+  });
+}
+
+// Rest one opponent-select on whatever the bot config currently is.
+function _quickBotPaintSel(sel){
+  if(!sel) return;
   const lvlEl = document.getElementById('sfLevel');
   const lvl = lvlEl ? (parseInt(lvlEl.value, 10) || QUICK_SF_DEFAULT) : QUICK_SF_DEFAULT;
   // Plain Stockfish at a level the select can express is the only case the
@@ -3488,10 +3537,6 @@ function quickBotSync(){
     }
     cur.textContent = n || 'Custom bot';
     sel.value = CUR;
-  }
-  const csel = document.getElementById('quickBotColor');
-  if(csel && typeof botColorPref !== 'undefined' && csel.value !== botColorPref){
-    csel.value = botColorPref;
   }
 }
 

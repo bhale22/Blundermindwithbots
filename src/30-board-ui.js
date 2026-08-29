@@ -2824,10 +2824,11 @@ if(typeof ghostSyncUI === "function") ghostSyncUI();
 if(typeof quickBotPick === "function") quickBotPick(String(QUICK_SF_DEFAULT));
 loadPos(0);
 resizeBoard();
-// The first-visit greeting is the landing itself again (see the inline shell
-// resolver next to #landingOverlay), so the board-level welcome card is not
-// shown. welcomeInit/welcomeDismiss are left in place — the card markup is
-// gone, and both no-op without it.
+// The first-visit greeting depends on the product (see the inline shell
+// resolver next to #landingOverlay): the Expert board gets the full-screen
+// landing, the Visualization board gets #bmWelcome over this live board.
+// Either way it is bmWelcomeInit(), on DOMContentLoaded, that wires the panel
+// up — nothing here needs to know which one ran.
 
 // Start the Maia worker shortly after page load so it can detect any cached
 // model in IndexedDB and update the status UI before the user opens the bot

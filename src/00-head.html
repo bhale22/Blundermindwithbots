@@ -1330,45 +1330,159 @@ canvas{
 #ghostCanvas { position:absolute;top:0;left:0;pointer-events:none;border-radius:4px;
                border-color:transparent; }
 
-/* ── First-visit welcome ────────────────────────────────────────────────────
-   Deliberately NOT a modal. It has no backdrop and does not cover the whole
-   board, because the point of landing on the board is that the board is
-   usable — a card you must dismiss before playing is the same interstitial
-   in a smaller box. Anything outside it goes straight to the canvas. */
-#welcomeCard{
-  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-  z-index:40;width:min(88%,340px);
-  background:var(--bg-panel);border:1.5px solid var(--accent);border-radius:8px;
-  box-shadow:0 6px 28px -8px rgba(10,25,40,0.45);
-  padding:14px 15px 13px;
-  transition:opacity 0.25s ease, transform 0.25s ease;
+/* ── First-visit welcome (Visualization board) ──────────────────────
+   Replaces the old #welcomeCard, which was a 340px note with three options and
+   no way to actually start a game — the thing most visitors came to do. This
+   one carries every entry point the landing had, over a live board.
+
+   The veil dims the page; #board-canvas-wrap is lifted above it by .bmw-lift so
+   the board alone stays crisp. That is the whole answer to "one click to play"
+   vs "a simple first screen" — the board is not what makes the screen busy, the
+   sidebar of overlay toggles is, and the veil quiets exactly that. */
+#bmWelcomeVeil{
+  position:fixed;inset:0;z-index:4990;
+  background:rgba(12,20,30,0.62);
+  animation:bmwFade 0.35s ease both;
 }
-#welcomeCard[hidden]{display:none;}
-#welcomeCard.fade-out{opacity:0;transform:translate(-50%,-46%);pointer-events:none;}
-.wc-x{
-  position:absolute;top:5px;right:7px;width:22px;height:22px;line-height:1;
-  border:0;background:transparent;color:var(--text-dim);font-size:17px;
-  cursor:pointer;border-radius:4px;
+#bmWelcomeVeil[hidden]{display:none;}
+/* Lifted above the veil, so the board reads at full contrast around the panel
+   while everything else recedes. Removed the moment the panel is dismissed. */
+#board-canvas-wrap.bmw-lift{ z-index:4995; }
+@keyframes bmwFade{from{opacity:0;}to{opacity:1;}}
+
+#bmWelcome{
+  position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);
+  z-index:5001;width:min(94vw,430px);max-height:92vh;overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  background:var(--bg-panel);border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 18px 60px -12px rgba(5,15,25,0.65);
+  padding:20px 20px 16px;text-align:center;
+  animation:bmwRise 0.34s cubic-bezier(0.2,0.9,0.3,1) both;
 }
-.wc-x:hover{color:var(--text-primary);background:var(--bg-panel2);}
-.wc-h{font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:5px;}
-.wc-b{font-size:11.5px;line-height:1.5;color:var(--text-secondary);margin:0 0 11px;}
-.wc-opts{display:flex;gap:6px;}
-.wc-opt{
-  flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;
-  padding:8px 4px;border:1px solid var(--border);border-radius:6px;
+#bmWelcome[hidden]{display:none;}
+@keyframes bmwRise{
+  from{opacity:0;transform:translate(-50%,-46%) scale(0.97);}
+  to  {opacity:1;transform:translate(-50%,-50%) scale(1);}
+}
+#bmWelcome.fade-out{
+  opacity:0;transform:translate(-50%,-52%);pointer-events:none;
+  transition:opacity 0.24s ease,transform 0.24s ease;
+}
+#bmWelcomeVeil.fade-out{opacity:0;transition:opacity 0.24s ease;pointer-events:none;}
+@media (prefers-reduced-motion:reduce){
+  #bmWelcome,#bmWelcomeVeil{animation:none;}
+}
+
+.bmw-x{
+  position:absolute;top:8px;right:10px;width:26px;height:26px;line-height:1;
+  border:0;background:transparent;color:var(--text-dim);font-size:16px;
+  cursor:pointer;border-radius:5px;
+}
+.bmw-x:hover{color:var(--text-primary);background:var(--bg-panel2);}
+.bmw-title{
+  font-size:27px;font-weight:700;color:var(--text-primary);
+  letter-spacing:-0.02em;line-height:1.1;
+}
+.bmw-accent{color:#4a9fd4;}
+.bmw-tag{
+  font-size:12px;color:var(--text-dim);font-style:italic;
+  margin:3px 0 15px;letter-spacing:0.02em;
+}
+
+/* The primary action is the only filled, full-width control in the panel. */
+.bmw-play{
+  display:block;width:100%;padding:11px 14px 9px;
+  border:0;border-radius:9px;cursor:pointer;font-family:inherit;
+  background:linear-gradient(180deg,#2f9d5b,#22a85a);
+  color:#fff;box-shadow:0 3px 14px -4px rgba(34,168,90,0.75);
+  transition:filter 0.14s,transform 0.1s,box-shadow 0.14s;
+}
+.bmw-play:hover{filter:brightness(1.08);box-shadow:0 5px 18px -4px rgba(34,168,90,0.85);}
+.bmw-play:active{transform:translateY(1px);}
+.bmw-play:focus-visible{outline:2px solid #fff;outline-offset:2px;}
+.bmw-play-t{display:block;font-size:16px;font-weight:700;letter-spacing:0.01em;}
+.bmw-play-s{display:block;font-size:10.5px;opacity:0.85;margin-top:1px;}
+
+/* Mirrors of the sidebar's quick-start selects — the machinery the green
+   button runs on, shown rather than hidden behind it. */
+.bmw-quick{display:flex;gap:7px;margin-top:8px;}
+.bmw-sel{
+  flex:1;min-width:0;padding:6px 7px;
+  font-family:inherit;font-size:11px;
   background:var(--bg-panel2);color:var(--text-secondary);
-  font-family:inherit;font-size:10.5px;font-weight:600;cursor:pointer;
-  transition:border-color 0.12s,color 0.12s,background 0.12s;
+  border:1px solid var(--border);border-radius:6px;cursor:pointer;
 }
-.wc-opt:hover{border-color:var(--accent);color:var(--accent);background:var(--bg-panel);}
-.wc-opt:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
-.wc-i{font-size:16px;line-height:1;}
-.wc-t{white-space:nowrap;}
-@media(max-width:420px){
-  #welcomeCard{width:92%;padding:12px 12px 11px;}
-  .wc-t{font-size:9.5px;white-space:normal;text-align:center;}
+.bmw-sel:hover{border-color:var(--accent);color:var(--text-primary);}
+.bmw-sel:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
+
+.bmw-or{
+  position:relative;margin:15px 0 12px;
+  font-size:9.5px;letter-spacing:0.16em;text-transform:uppercase;color:var(--text-dim);
 }
+.bmw-or::before{
+  content:"";position:absolute;left:0;right:0;top:50%;height:1px;
+  background:var(--border);
+}
+.bmw-or span{position:relative;background:var(--bg-panel);padding:0 10px;}
+
+.bmw-grid{display:flex;flex-direction:column;gap:7px;}
+.bmw-opt{
+  display:grid;grid-template-columns:26px 1fr;grid-template-areas:"i t" "i d";
+  gap:0 10px;align-items:center;text-align:left;
+  padding:9px 11px;border:1px solid var(--border);border-radius:8px;
+  background:var(--bg-panel2);cursor:pointer;font-family:inherit;
+  transition:border-color 0.14s,background 0.14s,transform 0.1s;
+}
+.bmw-opt:hover{border-color:var(--accent);background:var(--bg-panel);transform:translateX(2px);}
+.bmw-opt:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.bmw-i{grid-area:i;font-size:19px;line-height:1;text-align:center;}
+.bmw-t{grid-area:t;font-size:12.5px;font-weight:700;color:var(--text-primary);}
+.bmw-d{grid-area:d;font-size:10px;color:var(--text-dim);line-height:1.35;margin-top:1px;}
+
+.bmw-more{
+  display:flex;flex-wrap:wrap;justify-content:center;gap:6px;
+  margin-top:14px;padding-top:12px;border-top:1px solid var(--border);
+}
+.bmw-link{
+  padding:5px 11px;border:0.5px solid var(--border);border-radius:20px;
+  background:transparent;color:var(--text-dim);
+  font-family:inherit;font-size:10.5px;cursor:pointer;transition:all 0.12s;
+}
+.bmw-link:hover{border-color:var(--accent);color:var(--accent);}
+.bmw-link:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.bmw-foot{margin-top:11px;font-size:9.5px;color:var(--text-dim);letter-spacing:0.02em;}
+
+/* Phones: the panel is the screen, so let it use the width and drop the
+   descriptions that only repeat the title at this size. */
+@media(max-width:430px){
+  #bmWelcome{width:94vw;padding:16px 15px 13px;border-radius:10px;}
+  .bmw-title{font-size:23px;}
+  .bmw-tag{margin-bottom:12px;}
+  .bmw-quick{flex-direction:column;gap:6px;}
+  .bmw-d{display:none;}
+  .bmw-opt{grid-template-areas:"i t";align-items:center;padding:10px;}
+}
+/* Short viewports (landscape phones). The panel scrolls, but a first
+   impression that opens already cut in half is not one — every entry point has
+   to be on screen without being found. So the whole thing shrinks: the play
+   button loses its second line, the options lose their descriptions, and the
+   vertical rhythm tightens until the load/tour row clears the fold. */
+@media(max-height:560px){
+  #bmWelcome{padding:12px 15px 10px;max-height:96vh;}
+  .bmw-title{font-size:18px;}
+  .bmw-tag{font-size:11px;margin:1px 0 9px;}
+  .bmw-play{padding:8px 12px;}
+  .bmw-play-t{font-size:14px;}
+  .bmw-play-s{display:none;}
+  .bmw-quick{margin-top:6px;}
+  .bmw-or{margin:9px 0 7px;}
+  .bmw-grid{gap:5px;}
+  .bmw-opt{padding:7px 10px;grid-template-areas:"i t";align-items:center;}
+  .bmw-d{display:none;}
+  .bmw-more{margin-top:9px;padding-top:8px;}
+  .bmw-foot{margin-top:7px;}
+}
+
 #board-canvas-wrap { position:relative;display:inline-block;flex-shrink:0; }
 
 /* ── Board-vision settings drawer ──────────────────────────────────────────
@@ -2510,6 +2624,86 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
   </div>
  </div>
 </div>
+
+<!-- ── First-visit welcome — Visualization board only ─────────────────────────
+     The landing above is a page you read before you are allowed to see the
+     product. That is the wrong first move for a site whose whole pitch is a
+     board you have to LOOK at: the screenshot in someone's head after a visit
+     should be the board, not a column of cards.
+     So on blundermindchess.com the board loads live and this panel sits over
+     it. buildabotchess.com keeps the landing — see the resolver below for why.
+
+     On the "too visually confusing" worry: the board at rest is already calm.
+     Every overlay in IND initialises {on:false, pre:true}, i.e. it draws only
+     while a move is being explored, so an untouched board is a plain starting
+     position and nothing else. What actually crowds a first screenshot is the
+     SIDEBAR — a wall of fourteen overlay toggles. Hence the veil: it dims the
+     chrome while #board-canvas-wrap is lifted above it, so the visitor sees a
+     clean board and one panel. Nothing is simplified away; it is just quiet
+     until they have chosen something. -->
+<div id="bmWelcomeVeil" hidden onclick="bmWelcomeChoose('solo')"></div>
+<div id="bmWelcome" hidden role="dialog" aria-labelledby="bmwTitle">
+  <button class="bmw-x" onclick="bmWelcomeChoose('solo')"
+          aria-label="Close and explore the board">&#10005;</button>
+
+  <div class="bmw-title" id="bmwTitle">&#9823; Blunder<span class="bmw-accent">mind</span></div>
+  <div class="bmw-tag">Stop getting blundermined.</div>
+
+  <!-- PRIMARY. Starts whatever opponent the sidebar's quick-start block is
+       already holding — Stockfish 1 on a first visit — with no builder in the
+       way. The two selects are that block's own selects, mirrored by
+       quickBotSync(): change one and the other moves. The panel therefore
+       never starts a game the sidebar cannot account for afterwards. -->
+  <button type="button" class="bmw-play" onclick="bmWelcomeChoose('play')">
+    <span class="bmw-play-t">&#9654; Play a game</span>
+    <span class="bmw-play-s">Start now — nothing to set up</span>
+  </button>
+  <div class="bmw-quick">
+    <select class="bmw-sel" id="bmwBotSel" onchange="bmWelcomeBotPick(this.value)"
+            aria-label="Choose the opponent">
+      <optgroup label="Stockfish level" id="bmwBotLevels"></optgroup>
+      <option value="builder">Open Bot-Builder…</option>
+    </select>
+    <select class="bmw-sel" id="bmwBotColor" onchange="botSetPlayerColor(this.value)"
+            aria-label="Choose which colour you play">
+      <option value="random">Play as Random</option>
+      <option value="white">Play as White</option>
+      <option value="black">Play as Black</option>
+    </select>
+  </div>
+
+  <div class="bmw-or"><span>or</span></div>
+
+  <div class="bmw-grid">
+    <button type="button" class="bmw-opt" onclick="bmWelcomeChoose('solo')">
+      <span class="bmw-i">&#128269;</span>
+      <span class="bmw-t">Explore the board</span>
+      <span class="bmw-d">Move either side and watch the overlays</span>
+    </button>
+    <!-- Kept findable by id: the local-server check dims this one in place. -->
+    <button type="button" class="bmw-opt" id="bmwMpOpt" onclick="bmWelcomeChoose('mp')">
+      <span class="bmw-i">&#9876;&#65039;</span>
+      <span class="bmw-t">Play a friend</span>
+      <span class="bmw-d">Share a link — &ldquo;hang-free&rdquo; 2-player</span>
+    </button>
+    <button type="button" class="bmw-opt" onclick="bmWelcomeChoose('bot')">
+      <span class="bmw-i">&#129302;</span>
+      <span class="bmw-t">Build a bot</span>
+      <span class="bmw-d">Shape an opponent's personality, then play it</span>
+    </button>
+  </div>
+
+  <div class="bmw-more">
+    <button type="button" class="bmw-link" onclick="bmWelcomeChoose('tour')">&#129517; Take a tour</button>
+    <button type="button" class="bmw-link" onclick="bmWelcomeChoose('pgn')">&#128193; Load a game</button>
+    <button type="button" class="bmw-link"
+            onclick="document.getElementById('bmwBotCfgInput').click()">&#9881;&#65039; Load a bot</button>
+    <input type="file" id="bmwBotCfgInput" accept=".json" style="display:none"
+           onchange="bmWelcomeLoadBotConfig(event)">
+  </div>
+
+  <div class="bmw-foot">No account &middot; No tracking &middot; <em>Free forever</em></div>
+</div>
 <!-- Open the landing in the style of the visitor's last-chosen board (no flash).
      FIRST VISIT ONLY, the default comes from the domain they arrived on:
      buildabotchess.com opens the Expert board, blundermindchess.com (and any
@@ -2532,11 +2726,35 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
   // has already made the one choice it asks about (it is stored in bm_shell),
   // so they go straight to the board. Decided here, inline and before paint,
   // so there is no flash of the landing on a return visit.
-  var seenLanding = null;
-  try { seenLanding = ls.getItem('bm_landingSeen'); } catch(e) {}
-  if (seenLanding !== '1') {
-    var _lov = document.getElementById('landingOverlay');
-    if (_lov) _lov.style.display = 'block';
+  //
+  // FIRST VISIT — which front door, decided per product:
+  //
+  //   Expert / buildabotchess.com  → the full landing, unchanged. Someone who
+  //     arrives there has to be told what "build a bot" IS before it means
+  //     anything, and the Expert board deliberately draws no overlays, so
+  //     opening on it shows a plain board that explains nothing. Opening
+  //     straight into the builder is worse again: it is the densest surface in
+  //     the product and reads as a cockpit to anyone who did not ask for it.
+  //
+  //   Visualization / blundermindchess.com → the live board with #bmWelcome
+  //     over it. Here the board IS the pitch, so showing it costs nothing and
+  //     a page of cards in front of it costs the whole first impression.
+  //
+  // Separate keys, so neither decision replays the other's "seen" state.
+  var _key = (s === 'pro') ? 'bm_landingSeen' : 'bm_welcomed';
+  var _seen = null;
+  try { _seen = ls.getItem(_key); } catch(e) {}
+  if (_seen !== '1') {
+    if (s === 'pro') {
+      var _lov = document.getElementById('landingOverlay');
+      if (_lov) _lov.style.display = 'block';
+    } else {
+      var _w = document.getElementById('bmWelcome');
+      var _v = document.getElementById('bmWelcomeVeil');
+      if (_w) _w.hidden = false;
+      if (_v) _v.hidden = false;
+      window.__bmWelcomeOpen = true;
+    }
   }
   if (s === 'pro') {
     var lo = document.getElementById('landingOverlay');
@@ -3099,10 +3317,15 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
   <!-- The two sites are one codebase and each other's only signpost. This used
        to surface only inside the landing's app-only "Also on the web" note, so
        on the web neither domain mentioned the other at all. -->
+  <!-- These two navigate away IN PLACE and so end a game in progress. They go
+       through bmConfirmLeaveSite() for the same confirmation any other
+       game-ending control gets; it is a no-op when nothing is being played. -->
   <span class="footer-sites">
-    <a href="https://blundermindchess.com" rel="noopener">&#9823; Blundermindchess.com</a>
+    <a href="https://blundermindchess.com" rel="noopener"
+       onclick="return bmConfirmLeaveSite(event,'Blundermindchess.com')">&#9823; Blundermindchess.com</a>
     <span class="footer-sep">·</span>
-    <a href="https://buildabotchess.com" rel="noopener">&#9822; Buildabotchess.com</a>
+    <a href="https://buildabotchess.com" rel="noopener"
+       onclick="return bmConfirmLeaveSite(event,'Buildabotchess.com')">&#9822; Buildabotchess.com</a>
   </span>
 </div>
 

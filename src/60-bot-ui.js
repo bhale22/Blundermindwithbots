@@ -626,8 +626,11 @@ function botSetPlayerColor(col) {
     const el = document.getElementById('pcolor-'+v);
     if (el) el.classList.toggle('active', v === col);
   });
-  const sel = document.getElementById('quickBotColor');
-  if (sel && sel.value !== col) sel.value = col;
+  // Both mirrors of the quick-start colour: the sidebar block and the
+  // first-visit welcome panel.
+  document.querySelectorAll('#quickBotColor, #bmwBotColor').forEach(sel => {
+    if (sel.value !== col) sel.value = col;
+  });
 }
 
 // Hybrid slot management
@@ -1299,48 +1302,113 @@ function _landingApplyShellStyle(s) {
   });
 }
 
-// ── First-visit welcome ─────────────────────────────────────────────────────
-// Replaces the landing as the thing a first-time visitor meets. Three rules
-// make it a card rather than a gate: the board behind it is live, ANY board
-// interaction dismisses it, and it is shown exactly once ever. The landing
-// used to reappear on every single visit — bm_shell already stored the only
-// choice it really asked about — so "once" is the actual fix here.
-function welcomeDismiss() {
-  try { localStorage.setItem('bm_welcomed', '1'); } catch (e) {}
-  const card = document.getElementById('welcomeCard');
-  if (!card || card.hidden) return;
-  card.classList.add('fade-out');
-  setTimeout(() => { if (card.parentNode) card.remove(); }, 260);
+// ── First-visit welcome — Visualization board ────────────────────────────────
+// Shown over a LIVE board instead of the full-screen landing (see the resolver
+// beside #bmWelcome for which domain gets which). It carries every entry point
+// the landing had, so nothing is lost by not showing the landing first — and
+// it adds the one that was missing: starting a game without opening the
+// builder. The old #welcomeCard this replaces offered three options and no way
+// to actually play, which is why it went back to being the landing.
+//
+// Deliberately NOT auto-tour. This panel IS the tour's first step — it is the
+// first thing a visitor reads, and it names every path through the product —
+// so "Take a tour" here CONTINUES that tour rather than starting one, and
+// every other button is someone choosing to leave it. Firing a tour anyway
+// after they picked Explore would override a choice just made. The landing
+// (Expert board) is a different front door and keeps its own auto-tour.
+
+function bmWelcomeIsOpen() {
+  const w = document.getElementById('bmWelcome');
+  return !!w && !w.hidden && !w.classList.contains('fade-out');
 }
 
-function welcomeChoose(mode) {
-  welcomeDismiss();
-  // Past the card's own fade, so the panel does not open underneath it.
+function bmWelcomeDismiss() {
+  // However they leave it, the welcome has now been seen. It is shown exactly
+  // once ever — bm_shell already stores the only setting it asks about.
+  try { localStorage.setItem('bm_welcomed', '1'); } catch (e) {}
+  window.__bmWelcomeOpen = false;
+  const w = document.getElementById('bmWelcome');
+  const v = document.getElementById('bmWelcomeVeil');
+  const wrap = document.getElementById('board-canvas-wrap');
+  // Drop the lift immediately: it parks the board at z-index 4995, which must
+  // not outlive the veil it was lifted above or it would sit over the panels.
+  if (wrap) wrap.classList.remove('bmw-lift');
+  if (!w || w.hidden) return;
+  w.classList.add('fade-out');
+  if (v) v.classList.add('fade-out');
   setTimeout(() => {
-    if (mode === 'bot')       { if (typeof openBotModal === 'function') openBotModal(); }
-    else if (mode === 'mp')   { if (typeof openPanel === 'function') openPanel('mpPanel'); }
-    else if (mode === 'tour') { if (typeof startTour === 'function') startTour(); }
+    if (w)  { w.hidden = true;  w.classList.remove('fade-out'); }
+    if (v)  { v.hidden = true;  v.classList.remove('fade-out'); }
+    // The challenge marker hides behind any full-screen greeting; bring it back.
+    if (typeof mpUpdateChallengeMarker === 'function') mpUpdateChallengeMarker();
+  }, 260);
+}
+
+function bmWelcomeChoose(mode) {
+  if (!bmWelcomeIsOpen()) return;
+  bmWelcomeDismiss();
+  // Past the panel's own fade, so nothing opens underneath it.
+  setTimeout(() => {
+    if (mode === 'play') {
+      // The whole point of the primary button: play the opponent the quick
+      // block is already holding (Stockfish 1 on a first visit) without the
+      // builder ever appearing.
+      if (typeof quickBotStart === 'function') quickBotStart();
+    } else if (mode === 'bot') {
+      if (typeof openBotModal === 'function') openBotModal();
+    } else if (mode === 'mp') {
+      if (typeof openPanel === 'function') openPanel('mpPanel');
+    } else if (mode === 'tour') {
+      if (typeof startTour === 'function') startTour();
+    } else if (mode === 'pgn') {
+      const el = document.getElementById('pgnFileInput');
+      if (el) el.click();
+    }
+    // 'solo' just dismisses — the board is already set up and ready.
   }, 280);
 }
 
-function welcomeInit() {
-  const card = document.getElementById('welcomeCard');
-  if (!card) return;
-  // One flag, read inside the guard: where storage is blocked this throws and
-  // the card simply shows, which is the right way to fail for a greeting.
-  let seen = null;
-  try { seen = localStorage.getItem('bm_welcomed'); } catch (e) {}
-  if (seen === '1') { card.remove(); return; }
-  card.hidden = false;
-  // Capture phase and passive: this only watches for the first touch of the
-  // board, it must never swallow or delay the move that dismissed it.
+// The opponent select inside the panel. Everything except "Open Bot-Builder…"
+// is a plain quick-start change and leaves the panel up, because the visitor is
+// still choosing who to play; the builder is a destination, so it dismisses.
+function bmWelcomeBotPick(v) {
+  if (v === 'builder') { bmWelcomeChoose('bot'); return; }
+  if (typeof quickBotPick === 'function') quickBotPick(v);
+}
+
+function bmWelcomeLoadBotConfig(event) {
+  if (typeof botLoadConfig === 'function') botLoadConfig(event);
+  bmWelcomeDismiss();
+  setTimeout(() => { if (typeof openPanel === 'function') openPanel('botPanel'); }, 300);
+}
+
+function bmWelcomeInit() {
+  if (!window.__bmWelcomeOpen || !bmWelcomeIsOpen()) return;
+  // Lift the board above the veil so it stays at full contrast while the rest
+  // of the page — the sidebar's overlay toggles above all — recedes.
+  const wrap = document.getElementById('board-canvas-wrap');
+  if (wrap) wrap.classList.add('bmw-lift');
+  // Paint the mirrored selects from the live bot config.
+  if (typeof quickBotSync === 'function') quickBotSync();
+  // Touching the board is a decision too: it means "let me look at this".
   const cv = document.getElementById('cv');
   if (cv) {
-    const go = () => welcomeDismiss();
+    const go = () => { if (bmWelcomeIsOpen()) bmWelcomeChoose('solo'); };
     cv.addEventListener('mousedown',  go, { once: true, capture: true });
     cv.addEventListener('touchstart', go, { once: true, capture: true, passive: true });
   }
+  // Esc leaves it the same way the ✕ does.
+  document.addEventListener('keydown', function onEsc(e) {
+    if (e.key !== 'Escape') return;
+    if (!bmWelcomeIsOpen()) { document.removeEventListener('keydown', onEsc); return; }
+    bmWelcomeChoose('solo');
+    document.removeEventListener('keydown', onEsc);
+  });
+  // Focus the primary action so keyboard and screen-reader users land on it.
+  const play = document.querySelector('#bmWelcome .bmw-play');
+  if (play) setTimeout(() => { try { play.focus({ preventScroll: true }); } catch (e) {} }, 60);
 }
+document.addEventListener('DOMContentLoaded', bmWelcomeInit);
 
 // Re-open the landing (Home), styled for the currently active shell.
 function landingShow() {
@@ -1455,8 +1523,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // Check for ?join= invite link in URL
     mpCheckInviteUrl();
   } else {
-    // Running locally — dim the multiplayer landing card and say why (the
-    // deployed site never hits this branch)
+    // Running locally — dim the multiplayer entry points and say why (the
+    // deployed site never hits this branch). The welcome panel needs the same
+    // treatment as the landing card: it offers the same unavailable thing.
+    const mpOpt = document.getElementById('bmwMpOpt');
+    if (mpOpt) {
+      mpOpt.style.opacity = '0.55';
+      mpOpt.title = 'Multiplayer requires the deployed server';
+      const d = mpOpt.querySelector('.bmw-d');
+      if (d) { d.textContent = 'Unavailable locally'; d.style.color = '#c06060'; d.style.fontStyle = 'italic'; }
+    }
     if (mpCard) {
       mpCard.style.opacity = '0.55';
       mpCard.title = 'Multiplayer requires the deployed server';
@@ -1472,6 +1548,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
   }
+  // Touching the board while the LANDING is up means the same as pressing
+  // Solo. The welcome panel has its own equivalent handler in bmWelcomeInit(),
+  // so this one stays scoped to the landing and the two never both fire.
   const cv3 = document.getElementById('cv');
   if (cv3) cv3.addEventListener('click', () => {
     const overlay = document.getElementById('landingOverlay');

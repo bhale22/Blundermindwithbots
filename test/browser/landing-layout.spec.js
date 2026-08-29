@@ -1,7 +1,9 @@
-// The landing is Home now rather than the front door — a first visit goes
-// straight to the board — but it is still where someone lands when they click
-// the wordmark, and both requirements below still hold for it. These tests
-// therefore OPEN it (landingShow) instead of expecting it on load.
+// The landing is the front door for the EXPERT board (buildabotchess.com) and
+// Home for both — a first visit to the Visualization board goes straight to the
+// live board with #bmWelcome over it. Either way it is still where someone
+// lands when they click the wordmark, and both requirements below still hold
+// for it. These tests therefore OPEN it (landingShow) instead of relying on
+// whichever greeting the shell would have shown on load.
 //
 //   1. It must fit on one screen. Anything below the fold is effectively
 //      invisible.
@@ -51,7 +53,7 @@ describe('landing page layout', { concurrency: 1 }, () => {
     // (which waits for VISIBILITY) would sit here until it timed out.
     await page.waitForSelector('#landingOverlay', { state: 'attached' });
     await page.evaluate(() => {
-      if (typeof welcomeDismiss === 'function') welcomeDismiss();
+      if (typeof bmWelcomeDismiss === 'function') bmWelcomeDismiss();
       if (typeof landingShow === 'function') landingShow();
     });
     await page.waitForSelector('#landingOverlay');

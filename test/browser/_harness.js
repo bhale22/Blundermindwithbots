@@ -78,16 +78,17 @@ function stopServer(server) {
 
 // ── Page helpers ────────────────────────────────────────────────────────────
 
-// Clear whatever is sitting over the board on a fresh load. The landing is no
-// longer the entry point (it is Home, opened from the wordmark), but a first
-// visit now gets the welcome card, which is positioned over the middle of the
-// board and would intercept clicks aimed at the centre files. Every test
-// profile is fresh, so the card is always there. Both are cleared here so the
-// helper still means one thing: "give me a board I can click".
+// Clear whatever is sitting over the board on a fresh load. Which greeting that
+// is depends on the shell: the Expert board still gets the full-screen landing,
+// the Visualization board gets #bmWelcome over the live board — and that panel
+// sits over the middle of the board, so it would intercept clicks aimed at the
+// centre files. Every test profile is fresh, so one of the two is always there.
+// Both are cleared here so the helper still means one thing: "give me a board I
+// can click".
 async function dismissLanding(page) {
   await page.evaluate(() => {
     if (typeof landingDismiss === 'function') landingDismiss();
-    if (typeof welcomeDismiss === 'function') welcomeDismiss();
+    if (typeof bmWelcomeDismiss === 'function') bmWelcomeDismiss();
   });
   await page.waitForTimeout(600);
 }
