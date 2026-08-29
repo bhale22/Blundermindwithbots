@@ -498,6 +498,25 @@ app.get('/stockfish.wasm', (req, res) => {
   res.send(sfWasm);
 });
 
+// ── robots.txt / sitemap ────────────────────────────────────────────────────
+// Both were 404ing. Generated per host for the same reason the manifest is:
+// the two domains are two products and each should point at its own sitemap.
+app.get('/robots.txt', (req, res) => {
+  const origin = reqOrigin(req);
+  res.type('text/plain').set('Cache-Control', 'public, max-age=3600')
+     .send('User-agent: *\nAllow: /\nSitemap: ' + origin + '/sitemap.xml\n');
+});
+
+app.get('/sitemap.xml', (req, res) => {
+  const origin = reqOrigin(req);
+  const urls = ['/', '/privacy', '/credits'];
+  res.type('application/xml').set('Cache-Control', 'public, max-age=3600').send(
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' +
+    urls.map(u => '<url><loc>' + origin + u + '</loc></url>').join('') +
+    '</urlset>');
+});
+
 // ── PWA: manifest, service worker, icons ────────────────────────────────────
 // The manifest is generated rather than a static file because the two domains
 // are two products: buildabotchess.com opens the Expert board, everything else
@@ -677,14 +696,66 @@ app.get('/icons/:file', (req, res) => {
   res.sendFile(p);
 });
 
+// Per-host HTML. og:image and twitter:image MUST be absolute — Facebook,
+// Discord, X and iMessage all refuse to resolve a relative path, so a shared
+// link would unfurl with no picture — and this app answers on two domains, so
+// the origin cannot be baked in at build time. og:url and rel=canonical want
+// the same treatment, and buildabotchess.com should say what it is.
+//
+// One variant per host, built once and re-used, keyed off the base ETag so a
+// deploy invalidates every variant. Capped, because the key comes from the
+// Host header and that is attacker-controlled.
+const htmlByHost = new Map();
+const HTML_HOST_CAP = 8;
+
+function reqOrigin(req) {
+  const proto = String(req.headers['x-forwarded-proto'] || '')
+    .split(',')[0].trim() || req.protocol || 'https';
+  return proto + '://' + req.get('host');
+}
+
+function htmlVariant(req) {
+  loadHtml();
+  const origin = reqOrigin(req);
+  const hit = htmlByHost.get(origin);
+  if (hit && hit.base === htmlEtag) return hit;
+
+  const isBab = /(^|\.)buildabotchess\.com$/i.test(req.hostname || '');
+  let out = htmlCache.toString('utf8')
+    // Absolute-ise the two social images.
+    .replace(/((?:property|name)="(?:og:image|twitter:image)" content=")\//g, '$1' + origin + '/')
+    // Claim the canonical URL for whichever domain answered.
+    .replace('<meta property="og:type" content="website">',
+      '<meta property="og:type" content="website">' +
+      '<meta property="og:url" content="' + origin + '/">' +
+      '<link rel="canonical" href="' + origin + '/">');
+
+  if (isBab) {
+    out = out
+      .replace('<title>Blundermind — Stop getting blundermined.</title>',
+               '<title>Blundermind Build-a-Bot — Build a chess bot, then play it.</title>')
+      .replace('<meta property="og:title" content="Blundermind">',
+               '<meta property="og:title" content="Blundermind Build-a-Bot">')
+      .replace('<meta name="twitter:title" content="Blundermind">',
+               '<meta name="twitter:title" content="Blundermind Build-a-Bot">');
+  }
+
+  const buf = Buffer.from(out, 'utf8');
+  const v = { base: htmlEtag, buf,
+              etag: '"' + crypto.createHash('md5').update(buf).digest('hex') + '"' };
+  if (htmlByHost.size >= HTML_HOST_CAP) htmlByHost.clear();
+  htmlByHost.set(origin, v);
+  return v;
+}
+
 // Serve HTML — short cache with ETag so deploys propagate quickly
 function serveHtml(req, res) {
-  loadHtml(); // re-check if file changed (cheap stat call)
-  if (req.headers['if-none-match'] === htmlEtag) { res.status(304).end(); return; }
+  const v = htmlVariant(req);
+  if (req.headers['if-none-match'] === v.etag) { res.status(304).end(); return; }
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'public, max-age=300'); // 5 min
-  res.setHeader('ETag', htmlEtag);
-  res.send(htmlCache);
+  res.setHeader('ETag', v.etag);
+  res.send(v.buf);
 }
 app.get('/', serveHtml);
 app.get('/blundermind.html', serveHtml);

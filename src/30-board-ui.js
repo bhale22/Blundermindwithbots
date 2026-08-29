@@ -1452,20 +1452,30 @@ function render(){
   // either square shade, so a single colour pair works across the whole board.
   // textAlign is set explicitly because the piece-drawing paths above leave it
   // on 'center', which this block used to inherit by accident.
+  // Lichess-style: the label is drawn in the colour of the OPPOSITE square, so
+  // it reads on whichever square it lands on with nothing behind it. The white
+  // halo this replaces did keep one colour legible everywhere, but a ring of
+  // white on every file and rank is a lot of visual noise next to the pieces —
+  // and on a dark board theme it was the brightest thing on the square.
   ctx.save();
-  ctx.font='600 11px system-ui,-apple-system,"Segoe UI",sans-serif';
+  ctx.font='700 11px system-ui,-apple-system,"Segoe UI",sans-serif';
   ctx.textAlign='left'; ctx.textBaseline='alphabetic';
-  ctx.lineWidth=2.5; ctx.lineJoin='round'; ctx.miterLimit=2;
-  ctx.strokeStyle='rgba(255,255,255,0.85)';
-  ctx.fillStyle='rgba(0,0,0,0.85)';
-  const _coord=(t,x,y)=>{ ctx.strokeText(t,x,y); ctx.fillText(t,x,y); };
+  const _ct = (typeof BOARD_THEMES!=='undefined' &&
+               (BOARD_THEMES[currentBoardTheme] || BOARD_THEMES.classic)) || null;
+  // (r + c) even is a light square, matching the fill loop above.
+  const _coord=(t,x,y,r,c)=>{
+    if(_ct) ctx.fillStyle = ((r+c)%2===0) ? _ct.dark : _ct.light;
+    ctx.fillText(t,x,y);
+  };
   for(let i=0;i<8;i++){
     if(_boardFlipped){
-      _coord(String.fromCharCode(97+7-i),(480-((i+1)*SQ))+4,7*SQ+SQ-4);
-      _coord(String(i+1),480-SQ+4,i*SQ+14);
+      // files sit on display row 7; flipped, file (7-i) is at display col (7-i)
+      _coord(String.fromCharCode(97+7-i),(480-((i+1)*SQ))+4,7*SQ+SQ-4, 7, 7-i);
+      // ranks sit on display col 7 when flipped
+      _coord(String(i+1),480-SQ+4,i*SQ+14, i, 7);
     } else {
-      _coord(String.fromCharCode(97+i),i*SQ+4,7*SQ+SQ-4);
-      _coord(String(8-i),4,i*SQ+14);
+      _coord(String.fromCharCode(97+i),i*SQ+4,7*SQ+SQ-4, 7, i);
+      _coord(String(8-i),4,i*SQ+14, i, 0);
     }
   }
   ctx.restore();
@@ -2814,6 +2824,10 @@ if(typeof ghostSyncUI === "function") ghostSyncUI();
 if(typeof quickBotPick === "function") quickBotPick(String(QUICK_SF_DEFAULT));
 loadPos(0);
 resizeBoard();
+// The first-visit greeting is the landing itself again (see the inline shell
+// resolver next to #landingOverlay), so the board-level welcome card is not
+// shown. welcomeInit/welcomeDismiss are left in place — the card markup is
+// gone, and both no-op without it.
 
 // Start the Maia worker shortly after page load so it can detect any cached
 // model in IndexedDB and update the status UI before the user opens the bot

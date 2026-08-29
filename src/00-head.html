@@ -8,6 +8,20 @@
 <meta property="og:title" content="Blundermind">
 <meta property="og:description" content="Stop getting blundermined. Board vision training for novice chess players.">
 <meta property="og:type" content="website">
+<!-- Social preview. Without og:image a shared link renders as a bare text row
+     on every platform that unfurls; with it, the card carries the wordmark and
+     the chimera. The Play feature graphic is reused rather than a new asset:
+     it is already 1024x500 (near og's 1.91:1) and already says what the site
+     is. og:url is set per request in server.js so each domain claims itself. -->
+<meta property="og:image" content="/icons/feature-graphic-1024x500.png">
+<meta property="og:image:width" content="1024">
+<meta property="og:image:height" content="500">
+<meta property="og:image:alt" content="Blundermind — stop getting blundermined. Board vision and Build-A-Bot chess.">
+<meta property="og:site_name" content="Blundermind">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Blundermind">
+<meta name="twitter:description" content="Stop getting blundermined. Board vision training for novice chess players.">
+<meta name="twitter:image" content="/icons/feature-graphic-1024x500.png">
 <!-- PWA. The manifest is generated per-host by server.js so buildabotchess.com
      installs as Build-A-Bot and blundermindchess.com as Blundermind. -->
 <link rel="manifest" href="/manifest.webmanifest">
@@ -80,22 +94,26 @@ body{
 
 /* ── Site header ──────────────────────────────────────────────────────────── */
 #site-header{
-  display:flex;align-items:center;gap:10px;
+  display:flex;align-items:baseline;gap:10px;
   width:100%;padding:2px 0 4px;
   flex-shrink:0;
   justify-content:center;
 }
+/* The buttons are not text and have no baseline worth sharing — centre them
+   against the row instead, or baseline alignment drags them down by their
+   own label's descender. */
+#site-header #headerBtnGroup{ align-self:center; }
 #site-name{
-  font-size:18px;font-weight:600;color:#c8d8e8;
+  font-size:18px;font-weight:600;color:var(--text-primary);
   letter-spacing:-0.02em;
 }
-#site-name .sn-accent{color:#4a9fd4;}
+#site-name .sn-accent{color:var(--st-word-accent,#4a9fd4);}
 /* Header wordmark and tagline follow the shell, same two-span swap as the
    landing: Blundermind on the Visualization board, Build-A-Bot Chess on the
    Expert one. Pro overrides live in the PRO SHELL block below. */
 .sn-bab{display:none;}
 #site-tagline{
-  font-size:11px;color:#506070;font-style:italic;
+  font-size:11px;color:var(--text-secondary);font-style:italic;
   letter-spacing:0.02em;
 }
 
@@ -295,9 +313,9 @@ canvas{
    only state whose chip is a solid fill — it is the strongest state and should
    look it. */
 .ib.on .ib-main{
-  background:rgba(34,168,90,0.14);
-  color:#14713c;border-color:#22a85a;
-  box-shadow:0 0 0 1.5px rgba(34,168,90,0.18);
+  background:var(--st-on-bg,rgba(34,168,90,0.14));
+  color:var(--st-on-fg,#14713c);border-color:var(--st-on-bd,#22a85a);
+  box-shadow:0 0 0 1.5px var(--st-on-ring,rgba(34,168,90,0.18));
 }
 /* State is carried by tint and border colour alone. Weight used to help, but a
    weight change re-measures the text, and a label sitting near the column width
@@ -308,8 +326,8 @@ canvas{
    always-on it has to be distinguishable at a glance, not on inspection. This
    is the pair that used to differ by a 0.5px border at 25% opacity. */
 .ib.pre .ib-main{
-  background:rgba(90,104,200,0.10);
-  color:#3a44a0;border-color:rgba(90,104,200,0.55);
+  background:var(--st-exp-bg,rgba(90,104,200,0.10));
+  color:var(--st-exp-fg,#3a44a0);border-color:var(--st-exp-bd,rgba(90,104,200,0.55));
 }
 
 /* Peeking. This colour is the contract: while it shows, the press is a peek and
@@ -427,7 +445,8 @@ canvas{
 .ctrl-btn:hover{border-color:var(--accent);color:var(--text-primary);}
 .ctrl-btn.reset-btn{border-color:rgba(110,44,0,0.6);color:#c07840;}
 .ctrl-btn.reset-btn:hover{border-color:#e07820;}
-.ctrl-btn.danger-btn{border-color:rgba(110,26,26,0.6);color:#c06060;}
+.ctrl-btn.danger-btn{border-color:var(--st-danger-bd,rgba(110,26,26,0.6));
+  color:var(--st-danger,#c06060);}
 .ctrl-btn.danger-btn:hover{border-color:#e04040;}
 .ctrl-btn.util-btn{border-color:var(--border2);}
 .ctrl-spacer{flex:1;}
@@ -610,7 +629,14 @@ canvas{
    no scrollbar can reach it. That put the title and the two board-choice panels
    ~490px above the top of a phone screen, permanently unreachable. min-height
    on the inner keeps the centred look whenever the content does fit. */
+/* Hidden on load. The landing is Home now, not the door: it is reached by
+   clicking the wordmark, and landingShow() sets an explicit display to open
+   it. It used to cover the board on EVERY visit — not just the first — and
+   the main thing it asked (board style) is already answered by bm_shell,
+   which is domain-defaulted and persisted, so it was interrupting to ask a
+   question it had already stored the answer to. */
 #landingOverlay {
+  display:none;
   position:fixed;top:0;left:0;width:100%;height:100%;
   background:var(--bg-page);
   z-index:5000;
@@ -834,6 +860,9 @@ canvas{
 .landing-expert .landing-card.green-card:hover,
 .landing-expert .landing-card.gold-card:hover { border-color:#c8922a;box-shadow:0 0 0 2px rgba(200,146,42,0.18); }
 .landing-expert .landing-card-title { color:#e8e6e0; }
+.lg-bab{ display:none; }
+.landing-expert .lg-bm{ display:none; }
+.landing-expert .lg-bab{ display:inline; }
 .landing-expert .landing-footer { color:#717a8a; }
 /* Three equal columns on one shared measure. This was a centred flex row of
    fixed-width cards, so the block came out 617px wide while the rows beneath it
@@ -1144,6 +1173,63 @@ canvas{
   pointer-events:none;
   transition:top 0.25s ease,left 0.25s ease,width 0.25s ease,height 0.25s ease;
 }
+/* The dimming is that 9999px shadow, which darkens everything the ring is not
+   around — including the board. On a step whose whole point is an overlay
+   DRAWN ON THE BOARD, that put the position under 50% black and the pieces
+   read as washed out. Keep the glow, drop the blackout. */
+#tourRing.tour-nodim{ box-shadow:0 0 16px 3px rgba(74,159,212,0.75); }
+
+/* The overlays, brought into the panel. On a phone the real grid is far below
+   the board and you cannot watch both; these put the whole step within reach
+   of the board it is demonstrating. Tried ones stay marked so it is obvious
+   what is left. */
+.tour-chips{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 10px;}
+.tour-chip{
+  font-family:inherit;font-size:10.5px;font-weight:600;line-height:1;
+  padding:5px 7px;border-radius:4px;cursor:pointer;
+  border:1px solid var(--border,#3a4450);
+  background:var(--bg-panel2,#1a1e24);color:var(--text-secondary,#aab4c0);
+  transition:background 0.12s,border-color 0.12s,color 0.12s;
+}
+.tour-chip:hover{border-color:var(--accent,#4a9fd4);color:var(--accent,#4a9fd4);}
+.tour-chip:focus-visible{outline:2px solid var(--accent,#4a9fd4);outline-offset:2px;}
+.tour-chip.tried{opacity:0.62;}
+.tour-chip.on{
+  background:var(--st-on-bg,rgba(34,168,90,0.16));border-color:var(--st-on-bd,#22a85a);
+  color:var(--st-on-fg,#14713c);opacity:1;
+}
+
+/* Help bodies run to several paragraphs, and the panel is docked over the
+   board during the interactive step, so it has to stay bounded rather than
+   grow until it covers the position being demonstrated. */
+/* Capped, and the BODY is what scrolls — not the whole panel. Scrolling the
+   panel pushed Skip / Back / Next off the bottom, so the step could be entered
+   and never left. Title and buttons stay put; only the help text moves. */
+#tourPanel.tour-explore{
+  max-height:min(52vh,420px);
+  display:flex;flex-direction:column;overflow:hidden;
+  transform:none;
+}
+#tourPanel.tour-explore .tour-body{
+  flex:1 1 auto;min-height:0;overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+}
+#tourPanel.tour-explore .tour-actions{flex:0 0 auto;}
+
+/* "These are the buttons — press one." Used only while the tour is on its
+   interactive step; nothing is dimmed, so the invitation has to be the thing
+   that draws the eye. */
+.ind-grid.tour-invite{
+  outline:2px solid var(--accent,#4a9fd4);outline-offset:3px;border-radius:6px;
+  animation:tourInvite 1.8s ease-in-out infinite;
+}
+@keyframes tourInvite{
+  0%,100%{ outline-color:rgba(74,159,212,0.9); }
+  50%    { outline-color:rgba(74,159,212,0.25); }
+}
+@media (prefers-reduced-motion: reduce){
+  .ind-grid.tour-invite{ animation:none; }
+}
 #tourPanel,#tourOutro {
   position:absolute;top:50%;left:50%;width:288px;max-width:calc(100vw - 24px);
   background:var(--bg-panel,#14161a);border:1px solid var(--accent,#4a9fd4);
@@ -1243,6 +1329,46 @@ canvas{
    matches the main canvas exactly and the overlay stays in register. */
 #ghostCanvas { position:absolute;top:0;left:0;pointer-events:none;border-radius:4px;
                border-color:transparent; }
+
+/* ── First-visit welcome ────────────────────────────────────────────────────
+   Deliberately NOT a modal. It has no backdrop and does not cover the whole
+   board, because the point of landing on the board is that the board is
+   usable — a card you must dismiss before playing is the same interstitial
+   in a smaller box. Anything outside it goes straight to the canvas. */
+#welcomeCard{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  z-index:40;width:min(88%,340px);
+  background:var(--bg-panel);border:1.5px solid var(--accent);border-radius:8px;
+  box-shadow:0 6px 28px -8px rgba(10,25,40,0.45);
+  padding:14px 15px 13px;
+  transition:opacity 0.25s ease, transform 0.25s ease;
+}
+#welcomeCard[hidden]{display:none;}
+#welcomeCard.fade-out{opacity:0;transform:translate(-50%,-46%);pointer-events:none;}
+.wc-x{
+  position:absolute;top:5px;right:7px;width:22px;height:22px;line-height:1;
+  border:0;background:transparent;color:var(--text-dim);font-size:17px;
+  cursor:pointer;border-radius:4px;
+}
+.wc-x:hover{color:var(--text-primary);background:var(--bg-panel2);}
+.wc-h{font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:5px;}
+.wc-b{font-size:11.5px;line-height:1.5;color:var(--text-secondary);margin:0 0 11px;}
+.wc-opts{display:flex;gap:6px;}
+.wc-opt{
+  flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:8px 4px;border:1px solid var(--border);border-radius:6px;
+  background:var(--bg-panel2);color:var(--text-secondary);
+  font-family:inherit;font-size:10.5px;font-weight:600;cursor:pointer;
+  transition:border-color 0.12s,color 0.12s,background 0.12s;
+}
+.wc-opt:hover{border-color:var(--accent);color:var(--accent);background:var(--bg-panel);}
+.wc-opt:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.wc-i{font-size:16px;line-height:1;}
+.wc-t{white-space:nowrap;}
+@media(max-width:420px){
+  #welcomeCard{width:92%;padding:12px 12px 11px;}
+  .wc-t{font-size:9.5px;white-space:normal;text-align:center;}
+}
 #board-canvas-wrap { position:relative;display:inline-block;flex-shrink:0; }
 
 /* ── Board-vision settings drawer ──────────────────────────────────────────
@@ -1280,25 +1406,25 @@ canvas{
 .quick-bot{
   display:flex;flex-direction:column;align-items:stretch;gap:0;
   width:100%;flex-shrink:0;
-  border:1.5px solid #4aab74;border-radius:6px;overflow:hidden;
-  background:rgba(90,212,144,0.16);
+  border:1.5px solid var(--st-go-bd,#4aab74);border-radius:6px;overflow:hidden;
+  background:var(--st-go-bg,rgba(90,212,144,0.16));
   /* Separates the launch block from the visualization controls under it —
      they are different kinds of thing and were reading as one stack. */
   margin-bottom:11px;
 }
 .qb-go{
   width:100%;display:flex;align-items:center;justify-content:center;
-  padding:9px 8px;border:0;background:transparent;color:#1d6b41;
+  padding:9px 8px;border:0;background:transparent;color:var(--st-go-fg,#1d6b41);
   font-family:inherit;cursor:pointer;text-align:center;
   -webkit-tap-highlight-color:transparent;
 }
-.qb-go:hover{background:rgba(90,212,144,0.22);}
+.qb-go:hover{background:var(--st-go-hv,rgba(90,212,144,0.22));}
 .qb-go:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
 .qb-t1{font-size:15px;font-weight:700;line-height:1.15;white-space:nowrap;}
 .qb-row{display:flex;align-items:stretch;border-top:1px solid rgba(74,171,116,0.55);}
 .qb-sel{
   flex:1;min-width:0;border:0;border-radius:0;
-  background:transparent;color:#1d6b41;
+  background:transparent;color:var(--st-go-fg,#1d6b41);
   font-family:inherit;font-size:11px;font-weight:600;padding:4px 3px;cursor:pointer;
 }
 .qb-row .qb-sel + .qb-sel{border-left:1px solid rgba(74,171,116,0.55);}
@@ -1325,8 +1451,10 @@ canvas{
   padding:3px 2px;border-radius:3px;
   border:0.5px solid var(--border);background:var(--bg-panel2);color:var(--text-dim);
 }
-.ind-key-row .k-exp{background:rgba(90,104,200,0.10);border-color:rgba(90,104,200,0.55);color:#3a44a0;}
-.ind-key-row .k-on{background:rgba(34,168,90,0.14);border-color:#22a85a;color:#14713c;}
+.ind-key-row .k-exp{background:var(--st-exp-bg,rgba(90,104,200,0.10));
+  border-color:var(--st-exp-bd,rgba(90,104,200,0.55));color:var(--st-exp-fg,#3a44a0);}
+.ind-key-row .k-on{background:var(--st-on-bg,rgba(34,168,90,0.14));
+  border-color:var(--st-on-bd,#22a85a);color:var(--st-on-fg,#14713c);}
 
 /* ── Board settings launcher ────────────────────────────────────────────────
    Moved out of the top of the column and re-sited between the two overlay
@@ -1375,16 +1503,16 @@ canvas{
   height:var(--ib-h);
 }
 .ghost-one.on{
-  background:rgba(34,168,90,0.14);border-color:#22a85a;
-  box-shadow:0 0 0 1.5px rgba(34,168,90,0.18);
+  background:var(--st-on-bg,rgba(34,168,90,0.14));border-color:var(--st-on-bd,#22a85a);
+  box-shadow:0 0 0 1.5px var(--st-on-ring,rgba(34,168,90,0.18));
 }
-.ghost-one.on .ib-main{background:transparent;color:#14713c;}
+.ghost-one.on .ib-main{background:transparent;color:var(--st-on-fg,#14713c);}
 #soloGhostDepth{
   flex:1;min-width:0;font-family:inherit;font-size:10px;
   border:0;border-left:0.5px solid var(--border2);border-radius:0;
   background:transparent;color:var(--text-secondary);cursor:pointer;padding:2px 3px;
 }
-.ghost-one.on #soloGhostDepth{color:#14713c;border-left-color:rgba(34,168,90,0.45);}
+.ghost-one.on #soloGhostDepth{color:var(--st-on-fg,#14713c);border-left-color:var(--st-on-bd,rgba(34,168,90,0.45));}
 #soloGhostDepth:disabled{opacity:0.55;cursor:default;}
 
 /* ── Indicator utility row ──────────────────────────────────────────────────
@@ -1437,11 +1565,16 @@ canvas{
 .play-btn{
   font-size:12px;font-weight:700;line-height:1.2;padding:0 4px;
   height:var(--play-h);min-height:0;
-  background:rgba(90,212,144,0.16);border:1.5px solid #4aab74;color:#1d6b41;
+  background:var(--st-go-bg,rgba(90,212,144,0.16));
+  border:1.5px solid var(--st-go-bd,#4aab74);color:var(--st-go-fg,#1d6b41);
 }
 .play-btn:hover{background:rgba(90,212,144,0.26);border-color:#3d9463;}
-.play-btn.mp{background:rgba(74,159,212,0.14);border-color:#3f8cc0;color:#1a5d88;}
-.play-btn.mp:hover{background:rgba(74,159,212,0.24);border-color:#33780f00;}
+.play-btn.mp{background:var(--st-mp-bg,rgba(74,159,212,0.14));
+  border-color:var(--st-mp-bd,#3f8cc0);color:var(--st-mp-fg,#1a5d88);}
+/* The hover border was #33780f00 — eight hex digits, so alpha 00: the border
+   vanished on hover instead of strengthening. */
+.play-btn.mp:hover{background:var(--st-mp-hv,rgba(74,159,212,0.24));
+  border-color:var(--st-mp-bd,#3f8cc0);}
 /* The dynamic action slot shares the primary row but only deserves primary
    weight when it IS the primary action. Idle it says "Training Tips", which
    must not shout over the two game starters; updateActionBtn() swaps it to
@@ -2279,7 +2412,10 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div class="landing-card green-card" onclick="landingChoose('bot')">
       <div class="landing-card-icon">🤖</div>
       <div class="landing-card-title">Bot Builder</div>
-      <div class="landing-card-go">Play a bot</div>
+      <!-- Build-a-Bot arrives here to BUILD, not to pick a stock opponent, so
+           the card names that. Same dual-label pattern as the wordmark. -->
+      <div class="landing-card-go"><span class="lg-bm">Play a bot</span><span
+           class="lg-bab">Create custom bot</span></div>
     </div>
 
     <!-- 2 Player. Kept as .landing-card with the mp onclick: the local-server
@@ -2392,6 +2528,16 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     try { ls.setItem('bm_shell', s); } catch(e) {}   // storage blocked → session-only default
   }
   window.__bmShell = s;
+  // The landing is the first impression and nothing else — a returning visitor
+  // has already made the one choice it asks about (it is stored in bm_shell),
+  // so they go straight to the board. Decided here, inline and before paint,
+  // so there is no flash of the landing on a return visit.
+  var seenLanding = null;
+  try { seenLanding = ls.getItem('bm_landingSeen'); } catch(e) {}
+  if (seenLanding !== '1') {
+    var _lov = document.getElementById('landingOverlay');
+    if (_lov) _lov.style.display = 'block';
+  }
   if (s === 'pro') {
     var lo = document.getElementById('landingOverlay');
     if (lo) {
@@ -2425,7 +2571,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 
 <!-- ── Site header ──────────────────────────────────────────────────────── -->
 <div id="site-header">
-  <span id="site-name" onclick="landingShow()" style="cursor:pointer;" title="Home — choose board experience"><span class="sn-bm">♟ Blunder<span class="sn-accent">mind</span></span><span class="sn-bab">♟ Build-A-Bot <span class="sn-accent">Chess</span></span></span>
+  <span id="site-name" onclick="landingShow()" style="cursor:pointer;" title="Home — choose board experience"><span class="sn-bm">♟ Blunder<span class="sn-accent">mind</span></span><span class="sn-bab">♞ Blundermind <span class="sn-accent">Build-a-Bot</span></span></span>
   <span id="site-tagline"><span class="sn-bm">Stop getting blundermined.</span><span class="sn-bab">Domo Arigato</span></span>
   <div id="headerBtnGroup" style="display:flex;gap:8px;align-items:center;flex-shrink:0;margin-left:20px;">
     <button id="tourBtn" onclick="startTour()"
@@ -2497,6 +2643,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div id="board-canvas-wrap">
       <canvas id="cv" width="480" height="480"></canvas>
       <canvas id="ghostCanvas" width="480" height="480"></canvas>
+
     </div>
 
     <!-- The commit chip is mounted into the player's own clock box by
@@ -2948,6 +3095,15 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
   <span><em>Stop getting blundermined.</em></span>
   <span class="footer-sep">·</span>
   <span style="font-size:8px;color:#304050;">Built on Stockfish, Maia &amp; Lichess — <a href="/credits" style="color:inherit;text-decoration:underline;">credits &amp; licences</a></span>
+  <span class="footer-sep">·</span>
+  <!-- The two sites are one codebase and each other's only signpost. This used
+       to surface only inside the landing's app-only "Also on the web" note, so
+       on the web neither domain mentioned the other at all. -->
+  <span class="footer-sites">
+    <a href="https://blundermindchess.com" rel="noopener">&#9823; Blundermindchess.com</a>
+    <span class="footer-sep">·</span>
+    <a href="https://buildabotchess.com" rel="noopener">&#9822; Buildabotchess.com</a>
+  </span>
 </div>
 
 <!-- ── Promotion modal ───────────────────────────────────────────────────── -->
