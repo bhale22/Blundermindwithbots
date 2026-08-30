@@ -893,6 +893,49 @@ body.rs-highvis [style*="font-size:10px"]{font-size:14px !important;}
   gap:8px;padding:14px;text-align:center;
 }
 .speedo-brand{font-family:var(--font-d);font-size:13px;font-style:italic;font-weight:300;color:var(--amber-dim);text-align:center;margin-top:-4px;letter-spacing:0.06em;}
+
+/* ── Maia model: "not downloaded" is an ALERT, not another settings row ──────
+   Until the 44 MB net is in this browser's local storage every Maia option on
+   the panel is inert, so the block that says so has to read as a blocker. It
+   used to be styled exactly like the neutral surrounding rows — same carbon
+   ground, same hairline border, same 8px caps — and the download button was a
+   0.5px green outline at 50% opacity, which reads as a disabled label rather
+   than the one control standing between the visitor and a working bot.
+   The alert dress is applied by bcpMaiaSetStatus and removed the instant the
+   model is ready, so a settled panel goes back to being quiet. */
+.bcp-maia-block{
+  margin-top:10px;padding:8px 10px;border-radius:var(--r);
+  background:var(--carbon-surface);border:0.5px solid var(--border);
+  transition:background 0.2s ease,border-color 0.2s ease,box-shadow 0.2s ease;
+}
+.bcp-maia-block.needs-dl{
+  background:rgba(224,150,40,0.10);
+  border:1px solid rgba(224,150,40,0.55);
+  box-shadow:0 0 0 3px rgba(224,150,40,0.10);
+}
+/* The heading earns a warning colour only in the alert state. */
+.bcp-maia-block .bcp-maia-hd{
+  font-family:var(--font-m);font-size:8.5px;letter-spacing:0.06em;
+  text-transform:uppercase;color:var(--text-secondary);
+  transition:color 0.2s ease;
+}
+.bcp-maia-block.needs-dl .bcp-maia-hd{ color:#f0b550;font-weight:700; }
+/* Leading "⚠" — markup, not content, so the label text stays one string. */
+.bcp-maia-warn{ display:none;margin-right:4px; }
+.bcp-maia-block.needs-dl .bcp-maia-warn{ display:inline; }
+
+/* A pulse, twice, on the button that needs pressing. Long enough to catch the
+   eye on arrival, short enough not to become decoration — and off entirely for
+   anyone who asked for reduced motion. */
+@keyframes bcpDlPulse{
+  0%,100%{ box-shadow:0 1px 6px -1px rgba(224,150,40,0.55); }
+  50%    { box-shadow:0 1px 6px -1px rgba(224,150,40,0.55),0 0 0 6px rgba(224,150,40,0); }
+  1%     { box-shadow:0 1px 6px -1px rgba(224,150,40,0.55),0 0 0 0 rgba(224,150,40,0.45); }
+}
+.bcp-maia-dl-btn.needs-dl{ animation:bcpDlPulse 1.6s ease-out 2; }
+@media (prefers-reduced-motion:reduce){
+  .bcp-maia-dl-btn.needs-dl{ animation:none; }
+}
 .speedo-inputs{display:flex;align-items:center;gap:10px;justify-content:center;margin-top:10px;}
 .elo-input{
   width:80px;padding:6px 8px;
@@ -1977,13 +2020,24 @@ body.fj .picon{font-weight:500;}
    min-height would only have been right for one of them. There is nothing to
    see behind it anyway: an undownloaded dial is not usable.
    ═══════════════════════════════════════════════════════════════════════════ */
+/* The de-absolute treatment is NOT phone-only. The reasoning above holds at
+   every width: the dial is ~125px tall and the overlay needs ~190px of title,
+   blurb, button and status, so above 760px the excess simply painted over the
+   dial's own labels — "Maia 3 model" landing on top of "Maia 3 — ELO", the
+   download button on top of the "click arc · drag needle" hint. The notice
+   that the model has to be downloaded was the least readable thing on the
+   panel, on the widths most people use.
+   Out of the flow it is sized by its own content and cannot overlap anything;
+   there is nothing to see behind it either way, since an undownloaded dial is
+   not usable. Only the reflow of the ROW stays phone-only. */
+.speedo-dial.overlay-on .speedo-overlay{
+  position:static;border:0.5px solid var(--border-amber);
+}
+.speedo-dial.overlay-on .speedo-svg{display:none;}
+
 @media (max-width:760px){
   .speedo-row{flex-wrap:wrap;gap:8px;}
   .speedo-dial{flex:1 1 100%;}
-  .speedo-dial.overlay-on .speedo-overlay{
-    position:static;border:0.5px solid var(--border-amber);
-  }
-  .speedo-dial.overlay-on .speedo-svg{display:none;}
   /* ELO box moves under the dial as a full-width labelled row. */
   .elo-col{flex:1 1 100%;flex-direction:row;justify-content:center;gap:10px;}
   .elo-col .elo-input{max-width:140px;}
@@ -2870,10 +2924,10 @@ body.fj .picon{font-weight:500;}
             </div>
             <div class="ctrl-hint" style="margin-top:8px;">LC modes use the Lichess Open Explorer as an opening book; Maia 3 takes over when the book runs dry.</div>
             <!-- Maia model status / download -->
-            <div style="margin-top:10px;padding:8px 10px;background:var(--carbon-surface);border:0.5px solid var(--border);border-radius:var(--r);">
+            <div class="bcp-maia-block">
               <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
                 <div>
-                  <div style="font-family:var(--font-m);font-size:8.5px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-secondary);">Maia 3 model</div>
+                  <div class="bcp-maia-hd"><span class="bcp-maia-warn" aria-hidden="true">&#9888;</span>Maia 3 model</div>
                   <div class="bcp-maia-status-txt" style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:2px;">Checking…</div>
                 </div>
                 <button class="bcp-maia-dl-btn" onclick="bcpMaiaDownload()" disabled
@@ -8713,26 +8767,51 @@ function bcpMaiaSetStatus(status, ready, progress){
   const labels = {
     idle:        'Checking storage…',
     loading:     'Checking storage…',
-    'no-cache':  'Not downloaded — click the button to download',
+    'no-cache':  'Maia bots cannot play until this is downloaded.',
     ready:       '✓ Model ready',
     error:       '✗ Error loading model — try reloading'
   };
   const pct = (status === 'downloading' && progress != null) ? ' ' + progress + '%' : '';
   const txt = status === 'downloading' ? ('Downloading… ' + pct) : (labels[status] || status);
-  const clr = ready ? '#5ad490' : (status === 'error' ? '#e04040' : 'var(--text-dim)');
-  document.querySelectorAll('.bcp-maia-status-txt').forEach(function(el){
-    el.textContent = txt; el.style.color = clr;
-  });
   // Only enable the Download button once we *know* there is no cached model.
   // idle/loading = still checking; keep button disabled so the user doesn't
   // trigger a redundant download while the cache check is in flight.
   const checking = (status === 'idle' || status === 'loading');
   const done     = ready || status === 'downloading' || checking;
+  // The one state that is asking the visitor for something. Everything below
+  // dresses up for this and undresses again the moment it clears.
+  const needsDl  = !ready && !checking && status !== 'downloading';
+  const clr = ready ? '#5ad490'
+            : (status === 'error' ? '#e04040'
+            : (needsDl ? '#f0b550' : 'var(--text-dim)'));
+  document.querySelectorAll('.bcp-maia-status-txt').forEach(function(el){
+    el.textContent = txt; el.style.color = clr;
+  });
+  document.querySelectorAll('.bcp-maia-block').forEach(function(el){
+    el.classList.toggle('needs-dl', needsDl);
+  });
   document.querySelectorAll('.bcp-maia-dl-btn').forEach(function(btn){
     btn.textContent   = ready ? '✓ Model ready' : (checking ? 'Checking…' : 'Download (~44 MB)');
     btn.disabled      = done;
-    btn.style.opacity = done ? '0.5' : '1';
-    btn.style.cursor  = done ? 'default' : 'pointer';
+    btn.classList.toggle('needs-dl', needsDl);
+    // Both download buttons carry their resting look in a style="" attribute,
+    // so the alert dress has to be applied inline to beat it — and clearing a
+    // property would delete the resting look rather than reveal it. Snapshot
+    // the original declaration once, and restore from that.
+    if (btn.dataset.bmBaseCss === undefined) btn.dataset.bmBaseCss = btn.style.cssText;
+    btn.style.cssText = btn.dataset.bmBaseCss;
+    if (needsDl) {
+      // Solid amber, dark text, real weight: the only pressable thing in a
+      // column of labels should not also be the faintest thing in it.
+      btn.style.opacity      = '1';
+      btn.style.background   = '#e09628';
+      btn.style.border       = '1px solid #e09628';
+      btn.style.color        = '#14161a';
+      btn.style.fontWeight   = '700';
+    } else {
+      btn.style.opacity      = done ? '0.5' : '1';
+    }
+    btn.style.cursor = done ? 'default' : 'pointer';
   });
   // Reflect model availability on the Maia engine cards themselves, so the option
   // reads as "download to enable" before it's selected — never hidden, and never a
