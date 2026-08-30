@@ -139,28 +139,27 @@
 </div>
 
 <div class="card">
-  <h2>Prof. Kenneth Regan — time and rating</h2>
+  <h2>IM Prof. Kenneth Regan — time and rating</h2>
   <p>
-    The time-pressure model — how a bot's effective strength degrades as its clock runs
-    down — is seeded on Prof. Kenneth Regan's (University at Buffalo) published data on
-    rating loss across time controls. His work on modelling human move choice as a
-    function of rating, and on intrinsic performance ratings, is the intellectual
-    groundwork for the idea that an engine can be conditioned to play <em>like</em> a
-    given strength rather than merely <em>at</em> it.
-  </p>
-  <p class="cite">
-    Regan &amp; Haworth — <em>Intrinsic Chess Ratings</em>, AAAI 2011.
+    The time-pressure model, how a bot's effective strength degrades as its thinking time is shortened,  is based on 
+    IM Prof. Kenneth Regan's (University at Buffalo) models for
+    rating loss across time controlled games. 
   </p>
   <p>
-    <a href="https://engineering.buffalo.edu/computer-science-engineering/people/faculty-directory/full-time.host.html/content/shared/engineering/computer-science-engineering/profiles/faculty/ladder/regan-ken.detail.html" target="_blank" rel="noopener">Prof. Regan's faculty page</a>
-    at the University at Buffalo. He has also been interviewed twice by Ben Johnson on
-    the <a href="https://www.perpetualchesspod.com/" target="_blank" rel="noopener">Perpetual Chess Podcast</a> —
-    <a href="https://www.perpetualchesspod.com/new-blog/2019/7/23/episode-136-im-kenneth-regan" target="_blank" rel="noopener">Episode 136</a>,
-    on his career and how his model reads a game, and
-    <a href="https://www.perpetualchesspod.com/new-blog/2022/10/18/ep-301-computer-science-professor-and-im-dr-kenneth-regan-on-the-carlsenniemann-controversy-and-the-current-state-of-cheating-in-otb-chess" target="_blank" rel="noopener">Episode 301</a>,
-    on the Carlsen&ndash;Niemann controversy. Both are about cheating detection rather
-    than the rating work borrowed here, but they are the best plain-language
-    introduction to how he measures move quality.
+    He described some of his work on Ben Johnson's 
+    <a href="https://www.perpetualchesspod.com/" target="_blank" rel="noopener">Perpetual Chess Podcast</a>, and 
+    the equations used here are based on the graphs shown in the
+     <a href="https://www.youtube.com/watch?v=UsEIBzm5msU" target="_blank" rel="noopener">YouTube video of episode 301</a> (roughly minutes 10-20).
+     It's worth noting that Prof. Regan's models are based on the correlation between ELO degradation and time control
+     for entire games.  I use them here to estimate ELO degradation with thinking time per move instead of per game.
+  </p>  
+  <p>
+     His <a href="https://cse.buffalo.edu/~regan/" target="_blank" rel="noopener">University at Buffalo website</a> contains
+     links to his publications and talks (as well as fascinating lecture notes on quantum computing and its mathematical underpinnings). 
+  </p>
+  <p>
+    The formula for increasing temperature as thinking time decreases is purely conjecture, with the one takeaway 
+    from Prof. Regan's work being that it should probably be a logarithmic rather than linear relationship.
   </p>
 </div>
 
