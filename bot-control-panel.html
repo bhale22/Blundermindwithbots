@@ -2768,12 +2768,10 @@ body.fj .picon{font-weight:500;}
               <div id="bcp-speedo-overlay" class="speedo-overlay" style="display:flex;">
                 <div style="font-family:var(--font-d);font-size:16px;font-style:italic;
                   font-weight:300;color:var(--amber);letter-spacing:0.05em;">Maia 3 model</div>
-                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-secondary);
-                  line-height:1.6;max-width:210px;">
-                  Human-like neural net · plays at any ELO (600–2600)<br>
-                  One-time download to your browser's local storage<br>
-                  <span style="opacity:0.75;">(private/incognito windows don't share storage, so the model re-downloads there)</span>
-                </div>
+                <!-- Button first, directly under the name: this panel exists to ask
+                     for one thing, and the blurb is why — not what to do. Reading
+                     three lines of explanation before reaching the control put the
+                     answer after the argument. -->
                 <button class="bcp-maia-dl-btn" onclick="bcpMaiaDownload()" disabled
                   style="padding:6px 14px;font-family:var(--font-m);font-size:9px;letter-spacing:0.1em;
                   text-transform:uppercase;background:var(--dl-green-bg,rgba(90,212,144,0.12));
@@ -2783,6 +2781,12 @@ body.fj .picon{font-weight:500;}
                 </button>
                 <div class="bcp-maia-status-txt" style="font-family:var(--font-m);font-size:8px;
                   color:var(--text-dim);min-height:10px;">Checking storage…</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-secondary);
+                  line-height:1.6;max-width:210px;">
+                  Human-like neural net · plays at any ELO (600–2600)<br>
+                  One-time download to your browser's local storage<br>
+                  <span style="opacity:0.75;">(private/incognito windows don't share storage, so the model re-downloads there)</span>
+                </div>
               </div>
               <svg class="speedo-svg" id="speedo-svg" viewBox="0 40 360 150" style="cursor:pointer;max-width:300px;">
                 <defs>
@@ -9022,6 +9026,29 @@ const BOT_TOUR = [
   { stage:'Overview', closeAll:true, corner:true, sel:null, title:'Welcome to the Bot Builder',
     body:'Build an opponent that feels <i>human</i> — with a style, moods, and bad days, not just a level. The <b>quick-start bar</b> at the top has everything needed to just play: engine, time, color, <b>Start</b>. The sections below go deeper: <b>Engine</b> (the brain and its strength), <b>Personality</b> (style attractors, custom rules, a centipawn budget), <b>Opening Behavior</b>, <b>Move Timing</b>, and <b>Time-Pressure Degradation</b>. Step through with Next — or click anywhere else to close this and explore on your own.' },
 
+  // Step 2, before anything else is explained: almost every dial past the
+  // Engine section reshapes MOVE PROBABILITIES, and only Maia produces those.
+  // Someone who tours the whole panel, builds a personality and presses Start
+  // without the model gets a plain Stockfish bot and no hint as to why — so
+  // the prerequisite is stated once, up front, and reports its own state.
+  { stage:'Overview', open:'engine', sel:'#engine-sub-maia3',
+    title: function(){
+      return _bcpMaiaReady ? 'Maia 3 model — ready ✓'
+                           : 'First — download the Maia 3 model';
+    },
+    body: function(){
+      const lead = _bcpMaiaReady
+        ? 'The <b>Maia 3</b> model is already stored in this browser, so every control on this page is live — nothing to download. Here is what runs on what, so the split is clear before you start building:'
+        : 'Most of what makes a bot feel <i>human</i> here runs on <b>Maia 3</b>, a neural net trained on millions of human games. It is a <b>one-time ~44 MB download</b> into this browser’s storage, and the <b>Download</b> button sits at the top of the Maia dial just below.';
+      return lead +
+        '<br><br><b>Works on Stockfish alone:</b> engine strength, move timing and its human habits, opening behaviour, colour and clock, draw &amp; resign behaviour, and time-pressure <b>Curve A</b> — which drops Stockfish’s level as the clock runs down.' +
+        '<br><br><b>Needs Maia 3:</b> move sampling (temperature), the move-distribution range, every personality attractor, preset and custom rule, the <b>CP Budget</b> and <b>Hard Floor</b>, premoves, and time-pressure <b>Curve B</b>. All of those reshape <i>move probabilities</i>, and Stockfish does not produce any' +
+        (_bcpMaiaReady
+          ? '.'
+          : ' — so until the model is here a Maia bot quietly falls back to plain Stockfish and the style dials do nothing.') +
+        '<br><br><span style="opacity:0.75;">(The <b>LC</b> modes draw their probabilities from the Lichess opening explorer instead, so the personality controls do work there — but only while the game is still in book.)</span>';
+    } },
+
   { stage:'Engine', open:'engine', sel:'#engine-mode-grid', title:'1 · The engine',
     body:'Pick the brain — <b>Maia</b> (a neural net trained on millions of human games), <b>Stockfish</b>, or blends that pull openings from the <b>Lichess explorer</b> and fall back to an engine. You can build a <b>Hybrid</b> bot that mixes engines by weight, and set the exact playing strength.' },
 
@@ -9158,8 +9185,13 @@ function _btRender(){
   if(!step) return;
   // Panel text + stage chips immediately.
   document.getElementById('btCount').textContent = (_btIdx + 1) + ' / ' + _bt.length;
-  document.getElementById('btTitle').textContent = step.title;
-  document.getElementById('btBody').innerHTML = step.body;
+  // title/body may be functions: a step whose content depends on live state
+  // (is the Maia model here yet?) has to be resolved now, not at file-parse
+  // time, or it would report whatever was true when the page loaded.
+  document.getElementById('btTitle').textContent =
+    (typeof step.title === 'function') ? step.title() : step.title;
+  document.getElementById('btBody').innerHTML =
+    (typeof step.body === 'function') ? step.body() : step.body;
   document.getElementById('btStages').innerHTML = _btStageList().map(st =>
     '<button class="bt-chip' + (st.name === step.stage ? ' on' : '') + '" onclick="_btJump(' + st.idx + ')">' + st.name + '</button>').join('');
   document.getElementById('btPrev').style.visibility = _btIdx === 0 ? 'hidden' : 'visible';
