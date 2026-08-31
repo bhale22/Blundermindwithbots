@@ -1866,6 +1866,17 @@ window.addEventListener('message', function(e) {
   // Keep the applied config so the pro board's "Save bot" can export it later
   window._lastAppliedBotConfig = cfg;
 
+  // Carry the bot's name across, the way the file-load path already does in
+  // botApplyConfig. Without this the two apply paths disagreed: a bot opened
+  // from a .json kept its name, while the same bot arriving from the panel (or
+  // from a share link, which lands here too) lost it — botGenerateName() then
+  // invented one, so the quick-start selector would offer "Steady Maya 1500"
+  // for a bot everything else on screen calls "Café Entropy".
+  if (cfg.botName !== undefined) {
+    var _ni = document.getElementById('botNameInput');
+    if (_ni) _ni.value = cfg.botName || '';
+  }
+
   // Engine tab
   const engineMap = { maia3: 'maia3', stockfish: 'sf', hybrid: 'hybrid', lcsf: 'lcsf', lcmaia: 'maia' };
   botSetTab(engineMap[cfg.engine] || 'sf');
@@ -2306,4 +2317,81 @@ window.addEventListener('load', function () {
     if (typeof mpRoomId !== 'undefined' && mpRoomId) return;
     try { bmSessionRestore(); } catch (e) { console.warn('session restore', e); }
   }, 500);
+});
+
+// ── Shared bot links ─────────────────────────────────────────────────────────
+// A bot used to be shareable only as a downloaded .json: build it, save the
+// file, mail it, have the other person upload it. That ends every path where
+// somebody posts a bot for other people to try, which is the one thing that
+// makes a bot builder spread. A whole config is about a kilobyte, so it fits
+// in a link.
+//
+// The payload rides in the HASH, never the query string. A fragment is not sent
+// to the server, so a shared bot stays exactly as private as one kept on disk —
+// the same promise the rest of the site makes — and it dodges every URL-length
+// limit that lives in server headers.
+function _botDecodeShare(str) {
+  const b64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(b64);
+  const bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+function botCheckShareUrl() {
+  const m = /[#&]bot=([A-Za-z0-9\-_]+)/.exec(location.hash || '');
+  if (!m) return;
+  let cfg = null;
+  try { cfg = _botDecodeShare(m[1]); } catch (e) { cfg = null; }
+  // A malformed or foreign payload is ignored rather than half-applied: the
+  // type tag is what the message handler below keys on, so anything without it
+  // would be dropped there anyway.
+  if (!cfg || cfg.type !== 'botConfig') {
+    console.warn('shared bot link could not be read');
+    return;
+  }
+  // Straight down the panel's own path. postMessage to ourselves fires the
+  // listener that already exists for the iframe, so a link and the builder
+  // agree on what a config means by construction — there is no second
+  // interpretation of the format to keep in step.
+  try { window.postMessage(cfg, location.origin); } catch (e) { return; }
+  // Drop the payload from the address bar. Left in place it would re-apply on
+  // every reload, quietly reverting any edit the visitor made to the bot they
+  // were given. replaceState so there is no history entry to go back through.
+  try {
+    history.replaceState(null, '', location.pathname + location.search);
+  } catch (e) {}
+  setTimeout(function () { bmSharedBotToast(cfg.botName || cfg.name || ''); }, 400);
+}
+
+// Says what arrived. Without it a shared bot loads invisibly: the board looks
+// untouched, and the visitor has no reason to think pressing Start plays
+// anything other than the default opponent.
+function bmSharedBotToast(name) {
+  const old = document.getElementById('bm-sharedbot-toast'); if (old) old.remove();
+  const d = document.createElement('div');
+  d.id = 'bm-sharedbot-toast';
+  d.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);' +
+    'background:#14161a;border:0.5px solid rgba(74,159,212,0.55);border-radius:6px;' +
+    'color:#e8e6e0;font-family:system-ui,sans-serif;font-size:12px;padding:10px 14px;' +
+    'display:flex;align-items:center;gap:12px;z-index:9999;box-shadow:0 4px 18px rgba(0,0,0,0.4);';
+  const span = document.createElement('span');
+  span.textContent = name ? ('♟ Bot loaded: ' + name) : '♟ Shared bot loaded';
+  const btn = document.createElement('button');
+  btn.textContent = 'Play it';
+  btn.style.cssText = 'background:none;border:0.5px solid rgba(232,230,224,0.35);' +
+    'border-radius:4px;color:#e8e6e0;font-size:11px;padding:3px 9px;cursor:pointer;font-family:inherit;';
+  btn.onclick = function () {
+    d.remove();
+    if (typeof bmWelcomeDismiss === 'function') bmWelcomeDismiss();
+    setTimeout(function () { if (typeof botStart === 'function') botStart(); }, 300);
+  };
+  d.appendChild(span); d.appendChild(btn);
+  document.body.appendChild(d);
+  setTimeout(function () { if (d.parentNode) d.remove(); }, 12000);
+}
+
+// After session restore, so an explicitly-followed link beats whatever the last
+// visit happened to leave behind.
+window.addEventListener('load', function () {
+  setTimeout(botCheckShareUrl, 700);
 });
