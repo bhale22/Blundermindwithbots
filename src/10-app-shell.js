@@ -3515,9 +3515,15 @@ function _quickBotPaintSel(sel){
   if(!sel) return;
   const lvlEl = document.getElementById('sfLevel');
   const lvl = lvlEl ? (parseInt(lvlEl.value, 10) || QUICK_SF_DEFAULT) : QUICK_SF_DEFAULT;
-  // Plain Stockfish at a level the select can express is the only case the
-  // select can state directly.
-  const plainSf = (typeof botTab === 'undefined' || botTab === 'sf') &&
+  // A bot somebody actually NAMED is called that, whatever engine is under it.
+  // Only an unnamed plain-Stockfish bot rests on its level, which is the more
+  // useful label when there is no name to use. Without the name check, a shared
+  // bot called "Test Bot" running Stockfish 10 was announced as "Stockfish 10"
+  // by the very control you press to play it, while the notice beside it and
+  // the player box both said "Test Bot".
+  const _nameEl = document.getElementById('botNameInput');
+  const _named  = !!(_nameEl && _nameEl.value.trim());
+  const plainSf = !_named && (typeof botTab === 'undefined' || botTab === 'sf') &&
                   QUICK_SF_LEVELS.includes(lvl);
   const CUR = '__current';
   if(plainSf){

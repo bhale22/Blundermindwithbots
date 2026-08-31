@@ -2676,6 +2676,8 @@ body.fj .picon{font-weight:500;}
             style="flex:1;min-width:0;padding:5px 7px;font-family:var(--font-m);font-size:10px;color:var(--text-primary);background:var(--carbon-surface);border:0.5px solid var(--border);border-radius:2px;outline:none;"
             onkeydown="if(event.key==='Enter')saveCurrentBot()">
           <button class="preset-btn" onclick="saveCurrentBot()">Save</button>
+          <button class="preset-btn" id="bot-share-btn" onclick="copyBotShareLink()"
+            title="Copy a link that rebuilds this bot — the config travels in the URL, not through a server">&#128279; Link</button>
         </div>
         <!-- Save destination toggles + Import -->
         <div style="display:flex;gap:10px;align-items:center;padding:3px 6px 6px;font-size:9px;color:var(--text-dim);">
@@ -8676,6 +8678,49 @@ function saveCurrentBot(){
   }
   if(doDownload){
     _downloadBotJson(name, cfg);
+  }
+}
+
+// ── Share a bot as a link ────────────────────────────────────────────────────
+// Saving produced a .json you then had to send someone. This produces a URL
+// that rebuilds the same bot on open, so a bot can be posted rather than
+// attached. The config goes in the hash, which never reaches the server — a
+// shared bot is no less private than a saved one.
+function _botEncodeShare(cfg){
+  // btoa is latin-1 only, so go through UTF-8 bytes first or an accented bot
+  // name throws. base64url, so nothing needs escaping in a URL.
+  const bytes = new TextEncoder().encode(JSON.stringify(cfg));
+  let bin = '';
+  bytes.forEach(function(b){ bin += String.fromCharCode(b); });
+  return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+
+function copyBotShareLink(){
+  const btn = document.getElementById('bot-share-btn');
+  const say = function(msg){
+    if(!btn) return;
+    const was = btn.textContent;
+    btn.textContent = msg;
+    setTimeout(function(){ btn.textContent = was; }, 1800);
+  };
+  let url;
+  try {
+    const cfg = getBotConfig();
+    cfg.schemaVersion = BOT_SCHEMA_VERSION;
+    const nameEl = document.getElementById('bot-save-name');
+    const nm = nameEl && nameEl.value.trim();
+    if(nm) cfg.botName = nm;
+    // location.origin inside this iframe is the site's own origin, so the link
+    // points at the board, not at this panel.
+    url = location.origin + '/#bot=' + _botEncodeShare(cfg);
+  } catch(e){ say('Could not build link'); return; }
+  // Clipboard needs the user gesture that got us here; if it is refused the
+  // link is still worth showing rather than swallowing.
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(function(){ say('Link copied ✓'); },
+                                           function(){ window.prompt('Copy this link:', url); });
+  } else {
+    window.prompt('Copy this link:', url);
   }
 }
 

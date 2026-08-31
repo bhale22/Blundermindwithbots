@@ -21,6 +21,10 @@ npm-debug.log*
 # Build artifact — assembled from src/ by build.js / server.js
 blundermind.html
 
+# Model-download tally when no STATS_DIR volume is configured (server.js).
+# On Railway this path is ephemeral anyway; locally it is just scratch.
+.data/
+
 # ── Android signing keys — NEVER commit ─────────────────────────────────────
 # android/android.keystore signs every release. Publishing it lets anyone ship
 # an update as you; losing it is recoverable only via Play App Signing.

@@ -87,6 +87,25 @@ loadHtml();
 // no per-event timestamp, nothing written to disk, and the whole thing resets on
 // restart. That keeps it consistent with the privacy policy — this counts
 // transfers of one file, not people.
+// ── Model download tally ─────────────────────────────────────────────────────
+// Aggregate counts only. There is deliberately nothing per-visitor here: the
+// request for the 44 MB model happens anyway, so counting it adds no tracking
+// that the download itself did not already involve.
+//
+// These used to live only in memory, which meant every deploy reset them — so
+// the one number that says whether a link people shared actually reached anyone
+// was destroyed by the act of shipping a fix. They now persist to disk when
+// there is somewhere durable to write.
+//
+// STATS_DIR should point at a Railway volume (or any path that survives a
+// redeploy). With no volume mounted the fallback is the app directory, which on
+// Railway is ephemeral — so `persisted` in the API response reports which of the
+// two you actually got, rather than leaving it to be inferred from a suspicious
+// row of zeroes.
+const STATS_DIR  = process.env.STATS_DIR || path.join(__dirname, '.data');
+const STATS_FILE = path.join(STATS_DIR, 'model-stats.json');
+const STATS_DURABLE = !!process.env.STATS_DIR;
+
 const modelStats = {
   completed:   0,   // whole file sent
   aborted:     0,   // connection closed mid-body
@@ -94,6 +113,49 @@ const modelStats = {
   revalidated: 0,   // 304, the client already had it
   since: new Date().toISOString(),
 };
+
+(function loadModelStats() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(STATS_FILE, 'utf8'));
+    // Take only known numeric counters, so a hand-edited or half-written file
+    // cannot inject keys into what the endpoint serves.
+    for (const k of ['completed', 'aborted', 'partial', 'revalidated']) {
+      if (Number.isFinite(saved[k])) modelStats[k] = saved[k];
+    }
+    // `since` is the whole point of resuming: it must keep saying when counting
+    // began, not when this process happened to boot.
+    if (typeof saved.since === 'string') modelStats.since = saved.since;
+    console.log('[model] stats resumed from ' + STATS_FILE +
+                ' — ' + modelStats.completed + ' completed since ' + modelStats.since);
+  } catch (e) {
+    if (e.code !== 'ENOENT') console.warn('[model] could not read stats:', e.message);
+  }
+})();
+
+// Debounced: a burst of downloads should not mean a burst of writes, and losing
+// the last few seconds of counting to a hard kill is not worth a synchronous
+// write on every request.
+let _statsWriteTimer = null;
+function saveModelStats(immediate) {
+  const write = () => {
+    _statsWriteTimer = null;
+    try {
+      fs.mkdirSync(STATS_DIR, { recursive: true });
+      fs.writeFileSync(STATS_FILE, JSON.stringify(modelStats));
+    } catch (e) {
+      console.warn('[model] could not write stats:', e.message);
+    }
+  };
+  if (immediate) { if (_statsWriteTimer) clearTimeout(_statsWriteTimer); write(); return; }
+  if (_statsWriteTimer) return;
+  _statsWriteTimer = setTimeout(write, 5000);
+}
+
+// A container stop is the normal way this process ends on Railway, so flush
+// there rather than relying on the debounce having fired.
+for (const sig of ['SIGTERM', 'SIGINT']) {
+  process.on(sig, () => { saveModelStats(true); process.exit(0); });
+}
 
 // Serve Maia3 model and support files
 app.get('/models/:file', (req, res) => {
@@ -113,14 +175,16 @@ app.get('/models/:file', (req, res) => {
     // exactly like a finished download here, so anything that probes the URL
     // for its size would otherwise inflate the tally.
     if (req.method === 'HEAD') return;
-    if (res.statusCode === 304) { modelStats.revalidated++; return; }
-    if (ranged || res.statusCode === 206) { modelStats.partial++; return; }
+    if (res.statusCode === 304) { modelStats.revalidated++; saveModelStats(); return; }
+    if (ranged || res.statusCode === 206) { modelStats.partial++; saveModelStats(); return; }
     if (res.writableFinished && res.statusCode === 200) {
       modelStats.completed++;
+      saveModelStats();
       console.log('[model] ' + file + ' sent in full — ' + modelStats.completed +
                   ' completed since ' + modelStats.since);
     } else {
       modelStats.aborted++;
+      saveModelStats();
       console.log('[model] ' + file + ' abandoned mid-download — ' + modelStats.aborted +
                   ' abandoned since ' + modelStats.since);
     }
@@ -440,7 +504,9 @@ app.get('/api/explorer-health', (req, res) => {
 app.get('/api/model-stats', (req, res) => {
   let modelBytes = null;
   try { modelBytes = fs.statSync(path.join(__dirname, 'models', 'maia3_simplified.onnx')).size; } catch (_) {}
-  res.json({ ...modelStats, modelBytes });
+  // `persisted` answers "will these numbers survive the next deploy?" — the
+  // difference between a real tally and a reading of the last few hours.
+  res.json({ ...modelStats, modelBytes, persisted: STATS_DURABLE });
 });
 
 app.get('/maia-worker.js', (req, res) => {
