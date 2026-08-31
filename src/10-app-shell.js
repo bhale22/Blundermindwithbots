@@ -1295,8 +1295,10 @@ function bmRevealWebNotes(){
     const el = document.getElementById(id);
     if(el) el.hidden = false;
   });
+  // The web-side counterpart (#aboutAppNote — "there is an Android app") is
+  // parked while the app is in closed testing, so on the web there is nothing
+  // to reveal. Restore that element and add it back here to bring it out.
   if(inApp) show(['landingWebNote','aboutWebNote']);
-  else      show(['aboutAppNote']);
 }
 document.addEventListener('DOMContentLoaded', bmRevealWebNotes);
 

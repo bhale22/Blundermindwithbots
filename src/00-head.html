@@ -2620,7 +2620,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
   </div>
 
   <div class="landing-footer">
-    No account · No tracking · Your games are yours · <em>Free forever</em>
+    No account · No tracking · <em>Open source</em>
   </div>
  </div>
 </div>
@@ -2702,7 +2702,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
            onchange="bmWelcomeLoadBotConfig(event)">
   </div>
 
-  <div class="bmw-foot">No account &middot; No tracking &middot; <em>Free forever</em></div>
+  <div class="bmw-foot">No account &middot; No tracking &middot; <em>Open source</em></div>
 </div>
 <!-- Open the landing in the style of the visitor's last-chosen board (no flash).
      FIRST VISIT ONLY, the default comes from the domain they arrived on:
@@ -3367,34 +3367,32 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         </a>
       </div>
     </div>
-    <!-- Web-only, the mirror of aboutWebNote above: in the app this would be circular. -->
-    <div class="web-note" id="aboutAppNote" hidden style="margin-top:0;margin-bottom:14px;">
-      <div class="wn-head">There is an Android app</div>
-      <p class="wn-body">Blundermind is on the Play Store, but it is in closed testing and
-        not public yet &#8212; Google asks for a group of testers to use an app for a couple of
-        weeks before it can be released. It is the same board and the same bots, and once the
-        Maia model has downloaded it plays with no network at all.</p>
-      <p class="wn-body">If you would like to be one of the testers, say so in the feedback
-        box below and include the Google account email you use on the Play Store &#8212; I will
-        send you the opt-in link. On iPhone there is no app, but you can add this site to your
-        Home Screen and it behaves much the same.</p>
-    </div>
-
-    <p>Nearly all games of chess I play are decided on blundered pieces. I created this site in the hopes that I could see what it was like to play a game that was decided by strategy instead of blunders. I still blunder, but at least the number of blunders is reduced a bit when there is a big red circle around the queen when I hover it over my intended square. I still have no idea if this will translate to better board vision in &#8216;real&#8217; OTB games.</p>
-    <p>I also struggle with &#8220;getting a grip on the board&#8221; (to steal a useful phrase from the <a href="https://www.youtube.com/watch?v=3jiJn8bjtYk" target="_blank" rel="noopener" style="color:var(--accent);">Chess Dojo</a>), so while my intent was to blundercheck moves so that I would see if I were hanging my queen, I&#8217;m finding that it is showing discovered attacks and potential forks that I didn&#8217;t see at all (you can probably infer my rating at this point). I think it could be a very helpful tool as long as it is used as a blundercheck to double check and provide immediate feedback after assessment and calculation, not as a blunder avoider that just circles some hanging pieces while potential moves are explored by dragging the pieces around.</p>
-    <p>Also included in my numerous struggles is the ability to predict my opponent&#8217;s response, so I added a feature to show two potential responses by making two calls to Stockfish. I would like to do this with Maia, but running Maia3 on each potential move is too slow with my current set up &#8212; hopefully in the future. Currently the site does not include any engine analysis or indicators to show if a move is &#8220;good or bad&#8221; during game play or exploration. Each game can be downloaded and analyzed in <a href="https://lichess.org/paste" target="_blank" rel="noopener" style="color:var(--accent);">Lichess</a> or a website of your choice. Similarly, the PGN of any game can be uploaded and explored here.</p>
-    <p>While I most enjoy playing people in person, I find playing strangers online less enjoyable, so I added in the feature to play against bots. The problem with the bots I&#8217;ve found is that they don&#8217;t feel time pressure, and their behavior is often sporadic in an unsatisfying way. I&#8217;ve tried to make the bots customizable in a way so that I have more control over how the bot will play.</p>
-
-    <hr>
-    <h3>Privacy</h3>
-    <p>Blundermind uses no cookies, no analytics and no tracking of any kind, and there are no accounts. Your game in progress and your settings are saved on your own device so you can close the tab and pick the game back up — that stays on your device, is never sent anywhere, and clearing your browser data removes it. The board set up/configuration and customized bots can be downloaded and stored, then uploaded for future use. The one thing that does leave your device is a feedback message, if you choose to write one below. Full details in the <a href="/privacy" target="_blank" rel="noopener" style="color:var(--accent);">privacy policy</a>.</p>
-    <hr>
-    <h3>Feedback</h3>
-    <p>Any problems with functionality would be helpful, but I would particularly love feedback on whether any features on this site seem to translate into improvement in &#8216;real&#8217; over-the-board play.</p>
+    <!-- Feedback first. The about text below is long and personal, and a
+         visitor who arrived wanting to report something should not have to
+         read an essay to find the box. The Android-tester note that used to
+         open this panel is parked for now — see bmRevealWebNotes(). -->
+    <h3 style="margin-top:0;">Feedback</h3>
+    <p>Feedback and suggestions have been extremely helpful. Thanks to everyone for your time and insights.</p>
     <textarea id="feedbackText" placeholder="Your thoughts..." style="width:100%;height:90px;background:var(--bg-panel2);border:0.5px solid var(--border);border-radius:4px;color:var(--text-primary);font-family:inherit;font-size:10px;line-height:1.5;padding:8px;resize:vertical;margin-top:6px;"></textarea>
     <button class="panel-send-btn" onclick="sendFeedback()">Send feedback</button>
     <div id="feedbackThanks" style="display:none;color:#5ad490;font-size:10px;text-align:center;padding:8px;">Thank you &#8212; feedback received! &#9887;</div>
     <p style="font-size:9px;color:var(--text-dim);margin-top:8px;">Or email <a href="mailto:blundermindchess@gmail.com" style="color:var(--accent);">blundermindchess@gmail.com</a> &#8212; better if you want to attach a screenshot or a PGN, or if you&#8217;d like a reply.</p>
+
+    <hr>
+    <h3>About</h3>
+    <p>Most chess games I play are decided on blundered pieces. I created this site in the hopes that I could see what it was like to play a game that was decided by strategy instead of blunders. I still blunder, but at least the number of blunders is reduced a bit when there is a big red circle around the queen when I hover it over my intended square.</p>
+
+    <h3>Build-A-Bot / Bot Builder</h3>
+    <p>While I most enjoy playing people in person, I find playing strangers online oddly stressful, so I added in the feature to play against bots. The problem with the bots I&#8217;ve found is that they don&#8217;t feel time pressure, and their behavior is often sporadic in an unsatisfying way. I&#8217;ve tried to make the bots customizable in a way so that I have more control over how the bot will play. This became a deeper and more interesting rabbit hole than the initial visualization design.</p>
+
+    <h3>Blundermind / Visualization Board</h3>
+    <p>I struggle with &#8220;getting a grip on the board&#8221; (to steal a useful phrase from the <a href="https://www.youtube.com/watch?v=3jiJn8bjtYk" target="_blank" rel="noopener" style="color:var(--accent);">Chess Dojo</a>), so while my intent was to blundercheck moves so that I would see if I were hanging my queen, I&#8217;m finding that it is showing discovered attacks and potential forks that I didn&#8217;t see at all (you can probably infer my rating at this point). I think this site could be a useful learning tool if the visualization aids are set to provide immediate feedback after careful assessment and calculation, not as a blunder avoider that just circles some hanging pieces while potential moves are explored by dragging the pieces around. Admittedly, I have found the latter to be interesting as well.</p>
+    <p>Also included in my numerous struggles is the ability to predict my opponent&#8217;s response, so I added a feature to show two potential responses by making two engine calls. I would caution that this feature should only be turned on if you have already actively calculated your opponent&#8217;s likely next move.</p>
+    <p>The site does not include any engine analysis or indicators to show if a move is &#8220;good or bad&#8221; during game play or exploration. Each game can be downloaded and analyzed in <a href="https://lichess.org/paste" target="_blank" rel="noopener" style="color:var(--accent);">Lichess</a> or a website of your choice. Similarly, the PGN of any game can be uploaded and explored or played out here.</p>
+
+    <hr>
+    <h3>Privacy</h3>
+    <p>Blundermind / Build-A-Bot uses no cookies or tracking, and there are no accounts. Games in progress and settings are saved on your own device so you can close the tab and pick the game back up &#8212; that stays on your device, is never sent anywhere, and clearing your browser data removes it. The board set up/configuration and customized bots can be downloaded and stored, then uploaded for future use. The one thing that does leave your device is a feedback message, if you choose to write one above. This site is open source, available on <a href="https://github.com/bhale22/Blundermindwithbots" target="_blank" rel="noopener" style="color:var(--accent);">GitHub</a>. Full details in the <a href="/privacy" target="_blank" rel="noopener" style="color:var(--accent);">privacy policy</a>.</p>
     <hr>
     <p style="font-size:8px;color:var(--text-dim);">&#169; 2026 Blundermind &middot; free software under the GNU GPL v3 or later &middot; <a href="https://github.com/bhale22/Blundermindwithbots" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;">source</a><br>Board vision training for we happy few that strive for mediocrity.<br>Built on Stockfish (GPL-3.0), Maia by CSSLab (AGPL-3.0), Lichess data, react-chess-pieces (ISC) &amp; RhosGFX pieces (CC0) &middot; <a href="/credits" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;">full credits &amp; licences</a><br>Build <span id="buildStamp">&#8212;</span></p>
   </div>
