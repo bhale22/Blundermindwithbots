@@ -12004,7 +12004,7 @@ function drawCurve(canvasId, ctrl, sigFn, yMin, yMax, yFmt, lineColor, fillColor
 
   // ── Axis titles
   ctx.fillStyle=_curveDimColor; ctx.font=_chartFont(8); ctx.textAlign='center';
-  ctx.fillText('think time per move — more time \u2192 left', w/2, CH-2);
+  ctx.fillText('Think time per move', w/2, CH-2);
   ctx.save(); ctx.translate(11, CH/2); ctx.rotate(-Math.PI/2);
   ctx.fillText(canvasId==='cvA'?'Effective ELO':'Available distribution %', 0, 0);
   ctx.restore();
