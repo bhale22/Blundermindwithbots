@@ -600,6 +600,11 @@ input[type=range]::-webkit-slider-thumb:active{cursor:grabbing;}
 /* Toggles */
 .tog-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid var(--border);}
 .tog-row:last-child{border-bottom:none;}
+/* A toggle on a FULL-WIDTH row. space-between flings the switch to the far
+   right edge, a whole screen away from the label it belongs to, so the two
+   read as unrelated. Keep the pair together and let the slack fall after
+   them. Only for rows that span the panel; the half-width ones are fine. */
+.tog-row.tog-inline{justify-content:flex-start;gap:16px;}
 .tog-lbl{font-family:var(--font-m);font-size:9px;letter-spacing:0.06em;color:var(--text-secondary);text-transform:uppercase;}
 .tog-desc{font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:1px;}
 .tog{position:relative;width:32px;height:17px;flex-shrink:0;}
@@ -630,12 +635,18 @@ input[type=range]::-webkit-slider-thumb:active{cursor:grabbing;}
 .preset-btn:hover{border-color:var(--border-amber);color:var(--amber);}
 
 /* Stats row */
-.stats{display:flex;gap:1px;margin-top:8px;}
-.stat{flex:1;background:var(--carbon-surface);padding:6px 8px;border:0.5px solid var(--border);}
+/* Readouts, NOT controls. These four were styled exactly like the Engine
+   panel's CP Budget / Hard Floor tiles — same surface, same hairline border,
+   same amber value — and those tiles are clickable. Four identical-looking
+   things that do nothing when pressed is the panel inviting a click it cannot
+   answer. An inline strip reads as instrumentation instead: no box, no border,
+   no edge to aim at. */
+.stats{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 16px;margin-top:9px;}
+.stat{display:flex;align-items:baseline;gap:5px;background:none;padding:0;border:0;}
 .stat:first-child{border-radius:var(--r) 0 0 var(--r);}
 .stat:last-child{border-radius:0 var(--r) var(--r) 0;}
-.stat-l{font-family:var(--font-m);font-size:8px;color:var(--text-dim);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:2px;}
-.stat-v{font-family:var(--font-m);font-size:12px;color:var(--amber-bright);}
+.stat-l{font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);letter-spacing:0.1em;text-transform:uppercase;margin:0;}
+.stat-v{font-family:var(--font-m);font-size:10px;color:var(--amber);}
 
 /* Chart box */
 .chart-box{margin-top:4px;padding:12px;background:var(--carbon-surface);border:0.5px solid var(--border);border-radius:var(--r);position:relative;}
@@ -1445,8 +1456,10 @@ body.fj .leg-item{font-size:13.5px;}
 body.fj .ctip{font-size:15px;}
 body.fj .formula-title{font-size:13.5px;}
 body.fj .formula-body{font-size:15px;}
-body.fj .stat-l{font-size:13.5px;}
-body.fj .stat-v{font-size:19.5px;}
+/* Journal keeps its larger reading size, but these are readouts in both
+   formats — 19.5px made the value the loudest thing in the panel. */
+body.fj .stat-l{font-size:11px;}
+body.fj .stat-v{font-size:14px;}
 body.fj .ptrait{font-size:13.5px;}
 body.fj .ptag{font-size:12px;}
 body.fj .sub-title{font-size:13.5px;}
@@ -3523,28 +3536,30 @@ body.fj .picon{font-weight:500;}
           <div class="stat"><div class="stat-l">Max Temp</div><div class="stat-v" id="pSF">8.0</div></div>
         </div>
 
-        <!-- Bottom row: Can Flag (left) + time–rating model credit (right) -->
-        <div class="panel-2col" style="margin-top:12px;padding-top:12px;border-top:0.5px solid var(--border);align-items:start;">
-          <div>
-            <div class="dlbl"><span>Options</span></div>
-            <div class="tog-row"><div><div class="tog-lbl">Can flag</div><div class="tog-desc">Allow bot to run out of time completely</div></div><label class="tog"><input type="checkbox" id="cb-flag" checked onchange="drawA()"><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
+        <!-- One toggle, so no section header: a full-width "Options" rule over
+             a single checkbox announced a group that does not exist. -->
+        <div style="margin-top:12px;padding-top:12px;border-top:0.5px solid var(--border);">
+          <div class="tog-row tog-inline"><div><div class="tog-lbl">Can flag</div><div class="tog-desc">Allow bot to run out of time completely</div></div><label class="tog"><input type="checkbox" id="cb-flag" checked onchange="drawA()"><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
+        </div>
+
+        <!-- The model, then the explanation of what is done with it. These two
+             are one argument, so they now run full width and back-to-back:
+             squeezed into a half-column beside a single checkbox, the formula
+             wrapped badly and read as a footnote to the toggle rather than as
+             the source the curve above is drawn from. -->
+        <div class="formula-box" style="margin-top:12px;">
+          <div class="formula-title">Time–rating model</div>
+          <div class="formula-body">
+            <span class="formula-hl">ELO(s) = ELO₀ + D(s) − D(anchor)</span><br>
+            <span class="formula-hl">D(s) = 339 − 1442·s<sup>−0.283</sup></span><br>
+            s = think seconds per move · anchor = base/60 + increment<br>
+            Halving think time ≈ −100 ELO at rapid pace, steeper in blitz
           </div>
-          <div>
-            <div class="formula-box" style="margin-top:0;">
-              <div class="formula-title">Time–rating model</div>
-              <div class="formula-body">
-                <span class="formula-hl">ELO(s) = ELO₀ + D(s) − D(anchor)</span><br>
-                <span class="formula-hl">D(s) = 339 − 1442·s<sup>−0.283</sup></span><br>
-                s = think seconds per move · anchor = base/60 + increment<br>
-                Halving think time ≈ −100 ELO at rapid pace, steeper in blitz
-              </div>
-              <div style="margin-top:7px;font-family:var(--font-m);font-size:8px;line-height:1.6;color:var(--text-dim);">
-                Degradation curve based on fit shown by IM Professor <a href="https://cse.buffalo.edu/~regan/" target="_blank" rel="noopener" style="color:var(--amber);">Kenneth Regan</a>
-                describing ELO as a function of time-control, during his
-                <a href="https://www.youtube.com/watch?v=UsEIBzm5msU" target="_blank" rel="noopener" style="color:var(--amber);">Perpetual Chess Podcast</a>
-                interview with Ben Johnson. 
-              </div>
-            </div>
+          <div style="margin-top:7px;font-family:var(--font-m);font-size:8px;line-height:1.6;color:var(--text-dim);">
+            Degradation curve based on fit shown by IM Professor <a href="https://cse.buffalo.edu/~regan/" target="_blank" rel="noopener" style="color:var(--amber);">Kenneth Regan</a>
+            describing ELO as a function of time-control, during his
+            <a href="https://www.youtube.com/watch?v=UsEIBzm5msU" target="_blank" rel="noopener" style="color:var(--amber);">Perpetual Chess Podcast</a>
+            interview with Ben Johnson.
           </div>
         </div>
 
@@ -11074,14 +11089,19 @@ function updateQsPersonality(){
 function updateQsCpBudget(){
   const pill = document.getElementById('qs-cpb-value');
   if(!pill) return;
-  const hasActivity = selectedPersonality || _activeBotName
-    || ATTRACTORS.some(a => (attractorValues[a.id]??0) !== 0)
-    || PIECE_TYPES.some(p => (pieceValues[p.id]??0) !== 0)
-    || customControls.some(c => (c.value??0) !== 0);
-  if(!hasActivity){
-    pill.textContent = '—';
-    return;
-  }
+  // Always the budget that is actually set — no activity gate.
+  //
+  // This used to blank to an em-dash unless a personality, saved bot or a
+  // non-zero attractor was in play, on the theory that a budget with nothing
+  // to spend it on is not worth reporting. In practice it meant the Engine
+  // panel's CP Budget tile read "100 cp" while this pill read "—", for the
+  // same r-style value, in the same view — and pressing "Set: 80 / 310 cp"
+  // moved the tile while leaving the pill blank, so the one control whose
+  // whole job is to set the budget appeared to do nothing up here.
+  //
+  // Whether the budget currently BINDS is already answered by the Personality
+  // pill sitting immediately to the left: "Personality None · CP Budget 100 cp"
+  // states both facts without the two readouts contradicting each other.
   const budget = +(document.getElementById('r-style')?.value ?? 100);
   pill.textContent = budget + ' cp';
 }
