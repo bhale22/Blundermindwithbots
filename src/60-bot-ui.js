@@ -2073,7 +2073,12 @@ window.addEventListener('message', function(e) {
   window._bcpHustlerTempMode  = (cfg.personalityId === 'hustler');
 
   closeBotModal();
-  botStart();
+  // The panel's START button means "apply AND play", which is why this has
+  // always ended by starting a game. A shared link only means "apply": the
+  // visitor has not asked to play yet, and on a first visit this was starting a
+  // game silently behind the welcome panel. The flag is set on the synthetic
+  // message botCheckShareUrl posts, never on a config that gets saved.
+  if (!e.data._applyOnly) botStart();
 });
 
 
@@ -2352,42 +2357,108 @@ function botCheckShareUrl() {
   // Straight down the panel's own path. postMessage to ourselves fires the
   // listener that already exists for the iframe, so a link and the builder
   // agree on what a config means by construction — there is no second
-  // interpretation of the format to keep in step.
-  try { window.postMessage(cfg, location.origin); } catch (e) { return; }
+  // interpretation of the format to keep in step. _applyOnly stops it starting
+  // a game the visitor has not asked for yet; the toast below offers that.
+  try {
+    window.postMessage(Object.assign({}, cfg, { _applyOnly: true }), location.origin);
+  } catch (e) { return; }
   // Drop the payload from the address bar. Left in place it would re-apply on
   // every reload, quietly reverting any edit the visitor made to the bot they
   // were given. replaceState so there is no history entry to go back through.
   try {
     history.replaceState(null, '', location.pathname + location.search);
   } catch (e) {}
-  setTimeout(function () { bmSharedBotToast(cfg.botName || cfg.name || ''); }, 400);
+  setTimeout(function () { bmSharedBotToast(cfg); }, 400);
 }
 
-// Says what arrived. Without it a shared bot loads invisibly: the board looks
-// untouched, and the visitor has no reason to think pressing Start plays
-// anything other than the default opponent.
-function bmSharedBotToast(name) {
+// Does this config need the Maia model? Same rule the panel uses in
+// _maybePromptMaiaForConfig: the two Maia engines, or a hybrid carrying a Maia
+// slot with real weight behind it.
+function _botConfigNeedsMaia(cfg) {
+  if (!cfg) return false;
+  if (cfg.engine === 'maia3' || cfg.engine === 'lcmaia') return true;
+  return cfg.engine === 'hybrid' && Array.isArray(cfg.hybridSlots) &&
+         cfg.hybridSlots.some(function (s) { return s && s.type === 'maia' && (+s.pct || 0) > 0; });
+}
+
+// Says what arrived, and offers the one action that follows. Without it a
+// shared bot loads invisibly: the board looks untouched, and the visitor has no
+// reason to think pressing Start plays anything but the default opponent.
+//
+// A shared bot that needs Maia gets the download offered HERE rather than a
+// note telling it to go find the bot panel. Most of what the builder can do
+// only works on Maia, so bots worth sharing are usually Maia bots — sending a
+// stranger off to hunt for a button is where that link would be abandoned.
+function bmSharedBotToast(cfg) {
+  const name = (cfg && (cfg.botName || cfg.name)) || '';
   const old = document.getElementById('bm-sharedbot-toast'); if (old) old.remove();
   const d = document.createElement('div');
   d.id = 'bm-sharedbot-toast';
   d.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);' +
-    'background:#14161a;border:0.5px solid rgba(74,159,212,0.55);border-radius:6px;' +
-    'color:#e8e6e0;font-family:system-ui,sans-serif;font-size:12px;padding:10px 14px;' +
-    'display:flex;align-items:center;gap:12px;z-index:9999;box-shadow:0 4px 18px rgba(0,0,0,0.4);';
+    'max-width:min(92vw,420px);background:#14161a;border:0.5px solid rgba(74,159,212,0.55);' +
+    'border-radius:6px;color:#e8e6e0;font-family:system-ui,sans-serif;font-size:12px;' +
+    'padding:10px 14px;display:flex;align-items:center;gap:12px;z-index:9999;' +
+    'box-shadow:0 4px 18px rgba(0,0,0,0.4);';
   const span = document.createElement('span');
-  span.textContent = name ? ('♟ Bot loaded: ' + name) : '♟ Shared bot loaded';
+  span.style.cssText = 'flex:1;min-width:0;line-height:1.45;';
   const btn = document.createElement('button');
-  btn.textContent = 'Play it';
-  btn.style.cssText = 'background:none;border:0.5px solid rgba(232,230,224,0.35);' +
-    'border-radius:4px;color:#e8e6e0;font-size:11px;padding:3px 9px;cursor:pointer;font-family:inherit;';
-  btn.onclick = function () {
+  btn.style.cssText = 'flex-shrink:0;background:none;border:0.5px solid rgba(232,230,224,0.35);' +
+    'border-radius:4px;color:#e8e6e0;font-size:11px;padding:4px 10px;cursor:pointer;' +
+    'font-family:inherit;white-space:nowrap;';
+  d.appendChild(span); d.appendChild(btn);
+  document.body.appendChild(d);
+
+  const label = name ? ('♟ Bot loaded: ' + name) : '♟ Shared bot loaded';
+  const play = function () {
     d.remove();
     if (typeof bmWelcomeDismiss === 'function') bmWelcomeDismiss();
     setTimeout(function () { if (typeof botStart === 'function') botStart(); }, 300);
   };
-  d.appendChild(span); d.appendChild(btn);
-  document.body.appendChild(d);
-  setTimeout(function () { if (d.parentNode) d.remove(); }, 12000);
+
+  const maiaReady = (typeof _maiaReady !== 'undefined') && _maiaReady;
+  if (!_botConfigNeedsMaia(cfg) || maiaReady) {
+    span.textContent = label;
+    btn.textContent = 'Play it';
+    btn.onclick = play;
+    // Nothing is pending, so it can time out like any other notice.
+    setTimeout(function () { if (d.parentNode) d.remove(); }, 12000);
+    return;
+  }
+
+  // Needs Maia, and it is not here yet. No auto-dismiss: this one is waiting on
+  // an answer, and a notice that vanishes mid-download is worse than none.
+  span.innerHTML = label + '<br><span style="opacity:0.75;font-size:11px;">' +
+    'Uses the Maia 3 model — a one-time 44&nbsp;MB download to this browser.</span>';
+  btn.textContent = '↓ Download & play';
+  btn.onclick = function () {
+    if (typeof maiaDownloadModel !== 'function') { play(); return; }
+    btn.disabled = true;
+    btn.style.opacity = '0.6';
+    btn.style.cursor = 'default';
+    btn.textContent = 'Starting…';
+    try { maiaDownloadModel(); } catch (e) {}
+    // Poll rather than reach into the engine's status plumbing: this notice is
+    // short-lived, and _maiaStatus/_maiaProgress are exactly what the panel's
+    // own readouts are painted from.
+    const tick = setInterval(function () {
+      if (!d.parentNode) { clearInterval(tick); return; }
+      const st = (typeof _maiaStatus !== 'undefined') ? _maiaStatus : '';
+      if (st === 'downloading') {
+        const pct = (typeof _maiaProgress !== 'undefined' && _maiaProgress != null) ? _maiaProgress : 0;
+        btn.textContent = 'Downloading ' + pct + '%';
+      } else if (st === 'ready' || ((typeof _maiaReady !== 'undefined') && _maiaReady)) {
+        clearInterval(tick);
+        btn.textContent = 'Ready ✓';
+        setTimeout(play, 500);
+      } else if (st === 'error') {
+        clearInterval(tick);
+        span.textContent = '⚠ Maia download failed — open the Bot Builder to retry.';
+        btn.disabled = false; btn.style.opacity = ''; btn.style.cursor = 'pointer';
+        btn.textContent = 'Play anyway';
+        btn.onclick = play;
+      }
+    }, 500);
+  };
 }
 
 // After session restore, so an explicitly-followed link beats whatever the last
