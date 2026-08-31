@@ -600,6 +600,11 @@ input[type=range]::-webkit-slider-thumb:active{cursor:grabbing;}
 /* Toggles */
 .tog-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid var(--border);}
 .tog-row:last-child{border-bottom:none;}
+/* A toggle on a FULL-WIDTH row. space-between flings the switch to the far
+   right edge, a whole screen away from the label it belongs to, so the two
+   read as unrelated. Keep the pair together and let the slack fall after
+   them. Only for rows that span the panel; the half-width ones are fine. */
+.tog-row.tog-inline{justify-content:flex-start;gap:16px;}
 .tog-lbl{font-family:var(--font-m);font-size:9px;letter-spacing:0.06em;color:var(--text-secondary);text-transform:uppercase;}
 .tog-desc{font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:1px;}
 .tog{position:relative;width:32px;height:17px;flex-shrink:0;}
@@ -3531,10 +3536,10 @@ body.fj .picon{font-weight:500;}
           <div class="stat"><div class="stat-l">Max Temp</div><div class="stat-v" id="pSF">8.0</div></div>
         </div>
 
-        <!-- Options, full width — one toggle never needed half a grid. -->
+        <!-- One toggle, so no section header: a full-width "Options" rule over
+             a single checkbox announced a group that does not exist. -->
         <div style="margin-top:12px;padding-top:12px;border-top:0.5px solid var(--border);">
-          <div class="dlbl"><span>Options</span></div>
-          <div class="tog-row"><div><div class="tog-lbl">Can flag</div><div class="tog-desc">Allow bot to run out of time completely</div></div><label class="tog"><input type="checkbox" id="cb-flag" checked onchange="drawA()"><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
+          <div class="tog-row tog-inline"><div><div class="tog-lbl">Can flag</div><div class="tog-desc">Allow bot to run out of time completely</div></div><label class="tog"><input type="checkbox" id="cb-flag" checked onchange="drawA()"><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
         </div>
 
         <!-- The model, then the explanation of what is done with it. These two
