@@ -7,26 +7,24 @@
 // stacked page where the board was entirely off screen — so you could never
 // see what the control you were pressing did.
 //
-// The ANSWER changed. It used to be position:sticky, pinning the board and its
-// clocks and scrolling the controls through the ~370px that were left; this
-// file was written against that. The controls are now a bottom sheet that
-// covers the board while it is open (see the bv-tray CSS block), which buys a
-// whole screen to find a control in and puts the board one flick away instead
-// of one scroll. The assertions below are the same questions asked of the new
-// arrangement:
+// The ANSWER changed twice. It used to be position:sticky, pinning the board
+// and scrolling the controls through the ~370px that were left; this file was
+// written against that. Then it was a sheet dragged up from the bottom edge.
+// It is now a panel that slides in from the right when you ask for it, so the
+// page under the panel is only ever the board and the things that belong with
+// it. The assertions below are the same questions asked of that arrangement:
 //
-//   · every overlay is reachable, and the board is whole and unscrolled
-//     the moment the sheet is closed (the assertion this whole pass is about)
+//   · every overlay is reachable, and the board is whole and unscrolled the
+//     moment the panel is closed (the assertion this whole pass is about)
 //   · the pinned strip puts the overlays you are drilling beside the board,
-//     so the common case needs no sheet at all
+//     so the common case needs no panel at all
 //   · playing Black swaps which clock sits above the board
 //   · replay controls sit below the board block, not inside it
 //   · a narrow landscape phone still fits board, clocks and game bar
-//   · grid buttons are two-up, spell their names out, carry a state glyph
-//   · no "?" is left inside a toggle to be hit by accident; explain mode is
-//     the one deliberate way into help
-//   · the "drawing now" bar lists always-on overlays only
 //   · desktop is untouched by all of the above
+//
+// The panel's own behaviour — four states, Clear/Show all, explain mode, the
+// three ways to close it — is verify-vispanel.mjs, not this file.
 //
 // Deliberately does NOT start a bot game — that is what makes verify-phone.mjs
 // flaky, and none of the above needs one.
@@ -54,7 +52,6 @@ async function open(width, height, mobile = true) {
       // The first-visit dialog's veil swallows every tap until it is answered.
       localStorage.setItem('bm_welcomed', '1');
       localStorage.removeItem('bm_pins');
-      localStorage.removeItem('bm_bvt');
     } catch (e) {}
   });
   const page = await ctx.newPage();
@@ -65,9 +62,9 @@ async function open(width, height, mobile = true) {
   return { ctx, page, errors };
 }
 
-// The sheet replaces the old "More board vision" disclosure: all thirteen
-// overlays are simply in it, and opening it is how you reach any of them.
-const openSheet = page => page.evaluate(() => bvTraySet('full'));
+// All thirteen overlays are in the panel, and opening it is how you reach any
+// of them.
+const openSheet = page => page.evaluate(() => visPanelOpen());
 
 console.log('\n1    Every overlay is reachable, and the board is one flick away');
 {
@@ -76,42 +73,42 @@ console.log('\n1    Every overlay is reachable, and the board is one flick away'
   await page.waitForTimeout(450);
 
   const reach = await page.evaluate(() => {
-    const sheet = document.getElementById('sidebar');
-    const ids = [...document.querySelectorAll('.ind-grid .ib[id^="ib-"]')].map(e => e.id);
-    const sr = sheet.getBoundingClientRect();
+    const card = document.getElementById('visCard').getBoundingClientRect();
+    const rows = [...document.querySelectorAll('#visList .vis-row')];
     const unreachable = [];
-    ids.forEach(id => {
-      const el = document.getElementById(id);
+    rows.forEach(el => {
       el.scrollIntoView({ block: 'center' });
       const r = el.getBoundingClientRect();
-      // Inside the sheet's own viewport, and a real target once there.
-      if (r.height < 44 || r.bottom <= sr.top || r.top >= sr.bottom) unreachable.push(id);
+      // Inside the panel's own viewport, and a real target once there.
+      if (r.height < 44 || r.bottom <= card.top || r.top >= card.bottom) unreachable.push(el.id);
     });
-    return { count: ids.length, unreachable };
+    return { count: rows.length, unreachable };
   });
-  ok('all thirteen overlays are in the sheet', reach.count === 13, String(reach.count));
+  ok('all thirteen overlays are in the panel', reach.count === 13, String(reach.count));
   ok('every one is scrollable into view at 44px+', reach.unreachable.length === 0,
      reach.unreachable.join(', '));
 
   // Close it: the board must be whole, on screen, and the page unscrolled.
-  await page.evaluate(() => bvTraySet('closed'));
+  await page.evaluate(() => visPanelClose());
   await page.waitForTimeout(450);
   const board = await page.evaluate(() => {
     const b = document.getElementById('board-canvas-wrap').getBoundingClientRect();
-    const tray = document.getElementById('sidebar').getBoundingClientRect();
     return {
-      top: Math.round(b.top), bottom: Math.round(b.bottom), size: Math.round(b.width),
+      size: Math.round(b.width),
       vis: Math.round(Math.max(0, Math.min(b.bottom, innerHeight) - Math.max(b.top, 0))),
-      coveredByTray: b.bottom > tray.top,
+      panelGone: document.getElementById('visPanel').hidden,
       scrollY: window.scrollY,
-      pageScrolls: document.documentElement.scrollHeight > innerHeight + 2,
+      // Everything the board needs — clocks, strip, game bar — above the fold.
+      barBottom: Math.round(document.getElementById('phoneBar').getBoundingClientRect().bottom),
+      vh: innerHeight,
     };
   });
-  ok('closing the sheet leaves the board fully visible', board.vis === board.size,
+  ok('closing the panel leaves the board fully visible', board.vis === board.size,
      board.vis + ' of ' + board.size + 'px');
-  ok('the closed sheet does not cover the board', !board.coveredByTray);
-  ok('and it took no scrolling to get there', board.scrollY === 0 && !board.pageScrolls,
-     'scrollY=' + board.scrollY);
+  ok('the panel leaves the page entirely', board.panelGone);
+  ok('and it took no scrolling to get there', board.scrollY === 0, 'scrollY=' + board.scrollY);
+  ok('the board, its clocks, the strip and the bar all fit above the fold',
+     board.barBottom <= board.vh, board.barBottom + ' of ' + board.vh);
   ok('no page errors', errors.length === 0, errors.join('; '));
   await ctx.close();
 }
@@ -121,33 +118,34 @@ console.log('\n2    The pinned strip needs no sheet at all');
   const { ctx, page, errors } = await open(412, 915);
   const r = await page.evaluate(() => {
     // Pin the classic drill: checks, threats and captures.
-    pinToggleKey('checkthreats'); pinToggleKey('threats'); pinToggleKey('counts');
+    visClearAll();
+    ['checkthreats','threats','counts'].forEach(k => visCycle(k));
     const strip = document.getElementById('pinStrip').getBoundingClientRect();
     const board = document.getElementById('board-canvas-wrap').getBoundingClientRect();
-    const tray = document.getElementById('sidebar').getBoundingClientRect();
+    const bar = document.getElementById('phoneBar').getBoundingClientRect();
     const chips = [...document.querySelectorAll('#pinChips .pin-chip')];
     // Cycle one from the strip without opening anything.
     IND.threats.on = false; IND.threats.pre = false; ibUpdateUI('threats');
     ibTap('threats');
     const afterTap = { on: IND.threats.on, pre: IND.threats.pre,
                        cls: document.getElementById('pin-threats').className,
-                       tray: document.getElementById('sidebar').dataset.bvt };
+                       panelShut: document.getElementById('visPanel').hidden };
     return {
       chips: chips.length,
       minH: Math.min(...chips.map(c => Math.round(c.getBoundingClientRect().height))),
       belowBoard: strip.top >= board.bottom - 1,
-      aboveTray: strip.bottom <= tray.top + 1,
-      boardVisible: board.bottom <= tray.top,
+      aboveTray: strip.bottom <= bar.top + 1,
+      boardVisible: board.bottom <= innerHeight,
       afterTap,
     };
   });
   ok('the pinned overlays get a chip each', r.chips === 3, String(r.chips));
   ok('chips are a real touch target', r.minH >= 32, r.minH + 'px');
   ok('the strip sits below the board', r.belowBoard);
-  ok('and above the closed sheet', r.aboveTray);
+  ok('and above the game bar', r.aboveTray);
   ok('the board stays fully visible beside it', r.boardVisible);
-  ok('a chip cycles its overlay without opening the sheet',
-     r.afterTap.pre === true && r.afterTap.tray === 'closed',
+  ok('a chip cycles its overlay without opening the panel',
+     r.afterTap.pre === true && r.afterTap.panelShut === true,
      JSON.stringify(r.afterTap));
   ok('no page errors', errors.length === 0, errors.join('; '));
   await ctx.close();
@@ -209,7 +207,6 @@ console.log('\n5    A narrow landscape phone still fits the essentials');
     const b = r('board-canvas-wrap');
     return {
       sheet: getComputedStyle(document.getElementById('sidebar')).position,
-      state: document.getElementById('sidebar').dataset.bvt,
       square: Math.abs(b.width - b.height) < 2,
       size: Math.round(b.width),
       barBottom: Math.round(r('phoneBar').bottom),
@@ -223,8 +220,6 @@ console.log('\n5    A narrow landscape phone still fits the essentials');
         return q.top >= b.bottom - 1 || q.bottom <= b.top + 1 ||
                q.left >= b.right - 1 || q.right <= b.left + 1;
       }),
-      gridVisible: document.querySelector('.ind-grid').getBoundingClientRect().height > 0 &&
-                   getComputedStyle(document.querySelector('.ind-grid')).visibility !== 'hidden',
       hScroll: document.documentElement.scrollWidth > innerWidth + 1,
     };
   });
@@ -236,12 +231,10 @@ console.log('\n5    A narrow landscape phone still fits the essentials');
   });
   g.barReachable = g2.barBottom <= g2.vh + 1;
   g.barBottom = g2.barBottom;
-  // A 360px-tall screen has no room for a sheet: the closed strip alone would
-  // sit on the board's last two ranks. Below 520px tall the sidebar goes back
-  // into the flow and the controls are reached by scrolling — the same
-  // concession the old sticky layout made at the same breakpoint.
-  ok('740×360: the sheet stands down to a column', g.sheet === 'static', g.sheet);
-  ok('740×360: nothing is hidden by the closed state', g.gridVisible, String(g.gridVisible));
+  // Nothing is fixed over the page any more, at any height — the controls are
+  // a panel you open. A 360px-tall screen simply scrolls, which is what it did
+  // before any of this.
+  ok('740×360: the sidebar is a plain column', g.sheet === 'static', g.sheet);
   ok('740×360: the board is square', g.square, g.size + 'px');
   ok('740×360: the board is not covered by anything fixed', g.boardClear,
      'board.bottom@' + g.boardBottom);
@@ -252,110 +245,19 @@ console.log('\n5    A narrow landscape phone still fits the essentials');
   await ctx.close();
 }
 
-console.log('\n6    Grid buttons: two up, spelled out, state on the button');
-{
-  const { ctx, page } = await open(412, 915);
-  await openSheet(page);
-  await page.waitForTimeout(450);
-  const c = await page.evaluate(() => {
-    const grid = document.querySelector('.ind-grid');
-    const btns = [...document.querySelectorAll('.ind-grid .ib-main')];
-    const glyph = k => getComputedStyle(document.querySelector('#ib-' + k + ' .ib-main'), '::before').content;
-    IND.pins.on = false; IND.pins.pre = false; ibUpdateUI('pins');
-    const off = glyph('pins');
-    IND.pins.pre = true; ibUpdateUI('pins');
-    const exp = glyph('pins');
-    IND.pins.on = true; ibUpdateUI('pins');
-    const on = glyph('pins');
-    return {
-      cols: getComputedStyle(grid).gridTemplateColumns.split(' ').length,
-      clip: Math.max(...btns.map(b => b.scrollWidth - b.clientWidth)),
-      minH: Math.min(...btns.map(b => Math.round(b.getBoundingClientRect().height))),
-      glyphs: [off, exp, on],
-      spelled: ['weakb', 'discoveredopp', 'counts'].map(k =>
-        document.querySelector('#ib-' + k + ' .ib-lbl').getAttribute('data-full')),
-      aria: document.querySelector('#ib-pins .ib-main').getAttribute('aria-label'),
-      keyRow: getComputedStyle(document.querySelector('.ind-key-row')).display,
-    };
-  });
-  ok('two columns', c.cols === 2, String(c.cols));
-  ok('nothing clips out of a button', c.clip === 0, 'worst ' + c.clip + 'px');
-  ok('buttons clear the 44px touch minimum', c.minH >= 44, c.minH + 'px');
-  ok('the three states are three different glyphs',
-     new Set(c.glyphs).size === 3, c.glyphs.join(' / '));
-  ok('the abbreviations are spelled out', c.spelled.every(v => v && v.length > 12), c.spelled.join(' | '));
-  ok('state is in the accessible name too', /always on/.test(c.aria || ''), c.aria);
-  ok('the swatch key gives way to the glyph key', c.keyRow === 'none', c.keyRow);
-  await ctx.close();
-}
-
-console.log('\n7    No "?" to mis-tap; explain mode is the deliberate way in');
-{
-  const { ctx, page } = await open(412, 915);
-  await openSheet(page);
-  await page.waitForTimeout(450);
-  const r = await page.evaluate(() => {
-    const marks = document.querySelectorAll('.ind-grid .ib-help').length;
-    IND.pins.on = false; IND.pins.pre = false; ibUpdateUI('pins');
-
-    // Unarmed, a tap on the button cycles and opens nothing.
-    ibTap('pins');
-    const plain = { pre: IND.pins.pre,
-                    help: document.getElementById('helpPanel').classList.contains('open') };
-
-    // Armed, the same tap explains and leaves the overlay exactly as it was.
-    ibExplainToggle(true);
-    const armedCls = document.getElementById('bvtHelp').classList.contains('armed');
-    const before = { on: IND.pins.on, pre: IND.pins.pre };
-    ibTap('pins');
-    const armed = {
-      help: document.getElementById('helpPanel').classList.contains('open'),
-      title: document.getElementById('helpPanelTitle').textContent,
-      unchanged: IND.pins.on === before.on && IND.pins.pre === before.pre,
-      disarmed: !document.getElementById('bvtHelp').classList.contains('armed'),
-    };
-    closeAllPanels();
-    return { marks, plain, armedCls, armed };
-  });
-  ok('no "?" is left inside a toggle', r.marks === 0, String(r.marks));
-  ok('a plain tap cycles and opens nothing', r.plain.pre === true && r.plain.help === false,
-     JSON.stringify(r.plain));
-  ok('the help control arms visibly', r.armedCls);
-  ok('an armed tap opens that overlay’s help', r.armed.help && /pin/i.test(r.armed.title), r.armed.title);
-  ok('an armed tap does not toggle the overlay', r.armed.unchanged);
-  ok('and the mode disarms itself after one use', r.armed.disarmed);
-  await ctx.close();
-}
-
-console.log('\n8    The "drawing now" bar tracks always-on only');
-{
-  const { ctx, page } = await open(412, 915);
-  const r = await page.evaluate(() => {
-    const bar = document.getElementById('indActiveBar');
-    const chips = () => [...document.querySelectorAll('.iab-chip')].map(e => e.textContent.trim());
-    // Twelve of thirteen default to "while exploring" — the bar must stay away.
-    const atRest = { hidden: bar.hidden, pre: Object.keys(IND).filter(k => IND[k].pre).length,
-                     idle: !document.getElementById('bvtIdle').hidden };
-    IND.threats.on = true; ibUpdateUI('threats');
-    const withOne = { hidden: bar.hidden, chips: chips(),
-                      idle: !document.getElementById('bvtIdle').hidden };
-    document.querySelector('.iab-chip').click();
-    const afterTap = { hidden: bar.hidden, on: IND.threats.on, pre: IND.threats.pre };
-    return { atRest, withOne, afterTap };
-  });
-  ok('hidden when nothing is always-on', r.atRest.hidden === true,
-     'hidden=' + r.atRest.hidden + ' with ' + r.atRest.pre + ' exploring');
-  ok('the closed sheet says so rather than showing a bare heading', r.atRest.idle === true);
-  ok('appears when one is switched on', r.withOne.hidden === false && r.withOne.chips.length === 1,
-     JSON.stringify(r.withOne));
-  ok('and the idle line stands down', r.withOne.idle === false);
-  ok('the chip names the overlay in full', /Threats & captures/.test(r.withOne.chips[0] || ''),
-     r.withOne.chips[0]);
-  ok('tapping a chip switches that overlay off',
-     r.afterTap.on === false && r.afterTap.pre === false && r.afterTap.hidden === true,
-     JSON.stringify(r.afterTap));
-  await ctx.close();
-}
+// Sections 6, 7 and 8 moved out with the things they tested.
+//
+// 6 measured the overlay grid's phone presentation — two up, names spelled
+//   out, a state glyph per button. That grid is not on the phone any more:
+//   it belongs to the sidebar, and the sidebar's overlay controls are
+//   display:none under 760px. The panel's rows replaced it, and
+//   verify-vispanel.mjs section 2 measures those. The grid's remaining
+//   desktop presentation is section 9 below.
+// 7 tested the "?" marks and explain mode; explain mode is a control in the
+//   board-vision panel now (verify-vispanel.mjs section 5).
+// 8 tested the "drawing now" bar, which is gone entirely — every overlay that
+//   draws has a chip beside the board in its own state colour, which is
+//   section 2 above.
 
 console.log('\n9    Desktop is untouched');
 for (const [w, h] of [[1440, 900], [1366, 600]]) {
@@ -363,12 +265,10 @@ for (const [w, h] of [[1440, 900], [1366, 600]]) {
   const d = await page.evaluate(() => ({
     cols: getComputedStyle(document.querySelector('.ind-grid')).gridTemplateColumns.split(' ').length,
     sheet: getComputedStyle(document.getElementById('sidebar')).position,
-    handle: getComputedStyle(document.getElementById('bvtHandle')).display,
     strip: getComputedStyle(document.getElementById('pinStrip')).display,
     bar2: getComputedStyle(document.getElementById('phoneBar')).display,
     stick: getComputedStyle(document.getElementById('board-canvas-wrap')).position,
     col: getComputedStyle(document.getElementById('board-col')).display,
-    bar: getComputedStyle(document.getElementById('indActiveBar')).display,
     keyRow: getComputedStyle(document.querySelector('.ind-key-row')).display,
     keyG: getComputedStyle(document.querySelector('.ind-key-g')).display,
     keyHold: getComputedStyle(document.querySelector('.key-hold')).display,
@@ -377,13 +277,11 @@ for (const [w, h] of [[1440, 900], [1366, 600]]) {
     scrolls: document.documentElement.scrollHeight > innerHeight + 2,
   }));
   ok(w + ': grid is still two columns', d.cols === 2, String(d.cols));
-  ok(w + ': the sidebar is a column, not a sheet', d.sheet === 'static', d.sheet);
-  ok(w + ': the sheet handle is hidden', d.handle === 'none', d.handle);
+  ok(w + ': the sidebar is a column, not a panel', d.sheet === 'static', d.sheet);
   ok(w + ': the pinned strip is hidden', d.strip === 'none', d.strip);
   ok(w + ': the phone game bar is hidden', d.bar2 === 'none', d.bar2);
   ok(w + ': the board is not pinned', d.stick === 'relative', d.stick);
   ok(w + ': #board-col is still a real box', d.col === 'flex', d.col);
-  ok(w + ': the bar stays out of it', d.bar === 'none', d.bar);
   ok(w + ': the swatch key is kept', d.keyRow !== 'none', d.keyRow);
   ok(w + ': the glyph key is hidden', d.keyG === 'none', d.keyG);
   // Hold-to-peek survives where the controls sit beside the board.

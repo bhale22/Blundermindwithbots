@@ -106,19 +106,19 @@ console.log('\nPhone — 390x844');
   // at all — it is simply covered, and closing the sheet brings it straight
   // back. That is the property worth pinning.
   const before = a.bar.top;
-  await page.evaluate(() => bvTraySet('full'));
-  await page.waitForTimeout(450);
+  await page.evaluate(() => visPanelOpen());
+  await page.waitForTimeout(400);
   const opened = await page.evaluate(() => ({
     barTop: document.getElementById('phoneBar').getBoundingClientRect().top,
-    state: document.getElementById('sidebar').dataset.bvt,
-    sheetH: document.getElementById('sidebar').getBoundingClientRect().height,
+    open: !document.getElementById('visPanel').hidden,
+    panelH: document.getElementById('visCard').getBoundingClientRect().height,
   }));
-  ok('the sheet actually opened', opened.state === 'full', opened.state);
-  ok('the sheet is tall enough to have caused the old bug', opened.sheetH > 400,
-     'height ' + opened.sheetH.toFixed(0));
+  ok('the panel actually opened', opened.open === true, String(opened.open));
+  ok('it is tall enough to have caused the old bug', opened.panelH > 400,
+     'height ' + opened.panelH.toFixed(0));
   ok('opening it does not move the game bar', Math.abs(opened.barTop - before) < 2,
      `${before.toFixed(0)} → ${opened.barTop.toFixed(0)}`);
-  await page.evaluate(() => bvTraySet('closed'));
+  await page.evaluate(() => visPanelClose());
   await page.waitForTimeout(400);
   ok('closing it brings the bar back untouched',
      await page.evaluate(t => Math.abs(document.getElementById('phoneBar').getBoundingClientRect().top - t) < 2, before));

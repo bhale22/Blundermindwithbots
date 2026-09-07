@@ -1580,18 +1580,17 @@ canvas{
    without scrolling to the buttons. Every chip is a switch-off, which is the
    action you actually want when a board has gone noisy mid-game.
    Hidden entirely when nothing is on - an empty bar is just a stolen row. */
-#indActiveBar{display:none;}
 
 /* ══════════════════════════════════════════════════════════════════════════
-   PHONE FURNITURE — the tray handle, the pinned strip, the game bar
+   PHONE FURNITURE — the pinned strip and the game bar
    --------------------------------------------------------------------------
-   All three are display:none here and switched on inside the max-width:760px
-   block. Desktop has a sidebar that is on screen permanently and needs none
-   of them; declaring them off by default means a desktop that never has to
+   Both are display:none here and switched on inside the max-width:760px
+   block. Desktop has a sidebar that is on screen permanently and needs
+   neither; declaring them off by default means a desktop that never has to
    opt out of a phone layout, which is the direction that stays true as the
    page grows.
    ══════════════════════════════════════════════════════════════════════════ */
-#bvtHandle,#pinStrip,#phoneBar{display:none;}
+#pinStrip,#phoneBar{display:none;}
 
 /* ── Pinned overlay chip ──────────────────────────────────────────────────
    Shares the three state colours with .ib exactly, because it is the same
@@ -1633,78 +1632,172 @@ canvas{
 }
 .pin-chip.pressing::before{content:'\25C9';color:#15597f;}
 
-/* ── Pin picker ───────────────────────────────────────────────────────────── */
-.pin-picker-wrap{position:fixed;inset:0;z-index:1200;display:flex;
-  align-items:flex-end;justify-content:center;}
-.pin-picker-wrap[hidden]{display:none;}
-.pin-picker-scrim{position:absolute;inset:0;background:rgba(0,0,0,0.45);}
-.pin-picker{
-  position:relative;
-  width:100%;max-width:460px;max-height:76vh;
+/* ── Board-vision panel ────────────────────────────────────────────────────
+   A right-side sheet, on the same idiom as .slide-panel but with its own
+   geometry: it is a list of thirteen 44px targets and a footer, so it wants
+   height rather than the fixed 300px column the older panels use. */
+.vis-wrap{position:fixed;inset:0;z-index:1200;}
+.vis-wrap[hidden]{display:none;}
+.vis-scrim{
+  position:absolute;inset:0;
+  /* Faint on purpose — cycling a row changes the board just to the left, and
+     seeing that happen is the point of a visual control. */
+  background:rgba(0,0,0,0.18);
+  opacity:0;transition:opacity 0.18s ease;
+}
+.vis-wrap.in .vis-scrim{opacity:1;}
+.vis-card{
+  position:absolute;top:0;right:0;bottom:0;
+  width:min(340px,84vw);
+  box-sizing:border-box;
   display:flex;flex-direction:column;
   background:var(--bg-panel);
-  border:1px solid var(--border);border-bottom:0;
-  border-radius:14px 14px 0 0;
-  box-shadow:0 -10px 30px -14px rgba(0,0,0,0.55);
-  padding:0 0 calc(12px + env(safe-area-inset-bottom,0px));
+  border-left:1px solid var(--border);
+  box-shadow:-10px 0 30px -14px rgba(0,0,0,0.55);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  /* Quick — this is a panel someone opens, presses once and closes, and a
+     280ms drawer makes that round trip feel like waiting twice. */
+  transform:translateX(100%);
+  transition:transform 0.18s cubic-bezier(0.32,0.72,0,1);
+  /* Vertical scrolling belongs to the list; horizontal drags are the
+     swipe-to-close and must reach the handler. */
+  touch-action:pan-y;
 }
-.pin-picker-h{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:14px 16px 4px;
-  font-size:13px;font-weight:700;color:var(--text-primary);
-}
-.pin-picker-x{
-  background:none;border:0;font-family:inherit;font-size:15px;
-  color:var(--text-dim);cursor:pointer;padding:4px 6px;border-radius:4px;
-}
-.pin-picker-sub{padding:0 16px 10px;font-size:11px;color:var(--text-dim);line-height:1.45;}
-.pin-picker-list{
-  overflow-y:auto;padding:0 12px;
-  display:grid;grid-template-columns:1fr 1fr;gap:6px;
-}
-.pin-opt{
-  display:flex;align-items:center;gap:7px;
-  min-height:44px;padding:6px 10px;
-  background:var(--bg-panel2);border:0.5px solid var(--border2);border-radius:6px;
-  color:var(--text-secondary);
-  font-family:inherit;font-size:12px;text-align:left;line-height:1.25;
-  cursor:pointer;
-}
-.pin-opt::before{
-  content:'+';flex:0 0 auto;
-  width:18px;height:18px;border-radius:50%;
-  display:inline-flex;align-items:center;justify-content:center;
-  font-size:12px;font-weight:700;line-height:1;
-  background:var(--bg-panel);border:0.5px solid var(--border2);color:var(--text-dim);
-}
-.pin-opt.picked{
-  background:var(--st-on-bg,rgba(34,168,90,0.14));
-  border-color:var(--st-on-bd,#22a85a);color:var(--st-on-fg,#14713c);
-}
-.pin-opt.picked::before{content:'\2713';background:var(--st-on-bd,#22a85a);
-  border-color:var(--st-on-bd,#22a85a);color:#fff;}
+.vis-wrap.in .vis-card{transform:translateX(0);}
+.vis-card.vis-dragging{transition:none;}
 
-.iab-t{
-  flex:0 0 auto;font-size:8px;font-weight:700;letter-spacing:0.07em;
-  text-transform:uppercase;color:var(--text-dim);
+.vis-h{
+  display:flex;align-items:center;gap:8px;
+  padding:14px 14px 6px;flex:0 0 auto;
 }
-.iab-chips{display:flex;gap:5px;flex:1 1 auto;min-width:0;}
-.iab-chip{
-  flex:0 0 auto;display:inline-flex;align-items:center;
-  font-family:inherit;font-size:11px;line-height:1;
-  padding:7px 9px;border-radius:4px;cursor:pointer;white-space:nowrap;
-  border:0.5px solid var(--st-on-bd,#22a85a);
-  background:var(--st-on-bg,rgba(34,168,90,0.14));
-  color:var(--st-on-fg,#14713c);
+.vis-t{font-size:13px;font-weight:700;color:var(--text-primary);flex:1 1 auto;}
+.vis-info,.vis-x{
+  flex:0 0 auto;
+  width:32px;height:32px;border-radius:50%;
+  display:inline-flex;align-items:center;justify-content:center;
+  font-family:inherit;line-height:1;cursor:pointer;
+  background:var(--bg-panel2);border:0.5px solid var(--border2);
+  color:var(--text-dim);
   -webkit-tap-highlight-color:transparent;
 }
-/* More chips than fit. Set by indActiveBarSync() after measuring, so the edge
-   only fades when there is genuinely something past it. */
-.iab-more{
-  -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 22px),transparent);
-  mask-image:linear-gradient(to right,#000 calc(100% - 22px),transparent);
+.vis-info{font-size:14px;font-weight:700;}
+.vis-x{font-size:13px;}
+.vis-info.armed{
+  background:rgba(74,159,212,0.18);border-color:#2b7fb8;color:#15597f;
+  box-shadow:0 0 0 1.5px rgba(74,159,212,0.25);
 }
-.iab-chip:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
+.vis-sub{
+  padding:0 14px 8px;flex:0 0 auto;
+  font-size:10.5px;line-height:1.45;color:var(--text-dim);
+}
+.vis-sub.armed{color:#15597f;font-weight:600;}
+.vis-list{
+  flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  padding:0 10px 8px;
+  display:flex;flex-direction:column;gap:5px;
+}
+
+/* ── One row per overlay, carrying all four states ─────────────────────────
+   The tick and the fill are two channels for the same fact, which is what
+   lets the row be read at a glance and still survive a colour-blind reader:
+   the tick says "this one is beside the board", and the fill says what it is
+   doing there.
+
+     unselected  no tick, panel fill        — off, and no chip beside the board
+     selected    white tick, panel fill     — chip is there, overlay is off
+     exploring   white tick, purple fill    — drawn while you explore a move
+     always on   BLACK tick, green fill     — drawn all the time */
+.vis-row{
+  display:flex;align-items:center;gap:9px;
+  min-height:46px;padding:6px 11px;
+  background:var(--bg-panel2);border:0.5px solid var(--border2);border-radius:7px;
+  color:var(--text-secondary);
+  font-family:inherit;font-size:12.5px;text-align:left;line-height:1.25;
+  cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none;
+  transition:background 0.1s,color 0.1s,border-color 0.12s,box-shadow 0.12s;
+}
+.vis-row .vis-tick{
+  flex:0 0 auto;
+  width:20px;height:20px;border-radius:50%;
+  display:inline-flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:700;line-height:1;
+  background:var(--bg-panel);border:0.5px solid var(--border2);color:transparent;
+}
+.vis-row .vis-nm{flex:1 1 auto;min-width:0;}
+/* Selected — the tick appears; the row itself says nothing yet. */
+.vis-row.sel .vis-tick{background:var(--st-on-bd,#22a85a);border-color:var(--st-on-bd,#22a85a);color:#fff;}
+/* Exploring — purple, the same hue the .ib buttons use for this state. */
+.vis-row.exp{
+  background:var(--st-exp-bg,rgba(90,104,200,0.10));
+  color:var(--st-exp-fg,#3a44a0);border-color:var(--st-exp-bd,rgba(90,104,200,0.55));
+}
+/* Always on — green, and the tick flips to black so the two green states
+   cannot be mistaken for each other at arm's length. */
+.vis-row.on{
+  background:var(--st-on-bg,rgba(34,168,90,0.14));
+  color:var(--st-on-fg,#14713c);border-color:var(--st-on-bd,#22a85a);
+  box-shadow:0 0 0 1.5px var(--st-on-ring,rgba(34,168,90,0.18));
+}
+.vis-row.on .vis-tick{color:#08130c;}
+/* The state, in words, at the right-hand end. Colour and a tick are what a
+   sighted reader gets at a glance; this is the same fact spelled out. */
+.vis-row .vis-st{
+  flex:0 0 auto;font-size:9.5px;letter-spacing:0.04em;text-transform:uppercase;
+  opacity:0.75;
+}
+/* Armed for explanation: every row reads as a thing to ask about. */
+.vis-list.explain-armed .vis-row{border-style:dashed;border-color:#2b7fb8;}
+
+.vis-foot{
+  flex:0 0 auto;display:flex;gap:6px;
+  padding:8px 10px 10px;border-top:0.5px solid var(--border2);
+}
+.vis-act{
+  flex:1 1 0;min-height:42px;
+  background:var(--bg-panel2);border:0.5px solid var(--border2);border-radius:6px;
+  color:var(--text-secondary);font-family:inherit;font-size:12px;cursor:pointer;
+}
+.vis-act.danger{border-color:var(--st-danger-bd,rgba(110,26,26,0.6));color:#a05050;}
+
+/* ── Board settings: sized to what it holds ────────────────────────────────
+   The shared .slide-panel is a full-height 300px column, which on a phone is
+   a wall for six rows of settings. This one takes the bottom-right corner and
+   no more: the upper third and left quarter of the screen stay visible, so
+   the board is still there behind it and the panel reads as a thing that
+   opened rather than a page you navigated to. Same slide-in, quicker. */
+#boardSettingsPanel{
+  top:auto;bottom:0;right:-420px;
+  width:min(420px,76vw);height:auto;max-height:68vh;
+  border-left:1px solid var(--border);
+  border-top:1px solid var(--border);
+  border-radius:12px 0 0 0;
+  box-shadow:-10px -10px 30px -16px rgba(0,0,0,0.55);
+  transition:right 0.18s cubic-bezier(0.32,0.72,0,1);
+}
+#boardSettingsPanel.open{right:0;}
+
+/* Appearance rows: a name, its current value, and a chevron. The value is the
+   reason the row exists — "which pieces am I using" should not need a tap. */
+.bs-row{
+  display:flex;align-items:center;gap:8px;
+  width:100%;min-height:42px;padding:8px 10px;
+  background:var(--bg-panel2);border:0.5px solid var(--border2);border-radius:6px;
+  color:var(--text-secondary);font-family:inherit;font-size:12px;text-align:left;
+  cursor:pointer;margin-bottom:4px;
+}
+.bs-row-k{flex:0 0 auto;font-weight:600;}
+.bs-row-v{
+  flex:1 1 auto;min-width:0;text-align:right;color:var(--text-primary);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.bs-row-c{flex:0 0 auto;color:var(--text-dim);font-size:13px;}
+.bs-row:hover{border-color:var(--accent);}
+
+/* Ghost replies inside the settings panel: the control came from a grid two
+   columns wide, so it needs its own width rule here. */
+#boardSettingsPanel .ghost-one{width:100%;}
+#boardSettingsPanel .ghost-one .ib-main{height:auto;min-height:40px;}
+#boardSettingsPanel #soloGhostDepth{width:100%;margin-top:4px;}
 
 /* ── Board settings launcher ────────────────────────────────────────────────
    Moved out of the top of the column and re-sited between the two overlay
@@ -2063,177 +2156,59 @@ canvas{
 }
 
 /* ==========================================================================
-   PHONES - THE BOARD-VISION TRAY
+   PHONES - THE BOARD IS THE PAGE
    --------------------------------------------------------------------------
-   What was here before: the board, both clocks and the active-overlay strip
-   were pinned with position:sticky, and the thirteen overlay controls scrolled
-   underneath them in whatever slice of screen was left. The reasoning was
-   sound - an overlay is a VISUAL control, so you have to see the board to
-   learn what a control does - but the arithmetic was not. The pinned block is
-   about 59% of a phone screen, which leaves the controls a ~370px letterbox to
-   scroll thirteen buttons, two group headings, a ghost selector and four
-   utilities through. Everything was reachable and nothing was findable.
+   Two arrangements have been tried here and both failed the same way. First
+   the controls scrolled under a position:sticky board, which left them a
+   ~370px letterbox to scroll thirteen buttons through: everything reachable,
+   nothing findable. Then they lived in a sheet dragged up from the bottom
+   edge, which fixed the finding and introduced a second thing to learn — a
+   grip, three snap positions, a flick — before you could press a button.
 
-   This is the Google Maps arrangement instead. The controls live in a sheet
-   dragged up from the bottom edge, and while it is up it covers the board.
-   That trade is deliberate and it is the one Maps makes: once you have pulled
-   the sheet up, your attention is on the control you came for, not on what is
-   behind it. You get a whole screen to find that control in rather than a
-   letterbox, and the board is one flick away rather than a scroll.
+   What is here now has no third surface at all. The page under 760px is just
+   the board: clocks, board, the strip of overlays you chose to keep at hand,
+   and the game bar. Everything else is a panel that slides in from the right
+   when you ask for it, the same way every other panel in this app already
+   works (#boardSettingsPanel, #mpPanel, #helpPanel). One idiom, no gesture to
+   discover, and the board never has to share the page with a control it is
+   supposed to be demonstrating.
 
-   Three positions, snapped: closed (a 58px strip that reports what is drawing
-   right now), half, and full. Drag the grip or flick it. The strip sits on the
-   bottom edge, so an upward swipe from the bottom of the screen opens it
-   without competing with Android's own edge gestures - the strip is what the
-   thumb lands on.
-
-   Because nothing scrolls behind the sheet any more, the board does not need
-   to be sticky, the wrappers do not need display:contents, and the seam
-   shadows that held that arrangement together are gone with it. What is left
-   is a plain column: clocks, board, the pinned strip, the game bar.
+   #sidebar keeps the parts of itself that are still page furniture — the
+   quick-start block and the floor buttons — and hides the overlay controls,
+   which now live in #visPanel.
    ========================================================================== */
 @media(max-width:760px){
-  body:not(.pro-mode){
-    /* The closed strip's height. Everything that has to sit clear of the tray
-       derives from this, so the strip resizes in one place. */
-    --bvt-peek:58px;
-  }
-
-  /* A plain flex column again - the display:contents dissolve existed only to
-     make position:sticky work across the two wrappers. */
+  /* A plain flex column: the display:contents dissolve existed only to make
+     position:sticky work across the two wrappers, and nothing is sticky. */
   body:not(.pro-mode) #board-col{
     display:flex;flex-direction:column;align-items:center;gap:8px;
     width:100%;min-width:0;order:1;
   }
-  /* The page ends above the closed tray rather than under it. */
-  body:not(.pro-mode) #page-wrap{padding-bottom:calc(var(--bvt-peek) + 8px);}
-
-  /* -- The sheet ----------------------------------------------------------
-     #sidebar IS the tray. Re-parenting the controls into a new element would
-     have duplicated thirteen ids or moved them out from under every
-     getElementById in the app; making the container they already live in
-     behave differently at this width costs neither. Above 760px not one of
-     these rules applies and the sidebar is the column it always was. */
   body:not(.pro-mode) #sidebar{
-    position:fixed;left:0;right:0;bottom:0;
-    width:auto;max-width:none;min-width:0;
-    height:88vh;
-    z-index:60;
-    box-sizing:border-box;
-    padding:0 10px calc(18px + env(safe-area-inset-bottom,0px));
-    background:var(--bg-panel);
-    border-top:1px solid var(--border);
-    border-radius:14px 14px 0 0;
-    box-shadow:0 -10px 30px -14px rgba(0,0,0,0.55);
-    display:flex;flex-direction:column;gap:4px;
-    overflow-y:auto;overscroll-behavior:contain;
-    -webkit-overflow-scrolling:touch;
-    /* Closed. The transform is the ONE thing the drag handler writes, so a
-       drag, a flick and a tap all end in the same place by the same route. */
-    transform:translateY(calc(100% - var(--bvt-peek)));
-    transition:transform 0.28s cubic-bezier(0.32,0.72,0,1);
-  }
-  body:not(.pro-mode) #sidebar[data-bvt="half"]{transform:translateY(46%);}
-  body:not(.pro-mode) #sidebar[data-bvt="full"]{transform:translateY(0);}
-  /* While a finger is on it the sheet follows the finger exactly; a transition
-     here would make it lag 280ms behind and feel broken. */
-  body:not(.pro-mode) #sidebar.bvt-dragging{transition:none;}
-  /* Closed, the body is inert: nothing below the strip can be tapped through
-     the 58px of sheet that is on screen, and it must not be reachable by tab
-     either. Scrolling is off so a stray flick cannot scroll a hidden list. */
-  body:not(.pro-mode) #sidebar[data-bvt="closed"]{overflow-y:hidden;}
-  body:not(.pro-mode) #sidebar[data-bvt="closed"] > *:not(#bvtHandle){
-    visibility:hidden;pointer-events:none;
+    display:flex;flex-direction:column;gap:6px;
+    width:100%;max-width:100%;min-width:0;order:3;
+    margin-top:10px;
   }
 
-  /* The grip. Sticky rather than static: at the full position the sheet's
-     content scrolls, and the handle is both the drag target and the label for
-     what is on screen, so it has to stay put. */
-  body:not(.pro-mode) #bvtHandle{
-    position:sticky;top:0;z-index:3;
-    display:flex;flex-direction:column;gap:0;
-    margin:0 -10px;padding:0 10px 6px;
-    background:var(--bg-panel);
-    border-bottom:0.5px solid var(--border2);
-    /* The browser must not steal a vertical drag here for the sheet's own
-       scroller - receiving that drag is this element's whole job. */
-    touch-action:none;-webkit-tap-highlight-color:transparent;
-    user-select:none;cursor:grab;
-  }
-  body:not(.pro-mode) #sidebar.bvt-dragging #bvtHandle{cursor:grabbing;}
-  .bvt-grip{
-    width:38px;height:4px;border-radius:2px;
-    background:var(--border);
-    margin:8px auto 6px;flex:0 0 auto;
-  }
-  .bvt-row{display:flex;align-items:center;gap:8px;min-height:30px;}
-  .bvt-title{
-    font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;
-    color:var(--text-secondary);flex:0 0 auto;
-  }
-  /* One target for help, replacing thirteen. Armed, it says so loudly enough
-     that the next tap is not a surprise. */
-  #bvtHelp{
-    flex:0 0 auto;margin-left:auto;
-    width:30px;height:30px;border-radius:50%;
-    display:inline-flex;align-items:center;justify-content:center;
-    font-family:inherit;font-size:14px;font-weight:700;line-height:1;
-    background:var(--bg-panel2);border:0.5px solid var(--border2);
-    color:var(--text-dim);cursor:pointer;
-  }
-  #bvtHelp.armed{
-    background:rgba(74,159,212,0.18);border-color:#2b7fb8;color:#15597f;
-    box-shadow:0 0 0 1.5px rgba(74,159,212,0.25);
-  }
-  #bvtExplainHint{
-    font-size:10.5px;line-height:1.4;color:#15597f;
-    background:rgba(74,159,212,0.10);
-    border-radius:4px;padding:4px 8px;margin:2px 0 0;
-  }
-  /* Armed, every overlay button reads as a thing to ask about rather than a
-     thing to switch on. */
-  .ind-grid.explain-armed .ib-main{border-style:dashed;border-color:#2b7fb8;}
-
-  /* The strip's job when closed: say what is drawing on the board. Inside the
-     handle it is the sheet's summary line, exactly as a collapsed Maps sheet
-     names the place it is about. */
-  body:not(.pro-mode) #bvtHandle #indActiveBar:not([hidden]){
-    display:flex;align-items:center;gap:8px;
-    flex:1 1 auto;min-width:0;
-    padding:0;background:none;border:0;
-    overflow-x:auto;overflow-y:hidden;scrollbar-width:none;
-  }
-  body:not(.pro-mode) #bvtHandle #indActiveBar::-webkit-scrollbar{display:none;}
-  /* Nothing is drawing: the strip hides itself, and this stands in so the row
-     is not a bare word and a "?". */
-  #bvtIdle{
-    flex:1 1 auto;min-width:0;
-    font-size:10.5px;color:var(--text-dim);
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  }
-
-  /* -- What the tray no longer needs --------------------------------------
-     "More board vision" folded the second layer away because the controls
-     were competing with the board for one screen. They are not any more - the
-     sheet has a screen of its own - so the fold is pure indirection and the
-     disclosure is gone. #board-settings is simply open. */
-  body:not(.pro-mode) #bv-toggle{display:none;}
+  /* -- What the sidebar keeps, and what moved out ---------------------------
+     Start-a-game and the floor buttons are page furniture: they belong under
+     the board where they can be read. The overlay grid, its key, the utility
+     row and the Board-settings link are all in panels now, and the sidebar
+     copies would be a second, silent set of the same controls. */
   body:not(.pro-mode) #board-settings,
-  body:not(.pro-mode) #board-settings.open{display:flex;flex-direction:column;gap:4px;}
-  /* Resign and Offer draw are on the board's own bar now (#phoneBar), where
-     they are reachable without opening anything. */
-  body:not(.pro-mode) #sidebar #gameActions{display:none !important;}
-  /* Ate the column's spare height to pin a floor. There is no floor to pin in
-     a scrolling sheet, and it opened a dead gap mid-list. */
+  body:not(.pro-mode) #bv-toggle,
+  body:not(.pro-mode) #sidebar .bv-head,
+  body:not(.pro-mode) #sidebar .ind-grid,
+  body:not(.pro-mode) #sidebar .ind-key,
   body:not(.pro-mode) .sb-spacer{display:none;}
-
-  /* -- The handle ---------------------------------------------------------- */
-  body:not(.pro-mode) #bvtHandle{display:flex;}
+  /* Resign and Offer draw are on the board's own bar (#phoneBar), where they
+     are reachable without opening anything. */
+  body:not(.pro-mode) #sidebar #gameActions{display:none !important;}
 
   /* -- The pinned strip ---------------------------------------------------
      One line, scrolled horizontally rather than wrapped: a second row would
      take height from the board, and the whole point of pinning is that these
-     controls cost less screen than opening the tray does. */
+     controls cost less screen than opening the panel does. */
   body:not(.pro-mode) #pinStrip{
     display:flex;align-items:center;gap:6px;
     width:var(--board-size);max-width:100%;box-sizing:border-box;
@@ -2247,11 +2222,12 @@ canvas{
     -webkit-overflow-scrolling:touch;
   }
   .pin-chips::-webkit-scrollbar{display:none;}
-  /* Shown only while nothing is pinned — an empty strip with a lone "+" says
-     nothing about what the "+" would do. */
+  /* Shown only while nothing is selected, and part of the target rather than
+     a caption beside it — this and the "+" are the only door to the panel. */
   .pin-hint{
     flex:1 1 auto;min-width:0;
-    font-size:10.5px;color:var(--text-dim);
+    background:none;border:0;padding:0;text-align:left;
+    font-family:inherit;font-size:10.5px;color:var(--text-dim);cursor:pointer;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   }
   .pin-add{
@@ -2267,7 +2243,7 @@ canvas{
   /* -- The game bar -------------------------------------------------------
      Seven buttons at most, and rarely that: Resign and Draw are only up
      during a live game against someone, Chat only in a 2-player one. Each is
-     a 44px-tall column so the label can be spelled out under the glyph — an
+     a 46px-tall column so the label can be spelled out under the glyph — an
      unlabelled icon row is where "which one was flip?" comes from. */
   body:not(.pro-mode) #phoneBar{
     display:flex;align-items:stretch;gap:5px;
@@ -2285,7 +2261,7 @@ canvas{
   .pb-l{font-size:9px;line-height:1;letter-spacing:0.02em;
     max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .pbtn:active{background:var(--bg-panel2);}
-  /* Held, not tapped — dashed, the same promise the tray's hold buttons make. */
+  /* Held, not tapped — dashed says so before you press it. */
   .pbtn.hold{border-style:dashed;}
   .pbtn.hold.peeking{
     background:rgba(74,159,212,0.18);border-color:#2b7fb8;color:#15597f;border-style:solid;
@@ -2293,47 +2269,6 @@ canvas{
   #pbResign{border-color:rgba(180,40,40,0.45);color:#a05050;}
   #pbDraw{border-color:rgba(40,80,180,0.4);color:#5a7ab0;}
 }
-
-/* A sheet needs a viewport with room for a sheet.
-   --------------------------------------------------------------------------
-   Turn the phone sideways and the screen is ~360px tall. Two clocks (60), the
-   pinned strip (44), the game bar (46) and the closed sheet's own strip (58)
-   come to 208 before the board gets a pixel, and the board's floor is 280 —
-   so the sheet's bottom strip would sit ON the board's last two ranks, which
-   is worse than anything the sheet was introduced to fix.
-
-   Below the line it simply is not a sheet: #sidebar goes back into the flow at
-   the bottom of the page and the controls are reached by scrolling, exactly as
-   they were before this pass and exactly the concession the old sticky layout
-   made at this same 520px. bvTrayActive() reads the same two conditions, so
-   the gestures follow the layout rather than the width alone.
-
-   520 splits the two cleanly: landscape phones are ~360-430px tall, the
-   shortest portrait phone still in service is 568px. */
-@media(max-width:760px) and (max-height:520px){
-  body:not(.pro-mode) #sidebar{
-    position:static;transform:none;height:auto;
-    z-index:auto;
-    padding:0;margin-top:8px;
-    background:none;border-top:0;border-radius:0;box-shadow:none;
-    overflow:visible;
-  }
-  /* The closed state hid everything below the strip. There is no strip to be
-     below any more, so nothing is hidden. */
-  body:not(.pro-mode) #sidebar[data-bvt="closed"]{overflow:visible;}
-  body:not(.pro-mode) #sidebar[data-bvt="closed"] > *:not(#bvtHandle){
-    visibility:visible;pointer-events:auto;
-  }
-  /* The handle stays — it still carries "drawing now", which is the one line
-     worth having here too — but it is a heading, not a grip. */
-  body:not(.pro-mode) #bvtHandle{
-    position:static;margin:0;padding:0 0 6px;
-    touch-action:auto;cursor:default;
-  }
-  .bvt-grip{display:none;}
-  body:not(.pro-mode) #page-wrap{padding-bottom:8px;}
-}
-
 /* Short viewports (landscape phones): cap the board by height, not width, and
    keep the clocks compact so board + clocks still fit above the fold. */
 @media(max-width:900px) and (max-height:500px){
@@ -3377,9 +3312,15 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
          guess before making their own choice. Populated by pinRender(). -->
     <div id="pinStrip">
       <span class="pin-chips" id="pinChips"></span>
-      <span class="pin-hint" id="pinHint">Pin the overlays you are practising →</span>
-      <button type="button" class="pin-add" id="pinAdd" onclick="pinPickerOpen()"
-              aria-label="Choose which overlays are pinned here" title="Add or remove pinned overlays">+</button>
+      <!-- The "+" is the only door to the board-vision panel, so while the
+           strip is empty the hint is part of the target rather than a caption
+           beside it — an empty strip with a lone "+" says nothing about what
+           the "+" would do. -->
+      <button type="button" class="pin-hint" id="pinHint" onclick="visPanelOpen()">
+        Choose your board-vision overlays</button>
+      <button type="button" class="pin-add" id="pinAdd" onclick="visPanelOpen()"
+              aria-label="Choose which overlays are shown beside the board"
+              title="Choose your board-vision overlays">+</button>
     </div>
 
     <!-- ── The game bar ─────────────────────────────────────────────────────
@@ -3487,31 +3428,6 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 
   <!-- RIGHT: sidebar -->
   <div id="sidebar">
-
-    <!-- ── Tray handle (phone only) ─────────────────────────────────────────
-         The grip you drag, and the line that tells you whether dragging is
-         worth it. Closed, this 58px strip is all of the sheet that is on
-         screen, so it has to answer "is anything drawing on my board?" on its
-         own — which is exactly what #indActiveBar was already for. It used to
-         sit under the board competing with it for height; here it is the
-         collapsed sheet's summary line and costs nothing.
-
-         Display:none above the breakpoint, where the sidebar is a column and
-         has nothing to drag. -->
-    <div id="bvtHandle">
-      <div class="bvt-grip" aria-hidden="true"></div>
-      <div class="bvt-row">
-        <span class="bvt-title">Board vision</span>
-        <span id="bvtIdle">Nothing drawing — drag up to choose</span>
-        <div id="indActiveBar" hidden>
-          <span class="iab-t">Drawing now</span>
-          <span class="iab-chips" id="indActiveChips"></span>
-        </div>
-        <button type="button" id="bvtHelp" aria-pressed="false"
-                onclick="ibExplainToggle()" title="Explain an overlay">?</button>
-      </div>
-      <div id="bvtExplainHint" hidden>Tap any overlay to read what it draws.</div>
-    </div>
 
     <!-- Always visible, on every screen size: start a game, and the four
          overlays that answer "can this be taken". Everything past these is
@@ -3664,36 +3580,6 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
             <span class="ib-lbl" data-full="Opponent&#39;s weak squares">Opp. weak sq.</span>
           </button>
         </div>
-    </div>
-
-    <!-- Ghost replies: the same button as the overlays beside it, because it
-         is one more thing that draws on the board. Two states, not three —
-         it runs or it does not — with the depth selector alongside. The two
-         are two views of one value; ghostToggle() keeps them in step. -->
-    <div class="ib ghost-one" id="ib-ghost">
-        <button class="ib-main" onclick="ghostToggle()">
-          <span class="ib-lbl">👻 Ghost replies</span>
-        </button>
-      <select id="soloGhostDepth" onchange="ghostModeChanged()" aria-label="Ghost reply engine and depth">
-        <option value="0" selected>Off</option>
-        <option value="4">SF Fast (depth 4)</option>
-        <option value="8">SF Medium (depth 8)</option>
-        <option value="12">SF Deep (depth 12)</option>
-        <option value="maia">Maia (2600 + 1500)</option>
-      </select>
-    </div>
-    <div id="ghostMpNote" style="display:none;font-size:7.5px;color:#c0a060;padding:0 2px 4px;">
-      ⚔ Inactive &amp; unavailable during 2-player games — engine hints would undercut human-vs-human play.
-    </div>
-    <div id="ghostMaiaHint" style="display:none;">
-      <div class="maia-alert">
-        <div class="maia-alert-h">⚠ Maia3 model not downloaded</div>
-        <div class="maia-alert-b">Maia is what makes ghosts and the Maia bots feel human. Until it
-          is downloaded, every one of them quietly falls back to Stockfish.</div>
-        <button type="button" class="maia-alert-btn" onclick="maiaDownloadModel()">
-          ↓ Download Maia3 (~44 MB) — one time
-        </button>
-      </div>
     </div>
 
     <!-- Clear / Hide / Peek / Show all read as one family. The last three do
@@ -3873,22 +3759,38 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 </div>
 
 <!-- ── Panel overlay ─────────────────────────────────────────────────────── -->
-<!-- ── Pin picker ──────────────────────────────────────────────────────────
-     Which overlays get a chip beside the board. Deliberately a flat list of
-     every overlay rather than the tray's two named groups: the question here
-     is "which of these am I drilling today", and grouping by "start with
-     these / when you're ready" answers a different one. Rows are built by
-     pinPickerOpen() from the buttons themselves, so it can never list an
-     overlay the app does not have. -->
-<div class="pin-picker-wrap" id="pinPicker" hidden>
-  <div class="pin-picker-scrim" onclick="pinPickerClose()"></div>
-  <div class="pin-picker" role="dialog" aria-modal="true" aria-labelledby="pinPickerTitle">
-    <div class="pin-picker-h">
-      <span id="pinPickerTitle">Pin beside the board</span>
-      <button type="button" class="pin-picker-x" onclick="pinPickerClose()" aria-label="Close">✕</button>
+<!-- ── Board-vision panel (phone) ──────────────────────────────────────────
+     The single place overlays are configured on a phone. It slides in from the
+     right like every other panel here, so there is no new idiom to learn, and
+     it closes three ways: the ✕, a swipe to the right, or a tap anywhere on
+     the board behind it.
+
+     One control per overlay, cycling four states — see visCycle(). The two
+     that used to be hold-only utilities in the sidebar (Clear all, Show all)
+     are plain buttons at the foot: holding a button to see the board is a
+     gesture that only worked when the controls sat BESIDE the board, and here
+     they sit over it.
+
+     The scrim is deliberately faint. Cycling a row changes the board a few
+     pixels to the left, and being able to half-see that happen is the whole
+     reason these are called visual controls. -->
+<div class="vis-wrap" id="visPanel" hidden>
+  <div class="vis-scrim" id="visScrim"></div>
+  <div class="vis-card" id="visCard" role="dialog" aria-modal="true" aria-labelledby="visTitle">
+    <div class="vis-h">
+      <span class="vis-t" id="visTitle">Board vision</span>
+      <!-- Stays armed once pressed, so a run of "what does this one draw?"
+           costs one press rather than one press per overlay. -->
+      <button type="button" class="vis-info" id="visInfo" aria-pressed="false"
+              onclick="ibExplainToggle()" title="Explain an overlay">?</button>
+      <button type="button" class="vis-x" onclick="visPanelClose()" aria-label="Close">✕</button>
     </div>
-    <div class="pin-picker-sub">Tap to add or remove. These stay on screen while you play.</div>
-    <div class="pin-picker-list" id="pinPickerList"></div>
+    <div class="vis-sub" id="visSub">Tap to cycle · swipe right to close</div>
+    <div class="vis-list" id="visList"></div>
+    <div class="vis-foot">
+      <button type="button" class="vis-act danger" onclick="visClearAll()">✕ Clear all</button>
+      <button type="button" class="vis-act" onclick="visShowAll()">⊞ Show all</button>
+    </div>
   </div>
 </div>
 
@@ -4691,8 +4593,24 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
   <div class="panel-body">
     <div class="bs-group">
       <div class="bs-head">Appearance</div>
-      <button type="button" class="bs-link" id="btnTheme" onclick="openPanel('themePanel')">
-        <span>🎨 Theme &amp; pieces</span><span>›</span>
+      <!-- Three named things instead of one "Theme & pieces" door. Each row
+           carries its own current value, so the panel answers "which board am
+           I on / which pieces am I using" without opening anything — which is
+           the question people were opening it to ask. -->
+      <button type="button" class="bs-row" id="bsBoardRow" onclick="bsToggleShell()">
+        <span class="bs-row-k">Board</span>
+        <span class="bs-row-v" id="bsBoardVal">Visualization Board</span>
+        <span class="bs-row-c">⇄</span>
+      </button>
+      <button type="button" class="bs-row" onclick="openPanel('themePanel')">
+        <span class="bs-row-k">Piece style</span>
+        <span class="bs-row-v" id="bsPieceVal">Staunton</span>
+        <span class="bs-row-c">›</span>
+      </button>
+      <button type="button" class="bs-row" id="btnTheme" onclick="openPanel('themePanel')">
+        <span class="bs-row-k">Board &amp; background</span>
+        <span class="bs-row-v" id="bsThemeVal"></span>
+        <span class="bs-row-c">›</span>
       </button>
     </div>
     <div class="bs-group">
@@ -4712,9 +4630,9 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <span class="s-spacer"></span>
         <label><input type="checkbox" id="cbInfluenceToggle" checked onchange="render()"> On</label>
       </div>
-    </div>
-    <div class="bs-group">
-      <div class="bs-head">What counts as a threat</div>
+      <!-- These two used to sit under a "What counts as a threat" heading. They
+           are two more board rules among the three above them, and the heading
+           split one short list into two shorter ones for no gain. -->
       <div class="s-row">
         <span class="s-lbl">Batteries in threat counts:<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('batteriessetting',event)" style="margin-left:4px;">?</span></span>
         <span class="s-spacer"></span>
@@ -4724,6 +4642,39 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <span class="s-lbl">Include queen pins:<span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('queenpinssetting',event)" style="margin-left:4px;">?</span></span>
         <span class="s-spacer"></span>
         <label><input type="checkbox" id="cbQPins" onchange="rebuildAtk()"> On</label>
+      </div>
+    </div>
+    <div class="bs-group">
+      <div class="bs-head">Ghost replies</div>
+      <!-- Moved here from the overlay grid. Ghost replies are not a board-vision
+           overlay: the overlays draw facts that are already true of the
+           position, and this one asks an engine what it would play next. It
+           belongs with the other settings that change how the board behaves,
+           not in a grid whose every other member is a static fact. -->
+      <div class="ib ghost-one" id="ib-ghost">
+          <button class="ib-main" onclick="ghostToggle()">
+            <span class="ib-lbl">👻 Ghost replies</span>
+          </button>
+        <select id="soloGhostDepth" onchange="ghostModeChanged()" aria-label="Ghost reply engine and depth">
+          <option value="0" selected>Off</option>
+          <option value="4">SF Fast (depth 4)</option>
+          <option value="8">SF Medium (depth 8)</option>
+          <option value="12">SF Deep (depth 12)</option>
+          <option value="maia">Maia (2600 + 1500)</option>
+        </select>
+      </div>
+      <div id="ghostMpNote" style="display:none;font-size:9.5px;color:#c0a060;padding:0 2px 4px;">
+        ⚔ Inactive &amp; unavailable during 2-player games — engine hints would undercut human-vs-human play.
+      </div>
+      <div id="ghostMaiaHint" style="display:none;">
+        <div class="maia-alert">
+          <div class="maia-alert-h">⚠ Maia3 model not downloaded</div>
+          <div class="maia-alert-b">Maia is what makes ghosts and the Maia bots feel human. Until it
+            is downloaded, every one of them quietly falls back to Stockfish.</div>
+          <button type="button" class="maia-alert-btn" onclick="maiaDownloadModel()">
+            ↓ Download Maia3 (~44 MB) — one time
+          </button>
+        </div>
       </div>
     </div>
   </div>

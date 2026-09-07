@@ -2175,56 +2175,13 @@ function updatePlayerBoxes(){
 
 function stopCheckThreats(){showingCheckThreats=false;checkThreatSquaresW=new Set();checkThreatSquaresB=new Set();render();}
 
-// ── Static Exchange Evaluation for fork landing squares ─────────────────────
-// Returns net material score for `color` if their piece of type `pieceType`
-// moves to `toSq` on board `bd`. Positive = profitable, negative = losing.
-// Static Exchange Evaluation for landing a piece of `pieceType`/`color` on
-// `toSq`. Returns the net material the mover comes out ahead (positive = good
-// for the mover) assuming both sides capture optimally with the cheapest piece
-// available at each step. Standard swap-off algorithm with negamax fold-back:
-// each side may "stand pat" rather than recapture if capturing would lose.
-//
-// This is the gate the next-move fork filter uses to decide whether a forking
-// landing square is safe. It MUST account for defended recaptures — e.g. a
-// knight jumping to a square guarded by the enemy queen but defended by our
-// bishop is perfectly safe (they never take, and if they did we win the queen),
-// so the SEE there is >= 0, not "-knight".
-function seeLandingScore(toSq, pieceType, color, bd) {
-  const opp = color === 'w' ? 'b' : 'w';
-  // Piece currently standing on toSq (if any) is the first thing we win.
-  const gains = [ bd[toSq] ? (PIECE_VAL[bd[toSq].piece] || 0) : 0 ];
-
-  // Working board: our piece now sits on toSq (whatever it captured is gone).
-  let b2 = {...bd};
-  b2[toSq] = { piece: pieceType, color };
-
-  let side = opp;                 // opponent moves next (the recapture)
-  let onSquareVal = PIECE_VAL[pieceType] || 0; // value of the piece now on toSq
-  let depth = 0;
-
-  // Build the raw gain sequence: at each ply the side-to-move captures the
-  // piece on toSq with its cheapest attacker; that attacker now sits on toSq.
-  while (true) {
-    const atks = currentAttackersOf(toSq, side, b2);
-    if (!atks.length) break;
-    const { sq: aSq, val: aVal } = atks[0]; // cheapest attacker (val from core)
-    // This side gains the value of the piece it captures off toSq.
-    gains[++depth] = onSquareVal - gains[depth - 1];
-    onSquareVal = aVal;           // the capturing piece now occupies toSq
-    const nb = {...b2};
-    nb[toSq] = nb[aSq]; delete nb[aSq];
-    b2 = nb;
-    side = side === 'w' ? 'b' : 'w';
-    if (depth > 31) break;        // safety
-  }
-
-  // Negamax fold-back: from the deepest capture upward, the side to move takes
-  // the better of "don't recapture" (keep prior gain) vs "recapture" (this gain).
-  for (let i = depth - 1; i >= 0; i--) {
-    gains[i] = -Math.max(-gains[i], gains[i + 1]);
-  }
-  return gains[0];
-}
+// A static-exchange evaluator used to live here, and the next-move fork filter
+// was its only caller: it scored the landing square and dropped any fork that
+// came out worse than the cheapest target. That was the overlay deciding
+// whether a move was worth playing, which is the player's job — see
+// computeForkData for what replaced it (one static fact: would the piece hang
+// there). Removed rather than left in place, so that grepping this file for
+// "does the board evaluate moves?" gets the honest answer.
 
 // ── Fork & Skewer detection ──────────────────────────────────────────────────
 const PIECE_VAL = {P:1, N:3, B:3, R:5, Q:9, K:100};
@@ -2410,19 +2367,13 @@ function computeForkData(bd, color, pinnedSqs) {
     const targets = attacks.filter(t => bd[t] && bd[t].color === opp);
     if (targets.length < 2) continue;
 
-    // Filter: only show if profitable
-    // Either: any target is undefended, OR combined value > forking piece value
-    const myVal = PIECE_VAL[p.piece] || 0;
-    // "Undefended" = no defender of the target's OWN colour (the opponent).
-    // Must be [opp], not [color]: directAtk[t][color] lists the forker's own
-    // attackers of t (and always includes the forking piece itself), so it is
-    // never empty — using it here silently suppressed every fork whose targets'
-    // combined value didn't exceed the forker (e.g. a knight forking two pawns).
-    const anyUndefended = targets.some(t => directAtk[t][opp].length === 0);
-    const combinedVal = targets.reduce((sum,t) => sum + (PIECE_VAL[bd[t].piece]||0), 0);
-    if (anyUndefended || combinedVal > myVal) {
-      result.current.push({ sq, targets });
-    }
+    // No profitability filter. There used to be one — show the fork only if a
+    // target is undefended or the targets outweigh the forker — and it was the
+    // overlay doing the player's job for them: deciding whether a fork was
+    // worth having. Two of the opponent's pieces attacked at once is a FACT
+    // about the position, and which facts matter is the player's call. A fork
+    // is a fork.
+    result.current.push({ sq, targets });
   }
 
   // ── Next-move forks ───────────────────────────────────────────────────────
@@ -2441,24 +2392,28 @@ function computeForkData(bd, color, pinnedSqs) {
       const targets = attacks2.filter(t => bd2[t] && bd2[t].color === opp);
       if (targets.length < 2) continue;
 
-      // Profitable fork filter. "Undefended" = no defender of the target's own
-      // colour ([opp]); [color] would count the forker's own attackers (never
-      // empty) and wrongly suppress low-combined-value forks.
-      const anyUndefended = targets.some(t => atk2[t][opp].length === 0);
-      const combinedVal = targets.reduce((sum,t) => sum + (PIECE_VAL[bd2[t].piece]||0), 0);
-      if (!anyUndefended && combinedVal <= myVal) continue;
+      // ── The only exclusion, and it is a fact rather than a judgement ─────
+      // Two evaluations used to live here: a "profitable fork" test comparing
+      // the targets' combined value against the forker, and a static-exchange
+      // score that dropped anything losing more than the cheapest target and
+      // otherwise sorted forks into gold and blue by whether the exchange came
+      // out ahead. Both answered "is this move good?" — which is the player's
+      // question, not the board's, and answering it quietly turned a vision
+      // overlay into a move suggester.
+      //
+      // What is left is one static fact about the landing square: after the
+      // move, is the piece attacked with nothing defending it? A fork that
+      // simply hangs the forker is not a fork anyone is choosing between, and
+      // drawing every one of them would bury the real ones — the board is
+      // crowded enough. Everything else is shown and left to the player.
+      const landAtt = atk2[toSq][opp].length;
+      const landDef = atk2[toSq][color].length;
+      if (landAtt > 0 && landDef === 0) continue;   // would simply hang there
 
-      // ── SEE filter: skip if landing square loses more than cheapest fork target ──
-      // e.g. queen moving to pawn-defended square = SEE heavily negative → not shown
-      const seeScore = seeLandingScore(toSq, p.piece, color, bd);
-      const cheapestTarget = targets.reduce(
-        (min,t) => Math.min(min, PIECE_VAL[bd2[t].piece]||0), 999);
-      if (seeScore < -cheapestTarget) continue; // catastrophic loss — skip entirely
-
-      // Classify by SEE result:
-      // SEE >= 0: landing square safe (or we gain material there) → gold fork symbol
-      // SEE < 0 but fork still worthwhile: contested → blue fork symbol
-      if (seeScore >= 0) {
+      // The two colours are now facts too, not verdicts:
+      //   green  — nothing attacks the landing square
+      //   blue   — it is attacked and defended; contested, and yours to judge
+      if (landAtt === 0) {
         result.safe.push({ from:sq, to:toSq, targets });
       } else {
         result.contested.push({ from:sq, to:toSq, targets });
@@ -2890,11 +2845,14 @@ loadSoundPref();
 loadBoardSettingsPref();
 // The phone furniture. All three no-op above the breakpoint: the tray is a
 // plain sidebar there, and the strip and the bar are display:none.
+// pinLoad() reads the saved overlay states, so it has to run before the first
+// indApply() paints anything.
 pinLoad();
 pinRender();
-bvTrayInit();
+visBindPanel();
 syncPhoneBar();
 ibBindHold();
+bsSyncAppearance();
 if(typeof ghostSyncUI === "function") ghostSyncUI();
 // Stockfish 1 is where a first visit should start: the quick block applies it
 // rather than inheriting the builder's own default of 8.
