@@ -27,27 +27,31 @@ const ok = (n, c, extra) => {
 
 const browser = await chromium.launch();
 
-async function open(w = 412, h = 915, mobile = true, seed) {
+async function open(w = 412, h = 915, mobile = true, seed, shell = 'amateur') {
   const ctx = await browser.newContext({
     viewport: { width: w, height: h }, deviceScaleFactor: 1,
     isMobile: mobile, hasTouch: mobile,
   });
-  await ctx.addInitScript(s => {
+  await ctx.addInitScript(a => {
     try {
       ['bm_bottour', 'bm_tour_pro', 'bm_tour_amateur'].forEach(k => localStorage.setItem(k, '1'));
-      localStorage.setItem('bm_shell', 'amateur');
+      localStorage.setItem('bm_shell', a.shell);
       localStorage.setItem('bm_welcomed', '1');
-      if (s) localStorage.setItem('bm_pins', s); else localStorage.removeItem('bm_pins');
+      if (a.seed) localStorage.setItem('bm_pins', a.seed); else localStorage.removeItem('bm_pins');
     } catch (e) {}
-  }, seed || null);
+  }, { seed: seed || null, shell });
   const page = await ctx.newPage();
   const errs = [];
   page.on('pageerror', e => errs.push(String(e)));
   page.on('console', m => { if (m.type() === 'error') errs.push('console: ' + m.text()); });
   await page.goto(BASE, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1600);
-  await page.evaluate(() => { try { if (!document.getElementById('bmWelcome').hidden) bmWelcomeChoose('solo'); } catch (e) {} });
-  await page.waitForTimeout(500);
+  await page.evaluate(() => {
+    try { if (!document.getElementById('bmWelcome').hidden) bmWelcomeChoose('solo'); } catch (e) {}
+    // The Expert shell opens on a full landing page, not on the board.
+    try { if (typeof landingDismiss === 'function') landingDismiss(); } catch (e) {}
+  });
+  await page.waitForTimeout(600);
   return { ctx, page, errs };
 }
 
@@ -445,7 +449,158 @@ console.log('\n11   Board settings');
   await ctx.close();
 }
 
-console.log('\n12   Desktop is untouched');
+console.log('\n12   The panel is two up, and sized to what it holds');
+{
+  const { ctx, page, errs } = await open();
+  await page.evaluate(() => visPanelOpen());
+  await page.waitForTimeout(350);
+  const g = await page.evaluate(() => {
+    const card = document.getElementById('visCard').getBoundingClientRect();
+    const rows = [...document.querySelectorAll('#visList .vis-row')];
+    const lefts = new Set(rows.map(r => Math.round(r.getBoundingClientRect().left)));
+    const wide = rows.filter(r => r.classList.contains('vis-wide'));
+    return {
+      cols: getComputedStyle(document.getElementById('visList')).gridTemplateColumns.split(' ').length,
+      distinctLefts: lefts.size,
+      wide: wide.map(r => r.id),
+      cardTop: Math.round(card.top), cardH: Math.round(card.height), vh: innerHeight,
+      cardLeft: Math.round(card.left), vw: innerWidth,
+      clipped: rows.filter(r => { const n = r.querySelector('.vis-nm'); return n.scrollWidth > n.clientWidth + 1; }).length,
+      minH: Math.min(...rows.map(r => Math.round(r.getBoundingClientRect().height))),
+    };
+  });
+  ok('the list is a two-column grid', g.cols === 2, String(g.cols));
+  ok('and the rows actually sit in two columns', g.distinctLefts === 2, String(g.distinctLefts));
+  ok('the one overlay with no pair spans the row',
+    JSON.stringify(g.wide) === '["vis-checkthreats"]', JSON.stringify(g.wide));
+  ok('it does not stretch to the full height of the screen',
+    g.cardH < g.vh * 0.85, g.cardH + ' of ' + g.vh);
+  ok('it leaves the top of the screen free', g.cardTop > g.vh * 0.2,
+    g.cardTop + ' of ' + g.vh);
+  ok('and the left edge', g.cardLeft > 0, g.cardLeft + ' of ' + g.vw);
+  ok('no name is clipped in a half-width cell', g.clipped === 0, String(g.clipped));
+  ok('rows are still a real touch target', g.minH >= 44, g.minH + 'px');
+  ok('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
+  await ctx.close();
+}
+
+console.log('\n13   Flip turns the pieces, not just the squares');
+{
+  const { ctx, page, errs } = await open();
+  // Sample the top-left square of the canvas. Unflipped it holds a black rook;
+  // flipped it must hold a white one. The bug this guards against had render()
+  // asking boardViewFlipped() while sqCanvas/sqXY read boardFlipped directly,
+  // so the board turned under the pieces and left them where they were.
+  const px = () => page.evaluate(() => {
+    const cv = document.getElementById('cv');
+    const s = cv.width / 8;
+    const d = cv.getContext('2d').getImageData(Math.round(s * 0.5), Math.round(s * 0.5), 1, 1).data;
+    return [d[0], d[1], d[2]];
+  });
+  const before = await px();
+  await page.evaluate(() => { flipPerspective(); render(); });
+  await page.waitForTimeout(250);
+  const after = await px();
+  ok('a1 corner holds a dark piece to begin with', before[0] < 90, JSON.stringify(before));
+  ok('and a light one once flipped', after[0] > 180, JSON.stringify(after));
+  ok('boardViewFlipped agrees', await page.evaluate(() => boardViewFlipped()) === true);
+  await page.evaluate(() => { flipPerspective(); render(); });
+  await page.waitForTimeout(250);
+  ok('flipping back restores it', JSON.stringify(await px()) === JSON.stringify(before));
+  ok('nothing reads boardFlipped behind the helper’s back',
+    await page.evaluate(() => /boardViewFlipped/.test(sqCanvas.toString()) &&
+                              /boardViewFlipped/.test(sqXY.toString())));
+  ok('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
+  await ctx.close();
+}
+
+console.log('\n14   The Expert board');
+for (const [w, h, label] of [[412, 915, 'phone'], [1440, 900, 'desktop']]) {
+  const { ctx, page, errs } = await open(w, h, w < 761, null, 'pro');
+  await page.evaluate(() => { quickBotPick('1'); botSetPlayerColor('white'); quickBotStart(); });
+  await page.waitForTimeout(2200);
+
+  const g = await page.evaluate(() => {
+    const r = i => { const e = document.getElementById(i); return e ? e.getBoundingClientRect() : null; };
+    return {
+      proMode,
+      topH: Math.round(r('proPlayerTop').height),
+      botH: Math.round(r('proPlayerBottom').height),
+      chipTop: r('proChipMount') ? Math.round(r('proChipMount').getBoundingClientRect ? 0 : 0) : null,
+      chipY: r('proChipMount') ? Math.round(r('proChipMount').top) : null,
+      ownClockY: Math.round(r('proPlayerBottom').top),
+      gearGone: !document.getElementById('proGearMenu'),
+      steps: (startTour(), _tourSteps.map(s => s.title)),
+    };
+  });
+  ok(label + ': the two clock rows are the same height', g.topH === g.botH, g.topH + ' vs ' + g.botH);
+  ok(label + ': and neither is a tall slab', g.topH <= 56, g.topH + 'px');
+  ok(label + ': the commit chip sits below your own row', g.chipY >= g.ownClockY,
+    'chip@' + g.chipY + ' row@' + g.ownClockY);
+  ok(label + ': the redundant gear menu is gone', g.gearGone);
+  ok(label + ': the tour has all four steps', g.steps.length === 4, JSON.stringify(g.steps));
+
+  // Clicking away ends it. "Away" has to be computed: the panel is full-width
+  // on a phone and moves per step, so a fixed point is sometimes on it — which
+  // is the reason the tour also carries a ✕ now.
+  const away = await page.evaluate(() => {
+    const p = document.getElementById('tourPanel').getBoundingClientRect();
+    // Somewhere vertically clear of the panel, inside the viewport.
+    const y = p.top > 120 ? Math.round(p.top / 2) : Math.round((p.bottom + innerHeight) / 2);
+    return { x: Math.round(innerWidth / 2), y: Math.min(Math.max(y, 8), innerHeight - 8) };
+  });
+  await page.mouse.click(away.x, away.y);
+  await page.waitForTimeout(300);
+  const after = await page.evaluate(() => ({
+    active: _tourActive,
+    overlay: getComputedStyle(document.getElementById('tourOverlay')).display,
+    ring: getComputedStyle(document.getElementById('tourRing')).display,
+    back: document.getElementById('tourBackdrop')
+      ? getComputedStyle(document.getElementById('tourBackdrop')).display : 'none',
+  }));
+  ok(label + ': clicking away ends the tour', after.active === false);
+  ok(label + ': and clears everything it put up',
+    after.overlay === 'none' && after.ring === 'none' && after.back === 'none',
+    JSON.stringify(after));
+
+  // And the ✕ always works, wherever the panel happens to be sitting.
+  await page.evaluate(() => startTour());
+  await page.waitForTimeout(250);
+  await page.click('#tourPanel .tour-x');
+  await page.waitForTimeout(300);
+  ok(label + ': the ✕ closes it too',
+    await page.evaluate(() => _tourActive === false &&
+      getComputedStyle(document.getElementById('tourOverlay')).display === 'none'));
+
+  // Settings: the same panel, minus what the Expert board cannot use.
+  await page.evaluate(() => openPanel('boardSettingsPanel'));
+  await page.waitForTimeout(350);
+  const st = await page.evaluate(() => ({
+    rows: [...document.querySelectorAll('#boardSettingsPanel .bs-row')]
+      .map(b => b.querySelector('.bs-row-k').textContent.trim()),
+    checks: [...document.querySelectorAll('#boardSettingsPanel .s-row')]
+      .filter(r => getComputedStyle(r).display !== 'none')
+      .map(r => r.querySelector('.s-lbl').textContent.trim().replace(/\?$/, '')),
+    ghost: getComputedStyle(document.querySelector('#boardSettingsPanel .bs-group.bs-vision')).display,
+    board: document.getElementById('bsBoardVal').textContent,
+  }));
+  ok(label + ': sound and legal moves are reachable at last',
+    st.checks.includes('🔊 Move sounds:') && st.checks.includes('Show legal moves:'),
+    JSON.stringify(st.checks));
+  ok(label + ': ghost replies are not offered here', st.ghost === 'none', st.ghost);
+  ok(label + ': nor the two threat-counting rules',
+    !st.checks.some(c => /Batteries|queen pins/i.test(c)), JSON.stringify(st.checks));
+  ok(label + ': nor the influence overlay, which draws nothing here',
+    !st.checks.some(c => /influence/i.test(c)), JSON.stringify(st.checks));
+  ok(label + ': Appearance names the board, pieces and theme',
+    st.rows.slice(0, 3).join('|') === 'Board|Piece style|Board & background', JSON.stringify(st.rows));
+  ok(label + ': and it says which board you are on', /Expert Board/.test(st.board), st.board);
+  ok(label + ': the tour has a home here now', st.rows.some(r => /tour/i.test(r)), JSON.stringify(st.rows));
+  ok(label + ': no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
+  await ctx.close();
+}
+
+console.log('\n15   Desktop is untouched');
 for (const [w, h] of [[1440, 900], [1366, 600]]) {
   const { ctx, page, errs } = await open(w, h, false);
   const d = await page.evaluate(() => {

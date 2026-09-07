@@ -1168,17 +1168,24 @@ function visRender(){
     const row = document.createElement('button');
     row.type = 'button';
     row.id = 'vis-' + k;
-    row.className = 'vis-row';
+    // The one overlay with no opposite number spans the pair, so the grid does
+    // not carry a hole. Everything else comes in mine/theirs couples.
+    row.className = 'vis-row' + (k === 'checkthreats' ? ' vis-wide' : '');
     const tick = document.createElement('span');
     tick.className = 'vis-tick';
     tick.textContent = '✓';
     tick.setAttribute('aria-hidden', 'true');
+    const txt = document.createElement('span');
+    txt.className = 'vis-txt';
     const nm = document.createElement('span');
     nm.className = 'vis-nm';
-    nm.textContent = pinLabel(k, true);
+    // Short name in the cell, full name in the accessible name — a half-width
+    // cell cannot hold "Opponent's discovered attacks" without an ellipsis.
+    nm.textContent = pinLabel(k, false);
     const st = document.createElement('span');
     st.className = 'vis-st';
-    row.appendChild(tick); row.appendChild(nm); row.appendChild(st);
+    txt.appendChild(nm); txt.appendChild(st);
+    row.appendChild(tick); row.appendChild(txt);
     row.addEventListener('click', function(){ visCycle(k); });
     list.appendChild(row);
     visPaintRow(k);
@@ -1441,9 +1448,16 @@ function phoneChatOpen(){
 let viewFlip = false;
 
 function boardViewFlipped(){
-  const seat = (typeof boardFlipped !== 'undefined' && boardFlipped) ||
-               (typeof mpRole !== 'undefined' && mpRole === 'black' &&
-                typeof mpInGame === 'function' && mpInGame());
+  // `boardFlipped` is a `let` in 30-board-ui.js and this is called from
+  // 20-chess-core.js, which sits between them in the concatenation — so the
+  // read is guarded rather than direct. typeof on a let in its temporal dead
+  // zone still throws, hence the try.
+  let seat = false;
+  try {
+    seat = (typeof boardFlipped !== 'undefined' && boardFlipped) ||
+           (typeof mpRole !== 'undefined' && mpRole === 'black' &&
+            typeof mpInGame === 'function' && mpInGame());
+  } catch(e) { return false; }
   return viewFlip ? !seat : seat;
 }
 
@@ -1564,7 +1578,6 @@ function setShell(mode){
     proApplyBoardClean();   // slate board + indicators off (minimal look)
     proSync();
   } else {
-    const gm = document.getElementById('proGearMenu'); if(gm) gm.style.display = 'none';
     proUnmountChat();
     proUnmountChip();
     proRestoreBoard();
@@ -1581,10 +1594,10 @@ function setShell(mode){
 }
 function toggleShell(){ setShell(proMode ? 'amateur' : 'pro'); }
 
-function proToggleGear(){
-  const m = document.getElementById('proGearMenu');
-  if(m) m.style.display = (m.style.display === 'none' || !m.style.display) ? 'flex' : 'none';
-}
+// proToggleGear() lived here. The menu it opened held six items, five of which
+// were already buttons on the same column — so "More" led to a copy of the
+// screen you were looking at. ⚙ opens Board settings now, and the tour, the one
+// item with nowhere else to be, is a row in it.
 
 function proFlipBoard(){
   if(typeof boardFlipped !== 'undefined') boardFlipped = !boardFlipped;
@@ -1915,14 +1928,21 @@ const TOURS = {
       body:'Click the Blundermind logo anytime to return Home and switch between the Beginner and Expert boards.' },
   ],
   pro: [
-    { sel:'#proSide', title:'The Expert board',
+    // selPhone: the same step, aimed at something that HAS a box at phone
+    // width. #proSide is display:contents there (the column dissolves so its
+    // parts can be ordered around the board), and a step whose target has no
+    // geometry is dropped by the filter in startTour() — which is how the
+    // Expert tour came to be one step long on a phone: of its four targets,
+    // #proSide and #proMoves had no box and .pro-actions resolved to the
+    // hidden idle row, leaving only the commit chip.
+    { sel:'#proSide', selPhone:'#proPlayerTop', title:'The Expert board',
       body:'A clean tournament view — minimal chrome, live notation, and no coaching overlays.' },
     { sel:'#commitModeChip', title:'How your moves get played',
       body:'Under your clock: <b>✋ Release to move</b> plays the move as soon as you let go. <b>👆 Tap to confirm</b> parks the piece on the square first, so you can sit with the position for a moment — and take your finger off a touchscreen — before a second tap commits it. Tapping a different square moves the parked piece there instead. Worth having on for phone play and in time scrambles, where a mis-drop costs a game. Tap the chip to switch, even mid-game.' },
-    { sel:'.pro-actions', title:'Board controls',
-      body:'Resign, offer a draw, flip the board, or open the 🎨 style palette — where you can also switch back to the Training board. The ⚙ menu has more: a bot game, 2-player, save/load.' },
-    { sel:'#proMoves', title:'Move list',
-      body:'Your game notation updates here live as you play.' },
+    { sel:'#proLiveActions', title:'Board controls',
+      body:'Resign, offer a draw, flip the board, or open the 🎨 style palette. <b>⚙ opens Board settings</b> — move sounds, legal-move dots, which board you are on and which pieces it uses.' },
+    { sel:'#proMoves', selPhone:'#proNotationHd', title:'Move list',
+      body:'Your game notation updates here live as you play. On a phone it is collapsed to this header — tap it to open the list, and the header itself keeps showing the last few moves.' },
   ],
 };
 
@@ -2120,9 +2140,13 @@ function startTour(opts){
     ? [_TOUR_LANDING_STEP].concat(TOURS[_tourShell] || [])
     : (TOURS[_tourShell] || []);
   // Keep only steps whose target is present and visible (drops hidden chrome).
+  // _tourSel picks selPhone at phone width, so a step is only dropped when it
+  // genuinely has nothing to point at rather than when its desktop target
+  // happens to be laid out differently here.
   _tourSteps = all.filter(s => {
-    if(!s.sel) return true;
-    const el = document.querySelector(s.sel);
+    const sel = _tourSel(s);
+    if(!sel) return true;
+    const el = document.querySelector(sel);
     return el && el.getBoundingClientRect().width > 0;
   });
   if(!_tourSteps.length) return;
@@ -2195,6 +2219,15 @@ function tourGoBotTour(){
 function endTour(completed){
   _tourActive = false;
   const ov = document.getElementById('tourOverlay');
+  // The ring and the backdrop are set per step and were never cleared here —
+  // only the overlay above them was hidden. Clear them explicitly so a tour
+  // that is skipped leaves nothing behind, whichever way it was skipped.
+  const _ring = document.getElementById('tourRing');
+  if(_ring) _ring.style.display = 'none';
+  const _back = document.getElementById('tourBackdrop');
+  if(_back) _back.style.display = 'none';
+  _tourExploring = false;
+  if(_tourModeTimer){ clearInterval(_tourModeTimer); _tourModeTimer = null; }
   if(_tourShell === 'amateur') _tourRestoreBoard();
   _tourRestoreBoardSettings();
   try{ localStorage.setItem('bm_tour_' + _tourShell, '1'); }catch(e){}
@@ -2218,6 +2251,14 @@ function tourPrev(){ if(_tourIdx > 0){ _tourIdx--; _renderTourStep(); } }
 // button — there both are on screen at once, and the real one is better.
 // Steps 4-6 introduce the grid itself rather than an overlay, and have no
 // `ind`, so they still point where they should.
+// Which selector this step should point at, at this width. A step without a
+// selPhone uses its one selector everywhere.
+function _tourSel(step){
+  if(!step) return null;
+  if(step.selPhone && window.matchMedia('(max-width:760px)').matches) return step.selPhone;
+  return step.sel || null;
+}
+
 function _tourBoardFocus(step){
   return !!(step && (step.ind || step.explore)) &&
          window.innerWidth <= 760 &&
@@ -2228,7 +2269,8 @@ function _tourBoardFocus(step){
 // the step just put it in — so the lit button in the panel matches the overlay
 // now on the board.
 function _tourControlReplica(step){
-  const src = step && step.sel ? document.querySelector(step.sel) : null;
+  const _sel = _tourSel(step);
+  const src = _sel ? document.querySelector(_sel) : null;
   if(!src) return '';
   const clone = src.cloneNode(true);
   // Ids would be duplicated into the document, and handlers would make a
@@ -2284,9 +2326,10 @@ function _renderTourStep(){
   // Cloned after the indicator block above has lit the control, so the copy in
   // the panel is in the same state as the overlay now on the board.
   const boardFocus = _tourBoardFocus(step);
+  const _sel = _tourSel(step);
   const el = boardFocus
     ? document.getElementById('cv')
-    : (step.sel ? document.querySelector(step.sel) : null);
+    : (_sel ? document.querySelector(_sel) : null);
   // On a phone the overlay controls are not in the page at all — they are in
   // the board-vision panel, and the sidebar copies are display:none. A step
   // pointing at one would ring a box with no layout, so open the panel and

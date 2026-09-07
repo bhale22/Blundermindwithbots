@@ -11,12 +11,21 @@ function parseFen(fen){
 function fileRankToSq(s){if(!s||s.length<2)return -1;const c=s.charCodeAt(0)-97,r=8-parseInt(s[1]);return r*8+c;}
 function sqName(sq){return String.fromCharCode(97+sq%8)+(8-Math.floor(sq/8));}
 function sqRC(sq){return{r:Math.floor(sq/8),c:sq%8};}
-// For rendering — pixel center of square, accounting for board flip
+// ── Where a square lands on the canvas ──────────────────────────────────────
+// Both of these ask boardViewFlipped() rather than reading boardFlipped, and
+// that is the whole point. There used to be four hand-rolled copies of the
+// flip rule — here, in sqCanvas below, in render() and in the ghost layer —
+// and no two of them agreed: one tested `mpRole==='black'`, one added
+// `mpRoomId!==null`, one was a bare `boardFlipped`. render()'s copy drew the
+// squares, the last-move highlight and the coordinates; these two placed the
+// pieces and every overlay on top of them. So a view flip turned the board
+// underneath and left the pieces where they were.
+//
+// boardViewFlipped() is the single answer to "which way round is this board
+// drawn", seat and user flip together. Do not inline it again.
 function sqXY(sq){
   const {r,c}=sqRC(sq);
-  // Flip for boardFlipped (bot game as black) OR multiplayer black role
-  const _fl=(typeof boardFlipped!=='undefined'&&boardFlipped)||
-            (typeof mpRole!=='undefined'&&mpRole==='black');
+  const _fl=boardViewFlipped();
   const dc=_fl?7-c:c;
   const dr=_fl?7-r:r;
   return {x:dc*SQ+SQ/2, y:dr*SQ+SQ/2};
@@ -24,10 +33,7 @@ function sqXY(sq){
 // Row/col on canvas for a given square (for fillRect etc)
 function sqCanvas(sq){
   const {r,c}=sqRC(sq);
-  // Flip for boardFlipped (bot game as black) OR multiplayer black role
-  const _fl=(typeof boardFlipped!=='undefined'&&boardFlipped)||
-            (typeof mpRole!=='undefined'&&mpRole==='black'&&
-             typeof mpRoomId!=='undefined'&&mpRoomId!==null);
+  const _fl=boardViewFlipped();
   return {r:_fl?7-r:r, c:_fl?7-c:c};
 }
 function rcSq(r,c){return r*8+c;}
