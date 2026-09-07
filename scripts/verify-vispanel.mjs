@@ -595,12 +595,230 @@ for (const [w, h, label] of [[412, 915, 'phone'], [1440, 900, 'desktop']]) {
   ok(label + ': Appearance names the board, pieces and theme',
     st.rows.slice(0, 3).join('|') === 'Board|Piece style|Board & background', JSON.stringify(st.rows));
   ok(label + ': and it says which board you are on', /Expert Board/.test(st.board), st.board);
-  ok(label + ': the tour has a home here now', st.rows.some(r => /tour/i.test(r)), JSON.stringify(st.rows));
+  // The tour is a button at the top of every page, so a second copy inside a
+  // settings panel was one more thing to read past.
+  ok(label + ': the tour is not duplicated here', !st.rows.some(r => /tour/i.test(r)), JSON.stringify(st.rows));
+  ok(label + ': it is at the top of the page instead',
+    await page.evaluate(() => {
+      const b = [...document.querySelectorAll('#site-header button, #headerBtnGroup button')]
+        .find(x => /tour/i.test(x.textContent));
+      return !!b && b.getBoundingClientRect().width > 0;
+    }));
   ok(label + ': no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
   await ctx.close();
 }
 
-console.log('\n15   Desktop is untouched');
+console.log('\n15   The overlay strip');
+{
+  const { ctx, page, errs } = await open();
+  const few = await page.evaluate(() => {
+    visPanelOpen(); visClearAll();
+    ['threats','counts'].forEach(k => { visCycle(k); visCycle(k); });
+    visPanelClose();
+    const box = document.getElementById('pinChips');
+    const tops = new Set([...box.querySelectorAll('.pin-chip')].map(c => Math.round(c.getBoundingClientRect().top)));
+    return { rows: tops.size, label: !document.querySelector('.pin-lbl').hidden };
+  });
+  ok('two chips stay on one row', few.rows === 1, String(few.rows));
+  ok('the strip is labelled', few.label);
+
+  const many = await page.evaluate(() => {
+    ['unprotected','pins','checkthreats','forksw'].forEach(k => { visCycle(k); visCycle(k); });
+    const box = document.getElementById('pinChips');
+    const chips = [...box.querySelectorAll('.pin-chip')];
+    const tops = [...new Set(chips.map(c => Math.round(c.getBoundingClientRect().top)))].sort((a,b)=>a-b);
+    // Row-major: the first three pinned sit on the top row, in order.
+    const row0 = chips.filter(c => Math.round(c.getBoundingClientRect().top) === tops[0]).map(c => c.id.slice(4));
+    return { rows: tops.length, row0, order: pinnedInds.slice(),
+             scrollable: box.scrollWidth > box.clientWidth + 1 };
+  });
+  ok('six chips take two rows', many.rows === 2, String(many.rows));
+  ok('the top row is filled first, in the order they were pinned',
+    JSON.stringify(many.row0) === JSON.stringify(many.order.slice(0, many.row0.length)),
+    JSON.stringify(many.row0) + ' of ' + JSON.stringify(many.order));
+  ok('and the overflow scrolls sideways rather than wrapping to a third row',
+    many.scrollable, String(many.scrollable));
+
+  const floor = await page.evaluate(() => ({
+    tips: getComputedStyle(document.getElementById('btnTips')).display,
+    save: getComputedStyle(document.getElementById('btnSavePgn')).display,
+    barSave: getComputedStyle(document.getElementById('pbSave')).display,
+  }));
+  ok('Training Tips and the floor Save are gone from the phone',
+    floor.tips === 'none' && floor.save === 'none', JSON.stringify(floor));
+  ok('but Save is still on the game bar', floor.barSave !== 'none', floor.barSave);
+  ok('and Training Tips has a door in the panel',
+    await page.evaluate(() => !!document.querySelector('.vis-tips')));
+  ok('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
+  await ctx.close();
+}
+
+console.log('\n16   Nothing has to be scrolled to');
+{
+  for (const [w, h] of [[412, 915], [390, 844], [360, 740]]) {
+    const { ctx, page, errs } = await open(w, h);
+    await page.evaluate(() => visPanelOpen());
+    await page.waitForTimeout(350);
+    const v = await page.evaluate(() => {
+      const l = document.getElementById('visList');
+      return { scrolls: l.scrollHeight > l.clientHeight + 2 };
+    });
+    ok(`${w}x${h}: the overlay list needs no scrolling`, !v.scrolls);
+    await page.evaluate(() => { visPanelClose(); openPanel('boardSettingsPanel'); });
+    await page.waitForTimeout(350);
+    const b = await page.evaluate(() => {
+      const body = document.querySelector('#boardSettingsPanel .panel-body');
+      return { scrolls: body.scrollHeight > body.clientHeight + 2 };
+    });
+    ok(`${w}x${h}: board settings needs no scrolling`, !b.scrolls);
+    ok(`${w}x${h}: no page errors`, errs.length === 0, errs.slice(0, 2).join(' | '));
+    await ctx.close();
+  }
+}
+
+console.log('\n17   Pressing a chip does not flash while you scroll');
+{
+  const { ctx, page, errs } = await open();
+  await page.evaluate(() => {
+    visPanelOpen(); visClearAll();
+    ['threats','counts','unprotected','pins','checkthreats','forksw'].forEach(k => { visCycle(k); visCycle(k); });
+    visPanelClose();
+  });
+  await page.waitForTimeout(400);
+  const box = await page.evaluate(() => {
+    const c = document.getElementById('pin-threats').getBoundingClientRect();
+    return { x: Math.round(c.x + c.width / 2), y: Math.round(c.y + c.height / 2) };
+  });
+  // Drag sideways across the chip, as if scrolling the strip. The overlay must
+  // never be drawn on the way past.
+  await page.evaluate(() => { window.__flashes = 0;
+    const o = indApply;
+    window.indApply = function(){ if (IND.threats.pressing) window.__flashes++; return o.apply(this, arguments); };
+  });
+  await page.mouse.move(box.x, box.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) await page.mouse.move(box.x - i * 12, box.y, { steps: 1 });
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  const drag = await page.evaluate(() => ({
+    flashes: window.__flashes, pressing: IND.threats.pressing,
+    state: visState('threats'),
+  }));
+  ok('a drag across a chip never lights its overlay', drag.flashes === 0, String(drag.flashes));
+  ok('and leaves the state alone', drag.state === 2, String(drag.state));
+  ok('and does not leave it stuck pressed', drag.pressing === false);
+
+  // A real press still peeks.
+  await page.mouse.move(box.x, box.y);
+  await page.mouse.down();
+  await page.waitForTimeout(500);
+  const held = await page.evaluate(() => ({
+    pressing: IND.threats.pressing,
+    cls: document.getElementById('pin-threats').className,
+  }));
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  ok('a press that stays put still peeks', held.pressing === true && /pressing/.test(held.cls),
+    JSON.stringify(held));
+  ok('and reverts on release', await page.evaluate(() => visState('threats') === 2 && !IND.threats.pressing));
+  ok('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
+  await ctx.close();
+}
+
+console.log('\n18   Swiping a panel away works over its buttons');
+{
+  const { ctx, page, errs } = await open();
+  await page.evaluate(() => visPanelOpen());
+  await page.waitForTimeout(350);
+  // Start the swipe ON a row, which is exactly where it used to fail.
+  const row = await page.evaluate(() => {
+    const r = document.getElementById('vis-pins').getBoundingClientRect();
+    return { x: Math.round(r.x + 30), y: Math.round(r.y + r.height / 2), st: visState('pins') };
+  });
+  await page.mouse.move(row.x, row.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 12; i++) await page.mouse.move(row.x + i * 18, row.y, { steps: 1 });
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  const after = await page.evaluate(() => ({
+    open: !document.getElementById('visPanel').hidden &&
+          document.getElementById('visPanel').classList.contains('in'),
+    st: visState('pins'),
+  }));
+  ok('a swipe starting on a row still closes the panel', after.open === false);
+  ok('and does not toggle the row it started on', after.st === row.st,
+    row.st + ' → ' + after.st);
+
+  // Board settings swipes away too.
+  await page.evaluate(() => openPanel('boardSettingsPanel'));
+  await page.waitForTimeout(350);
+  const sp = await page.evaluate(() => {
+    const r = document.getElementById('boardSettingsPanel').getBoundingClientRect();
+    return { x: Math.round(r.x + 40), y: Math.round(r.y + 60) };
+  });
+  await page.mouse.move(sp.x, sp.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 12; i++) await page.mouse.move(sp.x + i * 18, sp.y, { steps: 1 });
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  ok('board settings swipes away as well',
+    await page.evaluate(() => !document.getElementById('boardSettingsPanel').classList.contains('open')));
+  ok('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
+  await ctx.close();
+}
+
+console.log('\n19   The style palette opens on the half it was asked for');
+{
+  const { ctx, page, errs } = await open();
+  const heads = () => page.evaluate(() =>
+    [...document.querySelectorAll('#themePanel h3')].filter(h => h.offsetParent !== null).map(h => h.textContent.trim()));
+  await page.evaluate(() => openThemePanel('pieces'));
+  await page.waitForTimeout(350);
+  ok('Piece style shows only pieces',
+    JSON.stringify(await heads()) === '["Piece style"]', JSON.stringify(await heads()));
+  ok('and says so', await page.evaluate(() => document.getElementById('themePanelTitle').textContent) === 'Piece style');
+  await page.evaluate(() => openThemePanel('board'));
+  await page.waitForTimeout(350);
+  ok('Board & background shows format, board and background',
+    JSON.stringify(await heads()) === '["Format","Board colors","Background"]', JSON.stringify(await heads()));
+  ok('and neither view offers the Training/Expert switch, which is a row above',
+    await page.evaluate(() => !document.querySelector('#themePanel [data-shell-btn]')));
+  ok('the tour row is gone from Board settings',
+    await page.evaluate(() => ![...document.querySelectorAll('#boardSettingsPanel .bs-row-k')]
+      .some(e => /tour/i.test(e.textContent))));
+  ok('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
+  await ctx.close();
+}
+
+console.log('\n20   Desktop grid carries the same marks');
+{
+  const { ctx, page, errs } = await open(1440, 900, false);
+  const m = await page.evaluate(() => {
+    const g = () => getComputedStyle(document.querySelector('#ib-pins .ib-main'), '::before');
+    IND.pins.on = false; IND.pins.pre = false; ibUpdateUI('pins');
+    const off = { c: g().content, bg: g().backgroundColor, col: g().color };
+    IND.pins.pre = true; ibUpdateUI('pins');
+    const pre = { c: g().content, bg: g().backgroundColor, col: g().color };
+    IND.pins.on = true; ibUpdateUI('pins');
+    const on = { c: g().content, bg: g().backgroundColor, col: g().color };
+    return { off, pre, on,
+      clip: Math.max(...[...document.querySelectorAll('.ind-grid .ib-lbl')].map(e => e.scrollWidth - e.clientWidth)),
+      key: document.querySelector('.ind-key-g').textContent };
+  });
+  ok('off is a "+"', /\+/.test(m.off.c), m.off.c);
+  ok('while exploring is a white tick on green',
+    /✓/.test(m.pre.c) && m.pre.bg === 'rgb(34, 168, 90)' && m.pre.col === 'rgb(255, 255, 255)',
+    JSON.stringify(m.pre));
+  ok('always on is a dark tick on the same green',
+    /✓/.test(m.on.c) && m.on.bg === 'rgb(34, 168, 90)' && m.on.col !== 'rgb(255, 255, 255)',
+    JSON.stringify(m.on));
+  ok('no label clips to make room for it', m.clip === 0, 'worst ' + m.clip + 'px');
+  ok('the key under the grid describes them', /\+/.test(m.key) && /✓/.test(m.key), m.key);
+  ok('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
+  await ctx.close();
+}
+
+console.log('\n21   Desktop is untouched');
 for (const [w, h] of [[1440, 900], [1366, 600]]) {
   const { ctx, page, errs } = await open(w, h, false);
   const d = await page.evaluate(() => {

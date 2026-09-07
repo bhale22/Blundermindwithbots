@@ -248,7 +248,7 @@ canvas{
    gives back is what pays for 8.5px → 13px type at the same block height. */
 .ib{display:flex;flex-direction:column;gap:0px;user-select:none;width:100%;}
 .ib-main{
-  padding:4px 7px;display:flex;align-items:center;gap:6px;
+  padding:4px 6px;display:flex;align-items:center;gap:6px;
   /* 13px, up from 11: dropping the icon slot returned 8px of chip plus its 6px
      gap, and the label is the only thing in this row that carries meaning, so
      it gets the space. 13 is the measured ceiling, not a guess — with every
@@ -271,6 +271,40 @@ canvas{
      long press as a callout/selection or steal it for a scroll on slight drift. */
   touch-action:manipulation;-webkit-touch-callout:none;
 }
+/* ── The state marker ─────────────────────────────────────────────────────
+   The same tick the board-vision panel uses on a phone, minus its fourth
+   state: these buttons are always beside the board, so "selected but not
+   drawing" has nothing to mean here.
+
+     off              +  in a grey ring    — nothing drawn
+     while exploring  ✓  white on green    — drawn while you explore a move
+     always on        ✓  BLACK on green    — drawn all the time
+
+   Two channels for one fact. The three fills differ by 10-14% alpha over the
+   same panel colour and the key decoding them sits below the buttons, so tint
+   alone asks you to hold two things in view at once; the marker survives
+   sunlight, colour blindness and a legend nobody read. The plus also says the
+   thing a bare circle did not: this is a control you add. */
+.ib-main::before{
+  content:'+';
+  flex:0 0 auto;align-self:center;
+  width:17px;height:17px;border-radius:50%;
+  display:inline-flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:700;line-height:1;
+  background:var(--bg-panel);border:0.5px solid var(--border2);color:var(--text-dim);
+}
+.ib.pre .ib-main::before{
+  content:'\2713';
+  background:var(--st-on-bd,#22a85a);border-color:var(--st-on-bd,#22a85a);color:#fff;
+}
+.ib.on .ib-main::before{
+  content:'\2713';
+  background:var(--st-on-bd,#22a85a);border-color:var(--st-on-bd,#22a85a);color:#08130c;
+}
+/* A peek is not a state you are in, it is a state you are borrowing — so the
+   marker keeps reporting what you will still have when you let go, and only
+   the button around it goes cyan. */
+
 .ib-main:hover{border-color:var(--border);color:var(--text-secondary);}
 /* The peek only arms after IB_HOLD_MS; :active covers the gap so a plain click
    still feels like it landed. */
@@ -1644,6 +1678,17 @@ canvas{
 }
 .pin-chip.pressing::before{content:'\25C9';color:#15597f;}
 
+/* On a short screen the rows give up height before the list gives up being
+   fully visible — scrolling a grid of thirteen toggles is the thing this
+   panel exists to avoid. */
+@media (max-height:720px){
+  .vis-row{ min-height:44px;padding:4px 8px; }
+  .vis-row .vis-nm{ font-size:11.5px; }
+  .vis-list{ gap:4px; }
+  .vis-h{ padding:10px 12px 4px; }
+  .vis-sub{ padding:0 12px 6px; }
+}
+
 /* ── Board-vision panel ────────────────────────────────────────────────────
    A right-side sheet, on the same idiom as .slide-panel but with its own
    geometry: it is a list of thirteen 44px targets and a footer, so it wants
@@ -1666,7 +1711,10 @@ canvas{
      shape as #boardSettingsPanel, so the two feel like one family. */
   position:absolute;right:0;bottom:0;
   width:min(420px,88vw);
-  max-height:76vh;
+  /* Thirteen overlays two-up is seven grid rows; with the header and the
+     footer that comes to about 530px, which fits a phone screen without
+     scrolling. The cap is a backstop for short viewports, not the usual case. */
+  max-height:88vh;
   box-sizing:border-box;
   display:flex;flex-direction:column;
   background:var(--bg-panel);
@@ -1708,9 +1756,16 @@ canvas{
 }
 .vis-sub{
   padding:0 14px 8px;flex:0 0 auto;
+  display:flex;align-items:baseline;gap:8px;
   font-size:10.5px;line-height:1.45;color:var(--text-dim);
 }
-.vis-sub.armed{color:#15597f;font-weight:600;}
+#visSub{flex:1 1 auto;min-width:0;}
+#visSub.armed{color:#15597f;font-weight:600;}
+.vis-tips{
+  flex:0 0 auto;background:none;border:none;padding:0;cursor:pointer;
+  font-family:inherit;font-size:10.5px;color:var(--accent);
+  text-decoration:underline;text-underline-offset:2px;
+}
 /* Two up. This is what made the panel read as a control surface rather than a
    settings list: thirteen full-width rows is a column you scroll, while two
    columns of short names is a keypad you scan. The names are the short forms
@@ -1801,6 +1856,15 @@ canvas{
 }
 .vis-act.danger{border-color:var(--st-danger-bd,rgba(110,26,26,0.6));color:#a05050;}
 
+/* Which half of the palette this view is about. */
+#themePanel[data-view="pieces"] .tv-board{ display:none; }
+#themePanel[data-view="board"]  .tv-pieces{ display:none; }
+
+/* Every slide-in panel can be swiped away to the right, not just the two that
+   were built this month — the gesture is bound in bindPanelSwipe() to each of
+   them, and this is the class it toggles while a finger is on one. */
+.slide-panel.panel-dragging{ transition:none; }
+
 /* ── Board settings: sized to what it holds ────────────────────────────────
    The shared .slide-panel is a full-height 300px column, which on a phone is
    a wall for six rows of settings. This one takes the bottom-right corner and
@@ -1809,7 +1873,12 @@ canvas{
    opened rather than a page you navigated to. Same slide-in, quicker. */
 #boardSettingsPanel{
   top:auto;bottom:0;right:-420px;
-  width:min(420px,76vw);height:auto;max-height:68vh;
+  /* 86vh, not 68: the panel holds three appearance rows, five checkbox rows
+     and the ghost control, and at 68vh that was a list you had to scroll to
+     reach the bottom of — which is the one thing a settings panel should never
+     ask. It still stops short of the top of the screen, so the board behind it
+     is visible and it reads as a thing that opened. */
+  width:min(420px,76vw);height:auto;max-height:86vh;
   border-left:1px solid var(--border);
   border-top:1px solid var(--border);
   border-radius:12px 0 0 0;
@@ -2168,21 +2237,6 @@ body.pro-mode .bs-vision{ display:none !important; }
     white-space:normal;
   }
 
-  /* State as a glyph, not only a tint. The three fills differ by 10-14% alpha
-     over the same panel colour, and the key that decoded them sat below the
-     buttons - two problems that cancel out only if you have both in view. The
-     glyph is a second, redundant channel that survives sunlight, colour
-     blindness and a legend nobody read. Desktop keeps the tint alone: its
-     column is 81px and the labels were measured to fit it with 7.9px to
-     spare, which a glyph plus its gap would spend. */
-  .ind-grid .ib-main::before{
-    content:'\25CB';align-self:center;flex:0 0 auto;
-    font-size:13px;line-height:1;color:var(--text-dim);
-  }
-  .ind-grid .ib.pre .ib-main::before     {content:'\25D0';color:var(--st-exp-fg,#3a44a0);}
-  .ind-grid .ib.on  .ib-main::before     {content:'\25CF';color:var(--st-on-fg,#14713c);}
-  .ind-grid .ib.pressing .ib-main::before{content:'\25C9';color:#15597f;}
-
   /* The full name, at last. The short forms in the markup were measured
      against the desktop sidebar's 81px column; this box is more than twice
      that, and went on showing "Opp. disc." anyway. */
@@ -2254,22 +2308,55 @@ body.pro-mode .bs-vision{ display:none !important; }
      are reachable without opening anything. */
   body:not(.pro-mode) #sidebar #gameActions{display:none !important;}
 
+  /* Save is already on the game bar under the board, and Training Tips is one
+     tap away in the board-vision panel — so on a phone these two were a second
+     copy and a stray, costing ~54px of the height the overlay strip needed for
+     its second row. Desktop keeps both: it has the column to spare. */
+  body:not(.pro-mode) #btnTips,
+  body:not(.pro-mode) #btnSavePgn{display:none !important;}
+
   /* -- The pinned strip ---------------------------------------------------
      One line, scrolled horizontally rather than wrapped: a second row would
      take height from the board, and the whole point of pinning is that these
      controls cost less screen than opening the panel does. */
   body:not(.pro-mode) #pinStrip{
-    display:flex;align-items:center;gap:6px;
+    display:flex;align-items:center;gap:8px;
     width:var(--board-size);max-width:100%;box-sizing:border-box;
-    padding:5px 6px 5px 8px;
-    background:var(--bg-panel);border:0.5px solid var(--border);border-radius:20px;
+    padding:6px 6px 6px 10px;
+    background:var(--bg-panel);border:0.5px solid var(--border);border-radius:22px;
   }
+  /* The oval had no name on it. Two short lines rather than one long one, so
+     the label costs 34px of width instead of 70 and the chips keep the room. */
+  .pin-lbl{
+    flex:0 0 auto;
+    font-size:8px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;
+    line-height:1.25;color:var(--text-dim);
+  }
+  /* Two rows, filled ACROSS then down, extending rightward past the edge with
+     the overflow scrollable — so twice as many overlays are in reach before
+     anything has to be scrolled to. One row while there are few enough to fit
+     it, because a half-empty second row is just a taller oval.
+     pinRender() sets the column count to ceil(n/2), which is what makes the
+     flow row-major: column-major would have put the second chip you pinned
+     underneath the first rather than beside it. */
   .pin-chips{
-    display:flex;align-items:center;gap:6px;
+    display:grid;grid-auto-flow:row;
+    align-items:center;justify-content:start;gap:5px;
+    /* Chips scroll out under the "+", and a name cut off mid-letter reads as
+       a rendering fault rather than as "there is more this way". */
+    -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 16px),transparent);
+    mask-image:linear-gradient(to right,#000 calc(100% - 16px),transparent);
     flex:1 1 auto;min-width:0;
     overflow-x:auto;overflow-y:hidden;scrollbar-width:none;
     -webkit-overflow-scrolling:touch;
+    /* A horizontal scroller inside a page that scrolls vertically: claim the
+       horizontal axis so a sideways drag here never turns into a page scroll,
+       and never gets mistaken for one. */
+    touch-action:pan-x;
+    overscroll-behavior-x:contain;
   }
+  /* No overflow to hide when everything fits, so no fade either. */
+  .pin-chips.fits{-webkit-mask-image:none;mask-image:none;}
   .pin-chips::-webkit-scrollbar{display:none;}
   /* Shown only while nothing is selected, and part of the target rather than
      a caption beside it — this and the "+" are the only door to the panel. */
@@ -3364,6 +3451,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
          Empty by default apart from the "+", so nobody has to dismantle a
          guess before making their own choice. Populated by pinRender(). -->
     <div id="pinStrip">
+      <span class="pin-lbl" aria-hidden="true">Board<br>vision</span>
       <span class="pin-chips" id="pinChips"></span>
       <!-- The "+" is the only door to the board-vision panel, so while the
            strip is empty the hint is part of the target rather than a caption
@@ -3545,7 +3633,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
          the second layer folds away. -->
     <div class="ind-key">
       <div class="ind-key-t">Tap to cycle<span class="key-hold"> · hold to peek</span></div>
-      <div class="ind-key-g">○ off · ◐ while exploring · ● always on</div>
+      <div class="ind-key-g">+ off · green ✓ while exploring · dark ✓ always on</div>
       <div class="ind-key-row">
         <span>Off</span><span class="k-exp">While exploring</span><span class="k-on">Always on</span>
       </div>
@@ -3762,7 +3850,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="pro-abtn danger" id="proResignBtn" onclick="resign()">⚑ Resign</div>
       <div class="pro-abtn draw" id="proDrawBtn" onclick="offerDraw()">½ Draw</div>
       <div class="pro-abtn icon" onclick="proFlipBoard()" title="Flip board">⇅</div>
-      <div class="pro-abtn icon" onclick="openPanel('themePanel')" title="Theme &amp; pieces">🎨</div>
+      <div class="pro-abtn icon" onclick="openThemePanel('board')" title="Board &amp; background">🎨</div>
       <div class="pro-abtn icon" onclick="openPanel('boardSettingsPanel')" title="Board settings">⚙</div>
     </div>
 
@@ -3838,7 +3926,13 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
               onclick="ibExplainToggle()" title="Explain an overlay">?</button>
       <button type="button" class="vis-x" onclick="visPanelClose()" aria-label="Close">✕</button>
     </div>
-    <div class="vis-sub" id="visSub">Tap to cycle · swipe right to close</div>
+    <div class="vis-sub">
+      <span id="visSub">Tap to cycle · swipe right to close</span>
+      <!-- "Decide first, then look" is the method these overlays are for, and
+           its only other door (the floor's Training Tips button) is hidden on
+           a phone. It belongs with them anyway. -->
+      <button type="button" class="vis-tips" onclick="openHelp('howto')">🎯 How to train</button>
+    </div>
     <div class="vis-list" id="visList"></div>
     <div class="vis-foot">
       <button type="button" class="vis-act danger" onclick="visClearAll()">✕ Clear all</button>
@@ -4655,19 +4749,14 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <span class="bs-row-v" id="bsBoardVal">Visualization Board</span>
         <span class="bs-row-c">⇄</span>
       </button>
-      <button type="button" class="bs-row" onclick="openPanel('themePanel')">
+      <button type="button" class="bs-row" onclick="openThemePanel('pieces')">
         <span class="bs-row-k">Piece style</span>
         <span class="bs-row-v" id="bsPieceVal">Staunton</span>
         <span class="bs-row-c">›</span>
       </button>
-      <button type="button" class="bs-row" id="btnTheme" onclick="openPanel('themePanel')">
+      <button type="button" class="bs-row" id="btnTheme" onclick="openThemePanel('board')">
         <span class="bs-row-k">Board &amp; background</span>
         <span class="bs-row-v" id="bsThemeVal"></span>
-        <span class="bs-row-c">›</span>
-      </button>
-      <button type="button" class="bs-row" onclick="closeAllPanels();startTour()">
-        <span class="bs-row-k">🧭 Take the tour</span>
-        <span class="bs-row-v"></span>
         <span class="bs-row-c">›</span>
       </button>
     </div>
@@ -4738,28 +4827,35 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
   </div>
 </div>
 
-<div class="slide-panel" id="themePanel">
+<!-- One panel, two views. "Piece style" and "Board & background" are separate
+     rows in Board settings, and a row that says "Piece style" and opens a page
+     of board colours, background swatches and a Training/Expert switch has
+     answered a question nobody asked. openThemePanel() sets data-view and the
+     CSS below shows only the sections that view is about.
+
+     Board experience (Training/Expert) is in neither: it is the "Board" row in
+     Board settings now, one line up from here. -->
+<div class="slide-panel" id="themePanel" data-view="board">
   <div class="panel-header">
-    <span class="panel-title">Theme &amp; Pieces</span>
+    <span class="panel-title" id="themePanelTitle">Board &amp; background</span>
     <button class="panel-close" onclick="closeAllPanels()">✕</button>
   </div>
   <div class="panel-body">
-    <h3>Board experience</h3>
-    <div class="piece-btns" style="margin-bottom:4px;">
-      <button class="piece-btn active" data-shell-btn="amateur" onclick="setShell('amateur')" title="Full training board — all vision overlays and indicators">Training</button>
-      <button class="piece-btn" data-shell-btn="pro" onclick="setShell('pro')" title="Clean tournament look — notation, no overlays">Expert</button>
+    <div class="tv-board">
+      <h3>Format</h3>
+      <div class="piece-btns" style="margin-bottom:4px;">
+        <button class="piece-btn" data-format="carbon" onclick="applyFormat('carbon')" title="Dashboard look — mono &amp; caps type">Carbon</button>
+        <button class="piece-btn" data-format="journal" onclick="applyFormat('journal')" title="Editorial look — serif type; pairs with any background">Journal</button>
+      </div>
+      <h3>Board colors</h3>
+      <div class="swatch-grid" id="boardSwatches"></div>
+      <h3>Background</h3>
+      <div class="swatch-grid" id="bgSwatches"></div>
     </div>
-    <h3>Format</h3>
-    <div class="piece-btns" style="margin-bottom:4px;">
-      <button class="piece-btn" data-format="carbon" onclick="applyFormat('carbon')" title="Dashboard look — mono &amp; caps type">Carbon</button>
-      <button class="piece-btn" data-format="journal" onclick="applyFormat('journal')" title="Editorial look — serif type; pairs with any background">Journal</button>
+    <div class="tv-pieces">
+      <h3>Piece style</h3>
+      <div class="piece-btns" id="pieceBtns"></div>
     </div>
-    <h3>Board colors</h3>
-    <div class="swatch-grid" id="boardSwatches"></div>
-    <h3>Background</h3>
-    <div class="swatch-grid" id="bgSwatches"></div>
-    <h3>Piece style</h3>
-    <div class="piece-btns" id="pieceBtns"></div>
   </div>
 </div>
 

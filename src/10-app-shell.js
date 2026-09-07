@@ -966,28 +966,55 @@ function ibReleaseHideLock(){
 }
 const ibPressTime = {};
 const ibHoldTimer = {};
+const ibPeekTimer = {};
+const ibStart     = {};
 const ibHeld      = {};
 
+// How long a press has to settle before the board flips. The peek used to fire
+// on pointerdown, which was right when a chip could only be tapped — but the
+// chips now sit in a strip you scroll sideways, and every drag across one lit
+// its overlay for as long as the finger was moving and then dropped it again.
+// A flash you did not ask for, on every scroll.
+//
+// 90ms is under the threshold at which a delay reads as lag, and comfortably
+// longer than the gap between a finger landing and a scroll starting to move —
+// so a drag never flashes, and a genuine press still feels immediate.
+const IB_PEEK_DELAY_MS = 90;
+// How far a finger may wander before the press is a scroll rather than a press.
+const IB_SLOP_PX = 9;
+
 function ibMainDown(key,e){
-  if(e) e.preventDefault();
+  if(e && e.cancelable) e.preventDefault();
   if(!IND[key]) return;
   // If hide is locked, any IND button press releases it and restores state
   ibReleaseHideLock();
   ibPressTime[key] = Date.now();
   ibHeld[key] = false;
   clearTimeout(ibHoldTimer[key]);
-  // The board flips NOW, on press, not after a 350ms wait. Holding used to feel
-  // broken because nothing happened for a third of a second, and a third of a
-  // second is a long time when you are asking "what does this square look like
-  // without the overlay". The timer no longer decides whether to draw the peek;
-  // it only decides when to LABEL the press as one, which keeps the cyan chip
-  // meaning exactly what it meant before: this press will not stick.
-  IND[key].pressing = true;
-  indApply();
+  clearTimeout(ibPeekTimer[key]);
+  // Where the finger landed, so a drag can be told from a press.
+  ibStart[key] = e ? {x:e.clientX, y:e.clientY} : null;
+  // Two timers, not one. The first draws the peek; the second labels the press
+  // as a hold, which is what turns the chip cyan and promises nothing sticks.
+  ibPeekTimer[key] = setTimeout(function(){
+    if(!IND[key]) return;
+    IND[key].pressing = true;
+    indApply();
+  }, IB_PEEK_DELAY_MS);
   ibHoldTimer[key] = setTimeout(function(){
     ibHeld[key] = true;
     ibUpdateUI(key);           // cyan appears; the board is already showing it
   }, IB_HOLD_MS);
+}
+
+// Called from the chip's own pointermove. A press that travels is a scroll:
+// drop it before it draws anything, and leave the strip to scroll in peace.
+function ibMainMove(key,e){
+  const st = ibStart[key];
+  if(!st || !e) return;
+  if(Math.abs(e.clientX - st.x) > IB_SLOP_PX || Math.abs(e.clientY - st.y) > IB_SLOP_PX){
+    ibMainCancel(key);
+  }
 }
 
 // Returns TRUE when the press lasted long enough to have been a peek — in
@@ -998,6 +1025,8 @@ function ibMainDown(key,e){
 function ibMainUp(key){
   if(!IND[key]) return false;
   clearTimeout(ibHoldTimer[key]);
+  clearTimeout(ibPeekTimer[key]);
+  ibStart[key] = null;
   const held = !!ibHeld[key];
   ibHeld[key] = false;
   IND[key].pressing = false;
@@ -1013,6 +1042,8 @@ function ibMainUp(key){
 function ibMainCancel(key){
   if(!IND[key]) return;
   clearTimeout(ibHoldTimer[key]);
+  clearTimeout(ibPeekTimer[key]);
+  ibStart[key] = null;
   ibHeld[key] = false;
   if(IND[key].pressing){
     IND[key].pressing = false;
@@ -1145,14 +1176,36 @@ function pinRender(){
       if(ibExplain) return;         // an armed tap explains; it never peeks
       ibMainDown(k, ev);
     });
+    // A finger that travels is scrolling the strip, not pressing this chip.
+    b.addEventListener('pointermove', function(ev){ ibMainMove(k, ev); });
     // No click handler on a chip, so the short-press tap is dispatched here.
     b.addEventListener('pointerup',     function(){ if(!ibMainUp(k)) ibTap(k); });
     b.addEventListener('pointercancel', function(){ ibMainCancel(k); });
     box.appendChild(b);
     ibUpdateUI(k);
   });
+  // Two rows once there are enough chips to fill them; one while there are
+  // not, because a half-empty second row is just a taller oval. Four is the
+  // threshold because that is two per row — the first count at which a second
+  // row is carrying its own weight.
+  //
+  // The column count is what makes the grid fill across-then-down rather than
+  // down-then-across: ceil(n/2) columns over two rows puts chips 1..k on the
+  // top row and the rest underneath, in the order they were pinned.
+  const n = pinnedInds.length;
+  const twoRow = n >= 4;
+  box.style.gridTemplateColumns = twoRow
+    ? 'repeat(' + Math.ceil(n / 2) + ', max-content)'
+    : 'repeat(' + n + ', max-content)';
+  // Measured after layout: the fade is a signal that there is more to scroll
+  // to, so it has no business showing when there is not.
+  requestAnimationFrame(function(){
+    box.classList.toggle('fits', box.scrollWidth <= box.clientWidth + 1);
+  });
   const hint = document.getElementById('pinHint');
   if(hint) hint.hidden = pinnedInds.length > 0;
+  const lbl = document.querySelector('.pin-lbl');
+  if(lbl) lbl.hidden = pinnedInds.length === 0;
 }
 
 // ── The panel ─────────────────────────────────────────────────────────────
@@ -1257,19 +1310,25 @@ function visShowAll(){
   if(typeof resizeBoard === 'function') resizeBoard();
 }
 
+// The frame between "in the layout" and "animate to open" is a frame in which
+// a close can arrive — and did, leaving the panel open because the pending
+// callback added .in after close had removed it. The id is held so close can
+// cancel it.
+let _visOpenRaf = 0;
+
 function visPanelOpen(){
   const w = document.getElementById('visPanel');
   if(!w) return;
   visRender();
   w.hidden = false;
-  // One frame between "in the layout" and "animate to open", or the transition
-  // has nothing to move from.
-  requestAnimationFrame(function(){ w.classList.add('in'); });
+  cancelAnimationFrame(_visOpenRaf);
+  _visOpenRaf = requestAnimationFrame(function(){ w.classList.add('in'); });
 }
 
 function visPanelClose(){
   const w = document.getElementById('visPanel');
   if(!w || w.hidden) return;
+  cancelAnimationFrame(_visOpenRaf);   // an open that has not painted yet
   const card = document.getElementById('visCard');
   if(card){ card.classList.remove('vis-dragging'); card.style.transform = ''; }
   w.classList.remove('in');
@@ -1279,58 +1338,92 @@ function visPanelClose(){
   if(ibExplain) ibExplainToggle(false);
 }
 
-// ── Swipe right to close ──────────────────────────────────────────────────
-// The list scrolls vertically, so the card declares touch-action:pan-y and
-// only horizontal movement reaches this. A drag that turns out to be vertical
-// is handed straight back.
-let _visDrag = null;
+// ── Swipe right to close, on every panel ──────────────────────────────────
+// The board-vision panel got this gesture first and it should not have been
+// special: every panel here slides in from the right edge, so pushing one back
+// off that edge is the obvious way to dismiss it. Bound once, over the whole
+// .slide-panel family.
+//
+// The listener sits on the panel and NOT on its scroller, and it deliberately
+// does not care what is under the finger — a swipe that starts on a button is
+// still a swipe, which is the bug this replaces. The click that a browser
+// delivers after that pointerup is swallowed (see _panelSwipeClick).
+function bindPanelSwipe(el, onClose){
+  if(!el || el._swipeBound) return;
+  el._swipeBound = true;
+  let d = null;
+  const CLS = el.classList.contains('vis-card') ? 'vis-dragging' : 'panel-dragging';
 
-function visBindPanel(){
-  const w = document.getElementById('visPanel');
-  const card = document.getElementById('visCard');
-  const scrim = document.getElementById('visScrim');
-  if(!w || !card) return;
-  // Tapping the board behind the panel closes it.
-  if(scrim) scrim.addEventListener('click', visPanelClose);
-
-  card.addEventListener('pointerdown', function(e){
+  el.addEventListener('pointerdown', function(e){
     if(e.pointerType === 'mouse' && e.button !== 0) return;
-    _visDrag = { x:e.clientX, y:e.clientY, dx:0, live:false, id:e.pointerId };
+    d = { x:e.clientX, y:e.clientY, dx:0, live:false, id:e.pointerId };
   });
-  card.addEventListener('pointermove', function(e){
-    const d = _visDrag; if(!d || e.pointerId !== d.id) return;
+  el.addEventListener('pointermove', function(e){
+    if(!d || e.pointerId !== d.id) return;
     const dx = e.clientX - d.x, dy = e.clientY - d.y;
     if(!d.live){
-      // Not a swipe until it is unambiguously horizontal and rightward.
-      if(Math.abs(dy) > Math.abs(dx) || dx < 8) {
-        if(Math.abs(dy) > 12) _visDrag = null;   // it is a scroll; let it go
+      // Not a swipe until it is unambiguously horizontal and rightward. A
+      // mostly-vertical drag is the panel's own scroller and is handed back.
+      if(Math.abs(dy) > Math.abs(dx) || dx < 10){
+        if(Math.abs(dy) > 12) d = null;
         return;
       }
       d.live = true;
-      card.classList.add('vis-dragging');
-      try{ card.setPointerCapture(e.pointerId); }catch(err){}
+      el.classList.add(CLS);
+      try{ el.setPointerCapture(e.pointerId); }catch(err){}
     }
     d.dx = Math.max(0, dx);
-    card.style.transform = 'translateX(' + d.dx + 'px)';
+    el.style.transform = 'translateX(' + d.dx + 'px)';
     if(e.cancelable) e.preventDefault();
   });
-  const finish = function(){
-    const d = _visDrag; if(!d) return;
-    _visDrag = null;
-    if(!d.live) return;
-    card.classList.remove('vis-dragging');
-    if(d.dx > 60){ visPanelClose(); }
-    else { card.style.transform = ''; }
+  const end = function(){
+    if(!d) return;
+    const wasLive = d.live, dist = d.dx;
+    d = null;
+    if(!wasLive) return;
+    el.classList.remove(CLS);
+    // The press that just ended was a drag, so the click the browser is about
+    // to deliver must not also press whatever is under the finger.
+    _panelSwipeClick = true;
+    if(dist > 60){ el.style.transform = ''; onClose(); }
+    else { el.style.transform = ''; }
   };
-  card.addEventListener('pointerup', finish);
-  card.addEventListener('pointercancel', function(){
-    const d = _visDrag; _visDrag = null;
-    if(d && d.live){ card.classList.remove('vis-dragging'); card.style.transform = ''; }
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', function(){
+    if(d && d.live){ el.classList.remove(CLS); el.style.transform = ''; }
+    d = null;
   });
-  // A drag that ends on a row must not also press it.
-  card.addEventListener('click', function(e){
-    if(card.dataset.swiped === '1'){ card.dataset.swiped = ''; e.stopPropagation(); e.preventDefault(); }
-  }, true);
+}
+
+// Set the instant a swipe ends; cleared by the click it swallows, or by the
+// next press if no click arrives.
+let _panelSwipeClick = false;
+document.addEventListener('click', function(e){
+  if(!_panelSwipeClick) return;
+  _panelSwipeClick = false;
+  e.stopPropagation(); e.preventDefault();
+}, true);
+document.addEventListener('pointerdown', function(){ _panelSwipeClick = false; }, true);
+
+function bindAllPanelSwipes(){
+  document.querySelectorAll('.slide-panel').forEach(function(p){
+    bindPanelSwipe(p, closeAllPanels);
+  });
+}
+
+// ── The board-vision panel's own wiring ───────────────────────────────────
+// The list scrolls vertically, so the card declares touch-action:pan-y and
+// only horizontal movement reaches this. A drag that turns out to be vertical
+// is handed straight back.
+function visBindPanel(){
+  const card = document.getElementById('visCard');
+  const scrim = document.getElementById('visScrim');
+  // Tapping the board behind the panel closes it.
+  if(scrim) scrim.addEventListener('click', visPanelClose);
+  // Same gesture as every other panel — including the part that made this one
+  // work over a button rather than only over the gaps between them.
+  bindPanelSwipe(card, visPanelClose);
+  bindAllPanelSwipes();
 }
 
 // ── Hold-to-peek on the grid, where the grid is beside the board ──────────
@@ -1355,6 +1448,7 @@ function ibBindHold(){
       if(visIsPhone() || ibExplain) return;
       ibMainDown(key, e);
     });
+    btn.addEventListener('pointermove', function(e){ ibMainMove(key, e); });
     btn.addEventListener('pointerup', function(){
       if(!IND[key].pressing && ibHeld[key] === undefined) return;
       if(ibMainUp(key)) _ibHeldRelease = true;
@@ -1363,6 +1457,21 @@ function ibBindHold(){
       btn.addEventListener(t, function(){ ibMainCancel(key); });
     });
   });
+}
+
+// ── The style palette, opened on one of its two halves ────────────────────
+function openThemePanel(view){
+  const p = document.getElementById('themePanel');
+  if(p){
+    p.dataset.view = (view === 'pieces') ? 'pieces' : 'board';
+    const t = document.getElementById('themePanelTitle');
+    if(t) t.textContent = (view === 'pieces') ? 'Piece style' : 'Board & background';
+  }
+  openPanel('themePanel');
+  // The swatch grids and the piece list are built lazily on first open; the
+  // panel's transitionend handler does that too, but a panel that is already
+  // open has no transition to end.
+  if(typeof setupThemePanel === 'function') setupThemePanel();
 }
 
 // ── Appearance rows in Board settings ─────────────────────────────────────
