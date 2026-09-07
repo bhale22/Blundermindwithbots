@@ -1027,18 +1027,18 @@ function render(){
       ctx.restore();
       ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.strokeRect(x+1,y+1,SQ-2,SQ-2);
     };
-    // "Mine" is White's set, matching ib-weakw ("My weak sq.") and every other
-    // My/Opp. pair on the indicator grid. This block used to swap the two to
-    // compensate for the buttons being labelled backwards; both are fixed now,
-    // so the straight mapping is the correct one.
-    // NOTE: neither set consults which colour the human is playing, so — like
-    // forks and discovered attacks — "mine" reads correctly for a player of
-    // White. Following the seat is a separate change across the whole family.
-    weakSquaresW.forEach(sq=>{
+    // Which set is "mine" follows the SEAT. This used to be hardwired to
+    // White — the NOTE that stood here called that out and deferred it — so a
+    // player of black got their own holes painted in the "theirs" colour AND
+    // hatched in the "theirs" direction. Both channels said the opposite of
+    // the truth, which is worse than showing nothing.
+    const _wsMine   = playerColor()==='w' ? weakSquaresW : weakSquaresB;
+    const _wsTheirs = playerColor()==='w' ? weakSquaresB : weakSquaresW;
+    _wsMine.forEach(sq=>{
       if(bothWeak.has(sq)) paint(sq,P.weakBothFill,P.weakBothStroke,[1,-1]);
       else                 paint(sq,P.weakMineFill,P.weakMineStroke,[1]);
     });
-    weakSquaresB.forEach(sq=>{
+    _wsTheirs.forEach(sq=>{
       if(bothWeak.has(sq)) return;
       paint(sq,P.weakTheirsFill,P.weakTheirsStroke,[-1]);
     });
@@ -1153,10 +1153,15 @@ function render(){
   // the discovered-attack threat color. Red is reserved for pieces that are
   // themselves in danger — a red ring on the opponent's FORKING piece made it
   // look threatened rather than threatening.
-  const wSafe = turn==='w' ? 'rgba(40,200,80,0.92)'  : 'rgba(235,140,0,0.92)';
-  const wCont = turn==='w' ? 'rgba(53,120,224,0.85)' : 'rgba(235,170,60,0.78)';
-  const bSafe = turn==='b' ? 'rgba(40,200,80,0.92)'  : 'rgba(235,140,0,0.92)';
-  const bCont = turn==='b' ? 'rgba(53,120,224,0.85)' : 'rgba(235,170,60,0.78)';
+  // Keyed on the SEAT, not on whose move it is. Green/blue is "something I can
+  // do", amber is "something they can do" — a distinction that has to hold
+  // still while the opponent thinks, or the board recolours itself every ply
+  // and amber stops meaning warning.
+  const _myCol = playerColor();
+  const wSafe = _myCol==='w' ? 'rgba(40,200,80,0.92)'  : 'rgba(235,140,0,0.92)';
+  const wCont = _myCol==='w' ? 'rgba(53,120,224,0.85)' : 'rgba(235,170,60,0.78)';
+  const bSafe = _myCol==='b' ? 'rgba(40,200,80,0.92)'  : 'rgba(235,140,0,0.92)';
+  const bCont = _myCol==='b' ? 'rgba(53,120,224,0.85)' : 'rgba(235,170,60,0.78)';
   try { // BG indicators
   try { // BG indicator rendering
   // ── King in check during exploration — highlight orange ───────────────────
@@ -1218,7 +1223,6 @@ function render(){
   if(indActive('threats')){
     const tBd = previewBoard||board;
     const tAtk = previewAtk||atkMap;
-    const opp = turn==='w'?'b':'w';
     for(let sq=0;sq<64;sq++){
       const p=tBd[sq]; if(!p||p.piece==='K') continue;
       const col=getCaptureColor(sq,p.color,tBd,tAtk);
@@ -1357,7 +1361,8 @@ function render(){
   // previewCollapsed means the piece is NOT on premoveTo in previewBoard — the
   // premove is not legal yet — so the fork data says nothing about landing there.
   if (previewBoard && premoveTo >= 0 && !previewCollapsed) {
-    const oppForkData = (turn === 'w') ? forkDataB : forkDataW;
+    // The opponent is the other seat, not the other side of the move counter.
+    const oppForkData = (playerColor() === 'w') ? forkDataB : forkDataW;
     // Opponent's forks are always "danger" colors for the active player
     const oppAccent   = 'rgba(220,50,50,0.92)'; // red = opponent safe fork danger
     if (oppForkData) {
@@ -2744,15 +2749,30 @@ function indApply() {
     showingOverloaded=true;
   } else { showingOverloaded=false; overloadedData=null; }
 
-  // Weak squares
+  // Weak squares.
+  //
+  // The two buttons are labelled "My weak squares" and "Opponent's weak
+  // squares"; the keys weakw/weakb are historical and mean my/opponent, NOT
+  // white/black. They were wired straight to white and black, which is only
+  // right for a player sitting in the white seat — with black, both buttons
+  // showed the other side's squares. Which colour each button means is a
+  // property of the seat, so it is asked here.
+  //
+  // The STORAGE stays keyed by real colour (weakSquaresW really is white's),
+  // because the render side colours by colour. Only the mapping from button
+  // to colour moves.
   showingWeakSquares=false;
   weakSquaresW=new Set(); weakSquaresB=new Set();
   const atk=buildDirectAtk(previewBoard||board);
-  if(indActive('weakw')) {
+  const _wsMe   = playerColor();
+  const _wsWant = { w:false, b:false };
+  _wsWant[_wsMe]                  = indActive('weakw');  // "My weak squares"
+  _wsWant[_wsMe==='w'?'b':'w']    = indActive('weakb');  // "Opponent's ..."
+  if(_wsWant.w) {
     showingWeakSquares=true;
     for(let s=0;s<64;s++){if((previewBoard||board)[s])continue;if(atk[s].w.length===0)weakSquaresW.add(s);}
   }
-  if(indActive('weakb')) {
+  if(_wsWant.b) {
     showingWeakSquares=true;
     for(let s=0;s<64;s++){if((previewBoard||board)[s])continue;if(atk[s].b.length===0)weakSquaresB.add(s);}
   }
@@ -2765,24 +2785,36 @@ function indApply() {
   const dispBd2 = previewBoard || board;
   const pins2 = computePins(dispBd2);
   const isPremoveExploring = !!previewBoard;
-  // Color system: active player = green(safe)/blue(contested), opponent = red(safe)/pink(contested)
-  const wSafe = turn==='w'?'rgba(40,200,80,0.92)':'rgba(220,50,50,0.92)';
-  const wCont = turn==='w'?'rgba(53,120,224,0.85)':'rgba(220,80,180,0.85)';
-  const bSafe = turn==='b'?'rgba(40,200,80,0.92)':'rgba(220,50,50,0.92)';
-  const bCont = turn==='b'?'rgba(53,120,224,0.85)':'rgba(220,80,180,0.85)';
+  // (The fork colour constants that used to sit here were dead — nothing in
+  //  this function read them. The live copy is in render(), which is also
+  //  where the my/opponent question is now asked. One copy, one answer.)
+
+  // Same story as weak squares: forksw/forksb are "My" and "Opponent's", not
+  // white's and black's. Wired straight to 'w' and 'b', a player with black
+  // pressing "My forks" got the opponent's.
+  const _fkMe   = playerColor();
+  const _fkOpp  = _fkMe==='w'?'b':'w';
+  const _fkWant = { w:false, b:false };
+  _fkWant[_fkMe]  = indActive('forksw');   // "My forks & skewers"
+  _fkWant[_fkOpp] = indActive('forksb');   // "Opponent's forks & skewers"
 
   // Skip fork computation if preview board has a king in check (checkmate position)
   const skipForks = isPremoveExploring && (inCheck(dispBd2,'w') || inCheck(dispBd2,'b'));
-  if (indActive('forksw') && !skipForks) {
+  // While a premove is being composed it is the OPPONENT's move, and their fork
+  // layer is computed on a board that already has your premove on it — a
+  // position that has not happened. That layer is dropped. This used to read
+  // `turn === 'b'`, which is the same rule only if the opponent is black.
+  const _fkDrop = function(col){ return isPremoveExploring && turn === col && col === _fkOpp; };
+  if (_fkWant.w && !skipForks) {
     try { forkDataW = computeForkData(dispBd2, 'w', pins2.w); } catch(e){ forkDataW=null; }
     try { skewerDataW = computeSkewerData(dispBd2, 'w'); } catch(e){ skewerDataW=null; }
-    showingForksW = true;
+    showingForksW = !_fkDrop('w');
   } else { showingForksW = false; forkDataW = null; skewerDataW = null; }
 
-  if (indActive('forksb') && !skipForks) {
+  if (_fkWant.b && !skipForks) {
     try { forkDataB = computeForkData(dispBd2, 'b', pins2.b); } catch(e){ forkDataB=null; }
     try { skewerDataB = computeSkewerData(dispBd2, 'b'); } catch(e){ skewerDataB=null; }
-    showingForksB = !(isPremoveExploring && turn === 'b');
+    showingForksB = !_fkDrop('b');
   } else { showingForksB = false; forkDataB = null; skewerDataB = null; }
 
   // Discovered attacks
@@ -2791,9 +2823,14 @@ function indApply() {
     const skipDisc = previewBoard && (inCheck(dispBd,'w')||inCheck(dispBd,'b'));
     if(!skipDisc){
       try {
-        const opp = turn==='w'?'b':'w';
+        // "My" and "the opponent's" are properties of the seat, not of whose
+        // move it happens to be. Keyed on `turn`, the two buttons swapped
+        // meaning every single ply — "My discovered attacks" showed mine while
+        // I was on move and the opponent's while they were.
+        const me  = playerColor();
+        const opp = me==='w'?'b':'w';
         const ownDisc = indActive('discoveredself')
-          ? computeDiscoveredData(dispBd, turn).map(d=>({...d,side:'own'})) : [];
+          ? computeDiscoveredData(dispBd, me).map(d=>({...d,side:'own'})) : [];
         const oppDisc = indActive('discoveredopp')
           ? computeDiscoveredData(dispBd, opp).map(d=>({...d,side:'opp'}))  : [];
         discoveredData = [...ownDisc, ...oppDisc];
@@ -2808,8 +2845,11 @@ function indApply() {
     const skipXray = previewBoard && (inCheck(dispBd,'w')||inCheck(dispBd,'b'));
     if(!skipXray){
       try {
-        const opp = turn==='w'?'b':'w';
-        const ownXray = computeXrayData(dispBd, turn).map(d=>({...d,side:'own'}));
+        // Own x-rays render black, the opponent's render amber, so which is
+        // which has to follow the seat rather than the move counter.
+        const me  = playerColor();
+        const opp = me==='w'?'b':'w';
+        const ownXray = computeXrayData(dispBd, me).map(d=>({...d,side:'own'}));
         const oppXray = computeXrayData(dispBd, opp).map(d=>({...d,side:'opp'}));
         xrayData = [...ownXray, ...oppXray];
       } catch(e) { xrayData = []; }
