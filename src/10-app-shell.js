@@ -243,10 +243,32 @@ function resizeBoard() {
   const topH     = (headerEl && headerEl.offsetHeight > 0 ? headerEl.offsetHeight : 40) + 8;
   const playerH  = 44 * 2 + 8; // two player boxes, fixed height
   const footerH  = 30;
-  // Stacked layout scrolls, so the board may exceed the fold — reserve room for
-  // the clocks and the settings toggle, but don't shrink it to fit everything.
+  // Stacked, the board no longer scrolls: the controls are in a sheet over the
+  // top of it, so everything else on the page has to fit above the fold at
+  // once. That is the clocks, the pinned strip, the game bar and the closed
+  // tray's own 58px. Measured rather than guessed — the strip appears and
+  // disappears with its chips, and a constant would be wrong half the time.
+  //
+  // Except on a viewport too short to fit any of it. Turn the phone sideways
+  // and the screen is ~360px tall: two clocks (96), the pinned strip (44), the
+  // game bar (46) and the closed tray (58) come to 244 before the board gets a
+  // pixel, and the board's own floor is 280. Reserving space that cannot exist
+  // just pins the board at its floor and overflows anyway — so below the line
+  // the page goes back to scrolling, which is what it did before the tray and
+  // is the same call the old sticky layout made at the same 520px.
+  const shortVp = window.innerHeight <= 520;
+  let phoneChrome = 0;
+  if (stacked && !shortVp) {
+    ['pinStrip', 'phoneBar'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.offsetParent !== null) phoneChrome += el.offsetHeight + 8;
+    });
+    const sb = document.getElementById('sidebar');
+    const peek = sb ? parseFloat(getComputedStyle(sb).getPropertyValue('--bvt-peek')) : 0;
+    phoneChrome += (peek || 58) + 8;
+  }
   const maxFromHeight = stacked
-    ? window.innerHeight - topH - playerH - 8
+    ? window.innerHeight - topH - playerH - 8 - phoneChrome
     : window.innerHeight - topH - playerH - footerH - 12;
   const boardPx = Math.max(280, Math.min(maxFromWidth, maxFromHeight, 900));
   const bpx = boardPx + 'px';
@@ -640,15 +662,20 @@ const HELP = {
 <p><span style="color:#ff8c00">■</span> <strong>Orange</strong> — squares where White can move a piece to put the Black king in check.</p>
 <p><span style="color:#b428dc">■</span> <strong>Purple</strong> — squares where Black can move a piece to put the White king in check.</p>
 <p>Useful for spotting forcing moves, escape routes, and tactical sequences involving check. Not shown when a king is already in check.</p>`},
-  threats:{title:'Threats',body:`<p>Shows the status of your own pieces using colored circles — letting you see at a glance which are in danger:</p>
-<p><span style="color:#d02828">●</span> <strong>Red</strong> — undefended, or can be captured by a less valuable piece. Immediate danger.</p>
-<p><span style="color:#1eb446">●</span> <strong>Green</strong> — overprotected and cannot be taken profitably. Safe.</p>
-<p><span style="color:#8888a0">●</span> <strong>Grey</strong> — equal attackers and defenders, no cheap capture available. Contested.</p>
+  threats:{title:'Threats',body:`<p>Coloured circles show what an attack on a piece actually costs — so how loud the circle is depends on <em>what</em> is attacked, not only on how many pieces are pointing at it.</p>
+<p><span style="color:#d02828">✳</span> <strong>Red sawtooth — an attacked queen.</strong> Always, however many defenders it has. Three defenders do not make losing a queen for a knight acceptable, so this one never gets a calm circle.</p>
+<p><span style="color:#d02828">●</span> <strong>Red</strong> — undefended, attacked by something cheaper, or simply outnumbered. Immediate danger.</p>
+<p><span style="color:#e0a814">●</span> <strong>Yellow — a rook, bishop or knight, defended as often as it is attacked.</strong> Evaluate it: the count is level, but the exchange still changes the position.</p>
+<p><span style="color:#e0a814">◐</span><span style="color:#1eb446">◑</span> <strong>Yellow/green — the same piece, over-defended.</strong> It is held. Keep half an eye on it rather than your full attention.</p>
+<p><span style="color:#8888a0">●</span> <strong>Grey</strong> — a pawn with equal attackers and defenders. Contested, and genuinely calm.</p>
+<p><span style="color:#1eb446">●</span> <strong>Green</strong> — an over-defended pawn.</p>
 <p>No circle = piece is not currently under attack.</p>`},
-  captures:{title:'Captures',body:`<p>Shows the status of opponent pieces using colored circles — telling you how safe each capture would be:</p>
-<p><span style="color:#d02828">●</span> <strong>Red</strong> — the opponent piece is undefended or can be taken by a less valuable piece. A safe or winning capture.</p>
-<p><span style="color:#1eb446">●</span> <strong>Green</strong> — the opponent piece is overprotected. Capturing it likely loses material.</p>
-<p><span style="color:#8888a0">●</span> <strong>Grey</strong> — equal attackers and defenders. Exchange may be even — evaluate carefully.</p>
+  captures:{title:'Captures',body:`<p>The same circles, read from the other side of the board — how safe each capture would be. Opponent pieces are graded by what taking them is worth, not just by the counts:</p>
+<p><span style="color:#d02828">✳</span> <strong>Red sawtooth</strong> — their queen is attacked. Worth looking at whatever is defending it.</p>
+<p><span style="color:#d02828">●</span> <strong>Red</strong> — undefended, takeable by something cheaper, or outnumbered. A safe or winning capture.</p>
+<p><span style="color:#e0a814">●</span> <strong>Yellow</strong> — a rook, bishop or knight with defenders equal to attackers. The trade is a real decision.</p>
+<p><span style="color:#e0a814">◐</span><span style="color:#1eb446">◑</span> <strong>Yellow/green</strong> — the same piece, over-defended. Taking it probably loses material.</p>
+<p><span style="color:#8888a0">●</span> <strong>Grey</strong> — an evenly contested pawn. <span style="color:#1eb446">●</span> <strong>Green</strong> — an over-defended pawn.</p>
 <p>No circle means you cannot currently capture that piece.</p>`},
   unprotected:{title:'Unprotected Pieces',body:`<p>An <strong>unprotected piece</strong> has no friendly defender.</p><p>🎯 <strong>Bullseye</strong> — unprotected, not currently attacked (quietly vulnerable)<br>🔴 <strong>Red ring</strong> — unprotected AND under attack (immediate danger)</p><p>Good habit: keep all pieces protected.</p>`},
   pins:{title:'Pins',body:`<p>A piece is <strong>"pinned"</strong> if moving it would expose a more valuable friendly piece behind it to capture.</p><hr><h3>${PIN_SVG_PURPLE} Absolute pin — to the king</h3><p>The piece <strong>cannot legally move</strong>. Always excluded from threat and defense counts.</p><p><em>Exception: it can capture the pinner — that resolves the pin.</em></p><hr><h3>${PIN_SVG_BLUE} Relative pin — to the queen</h3><p>The piece <strong>can legally move</strong> but doing so loses the queen.</p><p>When Queen Pins is enabled, these pieces are also excluded from counts — a defender pinned to the queen doesn't actually defend.</p>`},
@@ -791,11 +818,23 @@ function ibTogglePre(key){
 }
 function ibUpdateUI(key){
   const ind=IND[key]; if(!ind) return;
+  // An overlay can be on screen twice: as a button in the tray and as a chip
+  // pinned beside the board. They are two views of ONE value, so they are
+  // painted in one pass from IND rather than each keeping its own idea of the
+  // state — which is the only way the tray stays trustworthy once the chip is
+  // the thing being pressed.
+  let cls = '';
+  if(ind.pressing && ibHeld[key]) cls = 'pressing';
+  else if(ind.on)  cls = 'on';   // always-on: full green
+  else if(ind.pre) cls = 'pre';  // exploration-only
+  const chip=document.getElementById('pin-'+key);
+  if(chip){
+    chip.classList.remove('on','pre','pressing');
+    if(cls) chip.classList.add(cls);
+  }
   const el=document.getElementById('ib-'+key); if(!el) return;
   el.classList.remove('on','pre','pressing');
-  if(ind.pressing && ibHeld[key]) el.classList.add('pressing');
-  else if(ind.on) el.classList.add('on');  // always-on: full green
-  else if(ind.pre) el.classList.add('pre'); // exploration-only
+  if(cls) el.classList.add(cls);
   // The word tracks the SAVED state only, never `pressing` — a peek deliberately
   // leaves it alone, so the button keeps telling you what you will still have
   // once you let go.
@@ -860,6 +899,12 @@ function indActiveBarSync(){
     box.appendChild(b);n++;
   });
   bar.hidden = (n===0);
+  // Closed, the tray handle is a 58px strip and this is the only thing on it
+  // that says anything. When nothing is drawing the strip hides itself, so
+  // something has to stand in — otherwise the collapsed sheet reads as a bare
+  // heading and a "?" and gives no reason to drag it.
+  const idle=document.getElementById('bvtIdle');
+  if(idle) idle.hidden = (n>0);
   // Measure only once it is laid out; a hidden element reports zero for both.
   bar.classList.toggle('iab-more', !bar.hidden && bar.scrollWidth > bar.clientWidth+1);
 }
@@ -880,25 +925,90 @@ function indMode(key, mode, e){
 }
 
 // ── Indicator button gestures ─────────────────────────────────────────
-// Two gestures on one target, separated by time:
+// TWO SURFACES, DELIBERATELY DIFFERENT GESTURES.
 //
-//   click        advance the cycle  off → exp → on → off
+// The grid of indicator buttons now lives in a bottom tray that COVERS the
+// board while it is open (see the bv-tray block). Hold-to-peek there would be
+// a gesture whose entire payoff — watching the board change — is behind the
+// panel your thumb is holding down, so the grid is a plain tap:
+//
+//   tap   advance the cycle  off → while exploring → always on → off
+//
+// The peek gesture is not gone; it moved to the surface where it still works.
+// The pinned strip (#pinStrip) sits with the board, in full view, and keeps
+// both gestures:
+//
+//   tap          advance the cycle
 //   hold ≥350ms  peek: invert the overlay while held, revert on release
 //
-// This replaced a split control where the cycle was on DOUBLE-click and a
-// single click did nothing persistent at all — it only armed the double-click
-// timer. The most obvious gesture on the panel's primary control was a no-op,
-// so a first click looked like a flash and a broken button. Single click now
-// owns the cycle, and the double-click path is gone.
-//
-// The peek arms on a timer rather than on mousedown so that `.ib.pressing`
+// The peek arms on a timer rather than on pointerdown so that `.pressing`
 // (cyan) means exactly one thing: this press is a peek and nothing will stick.
-// If it lit on every mousedown it would carry no information. :active covers
-// the sub-threshold gap so a plain click still feels responsive.
-// How long a press has to last before it counts as a peek rather than a click.
-// The overlay itself flips on mousedown either way; this is only the line
-// between "you clicked it" and "you are holding it to look".
+// If it lit on every press it would carry no information. :active covers the
+// sub-threshold gap so a plain tap still feels responsive.
+//
+// How long a press has to last before it counts as a peek rather than a tap.
+// The overlay itself flips on press either way; this is only the line between
+// "you tapped it" and "you are holding it to look".
 const IB_HOLD_MS = 350;
+
+// ── Explain mode ──────────────────────────────────────────────────────────
+// Thirteen 16px "?" circles used to sit inside thirteen targets whose whole
+// job is to toggle. On a phone that is thirteen chances to open a help panel
+// when you meant to switch an overlay on, and thirteen specks of chrome in a
+// grid that is trying to be scannable. They are gone.
+//
+// Help itself is not. One control in the tray header arms this mode; the very
+// next indicator you tap explains itself instead of toggling, and the mode
+// disarms. One target instead of thirteen, and it cannot be hit by accident
+// because arming it is a deliberate, separate press.
+let ibExplain = false;
+
+function ibExplainToggle(on){
+  ibExplain = (on === undefined) ? !ibExplain : !!on;
+  const btn = document.getElementById('bvtHelp');
+  if(btn){
+    btn.classList.toggle('armed', ibExplain);
+    btn.setAttribute('aria-pressed', ibExplain ? 'true' : 'false');
+    btn.title = ibExplain ? 'Tap any overlay to read what it draws'
+                          : 'Explain an overlay';
+  }
+  // The grid says so too — an armed mode that only marks its own button is a
+  // mode you forget you are in.
+  document.querySelectorAll('.ind-grid').forEach(g =>
+    g.classList.toggle('explain-armed', ibExplain));
+  const hint = document.getElementById('bvtExplainHint');
+  if(hint) hint.hidden = !ibExplain;
+}
+
+// Set by a grid button whose press turned out to be a peek. The browser still
+// delivers a click after that pointerup, and the button's onclick would cycle
+// the overlay the peek was careful not to change. Cleared by the next press
+// either way, so it can never swallow an unrelated tap.
+let _ibHeldRelease = false;
+
+// The grid's tap. One entry point, so explain mode cannot be bypassed by a
+// button that forgot about it.
+function ibTap(key){
+  if(!IND[key]) return;
+  if(_ibHeldRelease){ _ibHeldRelease = false; return; }
+  if(ibExplain){
+    ibExplainToggle(false);
+    openHelp(key);
+    return;
+  }
+  ibReleaseHideLock();
+  ibCycle(key);
+}
+
+// A locked "hide everything" is a state you get out of by touching any
+// indicator — otherwise the next tap appears to do nothing at all.
+function ibReleaseHideLock(){
+  if(typeof hideShowLocked!=='undefined' && hideShowLocked && !hideShowPeeking){
+    hideShowLocked=false;
+    hideShowRestore();
+    updateHideShowBtn();
+  }
+}
 const ibPressTime = {};
 const ibHoldTimer = {};
 const ibHeld      = {};
@@ -907,11 +1017,7 @@ function ibMainDown(key,e){
   if(e) e.preventDefault();
   if(!IND[key]) return;
   // If hide is locked, any IND button press releases it and restores state
-  if(typeof hideShowLocked!=='undefined'&&hideShowLocked&&!hideShowPeeking){
-    hideShowLocked=false;
-    hideShowRestore();
-    updateHideShowBtn();
-  }
+  ibReleaseHideLock();
   ibPressTime[key] = Date.now();
   ibHeld[key] = false;
   clearTimeout(ibHoldTimer[key]);
@@ -929,20 +1035,21 @@ function ibMainDown(key,e){
   }, IB_HOLD_MS);
 }
 
+// Returns TRUE when the press lasted long enough to have been a peek — in
+// which case it deliberately changed nothing, and the caller must not also
+// treat it as a tap. The two callers want opposite things with that answer:
+// a pinned chip has no click handler and cycles itself, while a grid button
+// carries onclick="ibTap(...)" and needs the trailing click swallowed.
 function ibMainUp(key){
-  if(!IND[key]) return;
+  if(!IND[key]) return false;
   clearTimeout(ibHoldTimer[key]);
-  const held = ibHeld[key];
+  const held = !!ibHeld[key];
   ibHeld[key] = false;
   IND[key].pressing = false;
-  if(held){
-    // Long press: it was a peek. Put the board back and change nothing.
-    ibUpdateUI(key);
-    indApply();
-    return;
-  }
-  // Short press: undo the optimistic peek and treat it as the click it was.
-  ibCycle(key);
+  // Either way the optimistic peek from ibMainDown has to come off the board.
+  ibUpdateUI(key);
+  indApply();
+  return held;
 }
 
 // Pointer left the button, or the touch was stolen (scroll, call, app switch).
@@ -973,6 +1080,378 @@ function ibCycle(key){
   indApply();
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// THE BOARD-VISION TRAY (phones)
+// --------------------------------------------------------------------------
+// #sidebar becomes a bottom sheet under 760px; see the bv-tray CSS block for
+// why, and for the three snap positions. Everything below writes exactly one
+// thing — the sheet's transform — so a drag, a flick, a tap and a restored
+// preference all arrive at the same place by the same route.
+//
+// The snap offsets are derived from the sheet's own measured height and the
+// --bvt-peek custom property, not from a second copy of the CSS percentages.
+// A sheet that is 88vh tall on one phone and 88dvh on another still snaps to
+// its own edges.
+// ══════════════════════════════════════════════════════════════════════════
+const BVT_STATES = ['closed','half','full'];
+const BVT_HALF   = 0.46;      // matches [data-bvt="half"] in the stylesheet
+let _bvtState = 'closed';
+let _bvtDrag  = null;
+
+function bvTrayEl(){ return document.getElementById('sidebar'); }
+
+// The tray only exists on a narrow viewport that is also TALL enough to hold
+// a sheet, and only on the Training board — the Expert shell has its own
+// arrangement and no sidebar to convert. The height clause matches the
+// max-height:520px block that puts #sidebar back in the flow on a landscape
+// phone: below the line there is no sheet to drag, and the grid buttons get
+// their hold-to-peek back because nothing is covering the board.
+function bvTrayActive(){
+  return window.matchMedia('(max-width:760px) and (min-height:521px)').matches &&
+         !(typeof proMode !== 'undefined' && proMode);
+}
+
+function bvtPeekPx(){
+  const el = bvTrayEl(); if(!el) return 58;
+  const v = getComputedStyle(el).getPropertyValue('--bvt-peek');
+  return parseFloat(v) || 58;
+}
+
+// How far down the sheet sits, in px, for a given state. 0 is fully open.
+function bvtOffsetFor(state, H){
+  if(state === 'full') return 0;
+  if(state === 'half') return H * BVT_HALF;
+  return Math.max(0, H - bvtPeekPx());
+}
+
+function bvTraySet(state, remember){
+  const el = bvTrayEl(); if(!el) return;
+  if(BVT_STATES.indexOf(state) < 0) state = 'closed';
+  _bvtState = state;
+  // Hand the transform back to the stylesheet. Leaving the drag's inline value
+  // in place would pin the sheet wherever the finger left it and make every
+  // later state change a no-op.
+  el.style.transform = '';
+  el.dataset.bvt = state;
+  if(remember !== false){ try{ localStorage.setItem('bm_bvt', state); }catch(e){} }
+  // Reopening at the top: the sheet is a list you scrolled last time, and
+  // coming back to the middle of it looks like a different panel.
+  if(state === 'closed') el.scrollTop = 0;
+}
+
+// Tapping the grip steps up, then closes. Closed and half both want "more",
+// and from full the only thing left to ask for is the board back.
+function bvTrayTap(){
+  bvTraySet(_bvtState === 'closed' ? 'half' : (_bvtState === 'half' ? 'full' : 'closed'));
+}
+
+// Open the sheet at least as far as `state`, without ever closing it further.
+// Used by anything that needs a control the sheet holds — the tour, mostly.
+function bvTrayReveal(state){
+  if(!bvTrayActive()) return;
+  const rank = BVT_STATES.indexOf(state) < 0 ? 2 : BVT_STATES.indexOf(state);
+  if(BVT_STATES.indexOf(_bvtState) < rank) bvTraySet(BVT_STATES[rank], false);
+}
+
+function bvtDown(e){
+  if(!bvTrayActive()) return;
+  // The strip carries live controls — the overlay chips and the "?" — and a
+  // press on one of those is not a drag.
+  if(e.target && e.target.closest && e.target.closest('button,select,input,a')) return;
+  const el = bvTrayEl(); if(!el) return;
+  const H = el.offsetHeight;
+  _bvtDrag = { y:e.clientY, from:bvtOffsetFor(_bvtState, H), H:H,
+               moved:false, last:e.clientY, lastT:Date.now(), v:0 };
+  el.classList.add('bvt-dragging');
+  try{ e.currentTarget.setPointerCapture(e.pointerId); }catch(err){}
+}
+
+function bvtMove(e){
+  const d = _bvtDrag; if(!d) return;
+  const dy = e.clientY - d.y;
+  if(Math.abs(dy) > 4) d.moved = true;
+  const now = Date.now();
+  if(now > d.lastT){
+    d.v = (e.clientY - d.last) / (now - d.lastT);   // px per ms, + is downward
+    d.last = e.clientY; d.lastT = now;
+  }
+  const max = Math.max(1, d.H - bvtPeekPx());
+  const off = Math.max(0, Math.min(max, d.from + dy));
+  const el = bvTrayEl(); if(el) el.style.transform = 'translateY(' + off + 'px)';
+  if(e.cancelable) e.preventDefault();
+}
+
+function bvtUp(e){
+  const d = _bvtDrag; if(!d) return;
+  _bvtDrag = null;
+  const el = bvTrayEl(); if(el) el.classList.remove('bvt-dragging');
+  if(!d.moved){ bvTrayTap(); return; }            // it was a tap on the grip
+  const max = Math.max(1, d.H - bvtPeekPx());
+  const off = Math.max(0, Math.min(max, d.from + (e.clientY - d.y)));
+  // A flick beats proximity. Someone who throws the sheet upward from three
+  // pixels off the bottom means "open", and snapping them back to closed
+  // because that is where they still are is the single most annoying thing a
+  // sheet can do.
+  const FLICK = 0.45;   // px/ms
+  let target;
+  if(d.v < -FLICK)      target = (off > max * 0.6) ? 'half' : 'full';
+  else if(d.v > FLICK)  target = (off < max * 0.3) ? 'half' : 'closed';
+  else {
+    let best = null, bestD = Infinity;
+    BVT_STATES.forEach(function(st){
+      const dist = Math.abs(bvtOffsetFor(st, d.H) - off);
+      if(dist < bestD){ bestD = dist; best = st; }
+    });
+    target = best || 'closed';
+  }
+  bvTraySet(target);
+}
+
+// ── Hold-to-peek on the grid, where the grid is beside the board ──────────
+// The gesture is gone from the tray because the tray covers the board it
+// exists to reveal (see the ibTap comment). That reasoning is about the tray,
+// not about the gesture: at desktop widths the same buttons sit in a column
+// NEXT TO the board, nothing is covered, and holding one to see the position
+// without that overlay is as useful as it ever was.
+//
+// Bound here rather than inline because the condition is a media query rather
+// than a piece of markup — the same button is tap-only or holdable depending
+// on how wide the screen is, and it can change under the user's hands when a
+// phone is turned sideways.
+function ibBindHold(){
+  document.querySelectorAll('.ind-grid .ib[id^="ib-"]').forEach(function(ib){
+    const key = ib.id.slice(3);
+    const btn = ib.querySelector('.ib-main');
+    if(!btn || !IND[key]) return;
+    btn.addEventListener('pointerdown', function(e){
+      _ibHeldRelease = false;       // a fresh press; nothing to swallow
+      // Explain mode is a single deliberate tap, never a peek.
+      if(bvTrayActive() || ibExplain) return;
+      ibMainDown(key, e);
+    });
+    btn.addEventListener('pointerup', function(){
+      if(ibHeld[key] === undefined && !IND[key].pressing) return;
+      if(ibMainUp(key)) _ibHeldRelease = true;
+    });
+    ['pointerleave','pointercancel'].forEach(function(t){
+      btn.addEventListener(t, function(){ ibMainCancel(key); });
+    });
+  });
+}
+
+function bvTrayInit(){
+  const h = document.getElementById('bvtHandle');
+  if(h){
+    h.addEventListener('pointerdown', bvtDown);
+    h.addEventListener('pointermove', bvtMove);
+    h.addEventListener('pointerup', bvtUp);
+    h.addEventListener('pointercancel', function(){
+      if(_bvtDrag){ _bvtDrag = null; }
+      const el = bvTrayEl(); if(el) el.classList.remove('bvt-dragging');
+      bvTraySet(_bvtState, false);
+    });
+  }
+  // Restore where it was left — but never at "full", which would hide the
+  // board behind a panel on the first paint of a returning visit.
+  let want = 'closed';
+  try{ const v = localStorage.getItem('bm_bvt'); if(v === 'half') want = 'half'; }catch(e){}
+  bvTraySet(want, false);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// PINNED OVERLAYS
+// --------------------------------------------------------------------------
+// The tray is for setting board vision up; this strip is for working it. Put
+// the two or four overlays you are drilling — checks/threats/captures, or
+// forks and weak squares — beside the board and you never open the tray again
+// for that session.
+//
+// It is also the only surface that keeps hold-to-peek, because it is the only
+// one you can watch the board from. ibMainDown/Up/Cancel are unchanged; they
+// just have a new caller.
+// ══════════════════════════════════════════════════════════════════════════
+const PIN_STORE = 'bm_pins';
+let pinnedInds = [];
+
+function pinLabel(key, full){
+  const l = document.querySelector('#ib-' + key + ' .ib-lbl');
+  if(!l) return key;
+  return (full && l.getAttribute('data-full')) || l.textContent.trim();
+}
+
+function pinLoad(){
+  pinnedInds = [];
+  try{
+    const raw = localStorage.getItem(PIN_STORE);
+    if(raw){
+      const arr = JSON.parse(raw);
+      if(Array.isArray(arr)){
+        // Filter against the buttons that actually exist, so a key removed
+        // from the app in a later build cannot resurrect a dead chip.
+        pinnedInds = arr.filter(function(k){
+          return IND[k] && document.getElementById('ib-' + k);
+        });
+      }
+    }
+  }catch(e){ pinnedInds = []; }
+}
+
+function pinSave(){
+  try{ localStorage.setItem(PIN_STORE, JSON.stringify(pinnedInds)); }catch(e){}
+}
+
+function pinRender(){
+  const box = document.getElementById('pinChips');
+  if(!box) return;
+  box.textContent = '';
+  pinnedInds.forEach(function(k){
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.id = 'pin-' + k;
+    b.className = 'pin-chip';
+    // textContent, not innerHTML: these names carry apostrophes and ampersands.
+    b.textContent = pinLabel(k, false);
+    b.title = pinLabel(k, true) + ' — tap to cycle, hold to peek';
+    b.setAttribute('aria-label', pinLabel(k, true));
+    b.addEventListener('pointerdown', function(ev){
+      if(ibExplain) return;         // an armed tap explains; it never peeks
+      ibMainDown(k, ev);
+    });
+    // No click handler on a chip, so the short-press tap is dispatched here.
+    b.addEventListener('pointerup',     function(){ if(!ibMainUp(k)) ibTap(k); });
+    b.addEventListener('pointercancel', function(){ ibMainCancel(k); });
+    box.appendChild(b);
+    ibUpdateUI(k);
+  });
+  const hint = document.getElementById('pinHint');
+  if(hint) hint.hidden = pinnedInds.length > 0;
+}
+
+function pinToggleKey(k){
+  const i = pinnedInds.indexOf(k);
+  if(i >= 0) pinnedInds.splice(i, 1);
+  else pinnedInds.push(k);
+  pinSave();
+  pinRender();
+  // The strip appears and disappears with its first and last chip, and the
+  // board is sized around it.
+  if(typeof resizeBoard === 'function') resizeBoard();
+}
+
+function pinPickerOpen(){
+  const wrap = document.getElementById('pinPicker');
+  const list = document.getElementById('pinPickerList');
+  if(!wrap || !list) return;
+  list.textContent = '';
+  // Built from the buttons themselves, in the order the tray shows them, so
+  // this list can never offer an overlay the app does not have.
+  document.querySelectorAll('.ind-grid .ib[id^="ib-"]').forEach(function(el){
+    const k = el.id.slice(3);
+    if(!IND[k]) return;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = pinLabel(k, true);
+    const paint = function(){
+      const on = pinnedInds.indexOf(k) >= 0;
+      b.className = 'pin-opt' + (on ? ' picked' : '');
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    };
+    paint();
+    b.addEventListener('click', function(){ pinToggleKey(k); paint(); });
+    list.appendChild(b);
+  });
+  wrap.hidden = false;
+}
+
+function pinPickerClose(){
+  const w = document.getElementById('pinPicker');
+  if(w) w.hidden = true;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// THE PHONE GAME BAR
+// --------------------------------------------------------------------------
+// Every button here calls the same function its sidebar twin calls, so there
+// is one behaviour with two front doors. syncPhoneBar() answers only "which of
+// them is on screen", and takes that from the same conditions syncActionRow()
+// uses for the sidebar row — they are called together so the two cannot drift.
+// ══════════════════════════════════════════════════════════════════════════
+function syncPhoneBar(){
+  const bar = document.getElementById('phoneBar');
+  if(!bar) return;
+  const show = function(id, on){
+    const el = document.getElementById(id);
+    if(el) el.style.display = on ? '' : 'none';
+  };
+  const inGame = (typeof _gameInProgress === 'function') ? _gameInProgress() : false;
+  // "Solo" is an exploration with no opponent: there is nobody to resign to
+  // and nobody to offer a draw.
+  const isSolo = !(typeof botActive !== 'undefined' && botActive) &&
+                 !(typeof mpRoomId !== 'undefined' && mpRoomId &&
+                   typeof mpMode !== 'undefined' && mpMode === 'ingame');
+  const vs = inGame && !isSolo;
+  show('pbResign', vs);
+  show('pbDraw',   vs);
+  // Chat follows the chat box itself rather than re-deriving "is this a
+  // 2-player game" a fourth time.
+  const cb = document.getElementById('chatBox');
+  show('pbChat', !!(cb && cb.style.display && cb.style.display !== 'none'));
+}
+
+// Expand the chat and put it where it can be read. It sits below the board in
+// the same column, so this is a scroll, not a panel.
+function phoneChatOpen(){
+  const box = document.getElementById('chatBox');
+  if(!box) return;
+  if(typeof chatExpanded !== 'undefined' && !chatExpanded &&
+     typeof chatToggleExpand === 'function') chatToggleExpand();
+  try{ box.scrollIntoView({block:'nearest', behavior:'smooth'}); }catch(e){}
+  const inp = document.getElementById('chatInput');
+  if(inp) try{ inp.focus({preventScroll:true}); }catch(e){}
+}
+
+// ── Which way round the board is drawn ────────────────────────────────────
+// Two separate facts used to be one variable. `boardFlipped` means "the seat
+// you are sitting in" — the bot and multiplayer code set it when you are
+// playing Black — and every renderer ALSO or-ed in `mpRole === 'black'` on
+// top. That left no way to express "turn the board round for a moment", which
+// is all a flip button is: setting boardFlipped=false while playing Black
+// online was simply overruled by the or-ed clause, and the button did nothing.
+//
+// `viewFlip` is that second fact, and it is a pure view state — it never
+// changes whose pieces are whose, whose clock is running, or which colour you
+// are playing. It is reset when you sit down at a new board, because the seat
+// changing is exactly when "turned round from the seat" stops meaning anything.
+let viewFlip = false;
+
+function boardViewFlipped(){
+  const seat = (typeof boardFlipped !== 'undefined' && boardFlipped) ||
+               (typeof mpRole !== 'undefined' && mpRole === 'black' &&
+                typeof mpInGame === 'function' && mpInGame());
+  return viewFlip ? !seat : seat;
+}
+
+// The clocks follow the board: your own clock belongs next to your own pieces
+// whichever way round it is drawn. Called from updatePlayerBoxes(), which
+// already runs after every move and turn change, so any code that sets
+// boardFlipped directly gets the class corrected without knowing this exists.
+function syncBoardOrientation(){
+  const bc = document.getElementById('board-col');
+  if(bc) bc.classList.toggle('board-flipped', boardViewFlipped());
+}
+
+function flipPerspective(){
+  if(typeof proMode !== 'undefined' && proMode){
+    if(typeof proFlipBoard === 'function') proFlipBoard();
+    return;
+  }
+  viewFlip = !viewFlip;
+  syncBoardOrientation();
+  if(typeof syncCommitChipMount === 'function') syncCommitChipMount();
+  if(typeof resizeBoard === 'function') resizeBoard();
+  if(typeof render === 'function') render();
+}
+
 // ── Board square color helper ─────────────────────────────────────────
 function sqColor(r,c){
   const t=BOARD_THEMES[currentBoardTheme]||BOARD_THEMES.classic;
@@ -991,6 +1470,7 @@ let chatExpanded = false;
 function chatShow(visible){
   const box = document.getElementById('chatBox');
   if(box) box.style.display = visible ? 'flex' : 'none';
+  if(typeof syncPhoneBar === 'function') syncPhoneBar();
   if(visible){
     // Always start collapsed when a game begins
     chatExpanded = false;
@@ -1791,6 +2271,13 @@ function _renderTourStep(){
   const el = boardFocus
     ? document.getElementById('cv')
     : (step.sel ? document.querySelector(step.sel) : null);
+  // On a phone most of these controls are inside the board-vision sheet, which
+  // starts closed. Spotlighting a control that is 700px below the fold draws a
+  // ring on nothing, so the sheet opens far enough to show it first.
+  if (!boardFocus && el && typeof bvTrayReveal === 'function' &&
+      el.closest && el.closest('#sidebar')) {
+    bvTrayReveal('full');
+  }
   let rect = null;
   if(el){ try{ el.scrollIntoView({block:'nearest'}); }catch(e){} rect = el.getBoundingClientRect(); }
   const _tp = document.getElementById('tourPanel');
@@ -2245,6 +2732,11 @@ function mpSetMode(mode) {
     if (leaveRow) leaveRow.style.display = '';
   }
   mpUpdateChallengeMarker();
+  // mpMode is what _gameInProgress() and syncPhoneBar() read to decide whether
+  // a game is running, so every transition through here has to repaint the
+  // buttons that answer to it — Resign, Offer draw, and the starters that must
+  // not be one mis-tap away from abandoning the game.
+  if (typeof updateActionBtn === 'function') updateActionBtn();
 }
 
 // ── Standing-challenge marker ────────────────────────────────────────────────
@@ -3126,6 +3618,7 @@ function mpStartGame(tcKey) {
   if (mpStartFen) applyStartPosition(mpStartFen, mpStartSans);
   chatShow(true);
   boardFlipped = (mpRole === 'black');
+  viewFlip = false;   // a new seat; "turned round" no longer means anything
   const _bcEl = document.getElementById('board-col');
   if (_bcEl) _bcEl.classList.toggle('board-flipped', boardFlipped);
   render();
@@ -3508,6 +4001,9 @@ function peekDown(e){
   });
   const btn=document.getElementById('btnPeek');
   if(btn){btn.style.borderColor='var(--accent)';btn.style.color='var(--accent)';}
+  // The same gesture has a second button on the phone's game bar.
+  const pb=document.getElementById('pbPeek');
+  if(pb) pb.classList.add('peeking');
   ibRefreshAll(); indApply();
 }
 
@@ -3520,6 +4016,8 @@ function peekUp(){
   });
   const btn=document.getElementById('btnPeek');
   if(btn){btn.style.borderColor='';btn.style.color='';}
+  const pb=document.getElementById('pbPeek');
+  if(pb) pb.classList.remove('peeking');
   ibRefreshAll(); indApply();
 }
 

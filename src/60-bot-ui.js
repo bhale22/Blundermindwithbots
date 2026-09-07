@@ -898,6 +898,7 @@ async function botStart() {
   if (pc === 'random') pc = Math.random() < 0.5 ? 'white' : 'black';
   botPlayerColor = pc;
   boardFlipped = (pc === 'black');
+  viewFlip = false;   // new seat, so any view flip is spent
   // Sync the CSS class so player boxes rearrange to match board orientation
   var _bc = document.getElementById('board-col');
   if (_bc) _bc.classList.toggle('board-flipped', boardFlipped);
@@ -996,6 +997,14 @@ async function botStart() {
   // 73px overflows the page, and the reflow when it disappears shifts the board.
   if (typeof proSync === 'function') proSync();
 
+  // The beginner shell has exactly the same problem, and on a phone it is
+  // worse: Resign and Offer draw live on the game bar under the board, and
+  // the quick-start block ("Start Game vs Bot", opponent, colour) has to come
+  // down now that there is a game to lose. Both are driven by updateActionBtn,
+  // which otherwise waits for updatePlayerBoxes() on the first move — so a
+  // fresh game offered you a restart and no way to resign it.
+  if (typeof updateActionBtn === 'function') updateActionBtn();
+
   // If bot plays White (human is Black), bot moves first
   const botColor = pc === 'white' ? 'b' : 'w';
   if (turn === botColor) {
@@ -1014,6 +1023,7 @@ function botStop() {
   clearGhostPieces();
   botGhostResponses = {};
   boardFlipped = false;
+  viewFlip = false;   // new seat, so any view flip is spent
   var _bc = document.getElementById('board-col');
   if (_bc) _bc.classList.remove('board-flipped');
   // Phase 1: clear move history and clock baseline on stop
@@ -2266,6 +2276,7 @@ function bmSessionRestore() {
     setAwaitingConfirm(false);
 
     boardFlipped = !!snap.flipped;
+    viewFlip = false;   // restoring a seat, not a view
     const bcol = document.getElementById('board-col');
     if (bcol) bcol.classList.toggle('board-flipped', boardFlipped);
 

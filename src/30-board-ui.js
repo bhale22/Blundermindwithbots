@@ -374,9 +374,8 @@ function getEvtPos(e){const rect=cv.getBoundingClientRect();const cl=e.touches?e
 function getSq(pos){
   const scale=480/cv.getBoundingClientRect().width;
   let c=Math.floor(pos.x*scale/SQ),r=Math.floor(pos.y*scale/SQ);
-  // Flip for both multiplayer-black and bot-game-black (boardFlipped)
-  const shouldFlip = (typeof boardFlipped!=='undefined'&&boardFlipped) ||
-                     (typeof mpRole!=='undefined'&&mpRole==='black'&&typeof mpInGame==='function'&&mpInGame());
+  // Seat plus any view flip the player has asked for — see boardViewFlipped().
+  const shouldFlip = boardViewFlipped();
   if(shouldFlip){c=7-c;r=7-r;}
   if(c>=0&&c<8&&r>=0&&r<8)return rcSq(r,c);return -1;
 }
@@ -387,9 +386,8 @@ function canvasToBoard(pos){
   const py=(pos.y)*scale;
   let col=Math.max(0,Math.min(7,Math.floor(px/SQ)));
   let row=Math.max(0,Math.min(7,Math.floor(py/SQ)));
-  // Flip for both multiplayer-black and bot-game-black (boardFlipped)
-  const shouldFlip = (typeof boardFlipped!=='undefined'&&boardFlipped) ||
-                     (typeof mpRole!=='undefined'&&mpRole==='black'&&typeof mpInGame==='function'&&mpInGame());
+  // Seat plus any view flip the player has asked for — see boardViewFlipped().
+  const shouldFlip = boardViewFlipped();
   if(shouldFlip){col=7-col;row=7-row;}
   return rcSq(row,col);
 }
@@ -697,6 +695,36 @@ let currentPalette=PALETTES.default;
 
 // Determine threat circle color for a piece on sq of given color
 // Returns: 'red' (danger), 'green' (safe), 'grey' (contested), 'none' (no attackers)
+// What colour, if any, a piece's threat circle should be.
+//
+// The old rule read the count alone: equal attackers and defenders was always
+// grey, more defenders was always green, whatever the piece. That is only true
+// for a pawn. A queen defended three times and attacked once is still losing a
+// queen for a knight, and a bishop traded off an outpost is a decision, not a
+// non-event — but both drew the same calm circle a defended pawn did, so the
+// overlay was quietest exactly where the material at stake was largest.
+//
+// The scale is now the piece, not just the count:
+//
+//   Queen   attacked at all      → 'saw'         a red sawtooth ring. No count
+//                                                of defenders makes losing a
+//                                                queen for less than a queen
+//                                                acceptable, so this one never
+//                                                gets to be calm.
+//   Any     hanging / cheap      → 'red'         unchanged: no defender, a
+//           attacker / outnumbered              cheaper attacker, or simply
+//                                                more attackers than defenders.
+//   R/B/N   equally defended     → 'yellow'      evaluate this.
+//   R/B/N   over-defended        → 'yellowgreen' held, but keep half an eye on
+//                                                it — an exchange here still
+//                                                changes the position.
+//   Pawn    equally defended     → 'grey'        the only genuinely calm case.
+//   Pawn    over-defended        → 'green'
+//
+// Rooks ride with the minors: the user's rule named queens, minors and pawns,
+// and a rook sits with the pieces whose exchanges are worth a second look
+// rather than with the pawns whose are not. A rook attacked by anything
+// cheaper already resolves to 'red' above, before it reaches that branch.
 function getCaptureColor(sq, color, bd, atk){
   const opp = color==='w'?'b':'w';
   const p = bd[sq]; if(!p) return 'none';
@@ -704,6 +732,8 @@ function getCaptureColor(sq, color, bd, atk){
   const def = atk[sq][color] ? atk[sq][color].length : 0;
   const att = atk[sq][opp]  ? atk[sq][opp].length  : 0;
   if(att === 0) return 'none'; // not under attack
+  // An attacked queen is the loudest thing on the board, before any counting.
+  if(p.piece === 'Q') return 'saw';
   // Check for cheap attacker (attacker less valuable than this piece)
   let hasCheapAttacker = false;
   if(atk[sq][opp]){
@@ -714,23 +744,47 @@ function getCaptureColor(sq, color, bd, atk){
   }
   if(def === 0 || hasCheapAttacker) return 'red';   // hanging or cheap capture
   if(att > def)  return 'red';                       // outnumbered — more attackers than defenders
-  if(def > att)  return 'green';                     // overprotected
-  return 'grey';                                      // equal count — contested
+  if(p.piece === 'P') return def > att ? 'green' : 'grey';
+  return def > att ? 'yellowgreen' : 'yellow';
 }
 
-// Draw a threat circle around a piece square
+// The five threat-circle inks. Named once so the canvas, the help text and any
+// future key all read the same values rather than three sets of near-misses.
+const THREAT_INK = {
+  red:    'rgba(210,40,40,0.95)',
+  yellow: 'rgba(224,168,20,0.95)',
+  green:  'rgba(30,180,70,0.92)',
+  grey:   'rgba(140,140,160,0.80)',
+  saw:    'rgba(220,40,40,0.95)',
+};
+
+// Draw a threat circle around a piece square.
+//
+// 'yellowgreen' is drawn as one circle in alternating arcs rather than as a
+// blend: a blended colour would land somewhere between the yellow and green
+// already in use and read as a sixth, unexplained state. Alternating keeps
+// both of its parents legible — "held (green), still worth watching (yellow)".
 function drawThreatCircle(sq, color){
   const {r,c} = sqCanvas(sq);
   const x = c*SQ+SQ/2, y = r*SQ+SQ/2;
+  if(color==='saw'){ drawJaggedRing(ctx, sq, THREAT_INK.saw); return; }
   ctx.save();
-  ctx.beginPath(); ctx.arc(x,y,SQ*0.42,0,Math.PI*2);
-  if(color==='red'){
-    ctx.strokeStyle='rgba(210,40,40,0.95)'; ctx.lineWidth=1.8;
-  } else if(color==='green'){
-    ctx.strokeStyle='rgba(30,180,70,0.92)'; ctx.lineWidth=1.8;
-  } else {
-    ctx.strokeStyle='rgba(140,140,160,0.80)'; ctx.lineWidth=1.8;
+  ctx.lineWidth = 1.8;
+  if(color==='yellowgreen'){
+    // Eight segments, so each ink appears four times and neither can be
+    // mistaken for a partial ring at any board size.
+    const segs = 8, step = Math.PI*2/segs;
+    for(let i=0;i<segs;i++){
+      ctx.beginPath();
+      ctx.arc(x, y, SQ*0.42, i*step, (i+1)*step);
+      ctx.strokeStyle = (i%2===0) ? THREAT_INK.yellow : THREAT_INK.green;
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
   }
+  ctx.beginPath(); ctx.arc(x,y,SQ*0.42,0,Math.PI*2);
+  ctx.strokeStyle = THREAT_INK[color] || THREAT_INK.grey;
   ctx.stroke();
   ctx.restore();
 }
@@ -813,7 +867,7 @@ function render(){
 
   ctx.clearRect(0,0,480,480);
   ctx.setLineDash([]); ctx.globalAlpha=1; ctx.shadowBlur=0; ctx.lineWidth=1; // reset state
-  const _boardFlipped = boardFlipped || (typeof mpRole!=='undefined'&&mpRole==='black'&&typeof mpInGame==='function'&&mpInGame());
+  const _boardFlipped = boardViewFlipped();
 
   for(let r=0;r<8;r++)for(let c=0;c<8;c++){
     // For black: display row r,c → board square at mirrored position
@@ -1737,6 +1791,13 @@ function updateGameStartBtns() {
     const el = document.getElementById(id);
     if (el) el.style.display = live ? 'none' : '';
   });
+  // The quick-start block is the largest of the starters — a green Start
+  // button, an opponent picker and a colour picker — and it was the one that
+  // stayed. On a phone it sat at the top of the tray taking the space a live
+  // game has no use for, offering to throw that game away. It goes with the
+  // rest of them, and comes back the moment the game ends.
+  const qb = document.getElementById('quickBot');
+  if (qb) qb.style.display = live ? 'none' : '';
 }
 
 // One row, five buttons. While a game is live it carries Offer draw and
@@ -1801,6 +1862,11 @@ function syncActionRow() {
   const any = [drawBtn, resBtn, btn, review, explore]
     .some(el => el && el.style.display !== 'none');
   ga.style.display = any ? 'flex' : 'none';
+
+  // The phone's own game bar carries the same two live-game buttons. Synced
+  // from here rather than from its own listener so the two can never disagree
+  // about whether a game is running.
+  if (typeof syncPhoneBar === 'function') syncPhoneBar();
 }
 
 function updateActionBtn() {
@@ -1997,6 +2063,9 @@ function matAdvString(lead, pieces, oppPieces){
 }
 
 function updatePlayerBoxes(){
+  // Which box is on top follows the drawn orientation, not the seat — so a
+  // view flip moves the clocks with the pieces they belong to.
+  if(typeof syncBoardOrientation === 'function') syncBoardOrientation();
   const mat = computeMaterial(board);
   const diff = mat.w - mat.b;
   const inChk = inCheck(board, turn);
@@ -2819,6 +2888,13 @@ if (!localStorage.getItem('bm_pieceSet')) { currentPieceSet = 'staunton'; }
 loadPrefs();
 loadSoundPref();
 loadBoardSettingsPref();
+// The phone furniture. All three no-op above the breakpoint: the tray is a
+// plain sidebar there, and the strip and the bar are display:none.
+pinLoad();
+pinRender();
+bvTrayInit();
+syncPhoneBar();
+ibBindHold();
 if(typeof ghostSyncUI === "function") ghostSyncUI();
 // Stockfish 1 is where a first visit should start: the quick block applies it
 // rather than inheriting the builder's own default of 8.

@@ -68,66 +68,90 @@ console.log('\nPhone — 390x844');
   const { ctx, page, picked } = await shell(390, 844, true);
   ok('Visualization shell reachable from the landing page', picked);
 
-  // The row is game-only now: idle it holds nothing and collapses, and at the
-  // end of a game the same slot carries Rematch and Review instead. Put the
-  // page into a live game before asserting the row is there to measure.
-  ok('the row is empty and collapsed before a game starts',
+  // On a phone the two live-game buttons are on #phoneBar, under the board,
+  // and #gameActions is hidden inside the tray — the tray covers the board
+  // when it is open, which is the last place a resignation should live. The
+  // assertions below are the old ones re-pointed at the bar: still "these are
+  // reachable without opening anything, and they are a real tap target".
+  ok('the bar carries nothing to press before a game starts',
      await page.evaluate(() => {
-       botActive = false; updateActionBtn();
-       return document.getElementById('gameActions').getBoundingClientRect().height === 0;
+       botActive = false; gameOver = false; updateActionBtn();
+       const d = id => getComputedStyle(document.getElementById(id)).display;
+       return d('pbResign') === 'none' && d('pbDraw') === 'none';
      }));
   await page.evaluate(() => { botActive = true; updateActionBtn(); });
   await page.waitForTimeout(200);
 
-  const a = await rects(page);
-  ok('Resign / Offer draw is rendered once a game is live', a.ga && a.ga.h > 0,
-     a.ga ? 'height ' + a.ga.h : 'missing');
-  ok('sits below the clock', a.ga && a.clock && a.ga.top >= a.clock.bottom - 1,
-     a.ga && a.clock ? `ga.top ${a.ga.top.toFixed(0)} vs clock.bottom ${a.clock.bottom.toFixed(0)}` : 'missing');
-  ok('sits above the board-vision toggle', a.ga && a.toggle && a.ga.bottom <= a.toggle.top + 1,
-     a.ga && a.toggle ? `ga.bottom ${a.ga.bottom.toFixed(0)} vs toggle.top ${a.toggle.top.toFixed(0)}` : 'missing');
+  const a = await page.evaluate(() => {
+    const r = id => { const e = document.getElementById(id); const b = e.getBoundingClientRect();
+                      return { top: b.top, bottom: b.bottom, h: b.height }; };
+    return { clock: r('playerBoxW'), bar: r('phoneBar'), tray: r('sidebar'),
+             gaDisplay: getComputedStyle(document.getElementById('gameActions')).display };
+  });
+  ok('Resign / Offer draw are on the game bar once a game is live',
+     await page.evaluate(() => {
+       const d = id => getComputedStyle(document.getElementById(id)).display;
+       return d('pbResign') !== 'none' && d('pbDraw') !== 'none';
+     }));
+  ok('the sidebar copy stays out of the way inside the tray', a.gaDisplay === 'none', a.gaDisplay);
+  ok('the bar sits below the clock', a.bar.top >= a.clock.bottom - 1,
+     `bar.top ${a.bar.top.toFixed(0)} vs clock.bottom ${a.clock.bottom.toFixed(0)}`);
+  ok('the bar sits above the closed tray', a.bar.bottom <= a.tray.top + 1,
+     `bar.bottom ${a.bar.bottom.toFixed(0)} vs tray.top ${a.tray.top.toFixed(0)}`);
+  ok('the bar is on screen', a.bar.bottom <= 844, 'bar.bottom ' + a.bar.bottom.toFixed(0));
 
-  // The regression that motivated the change.
-  await page.evaluate(() => toggleBoardSettings());
+  // The regression that motivated all of this: opening the board-vision
+  // controls used to push the live-game buttons off the screen. Now the
+  // controls are a sheet that slides OVER the board, so the bar does not move
+  // at all — it is simply covered, and closing the sheet brings it straight
+  // back. That is the property worth pinning.
+  const before = a.bar.top;
+  await page.evaluate(() => bvTraySet('full'));
+  await page.waitForTimeout(450);
+  const opened = await page.evaluate(() => ({
+    barTop: document.getElementById('phoneBar').getBoundingClientRect().top,
+    state: document.getElementById('sidebar').dataset.bvt,
+    sheetH: document.getElementById('sidebar').getBoundingClientRect().height,
+  }));
+  ok('the sheet actually opened', opened.state === 'full', opened.state);
+  ok('the sheet is tall enough to have caused the old bug', opened.sheetH > 400,
+     'height ' + opened.sheetH.toFixed(0));
+  ok('opening it does not move the game bar', Math.abs(opened.barTop - before) < 2,
+     `${before.toFixed(0)} → ${opened.barTop.toFixed(0)}`);
+  await page.evaluate(() => bvTraySet('closed'));
   await page.waitForTimeout(400);
-  const b = await rects(page);
-  const open = await page.evaluate(() =>
-    document.getElementById('board-settings').classList.contains('open'));
-  ok('drawer actually opened', open);
-  ok('drawer is tall enough to have caused the bug', b.settings && b.settings.h > 200,
-     b.settings ? 'height ' + b.settings.h.toFixed(0) : 'missing');
-  ok('STILL above the toggle with the drawer open',
-     b.ga && b.toggle && b.ga.bottom <= b.toggle.top + 1,
-     b.ga && b.toggle ? `ga.bottom ${b.ga.bottom.toFixed(0)} vs toggle.top ${b.toggle.top.toFixed(0)}` : 'missing');
-  ok('still on screen with the drawer open', b.ga && b.ga.bottom <= 844,
-     b.ga ? 'ga.bottom ' + b.ga.bottom.toFixed(0) : 'missing');
+  ok('closing it brings the bar back untouched',
+     await page.evaluate(t => Math.abs(document.getElementById('phoneBar').getBoundingClientRect().top - t) < 2, before));
 
-  // Buttons stay a real tap target once moved.
-  // The row carries five buttons now - Draw/Resign while a game is live, and
-  // Rematch/Review/Explore once it ends - with only the applicable ones shown.
-  // Measure what is actually on screen, not the hidden ones.
+  // Buttons stay a real tap target.
   const tap = await page.evaluate(() =>
-    [...document.querySelectorAll('#gameActions .gbtn')]
-      .filter(el => el.offsetParent !== null)
+    [...document.querySelectorAll('#phoneBar .pbtn')]
+      .filter(el => getComputedStyle(el).display !== 'none')
       .map(el => Math.round(el.getBoundingClientRect().height)));
   ok('every visible button is >= 42px tall', tap.length >= 2 && tap.every(h => h >= 42),
      JSON.stringify(tap));
 
-  // End of game: the same slot must hand over to Rematch / Review.
+  // End of game: the sidebar row still hands over to Rematch / Review, and the
+  // bar drops the two buttons that no longer apply.
   const endRow = await page.evaluate(() => {
     gameOver = true;
     if (typeof gameMovesAlgebraic !== 'undefined') gameMovesAlgebraic = ['e4', 'e5'];
     updateActionBtn();
+    // #gameActions is display:none on a phone, so offsetParent is null for
+    // every child of it — read the inline display the sync actually sets.
     const vis = [...document.querySelectorAll('#gameActions .gbtn')]
-      .filter(el => el.offsetParent !== null).map(el => el.textContent.trim());
+      .filter(el => el.style.display !== 'none').map(el => el.textContent.trim());
+    const barResign = getComputedStyle(document.getElementById('pbResign')).display;
     gameOver = false; botActive = false;
     if (typeof gameMovesAlgebraic !== 'undefined') gameMovesAlgebraic = [];
     updateActionBtn();
-    return vis;
+    return { vis, barResign };
   });
   ok('Rematch and Review take the Draw/Resign slot at the end',
-     endRow.some(t => /Rematch/.test(t)) && endRow.some(t => /Review/.test(t)),
-     endRow.join(' | '));
+     endRow.vis.some(t => /Rematch/.test(t)) && endRow.vis.some(t => /Review/.test(t)),
+     endRow.vis.join(' | '));
+  ok('the game bar drops Resign once the game is over', endRow.barResign === 'none',
+     endRow.barResign);
 
   await ctx.close();
 }
