@@ -1571,6 +1571,12 @@ let _distExpanded = false;
 let _distPreMove  = null;  // { board, turn, castling, epSq, fen } snapshot before last move
 let _distLastUci  = null;  // uci of the move just played (may be outside Maia's top set)
 let _distSeq      = 0;     // guards against a stale async render overwriting a newer one
+// Game review keeps its own copy of who was who, because entering review calls
+// botStop() — botActive/botPlayerColor are gone by the time the panel reads
+// them, and without this every reviewed move is labelled "Last move" and read
+// at the fallback 1500 even when the game was against a Maia 1900.
+// { rating: '1900'|null, human: 'w'|'b'|null }
+let _distReviewCtx = null;
 
 // Visualization board only. This used to be Expert-board only, which had it
 // backwards on both counts: the Expert board's promise is a clean tournament
@@ -1594,6 +1600,9 @@ function _distApplicable() {
 // exploration and for Stockfish opponents, which have no human rating band.
 function _distRefRating() {
   try {
+    // In review the live bot is already stopped; _distReviewCtx is the same
+    // answer, captured before it was.
+    if (_distReviewCtx && _distReviewCtx.rating) return String(_distReviewCtx.rating);
     if (typeof botActive !== 'undefined' && botActive) {
       const tab = (typeof botTab !== 'undefined') ? botTab : '';
       if ((tab === 'maia3' || tab === 'maia' || tab === 'lcmaia' || tab === 'hybrid') &&
@@ -1612,9 +1621,16 @@ function _distRefRating() {
 function _distMoverLabel() {
   const mover = _distPreMove ? _distPreMove.turn : null;
   if (!mover) return 'Last move';
+  if (_distReviewCtx && _distReviewCtx.human) {
+    return mover === _distReviewCtx.human ? 'You played' : 'Opponent played';
+  }
   if (typeof botActive !== 'undefined' && botActive && typeof botPlayerColor !== 'undefined') {
     const human = botPlayerColor === 'white' ? 'w' : 'b';
     return mover === human ? 'You played' : 'Bot played';
+  }
+  // Stepping a loaded PGN: no seat to speak of, so name the side that moved.
+  if (typeof inReplay !== 'undefined' && inReplay) {
+    return (mover === 'w' ? 'White' : 'Black') + ' played';
   }
   return 'Last move';   // solo exploration: both sides are the user
 }
@@ -1638,6 +1654,32 @@ function distCapturePreMove(from, to, promo) {
   } catch (e) { _distPreMove = null; _distLastUci = null; }
 }
 
+// ── Game review ───────────────────────────────────────────────────────────────
+// Stepping a finished game asks exactly the question this panel answers, one
+// move at a time: at THIS position, what were the odds on the move that was
+// actually played? rebuildToReplayIdx already walks the game from its base
+// position, so it hands over the state it passed through on the way — no
+// second reconstruction here.
+//
+// Called with the position BEFORE replayMoves[replayIdx-1] and that move's
+// uci; or with (null, null) at move 0, where there is no played move yet.
+function distSetReplayPos(snapshot, uci) {
+  if (!_distApplicable()) { _distPreMove = null; _distLastUci = null; return; }
+  _distPreMove = snapshot || null;
+  _distLastUci = snapshot ? uci : null;
+  _distSeq++;                       // abandon any inference for the old position
+  distUpdateVisibility();
+  if (_distExpanded) distRefresh();
+}
+
+// Remember who the reviewer was playing, and at what rating, before entering
+// review tears the bot context down. Both may be null (loaded PGN).
+function distSetReviewCtx(rating, humanColor) {
+  _distReviewCtx = (rating || humanColor)
+    ? { rating: rating || null, human: humanColor || null }
+    : null;
+}
+
 // After a move completes: keep visibility in sync and refresh if the panel is open.
 function distOnMoveComplete() {
   distUpdateVisibility();
@@ -1646,7 +1688,7 @@ function distOnMoveComplete() {
 
 // New game — drop any stale distribution.
 function distReset() {
-  _distPreMove = null; _distLastUci = null;
+  _distPreMove = null; _distLastUci = null; _distReviewCtx = null;
   distUpdateVisibility();
   if (_distExpanded) distRefresh();
 }
@@ -1668,7 +1710,9 @@ async function distRefresh() {
   if (tag) tag.style.display = 'none';
   if (!_distPreMove) {
     rows.innerHTML = '';
-    if (hint) hint.textContent = 'Make a move to see the odds Maia gave each option here.';
+    if (hint) hint.textContent = (typeof inReplay !== 'undefined' && inReplay)
+      ? 'Step forward to see the odds Maia gave each option here.'
+      : 'Make a move to see the odds Maia gave each option here.';
     return;
   }
   // Maia model required — nudge a cache/init load if it isn't up yet.

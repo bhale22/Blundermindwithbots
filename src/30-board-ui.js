@@ -936,8 +936,9 @@ function render(){
   // Captures: now handled by circle system above
 
   // Weak square highlights (hold button)
-  // weakSquaresW = empty squares black has no attackers on = safe for white
-  // weakSquaresB = empty squares white has no attackers on = safe for black
+  // weakSquaresW = empty squares WHITE has no attacker on — White's own holes.
+  // weakSquaresB = the same for Black. (See indApply: the test is
+  // atk[s].<colour>.length === 0, i.e. the square that colour fails to cover.)
   if(showingWeakSquares){
     // A weak square is territory, not a piece in trouble, and it used to be
     // painted in the colours that mean "hanging" and "contested" — a 15% wash
@@ -972,18 +973,18 @@ function render(){
       ctx.restore();
       ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.strokeRect(x+1,y+1,SQ-2,SQ-2);
     };
-    // Which set is "mine" was reported the wrong way round on the board, so
-    // the pair is swapped here to match the buttons: ib-weakb is the one
-    // labelled "My weak sq." and it draws in the mine colour, hatched down-
-    // right; ib-weakw is "Opp. weak sq." and draws teal, hatched up-right.
-    // NOTE: neither set consults which colour the human is playing, so this
-    // reads correctly for a player of White. Following the seat is a separate
-    // change and wants its own look.
-    weakSquaresB.forEach(sq=>{
+    // "Mine" is White's set, matching ib-weakw ("My weak sq.") and every other
+    // My/Opp. pair on the indicator grid. This block used to swap the two to
+    // compensate for the buttons being labelled backwards; both are fixed now,
+    // so the straight mapping is the correct one.
+    // NOTE: neither set consults which colour the human is playing, so — like
+    // forks and discovered attacks — "mine" reads correctly for a player of
+    // White. Following the seat is a separate change across the whole family.
+    weakSquaresW.forEach(sq=>{
       if(bothWeak.has(sq)) paint(sq,P.weakBothFill,P.weakBothStroke,[1,-1]);
       else                 paint(sq,P.weakMineFill,P.weakMineStroke,[1]);
     });
-    weakSquaresW.forEach(sq=>{
+    weakSquaresB.forEach(sq=>{
       if(bothWeak.has(sq)) return;
       paint(sq,P.weakTheirsFill,P.weakTheirsStroke,[-1]);
     });

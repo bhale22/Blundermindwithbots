@@ -801,8 +801,68 @@ function ibUpdateUI(key){
   // once you let go.
   const st=el.querySelector('.ib-state');
   if(st) st.textContent = ind.on ? 'on' : (ind.pre ? 'exp' : 'off');
+  // Colour and a glyph are what a sighted user gets; this is the same fact for
+  // anyone reading the button aloud, which it never carried before.
+  const btn=el.querySelector('.ib-main');
+  const lbl=el.querySelector('.ib-lbl');
+  if(btn&&lbl){
+    const name=lbl.getAttribute('data-full')||lbl.textContent.trim();
+    btn.setAttribute('aria-label',
+      name+' — '+(ind.on?'always on':(ind.pre?'shown while exploring':'off')));
+  }
+  indActiveBarSync();
 }
-function ibRefreshAll(){Object.keys(IND).forEach(k=>ibUpdateUI(k));}
+function ibRefreshAll(){Object.keys(IND).forEach(k=>ibUpdateUI(k));indActiveBarSync();}
+
+// ── Active overlays bar ───────────────────────────────────────────────────
+// The one line that says what is drawing on the board right now. It lives with
+// the board (and on phones inside the sticky block), because the question it
+// answers — "why is the board covered in circles?" — is asked while looking at
+// the board, and used to require scrolling past nine buttons to answer.
+//
+// ALWAYS-ON overlays only, and the wording is literal: those are the ones
+// drawing on a board nobody is touching. "While exploring" is the default for
+// most indicators, so including those would pin an eight-chip strip under the
+// board from a first visit and say nothing - the bar would become furniture
+// rather than a signal. It stays hidden until you deliberately switch
+// something to always-on, which is also when a board starts looking busy.
+//
+// Walks the grid rather than IND's key order, so the chips read in the same
+// sequence as the buttons. That also scopes it to overlays that HAVE a button:
+// legal moves, batteries and influence are checkbox preferences in board
+// settings, and ghost replies is not an IND entry at all.
+function indActiveBarSync(){
+  const bar=document.getElementById('indActiveBar');
+  const box=document.getElementById('indActiveChips');
+  if(!bar||!box) return;
+  box.textContent='';
+  let n=0;
+  document.querySelectorAll('.ind-grid .ib[id^="ib-"]').forEach(el=>{
+    const k=el.id.slice(3);
+    const ind=IND[k];
+    if(!ind||!ind.on) return;
+    const lbl=el.querySelector('.ib-lbl');
+    if(!lbl) return;
+    const name=lbl.getAttribute('data-full')||lbl.textContent.trim();
+    const b=document.createElement('button');
+    b.type='button';
+    b.className='iab-chip';
+    // textContent, not innerHTML: these names carry apostrophes and ampersands.
+    b.textContent='● '+name;
+    b.title='Turn off '+name;
+    b.setAttribute('aria-label','Turn off '+name);
+    b.addEventListener('click',()=>{
+      IND[k].on=false;IND[k].pre=false;
+      ibUpdateUI(k);                        // re-syncs this bar too
+      if(typeof indApply==='function') indApply();
+      if(typeof render==='function') render();
+    });
+    box.appendChild(b);n++;
+  });
+  bar.hidden = (n===0);
+  // Measure only once it is laid out; a hidden element reports zero for both.
+  bar.classList.toggle('iab-more', !bar.hidden && bar.scrollWidth > bar.clientWidth+1);
+}
 
 // Aliases so indApply and newer code can call these by either name
 function indUpdateUI(key){ ibUpdateUI(key); }
@@ -3955,6 +4015,7 @@ function parsePgnAndStartReplay(pgnText){
   gameMovesAlgebraic=[];gameOverMsg='';gameOver=false;
   selSq=-1;legalMoves=[];clearPreview();
   replayMoves=tokens;inReplay=true;
+  if(typeof distSetReviewCtx==='function') distSetReviewCtx(null,null);
   const rc=document.getElementById('replayControls');
   if(rc) rc.style.display='block';
   // Position-only PGNs open at the position itself; games open at move 0
@@ -3978,10 +4039,20 @@ function rebuildToReplayIdx(targetIdx){
   let _bd=parseFen(baseFen);
   let _turn=turn,_cst={...castling},_ep=epSq;
   let _hm=parseInt(baseFen.split(' ')[4])||0;
+  let _fm=parseInt(baseFen.split(' ')[5])||1;
   let _lastFrom=-1,_lastTo=-1;
+  // Position the LAST replayed move was played from, for the Maia odds panel:
+  // the loop already passes through it, so capturing it here costs nothing and
+  // saves reconstructing the game a second time.
+  let _distSnap=null,_distUci=null;
   for(let i=0;i<targetIdx&&i<replayMoves.length;i++){
     const mv=algebraicToMove(replayMoves[i],_bd,_turn,_ep,_cst);
     if(!mv){break;}
+    if(i===targetIdx-1){
+      _distSnap={board:_bd,turn:_turn,castling:{..._cst},epSq:_ep,
+                 fen:boardToFen(_bd,_turn,_cst,_ep,_hm,_fm)};
+      _distUci=sqToUci(mv.from,mv.to,mv.promo?String(mv.promo).toLowerCase():null);
+    }
     const prevBoard=_bd;
     _bd=applyMove(mv.from,mv.to,_bd,_ep,mv.promo||'Q');
     const movedPiece=prevBoard[mv.from];
@@ -3990,6 +4061,7 @@ function rebuildToReplayIdx(targetIdx){
     _cst=updateCastling(mv.from,mv.to,movedPiece,_cst);
     _ep=computeEP(mv.from,mv.to,prevBoard);
     _turn=_turn==='w'?'b':'w';
+    if(_turn==='w')_fm++;              // a black move completed the full move
     _lastFrom=mv.from;_lastTo=mv.to;
   }
   board=_bd;turn=_turn;castling=_cst;epSq=_ep;
@@ -4000,6 +4072,7 @@ function rebuildToReplayIdx(targetIdx){
   const pins=computePins(board);
   pinnedWSquares=pins.w;pinnedBSquares=pins.b;
   updateReplayInfo();indApply();
+  if(typeof distSetReplayPos==='function') distSetReplayPos(_distSnap,_distUci);
   if(typeof render==='function') render();
   if(typeof proSync==='function') proSync();
 }
@@ -4073,6 +4146,15 @@ function startReplayOfCurrentGame(){
   if(liveBot||liveMp) return;              // only once the game is over
   const moves=gameMovesAlgebraic.slice();
   const baseFen=_gameStartFen||null;       // from-position games replay from their FEN
+  // Read the bot context BEFORE botStop() clears it — the Maia odds panel wants
+  // the opponent's own rating and which side the reviewer sat on.
+  if(typeof distSetReviewCtx==='function'){
+    distSetReviewCtx(null,null);       // clear first: _distRefRating reads it
+    const _ctxRating=(typeof _distRefRating==='function')?_distRefRating():null;
+    const _ctxHuman=(typeof botActive!=='undefined'&&botActive&&typeof botPlayerColor!=='undefined')
+      ?(botPlayerColor==='white'?'w':'b'):null;
+    distSetReviewCtx(_ctxRating,_ctxHuman);
+  }
   if(typeof botActive!=='undefined'&&botActive&&typeof botStop==='function') botStop();
   if(typeof mpRoomId!=='undefined'&&mpRoomId){
     if(mpWs){try{mpWs.close();}catch(e){} mpWs=null;}

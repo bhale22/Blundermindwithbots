@@ -1569,6 +1569,39 @@ canvas{
   border-color:var(--st-exp-bd,rgba(90,104,200,0.55));color:var(--st-exp-fg,#3a44a0);}
 .ind-key-row .k-on{background:var(--st-on-bg,rgba(34,168,90,0.14));
   border-color:var(--st-on-bd,#22a85a);color:var(--st-on-fg,#14713c);}
+/* The glyph key. Phones carry the state on each chip rather than in the swatch
+   row above, so they need this line to say what the three marks mean; desktop
+   keeps the swatches and hides it. */
+.ind-key-g{display:none;font-size:9px;line-height:1.45;color:var(--text-dim);}
+
+/* ── Active overlays bar ────────────────────────────────────────────────────
+   Phones only, and sited with the board rather than with the controls: it
+   rides inside the sticky block, so what is currently drawing is readable
+   without scrolling to the buttons. Every chip is a switch-off, which is the
+   action you actually want when a board has gone noisy mid-game.
+   Hidden entirely when nothing is on - an empty bar is just a stolen row. */
+#indActiveBar{display:none;}
+.iab-t{
+  flex:0 0 auto;font-size:8px;font-weight:700;letter-spacing:0.07em;
+  text-transform:uppercase;color:var(--text-dim);
+}
+.iab-chips{display:flex;gap:5px;flex:1 1 auto;min-width:0;}
+.iab-chip{
+  flex:0 0 auto;display:inline-flex;align-items:center;
+  font-family:inherit;font-size:11px;line-height:1;
+  padding:7px 9px;border-radius:4px;cursor:pointer;white-space:nowrap;
+  border:0.5px solid var(--st-on-bd,#22a85a);
+  background:var(--st-on-bg,rgba(34,168,90,0.14));
+  color:var(--st-on-fg,#14713c);
+  -webkit-tap-highlight-color:transparent;
+}
+/* More chips than fit. Set by indActiveBarSync() after measuring, so the edge
+   only fades when there is genuinely something past it. */
+.iab-more{
+  -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 22px),transparent);
+  mask-image:linear-gradient(to right,#000 calc(100% - 22px),transparent);
+}
+.iab-chip:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
 
 /* ── Board settings launcher ────────────────────────────────────────────────
    Moved out of the top of the column and re-sited between the two overlay
@@ -1883,17 +1916,176 @@ canvas{
   #sidebar select{font-size:13px !important;padding:7px 6px !important;min-height:38px;}
   .ctrl-btn,.gbtn{min-height:42px;font-size:12px;}
   .ctrl-row{gap:6px;}
-  /* Indicator cards go 1-up so their labels stop truncating */
-  .ind-grid{grid-template-columns:1fr;}
   #bs-open{min-height:48px;}
-  /* Thirteen always-visible overlays is a much taller stack at one column
-     than four was. The phone keeps its own #bv-toggle drawer around the
-     whole region, so this only has to stay thumb-sized, not compact. */
   .ind-utils .ctrl-btn,.play-row .ctrl-btn,.secondary-row .ctrl-btn{min-height:42px;}
   .ghost-row .ib-main{min-height:42px;}
-  /* The overlay buttons were 34px even when only four of them showed. There
-     are thirteen now, and they are the primary control on the panel. */
-  .ind-grid .ib-main{min-height:44px;}
+
+  /* -- Overlays as chips, two up --------------------------------------------
+     One-up was the fix for labels truncating in the desktop column, and it
+     worked, but thirteen 392x44 rows is 605px of almost-empty page - the
+     single biggest reason the board ends up off screen. Two up halves that
+     while keeping a target wider than the desktop column ever was, so the
+     labels can finally be spelled out (see .ib-lbl[data-full] below). */
+  .ind-grid{grid-template-columns:1fr 1fr;gap:6px;}
+  .ind-grid .ib-main{
+    height:auto;min-height:56px;
+    padding:0 0 0 10px;gap:8px;align-items:stretch;
+    white-space:normal;
+  }
+
+  /* State as a glyph, not only a tint. The three fills differ by 10-14% alpha
+     over the same panel colour, and the key that decoded them sat below the
+     buttons - two problems that cancel out only if you have both in view. The
+     glyph is a second, redundant channel that survives sunlight, colour
+     blindness and a legend nobody read. Desktop keeps the tint alone: its
+     column is 81px and the labels were measured to fit it with 7.9px to
+     spare, which a glyph plus its gap would spend. */
+  .ind-grid .ib-main::before{
+    content:'\25CB';align-self:center;flex:0 0 auto;
+    font-size:13px;line-height:1;color:var(--text-dim);
+  }
+  .ind-grid .ib.pre .ib-main::before     {content:'\25D0';color:var(--st-exp-fg,#3a44a0);}
+  .ind-grid .ib.on  .ib-main::before     {content:'\25CF';color:var(--st-on-fg,#14713c);}
+  .ind-grid .ib.pressing .ib-main::before{content:'\25C9';color:#15597f;}
+
+  /* The full name, at last. The short forms in the markup were measured
+     against the desktop sidebar's 81px column; this box is more than twice
+     that, and went on showing "Opp. disc." anyway. */
+  .ind-grid .ib-lbl{
+    align-self:center;white-space:normal;overflow:visible;text-overflow:clip;
+    font-size:12px;line-height:1.22;padding:7px 0;
+  }
+  .ind-grid .ib-lbl[data-full]{font-size:0;}
+  .ind-grid .ib-lbl[data-full]::after{content:attr(data-full);font-size:12px;}
+
+  /* "?" was a 16px target inside a 392px target whose whole job is to toggle,
+     so a near miss switched an overlay on instead of explaining it. It gets
+     its own full-height column and a rule to say it is a separate control. */
+  .ind-grid .ib-help{
+    flex:0 0 42px;width:42px;height:auto;align-self:stretch;
+    border-radius:0 3px 3px 0;font-size:13px;
+    border-left:0.5px solid var(--border2);
+  }
+
+  /* The swatch key is redundant once every chip carries its own glyph, and it
+     was the thing being scrolled away from. The glyph key replaces it. */
+  .ind-key-row{display:none;}
+  .ind-key-t{font-size:10px;}
+  .ind-key-g{display:block;font-size:10px;}
+
+  /* One line, horizontally scrollable rather than wrapping: a second row
+     would change the height the sticky offset below it is derived from. */
+  body:not(.pro-mode) #indActiveBar:not([hidden]){
+    display:flex;align-items:center;gap:8px;
+    width:var(--board-size);max-width:100%;box-sizing:border-box;
+    padding:5px 9px;
+    background:var(--bg-panel);border:0.5px solid var(--border);border-radius:5px;
+    overflow-x:auto;overflow-y:hidden;scrollbar-width:none;
+  }
+  body:not(.pro-mode) #indActiveBar::-webkit-scrollbar{display:none;}
+}
+
+/* ==========================================================================
+   PHONES - THE BOARD DOES NOT SCROLL AWAY
+   --------------------------------------------------------------------------
+   Every overlay is a VISUAL control: the only way to learn what "Overloaded"
+   draws is to watch the board change when you switch it on. Stacked, the
+   ninth overlay button sat 586px down the page, where the board was entirely
+   off screen - so the control and its effect could never be seen together.
+
+   The fix is the one the Expert board already uses below: dissolve the two
+   column wrappers with display:contents so #app lays every child out itself.
+   That is also what makes position:sticky work at all here - a sticky element
+   only sticks inside its containing block, and #board-col is ~518px tall with
+   the controls in #sidebar, a SIBLING. Sticky on the board did nothing until
+   the wrapper stopped being a box.
+
+   Offsets are derived, not guessed: --board-size is set by resizeBoard(), the
+   clocks are pinned to 44px by .player-box above, and --ph-gap is #app's own
+   gap. Scoped away from pro-mode, which has its own arrangement below.
+   ========================================================================== */
+@media(max-width:760px){
+  body:not(.pro-mode) #app{--ph-clock:44px;--ph-gap:8px;}
+  body:not(.pro-mode) #board-col,
+  body:not(.pro-mode) #sidebar{display:contents;}
+  body:not(.pro-mode) #board-col > *,
+  body:not(.pro-mode) #sidebar > *{width:100%;max-width:100%;min-width:0;}
+  /* The canvas wrapper stays a real box - #ghostCanvas is absolute inside it. */
+  body:not(.pro-mode) #board-canvas-wrap{width:auto;align-self:center;}
+
+  /* Dissolving the wrappers makes every order: on them inert, so each child
+     needs its own. Board block first, then the things that belong with the
+     board, then the sidebar. */
+  body:not(.pro-mode) #clockPanel       {order:1;}
+  body:not(.pro-mode) #playerBoxB       {order:2;}
+  body:not(.pro-mode) #board-canvas-wrap{order:3;}
+  body:not(.pro-mode) #playerBoxW       {order:4;}
+  body:not(.pro-mode) #indActiveBar     {order:5;}
+  body:not(.pro-mode) #boardInputRow    {order:6;}
+  body:not(.pro-mode) #replayControls   {order:7;}
+  body:not(.pro-mode) #chatBox          {order:8;}
+  body:not(.pro-mode) #distPanel        {order:9;}
+  body:not(.pro-mode) #proSide          {order:10;}
+  body:not(.pro-mode) #sidebar > *      {order:20;}
+  /* Resign / Offer draw stay first in the sidebar, as #gameActions{order:-1}
+     intended before the wrapper went away. Two ids, so it wins on its own. */
+  body:not(.pro-mode) #sidebar #gameActions{order:19;}
+
+  body:not(.pro-mode) #playerBoxB,
+  body:not(.pro-mode) #board-canvas-wrap,
+  body:not(.pro-mode) #playerBoxW,
+  body:not(.pro-mode) #indActiveBar:not([hidden]){
+    position:sticky;z-index:5;background:var(--bg-page);
+    /* #app puts an 8px gap between these, and a background stops at its own
+       box — so the seams stayed transparent and the chips scrolled visibly
+       through them. Each member paints 4px beyond itself, which covers its
+       half of every seam. The ring is the page colour, so it is invisible
+       against the page and opaque against anything sliding underneath. */
+    box-shadow:0 0 0 4px var(--bg-page);
+  }
+  body:not(.pro-mode) #playerBoxB       {top:0;}
+  body:not(.pro-mode) #board-canvas-wrap{top:calc(var(--ph-clock) + var(--ph-gap));}
+  body:not(.pro-mode) #playerBoxW{
+    top:calc(var(--ph-clock) + var(--ph-gap)*2 + var(--board-size));
+    box-shadow:0 0 0 4px var(--bg-page),0 9px 14px -12px rgba(0,0,0,0.5);
+  }
+  body:not(.pro-mode) #indActiveBar:not([hidden]){
+    top:calc(var(--ph-clock)*2 + var(--ph-gap)*3 + var(--board-size));
+    box-shadow:0 0 0 4px var(--bg-page),0 9px 14px -12px rgba(0,0,0,0.5);
+  }
+  /* Playing Black flips which clock is on top, so the two offsets swap with
+     it. These carry two ids and a class, so they beat both the rules above
+     and the older #board-col.board-flipped order pair. */
+  body:not(.pro-mode) #board-col.board-flipped #playerBoxW{
+    order:2;top:0;box-shadow:0 0 0 4px var(--bg-page);
+  }
+  body:not(.pro-mode) #board-col.board-flipped #playerBoxB{
+    order:4;top:calc(var(--ph-clock) + var(--ph-gap)*2 + var(--board-size));
+    box-shadow:0 0 0 4px var(--bg-page),0 9px 14px -12px rgba(0,0,0,0.5);
+  }
+}
+
+/* Pinning needs a viewport tall enough to have somewhere left to scroll.
+   In portrait the board is limited by WIDTH (392px on a 412x915 phone, well
+   under the 763px the height allows), so the pinned block is about 59% of the
+   screen and the controls keep a comfortable 370px. Turn the phone sideways
+   under the 760px breakpoint and the board becomes height-limited instead:
+   at 740x360 resizeBoard() gives it 208px, the pinned block becomes 312px of
+   a 360px screen, and the controls are left 48px to live in — worse than the
+   problem pinning was meant to solve.
+
+   520px splits the two cleanly: landscape phones are ~360-430px tall, the
+   shortest portrait phone still in service is 568px. Below the line the board
+   simply scrolls as it always did.  */
+@media(max-width:760px) and (max-height:520px){
+  body:not(.pro-mode) #playerBoxB,
+  body:not(.pro-mode) #board-canvas-wrap,
+  body:not(.pro-mode) #playerBoxW,
+  body:not(.pro-mode) #indActiveBar:not([hidden]),
+  body:not(.pro-mode) #board-col.board-flipped #playerBoxW,
+  body:not(.pro-mode) #board-col.board-flipped #playerBoxB{
+    position:static;box-shadow:none;
+  }
 }
 
 /* Short viewports (landscape phones): cap the board by height, not width, and
@@ -2885,6 +3077,17 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       </div>
     </div>
 
+    <!-- Active overlays. The one line that says what is actually drawing on
+         the board right now, sited with the board rather than with the
+         controls: on a phone it rides inside the sticky block, so "what is
+         on" never costs a scroll, and tapping a chip switches that overlay
+         off without going to find its button. Populated by indActiveBarSync()
+         from IND itself, and hidden whenever nothing is drawing. -->
+    <div id="indActiveBar" hidden>
+      <span class="iab-t">Drawing now</span>
+      <span class="iab-chips" id="indActiveChips"></span>
+    </div>
+
     <!-- White player box -->
     <div class="player-box" id="playerBoxW" style="width:var(--board-size);box-sizing:border-box;">
       <div class="player-col">
@@ -3011,26 +3214,26 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div class="ind-grid">
       <div class="ib" id="ib-threats">
           <button class="ib-main" onmousedown="ibMainDown('threats',event)" onmouseup="ibMainUp('threats')" onmouseleave="ibMainCancel('threats')" ontouchstart="ibMainDown('threats',event)" ontouchend="ibMainUp('threats')" ontouchcancel="ibMainCancel('threats')">
-            <span class="ib-lbl">Threats &amp; capt.</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('threats',event)">?</span>
+            <span class="ib-lbl" data-full="Threats &amp; captures">Threats &amp; capt.</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('threats',event)" ontouchstart="event.stopPropagation();" ontouchend="event.stopPropagation();event.preventDefault();openHelp('threats',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-counts">
           <button class="ib-main" onmousedown="ibMainDown('counts',event)" onmouseup="ibMainUp('counts')" onmouseleave="ibMainCancel('counts')" ontouchstart="ibMainDown('counts',event)" ontouchend="ibMainUp('counts')" ontouchcancel="ibMainCancel('counts')">
-            <span class="ib-lbl">Threat/def.</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('counts',event)">?</span>
+            <span class="ib-lbl" data-full="Threat/defense counts">Threat/def.</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('counts',event)" ontouchstart="event.stopPropagation();" ontouchend="event.stopPropagation();event.preventDefault();openHelp('counts',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-unprotected">
           <button class="ib-main" onmousedown="ibMainDown('unprotected',event)" onmouseup="ibMainUp('unprotected')" onmouseleave="ibMainCancel('unprotected')" ontouchstart="ibMainDown('unprotected',event)" ontouchend="ibMainUp('unprotected')" ontouchcancel="ibMainCancel('unprotected')">
             <span class="ib-lbl">Unprotected</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('unprotected',event)">?</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('unprotected',event)" ontouchstart="event.stopPropagation();" ontouchend="event.stopPropagation();event.preventDefault();openHelp('unprotected',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-pins">
           <button class="ib-main" onmousedown="ibMainDown('pins',event)" onmouseup="ibMainUp('pins')" onmouseleave="ibMainCancel('pins')" ontouchstart="ibMainDown('pins',event)" ontouchend="ibMainUp('pins')" ontouchcancel="ibMainCancel('pins')">
             <span class="ib-lbl">Pins</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('pins',event)">?</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('pins',event)" ontouchstart="event.stopPropagation();" ontouchend="event.stopPropagation();event.preventDefault();openHelp('pins',event)">?</span>
           </button>
         </div>
     </div>
@@ -3041,6 +3244,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
          the second layer folds away. -->
     <div class="ind-key">
       <div class="ind-key-t">Tap to cycle · hold to peek</div>
+      <div class="ind-key-g">○ off · ◐ while exploring · ● always on</div>
       <div class="ind-key-row">
         <span>Off</span><span class="k-exp">While exploring</span><span class="k-on">Always on</span>
       </div>
@@ -3080,55 +3284,61 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="ib ib-span" id="ib-checkthreats">
           <button class="ib-main" onmousedown="ibMainDown('checkthreats',event)" onmouseup="ibMainUp('checkthreats')" onmouseleave="ibMainCancel('checkthreats')" ontouchstart="ibMainDown('checkthreats',event)" ontouchend="ibMainUp('checkthreats')" ontouchcancel="ibMainCancel('checkthreats')">
             <span class="ib-lbl">Check threats</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('checkthreats',event)">?</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('checkthreats',event)" ontouchstart="event.stopPropagation();" ontouchend="event.stopPropagation();event.preventDefault();openHelp('checkthreats',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-forksw">
           <button class="ib-main" onmousedown="ibMainDown('forksw',event)" onmouseup="ibMainUp('forksw')" onmouseleave="ibMainCancel('forksw')" ontouchstart="ibMainDown('forksw',event)" ontouchend="ibMainUp('forksw')" ontouchcancel="ibMainCancel('forksw')">
-            <span class="ib-lbl">My forks</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksw',event)">?</span>
+            <span class="ib-lbl" data-full="My forks &amp; skewers">My forks</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksw',event)" ontouchstart="event.stopPropagation();" ontouchend="event.stopPropagation();event.preventDefault();openHelp('forksw',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-forksb">
           <button class="ib-main" onmousedown="ibMainDown('forksb',event)" onmouseup="ibMainUp('forksb')" onmouseleave="ibMainCancel('forksb')" ontouchstart="ibMainDown('forksb',event)" ontouchend="ibMainUp('forksb')" ontouchcancel="ibMainCancel('forksb')">
-            <span class="ib-lbl">Opp. forks</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksb',event)">?</span>
+            <span class="ib-lbl" data-full="Opponent&#39;s forks &amp; skewers">Opp. forks</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('forksb',event)" ontouchstart="event.stopPropagation();" ontouchend="event.stopPropagation();event.preventDefault();openHelp('forksb',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-discoveredself">
           <button class="ib-main" onmousedown="ibMainDown('discoveredself',event)" onmouseup="ibMainUp('discoveredself')" onmouseleave="ibMainCancel('discoveredself')" ontouchstart="ibMainDown('discoveredself',event)" ontouchend="ibMainUp('discoveredself')" ontouchcancel="ibMainCancel('discoveredself')">
-            <span class="ib-lbl">My disc.</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredself',event)">?</span>
+            <span class="ib-lbl" data-full="My discovered attacks">My disc.</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredself',event)" ontouchstart="event.stopPropagation();" ontouchend="event.stopPropagation();event.preventDefault();openHelp('discoveredself',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-discoveredopp">
           <button class="ib-main" onmousedown="ibMainDown('discoveredopp',event)" onmouseup="ibMainUp('discoveredopp')" onmouseleave="ibMainCancel('discoveredopp')" ontouchstart="ibMainDown('discoveredopp',event)" ontouchend="ibMainUp('discoveredopp')" ontouchcancel="ibMainCancel('discoveredopp')">
-            <span class="ib-lbl">Opp. disc.</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredopp',event)">?</span>
+            <span class="ib-lbl" data-full="Opponent&#39;s discovered attacks">Opp. disc.</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('discoveredopp',event)" ontouchstart="event.stopPropagation();" ontouchend="event.stopPropagation();event.preventDefault();openHelp('discoveredopp',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-xray">
           <button class="ib-main" onmousedown="ibMainDown('xray',event)" onmouseup="ibMainUp('xray')" onmouseleave="ibMainCancel('xray')" ontouchstart="ibMainDown('xray',event)" ontouchend="ibMainUp('xray')" ontouchcancel="ibMainCancel('xray')">
             <span class="ib-lbl">X-ray pressure</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('xray',event)">?</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('xray',event)" ontouchstart="event.stopPropagation();" ontouchend="event.stopPropagation();event.preventDefault();openHelp('xray',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-overloaded">
           <button class="ib-main" onmousedown="ibMainDown('overloaded',event)" onmouseup="ibMainUp('overloaded')" onmouseleave="ibMainCancel('overloaded')" ontouchstart="ibMainDown('overloaded',event)" ontouchend="ibMainUp('overloaded')" ontouchcancel="ibMainCancel('overloaded')">
             <span class="ib-lbl">Overloaded</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('overloaded',event)">?</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('overloaded',event)" ontouchstart="event.stopPropagation();" ontouchend="event.stopPropagation();event.preventDefault();openHelp('overloaded',event)">?</span>
+          </button>
+        </div>
+      <!-- weakw computes squares WHITE does not control = White's own weak
+           squares, and weakb the same for Black (see indApply). Every other
+           pair on this grid reads "w = mine, b = theirs" — My forks/Opp. forks,
+           My/Opp. discovered — and this pair alone had its two labels the other
+           way round, so "My weak sq." lit the opponent's holes. Labels now
+           follow the family convention, mine on the left like the rest. -->
+      <div class="ib" id="ib-weakw">
+          <button class="ib-main" onmousedown="ibMainDown('weakw',event)" onmouseup="ibMainUp('weakw')" onmouseleave="ibMainCancel('weakw')" ontouchstart="ibMainDown('weakw',event)" ontouchend="ibMainUp('weakw')" ontouchcancel="ibMainCancel('weakw')">
+            <span class="ib-lbl" data-full="My weak squares">My weak sq.</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakw',event)" ontouchstart="event.stopPropagation();" ontouchend="event.stopPropagation();event.preventDefault();openHelp('weakw',event)">?</span>
           </button>
         </div>
       <div class="ib" id="ib-weakb">
           <button class="ib-main" onmousedown="ibMainDown('weakb',event)" onmouseup="ibMainUp('weakb')" onmouseleave="ibMainCancel('weakb')" ontouchstart="ibMainDown('weakb',event)" ontouchend="ibMainUp('weakb')" ontouchcancel="ibMainCancel('weakb')">
-            <span class="ib-lbl">My weak sq.</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakb',event)">?</span>
-          </button>
-        </div>
-      <div class="ib" id="ib-weakw">
-          <button class="ib-main" onmousedown="ibMainDown('weakw',event)" onmouseup="ibMainUp('weakw')" onmouseleave="ibMainCancel('weakw')" ontouchstart="ibMainDown('weakw',event)" ontouchend="ibMainUp('weakw')" ontouchcancel="ibMainCancel('weakw')">
-            <span class="ib-lbl">Opp. weak sq.</span>
-            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakw',event)">?</span>
+            <span class="ib-lbl" data-full="Opponent&#39;s weak squares">Opp. weak sq.</span>
+            <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('weakb',event)" ontouchstart="event.stopPropagation();" ontouchend="event.stopPropagation();event.preventDefault();openHelp('weakb',event)">?</span>
           </button>
         </div>
     </div>
@@ -3140,7 +3350,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div class="ib ghost-one" id="ib-ghost">
         <button class="ib-main" onclick="ghostToggle()">
           <span class="ib-lbl">👻 Ghost replies</span>
-          <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('ghostresponses',event)">?</span>
+          <span class="ib-help" onmousedown="event.stopPropagation();event.preventDefault();openHelp('ghostresponses',event)" ontouchstart="event.stopPropagation();" ontouchend="event.stopPropagation();event.preventDefault();openHelp('ghostresponses',event)">?</span>
         </button>
       <select id="soloGhostDepth" onchange="ghostModeChanged()" aria-label="Ghost reply engine and depth">
         <option value="0" selected>Off</option>

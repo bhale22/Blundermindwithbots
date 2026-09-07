@@ -24,11 +24,18 @@ await ctx.addInitScript(() => {
   try {
     ['bm_tour_pro', 'bm_tour_amateur'].forEach(k => localStorage.setItem(k, '1'));
     localStorage.setItem('bm_shell', 'amateur');
+    // bm_welcomed is what the inline bootstrap checks before opening the
+    // first-visit dialog. Without it that dialog's veil swallows every click
+    // in this script, which is not what any of these assertions are about.
+    localStorage.setItem('bm_welcomed', '1');
   } catch (e) {}
 });
 const page = await ctx.newPage();
 await page.goto(BASE + '/', { waitUntil: 'networkidle' });
-await page.evaluate(() => { const o = document.getElementById('landingOverlay'); if (o) o.style.display = 'none'; });
+await page.evaluate(() => {
+  const o = document.getElementById('landingOverlay'); if (o) o.style.display = 'none';
+  try { if (!document.getElementById('bmWelcome').hidden) bmWelcomeChoose('solo'); } catch (e) {}
+});
 await page.waitForTimeout(400);
 
 const CORE = ['threats', 'counts', 'unprotected', 'pins'];
@@ -269,15 +276,15 @@ const pairs = await page.evaluate(() => {
     xray:  same('ib-xray', 'ib-overloaded'),
     mineLeftDisc:  mineLeft('ib-discoveredself', 'ib-discoveredopp'),
     mineLeftForks: mineLeft('ib-forksw', 'ib-forksb'),
-    mineLeftWeak:  mineLeft('ib-weakb', 'ib-weakw'),
+    mineLeftWeak:  mineLeft('ib-weakw', 'ib-weakb'),
     // Forks come before discovered attacks; weak squares come last.
     forksAboveDisc: t('ib-forksw').top < t('ib-discoveredself').top,
-    weakBelowXray:  t('ib-weakb').top > t('ib-xray').top,
+    weakBelowXray:  t('ib-weakw').top > t('ib-xray').top,
     checkSpans: t('ib-checkthreats').width > t('ib-forksw').width * 1.8,
-    // The two weak-square chips used to be the same colour, which said the two
-    // overlays were the same thing.
-    weakChips: [getComputedStyle(document.querySelector('#ib-weakb .ib-sq')).backgroundColor,
-                getComputedStyle(document.querySelector('#ib-weakw .ib-sq')).backgroundColor],
+    // The weak pair is the one that had its labels crossed: ib-weakw computes
+    // White's uncovered squares, so it is the one that must read "My".
+    weakLabels: ['ib-weakw', 'ib-weakb']
+      .map(id => document.querySelector('#' + id + ' .ib-lbl').textContent.trim()),
     maxClip: Math.max(...[...document.querySelectorAll('.ind-grid .ib-main')]
       .map(b => b.scrollWidth - b.clientWidth)),
   };
@@ -291,8 +298,9 @@ ok('mine is on the left of every pair',
 ok('discovered attacks sit below forks/skewers', pairs.forksAboveDisc);
 ok('weak squares sit below x-ray/overloaded', pairs.weakBelowXray);
 ok('check threats spans the full width', pairs.checkSpans);
-ok('the two weak-square chips differ', pairs.weakChips[0] !== pairs.weakChips[1],
-   pairs.weakChips.join(' vs '));
+ok('weakw is "mine" and weakb is "theirs"',
+   /^My /.test(pairs.weakLabels[0]) && /^Opp\. /.test(pairs.weakLabels[1]),
+   pairs.weakLabels.join(' / '));
 ok('nothing clips out of any button', pairs.maxClip === 0, 'worst ' + pairs.maxClip + 'px');
 
 console.log('\n9b   Ghost button and selector are one value');
