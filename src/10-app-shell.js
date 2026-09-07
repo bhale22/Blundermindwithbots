@@ -4211,6 +4211,30 @@ const QUICK_SF_MIN = 1, QUICK_SF_MAX = 20, QUICK_SF_DEFAULT = 1;
 // shows it as Custom, since the select cannot express it.
 const QUICK_SF_LEVELS = [1,2,3,4,5,6,7,8,9,10,15,20];
 
+// Maia3 is one 44MB network that answers "what would a human of rating R play
+// here", so a rating is the whole choice — there is no separate strength dial
+// to get wrong. Only the bottom of its range is offered here: this block is on
+// the training board, and someone who wants a 2400 opponent is already in the
+// builder. The full 600-2600 ladder still lives there.
+const QUICK_MAIA_RATINGS = [600, 800, 1000, 1200, 1400];
+
+// Temperature 1.0 is Maia's own sampling — the distribution the network
+// actually returns, undistorted. Anything else is a personality choice, and a
+// quick-start opponent should not be carrying one silently.
+const QUICK_MAIA_TEMP = 1.0;
+
+// Base minutes + increment seconds, in the format botSetBaseMin/botSetIncSec
+// already speak. These are the same controls the builder's time-control rows
+// drive, so choosing 5+0 here lights 5+0 there and vice versa.
+const QUICK_TIMES = [
+  [0,  0,  'Untimed'],
+  [3,  2,  'Blitz 3 + 2'],
+  [5,  0,  'Blitz 5 min'],
+  [10, 0,  'Rapid 10 min'],
+  [15, 10, 'Rapid 15 + 10'],
+  [30, 0,  'Classical 30 min'],
+];
+
 // Fills BOTH level lists: the sidebar's quick-start block and the first-visit
 // welcome panel's mirror of it. One list, so the two can never offer different
 // opponents.
@@ -4227,9 +4251,110 @@ function quickBotFillLevels(){
   });
 }
 
+// Maia's entry depends on whether the 44MB model is on this device, so unlike
+// the Stockfish list it is rebuilt on every sync rather than filled once. The
+// download states are options too: a dropdown that simply omits Maia until
+// some other screen has been visited never tells anyone Maia exists.
+function _quickBotFillMaia(){
+  const ready = (typeof _maiaStatus !== 'undefined') && _maiaStatus === 'ready';
+  const busy  = (typeof _maiaStatus !== 'undefined') && _maiaStatus === 'downloading';
+  ['quickBotMaia','bmwBotMaia'].forEach(function(id){
+    const g = document.getElementById(id);
+    if(!g) return;
+    // Rebuilding drops the selection, so put it back afterwards if it was ours.
+    const sel  = g.closest('select');
+    const held = sel ? sel.value : '';
+    g.textContent = '';
+    const add = function(value, text){
+      const o = document.createElement('option');
+      o.value = value; o.textContent = text;
+      g.appendChild(o);
+    };
+    if(ready){
+      for(const r of QUICK_MAIA_RATINGS) add('maia:' + r, 'Maia ' + r);
+    } else if(busy){
+      const pct = (typeof _maiaProgress !== 'undefined') ? _maiaProgress : 0;
+      add('maia-busy', 'Maia — downloading… ' + pct + '%');
+    } else {
+      add('maia-get', 'Maia — download 44 MB, once');
+    }
+    if(sel && held && sel.value !== held){
+      const still = sel.querySelector('option[value="' + held + '"]');
+      if(still) sel.value = held;
+    }
+  });
+}
+
+// Both time selects, from one list, for the same reason the level lists share
+// quickBotFillLevels: two pickers that can offer different clocks are two
+// pickers that will eventually disagree about what is about to start.
+function quickBotFillTimes(){
+  ['quickBotTime','bmwBotTime'].forEach(function(id){
+    const sel = document.getElementById(id);
+    if(!sel || sel.children.length) return;
+    for(const [min, inc, label] of QUICK_TIMES){
+      const o = document.createElement('option');
+      o.value = min + '+' + inc;
+      o.textContent = label;
+      sel.appendChild(o);
+    }
+  });
+}
+
+// Rest the time selects on whatever the bot config's clock currently is. A
+// clock built in the builder (7+5, say) has no entry here, so it gets its own
+// option rather than letting the select rest on a control it is not running.
+function _quickBotPaintTime(){
+  // _botBaseMin/_botIncSec are `let`s declared in 60-bot-ui.js, and every part
+  // is concatenated into ONE script scope — so during 30-board-ui's start-up
+  // block they are still in their temporal dead zone. `typeof` does not save
+  // you there: on a let-before-initialisation it throws rather than returning
+  // 'undefined', and an uncaught throw at top level abandons every part after
+  // it, which is how a clock picker takes the whole app down. Untimed is the
+  // right answer at that moment anyway; the real value is painted on the next
+  // sync, once the bot UI has run.
+  let min = 0, inc = 0;
+  try { min = _botBaseMin || 0; inc = _botIncSec || 0; } catch(e) { min = 0; inc = 0; }
+  const val = min + '+' + inc;
+  const known = QUICK_TIMES.some(function(t){ return t[0] === min && t[1] === inc; });
+  const CUR = '__curtime';
+  ['quickBotTime','bmwBotTime'].forEach(function(id){
+    const sel = document.getElementById(id);
+    if(!sel) return;
+    const old = sel.querySelector('option[value="' + CUR + '"]');
+    if(known){
+      if(old) old.remove();
+      sel.value = val;
+    } else {
+      let cur = old;
+      if(!cur){
+        cur = document.createElement('option');
+        cur.value = CUR;
+        sel.insertBefore(cur, sel.firstChild);
+      }
+      cur.textContent = min === 0 ? 'Untimed'
+                      : min + ' min' + (inc ? ' + ' + inc + 's' : '');
+      sel.value = CUR;
+    }
+  });
+}
+
+// Set the clock through the builder's own controls, so the two stay one value.
+function quickBotSetTime(v){
+  if(v === '__curtime'){ quickBotSync(); return; }
+  const m = /^(\d+)\+(\d+)$/.exec(String(v || ''));
+  if(!m){ quickBotSync(); return; }
+  if(typeof botSetBaseMin === 'function') botSetBaseMin(parseInt(m[1], 10));
+  if(typeof botSetIncSec  === 'function') botSetIncSec(parseInt(m[2], 10));
+  quickBotSync();
+}
+
 // Paint the block from whatever the bot config currently is.
 function quickBotSync(){
   quickBotFillLevels();
+  quickBotFillTimes();
+  _quickBotFillMaia();
+  _quickBotPaintTime();
   // The welcome panel shows the same two selects as the sidebar block, so both
   // are painted from the same config here — the panel can never announce an
   // opponent the block would then contradict.
@@ -4255,11 +4380,18 @@ function _quickBotPaintSel(sel){
   const _named  = !!(_nameEl && _nameEl.value.trim());
   const plainSf = !_named && (typeof botTab === 'undefined' || botTab === 'sf') &&
                   QUICK_SF_LEVELS.includes(lvl);
+  // The same test one tab over. Gated on the model actually being here: with
+  // Maia absent the tab falls back to Stockfish, so resting the picker on
+  // "Maia 1000" would name an opponent that is not the one playing.
+  const plainMaia = !_named && typeof botTab !== 'undefined' && botTab === 'maia3' &&
+                    typeof maia3SelectedRating !== 'undefined' &&
+                    QUICK_MAIA_RATINGS.includes(maia3SelectedRating) &&
+                    typeof _maiaStatus !== 'undefined' && _maiaStatus === 'ready';
   const CUR = '__current';
-  if(plainSf){
+  if(plainSf || plainMaia){
     const old = sel.querySelector('option[value="'+CUR+'"]');
     if(old) old.remove();
-    sel.value = String(lvl);
+    sel.value = plainMaia ? ('maia:' + maia3SelectedRating) : String(lvl);
   } else {
     // A bot built in the panel has no level to sit on. Give it its own option
     // carrying its name — otherwise the select would rest on "Open
@@ -4278,14 +4410,74 @@ function _quickBotPaintSel(sel){
   }
 }
 
+// Everything a quick-start opponent is NOT.
+//
+// The builder writes to these same globals, so a bot made there leaves its
+// personality attractors, its bad-day flag and its time-pressure curves behind
+// on the config the quick block then labels "Stockfish 3" or "Maia 1000".
+// Those leftovers are not cosmetic: attractors reshape a Maia distribution
+// move by move, and a pressure curve floors Stockfish's effective level once a
+// clock is running — which this block can now start. Without clearing them the
+// picker would be naming one opponent while another played.
+//
+// Draw behaviour is set rather than cleared: a quick-start bot is the casual
+// opponent, so it takes a draw unless it is genuinely winning. 400cp is roughly
+// a clear piece up.
+function _quickBotPlainConfig(){
+  botAcceptDraws          = true;
+  botDrawAcceptMargin     = 400;
+  botDrawUseObjectiveEval = true;
+  window._bcpAttractorValues = {};
+  window._bcpPieceValues     = {};
+  botBadDayMode     = false;
+  botPressureCurveA = null;
+  botPressureCurveB = null;
+  botTimePressure   = 'steady';
+  // A level or rating chosen here replaces any custom name the builder was
+  // carrying, otherwise the block would announce "Panicky Hybrid Bot" and
+  // start SF 3.
+  const nameEl = document.getElementById('botNameInput');
+  if(nameEl) nameEl.value = '';
+}
+
 function quickBotPick(v){
   // Re-selecting the bot already loaded is a no-op, not a reason to rebuild it.
   if(v === '__current'){ quickBotSync(); return; }
+  // Already downloading: the option is a progress readout, not a choice.
+  if(v === 'maia-busy'){ quickBotSync(); return; }
+  if(v === 'maia-get'){
+    quickBotSync();
+    if(typeof maiaDownloadModel === 'function') maiaDownloadModel();
+    return;
+  }
   if(v === 'builder'){
     // The select is a view, not the value: put it back and let the builder be
     // the thing that decides. Reopening it on every change would be a trap.
     quickBotSync();
     if(typeof openBotModal === 'function') openBotModal();
+    return;
+  }
+  const maiaPick = /^maia:(\d+)$/.exec(String(v || ''));
+  if(maiaPick){
+    // The list is only built when the model is ready, but a stale select — one
+    // painted before a cache eviction — must not quietly start Stockfish under
+    // a Maia label.
+    if(typeof _maiaStatus === 'undefined' || _maiaStatus !== 'ready'){
+      quickBotSync();
+      if(typeof maiaDownloadModel === 'function') maiaDownloadModel();
+      return;
+    }
+    if(typeof botSetTab === 'function') botSetTab('maia3');
+    if(typeof maia3SetRating === 'function') maia3SetRating(parseInt(maiaPick[1], 10));
+    // Maia's own sampling, undistorted. The builder's slider is the same value,
+    // so it is moved too rather than left showing a temperature nothing uses.
+    botMaiaTempValue = QUICK_MAIA_TEMP;
+    const tEl  = document.getElementById('maia3Temp');
+    if(tEl) tEl.value = QUICK_MAIA_TEMP;
+    const tOut = document.getElementById('maia3TempVal');
+    if(tOut) tOut.textContent = QUICK_MAIA_TEMP.toFixed(1);
+    _quickBotPlainConfig();
+    quickBotSync();
     return;
   }
   const lvl = Math.max(QUICK_SF_MIN, Math.min(QUICK_SF_MAX, parseInt(v, 10) || QUICK_SF_DEFAULT));
@@ -4296,18 +4488,7 @@ function quickBotPick(v){
     const out = document.getElementById('sfLevelVal');
     if(out) out.textContent = lvl;
   }
-  // Quick-start Stockfish is the casual opponent, so it takes a draw readily:
-  // accept unless it is genuinely winning. 400cp is roughly a clear piece up —
-  // below that a beginner offering a draw gets one rather than a stonewall.
-  // Set here, on the same fields the builder writes, so a bot built in the
-  // panel keeps whatever draw behaviour it was configured with.
-  botAcceptDraws          = true;
-  botDrawAcceptMargin     = 400;
-  botDrawUseObjectiveEval = true;
-  // A level chosen here replaces any custom name the builder was carrying,
-  // otherwise the block would announce "Panicky Hybrid Bot" and start SF 3.
-  const nameEl = document.getElementById('botNameInput');
-  if(nameEl) nameEl.value = '';
+  _quickBotPlainConfig();
   quickBotSync();
 }
 

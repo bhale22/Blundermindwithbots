@@ -1451,7 +1451,10 @@ canvas{
 
 /* Mirrors of the sidebar's quick-start selects — the machinery the green
    button runs on, shown rather than hidden behind it. */
-.bmw-quick{display:flex;gap:7px;margin-top:8px;}
+.bmw-quick{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px;}
+/* Same reasoning as .qb-row: the opponent name is the long one, so it takes
+   the full line and the two qualifiers split the line beneath it. */
+#bmwBotSel{flex:1 1 100%;}
 .bmw-sel{
   flex:1;min-width:0;padding:6px 7px;
   font-family:inherit;font-size:11px;
@@ -3206,6 +3209,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
   <div class="bmw-quick">
     <select class="bmw-sel" id="bmwBotSel" onchange="bmWelcomeBotPick(this.value)"
             aria-label="Choose the opponent">
+      <optgroup label="Maia — human-like" id="bmwBotMaia"></optgroup>
       <optgroup label="Stockfish level" id="bmwBotLevels"></optgroup>
       <option value="builder">Open Bot-Builder…</option>
     </select>
@@ -3215,6 +3219,8 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <option value="white">Play as White</option>
       <option value="black">Play as Black</option>
     </select>
+    <select class="bmw-sel" id="bmwBotTime" onchange="quickBotSetTime(this.value)"
+            aria-label="Choose the time control"></select>
   </div>
 
   <div class="bmw-or"><span>or</span></div>
@@ -3596,18 +3602,27 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <button type="button" class="qb-go" id="quickStartBtn" onclick="quickBotStart()">
         <span class="qb-t1">▶ Start Game vs Bot</span>
       </button>
+      <!-- Opponent gets the full width: its longest entries are names
+           ("Open Bot-Builder", "Maia 1200 - human-like"), and a name that
+           ellipsises is a control that will not say who you are about to
+           play. Colour and clock are short enough to share the row under it. -->
       <div class="qb-row">
         <select class="qb-sel" id="quickBotSel" onchange="quickBotPick(this.value)"
                 aria-label="Choose the opponent">
+          <optgroup label="Maia — human-like" id="quickBotMaia"></optgroup>
           <optgroup label="Stockfish level" id="quickBotLevels"></optgroup>
           <option value="builder">Open Bot-Builder…</option>
         </select>
+      </div>
+      <div class="qb-row">
         <select class="qb-sel" id="quickBotColor" onchange="botSetPlayerColor(this.value)"
                 aria-label="Choose which colour you play">
           <option value="random">Play as Random</option>
           <option value="white">Play as White</option>
           <option value="black">Play as Black</option>
         </select>
+        <select class="qb-sel" id="quickBotTime" onchange="quickBotSetTime(this.value)"
+                aria-label="Choose the time control"></select>
       </div>
     </div>
 

@@ -820,6 +820,11 @@ function _maiaUpdateStatusUI() {
       }, location.origin);
     }
   } catch(e) {}
+  // The quick-start block offers Maia only while the model is actually here,
+  // and shows the download percentage in the same slot while it is arriving.
+  // Both are read off _maiaStatus, so every status change has to repaint it —
+  // otherwise the ratings appear only on whatever next happens to sync.
+  if (typeof quickBotSync === 'function') quickBotSync();
   return; // skip old code below
 }
 
