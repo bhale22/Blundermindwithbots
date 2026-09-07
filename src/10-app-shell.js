@@ -1528,6 +1528,9 @@ function syncPhoneBar(){
   // 2-player game" a fourth time.
   const cb = document.getElementById('chatBox');
   show('pbChat', !!(cb && cb.style.display && cb.style.display !== 'none'));
+  // The labels shrink a half point when all seven are up; see #phoneBar.seven.
+  const n = [...bar.children].filter(el => el.style.display !== 'none').length;
+  bar.classList.toggle('seven', n >= 7);
 }
 
 // Expand the chat and put it where it can be read. It sits below the board in

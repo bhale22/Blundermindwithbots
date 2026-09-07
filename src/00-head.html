@@ -2387,15 +2387,26 @@ body.pro-mode .bs-vision{ display:none !important; }
   }
   .pbtn{
     flex:1 1 0;min-width:0;
-    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
-    min-height:46px;padding:4px 2px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    min-height:52px;padding:5px 2px;
     background:var(--bg-panel);border:0.5px solid var(--border2);border-radius:7px;
-    color:var(--text-secondary);font-family:inherit;cursor:pointer;
+    /* These were 9px in --text-secondary, which on a phone in daylight is a
+       grey smudge under a glyph. They name the only controls on this bar, and
+       one of them resigns the game — they are worth reading. Primary text at
+       11px, and the row grows 6px to carry it. */
+    color:var(--text-primary);font-family:inherit;cursor:pointer;
     -webkit-tap-highlight-color:transparent;
   }
-  .pb-i{font-size:15px;line-height:1;}
-  .pb-l{font-size:9px;line-height:1;letter-spacing:0.02em;
-    max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .pb-i{font-size:16px;line-height:1;}
+  .pb-l{
+    font-size:11px;font-weight:600;line-height:1.05;letter-spacing:0;
+    max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  /* Seven buttons only happen in a 2-player game, where Chat joins the six.
+     At 412px that is 52px each, and "Settings" does not fit at 11px — so the
+     labels give up half a point rather than a letter. */
+  #phoneBar.seven .pb-l{font-size:10px;}
+  #phoneBar.seven .pb-i{font-size:15px;}
   .pbtn:active{background:var(--bg-panel2);}
   /* Held, not tapped — dashed says so before you press it. */
   .pbtn.hold{border-style:dashed;}

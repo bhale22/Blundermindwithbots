@@ -818,7 +818,50 @@ console.log('\n20   Desktop grid carries the same marks');
   await ctx.close();
 }
 
-console.log('\n21   Desktop is untouched');
+console.log('\n21   The game bar is readable');
+{
+  for (const [w, h] of [[412, 915], [360, 740]]) {
+    const { ctx, page, errs } = await open(w, h);
+    await page.evaluate(() => { quickBotPick('1'); botSetPlayerColor('white'); quickBotStart(); });
+    await page.waitForTimeout(2200);
+    const read = () => page.evaluate(() => {
+      const btns = [...document.querySelectorAll('#phoneBar .pbtn')]
+        .filter(b => getComputedStyle(b).display !== 'none');
+      const neutral = btns.find(b => b.id === 'pbSettings');
+      return {
+        n: btns.length,
+        px: parseFloat(getComputedStyle(neutral.querySelector('.pb-l')).fontSize),
+        weight: getComputedStyle(neutral.querySelector('.pb-l')).fontWeight,
+        colour: getComputedStyle(neutral).color,
+        dim: getComputedStyle(document.documentElement).getPropertyValue('--text-dim').trim(),
+        secondary: getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim(),
+        clipped: btns.filter(b => { const l = b.querySelector('.pb-l');
+                                    return l.scrollWidth > l.clientWidth + 1; })
+                     .map(b => b.querySelector('.pb-l').textContent),
+        tall: Math.round(btns[0].getBoundingClientRect().height),
+      };
+    });
+    const six = await read();
+    ok(w + ': six labels are 11px', six.px === 11, String(six.px));
+    ok(w + ': and semibold, not a whisper', Number(six.weight) >= 600, six.weight);
+    ok(w + ': in primary text, not the dim grey',
+      six.colour !== six.dim && six.colour !== six.secondary, six.colour);
+    ok(w + ': nothing clips', six.clipped.length === 0, JSON.stringify(six.clipped));
+    ok(w + ': the row is still a comfortable target', six.tall >= 46, six.tall + 'px');
+
+    // Seven buttons is the 2-player case; the labels give up half a point.
+    await page.evaluate(() => { chatShow(true); syncPhoneBar(); });
+    await page.waitForTimeout(300);
+    const seven = await read();
+    ok(w + ': seven buttons still fit', seven.n === 7 && seven.clipped.length === 0,
+      seven.n + ' / ' + JSON.stringify(seven.clipped));
+    ok(w + ': by shrinking the type, not by dropping a letter', seven.px === 10, String(seven.px));
+    ok(w + ': no page errors', errs.length === 0, errs.slice(0, 2).join(' | '));
+    await ctx.close();
+  }
+}
+
+console.log('\n22   Desktop is untouched');
 for (const [w, h] of [[1440, 900], [1366, 600]]) {
   const { ctx, page, errs } = await open(w, h, false);
   const d = await page.evaluate(() => {
