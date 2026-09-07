@@ -2546,7 +2546,9 @@ function _drawGhost(bd, fromSq, toSq, alpha, outlineColor) {
 
   function sqXY(sq) {
     var r = Math.floor(sq / 8), c = sq % 8;
-    if (boardFlipped) { r = 7 - r; c = 7 - c; }
+    // Same one answer the board itself uses — a bare boardFlipped here left the
+    // ghosts on the unflipped squares when the view was turned round.
+    if (boardViewFlipped()) { r = 7 - r; c = 7 - c; }
     return { x: c * SQ, y: r * SQ };
   }
 

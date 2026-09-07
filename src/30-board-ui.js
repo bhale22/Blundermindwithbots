@@ -374,9 +374,8 @@ function getEvtPos(e){const rect=cv.getBoundingClientRect();const cl=e.touches?e
 function getSq(pos){
   const scale=480/cv.getBoundingClientRect().width;
   let c=Math.floor(pos.x*scale/SQ),r=Math.floor(pos.y*scale/SQ);
-  // Flip for both multiplayer-black and bot-game-black (boardFlipped)
-  const shouldFlip = (typeof boardFlipped!=='undefined'&&boardFlipped) ||
-                     (typeof mpRole!=='undefined'&&mpRole==='black'&&typeof mpInGame==='function'&&mpInGame());
+  // Seat plus any view flip the player has asked for — see boardViewFlipped().
+  const shouldFlip = boardViewFlipped();
   if(shouldFlip){c=7-c;r=7-r;}
   if(c>=0&&c<8&&r>=0&&r<8)return rcSq(r,c);return -1;
 }
@@ -387,9 +386,8 @@ function canvasToBoard(pos){
   const py=(pos.y)*scale;
   let col=Math.max(0,Math.min(7,Math.floor(px/SQ)));
   let row=Math.max(0,Math.min(7,Math.floor(py/SQ)));
-  // Flip for both multiplayer-black and bot-game-black (boardFlipped)
-  const shouldFlip = (typeof boardFlipped!=='undefined'&&boardFlipped) ||
-                     (typeof mpRole!=='undefined'&&mpRole==='black'&&typeof mpInGame==='function'&&mpInGame());
+  // Seat plus any view flip the player has asked for — see boardViewFlipped().
+  const shouldFlip = boardViewFlipped();
   if(shouldFlip){col=7-col;row=7-row;}
   return rcSq(row,col);
 }
@@ -697,6 +695,36 @@ let currentPalette=PALETTES.default;
 
 // Determine threat circle color for a piece on sq of given color
 // Returns: 'red' (danger), 'green' (safe), 'grey' (contested), 'none' (no attackers)
+// What colour, if any, a piece's threat circle should be.
+//
+// The old rule read the count alone: equal attackers and defenders was always
+// grey, more defenders was always green, whatever the piece. That is only true
+// for a pawn. A queen defended three times and attacked once is still losing a
+// queen for a knight, and a bishop traded off an outpost is a decision, not a
+// non-event — but both drew the same calm circle a defended pawn did, so the
+// overlay was quietest exactly where the material at stake was largest.
+//
+// The scale is now the piece, not just the count:
+//
+//   Queen   attacked at all      → 'saw'         a red sawtooth ring. No count
+//                                                of defenders makes losing a
+//                                                queen for less than a queen
+//                                                acceptable, so this one never
+//                                                gets to be calm.
+//   Any     hanging / cheap      → 'red'         unchanged: no defender, a
+//           attacker / outnumbered              cheaper attacker, or simply
+//                                                more attackers than defenders.
+//   R/B/N   equally defended     → 'yellow'      evaluate this.
+//   R/B/N   over-defended        → 'yellowgreen' held, but keep half an eye on
+//                                                it — an exchange here still
+//                                                changes the position.
+//   Pawn    equally defended     → 'grey'        the only genuinely calm case.
+//   Pawn    over-defended        → 'green'
+//
+// Rooks ride with the minors: the user's rule named queens, minors and pawns,
+// and a rook sits with the pieces whose exchanges are worth a second look
+// rather than with the pawns whose are not. A rook attacked by anything
+// cheaper already resolves to 'red' above, before it reaches that branch.
 function getCaptureColor(sq, color, bd, atk){
   const opp = color==='w'?'b':'w';
   const p = bd[sq]; if(!p) return 'none';
@@ -704,6 +732,8 @@ function getCaptureColor(sq, color, bd, atk){
   const def = atk[sq][color] ? atk[sq][color].length : 0;
   const att = atk[sq][opp]  ? atk[sq][opp].length  : 0;
   if(att === 0) return 'none'; // not under attack
+  // An attacked queen is the loudest thing on the board, before any counting.
+  if(p.piece === 'Q') return 'saw';
   // Check for cheap attacker (attacker less valuable than this piece)
   let hasCheapAttacker = false;
   if(atk[sq][opp]){
@@ -714,23 +744,47 @@ function getCaptureColor(sq, color, bd, atk){
   }
   if(def === 0 || hasCheapAttacker) return 'red';   // hanging or cheap capture
   if(att > def)  return 'red';                       // outnumbered — more attackers than defenders
-  if(def > att)  return 'green';                     // overprotected
-  return 'grey';                                      // equal count — contested
+  if(p.piece === 'P') return def > att ? 'green' : 'grey';
+  return def > att ? 'yellowgreen' : 'yellow';
 }
 
-// Draw a threat circle around a piece square
+// The five threat-circle inks. Named once so the canvas, the help text and any
+// future key all read the same values rather than three sets of near-misses.
+const THREAT_INK = {
+  red:    'rgba(210,40,40,0.95)',
+  yellow: 'rgba(224,168,20,0.95)',
+  green:  'rgba(30,180,70,0.92)',
+  grey:   'rgba(140,140,160,0.80)',
+  saw:    'rgba(220,40,40,0.95)',
+};
+
+// Draw a threat circle around a piece square.
+//
+// 'yellowgreen' is drawn as one circle in alternating arcs rather than as a
+// blend: a blended colour would land somewhere between the yellow and green
+// already in use and read as a sixth, unexplained state. Alternating keeps
+// both of its parents legible — "held (green), still worth watching (yellow)".
 function drawThreatCircle(sq, color){
   const {r,c} = sqCanvas(sq);
   const x = c*SQ+SQ/2, y = r*SQ+SQ/2;
+  if(color==='saw'){ drawJaggedRing(ctx, sq, THREAT_INK.saw); return; }
   ctx.save();
-  ctx.beginPath(); ctx.arc(x,y,SQ*0.42,0,Math.PI*2);
-  if(color==='red'){
-    ctx.strokeStyle='rgba(210,40,40,0.95)'; ctx.lineWidth=1.8;
-  } else if(color==='green'){
-    ctx.strokeStyle='rgba(30,180,70,0.92)'; ctx.lineWidth=1.8;
-  } else {
-    ctx.strokeStyle='rgba(140,140,160,0.80)'; ctx.lineWidth=1.8;
+  ctx.lineWidth = 1.8;
+  if(color==='yellowgreen'){
+    // Eight segments, so each ink appears four times and neither can be
+    // mistaken for a partial ring at any board size.
+    const segs = 8, step = Math.PI*2/segs;
+    for(let i=0;i<segs;i++){
+      ctx.beginPath();
+      ctx.arc(x, y, SQ*0.42, i*step, (i+1)*step);
+      ctx.strokeStyle = (i%2===0) ? THREAT_INK.yellow : THREAT_INK.green;
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
   }
+  ctx.beginPath(); ctx.arc(x,y,SQ*0.42,0,Math.PI*2);
+  ctx.strokeStyle = THREAT_INK[color] || THREAT_INK.grey;
   ctx.stroke();
   ctx.restore();
 }
@@ -813,7 +867,7 @@ function render(){
 
   ctx.clearRect(0,0,480,480);
   ctx.setLineDash([]); ctx.globalAlpha=1; ctx.shadowBlur=0; ctx.lineWidth=1; // reset state
-  const _boardFlipped = boardFlipped || (typeof mpRole!=='undefined'&&mpRole==='black'&&typeof mpInGame==='function'&&mpInGame());
+  const _boardFlipped = boardViewFlipped();
 
   for(let r=0;r<8;r++)for(let c=0;c<8;c++){
     // For black: display row r,c → board square at mirrored position
@@ -936,8 +990,9 @@ function render(){
   // Captures: now handled by circle system above
 
   // Weak square highlights (hold button)
-  // weakSquaresW = empty squares black has no attackers on = safe for white
-  // weakSquaresB = empty squares white has no attackers on = safe for black
+  // weakSquaresW = empty squares WHITE has no attacker on — White's own holes.
+  // weakSquaresB = the same for Black. (See indApply: the test is
+  // atk[s].<colour>.length === 0, i.e. the square that colour fails to cover.)
   if(showingWeakSquares){
     // A weak square is territory, not a piece in trouble, and it used to be
     // painted in the colours that mean "hanging" and "contested" — a 15% wash
@@ -972,18 +1027,18 @@ function render(){
       ctx.restore();
       ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.strokeRect(x+1,y+1,SQ-2,SQ-2);
     };
-    // Which set is "mine" was reported the wrong way round on the board, so
-    // the pair is swapped here to match the buttons: ib-weakb is the one
-    // labelled "My weak sq." and it draws in the mine colour, hatched down-
-    // right; ib-weakw is "Opp. weak sq." and draws teal, hatched up-right.
-    // NOTE: neither set consults which colour the human is playing, so this
-    // reads correctly for a player of White. Following the seat is a separate
-    // change and wants its own look.
-    weakSquaresB.forEach(sq=>{
+    // "Mine" is White's set, matching ib-weakw ("My weak sq.") and every other
+    // My/Opp. pair on the indicator grid. This block used to swap the two to
+    // compensate for the buttons being labelled backwards; both are fixed now,
+    // so the straight mapping is the correct one.
+    // NOTE: neither set consults which colour the human is playing, so — like
+    // forks and discovered attacks — "mine" reads correctly for a player of
+    // White. Following the seat is a separate change across the whole family.
+    weakSquaresW.forEach(sq=>{
       if(bothWeak.has(sq)) paint(sq,P.weakBothFill,P.weakBothStroke,[1,-1]);
       else                 paint(sq,P.weakMineFill,P.weakMineStroke,[1]);
     });
-    weakSquaresW.forEach(sq=>{
+    weakSquaresB.forEach(sq=>{
       if(bothWeak.has(sq)) return;
       paint(sq,P.weakTheirsFill,P.weakTheirsStroke,[-1]);
     });
@@ -1736,6 +1791,13 @@ function updateGameStartBtns() {
     const el = document.getElementById(id);
     if (el) el.style.display = live ? 'none' : '';
   });
+  // The quick-start block is the largest of the starters — a green Start
+  // button, an opponent picker and a colour picker — and it was the one that
+  // stayed. On a phone it sat at the top of the tray taking the space a live
+  // game has no use for, offering to throw that game away. It goes with the
+  // rest of them, and comes back the moment the game ends.
+  const qb = document.getElementById('quickBot');
+  if (qb) qb.style.display = live ? 'none' : '';
 }
 
 // One row, five buttons. While a game is live it carries Offer draw and
@@ -1800,6 +1862,11 @@ function syncActionRow() {
   const any = [drawBtn, resBtn, btn, review, explore]
     .some(el => el && el.style.display !== 'none');
   ga.style.display = any ? 'flex' : 'none';
+
+  // The phone's own game bar carries the same two live-game buttons. Synced
+  // from here rather than from its own listener so the two can never disagree
+  // about whether a game is running.
+  if (typeof syncPhoneBar === 'function') syncPhoneBar();
 }
 
 function updateActionBtn() {
@@ -1996,6 +2063,9 @@ function matAdvString(lead, pieces, oppPieces){
 }
 
 function updatePlayerBoxes(){
+  // Which box is on top follows the drawn orientation, not the seat — so a
+  // view flip moves the clocks with the pieces they belong to.
+  if(typeof syncBoardOrientation === 'function') syncBoardOrientation();
   const mat = computeMaterial(board);
   const diff = mat.w - mat.b;
   const inChk = inCheck(board, turn);
@@ -2105,56 +2175,13 @@ function updatePlayerBoxes(){
 
 function stopCheckThreats(){showingCheckThreats=false;checkThreatSquaresW=new Set();checkThreatSquaresB=new Set();render();}
 
-// ── Static Exchange Evaluation for fork landing squares ─────────────────────
-// Returns net material score for `color` if their piece of type `pieceType`
-// moves to `toSq` on board `bd`. Positive = profitable, negative = losing.
-// Static Exchange Evaluation for landing a piece of `pieceType`/`color` on
-// `toSq`. Returns the net material the mover comes out ahead (positive = good
-// for the mover) assuming both sides capture optimally with the cheapest piece
-// available at each step. Standard swap-off algorithm with negamax fold-back:
-// each side may "stand pat" rather than recapture if capturing would lose.
-//
-// This is the gate the next-move fork filter uses to decide whether a forking
-// landing square is safe. It MUST account for defended recaptures — e.g. a
-// knight jumping to a square guarded by the enemy queen but defended by our
-// bishop is perfectly safe (they never take, and if they did we win the queen),
-// so the SEE there is >= 0, not "-knight".
-function seeLandingScore(toSq, pieceType, color, bd) {
-  const opp = color === 'w' ? 'b' : 'w';
-  // Piece currently standing on toSq (if any) is the first thing we win.
-  const gains = [ bd[toSq] ? (PIECE_VAL[bd[toSq].piece] || 0) : 0 ];
-
-  // Working board: our piece now sits on toSq (whatever it captured is gone).
-  let b2 = {...bd};
-  b2[toSq] = { piece: pieceType, color };
-
-  let side = opp;                 // opponent moves next (the recapture)
-  let onSquareVal = PIECE_VAL[pieceType] || 0; // value of the piece now on toSq
-  let depth = 0;
-
-  // Build the raw gain sequence: at each ply the side-to-move captures the
-  // piece on toSq with its cheapest attacker; that attacker now sits on toSq.
-  while (true) {
-    const atks = currentAttackersOf(toSq, side, b2);
-    if (!atks.length) break;
-    const { sq: aSq, val: aVal } = atks[0]; // cheapest attacker (val from core)
-    // This side gains the value of the piece it captures off toSq.
-    gains[++depth] = onSquareVal - gains[depth - 1];
-    onSquareVal = aVal;           // the capturing piece now occupies toSq
-    const nb = {...b2};
-    nb[toSq] = nb[aSq]; delete nb[aSq];
-    b2 = nb;
-    side = side === 'w' ? 'b' : 'w';
-    if (depth > 31) break;        // safety
-  }
-
-  // Negamax fold-back: from the deepest capture upward, the side to move takes
-  // the better of "don't recapture" (keep prior gain) vs "recapture" (this gain).
-  for (let i = depth - 1; i >= 0; i--) {
-    gains[i] = -Math.max(-gains[i], gains[i + 1]);
-  }
-  return gains[0];
-}
+// A static-exchange evaluator used to live here, and the next-move fork filter
+// was its only caller: it scored the landing square and dropped any fork that
+// came out worse than the cheapest target. That was the overlay deciding
+// whether a move was worth playing, which is the player's job — see
+// computeForkData for what replaced it (one static fact: would the piece hang
+// there). Removed rather than left in place, so that grepping this file for
+// "does the board evaluate moves?" gets the honest answer.
 
 // ── Fork & Skewer detection ──────────────────────────────────────────────────
 const PIECE_VAL = {P:1, N:3, B:3, R:5, Q:9, K:100};
@@ -2340,19 +2367,13 @@ function computeForkData(bd, color, pinnedSqs) {
     const targets = attacks.filter(t => bd[t] && bd[t].color === opp);
     if (targets.length < 2) continue;
 
-    // Filter: only show if profitable
-    // Either: any target is undefended, OR combined value > forking piece value
-    const myVal = PIECE_VAL[p.piece] || 0;
-    // "Undefended" = no defender of the target's OWN colour (the opponent).
-    // Must be [opp], not [color]: directAtk[t][color] lists the forker's own
-    // attackers of t (and always includes the forking piece itself), so it is
-    // never empty — using it here silently suppressed every fork whose targets'
-    // combined value didn't exceed the forker (e.g. a knight forking two pawns).
-    const anyUndefended = targets.some(t => directAtk[t][opp].length === 0);
-    const combinedVal = targets.reduce((sum,t) => sum + (PIECE_VAL[bd[t].piece]||0), 0);
-    if (anyUndefended || combinedVal > myVal) {
-      result.current.push({ sq, targets });
-    }
+    // No profitability filter. There used to be one — show the fork only if a
+    // target is undefended or the targets outweigh the forker — and it was the
+    // overlay doing the player's job for them: deciding whether a fork was
+    // worth having. Two of the opponent's pieces attacked at once is a FACT
+    // about the position, and which facts matter is the player's call. A fork
+    // is a fork.
+    result.current.push({ sq, targets });
   }
 
   // ── Next-move forks ───────────────────────────────────────────────────────
@@ -2371,24 +2392,28 @@ function computeForkData(bd, color, pinnedSqs) {
       const targets = attacks2.filter(t => bd2[t] && bd2[t].color === opp);
       if (targets.length < 2) continue;
 
-      // Profitable fork filter. "Undefended" = no defender of the target's own
-      // colour ([opp]); [color] would count the forker's own attackers (never
-      // empty) and wrongly suppress low-combined-value forks.
-      const anyUndefended = targets.some(t => atk2[t][opp].length === 0);
-      const combinedVal = targets.reduce((sum,t) => sum + (PIECE_VAL[bd2[t].piece]||0), 0);
-      if (!anyUndefended && combinedVal <= myVal) continue;
+      // ── The only exclusion, and it is a fact rather than a judgement ─────
+      // Two evaluations used to live here: a "profitable fork" test comparing
+      // the targets' combined value against the forker, and a static-exchange
+      // score that dropped anything losing more than the cheapest target and
+      // otherwise sorted forks into gold and blue by whether the exchange came
+      // out ahead. Both answered "is this move good?" — which is the player's
+      // question, not the board's, and answering it quietly turned a vision
+      // overlay into a move suggester.
+      //
+      // What is left is one static fact about the landing square: after the
+      // move, is the piece attacked with nothing defending it? A fork that
+      // simply hangs the forker is not a fork anyone is choosing between, and
+      // drawing every one of them would bury the real ones — the board is
+      // crowded enough. Everything else is shown and left to the player.
+      const landAtt = atk2[toSq][opp].length;
+      const landDef = atk2[toSq][color].length;
+      if (landAtt > 0 && landDef === 0) continue;   // would simply hang there
 
-      // ── SEE filter: skip if landing square loses more than cheapest fork target ──
-      // e.g. queen moving to pawn-defended square = SEE heavily negative → not shown
-      const seeScore = seeLandingScore(toSq, p.piece, color, bd);
-      const cheapestTarget = targets.reduce(
-        (min,t) => Math.min(min, PIECE_VAL[bd2[t].piece]||0), 999);
-      if (seeScore < -cheapestTarget) continue; // catastrophic loss — skip entirely
-
-      // Classify by SEE result:
-      // SEE >= 0: landing square safe (or we gain material there) → gold fork symbol
-      // SEE < 0 but fork still worthwhile: contested → blue fork symbol
-      if (seeScore >= 0) {
+      // The two colours are now facts too, not verdicts:
+      //   green  — nothing attacks the landing square
+      //   blue   — it is attacked and defended; contested, and yours to judge
+      if (landAtt === 0) {
         result.safe.push({ from:sq, to:toSq, targets });
       } else {
         result.contested.push({ from:sq, to:toSq, targets });
@@ -2818,6 +2843,16 @@ if (!localStorage.getItem('bm_pieceSet')) { currentPieceSet = 'staunton'; }
 loadPrefs();
 loadSoundPref();
 loadBoardSettingsPref();
+// The phone furniture. All three no-op above the breakpoint: the tray is a
+// plain sidebar there, and the strip and the bar are display:none.
+// pinLoad() reads the saved overlay states, so it has to run before the first
+// indApply() paints anything.
+pinLoad();
+pinRender();
+visBindPanel();
+syncPhoneBar();
+ibBindHold();
+bsSyncAppearance();
 if(typeof ghostSyncUI === "function") ghostSyncUI();
 // Stockfish 1 is where a first visit should start: the quick block applies it
 // rather than inheriting the builder's own default of 8.

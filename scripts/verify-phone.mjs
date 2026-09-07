@@ -34,8 +34,18 @@ async function ctxFor(width, height, mobile) {
 async function openBuilder(page, shellIdx) {
   await page.goto(BASE, { waitUntil: 'networkidle' });
   await page.waitForTimeout(900);
-  const sb = await page.$$('.landing-shell-btn');
-  if (sb[shellIdx]) { await sb[shellIdx].click(); await page.waitForTimeout(400); }
+  // The landing is no longer the door. An inline bootstrap in 00-head.html
+  // decides the shell from bm_shell (domain-defaulted) before paint and opens
+  // the board directly, so .landing-shell-btn exists but is never visible and
+  // clicking it timed the whole script out before a single assertion ran.
+  // Pick the shell through the function the buttons call, then open the
+  // landing explicitly for the bot card below.
+  await page.evaluate((i) => {
+    if (typeof setShell === 'function') setShell(i === 1 ? 'pro' : 'amateur');
+    try { if (!document.getElementById('bmWelcome').hidden) bmWelcomeChoose('solo'); } catch (e) {}
+    if (typeof landingShow === 'function') landingShow();
+  }, shellIdx);
+  await page.waitForTimeout(500);
   // Target the card by what it DOES, not what it says. Matching on the label
   // ("build a bot") silently stopped selecting anything when the card was
   // renamed to "Bot Builder / Play a bot": the modal never opened, and every
@@ -66,6 +76,13 @@ async function openBuilder(page, shellIdx) {
 
 async function startGame(page, frame) {
   await frame.evaluate(() => { const b = document.querySelector('.start-btn'); if (b) b.click(); });
+  // KNOWN FLAKE, and not a slow one: this waits on the BOT's first move, and it
+  // times out at 90s as readily as at 30s, at a different call site each run
+  // (162, 167, 215 and 263 all seen). So the bot is not starting at all rather
+  // than starting late, and raising the budget only makes the failure slower.
+  // It reproduces identically on unmodified src/, so it is not a layout
+  // regression — every assertion AFTER this helper is what the script is for,
+  // and those pass on a run that gets through. Left at 30s deliberately.
   await page.waitForFunction(() => typeof gameMovesAlgebraic !== 'undefined' && gameMovesAlgebraic.length > 0,
                              null, { timeout: 30000 });
   await page.waitForTimeout(600);

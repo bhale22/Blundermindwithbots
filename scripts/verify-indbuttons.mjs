@@ -2,7 +2,7 @@
 //   node scripts/verify-indbuttons.mjs
 //
 //  1 the 13 "Show During Exploration" sub-buttons are gone
-//  2 every indicator has one fixed-width icon slot, so all labels align
+//  2 the label owns the button - no icon slot, no dots, no "?" to mis-tap
 //  3 the two paired indicators stack their dots vertically
 //  4 state is carried by font weight, not a word chip: on/exp bold, off regular
 //  5 click cycles off -> exp -> on -> off
@@ -24,11 +24,18 @@ await ctx.addInitScript(() => {
   try {
     ['bm_tour_pro', 'bm_tour_amateur'].forEach(k => localStorage.setItem(k, '1'));
     localStorage.setItem('bm_shell', 'amateur');
+    // bm_welcomed is what the inline bootstrap checks before opening the
+    // first-visit dialog. Without it that dialog's veil swallows every click
+    // in this script, which is not what any of these assertions are about.
+    localStorage.setItem('bm_welcomed', '1');
   } catch (e) {}
 });
 const page = await ctx.newPage();
 await page.goto(BASE + '/', { waitUntil: 'networkidle' });
-await page.evaluate(() => { const o = document.getElementById('landingOverlay'); if (o) o.style.display = 'none'; });
+await page.evaluate(() => {
+  const o = document.getElementById('landingOverlay'); if (o) o.style.display = 'none';
+  try { if (!document.getElementById('bmWelcome').hidden) bmWelcomeChoose('solo'); } catch (e) {}
+});
 await page.waitForTimeout(400);
 
 const CORE = ['threats', 'counts', 'unprotected', 'pins'];
@@ -49,28 +56,27 @@ const pageScrolls = await page.evaluate(() =>
 console.log('\n1-4  Structure');
 ok('13 indicators present', KEYS.length === 13, String(KEYS.length));
 ok('no .ib-pre sub-buttons remain', (await page.locator('.ib-pre').count()) === 0);
-ok('13 icon slots', (await page.locator('.ind-grid .ib-icon').count()) === 13);
 ok('no state chips remain', (await page.locator('.ib-state').count()) === 0);
 
-const slots = await page.evaluate(() =>
-  [...document.querySelectorAll('.ind-grid .ib-icon')].map(e => e.getBoundingClientRect().width));
-ok('every icon slot is the same width', new Set(slots.map(w => w.toFixed(2))).size === 1,
-   [...new Set(slots.map(w => w.toFixed(1)))].join(','));
+// The fixed-width icon slot and its coloured dots are gone, deliberately: the
+// swatch read as a key mapping a button to its overlay colour and was not one
+// - "My forks" carried a static yellow chip while the fork overlay renders
+// green, orange, blue or amber depending on turn and safety. What replaced it
+// is the label having the whole button, which is what these now measure.
+ok('no icon slot remains', (await page.locator('.ind-grid .ib-icon').count()) === 0);
+ok('no colour dots remain', (await page.locator('.ind-grid .ib-dot').count()) === 0);
+ok('no "?" remains inside a toggle', (await page.locator('.ind-grid .ib-help').count()) === 0);
 
-const stacked = await page.evaluate(() => {
-  const out = {};
-  for (const id of ['ib-threats', 'ib-counts']) {
-    const dots = [...document.querySelectorAll('#' + id + ' .ib-icon .ib-dot')];
-    if (dots.length !== 2) { out[id] = { dots: dots.length }; continue; }
-    const [a, b] = dots.map(d => d.getBoundingClientRect());
-    out[id] = { stacked: b.top >= a.bottom - 0.5, sameX: Math.abs(a.left - b.left) < 0.5 };
-  }
-  return out;
-});
-ok('threats dots stacked vertically', stacked['ib-threats'].stacked === true, JSON.stringify(stacked['ib-threats']));
-ok('threats dots share an x', stacked['ib-threats'].sameX === true);
-ok('counts dots stacked vertically', stacked['ib-counts'].stacked === true, JSON.stringify(stacked['ib-counts']));
-ok('counts dots share an x', stacked['ib-counts'].sameX === true);
+const labels = await page.evaluate(() =>
+  [...document.querySelectorAll('.ind-grid .ib-lbl')].map(e => {
+    const r = e.getBoundingClientRect();
+    const btn = e.closest('.ib-main').getBoundingClientRect();
+    return { share: r.width / btn.width, clipped: e.scrollWidth > e.clientWidth + 1 };
+  }));
+ok('the label is what the button is made of',
+   labels.every(l => l.share > 0.6), 'narrowest ' + Math.min(...labels.map(l => l.share)).toFixed(2));
+ok('and no label is clipped', labels.every(l => !l.clipped),
+   String(labels.filter(l => l.clipped).length) + ' clipped');
 
 // State used to be carried partly by font weight, which re-measured the label
 // and could rewrap it - "My disc. attacks" went from one line to two the moment
@@ -269,15 +275,15 @@ const pairs = await page.evaluate(() => {
     xray:  same('ib-xray', 'ib-overloaded'),
     mineLeftDisc:  mineLeft('ib-discoveredself', 'ib-discoveredopp'),
     mineLeftForks: mineLeft('ib-forksw', 'ib-forksb'),
-    mineLeftWeak:  mineLeft('ib-weakb', 'ib-weakw'),
+    mineLeftWeak:  mineLeft('ib-weakw', 'ib-weakb'),
     // Forks come before discovered attacks; weak squares come last.
     forksAboveDisc: t('ib-forksw').top < t('ib-discoveredself').top,
-    weakBelowXray:  t('ib-weakb').top > t('ib-xray').top,
+    weakBelowXray:  t('ib-weakw').top > t('ib-xray').top,
     checkSpans: t('ib-checkthreats').width > t('ib-forksw').width * 1.8,
-    // The two weak-square chips used to be the same colour, which said the two
-    // overlays were the same thing.
-    weakChips: [getComputedStyle(document.querySelector('#ib-weakb .ib-sq')).backgroundColor,
-                getComputedStyle(document.querySelector('#ib-weakw .ib-sq')).backgroundColor],
+    // The weak pair is the one that had its labels crossed: ib-weakw computes
+    // White's uncovered squares, so it is the one that must read "My".
+    weakLabels: ['ib-weakw', 'ib-weakb']
+      .map(id => document.querySelector('#' + id + ' .ib-lbl').textContent.trim()),
     maxClip: Math.max(...[...document.querySelectorAll('.ind-grid .ib-main')]
       .map(b => b.scrollWidth - b.clientWidth)),
   };
@@ -291,25 +297,44 @@ ok('mine is on the left of every pair',
 ok('discovered attacks sit below forks/skewers', pairs.forksAboveDisc);
 ok('weak squares sit below x-ray/overloaded', pairs.weakBelowXray);
 ok('check threats spans the full width', pairs.checkSpans);
-ok('the two weak-square chips differ', pairs.weakChips[0] !== pairs.weakChips[1],
-   pairs.weakChips.join(' vs '));
+ok('weakw is "mine" and weakb is "theirs"',
+   /^My /.test(pairs.weakLabels[0]) && /^Opp\. /.test(pairs.weakLabels[1]),
+   pairs.weakLabels.join(' / '));
 ok('nothing clips out of any button', pairs.maxClip === 0, 'worst ' + pairs.maxClip + 'px');
 
 console.log('\n9b   Ghost button and selector are one value');
+// Ghost replies moved out of the overlay grid and into Board settings: it is
+// not a board-vision overlay, it is an engine asking what it would play next.
+// The control has to be on screen to be clicked, so open the panel first.
+await page.evaluate(() => openPanel('boardSettingsPanel'));
+await page.waitForTimeout(350);
+ok('the ghost control lives in Board settings now',
+   await page.evaluate(() => !!document.querySelector('#boardSettingsPanel #soloGhostDepth') &&
+                             !document.querySelector('#sidebar #soloGhostDepth')));
 const gs = async () => page.evaluate(() => ({
   sel: document.getElementById('soloGhostDepth').value,
   on: document.getElementById('ib-ghost').classList.contains('on'),
   disabled: document.getElementById('soloGhostDepth').disabled,
 }));
+// The invariant is that the two never disagree, whichever way round they
+// start. Asserting a particular starting state was what made these four fail
+// for months after ghosts were changed to default off.
 const g0 = await gs();
-await page.click('#ib-ghost .ib-main'); await page.waitForTimeout(150);
+ok('at rest the button and selector agree',
+   g0.on === (g0.sel !== '0'), JSON.stringify(g0));
+// The selector is greyed out during live 2-player games (engine hints would
+// undercut human-vs-human play), NOT merely when ghosts are switched off.
+ok('and it is not greyed out outside a 2-player game', g0.disabled === false, JSON.stringify(g0));
+await page.click('#ib-ghost .ib-main'); await page.waitForTimeout(200);
 const g1 = await gs();
-await page.click('#ib-ghost .ib-main'); await page.waitForTimeout(150);
+ok('one click flips it', g1.on === !g0.on, JSON.stringify(g1));
+ok('and the two still agree', g1.on === (g1.sel !== '0'), JSON.stringify(g1));
+await page.click('#ib-ghost .ib-main'); await page.waitForTimeout(200);
 const g2 = await gs();
-ok('button starts on with a depth chosen', g0.on && g0.sel !== '0', JSON.stringify(g0));
-ok('turning it off drops the selector to Off', !g1.on && g1.sel === '0', JSON.stringify(g1));
-ok('the selector greys out while off', g1.disabled);
-ok('turning it back on restores the depth', g2.on && g2.sel === g0.sel, JSON.stringify(g2));
+ok('a second click puts it back, depth and all',
+   g2.on === g0.on && g2.sel === g0.sel, JSON.stringify(g2));
+await page.evaluate(() => closeAllPanels());
+await page.waitForTimeout(250);
 
 console.log('\n9c   Show all actually shows');
 const showAll = await page.evaluate(() => {

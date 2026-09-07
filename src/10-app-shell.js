@@ -243,10 +243,28 @@ function resizeBoard() {
   const topH     = (headerEl && headerEl.offsetHeight > 0 ? headerEl.offsetHeight : 40) + 8;
   const playerH  = 44 * 2 + 8; // two player boxes, fixed height
   const footerH  = 30;
-  // Stacked layout scrolls, so the board may exceed the fold — reserve room for
-  // the clocks and the settings toggle, but don't shrink it to fit everything.
+  // Stacked, the board no longer scrolls: the controls are in a sheet over the
+  // top of it, so everything else on the page has to fit above the fold at
+  // once. That is the clocks, the pinned strip and the game bar. Measured
+  // rather than guessed — the strip appears and disappears with its chips, and
+  // a constant would be wrong half the time.
+  //
+  // Except on a viewport too short to fit any of it. Turn the phone sideways
+  // and the screen is ~360px tall: two clocks (96), the pinned strip (44) and
+  // the game bar (46) come to 186 before the board gets a pixel, and the
+  // board's own floor is 280. Reserving space that cannot exist just pins the
+  // board at its floor and overflows anyway, so below the line the page simply
+  // scrolls — the same call the old sticky layout made at the same 520px.
+  const shortVp = window.innerHeight <= 520;
+  let phoneChrome = 0;
+  if (stacked && !shortVp) {
+    ['pinStrip', 'phoneBar'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.offsetParent !== null) phoneChrome += el.offsetHeight + 8;
+    });
+  }
   const maxFromHeight = stacked
-    ? window.innerHeight - topH - playerH - 8
+    ? window.innerHeight - topH - playerH - 8 - phoneChrome
     : window.innerHeight - topH - playerH - footerH - 12;
   const boardPx = Math.max(280, Math.min(maxFromWidth, maxFromHeight, 900));
   const bpx = boardPx + 'px';
@@ -604,6 +622,10 @@ function openPanel(id) {
   closeAllPanels();
   document.getElementById(id).classList.add('open');
   document.getElementById('panelOverlay').classList.add('open');
+  // The Appearance rows show current values, and a theme or piece set can be
+  // changed from the panel this one links to — so they are repainted every
+  // time it opens rather than only at startup.
+  if (id === 'boardSettingsPanel' && typeof bsSyncAppearance === 'function') bsSyncAppearance();
   // Refresh lobby list whenever the 2-player panel opens, then auto-refresh every 5s
   if (id === 'mpPanel') {
     mpLoadInfo();           // restore last-entered handle / rating / range / TC
@@ -640,15 +662,20 @@ const HELP = {
 <p><span style="color:#ff8c00">■</span> <strong>Orange</strong> — squares where White can move a piece to put the Black king in check.</p>
 <p><span style="color:#b428dc">■</span> <strong>Purple</strong> — squares where Black can move a piece to put the White king in check.</p>
 <p>Useful for spotting forcing moves, escape routes, and tactical sequences involving check. Not shown when a king is already in check.</p>`},
-  threats:{title:'Threats',body:`<p>Shows the status of your own pieces using colored circles — letting you see at a glance which are in danger:</p>
-<p><span style="color:#d02828">●</span> <strong>Red</strong> — undefended, or can be captured by a less valuable piece. Immediate danger.</p>
-<p><span style="color:#1eb446">●</span> <strong>Green</strong> — overprotected and cannot be taken profitably. Safe.</p>
-<p><span style="color:#8888a0">●</span> <strong>Grey</strong> — equal attackers and defenders, no cheap capture available. Contested.</p>
+  threats:{title:'Threats',body:`<p>Coloured circles show what an attack on a piece actually costs — so how loud the circle is depends on <em>what</em> is attacked, not only on how many pieces are pointing at it.</p>
+<p><span style="color:#d02828">✳</span> <strong>Red sawtooth — an attacked queen.</strong> Always, however many defenders it has. Three defenders do not make losing a queen for a knight acceptable, so this one never gets a calm circle.</p>
+<p><span style="color:#d02828">●</span> <strong>Red</strong> — undefended, attacked by something cheaper, or simply outnumbered. Immediate danger.</p>
+<p><span style="color:#e0a814">●</span> <strong>Yellow — a rook, bishop or knight, defended as often as it is attacked.</strong> Evaluate it: the count is level, but the exchange still changes the position.</p>
+<p><span style="color:#e0a814">◐</span><span style="color:#1eb446">◑</span> <strong>Yellow/green — the same piece, over-defended.</strong> It is held. Keep half an eye on it rather than your full attention.</p>
+<p><span style="color:#8888a0">●</span> <strong>Grey</strong> — a pawn with equal attackers and defenders. Contested, and genuinely calm.</p>
+<p><span style="color:#1eb446">●</span> <strong>Green</strong> — an over-defended pawn.</p>
 <p>No circle = piece is not currently under attack.</p>`},
-  captures:{title:'Captures',body:`<p>Shows the status of opponent pieces using colored circles — telling you how safe each capture would be:</p>
-<p><span style="color:#d02828">●</span> <strong>Red</strong> — the opponent piece is undefended or can be taken by a less valuable piece. A safe or winning capture.</p>
-<p><span style="color:#1eb446">●</span> <strong>Green</strong> — the opponent piece is overprotected. Capturing it likely loses material.</p>
-<p><span style="color:#8888a0">●</span> <strong>Grey</strong> — equal attackers and defenders. Exchange may be even — evaluate carefully.</p>
+  captures:{title:'Captures',body:`<p>The same circles, read from the other side of the board — how safe each capture would be. Opponent pieces are graded by what taking them is worth, not just by the counts:</p>
+<p><span style="color:#d02828">✳</span> <strong>Red sawtooth</strong> — their queen is attacked. Worth looking at whatever is defending it.</p>
+<p><span style="color:#d02828">●</span> <strong>Red</strong> — undefended, takeable by something cheaper, or outnumbered. A safe or winning capture.</p>
+<p><span style="color:#e0a814">●</span> <strong>Yellow</strong> — a rook, bishop or knight with defenders equal to attackers. The trade is a real decision.</p>
+<p><span style="color:#e0a814">◐</span><span style="color:#1eb446">◑</span> <strong>Yellow/green</strong> — the same piece, over-defended. Taking it probably loses material.</p>
+<p><span style="color:#8888a0">●</span> <strong>Grey</strong> — an evenly contested pawn. <span style="color:#1eb446">●</span> <strong>Green</strong> — an over-defended pawn.</p>
 <p>No circle means you cannot currently capture that piece.</p>`},
   unprotected:{title:'Unprotected Pieces',body:`<p>An <strong>unprotected piece</strong> has no friendly defender.</p><p>🎯 <strong>Bullseye</strong> — unprotected, not currently attacked (quietly vulnerable)<br>🔴 <strong>Red ring</strong> — unprotected AND under attack (immediate danger)</p><p>Good habit: keep all pieces protected.</p>`},
   pins:{title:'Pins',body:`<p>A piece is <strong>"pinned"</strong> if moving it would expose a more valuable friendly piece behind it to capture.</p><hr><h3>${PIN_SVG_PURPLE} Absolute pin — to the king</h3><p>The piece <strong>cannot legally move</strong>. Always excluded from threat and defense counts.</p><p><em>Exception: it can capture the pinner — that resolves the pin.</em></p><hr><h3>${PIN_SVG_BLUE} Relative pin — to the queen</h3><p>The piece <strong>can legally move</strong> but doing so loses the queen.</p><p>When Queen Pins is enabled, these pieces are also excluded from counts — a defender pinned to the queen doesn't actually defend.</p>`},
@@ -658,8 +685,8 @@ const HELP = {
     forksw:{title:"My Forks & Skewers",body:`<h3>Forks &amp; skewers — what are they?</h3>
 <p>A <strong>fork</strong> is a single move that simultaneously attacks two or more enemy pieces, forcing the opponent to abandon one. Knights are especially dangerous forkers because their L-shaped move is hard to see in advance.</p>
 <p>A <strong>skewer</strong> is the reverse of a pin — a high-value piece is attacked directly, and when it moves to safety it exposes a less valuable piece behind it to capture.</p>
-<hr><h3>How this button works</h3><p>Showing fork opportunities can feel like move suggestion — crossing from "see the board" into "here's your strategy." Use it as a double-check after you've done your own calculation, not as a first-look shortcut.</p><p><strong>Single click</strong> — momentary peek. <strong>Double-click</strong> — toggles the indicator permanently on or off.</p><p><em>Opponent forks (Black's Forks) work the same way — those are danger warnings for you.</em></p><hr><table class="help-table"><tr><th>Color</th><th>Meaning</th></tr><tr><td style="color:#28c850">■ Green</td><td>Safe fork opportunity (landing square not losing)</td></tr><tr><td style="color:#3578e0">■ Blue</td><td>Contested fork (evaluate carefully)</td></tr><tr><td>⬛ Not shown</td><td>Fork where landing loses more than gained</td></tr></table><p><em>Not shown ≠ bad move. Positional factors may still make it excellent.</em></p>`},
-  forksb:{title:"Fork &amp; Skewer Threats",body:`<h3>What is a fork or skewer?</h3><p>A <strong>fork</strong> simultaneously attacks two or more enemy pieces — the opponent can only save one. A <strong>skewer</strong> forces a high-value piece to move, exposing a lesser piece behind it.</p><hr><p>Shows opponent fork and skewer threats — danger warnings for you.</p><table class="help-table"><tr><th>Color</th><th>Meaning</th></tr><tr><td style="color:#dc3232">■ Red</td><td>Black has a safe fork/skewer threat</td></tr><tr><td style="color:#dc50b4">■ Pink</td><td>Contested fork (opponent must evaluate)</td></tr></table><p>During move exploration, a target symbol appears on your destination square if moving there creates fork danger.</p>`},
+<hr><h3>How this button works</h3><p>Showing fork opportunities can feel like move suggestion — crossing from "see the board" into "here's your strategy." Use it as a double-check after you've done your own calculation, not as a first-look shortcut.</p><p><em>Opponent forks work the same way — those are danger warnings for you.</em></p><hr><h3>What it does and does not judge</h3><p>The colours are <strong>facts about the landing square</strong>, not verdicts on the move. Whether a fork is worth playing is yours to work out.</p><table class="help-table"><tr><th>Color</th><th>Meaning</th></tr><tr><td style="color:#28c850">■ Green</td><td>Nothing attacks the square you would land on</td></tr><tr><td style="color:#3578e0">■ Blue</td><td>The landing square is attacked <em>and</em> defended — contested</td></tr><tr><td>⬛ Not shown</td><td>The forking piece would simply <strong>hang</strong> there: attacked, with nothing defending it</td></tr></table><p>That last one is the only fork withheld, and it is withheld to keep the board readable rather than because it is a bad move. Nothing here weighs what a fork wins against what it costs — the overlay used to do exactly that, and it was doing your job for you.</p>`},
+  forksb:{title:"Fork &amp; Skewer Threats",body:`<h3>What is a fork or skewer?</h3><p>A <strong>fork</strong> simultaneously attacks two or more enemy pieces — the opponent can only save one. A <strong>skewer</strong> forces a high-value piece to move, exposing a lesser piece behind it.</p><hr><p>Shows opponent fork and skewer threats — danger warnings for you.</p><table class="help-table"><tr><th>Color</th><th>Meaning</th></tr><tr><td style="color:#dc3232">■ Red</td><td>Nothing of yours attacks the square they would land on</td></tr><tr><td style="color:#dc50b4">■ Pink</td><td>You attack that square and they defend it — contested</td></tr><tr><td>⬛ Not shown</td><td>A fork that would leave their piece hanging on the landing square</td></tr></table><p>As with your own forks, these are facts about the landing square rather than a judgement of whether the threat is worth their while.</p><p>During move exploration, a target symbol appears on your destination square if moving there creates fork danger.</p>`},
   discoveredopp:{title:'Opponent Discovered Attack Threats',body:`<p>Shows potential discovered attacks the opponent can make — warning you of hidden threats.</p>
 <p><span style="color:#dc8200">●</span> <strong>Amber</strong> — moving the marked opponent piece would reveal a slider attack on your pieces.</p>
 <p>A dashed ring marks the piece that opens the discovery. A solid ring marks the revealed attacker. A target marks the threatened piece.</p>
@@ -791,18 +818,46 @@ function ibTogglePre(key){
 }
 function ibUpdateUI(key){
   const ind=IND[key]; if(!ind) return;
+  // An overlay can be on screen twice: as a button in the tray and as a chip
+  // pinned beside the board. They are two views of ONE value, so they are
+  // painted in one pass from IND rather than each keeping its own idea of the
+  // state — which is the only way the tray stays trustworthy once the chip is
+  // the thing being pressed.
+  let cls = '';
+  if(ind.pressing && ibHeld[key]) cls = 'pressing';
+  else if(ind.on)  cls = 'on';   // always-on: full green
+  else if(ind.pre) cls = 'pre';  // exploration-only
+  const chip=document.getElementById('pin-'+key);
+  if(chip){
+    chip.classList.remove('on','pre','pressing');
+    if(cls) chip.classList.add(cls);
+  }
+  if(typeof visPaintRow === 'function') visPaintRow(key);
   const el=document.getElementById('ib-'+key); if(!el) return;
   el.classList.remove('on','pre','pressing');
-  if(ind.pressing && ibHeld[key]) el.classList.add('pressing');
-  else if(ind.on) el.classList.add('on');  // always-on: full green
-  else if(ind.pre) el.classList.add('pre'); // exploration-only
+  if(cls) el.classList.add(cls);
   // The word tracks the SAVED state only, never `pressing` — a peek deliberately
   // leaves it alone, so the button keeps telling you what you will still have
   // once you let go.
   const st=el.querySelector('.ib-state');
   if(st) st.textContent = ind.on ? 'on' : (ind.pre ? 'exp' : 'off');
+  // Colour and a glyph are what a sighted user gets; this is the same fact for
+  // anyone reading the button aloud, which it never carried before.
+  const btn=el.querySelector('.ib-main');
+  const lbl=el.querySelector('.ib-lbl');
+  if(btn&&lbl){
+    const name=lbl.getAttribute('data-full')||lbl.textContent.trim();
+    btn.setAttribute('aria-label',
+      name+' — '+(ind.on?'always on':(ind.pre?'shown while exploring':'off')));
+  }
 }
 function ibRefreshAll(){Object.keys(IND).forEach(k=>ibUpdateUI(k));}
+
+// The "drawing now" bar that used to live here is gone. It answered "why is
+// the board covered in circles?" with a list of the always-on overlays — a
+// question the pinned strip beside the board now answers better, because every
+// overlay that is drawing has a chip there, in its own state colour, and the
+// chip is also the control that turns it off.
 
 // Aliases so indApply and newer code can call these by either name
 function indUpdateUI(key){ ibUpdateUI(key); }
@@ -820,69 +875,165 @@ function indMode(key, mode, e){
 }
 
 // ── Indicator button gestures ─────────────────────────────────────────
-// Two gestures on one target, separated by time:
+// TWO SURFACES, DELIBERATELY DIFFERENT GESTURES.
 //
-//   click        advance the cycle  off → exp → on → off
+// The grid of indicator buttons now lives in a bottom tray that COVERS the
+// board while it is open (see the bv-tray block). Hold-to-peek there would be
+// a gesture whose entire payoff — watching the board change — is behind the
+// panel your thumb is holding down, so the grid is a plain tap:
+//
+//   tap   advance the cycle  off → while exploring → always on → off
+//
+// The peek gesture is not gone; it moved to the surface where it still works.
+// The pinned strip (#pinStrip) sits with the board, in full view, and keeps
+// both gestures:
+//
+//   tap          advance the cycle
 //   hold ≥350ms  peek: invert the overlay while held, revert on release
 //
-// This replaced a split control where the cycle was on DOUBLE-click and a
-// single click did nothing persistent at all — it only armed the double-click
-// timer. The most obvious gesture on the panel's primary control was a no-op,
-// so a first click looked like a flash and a broken button. Single click now
-// owns the cycle, and the double-click path is gone.
-//
-// The peek arms on a timer rather than on mousedown so that `.ib.pressing`
+// The peek arms on a timer rather than on pointerdown so that `.pressing`
 // (cyan) means exactly one thing: this press is a peek and nothing will stick.
-// If it lit on every mousedown it would carry no information. :active covers
-// the sub-threshold gap so a plain click still feels responsive.
-// How long a press has to last before it counts as a peek rather than a click.
-// The overlay itself flips on mousedown either way; this is only the line
-// between "you clicked it" and "you are holding it to look".
+// If it lit on every press it would carry no information. :active covers the
+// sub-threshold gap so a plain tap still feels responsive.
+//
+// How long a press has to last before it counts as a peek rather than a tap.
+// The overlay itself flips on press either way; this is only the line between
+// "you tapped it" and "you are holding it to look".
 const IB_HOLD_MS = 350;
-const ibPressTime = {};
-const ibHoldTimer = {};
-const ibHeld      = {};
 
-function ibMainDown(key,e){
-  if(e) e.preventDefault();
+// ── Explain mode ──────────────────────────────────────────────────────────
+// Thirteen 16px "?" circles used to sit inside thirteen targets whose whole
+// job is to toggle. On a phone that is thirteen chances to open a help panel
+// when you meant to switch an overlay on, and thirteen specks of chrome in a
+// grid that is trying to be scannable. They are gone.
+//
+// Help itself is not. One control in the board-vision panel arms this mode,
+// and then any overlay you tap explains itself instead of toggling. It STAYS
+// armed until you press it again — reading three overlays in a row is the
+// normal way anyone uses this, and disarming after each one would charge a
+// press per question. One target instead of thirteen, and it cannot be hit by
+// accident because arming it is a deliberate, separate press.
+let ibExplain = false;
+
+function ibExplainToggle(on){
+  ibExplain = (on === undefined) ? !ibExplain : !!on;
+  const btn = document.getElementById('visInfo');
+  if(btn){
+    btn.classList.toggle('armed', ibExplain);
+    btn.setAttribute('aria-pressed', ibExplain ? 'true' : 'false');
+    btn.title = ibExplain ? 'Tap any overlay to read what it draws — press again to stop'
+                          : 'Explain an overlay';
+  }
+  // The list says so too — an armed mode that only marks its own button is a
+  // mode you forget you are in.
+  const list = document.getElementById('visList');
+  if(list) list.classList.toggle('explain-armed', ibExplain);
+  document.querySelectorAll('.ind-grid').forEach(g =>
+    g.classList.toggle('explain-armed', ibExplain));
+  const sub = document.getElementById('visSub');
+  if(sub){
+    sub.classList.toggle('armed', ibExplain);
+    sub.textContent = ibExplain
+      ? 'Tap any overlay to read what it draws. Press ? again to stop.'
+      : 'Tap to cycle · swipe right to close';
+  }
+}
+
+// Set by a grid button whose press turned out to be a peek. The browser still
+// delivers a click after that pointerup, and the button's onclick would cycle
+// the overlay the peek was careful not to change. Cleared by the next press
+// either way, so it can never swallow an unrelated tap.
+let _ibHeldRelease = false;
+
+// The grid's tap. One entry point, so explain mode cannot be bypassed by a
+// button that forgot about it.
+function ibTap(key){
   if(!IND[key]) return;
-  // If hide is locked, any IND button press releases it and restores state
-  if(typeof hideShowLocked!=='undefined'&&hideShowLocked&&!hideShowPeeking){
+  if(_ibHeldRelease){ _ibHeldRelease = false; return; }
+  if(ibExplain){ openHelp(key); return; }   // stays armed for the next question
+  ibReleaseHideLock();
+  ibCycle(key);
+}
+
+// A locked "hide everything" is a state you get out of by touching any
+// indicator — otherwise the next tap appears to do nothing at all.
+function ibReleaseHideLock(){
+  if(typeof hideShowLocked!=='undefined' && hideShowLocked && !hideShowPeeking){
     hideShowLocked=false;
     hideShowRestore();
     updateHideShowBtn();
   }
+}
+const ibPressTime = {};
+const ibHoldTimer = {};
+const ibPeekTimer = {};
+const ibStart     = {};
+const ibHeld      = {};
+
+// How long a press has to settle before the board flips. The peek used to fire
+// on pointerdown, which was right when a chip could only be tapped — but the
+// chips now sit in a strip you scroll sideways, and every drag across one lit
+// its overlay for as long as the finger was moving and then dropped it again.
+// A flash you did not ask for, on every scroll.
+//
+// 90ms is under the threshold at which a delay reads as lag, and comfortably
+// longer than the gap between a finger landing and a scroll starting to move —
+// so a drag never flashes, and a genuine press still feels immediate.
+const IB_PEEK_DELAY_MS = 90;
+// How far a finger may wander before the press is a scroll rather than a press.
+const IB_SLOP_PX = 9;
+
+function ibMainDown(key,e){
+  if(e && e.cancelable) e.preventDefault();
+  if(!IND[key]) return;
+  // If hide is locked, any IND button press releases it and restores state
+  ibReleaseHideLock();
   ibPressTime[key] = Date.now();
   ibHeld[key] = false;
   clearTimeout(ibHoldTimer[key]);
-  // The board flips NOW, on press, not after a 350ms wait. Holding used to feel
-  // broken because nothing happened for a third of a second, and a third of a
-  // second is a long time when you are asking "what does this square look like
-  // without the overlay". The timer no longer decides whether to draw the peek;
-  // it only decides when to LABEL the press as one, which keeps the cyan chip
-  // meaning exactly what it meant before: this press will not stick.
-  IND[key].pressing = true;
-  indApply();
+  clearTimeout(ibPeekTimer[key]);
+  // Where the finger landed, so a drag can be told from a press.
+  ibStart[key] = e ? {x:e.clientX, y:e.clientY} : null;
+  // Two timers, not one. The first draws the peek; the second labels the press
+  // as a hold, which is what turns the chip cyan and promises nothing sticks.
+  ibPeekTimer[key] = setTimeout(function(){
+    if(!IND[key]) return;
+    IND[key].pressing = true;
+    indApply();
+  }, IB_PEEK_DELAY_MS);
   ibHoldTimer[key] = setTimeout(function(){
     ibHeld[key] = true;
     ibUpdateUI(key);           // cyan appears; the board is already showing it
   }, IB_HOLD_MS);
 }
 
+// Called from the chip's own pointermove. A press that travels is a scroll:
+// drop it before it draws anything, and leave the strip to scroll in peace.
+function ibMainMove(key,e){
+  const st = ibStart[key];
+  if(!st || !e) return;
+  if(Math.abs(e.clientX - st.x) > IB_SLOP_PX || Math.abs(e.clientY - st.y) > IB_SLOP_PX){
+    ibMainCancel(key);
+  }
+}
+
+// Returns TRUE when the press lasted long enough to have been a peek — in
+// which case it deliberately changed nothing, and the caller must not also
+// treat it as a tap. The two callers want opposite things with that answer:
+// a pinned chip has no click handler and cycles itself, while a grid button
+// carries onclick="ibTap(...)" and needs the trailing click swallowed.
 function ibMainUp(key){
-  if(!IND[key]) return;
+  if(!IND[key]) return false;
   clearTimeout(ibHoldTimer[key]);
-  const held = ibHeld[key];
+  clearTimeout(ibPeekTimer[key]);
+  ibStart[key] = null;
+  const held = !!ibHeld[key];
   ibHeld[key] = false;
   IND[key].pressing = false;
-  if(held){
-    // Long press: it was a peek. Put the board back and change nothing.
-    ibUpdateUI(key);
-    indApply();
-    return;
-  }
-  // Short press: undo the optimistic peek and treat it as the click it was.
-  ibCycle(key);
+  // Either way the optimistic peek from ibMainDown has to come off the board.
+  ibUpdateUI(key);
+  indApply();
+  return held;
 }
 
 // Pointer left the button, or the touch was stolen (scroll, call, app switch).
@@ -891,6 +1042,8 @@ function ibMainUp(key){
 function ibMainCancel(key){
   if(!IND[key]) return;
   clearTimeout(ibHoldTimer[key]);
+  clearTimeout(ibPeekTimer[key]);
+  ibStart[key] = null;
   ibHeld[key] = false;
   if(IND[key].pressing){
     IND[key].pressing = false;
@@ -913,6 +1066,531 @@ function ibCycle(key){
   indApply();
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// THE BOARD-VISION PANEL (phones)
+// --------------------------------------------------------------------------
+// One surface, four states, no gesture to discover. A right-side sheet on the
+// same idiom as every other panel here, holding one control per overlay:
+//
+//   0  unselected   off, and no chip beside the board
+//   1  selected     a chip is beside the board; the overlay is not drawing
+//   2  exploring    drawn while you explore a move
+//   3  always on    drawn all the time
+//
+// Selection and state are ONE axis on purpose. Anything drawing on the board
+// also has a chip next to it, so there is never an overlay running that you
+// cannot see the name of or reach in one tap — which is exactly the situation
+// the old thirteen-button panel produced.
+//
+// The chips beside the board cycle the three DISPLAY states (1→2→3→1) and
+// never unselect: dropping an overlay off the strip is a decision, and it is
+// made here, where the full list is in view.
+// ══════════════════════════════════════════════════════════════════════════
+
+// The panel is the control surface only where the sidebar is not on screen.
+function visIsPhone(){
+  return window.matchMedia('(max-width:760px)').matches &&
+         !(typeof proMode !== 'undefined' && proMode);
+}
+
+// ── State, and remembering it ─────────────────────────────────────────────
+// The app never used to remember your overlay choices at all — every reload
+// started from the IND defaults. Now that "selected" is persisted, the state
+// has to be too, or a chip would come back in a state you never left it in.
+const PIN_STORE = 'bm_pins';
+let pinnedInds = [];               // keys, in the order they were added
+const PIN_FIRST_RUN = ['threats','counts','unprotected','pins'];
+
+function visState(key){
+  const ind = IND[key];
+  if(!ind || pinnedInds.indexOf(key) < 0) return 0;
+  if(ind.on)  return 3;
+  if(ind.pre) return 2;
+  return 1;
+}
+
+const VIS_WORDS = ['', 'beside board', 'exploring', 'always on'];
+
+function pinLabel(key, full){
+  const l = document.querySelector('#ib-' + key + ' .ib-lbl');
+  if(!l) return key;
+  return (full && l.getAttribute('data-full')) || l.textContent.trim();
+}
+
+function pinSave(){
+  const out = {};
+  pinnedInds.forEach(function(k){ out[k] = visState(k); });
+  try{ localStorage.setItem(PIN_STORE, JSON.stringify(out)); }catch(e){}
+}
+
+function pinLoad(){
+  pinnedInds = [];
+  // Desktop keeps the sidebar column, where pinning does not exist and the IND
+  // defaults are what a first visit is supposed to see. Only the phone layout
+  // takes its state from here.
+  if(!visIsPhone()) return;
+  let stored = null;
+  try{ stored = JSON.parse(localStorage.getItem(PIN_STORE) || 'null'); }catch(e){}
+  // Everything starts off; whatever is stored then switches itself back on.
+  // Without this the IND defaults (twelve overlays at "while exploring") would
+  // draw on the board with no chip anywhere naming them.
+  Object.keys(IND).forEach(function(k){
+    if(document.getElementById('ib-' + k)){ IND[k].on = false; IND[k].pre = false; }
+  });
+  let entries;
+  if(stored && !Array.isArray(stored) && typeof stored === 'object'){
+    entries = Object.keys(stored).map(function(k){ return [k, stored[k]]; });
+  } else if(Array.isArray(stored)){
+    entries = stored.map(function(k){ return [k, 1]; });   // older format
+  } else {
+    // First visit: the four the panel calls "start with these", set to draw
+    // while you explore a move. Enough to show what the overlays are for
+    // without covering a first board in thirteen layers.
+    entries = PIN_FIRST_RUN.map(function(k){ return [k, 2]; });
+  }
+  entries.forEach(function(pair){
+    const k = pair[0], st = pair[1] | 0;
+    if(!IND[k] || !document.getElementById('ib-' + k)) return;   // gone in a later build
+    if(st <= 0) return;
+    pinnedInds.push(k);
+    IND[k].on  = (st === 3);
+    IND[k].pre = (st >= 2);
+  });
+}
+
+// ── The chips beside the board ────────────────────────────────────────────
+function pinRender(){
+  const box = document.getElementById('pinChips');
+  if(!box) return;
+  box.textContent = '';
+  pinnedInds.forEach(function(k){
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.id = 'pin-' + k;
+    b.className = 'pin-chip';
+    // textContent, not innerHTML: these names carry apostrophes and ampersands.
+    b.textContent = pinLabel(k, false);
+    b.title = pinLabel(k, true) + ' — tap to cycle, hold to peek';
+    b.setAttribute('aria-label', pinLabel(k, true));
+    b.addEventListener('pointerdown', function(ev){
+      if(ibExplain) return;         // an armed tap explains; it never peeks
+      ibMainDown(k, ev);
+    });
+    // A finger that travels is scrolling the strip, not pressing this chip.
+    b.addEventListener('pointermove', function(ev){ ibMainMove(k, ev); });
+    // No click handler on a chip, so the short-press tap is dispatched here.
+    b.addEventListener('pointerup',     function(){ if(!ibMainUp(k)) ibTap(k); });
+    b.addEventListener('pointercancel', function(){ ibMainCancel(k); });
+    box.appendChild(b);
+    ibUpdateUI(k);
+  });
+  // Two rows once there are enough chips to fill them; one while there are
+  // not, because a half-empty second row is just a taller oval. Four is the
+  // threshold because that is two per row — the first count at which a second
+  // row is carrying its own weight.
+  //
+  // The column count is what makes the grid fill across-then-down rather than
+  // down-then-across: ceil(n/2) columns over two rows puts chips 1..k on the
+  // top row and the rest underneath, in the order they were pinned.
+  const n = pinnedInds.length;
+  const twoRow = n >= 4;
+  box.style.gridTemplateColumns = twoRow
+    ? 'repeat(' + Math.ceil(n / 2) + ', max-content)'
+    : 'repeat(' + n + ', max-content)';
+  // Measured after layout: the fade is a signal that there is more to scroll
+  // to, so it has no business showing when there is not.
+  requestAnimationFrame(function(){
+    box.classList.toggle('fits', box.scrollWidth <= box.clientWidth + 1);
+  });
+  const hint = document.getElementById('pinHint');
+  if(hint) hint.hidden = pinnedInds.length > 0;
+  const lbl = document.querySelector('.pin-lbl');
+  if(lbl) lbl.hidden = pinnedInds.length === 0;
+}
+
+// ── The panel ─────────────────────────────────────────────────────────────
+function visRender(){
+  const list = document.getElementById('visList');
+  if(!list) return;
+  list.textContent = '';
+  // Built from the overlay buttons themselves, in the order the sidebar shows
+  // them, so this list can never offer an overlay the app does not have.
+  document.querySelectorAll('.ind-grid .ib[id^="ib-"]').forEach(function(el){
+    const k = el.id.slice(3);
+    if(!IND[k]) return;
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.id = 'vis-' + k;
+    // The one overlay with no opposite number spans the pair, so the grid does
+    // not carry a hole. Everything else comes in mine/theirs couples.
+    row.className = 'vis-row' + (k === 'checkthreats' ? ' vis-wide' : '');
+    const tick = document.createElement('span');
+    tick.className = 'vis-tick';
+    tick.textContent = '✓';
+    tick.setAttribute('aria-hidden', 'true');
+    const txt = document.createElement('span');
+    txt.className = 'vis-txt';
+    const nm = document.createElement('span');
+    nm.className = 'vis-nm';
+    // Short name in the cell, full name in the accessible name — a half-width
+    // cell cannot hold "Opponent's discovered attacks" without an ellipsis.
+    nm.textContent = pinLabel(k, false);
+    const st = document.createElement('span');
+    st.className = 'vis-st';
+    txt.appendChild(nm); txt.appendChild(st);
+    row.appendChild(tick); row.appendChild(txt);
+    row.addEventListener('click', function(){ visCycle(k); });
+    list.appendChild(row);
+    visPaintRow(k);
+  });
+}
+
+// Painted from IND by ibUpdateUI, alongside the sidebar button and the chip —
+// one pass, so the three views of a value cannot disagree.
+function visPaintRow(key){
+  const row = document.getElementById('vis-' + key);
+  if(!row) return;
+  const st = visState(key);
+  row.classList.remove('sel','exp','on');
+  if(st >= 1) row.classList.add('sel');
+  if(st === 2) row.classList.add('exp');
+  if(st === 3) row.classList.add('on');
+  const w = row.querySelector('.vis-st');
+  if(w) w.textContent = VIS_WORDS[st];
+  row.setAttribute('aria-label', pinLabel(key, true) + ' — ' + (VIS_WORDS[st] || 'off'));
+  row.setAttribute('aria-pressed', st >= 1 ? 'true' : 'false');
+}
+
+// off → beside board → exploring → always on → off.
+function visCycle(key){
+  const ind = IND[key]; if(!ind) return;
+  if(ibExplain){ openHelp(key); return; }   // stays armed; see ibExplainToggle
+  const had = pinnedInds.length;
+  const next = (visState(key) + 1) % 4;
+  const i = pinnedInds.indexOf(key);
+  if(next === 0){
+    if(i >= 0) pinnedInds.splice(i, 1);
+    ind.on = false; ind.pre = false;
+  } else {
+    if(i < 0) pinnedInds.push(key);
+    ind.on  = (next === 3);
+    ind.pre = (next >= 2);
+  }
+  pinSave();
+  pinRender();
+  ibUpdateUI(key);
+  indApply();
+  // The strip appears with its first chip and goes with its last, and the
+  // board is sized around it — but only then, not on every tap.
+  if((had === 0) !== (pinnedInds.length === 0) && typeof resizeBoard === 'function') resizeBoard();
+}
+
+// Both footer buttons used to be hold-to-peek utilities in the sidebar. Held
+// gestures only pay off where the controls sit BESIDE the board; from a panel
+// that covers it, they are ordinary actions.
+function visClearAll(){
+  pinnedInds.slice().forEach(function(k){ IND[k].on = false; IND[k].pre = false; });
+  pinnedInds = [];
+  pinSave(); pinRender(); visRender();
+  if(typeof ibRefreshAll === 'function') ibRefreshAll();
+  indApply();
+  if(typeof resizeBoard === 'function') resizeBoard();
+}
+
+function visShowAll(){
+  document.querySelectorAll('.ind-grid .ib[id^="ib-"]').forEach(function(el){
+    const k = el.id.slice(3);
+    if(!IND[k]) return;
+    if(pinnedInds.indexOf(k) < 0) pinnedInds.push(k);
+    IND[k].on = true; IND[k].pre = true;
+  });
+  pinSave(); pinRender(); visRender();
+  if(typeof ibRefreshAll === 'function') ibRefreshAll();
+  indApply();
+  if(typeof resizeBoard === 'function') resizeBoard();
+}
+
+// The frame between "in the layout" and "animate to open" is a frame in which
+// a close can arrive — and did, leaving the panel open because the pending
+// callback added .in after close had removed it. The id is held so close can
+// cancel it.
+let _visOpenRaf = 0;
+
+function visPanelOpen(){
+  const w = document.getElementById('visPanel');
+  if(!w) return;
+  visRender();
+  w.hidden = false;
+  cancelAnimationFrame(_visOpenRaf);
+  _visOpenRaf = requestAnimationFrame(function(){ w.classList.add('in'); });
+}
+
+function visPanelClose(){
+  const w = document.getElementById('visPanel');
+  if(!w || w.hidden) return;
+  cancelAnimationFrame(_visOpenRaf);   // an open that has not painted yet
+  const card = document.getElementById('visCard');
+  if(card){ card.classList.remove('vis-dragging'); card.style.transform = ''; }
+  w.classList.remove('in');
+  // Leave it in the layout until the slide-out has finished.
+  setTimeout(function(){ if(!w.classList.contains('in')) w.hidden = true; }, 200);
+  // An armed explanation is scoped to the visit that armed it.
+  if(ibExplain) ibExplainToggle(false);
+}
+
+// ── Swipe right to close, on every panel ──────────────────────────────────
+// The board-vision panel got this gesture first and it should not have been
+// special: every panel here slides in from the right edge, so pushing one back
+// off that edge is the obvious way to dismiss it. Bound once, over the whole
+// .slide-panel family.
+//
+// The listener sits on the panel and NOT on its scroller, and it deliberately
+// does not care what is under the finger — a swipe that starts on a button is
+// still a swipe, which is the bug this replaces. The click that a browser
+// delivers after that pointerup is swallowed (see _panelSwipeClick).
+function bindPanelSwipe(el, onClose){
+  if(!el || el._swipeBound) return;
+  el._swipeBound = true;
+  let d = null;
+  const CLS = el.classList.contains('vis-card') ? 'vis-dragging' : 'panel-dragging';
+
+  el.addEventListener('pointerdown', function(e){
+    if(e.pointerType === 'mouse' && e.button !== 0) return;
+    d = { x:e.clientX, y:e.clientY, dx:0, live:false, id:e.pointerId };
+  });
+  el.addEventListener('pointermove', function(e){
+    if(!d || e.pointerId !== d.id) return;
+    const dx = e.clientX - d.x, dy = e.clientY - d.y;
+    if(!d.live){
+      // Not a swipe until it is unambiguously horizontal and rightward. A
+      // mostly-vertical drag is the panel's own scroller and is handed back.
+      if(Math.abs(dy) > Math.abs(dx) || dx < 10){
+        if(Math.abs(dy) > 12) d = null;
+        return;
+      }
+      d.live = true;
+      el.classList.add(CLS);
+      try{ el.setPointerCapture(e.pointerId); }catch(err){}
+    }
+    d.dx = Math.max(0, dx);
+    el.style.transform = 'translateX(' + d.dx + 'px)';
+    if(e.cancelable) e.preventDefault();
+  });
+  const end = function(){
+    if(!d) return;
+    const wasLive = d.live, dist = d.dx;
+    d = null;
+    if(!wasLive) return;
+    el.classList.remove(CLS);
+    // The press that just ended was a drag, so the click the browser is about
+    // to deliver must not also press whatever is under the finger.
+    _panelSwipeClick = true;
+    if(dist > 60){ el.style.transform = ''; onClose(); }
+    else { el.style.transform = ''; }
+  };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', function(){
+    if(d && d.live){ el.classList.remove(CLS); el.style.transform = ''; }
+    d = null;
+  });
+}
+
+// Set the instant a swipe ends; cleared by the click it swallows, or by the
+// next press if no click arrives.
+let _panelSwipeClick = false;
+document.addEventListener('click', function(e){
+  if(!_panelSwipeClick) return;
+  _panelSwipeClick = false;
+  e.stopPropagation(); e.preventDefault();
+}, true);
+document.addEventListener('pointerdown', function(){ _panelSwipeClick = false; }, true);
+
+function bindAllPanelSwipes(){
+  document.querySelectorAll('.slide-panel').forEach(function(p){
+    bindPanelSwipe(p, closeAllPanels);
+  });
+}
+
+// ── The board-vision panel's own wiring ───────────────────────────────────
+// The list scrolls vertically, so the card declares touch-action:pan-y and
+// only horizontal movement reaches this. A drag that turns out to be vertical
+// is handed straight back.
+function visBindPanel(){
+  const card = document.getElementById('visCard');
+  const scrim = document.getElementById('visScrim');
+  // Tapping the board behind the panel closes it.
+  if(scrim) scrim.addEventListener('click', visPanelClose);
+  // Same gesture as every other panel — including the part that made this one
+  // work over a button rather than only over the gaps between them.
+  bindPanelSwipe(card, visPanelClose);
+  bindAllPanelSwipes();
+}
+
+// ── Hold-to-peek on the grid, where the grid is beside the board ──────────
+// The gesture is not on the phone at all: the overlay controls are in a panel
+// that covers the board, and the chips beside the board have their own binding
+// in pinRender(). At desktop widths the grid sits in a column NEXT TO the
+// board, nothing is covered, and holding a button to see the position without
+// that overlay is as useful as it ever was.
+//
+// Bound here rather than inline because the condition is a media query rather
+// than a piece of markup — the same button is tap-only or holdable depending
+// on how wide the screen is, and that can change under the user's hands when
+// a phone is turned sideways.
+function ibBindHold(){
+  document.querySelectorAll('.ind-grid .ib[id^="ib-"]').forEach(function(ib){
+    const key = ib.id.slice(3);
+    const btn = ib.querySelector('.ib-main');
+    if(!btn || !IND[key]) return;
+    btn.addEventListener('pointerdown', function(e){
+      _ibHeldRelease = false;       // a fresh press; nothing to swallow
+      // Explain mode is a single deliberate tap, never a peek.
+      if(visIsPhone() || ibExplain) return;
+      ibMainDown(key, e);
+    });
+    btn.addEventListener('pointermove', function(e){ ibMainMove(key, e); });
+    btn.addEventListener('pointerup', function(){
+      if(!IND[key].pressing && ibHeld[key] === undefined) return;
+      if(ibMainUp(key)) _ibHeldRelease = true;
+    });
+    ['pointerleave','pointercancel'].forEach(function(t){
+      btn.addEventListener(t, function(){ ibMainCancel(key); });
+    });
+  });
+}
+
+// ── The style palette, opened on one of its two halves ────────────────────
+function openThemePanel(view){
+  const p = document.getElementById('themePanel');
+  if(p){
+    p.dataset.view = (view === 'pieces') ? 'pieces' : 'board';
+    const t = document.getElementById('themePanelTitle');
+    if(t) t.textContent = (view === 'pieces') ? 'Piece style' : 'Board & background';
+  }
+  openPanel('themePanel');
+  // The swatch grids and the piece list are built lazily on first open; the
+  // panel's transitionend handler does that too, but a panel that is already
+  // open has no transition to end.
+  if(typeof setupThemePanel === 'function') setupThemePanel();
+}
+
+// ── Appearance rows in Board settings ─────────────────────────────────────
+const PIECE_SET_NAMES = {
+  unicode:'Unicode', staunton:'Staunton', rhosgfx_solid:'RhosGFX Solid',
+  rhosgfx_outline:'RhosGFX Outline', rhosgfx_wood:'RhosGFX Wood', rhosgfx_flat:'RhosGFX Flat',
+};
+
+function bsToggleShell(){
+  if(typeof setShell === 'function') setShell((typeof proMode !== 'undefined' && proMode) ? 'amateur' : 'pro');
+  bsSyncAppearance();
+}
+
+// Each Appearance row carries its current value, so the panel answers "which
+// board am I on, which pieces am I using" without opening anything further.
+function bsSyncAppearance(){
+  const b = document.getElementById('bsBoardVal');
+  if(b) b.textContent = (typeof proMode !== 'undefined' && proMode) ? 'Expert Board' : 'Visualization Board';
+  const p = document.getElementById('bsPieceVal');
+  if(p) p.textContent = PIECE_SET_NAMES[typeof currentPieceSet !== 'undefined' ? currentPieceSet : ''] || '—';
+  const t = document.getElementById('bsThemeVal');
+  if(t){
+    const bt = (typeof BOARD_THEMES !== 'undefined' && typeof currentBoardTheme !== 'undefined' &&
+                BOARD_THEMES[currentBoardTheme] && BOARD_THEMES[currentBoardTheme].name) || currentBoardTheme || '';
+    t.textContent = bt ? String(bt) : '';
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// THE PHONE GAME BAR
+// --------------------------------------------------------------------------
+// Every button here calls the same function its sidebar twin calls, so there
+// is one behaviour with two front doors. syncPhoneBar() answers only "which of
+// them is on screen", and takes that from the same conditions syncActionRow()
+// uses for the sidebar row — they are called together so the two cannot drift.
+// ══════════════════════════════════════════════════════════════════════════
+function syncPhoneBar(){
+  const bar = document.getElementById('phoneBar');
+  if(!bar) return;
+  const show = function(id, on){
+    const el = document.getElementById(id);
+    if(el) el.style.display = on ? '' : 'none';
+  };
+  const inGame = (typeof _gameInProgress === 'function') ? _gameInProgress() : false;
+  // "Solo" is an exploration with no opponent: there is nobody to resign to
+  // and nobody to offer a draw.
+  const isSolo = !(typeof botActive !== 'undefined' && botActive) &&
+                 !(typeof mpRoomId !== 'undefined' && mpRoomId &&
+                   typeof mpMode !== 'undefined' && mpMode === 'ingame');
+  const vs = inGame && !isSolo;
+  show('pbResign', vs);
+  show('pbDraw',   vs);
+  // Chat follows the chat box itself rather than re-deriving "is this a
+  // 2-player game" a fourth time.
+  const cb = document.getElementById('chatBox');
+  show('pbChat', !!(cb && cb.style.display && cb.style.display !== 'none'));
+}
+
+// Expand the chat and put it where it can be read. It sits below the board in
+// the same column, so this is a scroll, not a panel.
+function phoneChatOpen(){
+  const box = document.getElementById('chatBox');
+  if(!box) return;
+  if(typeof chatExpanded !== 'undefined' && !chatExpanded &&
+     typeof chatToggleExpand === 'function') chatToggleExpand();
+  try{ box.scrollIntoView({block:'nearest', behavior:'smooth'}); }catch(e){}
+  const inp = document.getElementById('chatInput');
+  if(inp) try{ inp.focus({preventScroll:true}); }catch(e){}
+}
+
+// ── Which way round the board is drawn ────────────────────────────────────
+// Two separate facts used to be one variable. `boardFlipped` means "the seat
+// you are sitting in" — the bot and multiplayer code set it when you are
+// playing Black — and every renderer ALSO or-ed in `mpRole === 'black'` on
+// top. That left no way to express "turn the board round for a moment", which
+// is all a flip button is: setting boardFlipped=false while playing Black
+// online was simply overruled by the or-ed clause, and the button did nothing.
+//
+// `viewFlip` is that second fact, and it is a pure view state — it never
+// changes whose pieces are whose, whose clock is running, or which colour you
+// are playing. It is reset when you sit down at a new board, because the seat
+// changing is exactly when "turned round from the seat" stops meaning anything.
+let viewFlip = false;
+
+function boardViewFlipped(){
+  // `boardFlipped` is a `let` in 30-board-ui.js and this is called from
+  // 20-chess-core.js, which sits between them in the concatenation — so the
+  // read is guarded rather than direct. typeof on a let in its temporal dead
+  // zone still throws, hence the try.
+  let seat = false;
+  try {
+    seat = (typeof boardFlipped !== 'undefined' && boardFlipped) ||
+           (typeof mpRole !== 'undefined' && mpRole === 'black' &&
+            typeof mpInGame === 'function' && mpInGame());
+  } catch(e) { return false; }
+  return viewFlip ? !seat : seat;
+}
+
+// The clocks follow the board: your own clock belongs next to your own pieces
+// whichever way round it is drawn. Called from updatePlayerBoxes(), which
+// already runs after every move and turn change, so any code that sets
+// boardFlipped directly gets the class corrected without knowing this exists.
+function syncBoardOrientation(){
+  const bc = document.getElementById('board-col');
+  if(bc) bc.classList.toggle('board-flipped', boardViewFlipped());
+}
+
+function flipPerspective(){
+  if(typeof proMode !== 'undefined' && proMode){
+    if(typeof proFlipBoard === 'function') proFlipBoard();
+    return;
+  }
+  viewFlip = !viewFlip;
+  syncBoardOrientation();
+  if(typeof syncCommitChipMount === 'function') syncCommitChipMount();
+  if(typeof resizeBoard === 'function') resizeBoard();
+  if(typeof render === 'function') render();
+}
+
 // ── Board square color helper ─────────────────────────────────────────
 function sqColor(r,c){
   const t=BOARD_THEMES[currentBoardTheme]||BOARD_THEMES.classic;
@@ -931,6 +1609,7 @@ let chatExpanded = false;
 function chatShow(visible){
   const box = document.getElementById('chatBox');
   if(box) box.style.display = visible ? 'flex' : 'none';
+  if(typeof syncPhoneBar === 'function') syncPhoneBar();
   if(visible){
     // Always start collapsed when a game begins
     chatExpanded = false;
@@ -1008,7 +1687,6 @@ function setShell(mode){
     proApplyBoardClean();   // slate board + indicators off (minimal look)
     proSync();
   } else {
-    const gm = document.getElementById('proGearMenu'); if(gm) gm.style.display = 'none';
     proUnmountChat();
     proUnmountChip();
     proRestoreBoard();
@@ -1025,10 +1703,10 @@ function setShell(mode){
 }
 function toggleShell(){ setShell(proMode ? 'amateur' : 'pro'); }
 
-function proToggleGear(){
-  const m = document.getElementById('proGearMenu');
-  if(m) m.style.display = (m.style.display === 'none' || !m.style.display) ? 'flex' : 'none';
-}
+// proToggleGear() lived here. The menu it opened held six items, five of which
+// were already buttons on the same column — so "More" led to a copy of the
+// screen you were looking at. ⚙ opens Board settings now, and the tour, the one
+// item with nowhere else to be, is a row in it.
 
 function proFlipBoard(){
   if(typeof boardFlipped !== 'undefined') boardFlipped = !boardFlipped;
@@ -1359,14 +2037,21 @@ const TOURS = {
       body:'Click the Blundermind logo anytime to return Home and switch between the Beginner and Expert boards.' },
   ],
   pro: [
-    { sel:'#proSide', title:'The Expert board',
+    // selPhone: the same step, aimed at something that HAS a box at phone
+    // width. #proSide is display:contents there (the column dissolves so its
+    // parts can be ordered around the board), and a step whose target has no
+    // geometry is dropped by the filter in startTour() — which is how the
+    // Expert tour came to be one step long on a phone: of its four targets,
+    // #proSide and #proMoves had no box and .pro-actions resolved to the
+    // hidden idle row, leaving only the commit chip.
+    { sel:'#proSide', selPhone:'#proPlayerTop', title:'The Expert board',
       body:'A clean tournament view — minimal chrome, live notation, and no coaching overlays.' },
     { sel:'#commitModeChip', title:'How your moves get played',
       body:'Under your clock: <b>✋ Release to move</b> plays the move as soon as you let go. <b>👆 Tap to confirm</b> parks the piece on the square first, so you can sit with the position for a moment — and take your finger off a touchscreen — before a second tap commits it. Tapping a different square moves the parked piece there instead. Worth having on for phone play and in time scrambles, where a mis-drop costs a game. Tap the chip to switch, even mid-game.' },
-    { sel:'.pro-actions', title:'Board controls',
-      body:'Resign, offer a draw, flip the board, or open the 🎨 style palette — where you can also switch back to the Training board. The ⚙ menu has more: a bot game, 2-player, save/load.' },
-    { sel:'#proMoves', title:'Move list',
-      body:'Your game notation updates here live as you play.' },
+    { sel:'#proLiveActions', title:'Board controls',
+      body:'Resign, offer a draw, flip the board, or open the 🎨 style palette. <b>⚙ opens Board settings</b> — move sounds, legal-move dots, which board you are on and which pieces it uses.' },
+    { sel:'#proMoves', selPhone:'#proNotationHd', title:'Move list',
+      body:'Your game notation updates here live as you play. On a phone it is collapsed to this header — tap it to open the list, and the header itself keeps showing the last few moves.' },
   ],
 };
 
@@ -1564,9 +2249,13 @@ function startTour(opts){
     ? [_TOUR_LANDING_STEP].concat(TOURS[_tourShell] || [])
     : (TOURS[_tourShell] || []);
   // Keep only steps whose target is present and visible (drops hidden chrome).
+  // _tourSel picks selPhone at phone width, so a step is only dropped when it
+  // genuinely has nothing to point at rather than when its desktop target
+  // happens to be laid out differently here.
   _tourSteps = all.filter(s => {
-    if(!s.sel) return true;
-    const el = document.querySelector(s.sel);
+    const sel = _tourSel(s);
+    if(!sel) return true;
+    const el = document.querySelector(sel);
     return el && el.getBoundingClientRect().width > 0;
   });
   if(!_tourSteps.length) return;
@@ -1639,6 +2328,15 @@ function tourGoBotTour(){
 function endTour(completed){
   _tourActive = false;
   const ov = document.getElementById('tourOverlay');
+  // The ring and the backdrop are set per step and were never cleared here —
+  // only the overlay above them was hidden. Clear them explicitly so a tour
+  // that is skipped leaves nothing behind, whichever way it was skipped.
+  const _ring = document.getElementById('tourRing');
+  if(_ring) _ring.style.display = 'none';
+  const _back = document.getElementById('tourBackdrop');
+  if(_back) _back.style.display = 'none';
+  _tourExploring = false;
+  if(_tourModeTimer){ clearInterval(_tourModeTimer); _tourModeTimer = null; }
   if(_tourShell === 'amateur') _tourRestoreBoard();
   _tourRestoreBoardSettings();
   try{ localStorage.setItem('bm_tour_' + _tourShell, '1'); }catch(e){}
@@ -1662,6 +2360,14 @@ function tourPrev(){ if(_tourIdx > 0){ _tourIdx--; _renderTourStep(); } }
 // button — there both are on screen at once, and the real one is better.
 // Steps 4-6 introduce the grid itself rather than an overlay, and have no
 // `ind`, so they still point where they should.
+// Which selector this step should point at, at this width. A step without a
+// selPhone uses its one selector everywhere.
+function _tourSel(step){
+  if(!step) return null;
+  if(step.selPhone && window.matchMedia('(max-width:760px)').matches) return step.selPhone;
+  return step.sel || null;
+}
+
 function _tourBoardFocus(step){
   return !!(step && (step.ind || step.explore)) &&
          window.innerWidth <= 760 &&
@@ -1672,7 +2378,8 @@ function _tourBoardFocus(step){
 // the step just put it in — so the lit button in the panel matches the overlay
 // now on the board.
 function _tourControlReplica(step){
-  const src = step && step.sel ? document.querySelector(step.sel) : null;
+  const _sel = _tourSel(step);
+  const src = _sel ? document.querySelector(_sel) : null;
   if(!src) return '';
   const clone = src.cloneNode(true);
   // Ids would be duplicated into the document, and handlers would make a
@@ -1728,9 +2435,18 @@ function _renderTourStep(){
   // Cloned after the indicator block above has lit the control, so the copy in
   // the panel is in the same state as the overlay now on the board.
   const boardFocus = _tourBoardFocus(step);
+  const _sel = _tourSel(step);
   const el = boardFocus
     ? document.getElementById('cv')
-    : (step.sel ? document.querySelector(step.sel) : null);
+    : (_sel ? document.querySelector(_sel) : null);
+  // On a phone the overlay controls are not in the page at all — they are in
+  // the board-vision panel, and the sidebar copies are display:none. A step
+  // pointing at one would ring a box with no layout, so open the panel and
+  // ring that instead.
+  if (!boardFocus && el && typeof visIsPhone === 'function' && visIsPhone() &&
+      el.closest && el.closest('#sidebar') && el.getBoundingClientRect().width === 0) {
+    if (typeof visPanelOpen === 'function') visPanelOpen();
+  }
   let rect = null;
   if(el){ try{ el.scrollIntoView({block:'nearest'}); }catch(e){} rect = el.getBoundingClientRect(); }
   const _tp = document.getElementById('tourPanel');
@@ -2185,6 +2901,11 @@ function mpSetMode(mode) {
     if (leaveRow) leaveRow.style.display = '';
   }
   mpUpdateChallengeMarker();
+  // mpMode is what _gameInProgress() and syncPhoneBar() read to decide whether
+  // a game is running, so every transition through here has to repaint the
+  // buttons that answer to it — Resign, Offer draw, and the starters that must
+  // not be one mis-tap away from abandoning the game.
+  if (typeof updateActionBtn === 'function') updateActionBtn();
 }
 
 // ── Standing-challenge marker ────────────────────────────────────────────────
@@ -3066,6 +3787,7 @@ function mpStartGame(tcKey) {
   if (mpStartFen) applyStartPosition(mpStartFen, mpStartSans);
   chatShow(true);
   boardFlipped = (mpRole === 'black');
+  viewFlip = false;   // a new seat; "turned round" no longer means anything
   const _bcEl = document.getElementById('board-col');
   if (_bcEl) _bcEl.classList.toggle('board-flipped', boardFlipped);
   render();
@@ -3448,6 +4170,9 @@ function peekDown(e){
   });
   const btn=document.getElementById('btnPeek');
   if(btn){btn.style.borderColor='var(--accent)';btn.style.color='var(--accent)';}
+  // The same gesture has a second button on the phone's game bar.
+  const pb=document.getElementById('pbPeek');
+  if(pb) pb.classList.add('peeking');
   ibRefreshAll(); indApply();
 }
 
@@ -3460,6 +4185,8 @@ function peekUp(){
   });
   const btn=document.getElementById('btnPeek');
   if(btn){btn.style.borderColor='';btn.style.color='';}
+  const pb=document.getElementById('pbPeek');
+  if(pb) pb.classList.remove('peeking');
   ibRefreshAll(); indApply();
 }
 
@@ -3955,6 +4682,7 @@ function parsePgnAndStartReplay(pgnText){
   gameMovesAlgebraic=[];gameOverMsg='';gameOver=false;
   selSq=-1;legalMoves=[];clearPreview();
   replayMoves=tokens;inReplay=true;
+  if(typeof distSetReviewCtx==='function') distSetReviewCtx(null,null);
   const rc=document.getElementById('replayControls');
   if(rc) rc.style.display='block';
   // Position-only PGNs open at the position itself; games open at move 0
@@ -3978,10 +4706,20 @@ function rebuildToReplayIdx(targetIdx){
   let _bd=parseFen(baseFen);
   let _turn=turn,_cst={...castling},_ep=epSq;
   let _hm=parseInt(baseFen.split(' ')[4])||0;
+  let _fm=parseInt(baseFen.split(' ')[5])||1;
   let _lastFrom=-1,_lastTo=-1;
+  // Position the LAST replayed move was played from, for the Maia odds panel:
+  // the loop already passes through it, so capturing it here costs nothing and
+  // saves reconstructing the game a second time.
+  let _distSnap=null,_distUci=null;
   for(let i=0;i<targetIdx&&i<replayMoves.length;i++){
     const mv=algebraicToMove(replayMoves[i],_bd,_turn,_ep,_cst);
     if(!mv){break;}
+    if(i===targetIdx-1){
+      _distSnap={board:_bd,turn:_turn,castling:{..._cst},epSq:_ep,
+                 fen:boardToFen(_bd,_turn,_cst,_ep,_hm,_fm)};
+      _distUci=sqToUci(mv.from,mv.to,mv.promo?String(mv.promo).toLowerCase():null);
+    }
     const prevBoard=_bd;
     _bd=applyMove(mv.from,mv.to,_bd,_ep,mv.promo||'Q');
     const movedPiece=prevBoard[mv.from];
@@ -3990,6 +4728,7 @@ function rebuildToReplayIdx(targetIdx){
     _cst=updateCastling(mv.from,mv.to,movedPiece,_cst);
     _ep=computeEP(mv.from,mv.to,prevBoard);
     _turn=_turn==='w'?'b':'w';
+    if(_turn==='w')_fm++;              // a black move completed the full move
     _lastFrom=mv.from;_lastTo=mv.to;
   }
   board=_bd;turn=_turn;castling=_cst;epSq=_ep;
@@ -4000,6 +4739,7 @@ function rebuildToReplayIdx(targetIdx){
   const pins=computePins(board);
   pinnedWSquares=pins.w;pinnedBSquares=pins.b;
   updateReplayInfo();indApply();
+  if(typeof distSetReplayPos==='function') distSetReplayPos(_distSnap,_distUci);
   if(typeof render==='function') render();
   if(typeof proSync==='function') proSync();
 }
@@ -4073,6 +4813,15 @@ function startReplayOfCurrentGame(){
   if(liveBot||liveMp) return;              // only once the game is over
   const moves=gameMovesAlgebraic.slice();
   const baseFen=_gameStartFen||null;       // from-position games replay from their FEN
+  // Read the bot context BEFORE botStop() clears it — the Maia odds panel wants
+  // the opponent's own rating and which side the reviewer sat on.
+  if(typeof distSetReviewCtx==='function'){
+    distSetReviewCtx(null,null);       // clear first: _distRefRating reads it
+    const _ctxRating=(typeof _distRefRating==='function')?_distRefRating():null;
+    const _ctxHuman=(typeof botActive!=='undefined'&&botActive&&typeof botPlayerColor!=='undefined')
+      ?(botPlayerColor==='white'?'w':'b'):null;
+    distSetReviewCtx(_ctxRating,_ctxHuman);
+  }
   if(typeof botActive!=='undefined'&&botActive&&typeof botStop==='function') botStop();
   if(typeof mpRoomId!=='undefined'&&mpRoomId){
     if(mpWs){try{mpWs.close();}catch(e){} mpWs=null;}
