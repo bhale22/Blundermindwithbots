@@ -4202,7 +4202,29 @@ function peekUp(){
 // The select does not hold the state — botTab and the builder's own #sfLevel
 // slider do. This reads them, so a bot made in the builder shows up here
 // correctly instead of the two disagreeing.
-const QUICK_SF_MIN = 1, QUICK_SF_MAX = 20, QUICK_SF_DEFAULT = 1;
+// ── The Stockfish level range ─────────────────────────────────────────────
+// The slider stops at 1 because everything below it was measured to be the same
+// bot: against a fixed reference, levels -3 through 2 all landed within noise of
+// each other, and level 1 scored WORSE than level -3. Skill Level simply has no
+// resolution down there, and depth is no better — Stockfish runs quiescence even
+// at 1 ply, so it never hands over material however far you turn it down.
+//
+// Weakening now happens in Flounder instead (see flounderChooseMove), which
+// samples how much a turn should cost rather than degrading the search.
+const SF_LEVEL_MIN = 1;
+const SF_LEVEL_MAX = 20;
+
+// Every read of the level slider goes through here, because parseInt('0') is
+// 0, which is FALSY — the `|| 8` idiom that used to guard these reads turned
+// the weakest setting on the dial into a middling one.
+function sfSliderLevel(fallback){
+  const el = document.getElementById('sfLevel');
+  const v  = el ? parseInt(el.value, 10) : NaN;
+  if(!Number.isFinite(v)) return (fallback === undefined) ? 8 : fallback;
+  return Math.max(SF_LEVEL_MIN, Math.min(SF_LEVEL_MAX, v));
+}
+
+const QUICK_SF_MIN = SF_LEVEL_MIN, QUICK_SF_MAX = SF_LEVEL_MAX, QUICK_SF_DEFAULT = 1;
 
 // Twenty entries made the picker a wall of near-identical numbers. The steps
 // that actually change how a game feels are the low ones, so 1-10 stay

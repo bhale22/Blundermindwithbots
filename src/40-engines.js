@@ -194,7 +194,13 @@ function sfGetMove(fen, levelOrDepth, isDepth=false) {
       }
     }
     sfWorker.postMessage('position fen ' + fen);
-    const depth = isDepth ? levelOrDepth : (levelOrDepth <= 4 ? 5 : levelOrDepth <= 10 ? 8 : 12);
+    // Levels at or below 0 run Skill 0 (the clamp above floors there) and are
+    // separated by depth alone: 0 -> 4 ply, -1 -> 3, -2 -> 2, -3 -> 1.
+    const depth = isDepth ? levelOrDepth
+                : levelOrDepth <= 0  ? Math.max(1, 4 + levelOrDepth)
+                : levelOrDepth <= 4  ? 5
+                : levelOrDepth <= 10 ? 8
+                :                      12;
     sfWorker.postMessage('go depth ' + depth);
     // Safety timeout — resolve null after 5s to prevent hangs
     setTimeout(() => {
@@ -273,7 +279,7 @@ function sfEvalMoves(fen, moves, depth) {
     // candidate count since a wider MultiPV probe (CP-budget acceptance can
     // send well over a dozen moves) genuinely takes longer than the 2-move
     // degradation-guard probe; capped so a large list still fails open promptly.
-    const timeoutMs = Math.min(4500, 2000 + moves.length * 150);
+    const timeoutMs = Math.min(REGAN_PROBE_TIMEOUT_MAX_MS, 2000 + moves.length * 150);
     setTimeout(() => {
       if (sfCplxPending === resolve) {
         sfCplxActive  = false;
@@ -287,6 +293,217 @@ function sfEvalMoves(fen, moves, depth) {
     }, timeoutMs);
   });
 }
+
+// ══════════════════════════════════════════════════════════════════════════
+// REGAN MOVE-CHOICE MODEL — turning Stockfish into a distribution engine
+// ══════════════════════════════════════════════════════════════════════════
+// Kenneth Regan & Guy Haworth, "Intrinsic Chess Ratings" (AAAI 2011), fitted
+// against 6,000+ games at each Elo milepost at 13 ply / 50 PV. The same author
+// whose rating-vs-time-control data seeds Curve A.
+//
+// Equation (1) of the paper. For each legal move i with evaluation shortfall
+// delta_i from the best move:
+//
+//     y_i = exp( -(delta_i / s)^c )        p_i = y_i / sum(y_j)
+//
+//   s  sensitivity — discrimination between near-equal moves. SMALLER is
+//      stronger (it raises delta/s, pushing inferior moves down).
+//   c  consistency — the exponent, governing how reliably bad moves are
+//      avoided.
+//
+// WHY THIS SHAPE AND NOT A BELL CURVE. The fitted c sits around 0.44-0.51, so
+// the tail decays like e^-sqrt(d). A Gaussian is c = 2 (e^-d^2); a plain
+// exponential is c = 1. At c ~ 1/2 the tail is enormously fatter than either —
+// which is the formal statement of "humans occasionally play something awful".
+// A Gaussian on centipawn loss would also be symmetric (loss cannot go below
+// zero) and would miss the huge spike AT zero: even 1600s play the engine's
+// top move ~43% of the time. All three properties fall out of this curve for
+// free, which is why the model samples moves directly rather than sampling a
+// target loss and hunting for a move that matches it.
+//
+// Depth of the wide MultiPV probe that scores every legal move. Shallow and
+// wide beats deep and narrow here: the model needs a score for the BAD moves
+// too (they are the ones a beatable bot plays), and their relative ordering is
+// stable long before the top move's evaluation settles.
+const REGAN_PROBE_DEPTH = 8;
+
+// Ceiling on the shared eval probe. Raised from 4500 when the legal-move probe
+// (30+ moves) started hitting it; measured below.
+const REGAN_PROBE_TIMEOUT_MAX_MS = 7000;
+
+// ── The Flounder ladder ───────────────────────────────────────────────────
+// MEASURED, not derived. Nine points, 756 games, each one calibrated by playing
+// against Maia at the SAME rating and searching s for a 50% score, bracketed
+// +/-100 so the rating is pinned from both sides. Every point is +/-74 at 95%.
+//
+// Why measured and not fitted: s is violently steep (the whole 600-2400 range
+// lives between 0.069 and 0.113) and the relationship is not log-linear. A
+// straight-line fit through these points is ~100 Elo out in places.
+//
+//   elo    s          elo    s
+//   732    0.1133     1696   0.0832
+//   884    0.1065     1959   0.0782
+//   1118   0.1001     2204   0.0735
+//   1289   0.0941     2387   0.0691
+//   1559   0.0885
+//
+// Adaptive subdivision found the curve SMOOTH — all four midpoint tests landed
+// inside a 75 Elo tolerance on the first try, so no interval needed splitting.
+// Outside 732-2387 the values are extrapolated and provisional.
+//
+// THIS TABLE IS SPECIFIC TO STOCKFISH 18 lite AT PROBE DEPTH 8. Any change of
+// engine, network or depth invalidates it. scripts/fit-flounder-adaptive-refine
+// is how it gets rebuilt.
+const FLOUNDER_LADDER = [
+  [732, 0.1133], [884, 0.1065], [1118, 0.1001], [1289, 0.0941], [1559, 0.0885],
+  [1696, 0.0832], [1959, 0.0782], [2204, 0.0735], [2387, 0.0691],
+];
+
+// c is Regan's cfit column as a closed form — no games needed. It sets the tail
+// weight, which is what makes low ratings play mostly-clean chess punctuated by
+// real mistakes rather than bleeding mediocrity evenly.
+//
+// Below 1600 this is extrapolation past his data, and his data contains almost
+// no blunders at all (FIDE 1600+, lopsided positions excluded), so the far tail
+// is model rather than measurement. Maia's own error rates are the empirical
+// check on it: 78cp expected loss at 600 falling to 17cp at 2600.
+const flounderC = elo =>
+  Math.max(0.28, Math.min(0.55, 0.436 + (elo - 1600) * 0.00007));
+
+// Regan's perceptual scale, applied to the EVALUATION and then differenced —
+// not to the difference. That ordering is what discounts errors made in an
+// already-decided position, which is the winning/losing/equal conditioning.
+const _flounderScale = v => Math.sign(v) * Math.log(1 + Math.abs(v) / 100);
+
+// Interpolate ln(s) between measured points; extrapolate on the end slopes.
+function flounderParams(elo) {
+  const T = FLOUNDER_LADDER, e = elo || 1500;
+  const c = flounderC(e);
+  const ln = Math.log;
+  if (e <= T[0][0]) {
+    const m = (ln(T[1][1]) - ln(T[0][1])) / (T[1][0] - T[0][0]);
+    return { s: Math.exp(ln(T[0][1]) + (e - T[0][0]) * m), c };
+  }
+  const last = T.length - 1;
+  if (e >= T[last][0]) {
+    const m = (ln(T[last][1]) - ln(T[last-1][1])) / (T[last][0] - T[last-1][0]);
+    return { s: Math.exp(ln(T[last][1]) + (e - T[last][0]) * m), c };
+  }
+  for (let i = 0; i < last; i++) if (e >= T[i][0] && e <= T[i+1][0]) {
+    const t = (e - T[i][0]) / (T[i+1][0] - T[i][0]);
+    return { s: Math.exp(ln(T[i][1]) + t * (ln(T[i+1][1]) - ln(T[i][1]))), c };
+  }
+  return { s: T[last][1], c };
+}
+
+// How far past the sampled target a move may sit and still be chosen.
+//
+// Without this the sampler takes whichever move is NEAREST the target in
+// absolute distance, which in a forced position can mean answering "throw away
+// about 40cp" by hanging a rook, because the rook was the closest thing on
+// offer. Erring toward a better move is harmless; erring far toward a worse one
+// reads as broken, and Stockfish never does it at any skill level.
+//
+// Measured: fires on ~0.1% of moves, and only about a third of those are in
+// positions still live enough for it to matter, so the rating effect is bounded
+// at +7 Elo at the bottom of the ladder and +2 at the top — a tenth of the
+// measurement precision. Confirmed live over 20 bracketed games at 732.
+const FLOUNDER_OVERSHOOT_MARGIN = 0.5;
+
+// FEN → legal moves, WITHOUT touching game state.
+//
+// parseFen() assigns to the `turn`, `castling` and `epSq` globals as a side
+// effect, so calling it mid-move would silently rewrite the live game.
+function _fenLegalUcis(fen) {
+  const parts = String(fen).split(' ');
+  const bd = {};
+  const rows = parts[0].split('/');
+  for (let r = 0; r < 8; r++) {
+    let c = 0;
+    for (const ch of rows[r]) {
+      if ('12345678'.includes(ch)) { c += +ch; }
+      else { bd[r * 8 + c] = { piece: ch.toUpperCase(), color: ch === ch.toUpperCase() ? 'w' : 'b' }; c++; }
+    }
+  }
+  const tn = parts[1] || 'w';
+  const cs = parts[2] || '-';
+  const cst = { wK: cs.includes('K'), wQ: cs.includes('Q'), bK: cs.includes('k'), bQ: cs.includes('q') };
+  const ep = (parts[3] && parts[3] !== '-') ? fileRankToSq(parts[3]) : -1;
+  const out = [];
+  for (let sq = 0; sq < 64; sq++) {
+    const p = bd[sq];
+    if (!p || p.color !== tn) continue;
+    for (const d of legalMovesFor(sq, bd, ep, cst)) {
+      const promo = (p.piece === 'P' && (Math.floor(d / 8) === 0 || Math.floor(d / 8) === 7)) ? 'q' : '';
+      out.push(sqName(sq) + sqName(d) + promo);
+    }
+  }
+  return out;
+}
+
+// ── Flounder: pick a move for a bot of the given rating ───────────────────
+//
+// Sample how much this turn should COST, then play the move closest to that.
+//
+//   1. one MultiPV probe scores every legal move
+//   2. each evaluation goes on the perceptual scale, then differences give the
+//      shortfall of each move
+//   3. draw a target from Weibull(shape c, scale s) — Regan's curve IS this
+//      distribution's survival function, so this is his model expressed as a
+//      continuous law over cost rather than a discrete law over moves
+//   4. play the nearest move that does not overshoot the target
+//
+// Sampling a cost rather than a move is what makes the rating dial tractable:
+// Regan's own normalisation over the move list adapts to the position, which is
+// faithful but means the same s produces a different agent in every position.
+// Measured, that version's ratings were worth ~120 real Elo per 400 labelled.
+//
+// Returns { uci, cp, tau } or null so the caller can fall back to a plain search.
+async function flounderChooseMove(fen, elo, depth) {
+  try {
+    if (!sfReady) { try { await sfInit(); } catch (e) { return null; } }
+    const moves = _fenLegalUcis(fen);
+    if (!moves.length) return null;
+    if (moves.length === 1) return { uci: moves[0], cp: 0, tau: 0 };
+    const evals = await sfEvalMoves(fen, moves, depth || REGAN_PROBE_DEPTH);
+    if (!evals) return null;
+    const scored = moves.filter(m => evals[m] != null);
+    if (scored.length < 2) return scored.length ? { uci: scored[0], cp: 0, tau: 0 } : null;
+
+    let best = -Infinity;
+    for (const m of scored) if (evals[m] > best) best = evals[m];
+    const gBest = _flounderScale(best);
+    const d = scored.map(m => gBest - _flounderScale(evals[m]));
+
+    const { s, c } = flounderParams(elo);
+    // Weibull inverse-CDF sample. The heavy tail at c < 1/2 is the point: most
+    // turns cost almost nothing and a rare one costs a piece.
+    const tau = s * Math.pow(-Math.log(1 - Math.random()), 1 / c);
+
+    let k = -1, gap = Infinity;
+    for (let i = 0; i < scored.length; i++) {
+      if (d[i] > tau + FLOUNDER_OVERSHOOT_MARGIN) continue;
+      const g = Math.abs(d[i] - tau);
+      if (g < gap) { gap = g; k = i; }
+    }
+    // d = 0 always qualifies, so this is belt-and-braces.
+    if (k < 0) { let lo = Infinity; for (let i = 0; i < d.length; i++) if (d[i] < lo) { lo = d[i]; k = i; } }
+    return { uci: scored[k], cp: best - evals[scored[k]], tau };
+  } catch (e) {
+    return null;
+  }
+}
+
+// PERSONALITY HOOK — deliberately not wired yet.
+//
+// This returns one move, so applyMoveAttractors has no distribution to reshape
+// and the personality controls do NOT reach the Stockfish tab. The intended fix
+// is to take the BAND of moves near the target and let attractor-weighted
+// probabilities choose among them: the rating decides how much you throw away,
+// the personality decides which way you throw it. With neutral attractors that
+// must reduce to the nearest-move choice above, or it invalidates the ladder,
+// which is measured on exactly this selection rule — so it needs its own
+// verification pass rather than being folded in blind.
 
 // Parse MultiPV info lines into {uci: cp} using the deepest score seen for the
 // first move of each pv. Mate scores map to ±(10000 − plies) so nearer mates

@@ -1501,7 +1501,7 @@ function sfPickLevel(targetLevel) {
               : r < 1 - h1 - h2   ?  0
               : r < 1 - h2        ?  1
               :                      2;
-    return Math.max(1, Math.min(20, targetLevel + off));
+    return Math.max(SF_LEVEL_MIN, Math.min(SF_LEVEL_MAX, targetLevel + off));
   }
 
   // Legacy path: use botSfTempLevel tiers (set by old save/load configs)
@@ -1520,7 +1520,7 @@ function sfPickLevel(targetLevel) {
             : r < t[2] ? -1
             : r < t[3] ?  2
             :            -2;
-  return Math.max(1, Math.min(20, targetLevel + off));
+  return Math.max(SF_LEVEL_MIN, Math.min(SF_LEVEL_MAX, targetLevel + off));
 }
 
 // ── Effective Stockfish level (degrades under time pressure) ─────────────────
@@ -1532,14 +1532,14 @@ function sfPickLevel(targetLevel) {
 //   2. cvA pressure curve → spline interpolation in log-time space
 //   3. Linear fallback    → original 0–30 s linear ramp
 function sfEffectiveLevel(clockMs) {
-  const startLevel = parseInt(document.getElementById('sfLevel').value) || 8;
+  const startLevel = sfSliderLevel();
 
   // ── Time-pressure floor (from the curve-implied max drop, or DOM slider) ──
   // The panel derives timePressureMaxDrop from Curve A itself (base ELO −
   // curve minimum), so the SF floor always mirrors the visible curve.
   let floorLevel;
   if (botTimePressureMaxDrop !== null) {
-    floorLevel = Math.max(1, startLevel - Math.round(botTimePressureMaxDrop / 50));
+    floorLevel = Math.max(SF_LEVEL_MIN, startLevel - Math.round(botTimePressureMaxDrop / 50));
   } else {
     floorLevel = parseInt(document.getElementById('sfPressureLevel').value) || 4;
   }
@@ -1667,7 +1667,7 @@ function botEffectiveElo() {
   // Unified ELO across engine tabs. Maia3/LC modes use maia3SelectedRating
   // directly. SF uses a 1-20 level slider mapped to ~650-2600 ELO.
   if (typeof botTab !== 'undefined' && botTab === 'sf') {
-    const lvl = parseInt(document.getElementById('sfLevel')?.value) || 8;
+    const lvl = sfSliderLevel();
     return Math.round(650 + (lvl - 1) / 19 * 1950); // 1→650, 20→2600
   }
   return (typeof maia3SelectedRating !== 'undefined' && maia3SelectedRating)
@@ -2031,15 +2031,43 @@ async function botMakeMove() {
     // ── End opening book layer ────────────────────────────────────────────
 
     if (botTab === 'sf') {
-      const level = sfPickLevel(sfEffectiveLevel(clockMs));
       await sfInit();
-      uciMove = await sfGetMove(fen, level);
-      lastBotMoveSource = 'SF';
-      // Simulate think time. Pass null, NOT a fake single-move distribution:
-      // a one-entry distribution has entropy 0, which made the "blink" branch
-      // treat every SF move as forced and play it near-instantly.
-      const delay = botThinkTime(null, clockMs);
-      await new Promise(r => setTimeout(r, delay));
+      // ── Flounder: Stockfish at a target rating ──────────────────────────
+      // Sample how much this turn should COST, then play the move nearest that
+      // cost. The ladder behind flounderChooseMove is measured against Maia at
+      // each rating — 9 points, 756 games, +/-74 — rather than derived from any
+      // statistic, because fitting to a statistic (Regan's move-match column)
+      // reproduced his numbers exactly and still produced ratings worth about
+      // 120 real Elo per 400 labelled.
+      const sfElo = botEffectiveElo();
+      const pick  = await flounderChooseMove(fen, sfElo);
+
+      if (pick && pick.uci) {
+        // Pass null to botThinkTime, not a one-entry distribution: a single
+        // move has entropy 0, which the "blink" branch reads as forced and
+        // plays near-instantly. Same reasoning as the plain-search path below.
+        const targetDelay = botThinkTime(null, clockMs);
+        const spent = Date.now() - _botMoveStartMs;
+        const wait  = Math.max(0, targetDelay - spent);
+        if (wait > 0) await new Promise(r => setTimeout(r, wait));
+
+        uciMove = pick.uci;
+        lastBotMoveSource = 'SF';
+
+        // The CP-budget, degradation and hard-floor guards are deliberately NOT
+        // applied here. All three exist because Maia's probabilities are
+        // popularity rather than quality, so a sampled move has to be checked
+        // against an evaluation. Here the move was chosen BY evaluation, and
+        // clamping the tail afterwards would remove exactly the occasional real
+        // mistake that the rating is supposed to produce.
+      } else {
+        // Probe failed — engine busy, or fewer than two legal moves. Plain search.
+        const level = sfPickLevel(sfEffectiveLevel(clockMs));
+        uciMove = await sfGetMove(fen, level);
+        lastBotMoveSource = 'SF';
+        const delay = botThinkTime(null, clockMs);
+        await new Promise(r => setTimeout(r, delay));
+      }
 
     } else if (botTab === 'maia3') {
       // Pure Maia3 — no LC fallback, SF only if model not downloaded.
