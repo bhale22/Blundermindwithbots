@@ -2746,7 +2746,7 @@ body.fj .picon{font-weight:500;}
           <div class="mcard" data-engine="stockfish" onclick="selEngineCard(this)">
             <div class="mdot"></div>
             <div class="mname">Flounder</div>
-            <div class="mdesc">Stockfish at a measured rating, 750–2400. Nothing to download.</div>
+            <div class="mdesc">Based on Stockfish, moves sampled with Flounder to tune ELO level. 750–2400, nothing to download.</div>
           </div>
           <div class="mcard" data-engine="hybrid" onclick="selEngineCard(this)">
             <div class="mdot"></div>
@@ -2982,7 +2982,7 @@ body.fj .picon{font-weight:500;}
 
         <!-- RIGHT: shared quality controls — hidden for pure-SF engines -->
         <div id="engine-temp-col">
-          <div class="dlbl"><span>Move sampling — temperature</span></div>
+          <div class="dlbl"><span id="temp-section-title">Move sampling — temperature</span></div>
 
           <!-- Phone only: says where the control is set, in the size that
                matters. Desktop keeps the formula line as the readout. -->
@@ -2995,17 +2995,17 @@ body.fj .picon{font-weight:500;}
           <div class="temp-slider-zone">
             <!-- Tick marks at the 5 named presets -->
             <div class="temp-ticks">
-              <span class="tt" style="left:7.7%">Focused</span>
-              <span class="tt" style="left:23.1%">Neutral</span>
-              <span class="tt" style="left:43.6%">Varied</span>
-              <span class="tt" style="left:74.4%">Wild</span>
+              <span class="tt" id="tt-1" style="left:7.7%">Focused</span>
+              <span class="tt" id="tt-2" style="left:23.1%">Neutral</span>
+              <span class="tt" id="tt-3" style="left:43.6%">Varied</span>
+              <span class="tt" id="tt-4" style="left:74.4%">Wild</span>
             </div>
             <input type="range" id="temp-t-slider" class="temp-t-slider"
               min="0.1" max="4.0" step="0.05" value="1.0"
               oninput="onTempSlider(+this.value)">
             <div style="display:flex;justify-content:space-between;font-size:7px;
                         color:var(--text-dim);font-family:var(--font-m);margin-top:1px;">
-              <span>▲ Top move</span><span>4.0 ▲</span>
+              <span id="temp-end-lo">▲ Top move</span><span id="temp-end-hi">4.0 ▲</span>
             </div>
           </div>
 
@@ -3023,7 +3023,7 @@ body.fj .picon{font-weight:500;}
               oninput="onGaugeSliderInput(+this.value)">
             <span class="ctrl-val" id="v-style-mirror">100 cp</span>
           </div>
-          <div class="ctrl-hint">Same dial as the Personality section's Centipawmeter — move either one. The third (blue) bar shows an <em>illustrative</em> personality (loves c4, dislikes d4) pushing the temperature-shaped distribution: the push grows with Budget, and in play a Stockfish check caps the real cost of any personality pick at the Budget.</div>
+          <div class="ctrl-hint" id="temp-chart-hint">Same dial as the Personality section's Centipawmeter — move either one. The third (blue) bar shows an <em>illustrative</em> personality (loves c4, dislikes d4) pushing the temperature-shaped distribution: the push grows with Budget, and in play a Stockfish check caps the real cost of any personality pick at the Budget.</div>
 
         </div><!-- /right col -->
 
@@ -9669,6 +9669,16 @@ function applyEngineMode(){
     tempCol.style.visibility = tempOff ? 'hidden' : '';
     tempCol.classList.toggle('tc-hidden', tempOff);
   }
+  // The temperature block means a different thing on each engine — different
+  // parameter, different scale names, different chart. Repaint it here rather
+  // than leaving Maia's reading on a Flounder bot.
+  _syncTempScaleLabels();
+  // Deferred: onTempSlider redraws curve B, and on the initial boot this runs
+  // before initPts() has seeded it. Same reason renderTempGrid defers its own
+  // first call.
+  setTimeout(function(){
+    try{ if(typeof _currentTempValue === 'number') onTempSlider(_currentTempValue); }catch(e){}
+  }, 0);
   updateEngineDescTail();
   updatePersonalityGating();
 }
@@ -10063,6 +10073,11 @@ function setElo(elo){
   // Refresh the Engine-panel recommendation readout (display only — the
   // Budget/Floor themselves never move unless the user acts)
   if(typeof updateCpIndicators === 'function') updateCpIndicators();
+  // On Flounder the rating sets s, which is half of the error distribution the
+  // chart draws — so moving the dial has to redraw it.
+  if(_isFlounderTab() && typeof drawTempChart === 'function'){
+    try{ drawTempChart(_currentTempValue); }catch(e){}
+  }
 }
 
 function onEloInputChange(val){
@@ -10117,6 +10132,119 @@ function updateDialSVG(svgId, value, min, max){
 ══════════════════════════════════════════════════════════════ */
 
 // Illustrative Maia3 move distribution (fixed reference for the chart)
+// ── Flounder's own chart model ───────────────────────────────────────────────
+// The Maia chart shows a probability distribution over moves being flattened.
+// Flounder has no such distribution to flatten: it samples a COST for the turn
+// and plays the move nearest it. Drawing Maia's picture on the Flounder tab
+// would be showing a mechanism that is not running.
+//
+// So this computes the real thing. Each illustrative move has a cost in
+// centipawns; the selection rule below is the same rule flounderChooseMove
+// applies, and the bar heights are the exact probability of each move being
+// chosen, obtained by running that rule across the whole target distribution.
+// Nothing here is a stand-in — change c and the bars move because the rule
+// really does pick differently.
+const FLOUNDER_CHART_MOVES = [
+  { label:'Nf3 0',    cp:0   },
+  { label:'Bb5 20',   cp:20  },
+  { label:'d4 60',    cp:60  },
+  { label:'Ng5 150',  cp:150 },
+  { label:'Nxe5 420', cp:420 },
+];
+// Illustrative personality, matching the Maia chart's: likes the third move,
+// dislikes the second. The values are directions, not magnitudes.
+//
+// FLOUNDER_CHART_PREF_GAIN stands in for the tanh(...) damping every real
+// attractor carries in applyMoveAttractors — a metric delta of one pawn, one
+// defender, one pawn island is a fraction of full deflection, not all of it.
+// Without it the illustration overstated personality in the loud direction:
+// selection here is an argmax, so an undamped preference wins EVERY draw.
+//
+// MEASURED, not chosen. A maxed single attractor (attacker: 5) on a real
+// middlegame position produces top log-weights of +0.199 / +0.392 / +0.580 at
+// CP Budget 100 / 200 / 300. This gain reproduces all three to within 0.01,
+// so the blue bar is as strong as a real personality at full tilt and no
+// stronger. Re-measure it if the attractor scaling ever changes.
+const FLOUNDER_CHART_PREF = [0, -1, 1, 0, 0];
+const FLOUNDER_CHART_PREF_GAIN = 0.29;
+
+// The shipped ladder, copied from src/40-engines.js. The panel is a separate
+// document and cannot call into the app, so this is a duplicate — if the ladder
+// is ever refitted, both copies move together.
+const PANEL_FLOUNDER_LADDER = [
+  [732, 0.1133], [884, 0.1065], [1118, 0.1001], [1289, 0.0941], [1559, 0.0885],
+  [1696, 0.0832], [1959, 0.0782], [2204, 0.0735], [2387, 0.0691],
+];
+const PANEL_FLOUNDER_MARGIN = 0.5;
+const PANEL_FLOUNDER_TEMP_C_GAIN = 0.027;
+
+function _panelFlounderParams(elo){
+  const T = PANEL_FLOUNDER_LADDER, e = elo || 1500, ln = Math.log;
+  const c = Math.max(0.28, Math.min(0.55, 0.436 + (e - 1600) * 0.00007));
+  const last = T.length - 1;
+  if(e <= T[0][0]){
+    const m = (ln(T[1][1]) - ln(T[0][1])) / (T[1][0] - T[0][0]);
+    return { s: Math.exp(ln(T[0][1]) + (e - T[0][0]) * m), c };
+  }
+  if(e >= T[last][0]){
+    const m = (ln(T[last][1]) - ln(T[last-1][1])) / (T[last][0] - T[last-1][0]);
+    return { s: Math.exp(ln(T[last][1]) + (e - T[last][0]) * m), c };
+  }
+  for(let i = 0; i < last; i++) if(e >= T[i][0] && e <= T[i+1][0]){
+    const t = (e - T[i][0]) / (T[i+1][0] - T[i][0]);
+    return { s: Math.exp(ln(T[i][1]) + t * (ln(T[i+1][1]) - ln(T[i][1]))), c };
+  }
+  return { s: T[last][1], c };
+}
+
+function _panelFlounderC(T){
+  const cCal = _panelFlounderParams(typeof currentElo === 'number' ? currentElo : 1500).c;
+  if(!(T > 0) || Math.abs(T - 1) < 1e-9) return cCal;
+  return Math.max(0.28, Math.min(0.55, cCal - PANEL_FLOUNDER_TEMP_C_GAIN * Math.log(T)));
+}
+
+// Regan's perceptual scale — cost in centipawns to the units the sampler works in.
+const _panelScale = cp => Math.log(1 + Math.max(0, cp) / 100);
+
+// One selection, given a drawn target. Mirrors flounderChooseMove +
+// flounderApplyPersonality exactly, including the overshoot cap.
+function _flounderPickIdx(d, tau, band, prefs){
+  let k = -1, gap = Infinity;
+  for(let i = 0; i < d.length; i++){
+    if(d[i] > tau + PANEL_FLOUNDER_MARGIN) continue;
+    const g = Math.abs(d[i] - tau);
+    if(g < gap){ gap = g; k = i; }
+  }
+  if(k < 0){ let lo = Infinity; for(let i = 0; i < d.length; i++) if(d[i] < lo){ lo = d[i]; k = i; } }
+  if(band > 0 && prefs){
+    let best = k, bestScore = -Infinity;
+    for(let i = 0; i < d.length; i++){
+      if(d[i] > tau + PANEL_FLOUNDER_MARGIN) continue;
+      if(Math.abs(d[i] - d[k]) > band) continue;
+      const score = (prefs[i] || 0) - Math.abs(d[i] - tau) / band;
+      if(score > bestScore){ bestScore = score; best = i; }
+    }
+    k = best;
+  }
+  return k;
+}
+
+// Probability of each move being played, integrated across the target
+// distribution. Stratified over the quantile so it is exact and deterministic
+// rather than a simulation that wobbles every redraw.
+function _flounderSelProbs(d, s, c, band, prefs){
+  const N = 3000;
+  const out = new Array(d.length).fill(0);
+  for(let j = 0; j < N; j++){
+    const u = (j + 0.5) / N;
+    const tau = s * Math.pow(-Math.log(1 - u), 1 / c);
+    out[_flounderPickIdx(d, tau, band, prefs)] += 1 / N;
+  }
+  return out;
+}
+
+const _isFlounderTab = () => (typeof baseEngine !== 'undefined' && baseEngine === 'stockfish');
+
 const TEMP_CHART_MOVES = [
   { label:'e4', p:0.60 },
   { label:'d4', p:0.25 },
@@ -10153,21 +10281,56 @@ function _tempPresetIdFromValue(T){
 // this is NOT rating-neutral: it moves real strength, and the number on the
 // Elometer gets correspondingly less true toward the ends.
 function _tempLabel(T){
-  const fl = (typeof baseEngine !== 'undefined' && baseEngine === 'stockfish');
-  const cx = 'c−' + (0.027 * Math.log(Math.max(0.01, T))).toFixed(3).replace('-', '−');
-  if(fl){
-    if(T < 0.15) return { name:'Grinder', exponent:'c high', desc:'Errors spread evenly — small ones, few disasters' };
-    if(T < 0.7)  return { name:'Steady',  exponent:cx, desc:'More consistent than its rating, and slightly stronger for it' };
-    if(T < 1.3)  return { name:'Neutral', exponent:'c as measured', desc:'The shape the ladder was calibrated on — the rating means what it says' };
-    if(T < 2.3)  return { name:'Streaky', exponent:cx, desc:'Cleaner most moves, worse when it goes wrong — and weaker overall' };
-    return             { name:'Wild',    exponent:cx, desc:'Long clean runs punctuated by real disasters; well below the labelled rating' };
+  if(_isFlounderTab()){
+    // T is the slider's own coordinate and means nothing to this engine, so it
+    // is not what gets shown. The readout names the parameter that actually
+    // changes — the Weibull shape c — alongside the scale s the rating set.
+    // Those two numbers ARE the bot's error distribution; there is nothing
+    // else behind them.
+    const prm  = _panelFlounderParams(typeof currentElo === 'number' ? currentElo : 1500);
+    const cEff = _panelFlounderC(T);
+    const lead = 'c = ' + cEff.toFixed(3);
+    const sx   = 's = ' + prm.s.toFixed(4);
+    if(T < 0.7)  return { name:'Steady',  lead, exponent:sx,
+      desc:'Tighter tail than the rating was measured with — more consistent, and stronger than the label' };
+    if(T < 1.3)  return { name:'Neutral', lead, exponent:sx,
+      desc:'The shape the ladder was calibrated on — the rating means what it says' };
+    if(T < 2.3)  return { name:'Streaky', lead, exponent:sx,
+      desc:'Fatter tail: more moves cost nothing, and the bad ones cost more. Weaker than the label' };
+    return             { name:'Wild',    lead, exponent:sx,
+      desc:'Long clean runs punctuated by real disasters. Well below the labelled rating' };
   }
-  if(T < 0.15) return { name:'Top move',  exponent:'argmax', desc:'Always the highest-probability move' };
+  const lead = 'T = ' + T.toFixed(2);
+  if(T < 0.15) return { name:'Top move',  lead, exponent:'argmax', desc:'Always the highest-probability move' };
   const exp = (1/T).toFixed(2);
-  if(T < 0.7)  return { name:'Focused', exponent:'p^'+exp, desc:'Sharpens the distribution — mostly top 1-2 moves' };
-  if(T < 1.3)  return { name:'Neutral', exponent:'p^'+exp, desc:'Samples Maia\'s original distribution unchanged' };
-  if(T < 2.3)  return { name:'Varied',  exponent:'p^'+exp, desc:'Wider sampling — more surprise choices' };
-  return             { name:'Wild',    exponent:'p^'+exp, desc:'Nearly flattens the distribution — even unlikely moves get real weight' };
+  if(T < 0.7)  return { name:'Focused', lead, exponent:'p^'+exp, desc:'Sharpens the distribution — mostly top 1-2 moves' };
+  if(T < 1.3)  return { name:'Neutral', lead, exponent:'p^'+exp, desc:'Samples Maia\'s original distribution unchanged' };
+  if(T < 2.3)  return { name:'Varied',  lead, exponent:'p^'+exp, desc:'Wider sampling — more surprise choices' };
+  return             { name:'Wild',    lead, exponent:'p^'+exp, desc:'Nearly flattens the distribution — even unlikely moves get real weight' };
+}
+
+// The slider's named stops. Its coordinate is the same either way; what that
+// coordinate DOES differs, so the names do too.
+function _syncTempScaleLabels(){
+  const fl = _isFlounderTab();
+  const names = fl ? ['Steady','Neutral','Streaky','Wild']
+                   : ['Focused','Neutral','Varied','Wild'];
+  names.forEach((n, i) => {
+    const el = document.getElementById('tt-' + (i + 1));
+    if(el) el.textContent = n;
+  });
+  const lo = document.getElementById('temp-end-lo');
+  if(lo) lo.textContent = fl ? '▲ Tighter tail' : '▲ Top move';
+  const ttl = document.getElementById('temp-section-title');
+  if(ttl) ttl.textContent = fl ? 'Error shape — the tail of the mistake distribution'
+                               : 'Move sampling — temperature';
+  const hint = document.getElementById('temp-chart-hint');
+  if(hint) hint.innerHTML = fl
+    ? 'Bars are the <em>real</em> chance of each move being played: the rule that picks them is run across the whole target distribution. '
+      + 'The number after each move is what it throws away, in centipawns. <b>At rating</b> is the shape this rating was measured with; '
+      + '<b>Temp</b> is where the slider has moved it — that <em>changes real strength</em>, unlike the Budget; '
+      + '<b>Pers.</b> adds an illustrative personality (likes d4, dislikes Bb5) choosing within ± the CP Budget of the cost the rating asked for.'
+    : 'Same dial as the Personality section\'s Centipawmeter — move either one. The third (blue) bar shows an <em>illustrative</em> personality (loves c4, dislikes d4) pushing the temperature-shaped distribution: the push grows with Budget, and in play a Stockfish check caps the real cost of any personality pick at the Budget.';
 }
 
 // Apply temperature scaling to the reference distribution
@@ -10237,10 +10400,28 @@ function drawTempChart(T){
   // 11px need ~75px — they ran together as "60%60%59%". Three columns give
   // ~109px, so the numbers fit and no information is dropped, only the two
   // smallest moves (1% and 4% bars, invisible at this size anyway).
-  const moves = _ph ? TEMP_CHART_MOVES.slice(0, 3) : TEMP_CHART_MOVES;
-  const adj   = _tempAdjusted(moves, T);
+  const _fl = _isFlounderTab();
   const budgetNow = +(document.getElementById('r-style')?.value || 0);
-  const pers  = _persAdjusted(adj, budgetNow);
+  let moves, base, adj, pers;
+  if(_fl){
+    // Bars are the real selection probabilities: at the rating's own calibrated
+    // shape, at the shape temperature has moved it to, and after the
+    // personality band. All three come from running the actual rule.
+    moves = _ph ? FLOUNDER_CHART_MOVES.slice(0, 3) : FLOUNDER_CHART_MOVES;
+    const prm  = _panelFlounderParams(typeof currentElo === 'number' ? currentElo : 1500);
+    const cEff = _panelFlounderC(T);
+    const d    = moves.map(m => _panelScale(m.cp));
+    const band = budgetNow > 0 ? Math.log(1 + budgetNow / 100) : 0;
+    const prefs = FLOUNDER_CHART_PREF.map(v => v * FLOUNDER_CHART_PREF_GAIN * (budgetNow / 150));
+    base = _flounderSelProbs(d, prm.s, prm.c, 0, null);
+    adj  = _flounderSelProbs(d, prm.s, cEff,  0, null);
+    pers = _flounderSelProbs(d, prm.s, cEff,  band, prefs);
+  } else {
+    moves = _ph ? TEMP_CHART_MOVES.slice(0, 3) : TEMP_CHART_MOVES;
+    base  = moves.map(m => m.p);
+    adj   = _tempAdjusted(moves, T);
+    pers  = _persAdjusted(adj, budgetNow);
+  }
   const nM    = moves.length;
   const colW  = chartW / nM;
   const barW  = colW * 0.21;
@@ -10254,7 +10435,7 @@ function drawTempChart(T){
   const C_PERS   = 'rgba(96,150,224,0.88)'; // blue — after personality × CP budget
 
   moves.forEach((mv, i)=>{
-    const maiaP = mv.p;
+    const maiaP = base[i];
     const adjP  = adj[i];
     const perP  = pers[i];
     const cx = padL + i*colW + colW/2;
@@ -10318,7 +10499,7 @@ function drawTempChart(T){
     // Row 3: column labels (M / T / P)
     ctx.fillStyle = _tDim;
     ctx.font = _chartFont(6.5);
-    ctx.fillText('M', mX + barW/2, H - padB + rowMTP);
+    ctx.fillText(_fl ? 'R' : 'M', mX + barW/2, H - padB + rowMTP);
     ctx.fillText('T', aX + barW/2, H - padB + rowMTP);
     ctx.fillText('P', pX + barW/2, H - padB + rowMTP);
   });
@@ -10329,7 +10510,8 @@ function drawTempChart(T){
   const legTop = _ph ? 6 : 4;
   let lx = padL;
   ctx.textAlign = 'left';
-  [['rgba(235,140,0,0.3)','Maia'],['rgba(235,160,0,0.88)','Temp'],[C_PERS,'Pers.']]
+  [['rgba(235,140,0,0.3)', _fl ? 'At rating' : 'Maia'],
+   ['rgba(235,160,0,0.88)','Temp'],[C_PERS,'Pers.']]
     .forEach(([col,label]) => {
       ctx.fillStyle = col;
       ctx.fillRect(lx, legTop, swatch, swatch);
@@ -10350,14 +10532,14 @@ function onTempSlider(T){
   const hn = document.getElementById('temp-head-name');
   const ht = document.getElementById('temp-head-t');
   if(hn) hn.textContent = info.name;
-  if(ht) ht.textContent = 'T = ' + T.toFixed(2);
+  if(ht) ht.textContent = info.lead;
   document.querySelectorAll('.temp-ticks .tt').forEach(el =>
     el.classList.toggle('tt-on', el.textContent.trim() === info.name));
 
   const fEl  = document.getElementById('temp-formula-line');
   if(fEl){
     fEl.innerHTML =
-      '<span style="color:var(--amber);">T = ' + T.toFixed(2) + '</span>' +
+      '<span style="color:var(--amber);">' + info.lead + '</span>' +
       ' · <span style="color:var(--amber-bright);">' + info.name + '</span>' +
       ' · <span style="opacity:0.55;">' + info.exponent + '</span>' +
       ' · <span style="opacity:0.5;">' + info.desc + '</span>';

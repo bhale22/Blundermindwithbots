@@ -151,7 +151,16 @@ console.log('\nPHONE  390×844');
   ok('temperature is offered on Flounder too', await page.evaluate(() =>
     getComputedStyle(document.getElementById('engine-temp-col')).display !== 'none'));
   ok('...and its blurb follows it', await page.evaluate(() =>
-    /measured rating/.test(document.getElementById('engine-desc-tail').textContent)));
+    /sampled with Flounder/.test(document.getElementById('engine-desc-tail').textContent)),
+    await page.evaluate(() => document.getElementById('engine-desc-tail').textContent.slice(0, 60)));
+  // On Flounder the slider moves the Weibull shape, not a probability
+  // exponent, so the readout has to name c. Showing "T" here would be the
+  // control describing a mechanism that is not running.
+  ok('the readout names c, not T', await page.evaluate(() =>
+    /^c\s*=\s*0\.\d+/.test(_tempLabel(1.0).lead)), await page.evaluate(() => _tempLabel(1.0).lead));
+  ok('and the scale is renamed with it', await page.evaluate(() =>
+    document.getElementById('tt-3').textContent === 'Streaky'),
+    await page.evaluate(() => document.getElementById('tt-3').textContent));
   ok('the dial re-brands to the selected engine', await page.evaluate(() =>
     /Flounder/.test(document.getElementById('speedo-brand').textContent)));
   ok('and takes the measured range', await page.evaluate(() =>
@@ -173,7 +182,7 @@ console.log('\nPHONE  390×844');
     lit: document.querySelectorAll('.tt.tt-on').length,
   }));
   ok('badge names the preset', th.name.length > 2, th.name);
-  ok('badge shows T', /^T = \d/.test(th.t), th.t);
+  ok('badge shows T on Maia', /^T\s*=\s*\d/.test(th.t), th.t);
   ok('badge is the biggest thing in the control', th.size >= 14, th.size + 'px');
   ok('the active zone caption is lit', th.lit === 1, th.lit + ' lit');
   await page.evaluate(() => { const s = document.getElementById('temp-t-slider'); s.value = 3.0; onTempSlider(3.0); });
