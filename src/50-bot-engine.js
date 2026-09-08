@@ -421,10 +421,18 @@ async function applyCpBudgetAcceptance(fen, chosenUci, rawProbs, shapedProbs) {
 // Bad Day and temperature-based sampling steer the bot's pick by PROBABILITY,
 // which is popularity at the rating, not quality — so the steered pick is
 // occasionally an objectively strong move few players see. Degradation must
-// never upgrade play: whenever the pick differs from the top-probability move,
-// evaluate both with one shallow searchmoves probe and play whichever scores
-// WORSE. (No need to gate on "is a mechanism currently active" — divergence
-// from the top move only happens when sampling actually picked something else.)
+// never upgrade play: when one of those mechanisms lands on a move that
+// evaluates BETTER than the most-popular one, this swaps it back.
+//
+// PERSONALITY IS THE EXCEPTION, and it is deliberate. A real trait deviates in
+// both directions — a 1200 obsessed with pawn structure plays below 1200 on
+// some moves and above it on others. Clamping every improvement made the
+// personality a pure handicap: the popular move already carries its own loss,
+// so a one-sided budget on top of it dragged strong-personality bots below
+// their labelled rating. When the attractors actually reshaped the distribution
+// (_attrReweightApplied) the pick may therefore beat the popular move by up to
+// the CP Budget — the same allowance applyCpBudgetAcceptance already grants on
+// the downside. Every other mechanism still gets zero upside.
 async function applyDegradationEvalGuard(fen, chosenUci, rawProbs) {
   try {
     if (!chosenUci || !rawProbs) return chosenUci;
@@ -435,9 +443,14 @@ async function applyDegradationEvalGuard(fen, chosenUci, rawProbs) {
     const evals = await sfEvalMoves(fen, [chosenUci, topMove]);
     if (!evals || evals[chosenUci] == null || evals[topMove] == null) return chosenUci;
     _lastEvalProbe = { fen: fen, evals: evals };
-    if (evals[chosenUci] > evals[topMove]) {
+    // Upside allowance: the Budget for personality, zero for everything else.
+    const upBudget = (_attrReweightApplied && window._bcpCpBudget != null)
+      ? Math.max(0, +window._bcpCpBudget || 0) : 0;
+    const gain = evals[chosenUci] - evals[topMove];
+    if (gain > upBudget) {
       console.log('[DegradeGuard] pick', chosenUci, '(' + evals[chosenUci] + 'cp) beats top-prob',
-        topMove, '(' + evals[topMove] + 'cp) — playing the top-probability move instead');
+        topMove, '(' + evals[topMove] + 'cp) by', Math.round(gain), 'cp, over the', upBudget,
+        'cp upside allowance — playing the top-probability move instead');
       return topMove;
     }
     return chosenUci;
@@ -1050,7 +1063,77 @@ function _ccPressureMatch(cond, botClock, oppClock) {
   return true;
 }
 
-function applyMoveAttractors(moveProbs) {
+// ── Flounder personality: the band around the sampled cost ───────────────────
+// Called by flounderChooseMove once the rating has picked a move. Returns the
+// index to play instead, or k0 to leave the choice alone.
+//
+// The rating decides how much the turn throws away; the personality decides
+// which way. That split is what makes "Flounder 2200 with a character flaw" a
+// coherent object rather than a handicap: a strong bot that is wrong in a
+// particular, recognisable direction.
+//
+// SYMMETRIC, not downward-only. The band sits either side of the selected
+// move's cost, so a personality plays BELOW its rating on some moves and ABOVE
+// it on others. A one-sided band can only model the second half, which makes
+// every personality a handicap and drags the rating down as personality
+// strength rises — the same defect the Maia degradation guard had.
+//
+// Residual leak, known and deliberate: a personality whose preferences
+// correlate with cost (one that likes sacrifices) still drifts downward.
+// Symmetry makes that second-order and measurable instead of guaranteed.
+function flounderApplyPersonality(moves, d, tau, k0, margin) {
+  try {
+    const budget = window._bcpCpBudget != null ? +window._bcpCpBudget : 0;
+    if (!(budget > 0)) return k0;
+
+    // Band half-width, in the SAME scaled units d is measured in. Labelling the
+    // control in centipawns and then applying it as a flat cp width would make
+    // personality quietly louder as the game decides: g() compresses, so 100cp
+    // covers far more of the scale near equality than it does at +5 pawns.
+    // ln(1 + budget/100) is exactly "budget centipawns at an equal position".
+    const w = Math.log(1 + budget / 100);
+    if (!(w > 0)) return k0;
+
+    const band = [];
+    for (let i = 0; i < moves.length; i++) {
+      if (d[i] > tau + margin) continue;              // the overshoot cap still binds
+      if (Math.abs(d[i] - d[k0]) <= w) band.push(i);
+    }
+    // Self-regulating: in a sharp position almost nothing qualifies, so style
+    // cannot override necessity. Nothing to choose between is not a failure.
+    if (band.length < 2) return k0;
+
+    // Uniform over the band, so what comes back is the attractor weighting and
+    // nothing else.
+    const uniform = {};
+    for (const i of band) uniform[moves[i]] = 1 / band.length;
+    const shaped = applyMoveAttractors(uniform, { rawWeights: true });
+    if (!shaped) return k0;
+
+    let bestI = k0, bestScore = -Infinity;
+    for (const i of band) {
+      const aw = shaped[moves[i]];
+      if (!(aw > 0)) continue;
+      // Closeness to the sampled cost, on the same scale as the band, against
+      // the attractor weight. With neutral attractors every aw is equal and the
+      // argmax is simply the move nearest the target — bit for bit the rule the
+      // 756-game ladder measured. That reduction is the whole safety argument.
+      const score = Math.log(aw) - Math.abs(d[i] - tau) / w;
+      if (score > bestScore) { bestScore = score; bestI = i; }
+    }
+    return bestI;
+  } catch (e) {
+    return k0;
+  }
+}
+
+// opts.rawWeights — the caller is not handing us a popularity distribution.
+// Flounder passes a uniform weight over a band of candidate moves and wants
+// back nothing but the attractor scoring, so the three stages that read a
+// probability AS popularity (the min-probability floor, the day band, Bad Day)
+// are skipped. They are meaningful for Maia and meaningless here.
+function applyMoveAttractors(moveProbs, opts) {
+  const rawWeights = !!(opts && opts.rawWeights);
   _attrReweightApplied = false;
   if (!moveProbs || !Object.keys(moveProbs).length) return moveProbs;
 
@@ -1093,7 +1176,7 @@ function applyMoveAttractors(moveProbs) {
   // relative "blunder limit" cutoff (e^(−cp/100) of the top move) pretended
   // probability ratios were centipawns; real centipawn enforcement now
   // happens post-pick in applyCpBudgetAcceptance (Stockfish-verified).
-  if (botMinProbPct > 0) {
+  if (!rawWeights && botMinProbPct > 0) {
     const entries  = Object.entries(moveProbs).sort((a, b) => b[1] - a[1]);
     const absFloor = botMinProbPct / 100;
     const passed   = entries.filter(([, p]) => p >= absFloor);
@@ -1124,7 +1207,7 @@ function applyMoveAttractors(moveProbs) {
   let lo = Math.max(0, Math.min(95, botDayLower - luckVal * 4));
   let hi = Math.max(lo + 5, Math.min(100, botDayUpper - luckVal * 4));
   let filtered = moveProbs;
-  if (lo > 0 || hi < 100) {
+  if (!rawWeights && (lo > 0 || hi < 100)) {
     const sorted = Object.entries(moveProbs).sort((a, b) => b[1] - a[1]);
     const total  = sorted.reduce((s, [, p]) => s + p, 0);
     if (total > 0) {
@@ -1148,7 +1231,7 @@ function applyMoveAttractors(moveProbs) {
   // often players at this rating choose the move, not engine quality — this
   // can land on a strong move few players see; the post-pick
   // applyDegradationEvalGuard swaps those back to the top choice.
-  if (botBadDayMode) {
+  if (!rawWeights && botBadDayMode) {
     const _floor = botMinProbPct / 100;
     const _asc = Object.entries(filtered).sort((a, b) => a[1] - b[1]);
     const _worst = _asc.find(([, p]) => p >= _floor);
@@ -1523,6 +1606,88 @@ function sfPickLevel(targetLevel) {
   return Math.max(SF_LEVEL_MIN, Math.min(SF_LEVEL_MAX, targetLevel + off));
 }
 
+// ── Flounder under time pressure, in ELO rather than skill levels ────────────
+// sfEffectiveLevel expressed the same idea as level arithmetic: start at the
+// slider, floor at maxDrop/50 levels below it, interpolate on curve A. Every
+// term of that was a proxy. Curve A is already drawn in ELO, the bot's strength
+// is already an ELO, and the drop the user dialled in is already an ELO — so
+// the whole thing is one subtraction once nothing has to pretend to be a level.
+//
+// The relative-drop form (pressureSlotEloByThink) is used rather than the
+// curve's absolute value because the curve is anchored to the panel's Elometer,
+// which a Flounder bot does not necessarily share. Relaxed think means no drop,
+// so a bot with time to spare plays exactly its labelled rating.
+// The Variety control, in the units the bot now runs on.
+//
+// It used to nudge the Stockfish SKILL LEVEL by +/-1 or +/-2, through
+// sfPickLevel — a function nothing on the Flounder path calls any more. So the
+// slider was still on screen, still saved into configs, and doing nothing at
+// all. It moves the RATING instead: one step is 100 Elo, which is about half a
+// rung of the measured ladder.
+//
+// The distribution is symmetric (p(-1) = p(+1)), so this widens the spread of
+// an opponent's play without moving its average strength — which is what the
+// control claims to do. At the very ends of the dial the clamp makes it
+// slightly one-sided; there is no calibration outside 750-2400 to spend.
+const FLOUNDER_VARIETY_STEP = 100;
+
+function flounderVarietyOffset() {
+  const var1 = Math.max(0, Math.min(50, botSfVar1)) / 100;
+  const var2 = Math.max(0, Math.min(20, botSfVar2)) / 100;
+  if (var1 <= 0 && var2 <= 0) return 0;
+  const h1 = var1 / 2, h2 = var2 / 2;
+  const r = Math.random();
+  const step = r < h2          ? -2
+             : r < h2 + h1     ? -1
+             : r < 1 - h1 - h2 ?  0
+             : r < 1 - h2      ?  1
+             :                    2;
+  return step * FLOUNDER_VARIETY_STEP;
+}
+
+function flounderEffectiveElo(clockMs, thinkSec) {
+  const base = Math.max(FLOUNDER_ELO_MIN, Math.min(FLOUNDER_ELO_MAX,
+    flounderSliderElo() + flounderVarietyOffset()));
+  if (clockMs === null || !_pressureClockActive()) return base;
+
+  // Floor: the visible curve's own maximum drop, never below the bottom of the
+  // measured ladder — there is no calibration under 750 to degrade into.
+  const maxDrop = botTimePressureMaxDrop != null ? botTimePressureMaxDrop : 300;
+  const floorElo = Math.max(FLOUNDER_ELO_MIN, base - maxDrop);
+
+  // Weaponizer: the opponent is short of time, so play at the floor and make
+  // them spend it. Inert in untimed games, where botOppClockMs is null.
+  if (botWeaponizerEnabled && botOppClockMs !== null &&
+      botOppClockMs <= botWeaponizerTriggerMs) {
+    return floorElo;
+  }
+
+  const dropped = pressureSlotEloByThink(base, thinkSec);
+  return Math.max(floorElo, Math.min(base, dropped));
+}
+
+// ── Flounder, with a plain search only as a safety net ───────────────────────
+// Every bot fallback in this file used to be sfGetMove at some skill level, and
+// a skill level is not a rating: levels -3 through 2 all measured as the same
+// bot, with level 1 scoring WORSE than level -3. So "Maia isn't downloaded,
+// drop to Stockfish 6" quietly handed the player an opponent whose strength
+// nobody had ever measured, under a label implying somebody had.
+//
+// These paths now play Flounder at the rating the caller was already asking
+// for. sfGetMove survives only for the case Flounder itself cannot serve — the
+// MultiPV probe failing because the engine is busy — where any legal move beats
+// stalling. Stockfish still does all the evaluating; it just no longer pretends
+// that turning its search down is the same thing as playing worse.
+async function flounderMoveOrSearch(fen, elo) {
+  const e = Math.max(600, Math.min(2600, Math.round(elo) || 1500));
+  const pick = await flounderChooseMove(fen, e);
+  if (pick && pick.uci) { lastBotMoveSource = 'Flounder'; return pick.uci; }
+  const lvl = Math.max(SF_LEVEL_MIN, Math.min(SF_LEVEL_MAX,
+    Math.round(1 + (e - 650) * 19 / 1950)));
+  lastBotMoveSource = 'SF';
+  return await sfGetMove(fen, lvl);
+}
+
 // ── Effective Stockfish level (degrades under time pressure) ─────────────────
 // Floor = time-pressure floor (botTimePressureMaxDrop / sfPressureLevel).
 // (The old blunderLimitCp-derived quality floor is gone — the blunder-limit
@@ -1664,11 +1829,15 @@ function explorerConfidenceFromData(data) {
 }
 
 function botEffectiveElo() {
-  // Unified ELO across engine tabs. Maia3/LC modes use maia3SelectedRating
-  // directly. SF uses a 1-20 level slider mapped to ~650-2600 ELO.
+  // Unified ELO across engine tabs. Every tab now names a rating outright:
+  // Maia/LC modes through maia3SelectedRating, Flounder through its own dial.
+  //
+  // This used to read the 1-20 level slider and convert. Once the dial itself
+  // became a rating that conversion round-tripped ELO -> level -> ELO and lost
+  // the difference: a dial set to 1000 played at 958, because 1000 lands
+  // between two integer levels. Read the rating the user actually set.
   if (typeof botTab !== 'undefined' && botTab === 'sf') {
-    const lvl = sfSliderLevel();
-    return Math.round(650 + (lvl - 1) / 19 * 1950); // 1→650, 20→2600
+    return flounderSliderElo();
   }
   return (typeof maia3SelectedRating !== 'undefined' && maia3SelectedRating)
     ? maia3SelectedRating : 1500;
@@ -2039,7 +2208,11 @@ async function botMakeMove() {
       // statistic, because fitting to a statistic (Regan's move-match column)
       // reproduced his numbers exactly and still produced ratings worth about
       // 120 real Elo per 400 labelled.
-      const sfElo = botEffectiveElo();
+      // Rough think estimate BEFORE the probe, so the degradation curve reads
+      // the pace this move is actually being played at rather than a clock
+      // average — the same plumbing every Maia path uses.
+      const sfRoughThinkSec = botThinkTime(null, clockMs) / 1000;
+      const sfElo = flounderEffectiveElo(clockMs, sfRoughThinkSec);
       const pick  = await flounderChooseMove(fen, sfElo);
 
       if (pick && pick.uci) {
@@ -2052,7 +2225,7 @@ async function botMakeMove() {
         if (wait > 0) await new Promise(r => setTimeout(r, wait));
 
         uciMove = pick.uci;
-        lastBotMoveSource = 'SF';
+        lastBotMoveSource = 'Flounder';
 
         // The CP-budget, degradation and hard-floor guards are deliberately NOT
         // applied here. All three exist because Maia's probabilities are
@@ -2121,11 +2294,12 @@ async function botMakeMove() {
         _botMoveThinkSec = null;
         console.log('[Maia3 FULL] chose:', uciMove, '| temp:', adjTemp.toFixed(2), '(base:', m3EffTemp.toFixed(2), ')| inf:', inferenceMs, 'ms | extra wait:', delay, 'ms');
       } else {
-        // Maia3 not downloaded — fall back to SF
+        // Maia3 not downloaded — Flounder at the rating Maia was asked for.
+        // This is the case Flounder was built for: the same rating, no 44MB
+        // model. The old code dropped to Stockfish at rating/200 as a "rough
+        // mapping", which is the exact substitution the ladder work disproved.
         await sfInit();
-        const fbLevel = Math.round(maia3SelectedRating / 200); // rough mapping
-        uciMove = await sfGetMove(fen, Math.max(1, Math.min(20, fbLevel)));
-        lastBotMoveSource = 'SF';
+        uciMove = await flounderMoveOrSearch(fen, maia3SelectedRating);
       }
 
     } else if (botTab === 'maia') {
@@ -2189,9 +2363,10 @@ async function botMakeMove() {
         uciMove = await applyHardFloorBackstop(fen, uciMove, probs);
         _botMoveThinkSec = null;
       } else {
+        // Off book. The fallback slider is still the user's stated strength for
+        // this case, so honour it — just as a rating rather than a skill level.
         await sfInit();
-        uciMove = await sfGetMove(fen, lcFallbackLevel());
-        lastBotMoveSource = 'SF';
+        uciMove = await flounderMoveOrSearch(fen, flounderEloFromLegacyLevel(lcFallbackLevel()));
       }
 
     } else if (botTab === 'lcsf') {
@@ -2246,8 +2421,7 @@ async function botMakeMove() {
         _botMoveThinkSec = null;
       } else {
         await sfInit();
-        uciMove = await sfGetMove(fen, lcsfFallbackLevel());
-        lastBotMoveSource = 'SF';
+        uciMove = await flounderMoveOrSearch(fen, flounderEloFromLegacyLevel(lcsfFallbackLevel()));
       }
 
     } else if (botTab === 'hybrid') {
@@ -2308,16 +2482,21 @@ async function botMakeMove() {
             uciMove = await applyHardFloorBackstop(fen, uciMove, probs);
             _botMoveThinkSec = null;
           } else {
-            // Maia3 not downloaded/failed — SF at a level matching the slot ELO
-            const fbLevel = Math.max(1, Math.min(20, Math.round(slotElo / 200)));
-            uciMove = await sfGetMove(fen, fbLevel);
-            lastBotMoveSource = 'SF';
+            // Maia3 not downloaded or failed — Flounder at the slot's own ELO,
+            // which keeps the blend's identity intact instead of replacing one
+            // slot with an unrated engine.
+            uciMove = await flounderMoveOrSearch(fen, slotElo);
           }
         } else {
-          const effectiveLevel = (chosen.level !== undefined && chosen.level > 0) ? chosen.level : sfEffectiveLevel(clockMs);
+          // A Flounder slot is a rating, exactly like a Maia slot, so it
+          // degrades under time pressure through the same curve every other
+          // rating uses rather than through skill-level arithmetic.
+          const slotFlounderElo = (chosen.elo != null && chosen.elo > 0)
+            ? chosen.elo : flounderEloFromLegacyLevel(chosen.level);
           const delay = botThinkTime(null, clockMs);
           await new Promise(res => setTimeout(res, delay));
-          uciMove = await sfGetMove(fen, effectiveLevel);
+          uciMove = await flounderMoveOrSearch(fen,
+            pressureSlotEloByThink(slotFlounderElo, delay / 1000));
         }
       }
     }

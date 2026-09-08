@@ -85,8 +85,8 @@ console.log('\n4   A real game runs through botMakeMove');
 {
   const r = await page.evaluate(async () => {
     botSetTab('sf');
-    const el = document.getElementById('sfLevel');
-    if (el) el.value = 3;                 // ~1000 through botEffectiveElo
+    const el = document.getElementById('flounderElo');
+    if (el) el.value = 1000;              // the dial is a rating now, not a level
     botSetPlayerColor('white');
     quickBotStart();
     return { elo: botEffectiveElo() };
@@ -97,26 +97,42 @@ console.log('\n4   A real game runs through botMakeMove');
     src: lastBotMoveSource,
     tab: botTab,
   }));
-  ok('a bot game started on the Stockfish tab', state.active && state.tab === 'sf',
+  ok('a bot game started on the Flounder tab', state.active && state.tab === 'sf',
     JSON.stringify(state));
-  ok('botEffectiveElo maps the slider into the ladder range',
-    r.elo > 500 && r.elo < 2700, String(r.elo));
+  ok('botEffectiveElo reads the rating dial directly', r.elo === 1000, String(r.elo));
 
   // Play a few human moves and let the bot answer each one.
   const moves = [['e2','e4'], ['g1','f3'], ['f1','c4']];
-  let replied = 0;
+  let replied = 0, attempted = 0;
   for (const [from, to] of moves) {
     const before = await page.evaluate(() => gameMovesAlgebraic.length);
-    await page.evaluate(([f, t]) => {
-      executeMove(fileRankToSq(f), fileRankToSq(t));
+    // The bot's replies vary, so a scripted human move can be illegal in the
+    // position that actually arose. Skip those rather than counting them as a
+    // failure to reply — executeMove does not check legality itself.
+    const played = await page.evaluate(([f, t]) => {
+      const sq = fileRankToSq(f), dst = fileRankToSq(t);
+      if (!legalMovesFor(sq, board, epSq, castling).includes(dst)) return false;
+      executeMove(sq, dst);
+      return true;
     }, [from, to]);
-    await page.waitForTimeout(3500);
-    const after = await page.evaluate(() => gameMovesAlgebraic.length);
+    if (!played) continue;
+    attempted++;
+    // Wait for the reply rather than sleeping a fixed amount. Think time is
+    // deliberately variable — the "reconsider" habit multiplies it by 1.5-2.5x
+    // on about one move in seven — so any fixed budget is a coin flip, and this
+    // test was failing roughly one run in three for that reason alone.
+    let after = before;
+    for (let waited = 0; waited < 20000 && after < before + 2; waited += 250) {
+      await page.waitForTimeout(250);
+      after = await page.evaluate(() => gameMovesAlgebraic.length);
+    }
     if (after >= before + 2) replied++;
   }
-  ok('the bot replied to each move', replied === moves.length, replied + '/' + moves.length);
-  ok('moves are attributed to Stockfish',
-    await page.evaluate(() => lastBotMoveSource) === 'SF');
+  ok('the bot replied to each move', attempted > 0 && replied === attempted,
+    replied + '/' + attempted);
+  ok('moves are attributed to Flounder',
+    await page.evaluate(() => lastBotMoveSource) === 'Flounder',
+    await page.evaluate(() => String(lastBotMoveSource)));
   ok('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
 }
 

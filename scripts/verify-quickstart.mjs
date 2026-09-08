@@ -213,25 +213,26 @@ console.log('\n7   A stale Maia pick cannot start Stockfish under a Maia label')
   await ctx.close();
 }
 
-console.log('\n8   Stockfish picks still work, and are plain');
+console.log('\n8   Flounder picks still work, and are plain');
 {
   const { ctx, page, errs } = await open();
   const got = await page.evaluate(() => {
     window._bcpAttractorValues = { chaos: 5 };
     botPressureCurveA = [{ x: 1, y: 600 }, { x: 60, y: 1500 }];
-    quickBotPick('7');
+    quickBotPick('1400');
     return {
-      tab: botTab, lvl: parseInt(document.getElementById('sfLevel').value, 10),
+      tab: botTab, elo: parseInt(document.getElementById('flounderElo').value, 10),
       sel: document.getElementById('quickBotSel').value,
       attrs: Object.keys(window._bcpAttractorValues).length,
       curveA: botPressureCurveA,
       draws: [botAcceptDraws, botDrawAcceptMargin],
     };
   });
-  ok('Stockfish 7 selects Stockfish 7', got.tab === 'sf' && got.lvl === 7, JSON.stringify(got));
-  ok('the picker rests on it', got.sel === '7', got.sel);
+  ok('Flounder 1400 selects Flounder 1400', got.tab === 'sf' && got.elo === 1400,
+    JSON.stringify(got));
+  ok('the picker rests on it', got.sel === '1400', got.sel);
   ok('with no leftover attractors', got.attrs === 0, String(got.attrs));
-  ok('and no leftover pressure curve floor on its level', got.curveA === null);
+  ok('and no leftover pressure curve floor on its rating', got.curveA === null);
   ok('casual draw behaviour is kept', got.draws[0] === true && got.draws[1] === 400,
     JSON.stringify(got.draws));
   ok('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));

@@ -108,8 +108,8 @@
 <div class="card">
   <h2>Stockfish — the analytical engine</h2>
   <p>
-    The engine behind the ghost-move previews, the engine-calculated bot controls and the
-    non-Maia bot levels is <a href="https://stockfishchess.org/" target="_blank" rel="noopener">Stockfish</a>,
+    The engine behind the ghost-move previews, the engine-calculated bot controls and
+    every Flounder bot is <a href="https://stockfishchess.org/" target="_blank" rel="noopener">Stockfish</a>,
     free software under the <strong>GNU General Public License v3</strong>. Blundermind ships
     <strong>Stockfish.js&nbsp;18</strong> (the single-threaded lite WASM build) from the
     <a href="https://github.com/nmrugg/stockfish.js" target="_blank" rel="noopener">stockfish.js</a>
@@ -122,6 +122,33 @@
     In line with the GPL, Blundermind's complete corresponding source — including the
     exact Stockfish build it ships — is public:
     <a href="https://github.com/bhale22/Blundermindwithbots" target="_blank" rel="noopener">github.com/bhale22/Blundermindwithbots</a>.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Flounder — Stockfish, playing at a rating</h2>
+  <p>
+    <strong>Flounder is built on Stockfish.</strong> It is not a separate engine and it does
+    not evaluate anything itself: every Flounder bot in Blundermind is Stockfish
+    18&nbsp;lite doing the analysis, with a selection layer on top that decides which of
+    Stockfish's own evaluated moves to actually play.
+  </p>
+  <p>
+    That layer scores every legal move in one MultiPV probe, puts the evaluations on the
+    perceptual scale <code>g(v) = sign(v)·ln(1+|v|/100)</code>, then samples how much the
+    turn should <em>cost</em> from a Weibull distribution and plays the move nearest that
+    cost. The curve is the human-error model of Kenneth&nbsp;W.&nbsp;Regan and
+    Guy&nbsp;McC.&nbsp;Haworth, <em>Intrinsic Chess Ratings</em> (AAAI 2011); the shape
+    parameter is their fitted column, and the scale was measured here by playing each
+    rating against Maia at the same rating — 756 games across nine rungs.
+  </p>
+  <p>
+    The name is ours and the mistakes are ours; the chess is Stockfish's. Flounder is
+    <strong>not</strong> a Stockfish release and is not endorsed by or affiliated with the
+    Stockfish project — the Stockfish authors are responsible for Stockfish, not for what
+    this layer chooses to do with its output. As a derivative of GPL-3.0 software it is
+    itself GPL-3.0, and its source sits in the same public repository as the rest of
+    Blundermind.
   </p>
 </div>
 

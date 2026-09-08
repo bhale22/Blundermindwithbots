@@ -622,6 +622,8 @@ input[type=range]::-webkit-slider-thumb:active{cursor:grabbing;}
 
 /* Segmented buttons */
 .seg-row{display:flex;gap:0;}
+.ob-row{display:flex;align-items:center;gap:10px;margin:8px 0 4px;}
+.ob-lbl{font-family:var(--font-m);font-size:8px;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-dim);white-space:nowrap;}
 .seg-btn{flex:1;padding:7px 10px;font-family:var(--font-m);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;background:var(--carbon-surface);border:0.5px solid var(--border);cursor:pointer;color:var(--text-dim);transition:all 0.15s;text-align:center;}
 .seg-btn:first-child{border-radius:var(--r) 0 0 var(--r);}
 .seg-btn:last-child{border-radius:0 var(--r) var(--r) 0;}
@@ -686,7 +688,7 @@ canvas{display:block;background:transparent;}
 #sec-attract .itab-pane{min-height:460px;}
 /* Personality controls only do something when the engine yields a move
    distribution to reweight (Maia 3 / LC+Maia). Grey them out for pure
-   Stockfish / LC+Stockfish (and all-SF hybrids). */
+   Flounder / Flounder+book (and all-Flounder hybrids). */
 .pers-inactive{opacity:0.4;filter:grayscale(0.55);pointer-events:none;}
 /* Positioning context for the overlaid inactive-state note (below) */
 #attract-personality-body{position:relative;}
@@ -2735,31 +2737,33 @@ body.fj .picon{font-weight:500;}
       <!-- Engine mode selector — all 5 in one row -->
       <div class="pr">
         <div class="dlbl"><span>Engine mode</span></div>
-        <div class="mode-grid mode-grid-5 mode-compact" id="engine-mode-grid">
+        <div class="mode-grid mode-grid-3 mode-compact" id="engine-mode-grid">
           <div class="mcard sel" data-engine="maia3" onclick="selEngineCard(this)">
             <div class="mdot"></div>
             <div class="mname">Maia 3 <span class="mrec">recommended</span></div>
-            <div class="mdesc">Human-like neural net. Choose ELO 600–2600. Every personality control applies on this engine.</div>
+            <div class="mdesc">Human-like neural net, ELO 600–2600. One-time 44MB download.</div>
           </div>
           <div class="mcard" data-engine="stockfish" onclick="selEngineCard(this)">
             <div class="mdot"></div>
-            <div class="mname">Stockfish</div>
-            <div class="mdesc">Classical engine. Set level SF1–SF10.</div>
+            <div class="mname">Flounder</div>
+            <div class="mdesc">Stockfish at a measured rating, 750–2400. Nothing to download.</div>
           </div>
           <div class="mcard" data-engine="hybrid" onclick="selEngineCard(this)">
             <div class="mdot"></div>
             <div class="mname">Hybrid</div>
-            <div class="mdesc">Weighted blend of Maia ELOs + SF levels.</div>
+            <div class="mdesc">Weighted blend of Flounder and Maia ratings, mixed move by move.</div>
           </div>
-          <div class="mcard" data-engine="lcsf" onclick="selEngineCard(this)">
-            <div class="mdot"></div>
-            <div class="mname">LC + Stockfish</div>
-            <div class="mdesc">Lichess explorer fallback + Stockfish.</div>
-          </div>
-          <div class="mcard" data-engine="lcmaia" onclick="selEngineCard(this)">
-            <div class="mdot"></div>
-            <div class="mname">LC + Maia 3</div>
-            <div class="mdesc">Lichess explorer fallback + Maia 3.</div>
+        </div>
+        <!-- The opening book is orthogonal to the engine, and always has been:
+             the book layer answers first and hands over to the engine when it
+             runs dry. It used to be spelled as two extra engine cards, which
+             made "LC + Stockfish" look like a third kind of engine rather than
+             the same engine with a book in front of it. -->
+        <div class="ob-row" id="engine-book-row">
+          <span class="ob-lbl">Opening book</span>
+          <div class="seg-row" id="engine-book-seg" style="flex:1;">
+            <div class="seg-btn sel" data-book="off" onclick="setEngineBook('off')">Off</div>
+            <div class="seg-btn"     data-book="on"  onclick="setEngineBook('on')">Lichess explorer</div>
           </div>
         </div>
       </div>
@@ -2771,7 +2775,7 @@ body.fj .picon{font-weight:500;}
         <div id="engine-sub-col">
           <!-- Maia 3 sub-panel -->
           <div id="engine-sub-maia3">
-            <div class="dlbl"><span>Maia 3 — ELO</span></div>
+            <div class="dlbl"><span id="eng-elo-lbl">Maia 3 — ELO</span></div>
             <div class="speedo-row">
             <!-- overlay-on matches the overlay's initial display:flex below;
                  bcpMaiaSetStatus clears it once the model is ready. -->
@@ -2825,7 +2829,7 @@ body.fj .picon{font-weight:500;}
                 <text id="speedo-elo-text" x="180" y="142" text-anchor="middle" font-family="'DM Mono',monospace" font-size="26" font-weight="500" fill="#e8aa40">1500</text>
                 <text id="speedo-min-lbl" x="0" y="0" font-family="'DM Mono',monospace" font-size="9" fill="#4a5060" text-anchor="middle">600</text>
                 <text id="speedo-max-lbl" x="0" y="0" font-family="'DM Mono',monospace" font-size="9" fill="#4a5060" text-anchor="middle">2600</text>
-                <text x="180" y="177" text-anchor="middle" font-family="'Cormorant Garamond',serif" font-size="14" font-style="italic" font-weight="300" fill="#8a6420" letter-spacing="2">Maia 3 Elometer</text>
+                <text x="180" y="177" text-anchor="middle" font-family="'Cormorant Garamond',serif" font-size="14" font-style="italic" font-weight="300" fill="#8a6420" letter-spacing="2" id="speedo-brand">Maia 3 Elometer</text>
               </svg>
             </div>
             <!-- ELO input column — sits to the right of the Elometer -->
@@ -2853,25 +2857,30 @@ body.fj .picon{font-weight:500;}
               </div>
             </div>
             <div class="ctrl-hint" style="margin-top:4px;text-align:center;">Budget = the personality's engine-calculated spend · Floor = worst-move backstop · click a tile to fine-tune in the Personality panel</div>
-            <div class="engine-credit" style="margin-top:10px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);line-height:1.6;">
+            <div class="engine-credit" id="eng-credit-maia" style="margin-top:10px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);line-height:1.6;">
               Maia is a human-like neural net with its own free web app — analysis tools, puzzles, and play against Maia bots:
               <a href="https://maiachess.com" target="_blank" rel="noopener" style="color:var(--amber);text-decoration:none;">maiachess.com</a>
             </div>
+            <div class="engine-credit" id="eng-credit-flounder" style="display:none;margin-top:10px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);line-height:1.6;">
+              <strong>Flounder is built on Stockfish</strong> (GPL-3.0) — Stockfish scores every legal
+              move, and Flounder chooses among them so the mistakes land where a human's would.
+              Each rating on this dial was measured against Maia at the same rating.
+              <a href="/credits" target="_blank" rel="noopener" style="color:var(--amber);text-decoration:none;">credits &amp; licences</a>
+            </div>
           </div>
 
-          <!-- Stockfish sub-panel -->
+          <!-- Flounder sub-panel. Strength is the Elometer above; what is left
+               here is the move-to-move variation around it. -->
           <div id="engine-sub-stockfish" style="display:none;">
-            <div class="dlbl"><span>Stockfish — strength level</span></div>
-            <div class="sf-pips" id="sf-pips"></div>
-            <div class="ctrl-hint" style="margin-top:8px;">SF1 = weakest. SF10 = maximum. Each level ≈ +150–200 ELO.</div>
-            <div class="dlbl" style="margin-top:12px;"><span>Stockfish variety</span></div>
+            <div class="dlbl"><span>Flounder variety</span></div>
+            <div class="ctrl-hint" style="margin-bottom:6px;">How often the bot plays a step either side of its rating. Symmetric, so it widens the spread of its play without moving the average.</div>
             <div class="ctrl">
-              <span class="ctrl-lbl">±1 level calls</span>
+              <span class="ctrl-lbl">±100 Elo</span>
               <input type="range" id="r-sfvar1" min="0" max="50" step="1" value="0" oninput="sv(this,'v-sfvar1',v=>v+'%')">
               <span class="ctrl-val" id="v-sfvar1">0%</span>
             </div>
             <div class="ctrl">
-              <span class="ctrl-lbl">±2 level calls</span>
+              <span class="ctrl-lbl">±200 Elo</span>
               <input type="range" id="r-sfvar2" min="0" max="20" step="1" value="0" oninput="sv(this,'v-sfvar2',v=>v+'%')">
               <span class="ctrl-val" id="v-sfvar2">0%</span>
             </div>
@@ -2893,15 +2902,13 @@ body.fj .picon{font-weight:500;}
 
           <!-- LC + SF sub-panel -->
           <div id="engine-sub-lcsf" style="display:none;">
-            <div class="dlbl"><span>LC + Stockfish</span></div>
+            <div class="dlbl"><span>Opening book — Lichess explorer</span></div>
             <div class="ctrl">
               <span class="ctrl-lbl">Lichess ELO</span>
               <input type="number" min="600" max="2600" step="25" value="1200" id="lcsf-lc-elo"
                 style="width:70px;padding:4px 6px;font-family:var(--font-m);font-size:11px;color:var(--amber-bright);background:var(--carbon-surface);border:0.5px solid var(--border-amber);border-radius:2px;text-align:center;outline:none;">
             </div>
-            <div class="ctrl" style="margin-top:6px;"><span class="ctrl-lbl">Stockfish level</span></div>
-            <div class="sf-pips" id="lcsf-sf-pips"></div>
-            <div class="ctrl-hint" style="margin-top:8px;">LC modes use the Lichess Open Explorer as an opening book; Stockfish takes over when the book runs dry.</div>
+            <div class="ctrl-hint" style="margin-top:8px;">The explorer plays the moves real players of that rating chose. When a position is not in the database, the engine above takes over at its own rating.</div>
             <div class="engine-credit" style="margin-top:10px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);line-height:1.6;">
               Lichess is free, open-source, and ad-free — opening explorer, engine analysis, puzzles, and more:
               <a href="https://lichess.org/analysis" target="_blank" rel="noopener" style="color:var(--amber);text-decoration:none;">lichess.org/analysis</a>
@@ -3834,6 +3841,20 @@ body.fj .picon{font-weight:500;}
 
 // Speedometer domain
 const SPEEDO = { min:600, max:2600, step:25, default:1500 };
+
+// One Elometer, two identities. The dial is not decoration on the Maia panel —
+// currentElo is what curve A is anchored to, what timePressureMaxDrop is
+// measured from, and what the CP recommendation reads. Giving Flounder a
+// separate rating control would have left every one of those pointed at a
+// number the Flounder bot was not playing at.
+//
+// Maia's range is the range its network was conditioned over. Flounder's is the
+// range that was actually measured — nine rungs from 732 to 2387 — and it stops
+// there rather than extrapolating past the evidence.
+const SPEEDO_RANGES = {
+  maia3:     { min:600, max:2600, brand:'Maia 3 Elometer',  label:'Maia 3 — ELO' },
+  stockfish: { min:750, max:2400, brand:'Flounder Elometer', label:'Flounder — rating' },
+};
 // Speedometer geometry — viewBox 360×185, arc centered at (180,155), R=108
 // Orientation: 600 ELO at 9:15 (SVG 188°), 2600 ELO at 2:45 (SVG 353°)
 // Sweep = 165° clockwise through the bottom — opens upward like a dashboard gauge.
@@ -8283,6 +8304,10 @@ function getBotConfig(){
     engine:          currentEngine,
     elo:             currentElo,
     sfLevel:         sfLevel,
+    // The Flounder rating. Kept separate from `elo` (which the app reads as the
+    // Maia rating) so a config names both without either having to be inferred
+    // from the engine mode.
+    flounderElo:     (baseEngine === 'stockfish') ? currentElo : null,
     sfvar1:          parseInt(document.getElementById('r-sfvar1')?.value || '0'),
     sfvar2:          parseInt(document.getElementById('r-sfvar2')?.value || '0'),
     maia3Temp:       maia3Temp,
@@ -8378,11 +8403,39 @@ function applyBotConfig(cfg){
   const grp = (fn) => { try { fn(); } catch(e){ console.warn('applyBotConfig:', e); } };
 
   // Engine mode + ELO + SF level/variety + LC ELOs
+  //
+  // A saved config still names one of the five old modes, because that is what
+  // the app and every share link speak. Two of those five are a base engine
+  // with a book in front of it, so loading one means splitting it back into the
+  // card and the toggle that now express it — there are no lcsf/lcmaia cards to
+  // find any more, and looking for one selected nothing at all.
   grp(() => {
-    const card = document.querySelector('#engine-mode-grid .mcard[data-engine="' + (cfg.engine || 'maia3') + '"]');
-    if(card) selEngineMode(card);
+    const eng  = cfg.engine || 'maia3';
+    const base = (eng === 'lcmaia') ? 'maia3' : (eng === 'lcsf') ? 'stockfish' : eng;
+    const book = (eng === 'lcsf' || eng === 'lcmaia') ? 'on' : 'off';
+    const card = document.querySelector('#engine-mode-grid .mcard[data-engine="' + base + '"]');
+    if(card){
+      document.querySelectorAll('#engine-mode-grid .mcard').forEach(c => c.classList.remove('sel'));
+      card.classList.add('sel');
+      baseEngine = base;
+    }
+    setEngineBook(book);   // applies the mode, and re-ranges the dial with it
   });
-  grp(() => { if(cfg.elo) setElo(clampElo(cfg.elo)); });
+  grp(() => {
+    // Which number is this bot's rating depends on the engine it was saved as.
+    // A Flounder bot saved before the dial existed has only a 1-10 pip level,
+    // which doubles into the old 1-20 scale and then through the same legacy
+    // map the app uses, so it opens at the strength it actually played at.
+    let elo = cfg.elo;
+    if(baseEngine === 'stockfish'){
+      if(cfg.flounderElo != null) elo = cfg.flounderElo;
+      else if(cfg.sfLevel != null){
+        const lvl20 = Math.min(20, Math.max(1, cfg.sfLevel * 2));
+        elo = Math.round((650 + (lvl20 - 1) / 19 * 1950) / 25) * 25;
+      }
+    }
+    if(elo) setElo(clampElo(elo));
+  });
   grp(() => {
     if(cfg.sfLevel){ selectSFLevel(cfg.sfLevel, 'sf-pips'); selectSFLevel(cfg.sfLevel, 'lcsf-sf-pips'); }
   });
@@ -8815,19 +8868,27 @@ function bcpMaiaDownload(){
   }
 }
 
+// The "download Maia first" overlay sits on top of the rating dial, and that
+// dial is now shared with Flounder — the engine whose whole point is that it
+// needs no download. So the overlay is a function of TWO things, not one: the
+// model being absent, and Maia actually being the selected engine.
+function bcpMaiaSyncOverlay(){
+  var overlay = document.getElementById('bcp-speedo-overlay');
+  if(!overlay) return;
+  var isMaia = (typeof baseEngine === 'undefined') || baseEngine === 'maia3';
+  var wanted = !_bcpMaiaReady && isMaia;
+  overlay.style.display = wanted ? 'flex' : 'none';
+  // The overlay is absolutely positioned over the dial. On a phone its content
+  // is taller than the dial it covers, so the wrap needs a floor while it is up
+  // or the text spills onto the controls below — but only while it is up, so a
+  // ready dial keeps its natural height.
+  if(overlay.parentElement) overlay.parentElement.classList.toggle('overlay-on', wanted);
+}
+
 function bcpMaiaSetStatus(status, ready, progress){
   _bcpMaiaStatus = status || 'idle';
   _bcpMaiaReady  = !!ready;
-  // Show overlay on speedometer when model not loaded; hide when ready
-  var overlay = document.getElementById('bcp-speedo-overlay');
-  if(overlay){
-    overlay.style.display = ready ? 'none' : 'flex';
-    // The overlay is absolutely positioned over the dial. On a phone its
-    // content is taller than the dial it covers, so the wrap needs a floor
-    // while it is up or the text spills onto the controls below — but only
-    // while it is up, so a ready dial keeps its natural height.
-    if(overlay.parentElement) overlay.parentElement.classList.toggle('overlay-on', !ready);
-  }
+  bcpMaiaSyncOverlay();
   const labels = {
     idle:        'Checking storage…',
     loading:     'Checking storage…',
@@ -9098,19 +9159,20 @@ const BOT_TOUR = [
     },
     body: function(){
       const lead = _bcpMaiaReady
-        ? 'The <b>Maia 3</b> model is already stored in this browser, so every control on this page is live — nothing to download. Here is what runs on what, so the split is clear before you start building:'
-        : 'Most of what makes a bot feel <i>human</i> here runs on <b>Maia 3</b>, a neural net trained on millions of human games. It is a <b>one-time ~44 MB download</b> into this browser’s storage, and the <b>Download</b> button sits at the top of the Maia dial just below.';
+        ? 'The <b>Maia 3</b> model is already stored in this browser, so both engines are available. Here is what each one is for:'
+        : 'Two engines, and only one of them asks for anything. <b>Flounder</b> is ready now; <b>Maia 3</b> is a neural net trained on millions of human games and needs a <b>one-time ~44 MB download</b> into this browser’s storage, from the <b>Download</b> button on the dial below.';
       return lead +
-        '<br><br><b>Works on Stockfish alone:</b> engine strength, move timing and its human habits, opening behaviour, colour and clock, draw &amp; resign behaviour, and time-pressure <b>Curve A</b> — which drops Stockfish’s level as the clock runs down.' +
-        '<br><br><b>Needs Maia 3:</b> move sampling (temperature), the move-distribution range, every personality attractor, preset and custom rule, the <b>CP Budget</b> and <b>Hard Floor</b>, premoves, and time-pressure <b>Curve B</b>. All of those reshape <i>move probabilities</i>, and Stockfish does not produce any' +
+        '<br><br><b>Flounder</b> — Stockfish scoring every legal move, with a layer on top that decides how much the turn should cost and plays accordingly. Its ratings were <i>measured</i>, by playing each rung against Maia at the same rating. Nothing to download.' +
+        '<br><br><b>Maia 3</b> — predicts the move a human of a given rating would actually play, so it reproduces human habits rather than human error rates. It is the better opponent when you want the moves to feel familiar rather than merely fallible.' +
+        '<br><br><b>Every control on this page works on both.</b> That used to be the real split: personality reshaped a probability distribution, and only Maia produced one. Flounder now hands the attractors a band of moves either side of the cost it sampled, so the CP Budget, the presets, the custom rules and the temperature all reach it' +
         (_bcpMaiaReady
           ? '.'
-          : ' — so until the model is here a Maia bot quietly falls back to plain Stockfish and the style dials do nothing.') +
-        '<br><br><span style="opacity:0.75;">(The <b>LC</b> modes draw their probabilities from the Lichess opening explorer instead, so the personality controls do work there — but only while the game is still in book.)</span>';
+          : ' — and a Flounder bot needs no download to use any of them.') +
+        '<br><br><span style="opacity:0.75;">(With the <b>opening book</b> on, moves come from the Lichess explorer while the game is still in book, and the engine takes over when it runs dry.)</span>';
     } },
 
   { stage:'Engine', open:'engine', sel:'#engine-mode-grid', title:'1 · The engine',
-    body:'Pick the brain — <b>Maia</b> (a neural net trained on millions of human games), <b>Stockfish</b>, or blends that pull openings from the <b>Lichess explorer</b> and fall back to an engine. You can build a <b>Hybrid</b> bot that mixes engines by weight, and set the exact playing strength.' },
+    body:'Pick the brain — <b>Flounder</b> (Stockfish, playing at a measured rating, nothing to download) or <b>Maia 3</b> (a neural net trained on millions of human games). The <b>opening book</b> toggle puts the Lichess explorer in front of whichever you chose, and <b>Hybrid</b> blends two ratings by weight. The dial below sets the exact playing strength either way.' },
 
   { stage:'Engine', open:'engine', sel:'#engine-temp-col', title:'Move sampling — temperature',
     body:"How adventurously the bot samples from Maia’s move probabilities. <b>Focused</b> = almost always the top move; <b>Wild</b> = it’ll reach for lower-probability tries. The live chart shows the whole pipeline per move: <b>Maia’s</b> raw odds → after <b>temperature</b> → after the <b>personality × CP Budget</b> (blue bar, illustrative) — with a Budget slider right below it.",
@@ -9464,6 +9526,14 @@ function fillArcPath(cx,cy,r,startDeg,elo){
    ENGINE MODE SWITCHING
 ══════════════════════════════════════════════════════════════ */
 const ENGINE_SUBS = ['maia3','stockfish','hybrid','lcsf','lcmaia'];
+
+// currentEngine keeps its five old values because everything downstream — the
+// emitted config, the app's engineMap, saved bots, share links — speaks them.
+// What changed is how it is arrived at. The five were never five engines: they
+// were two engines, each with or without an opening book, plus hybrid. Now the
+// user picks those two things and this derives the value.
+let baseEngine  = 'maia3';   // 'maia3' | 'stockfish' | 'hybrid'  (the card)
+let engineBook  = 'off';     // 'off'   | 'on'                    (the toggle)
 let currentEngine = 'maia3';
 let sfLevel = 5;
 
@@ -9471,22 +9541,16 @@ let sfLevel = 5;
 // min-height, so switching engines never resizes the section. Hybrid can
 // still grow past the floor as slots are added. Measured lazily on the
 // first mode switch (the section must be open for offsetHeight to work).
-let _engineSubsEqualized = false;
-function equalizeEngineSubHeights(){
-  if(_engineSubsEqualized) return;
-  let maxH = 0;
-  const subs = ENGINE_SUBS.map(id => document.getElementById('engine-sub-' + id)).filter(Boolean);
-  subs.forEach(el => {
-    const prev = { d: el.style.display, v: el.style.visibility, p: el.style.position };
-    el.style.visibility = 'hidden'; el.style.position = 'absolute'; el.style.display = 'block';
-    maxH = Math.max(maxH, el.offsetHeight);
-    el.style.display = prev.d; el.style.visibility = prev.v; el.style.position = prev.p;
-  });
-  if(maxH > 100){ // 0/<100 means we measured while hidden — try again next time
-    subs.forEach(el => { el.style.minHeight = maxH + 'px'; });
-    _engineSubsEqualized = true;
-  }
-}
+// Was: measure the tallest sub-panel and give every one that min-height, so
+// switching engines never resized the section.
+//
+// That floor is now dead weight, and visibly so — it left a block of empty
+// space under the rating dial. The panels no longer take turns: the dial is
+// shown for every non-hybrid engine and the engine-specific controls stack
+// underneath it, so the section's height is already stable across the switches
+// a user actually makes. Kept as a no-op because it is called from the mode
+// switch and from the phone layer.
+function equalizeEngineSubHeights(){ /* panels stack now; nothing to equalize */ }
 
 /* Click handler for the five engine cards.
 
@@ -9530,31 +9594,77 @@ function selEngineMode(card){
   document.querySelectorAll('#engine-mode-grid .mcard')
     .forEach(c => c.classList.remove('sel'));
   card.classList.add('sel');
-  currentEngine = card.dataset.engine;
+  baseEngine = card.dataset.engine;
+  applyEngineMode();
+}
+
+function setEngineBook(mode){
+  engineBook = (mode === 'on') ? 'on' : 'off';
+  document.querySelectorAll('#engine-book-seg .seg-btn')
+    .forEach(b => b.classList.toggle('sel', b.dataset.book === engineBook));
+  applyEngineMode();
+}
+
+// The status name for the engine as configured. Reads the two user-facing
+// facts — which engine, at what rating — rather than an internal mode id.
+function engineStatusName(){
+  const book = (engineBook === 'on') ? ' + book' : '';
+  if(baseEngine === 'hybrid')    return 'Hybrid';
+  if(baseEngine === 'stockfish') return 'Flounder ' + currentElo + book;
+  return 'Maia 3 · ' + currentElo + book;
+}
+
+function applyEngineMode(){
+  currentEngine = (baseEngine === 'hybrid') ? 'hybrid'
+                : (engineBook === 'on') ? (baseEngine === 'maia3' ? 'lcmaia' : 'lcsf')
+                : baseEngine;
   equalizeEngineSubHeights();
+
+  // The book toggle is meaningless for a blend — each slot brings its own.
+  const bookRow = document.getElementById('engine-book-row');
+  if(bookRow) bookRow.style.display = (baseEngine === 'hybrid') ? 'none' : '';
+
+  // Which sub-panels are on screen. More than one can be: the rating dial is
+  // shared, so a Flounder bot with a book shows the dial, its variety controls
+  // and the explorer's rating band together, each naming one decision.
+  const show = (baseEngine === 'hybrid') ? ['hybrid'] : ['maia3']
+    .concat(baseEngine === 'stockfish' ? ['stockfish'] : [])
+    .concat(engineBook === 'on' ? [baseEngine === 'maia3' ? 'lcmaia' : 'lcsf'] : []);
   ENGINE_SUBS.forEach(id => {
     const el = document.getElementById('engine-sub-' + id);
-    if(el) el.style.display = 'none';
+    if(el) el.style.display = show.includes(id) ? 'block' : 'none';
   });
-  const sub = document.getElementById('engine-sub-' + currentEngine);
-  if(sub) sub.style.display = 'block';
-  const names = {
-    maia3:    'Maia 3 · ' + currentElo,
-    stockfish:'Stockfish ' + sfLevel,
-    hybrid:   'Hybrid',
-    lcsf:     'LC + SF ' + sfLevel,
-    lcmaia:   'LC + Maia 3',
-  };
-  document.getElementById('st-engine').textContent = names[currentEngine] || currentEngine;
-  document.getElementById('qs-engine-pill').textContent = names[currentEngine] || currentEngine;
+
+  // Re-brand the shared dial and put it on the selected engine's range.
+  if(baseEngine !== 'hybrid'){
+    const spec = SPEEDO_RANGES[baseEngine] || SPEEDO_RANGES.maia3;
+    const lbl = document.getElementById('eng-elo-lbl');
+    if(lbl) lbl.textContent = spec.label;
+    const brand = document.getElementById('speedo-brand');
+    if(brand) brand.textContent = spec.brand;
+    const cm = document.getElementById('eng-credit-maia');
+    const cf = document.getElementById('eng-credit-flounder');
+    if(cm) cm.style.display = (baseEngine === 'maia3') ? '' : 'none';
+    if(cf) cf.style.display = (baseEngine === 'maia3') ? 'none' : '';
+    // The "download Maia first" overlay covers the dial, so it must not sit
+    // over a Flounder rating — Flounder is the engine that needs no download.
+    const ov = document.getElementById('bcp-speedo-overlay');
+    if(ov && baseEngine !== 'maia3') ov.style.display = 'none';
+    else if(typeof bcpMaiaSyncOverlay === 'function') bcpMaiaSyncOverlay();
+    speedoSetRange(spec.min, spec.max);
+  }
+
+  document.getElementById('st-engine').textContent = engineStatusName();
+  document.getElementById('qs-engine-pill').textContent = engineStatusName();
   // Hide with visibility (not display) so the right column keeps its size and
   // the panel stays visually stable across engine selections.
   const mqr = document.getElementById('move-quality-range');
   if(mqr) mqr.style.visibility = (['maia3','lcmaia','hybrid'].includes(currentEngine)) ? '' : 'hidden';
   const tempCol = document.getElementById('engine-temp-col');
-  const tempOff = ['stockfish','lcsf'].includes(currentEngine);
-  // visibility keeps the desktop grid stable; the class lets the phone layer
-  // take it out of the flow instead (see #engine-temp-col.tc-hidden).
+  // Temperature reaches Flounder now: it maps to the Weibull shape c, which is
+  // the same trade Maia's temperature makes — wilder, less consistent, and a
+  // little weaker. So the control is no longer hidden on this engine.
+  const tempOff = false;
   if(tempCol){
     tempCol.style.visibility = tempOff ? 'hidden' : '';
     tempCol.classList.toggle('tc-hidden', tempOff);
@@ -9569,14 +9679,14 @@ function selEngineMode(card){
    (Lichess in-book distribution), never pure Stockfish. Hybrid is partial:
    personality shapes only the Maia-bound share of moves. */
 function personalityEngineState(){
-  if(currentEngine === 'maia3' || currentEngine === 'lcmaia') return 'full';
-  if(currentEngine === 'stockfish' || currentEngine === 'lcsf') return 'inactive';
+  // Every engine now produces something for the personality to act on. Maia
+  // returns a distribution the attractors reweight; Flounder returns a band of
+  // moves around the cost the rating sampled, and the attractors choose within
+  // it. Both are gated by the same CP Budget, so "inactive" no longer has an
+  // engine that deserves it — a hybrid with no weight anywhere aside.
   if(currentEngine === 'hybrid'){
-    const maiaPct = hybridSlots.filter(s=>s.type==='maia').reduce((a,s)=>a+(+s.pct||0),0);
-    const sfPct   = hybridSlots.filter(s=>s.type==='sf').reduce((a,s)=>a+(+s.pct||0),0);
-    if(maiaPct <= 0) return 'inactive';   // all-Stockfish hybrid
-    if(sfPct   <= 0) return 'full';        // all-Maia hybrid
-    return 'partial';                      // mixed → personality on the Maia share only
+    const total = hybridSlots.reduce((a,s)=>a+(+s.pct||0),0);
+    return total > 0 ? 'full' : 'inactive';
   }
   return 'full';
 }
@@ -9658,16 +9768,9 @@ function selectSFLevel(n, fromContainer){
     });
   });
   // Update status
-  const names = {
-    stockfish: 'Stockfish ' + n,
-    hybrid: 'Hybrid',
-    lcsf: 'LC + SF ' + n,
-    maia3: 'Maia 3 · ' + currentElo,
-    lcmaia: 'LC + Maia 3',
-    lc: 'Lichess Explorer'
-  };
-  document.getElementById('st-engine').textContent = names[currentEngine] || currentEngine;
-  document.getElementById('qs-engine-pill').textContent = names[currentEngine] || currentEngine;
+  const _nm = engineStatusName();
+  document.getElementById('st-engine').textContent = _nm;
+  document.getElementById('qs-engine-pill').textContent = _nm;
 }
 
 function setSFVariety(v1, v2){
@@ -9678,10 +9781,15 @@ function setSFVariety(v1, v2){
 }
 
 /* ── Dynamic Hybrid engine slots ─────────────────────────────────────────── */
-// hybridSlots: [{type:'maia'|'sf', elo:number, level:number, pct:number}]
+// hybridSlots: [{type:'maia'|'sf', elo:number, flounderElo:number, pct:number}]
+//
+// Both slot types name a RATING now. An "SF5" slot used to mean skill level 5,
+// which was never a rating at all — the app converts any old one through the
+// legacy map so saved blends keep working, but nothing new should be made in
+// those units.
 let hybridSlots = [
-  { type:'maia', elo:1500,  pct:50 },
-  { type:'sf',   level:5,   pct:50 },
+  { type:'maia', elo:1500,        pct:50 },
+  { type:'sf',   flounderElo:1200, level:5, pct:50 },
 ];
 
 function renderHybridSlots(){
@@ -9691,17 +9799,17 @@ function renderHybridSlots(){
     <div class="hybrid-slot" data-i="${i}">
       <div class="hybrid-slot-type">
         <button class="hybrid-type-btn${s.type==='maia'?' sel':''}" onclick="setHybridType(${i},'maia')">Maia</button>
-        <button class="hybrid-type-btn${s.type==='sf'?' sel':''}" onclick="setHybridType(${i},'sf')">SF</button>
+        <button class="hybrid-type-btn${s.type==='sf'?' sel':''}" onclick="setHybridType(${i},'sf')">Flounder</button>
       </div>
       <div class="hybrid-slot-param">
         ${s.type==='maia'
           ? `<input type="number" min="600" max="2600" step="25" value="${s.elo}"
                style="width:64px;padding:3px 5px;font-family:var(--font-m);font-size:10px;color:var(--amber-bright);background:var(--carbon-raise);border:0.5px solid var(--border-amber);border-radius:2px;text-align:center;outline:none;"
                title="Maia ELO" oninput="hybridSlots[${i}].elo=+this.value">`
-          : `<div style="display:flex;gap:3px;flex-wrap:wrap;">
-               ${[1,2,3,4,5,6,7,8,9,10].map(n=>`<div class="sf-pip${n===s.level?' sel':''}"
-                 data-sf="${n}" onclick="setHybridSF(${i},${n})">SF${n}</div>`).join('')}
-             </div>`
+          : `<input type="number" min="750" max="2400" step="25" value="${s.flounderElo || 1200}"
+               style="width:64px;padding:3px 5px;font-family:var(--font-m);font-size:10px;color:var(--amber-bright);background:var(--carbon-raise);border:0.5px solid var(--border-amber);border-radius:2px;text-align:center;outline:none;"
+               title="Flounder rating (750–2400, the measured range)"
+               oninput="hybridSlots[${i}].flounderElo=+this.value">`
         }
       </div>
       <div class="hybrid-slot-pct">
@@ -9716,8 +9824,8 @@ function renderHybridSlots(){
 
 function setHybridType(i, type){
   hybridSlots[i].type = type;
-  if(type==='sf' && !hybridSlots[i].level) hybridSlots[i].level = 5;
-  if(type==='maia' && !hybridSlots[i].elo)  hybridSlots[i].elo  = 1500;
+  if(type==='sf'   && !hybridSlots[i].flounderElo) hybridSlots[i].flounderElo = 1200;
+  if(type==='maia' && !hybridSlots[i].elo)         hybridSlots[i].elo = 1500;
   renderHybridSlots();
 }
 function setHybridSF(i, level){
@@ -9754,6 +9862,34 @@ function initSpeedo(){
   const minLbl = document.getElementById('speedo-min-lbl');
   const maxLbl = document.getElementById('speedo-max-lbl');
 
+  speedoRedraw();
+
+  updateSpeedo(currentElo);
+
+  // Click on arc
+  svg.addEventListener('click', e=>{
+    const r = svg.getBoundingClientRect();
+    const vbW=360, vbH=200;
+    const scaleX=vbW/r.width, scaleY=vbH/r.height;
+    const px=(e.clientX-r.left)*scaleX - SP_CX;
+    const py=(e.clientY-r.top)*scaleY  - SP_CY;
+    const ang = Math.atan2(py,px);
+    const elo = clampElo(angleToElo(ang));
+    setElo(elo);
+  });
+  _initSpeedoDrag(svg);
+}
+
+// The face of the dial: arc, ticks and end labels. Split out of initSpeedo so
+// switching engines can re-scale it without re-binding the pointer handlers.
+function speedoRedraw(){
+  const track = document.getElementById('speedo-track');
+  const ticks = document.getElementById('speedo-ticks');
+  const minLbl = document.getElementById('speedo-min-lbl');
+  const maxLbl = document.getElementById('speedo-max-lbl');
+  const hub   = document.getElementById('speedo-hub');
+  if(!track || !ticks || !minLbl || !maxLbl || !hub) return;
+
   track.setAttribute('d', arcPath(SP_CX,SP_CY,SP_R,SP_START_DEG,SP_SWEEP_DEG));
   track.setAttribute('stroke-width','14');
 
@@ -9783,20 +9919,22 @@ function initSpeedo(){
 
   hub.setAttribute('cx',SP_CX); hub.setAttribute('cy',SP_CY);
 
-  updateSpeedo(currentElo);
+  minLbl.textContent = SPEEDO.min;
+  maxLbl.textContent = SPEEDO.max;
+  const inp = document.getElementById('elo-input');
+  if(inp){ inp.min = SPEEDO.min; inp.max = SPEEDO.max; }
+}
 
-  // Click on arc
-  svg.addEventListener('click', e=>{
-    const r = svg.getBoundingClientRect();
-    const vbW=360, vbH=200;
-    const scaleX=vbW/r.width, scaleY=vbH/r.height;
-    const px=(e.clientX-r.left)*scaleX - SP_CX;
-    const py=(e.clientY-r.top)*scaleY  - SP_CY;
-    const ang = Math.atan2(py,px);
-    const elo = clampElo(angleToElo(ang));
-    setElo(elo);
-  });
+// Point the dial at a different engine's range, keeping the current rating if
+// it still fits and pulling it to the nearest end if it does not.
+function speedoSetRange(min, max){
+  if(SPEEDO.min === min && SPEEDO.max === max) return;
+  SPEEDO.min = min; SPEEDO.max = max;
+  speedoRedraw();
+  setElo(clampElo(currentElo));
+}
 
+function _initSpeedoDrag(svg){
   // Drag needle
   let dragging=false;
   svg.addEventListener('mousedown', e=>{ dragging=true; e.preventDefault(); });
@@ -9912,8 +10050,9 @@ function setElo(elo){
   updateSpeedo(elo);
   syncLcMaiaFromElometer(elo);
   document.getElementById('elo-input').value = elo;
-  document.getElementById('st-engine').textContent = `Maia 3 · ${elo}`;
-  document.getElementById('qs-engine-pill').textContent = `Maia 3 · ${elo}`;
+  const _nm = (typeof engineStatusName === 'function') ? engineStatusName() : `Maia 3 · ${elo}`;
+  document.getElementById('st-engine').textContent = _nm;
+  document.getElementById('qs-engine-pill').textContent = _nm;
   document.getElementById('tp-elo-display').textContent = elo;
   document.getElementById('pS0').textContent = elo;
   _updateEnginePanelHeader();
@@ -10000,8 +10139,29 @@ function _tempPresetIdFromValue(T){
   if(T < 2.3)  return 'high';
   return 'wild';
 }
-// Human-readable name + formula string for current T
+// Human-readable name + formula string for current T.
+//
+// The same slider does two different things, because the two engines have
+// different shapes to distort. Maia returns a distribution over moves, and T
+// flattens it: p^(1/T). Flounder samples a COST for the turn, so there is no
+// distribution over moves to flatten — T moves the Weibull shape c instead,
+// which trades consistency for a fatter tail. Both make the bot wilder and a
+// little weaker; only one of them is an exponent on a probability, and the
+// readout should not claim otherwise on the engine where it is false.
+//
+// Flounder's copy is blunter about the cost, because unlike the CP Budget band
+// this is NOT rating-neutral: it moves real strength, and the number on the
+// Elometer gets correspondingly less true toward the ends.
 function _tempLabel(T){
+  const fl = (typeof baseEngine !== 'undefined' && baseEngine === 'stockfish');
+  const cx = 'c−' + (0.027 * Math.log(Math.max(0.01, T))).toFixed(3).replace('-', '−');
+  if(fl){
+    if(T < 0.15) return { name:'Grinder', exponent:'c high', desc:'Errors spread evenly — small ones, few disasters' };
+    if(T < 0.7)  return { name:'Steady',  exponent:cx, desc:'More consistent than its rating, and slightly stronger for it' };
+    if(T < 1.3)  return { name:'Neutral', exponent:'c as measured', desc:'The shape the ladder was calibrated on — the rating means what it says' };
+    if(T < 2.3)  return { name:'Streaky', exponent:cx, desc:'Cleaner most moves, worse when it goes wrong — and weaker overall' };
+    return             { name:'Wild',    exponent:cx, desc:'Long clean runs punctuated by real disasters; well below the labelled rating' };
+  }
   if(T < 0.15) return { name:'Top move',  exponent:'argmax', desc:'Always the highest-probability move' };
   const exp = (1/T).toFixed(2);
   if(T < 0.7)  return { name:'Focused', exponent:'p^'+exp, desc:'Sharpens the distribution — mostly top 1-2 moves' };
@@ -12350,6 +12510,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   renderPersonalities();
   renderHybridSlots();
   initSpeedo();
+  applyEngineMode();
   // setElo resizes the drop track, but it does not run on a default boot —
   // markup alone can't size a track that depends on the starting ELO.
   syncDropRange();

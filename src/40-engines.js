@@ -396,6 +396,35 @@ function flounderParams(elo) {
   return { s: T[last][1], c };
 }
 
+// ── Temperature, on an engine that has no distribution to flatten ────────────
+// Maia's Temperature raises p^(1/T): the probabilities flatten, the bot picks
+// less-popular moves more often, and it plays wilder and somewhat worse.
+//
+// Flounder samples a cost rather than a move, so there is nothing to flatten.
+// The analogue is the Weibull SHAPE c. Below 1, lowering c simultaneously puts
+// more mass at zero and fattens the tail: more moves that cost nothing at all,
+// punctuated by rarer but larger disasters. Consistency falls, and the mean
+// cost rises with it — which is the same trade Maia's temperature makes.
+//
+// THIS MOVES REAL STRENGTH, and the label on the control has to say so. The CP
+// Budget band is rating-neutral by construction because it is symmetric; this
+// is not. At the ends of the slider it is worth on the order of 100-150 Elo,
+// and the ladder's own rungs are +/-74, so it is deliberately kept modest:
+// c shifts by at most about 0.03 across the whole range.
+//
+// Symmetric in log-temperature, so T = 1 is exactly neutral and leaves the
+// measured ladder untouched.
+const FLOUNDER_TEMP_C_GAIN = 0.027;
+
+function flounderTempAdjustedC(c) {
+  let T = 1;
+  try {
+    if (typeof botMaiaBaseTemp === 'function') T = botMaiaBaseTemp();
+  } catch (e) { T = 1; }
+  if (!(T > 0) || Math.abs(T - 1) < 1e-9) return c;
+  return Math.max(0.28, Math.min(0.55, c - FLOUNDER_TEMP_C_GAIN * Math.log(T)));
+}
+
 // How far past the sampled target a move may sit and still be chosen.
 //
 // Without this the sampler takes whichever move is NEAREST the target in
@@ -476,9 +505,10 @@ async function flounderChooseMove(fen, elo, depth) {
     const d = scored.map(m => gBest - _flounderScale(evals[m]));
 
     const { s, c } = flounderParams(elo);
+    const cEff = flounderTempAdjustedC(c);
     // Weibull inverse-CDF sample. The heavy tail at c < 1/2 is the point: most
     // turns cost almost nothing and a rare one costs a piece.
-    const tau = s * Math.pow(-Math.log(1 - Math.random()), 1 / c);
+    const tau = s * Math.pow(-Math.log(1 - Math.random()), 1 / cEff);
 
     let k = -1, gap = Infinity;
     for (let i = 0; i < scored.length; i++) {
@@ -488,22 +518,28 @@ async function flounderChooseMove(fen, elo, depth) {
     }
     // d = 0 always qualifies, so this is belt-and-braces.
     if (k < 0) { let lo = Infinity; for (let i = 0; i < d.length; i++) if (d[i] < lo) { lo = d[i]; k = i; } }
+
+    // PERSONALITY. The rating has now decided how much this turn throws away;
+    // personality decides which way. The hook lives in 50-bot-engine.js because
+    // it needs the attractor machinery; when no personality is configured it
+    // returns k unchanged, so this file's behaviour is untouched by default.
+    if (typeof flounderApplyPersonality === 'function') {
+      const alt = flounderApplyPersonality(scored, d, tau, k, FLOUNDER_OVERSHOOT_MARGIN);
+      if (Number.isInteger(alt) && alt >= 0 && alt < scored.length) k = alt;
+    }
     return { uci: scored[k], cp: best - evals[scored[k]], tau };
   } catch (e) {
     return null;
   }
 }
 
-// PERSONALITY HOOK — deliberately not wired yet.
-//
-// This returns one move, so applyMoveAttractors has no distribution to reshape
-// and the personality controls do NOT reach the Stockfish tab. The intended fix
-// is to take the BAND of moves near the target and let attractor-weighted
-// probabilities choose among them: the rating decides how much you throw away,
-// the personality decides which way you throw it. With neutral attractors that
-// must reduce to the nearest-move choice above, or it invalidates the ladder,
-// which is measured on exactly this selection rule — so it needs its own
-// verification pass rather than being folded in blind.
+// The personality hook above is flounderApplyPersonality in 50-bot-engine.js.
+// It takes the band of moves within +/- CP Budget of the selected move's cost
+// and picks among them by closeness-to-target times attractor weight. With
+// neutral attractors the closeness term is the only one, so the argmax is the
+// nearest move to the target — bit for bit the rule the 756-game ladder was
+// measured on. That equivalence is not a nicety: break it and the ladder stops
+// describing the shipped bot.
 
 // Parse MultiPV info lines into {uci: cp} using the deepest score seen for the
 // first move of each pv. Mate scores map to ±(10000 − plies) so nearer mates

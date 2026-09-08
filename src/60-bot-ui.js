@@ -763,8 +763,7 @@ function botGenerateName() {
   var tpLabel = { steady: 'Steady', normal: 'Normal', panicky: 'Panicky' }[botTimePressure] || '';
   var tabLabel = '';
   if (botTab === 'sf') {
-    var lvl = parseInt(document.getElementById('sfLevel').value) || 8;
-    tabLabel = 'Stockfish ' + lvl;
+    tabLabel = 'Flounder ' + flounderSliderElo();
   } else if (botTab === 'maia3') {
     tabLabel = 'Maya ' + (maia3SelectedRating || '1200');
   } else if (botTab === 'maia') {
@@ -784,8 +783,8 @@ function botEngineTag() {
   // Before first move: show configured tab type only
   if (botTab === 'maia3')  return ' ‹Maia3›';
   if (botTab === 'maia')   return ' ‹LC+Maia›';
-  if (botTab === 'lcsf')   return ' ‹LC+SF›';
-  if (botTab === 'sf')     return ' ‹SF›';
+  if (botTab === 'lcsf')   return ' ‹Book+Flounder›';
+  if (botTab === 'sf')     return ' ‹Flounder›';
   if (botTab === 'hybrid') return ' ‹Hybrid›';
   return '';
 }
@@ -824,7 +823,7 @@ function _checkEngineReady(tab) {
   var maiaTabs = ['maia3','maia','lcmaia','hybrid'];
   if (sfTabs.includes(tab)) {
     if (sfWorker && !sfReady) {
-      showEngineWarning('⚠ Stockfish is loading — the first move may be delayed.');
+      showEngineWarning('⚠ The engine is loading — the first move may be delayed.');
     } else if (!sfWorker) {
       // Will be started by sfInit() — no warning needed, just inform
     }
@@ -1079,6 +1078,9 @@ function botCollectConfig(configName, botNameVal) {
     botName: botNameVal || '',
     tab: botTab,
     stockfish: {
+      // `elo` is the value that matters now; `level` is written alongside it
+      // only so a config saved here still opens in an older build.
+      elo: _num('flounderElo', FLOUNDER_ELO_DEFAULT),
       level: _num('sfLevel', 8),
       pressureLevel: _num('sfPressureLevel', 4),
       temperature: _num('sfTemperature', 0)
@@ -1162,8 +1164,13 @@ function botApplyConfig(cfg) {
       var _setTxt = function (id, v) { var e = document.getElementById(id); if (e) e.textContent = v; };
       if (cfg.tab) botSetTab(cfg.tab);
       if (cfg.stockfish) {
-        _setVal('sfLevel', cfg.stockfish.level || 8);
-        _setTxt('sfLevelVal', cfg.stockfish.level || 8);
+        // Configs saved before the rating dial existed carry only a 1-20 skill
+        // level, so convert rather than dropping them onto the default.
+        var _fElo = (cfg.stockfish.elo != null)
+          ? cfg.stockfish.elo
+          : flounderEloFromLegacyLevel(cfg.stockfish.level);
+        _setVal('flounderElo', _fElo);
+        _setTxt('flounderEloVal', _fElo);
         _setVal('sfPressureLevel', cfg.stockfish.pressureLevel || 4);
         _setTxt('sfPressureVal', cfg.stockfish.pressureLevel || 4);
         if (cfg.stockfish.temperature !== undefined) {
@@ -1953,10 +1960,19 @@ window.addEventListener('message', function(e) {
     botSelectedTC = 'untimed';
   }
 
-  // Stockfish level: new panel 1–10 → existing 1–20 (multiply ×2)
+  // Flounder rating. The builder sends `flounderElo` directly; older panels
+  // (and older share links) send a 1–10 pip level, which doubles into the old
+  // 1–20 scale and then converts through the same legacy map as saved configs.
   const sfLvl20 = Math.min(20, Math.max(1, (cfg.sfLevel || 5) * 2));
-  var sfLvlEl = document.getElementById('sfLevel');
-  if (sfLvlEl) { sfLvlEl.value = sfLvl20; document.getElementById('sfLevelVal').textContent = sfLvl20; }
+  const fElo = (cfg.flounderElo != null) ? Math.max(FLOUNDER_ELO_MIN,
+                 Math.min(FLOUNDER_ELO_MAX, Math.round(cfg.flounderElo)))
+             : flounderEloFromLegacyLevel(sfLvl20);
+  var fEloEl = document.getElementById('flounderElo');
+  if (fEloEl) {
+    fEloEl.value = fElo;
+    var fEloOut = document.getElementById('flounderEloVal');
+    if (fEloOut) fEloOut.textContent = fElo;
+  }
   var pressLvl = Math.max(1, sfLvl20 - 4);
   var pressEl = document.getElementById('sfPressureLevel');
   if (pressEl) { pressEl.value = pressLvl; document.getElementById('sfPressureVal').textContent = pressLvl; }
@@ -2100,7 +2116,12 @@ window.addEventListener('message', function(e) {
       var isSf = (s.type === 'stockfish' || s.type === 'sf');
       return {
         type:   isSf ? 'sf' : 'maia',
-        elo:    isSf ? null : (s.elo || 1500), // Maia3 slot ELO, used directly by botMakeMove
+        // Both slot types now carry a real ELO: a Flounder slot is a rating,
+        // exactly like a Maia slot, rather than a skill level pretending to be
+        // one. `level` stays for the plain-search fallback path only.
+        elo:    isSf ? (s.flounderElo != null ? Math.round(s.flounderElo)
+                        : flounderEloFromLegacyLevel(Math.min(20, Math.max(1, (s.sfLevel || s.level || 5) * 2))))
+                     : (s.elo || 1500),
         level:  isSf ? Math.min(20, Math.max(1, (s.sfLevel || s.level || 5) * 2))
                      : Math.round((s.elo || 1500) / 200),
         weight: s.pct || 0

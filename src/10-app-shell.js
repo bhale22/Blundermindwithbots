@@ -2014,7 +2014,7 @@ const TOURS = {
     { sel:'#commitModeChip', title:'How your moves get played',
       body:'This chip sits with your clock and switches how a move is committed. <b>✋ Release to move</b> plays the move the moment you let go. <b>👆 Tap to confirm</b> instead <i>parks</i> the piece on the square with every overlay live, so you can take your finger off the board, read what the move actually does, and only then tap again to play it — or tap a different square to change your mind. On a phone your finger covers the very squares you moved there to read, so this is the difference between seeing the answer and guessing. Tap the chip to switch, even mid-game.' },
     { sel:'#quickBot', title:'Start a game',
-      body:'The fastest way in. The row underneath sets the two things that matter: which opponent — Stockfish 1 is the gentlest, 20 the strongest — and which colour you play. <b>Play as Random</b> re-rolls every game. Pick <b>Open Bot-Builder…</b> from the same list to build your own instead.' },
+      body:'The fastest way in. The row underneath sets the two things that matter: which opponent — Flounder 750 is the gentlest, 2400 the strongest — and which colour you play. <b>Play as Random</b> re-rolls every game. Pick <b>Open Bot-Builder…</b> from the same list to build your own instead.' },
     { sel:'#mpSidebarBtn', title:'Play a friend',
       body:'Two people, one board, over the internet. <b>Inviting a friend with a private link is the recommended way</b> — you know who you are playing. You can post an open challenge instead if you would rather take on a stranger. Either way it runs on the honour system: there is <b>no cheat detection</b>, and once a move is committed there are <b>no take-backs</b>.' },
     { sel:'#botSidebarBtn', title:'Bot Builder',
@@ -4214,24 +4214,64 @@ function peekUp(){
 const SF_LEVEL_MIN = 1;
 const SF_LEVEL_MAX = 20;
 
-// Every read of the level slider goes through here, because parseInt('0') is
-// 0, which is FALSY — the `|| 8` idiom that used to guard these reads turned
-// the weakest setting on the dial into a middling one.
-function sfSliderLevel(fallback){
-  const el = document.getElementById('sfLevel');
+// ── The Flounder rating dial ───────────────────────────────────────
+// The engine tab no longer carries a Skill Level, because Skill Level was never
+// a rating: levels -3 through 2 all measured as the same bot. It carries an ELO
+// instead, and flounderChooseMove turns that into how much a turn should cost.
+//
+// The range is the MEASURED range and nothing more. Nine rungs were calibrated
+// by playing Flounder against Maia at the same rating and searching s for a 50%
+// score — 756 games, mean absolute error 39 Elo — and they span 732 to 2387.
+// The dial stops at 750 and 2400 so every position on it sits inside that
+// envelope: no part of this control is extrapolation the user cannot see.
+const FLOUNDER_ELO_MIN     = 750;
+const FLOUNDER_ELO_MAX     = 2400;
+const FLOUNDER_ELO_STEP    = 25;
+const FLOUNDER_ELO_DEFAULT = 1200;
+
+// Every read of the rating dial goes through here. Same reason the old level
+// reader existed: parseInt('0') is 0, which is FALSY, so the `|| n` idiom
+// silently turned the weakest setting on a dial into a middling one.
+function flounderSliderElo(fallback){
+  const el = document.getElementById('flounderElo');
   const v  = el ? parseInt(el.value, 10) : NaN;
-  if(!Number.isFinite(v)) return (fallback === undefined) ? 8 : fallback;
-  return Math.max(SF_LEVEL_MIN, Math.min(SF_LEVEL_MAX, v));
+  if(!Number.isFinite(v)) return (fallback === undefined) ? FLOUNDER_ELO_DEFAULT : fallback;
+  return Math.max(FLOUNDER_ELO_MIN, Math.min(FLOUNDER_ELO_MAX, v));
 }
 
-const QUICK_SF_MIN = SF_LEVEL_MIN, QUICK_SF_MAX = SF_LEVEL_MAX, QUICK_SF_DEFAULT = 1;
+// Configs saved before the dial existed carry a 1-20 Skill Level. The old map
+// was elo = 650 + (lvl-1)/19*1950; this is its inverse, clamped into the
+// measured range, so an old "Stockfish 20" opens as Flounder 2400.
+function flounderEloFromLegacyLevel(lvl){
+  const n = Number.isFinite(+lvl) ? +lvl : 8;
+  const elo = 650 + (Math.max(1, Math.min(20, n)) - 1) / 19 * 1950;
+  return Math.max(FLOUNDER_ELO_MIN,
+         Math.min(FLOUNDER_ELO_MAX, Math.round(elo / FLOUNDER_ELO_STEP) * FLOUNDER_ELO_STEP));
+}
 
-// Twenty entries made the picker a wall of near-identical numbers. The steps
-// that actually change how a game feels are the low ones, so 1-10 stay
-// individually pickable and 15/20 stand in for "strong" and "full strength".
-// Any other level (one built in the builder) still runs — quickBotSync just
-// shows it as Custom, since the select cannot express it.
-const QUICK_SF_LEVELS = [1,2,3,4,5,6,7,8,9,10,15,20];
+// LEGACY SHIM. Nothing in the bot move path should need a Stockfish skill level
+// any more — Flounder replaced every bot use of one. This survives for the few
+// plain-search fallbacks that still take a level argument, derived from the
+// rating dial so the two can never disagree. Delete it when they are gone.
+function sfSliderLevel(fallback){
+  const el = document.getElementById('flounderElo');
+  if(!el) return (fallback === undefined) ? 8 : fallback;
+  const elo = flounderSliderElo();
+  return Math.max(SF_LEVEL_MIN, Math.min(SF_LEVEL_MAX,
+    Math.round(1 + (elo - 650) * 19 / 1950)));
+}
+
+const QUICK_FLOUNDER_MIN = FLOUNDER_ELO_MIN, QUICK_FLOUNDER_MAX = FLOUNDER_ELO_MAX;
+
+// A first visit should start at the gentlest opponent, which is now the bottom
+// of the measured ladder rather than "level 1".
+const QUICK_FLOUNDER_DEFAULT = 750;
+
+// Coarser than the dial on purpose: a picker is for choosing an opponent, not
+// for tuning one. These are round steps the Maia list also uses, so the two
+// engines can be compared straight down the dropdown. Any other rating (one set
+// in the builder) still runs — quickBotSync just shows it as Custom.
+const QUICK_FLOUNDER_ELOS = [750, 900, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400];
 
 // Maia3 is one 44MB network that answers "what would a human of rating R play
 // here", so a rating is the whole choice — there is no separate strength dial
@@ -4264,17 +4304,17 @@ function quickBotFillLevels(){
   ['quickBotLevels','bmwBotLevels'].forEach(function(id){
     const g = document.getElementById(id);
     if(!g || g.children.length) return;
-    for(const i of QUICK_SF_LEVELS){
+    for(const r of QUICK_FLOUNDER_ELOS){
       const o = document.createElement('option');
-      o.value = String(i);
-      o.textContent = 'Stockfish ' + i;
+      o.value = String(r);
+      o.textContent = 'Flounder ' + r;
       g.appendChild(o);
     }
   });
 }
 
 // Maia's entry depends on whether the 44MB model is on this device, so unlike
-// the Stockfish list it is rebuilt on every sync rather than filled once. The
+// the Flounder list it is rebuilt on every sync rather than filled once. The
 // download states are options too: a dropdown that simply omits Maia until
 // some other screen has been visited never tells anyone Maia exists.
 function _quickBotFillMaia(){
@@ -4390,20 +4430,19 @@ function quickBotSync(){
 // Rest one opponent-select on whatever the bot config currently is.
 function _quickBotPaintSel(sel){
   if(!sel) return;
-  const lvlEl = document.getElementById('sfLevel');
-  const lvl = lvlEl ? (parseInt(lvlEl.value, 10) || QUICK_SF_DEFAULT) : QUICK_SF_DEFAULT;
+  const elo = flounderSliderElo(QUICK_FLOUNDER_DEFAULT);
   // A bot somebody actually NAMED is called that, whatever engine is under it.
-  // Only an unnamed plain-Stockfish bot rests on its level, which is the more
+  // Only an unnamed plain-Flounder bot rests on its rating, which is the more
   // useful label when there is no name to use. Without the name check, a shared
-  // bot called "Test Bot" running Stockfish 10 was announced as "Stockfish 10"
+  // bot called "Test Bot" running Flounder 1500 was announced as "Flounder 1500"
   // by the very control you press to play it, while the notice beside it and
   // the player box both said "Test Bot".
   const _nameEl = document.getElementById('botNameInput');
   const _named  = !!(_nameEl && _nameEl.value.trim());
   const plainSf = !_named && (typeof botTab === 'undefined' || botTab === 'sf') &&
-                  QUICK_SF_LEVELS.includes(lvl);
+                  QUICK_FLOUNDER_ELOS.includes(elo);
   // The same test one tab over. Gated on the model actually being here: with
-  // Maia absent the tab falls back to Stockfish, so resting the picker on
+  // Maia absent the tab falls back to Flounder, so resting the picker on
   // "Maia 1000" would name an opponent that is not the one playing.
   const plainMaia = !_named && typeof botTab !== 'undefined' && botTab === 'maia3' &&
                     typeof maia3SelectedRating !== 'undefined' &&
@@ -4413,7 +4452,7 @@ function _quickBotPaintSel(sel){
   if(plainSf || plainMaia){
     const old = sel.querySelector('option[value="'+CUR+'"]');
     if(old) old.remove();
-    sel.value = plainMaia ? ('maia:' + maia3SelectedRating) : String(lvl);
+    sel.value = plainMaia ? ('maia:' + maia3SelectedRating) : String(elo);
   } else {
     // A bot built in the panel has no level to sit on. Give it its own option
     // carrying its name — otherwise the select would rest on "Open
@@ -4436,7 +4475,7 @@ function _quickBotPaintSel(sel){
 //
 // The builder writes to these same globals, so a bot made there leaves its
 // personality attractors, its bad-day flag and its time-pressure curves behind
-// on the config the quick block then labels "Stockfish 3" or "Maia 1000".
+// on the config the quick block then labels "Flounder 1200" or "Maia 1000".
 // Those leftovers are not cosmetic: attractors reshape a Maia distribution
 // move by move, and a pressure curve floors Stockfish's effective level once a
 // clock is running — which this block can now start. Without clearing them the
@@ -4502,13 +4541,14 @@ function quickBotPick(v){
     quickBotSync();
     return;
   }
-  const lvl = Math.max(QUICK_SF_MIN, Math.min(QUICK_SF_MAX, parseInt(v, 10) || QUICK_SF_DEFAULT));
+  const elo = Math.max(QUICK_FLOUNDER_MIN,
+              Math.min(QUICK_FLOUNDER_MAX, parseInt(v, 10) || QUICK_FLOUNDER_DEFAULT));
   if(typeof botSetTab === 'function') botSetTab('sf');
-  const lvlEl = document.getElementById('sfLevel');
-  if(lvlEl){
-    lvlEl.value = lvl;
-    const out = document.getElementById('sfLevelVal');
-    if(out) out.textContent = lvl;
+  const eloEl = document.getElementById('flounderElo');
+  if(eloEl){
+    eloEl.value = elo;
+    const out = document.getElementById('flounderEloVal');
+    if(out) out.textContent = elo;
   }
   _quickBotPlainConfig();
   quickBotSync();

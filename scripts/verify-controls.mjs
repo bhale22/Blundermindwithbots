@@ -146,10 +146,22 @@ console.log('\nPHONE  390×844');
   // Selecting a different engine swaps the sub-panel and never leaves it folded.
   await tap(page, '#sec-engine .mcard[data-engine="stockfish"]');
   ok('switching engine shows the new sub-panel', await shown(page, '#engine-sub-stockfish'));
-  ok('an engine with no temperature column leaves no gap', await page.evaluate(() =>
-    getComputedStyle(document.getElementById('engine-temp-col')).display === 'none'));
+  // Temperature reaches Flounder now — it maps to the Weibull shape c, which
+  // buys the same trade Maia's temperature does. It used to be hidden here.
+  ok('temperature is offered on Flounder too', await page.evaluate(() =>
+    getComputedStyle(document.getElementById('engine-temp-col')).display !== 'none'));
   ok('...and its blurb follows it', await page.evaluate(() =>
-    /Classical engine/.test(document.getElementById('engine-desc-tail').textContent)));
+    /measured rating/.test(document.getElementById('engine-desc-tail').textContent)));
+  ok('the dial re-brands to the selected engine', await page.evaluate(() =>
+    /Flounder/.test(document.getElementById('speedo-brand').textContent)));
+  ok('and takes the measured range', await page.evaluate(() =>
+    SPEEDO.min === 750 && SPEEDO.max === 2400), await page.evaluate(() => SPEEDO.min + '-' + SPEEDO.max));
+  ok('the opening book is a toggle, not two more engine cards', await page.evaluate(() => {
+    setEngineBook('on');
+    const lcsf = currentEngine === 'lcsf';
+    setEngineBook('off');
+    return lcsf && currentEngine === 'stockfish';
+  }));
   await tap(page, '#sec-engine .mcard[data-engine="maia3"]');
 
   // ── 7. Temperature ──

@@ -2896,7 +2896,7 @@ bsSyncAppearance();
 if(typeof ghostSyncUI === "function") ghostSyncUI();
 // Stockfish 1 is where a first visit should start: the quick block applies it
 // rather than inheriting the builder's own default of 8.
-if(typeof quickBotPick === "function") quickBotPick(String(QUICK_SF_DEFAULT));
+if(typeof quickBotPick === "function") quickBotPick(String(QUICK_FLOUNDER_DEFAULT));
 loadPos(0);
 resizeBoard();
 // The first-visit greeting depends on the product (see the inline shell
