@@ -58,7 +58,7 @@ const strength = await page.evaluate(async ({ fens, attrs }) => {
   }
   return out;
 }, { fens: FENS, attrs: ['attacker','fortkx','trade','spacecadet','gambito','structure',
-                         'grabber','kingsafety','prophylaxis'] });
+                         'grabber','kingsafety','prophylaxis','chaos'] });
 
 console.log('\n1   Every position control actually moves a move');
 {
@@ -264,6 +264,55 @@ console.log('\n7   Metrics measure the thing they are named after');
   ok('a square a pawn can still be pushed at is not', r.opEvictable === 0,
     String(r.opEvictable));
   ok('and neither is one on your own half', r.opOwnHalf === 0, String(r.opOwnHalf));
+}
+
+console.log(String.fromCharCode(10) + '8   Chaos scores the position the move leaves behind');
+{
+  const r = await page.evaluate(() => {
+    const E = new Set();
+    const fen = 'r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R w KQkq - 4 5';
+    const bd = parseFen(fen);
+    const t = turn, ep = epSq, cst = castling;
+    botPlayerColor = 'black';
+    botMinProbPct = 0; botBadDayMode = false; botDayLower = 0; botDayUpper = 100;
+    window._bcpCustomControls = []; window._bcpPieceValues = {};
+    const moves = _fenLegalUcis(fen);
+    const tension = b2 => {
+      const a = buildDirectAtk(b2, E, E, E, E);
+      let x = 0;
+      for (let s2 = 0; s2 < 64; s2++) {
+        const q = b2[s2];
+        if (!q || !a[s2]) continue;
+        x += (a[s2][q.color === 'w' ? 'b' : 'w'] || []).length;
+      }
+      return x;
+    };
+    const t0 = tension(bd);
+    const boosts = v => {
+      window._bcpCpBudget = 300; window._bcpAttractorValues = { chaos: v };
+      const uni = {}; moves.forEach(m => uni[m] = 1 / moves.length);
+      const sh = _botWithPosition(bd, t, ep, cst,
+        () => applyMoveAttractors(uni, { rawWeights: true }));
+      const n = moves.length; const o = {};
+      moves.forEach(m => o[m] = Math.log(Math.max(1e-12, sh[m] || 0) * n));
+      return o;
+    };
+    const ch = boosts(5), si = boosts(-5);
+    const rows = moves.map(m => {
+      const f = fileRankToSq(m.slice(0,2)), to = fileRankToSq(m.slice(2,4));
+      return { dt: tension(applyMove(f, to, bd, ep, 'Q')) - t0, ch: ch[m], si: si[m] };
+    });
+    return {
+      spread: rows.some(x => x.dt > 0) && rows.some(x => x.dt < 0),
+      agree: rows.every(x => x.dt === 0 || (x.dt > 0 ? x.ch > 0 && x.si < 0
+                                                     : x.ch < 0 && x.si > 0)),
+    };
+  });
+  // Judging the position it is standing IN gives every candidate the same score,
+  // which is no preference at all. It has to judge what each move leaves behind.
+  ok('the position offers both sharpening and quieting moves', r.spread);
+  ok('Chaos wants the sharper board and Simplifier the quieter one, on every move',
+    r.agree);
 }
 
 ok('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));

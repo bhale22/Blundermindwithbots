@@ -56,6 +56,8 @@
      letter-spacing:.06em;}
   tr:last-child td{border-bottom:0;}
   .note{font-size:14px; color:var(--dim);}
+  .fx{display:block; margin-top:5px; font-size:12.5px; color:var(--dim);
+      font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
   td.n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--dim);
        text-align:center; width:3rem;}
 </style>
@@ -251,6 +253,22 @@ attacked by the opponent and defended by no bot piece:
   </div>
 
   <div class="a">
+    <h3>Chaos agent &middot; Simplifier</h3>
+    <p class="poles">&minus;5 Simplifier &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Chaos agent +5</p>
+    <p>
+      Measures how much contact there is between the two armies: every piece on the board,
+      counted once for each enemy attacker bearing on it. A quiet position scores near zero;
+      one where captures and recaptures are hanging over several squares at once scores high.
+      It is judged on the position the move <em>leaves behind</em>, so a Chaos agent picks the
+      move that tangles the board and a Simplifier the one that untangles it.
+    </p>
+    <span class="f">tension(board) = &Sigma; over every piece of (enemy pieces attacking it)
+
+logBoost += v &times; scale &times; tanh( (tension(after) &minus; tension(before)) / 4 )</span>
+    <p class="when"><b>Applies to:</b> every move.</p>
+  </div>
+
+  <div class="a">
     <h3>Pawn grabber &middot; Principled</h3>
     <p class="poles">&minus;5 Principled &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Pawn grabber +5</p>
     <p>
@@ -330,26 +348,9 @@ logBoost += v &times; scale &times; tanh( (theirMoves(before) &minus; theirMoves
 <div class="card">
   <h2>Controls that act on the whole turn</h2>
   <p class="note" style="margin-top:0">
-    These four do not score individual moves. They still take a share of the CP Budget, because
+    These three do not score individual moves. They still take a share of the CP Budget, because
     they are still part of the personality.
   </p>
-
-  <div class="a">
-    <h3>Chaos agent &middot; Simplifier</h3>
-    <p class="poles">&minus;5 Simplifier &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Chaos agent +5</p>
-    <p>
-      Measures how <em>sharp</em> the position is by asking Stockfish for its top moves and
-      taking the spread of their evaluations. A wide spread means the position is tactical and
-      one move matters much more than another; a narrow one means it is quiet. Chaos raises
-      the sampling temperature in sharp positions, so the bot reaches further down its own
-      move list exactly where that is most dangerous. Simplifier does the reverse.
-    </p>
-    <span class="f">complexity = 0.6 &times; normalised&nbsp;&sigma;(top-N evaluations)
-           + 0.4 &times; normalised gap to the second-best move
-
-temperature &times;= exp( v &times; 0.08 &times; tanh( (complexity &minus; 0.5) &times; 4 ) )</span>
-    <p class="when"><b>Applies to:</b> the whole turn, by changing temperature.</p>
-  </div>
 
   <div class="a">
     <h3>Front-runner &middot; Swindler</h3>
@@ -435,6 +436,116 @@ temperature = base + fraction &times; multiplier &times; (ceiling &minus; base)<
 </div>
 
 <div class="card">
+  <h2>Custom controls</h2>
+  <p>
+    The named sliders are the ones worth having a name. Beyond them a bot can carry any number
+    of custom controls, built from the measurements below and scored in exactly the same way
+    &mdash; the change the move makes to that measurement, bounded by <code>tanh</code>:
+  </p>
+  <span class="f">logBoost += v &times; scale &times; tanh( (metric(after) &minus; metric(before)) / k )</span>
+  <p style="margin-top:12px">
+    <code>k</code> sets what counts as a big change for that measurement and is listed with
+    each one. A positive slider prefers moves that raise the metric, a negative one moves that
+    lower it. Everything is measured for the <em>bot&rsquo;s</em> side unless it says otherwise.
+    In the formulas, <code>me</code> is the bot and <code>them</code> the opponent.
+  </p>
+
+  <h3 style="margin:18px 0 0">Pawns</h3>
+  <table>
+    <tr><th>Metric</th><th>k</th><th>What it counts</th></tr>
+    <tr><td>Passed pawns</td><td class="n">1</td><td>Own pawns with no enemy pawn ahead of them on their own or either adjacent file.
+      <span class="fx">count of my pawns with no their-pawn ahead on files f&minus;1, f, f+1</span></td></tr>
+    <tr><td>Pawn advancement</td><td class="n">4</td><td>How far the pawns have come, measured as the distance they still have to travel. Any pawn move raises it, from any square, and so does promoting.
+      <span class="fx">&minus; &Sigma;<sub>my pawns</sub> (squares short of promotion)</span></td></tr>
+    <tr><td>Doubled pawns</td><td class="n">1</td><td>Pawns beyond the first on any file.
+      <span class="fx">&Sigma;<sub>files</sub> max(0, myPawnsOnFile &minus; 1)</span></td></tr>
+    <tr><td>Isolated pawns</td><td class="n">1</td><td>Pawns on a file with no own pawn on either adjacent file.
+      <span class="fx">&Sigma;<sub>files f with my pawns, none on f&minus;1 or f+1</sub> myPawnsOnFile</span></td></tr>
+    <tr><td>Pawn islands</td><td class="n">1</td><td>Groups of occupied files separated by at least one empty file.
+      <span class="fx">number of unbroken runs of files holding my pawns</span></td></tr>
+    <tr><td>Connected pawns</td><td class="n">2</td><td>Pawns with an own pawn on an adjacent file within one rank &mdash; the duo and the chain.
+      <span class="fx">count of my pawns with a my-pawn at |&Delta;file| = 1 and |&Delta;rank| &le; 1</span></td></tr>
+    <tr><td>Pawn structure health</td><td class="n">1</td><td>The Rigid/Loose penalty, negated, so higher is tidier.
+      <span class="fx">&minus;(islands + doubled + isolated + unconnected)</span></td></tr>
+  </table>
+
+  <h3 style="margin:18px 0 0">King safety</h3>
+  <table>
+    <tr><th>Metric</th><th>k</th><th>What it counts</th></tr>
+    <tr><td>Enemy pressure on my king</td><td class="n">3</td><td>Enemy attacks on the squares around the own king.
+      <span class="fx">&Sigma;<sub>9 squares around my king</sub> (their attackers on that square)</span></td></tr>
+    <tr><td>King-zone pressure</td><td class="n">3</td><td>The same sum around <em>their</em> king, counting own attacks.
+      <span class="fx">&Sigma;<sub>9 squares around their king</sub> (my attackers on that square)</span></td></tr>
+    <tr><td>Pawn shield on my king</td><td class="n">1</td><td>Own pawns on the six squares one and two ranks in front of the own king.
+      <span class="fx">count of my pawns at |&Delta;file| &le; 1 and 1 &le; &Delta;rank &le; 2 ahead of my king</span></td></tr>
+    <tr><td>Gives check</td><td class="n">1</td><td>Whether the move leaves the opponent in check.
+      <span class="fx">1 if they are in check, else 0</span></td></tr>
+  </table>
+
+  <h3 style="margin:18px 0 0">Material and development</h3>
+  <table>
+    <tr><th>Metric</th><th>k</th><th>What it counts</th></tr>
+    <tr><td>Material balance</td><td class="n">3</td><td>Own material minus the opponent&rsquo;s.
+      <span class="fx">&Sigma; my values &minus; &Sigma; their values, at P1 N3 B3 R5 Q9</span></td></tr>
+    <tr><td>Total pieces on board</td><td class="n">3</td><td>Every piece of either colour. Lower means a simplified position.
+      <span class="fx">count of occupied squares</span></td></tr>
+    <tr><td>Queens on board</td><td class="n">1</td><td>Queens of either colour, 0 to 2.
+      <span class="fx">count of queens, either colour</span></td></tr>
+    <tr><td>Bishop pair</td><td class="n">1</td><td>Whether the bot still holds two bishops.
+      <span class="fx">1 if my bishops &ge; 2, else 0</span></td></tr>
+    <tr><td>Developed minor pieces</td><td class="n">2</td><td>Own knights and bishops off the back rank.
+      <span class="fx">count of my N and B not on my first rank</span></td></tr>
+    <tr><td>Piece centralization</td><td class="n">3</td><td>How close the own pieces stand to the middle of the board. Pawns and the king are not counted.
+      <span class="fx">&Sigma;<sub>my N B R Q</sub> (3.5 &minus; |file &minus; 3.5|) + (3.5 &minus; |rank &minus; 3.5|)</span></td></tr>
+    <tr><td>Knight/bishop outposts</td><td class="n">1</td><td>Own knights and bishops past the middle of the board on a square no enemy pawn can ever attack: every pawn that might have challenged it has gone past or been captured.
+      <span class="fx">count of my N and B in their half with no their-pawn on file &plusmn;1 still behind the square</span></td></tr>
+    <tr><td>My piece mobility</td><td class="n">5</td><td>The number of legal moves available. The same measurement Prophylaxis points at the opponent.
+      <span class="fx">count of my legal moves</span></td></tr>
+  </table>
+
+  <h3 style="margin:18px 0 0">Threats and defence</h3>
+  <table>
+    <tr><th>Metric</th><th>k</th><th>What it counts</th></tr>
+    <tr><td>Attacks on enemy pieces</td><td class="n">3</td><td>Attackers summed over every enemy piece. Counting attacks rather than pieces means a second attacker on an already-attacked piece registers, which is usually the move worth finding.
+      <span class="fx">&Sigma;<sub>their pieces</sub> (my attackers on it)</span></td></tr>
+    <tr><td>My hanging pieces</td><td class="n">2</td><td>Own pieces, king aside, that are attacked and defended zero times.
+      <span class="fx">count of my pieces with their-attackers &gt; 0 and my-defenders = 0</span></td></tr>
+    <tr><td>Loose enemy pieces</td><td class="n">1</td><td>The same test on the other side.
+      <span class="fx">count of their pieces with my-attackers &gt; 0 and their-defenders = 0</span></td></tr>
+    <tr><td>My defended pieces</td><td class="n">3</td><td>Own pieces, king aside, with at least one own defender. Counts pieces.
+      <span class="fx">count of my pieces with my-defenders &ge; 1</span></td></tr>
+    <tr><td>Piece defense (Fort Knox)</td><td class="n">3</td><td>Total defensive cover. Counts <em>defences</em> rather than pieces &mdash; this is the measurement the Fort Knox slider uses.
+      <span class="fx">&Sigma;<sub>my pieces</sub> (my defenders on it)</span></td></tr>
+  </table>
+
+  <h3 style="margin:18px 0 0">Squares</h3>
+  <table>
+    <tr><th>Metric</th><th>k</th><th>What it counts</th></tr>
+    <tr><td>My weak squares</td><td class="n">5</td><td>Empty squares the bot does not attack, over the whole board &mdash; the Space cadet measurement without the centre weighting.
+      <span class="fx">count of empty squares with my-attackers = 0</span></td></tr>
+    <tr><td>Central square control</td><td class="n">3</td><td>Own attacks on the four centre squares. Counts attacks, so two attackers on one square score twice.
+      <span class="fx">&Sigma;<sub>d4 d5 e4 e5</sub> (my attackers on that square)</span></td></tr>
+    <tr><td>Space in enemy half</td><td class="n">5</td><td>Empty squares in the opponent&rsquo;s half that the bot attacks.
+      <span class="fx">count of empty squares in their half with my-attackers &ge; 1</span></td></tr>
+  </table>
+
+  <h3 style="margin:18px 0 0">Rooks</h3>
+  <table>
+    <tr><th>Metric</th><th>k</th><th>What it counts</th></tr>
+    <tr><td>Rooks on open files</td><td class="n">1</td><td>Own rooks on a file with no pawn of either colour.
+      <span class="fx">count of my rooks on files holding no pawns</span></td></tr>
+    <tr><td>Rooks on the 7th rank</td><td class="n">1</td><td>Own rooks on the opponent&rsquo;s second rank.
+      <span class="fx">count of my rooks on their 2nd rank</span></td></tr>
+  </table>
+
+  <p class="note">
+    A custom control can also be gated on game phase, on whether the bot is winning or losing,
+    and on time pressure &mdash; in which case it only takes a share of the budget on the moves
+    where its condition actually holds.
+  </p>
+</div>
+
+<div class="card">
   <h2>Where personality sits in the move pipeline</h2>
   <p>
     The two engines are different shapes, so the personality attaches at a different point in
@@ -471,86 +582,6 @@ temperature = base + fraction &times; multiplier &times; (ceiling &minus; base)<
     a little more than the rating asked for and moves that cost a little less. A real trait
     makes you play below your rating on some moves and above it on others, so a one-sided band
     would turn every personality into a handicap.
-  </p>
-</div>
-
-<div class="card">
-  <h2>Custom controls</h2>
-  <p>
-    Beyond the named sliders, a bot can carry custom controls built from any of the metrics
-    below. Each is scored the same way &mdash; the change the move makes to that metric, bounded
-    by <code>tanh</code>:
-  </p>
-  <span class="f">logBoost += v &times; scale &times; tanh( (metric(after) &minus; metric(before)) / k )</span>
-  <p style="margin-top:12px">
-    <code>k</code> is a per-metric constant setting what counts as a big change for that
-    measurement, and it is listed with each one. A positive slider prefers moves that raise the
-    metric; a negative one prefers moves that lower it. Every metric is measured for the
-    <em>bot&rsquo;s</em> side unless it says otherwise.
-  </p>
-
-  <h3 style="margin:18px 0 0">Pawns</h3>
-  <table>
-    <tr><th>Metric</th><th>k</th><th>What it counts</th></tr>
-    <tr><td>Passed pawns</td><td class="n">1</td><td>Own pawns with no enemy pawn ahead of them on their own or either adjacent file.</td></tr>
-    <tr><td>Pawn advancement</td><td class="n">4</td><td>How far the pawns have come, measured as the distance they still have to travel to promotion, negated. Any pawn move raises it, from any square, and so does promoting.</td></tr>
-    <tr><td>Doubled pawns</td><td class="n">1</td><td>Pawns beyond the first on any file: <code>&Sigma;<sub>files</sub> max(0, count &minus; 1)</code>.</td></tr>
-    <tr><td>Isolated pawns</td><td class="n">1</td><td>Pawns on a file with no own pawn on either adjacent file.</td></tr>
-    <tr><td>Pawn islands</td><td class="n">1</td><td>Groups of occupied files separated by at least one empty file.</td></tr>
-    <tr><td>Connected pawns</td><td class="n">2</td><td>Pawns with an own pawn on an adjacent file within one rank &mdash; the duo and the chain.</td></tr>
-    <tr><td>Pawn structure health</td><td class="n">1</td><td>The negative of the Rigid/Loose penalty: <code>&minus;(islands + doubled + isolated + unconnected)</code>. Higher is tidier.</td></tr>
-  </table>
-
-  <h3 style="margin:18px 0 0">King safety</h3>
-  <table>
-    <tr><th>Metric</th><th>k</th><th>What it counts</th></tr>
-    <tr><td>Enemy pressure on my king</td><td class="n">3</td><td>Enemy attacks summed over the nine squares around the own king.</td></tr>
-    <tr><td>King-zone pressure</td><td class="n">3</td><td>The same nine-square sum, around the <em>enemy</em> king, counting own attacks.</td></tr>
-    <tr><td>Pawn shield on my king</td><td class="n">1</td><td>Own pawns on the six squares one and two ranks in front of the own king.</td></tr>
-    <tr><td>Gives check</td><td class="n">1</td><td>1 if the move leaves the opponent in check, else 0.</td></tr>
-  </table>
-
-  <h3 style="margin:18px 0 0">Material and development</h3>
-  <table>
-    <tr><th>Metric</th><th>k</th><th>What it counts</th></tr>
-    <tr><td>Material balance</td><td class="n">3</td><td>Own material minus the opponent&rsquo;s, at P1 N3 B3 R5 Q9.</td></tr>
-    <tr><td>Total pieces on board</td><td class="n">3</td><td>Every piece of either colour. Lower means a simplified position.</td></tr>
-    <tr><td>Queens on board</td><td class="n">1</td><td>Queens of either colour, 0 to 2.</td></tr>
-    <tr><td>Bishop pair</td><td class="n">1</td><td>1 while the bot still holds two bishops, else 0.</td></tr>
-    <tr><td>Developed minor pieces</td><td class="n">2</td><td>Own knights and bishops no longer on the back rank.</td></tr>
-    <tr><td>Piece centralization</td><td class="n">3</td><td>Summed closeness to the centre over own non-pawn, non-king pieces: <code>(3.5 &minus; |file &minus; 3.5|) + (3.5 &minus; |rank &minus; 3.5|)</code>.</td></tr>
-    <tr><td>Knight/bishop outposts</td><td class="n">1</td><td>Own knights and bishops past the middle of the board on a square no enemy pawn can ever attack: every pawn that might have challenged it has gone past or been captured.</td></tr>
-    <tr><td>My piece mobility</td><td class="n">5</td><td>The number of legal moves available. The same measurement Prophylaxis points at the opponent.</td></tr>
-  </table>
-
-  <h3 style="margin:18px 0 0">Threats and defence</h3>
-  <table>
-    <tr><th>Metric</th><th>k</th><th>What it counts</th></tr>
-    <tr><td>Attacks on enemy pieces</td><td class="n">3</td><td>Attackers summed over every enemy piece. Counting attacks rather than pieces means a second attacker on an already-attacked piece registers, which is usually the move worth finding.</td></tr>
-    <tr><td>My hanging pieces</td><td class="n">2</td><td>Own pieces (king aside) that are attacked and defended zero times.</td></tr>
-    <tr><td>Loose enemy pieces</td><td class="n">1</td><td>The same test on the other side: enemy pieces the bot attacks and the opponent does not defend.</td></tr>
-    <tr><td>My defended pieces</td><td class="n">3</td><td>Own pieces (king aside) with at least one own defender. Counts pieces.</td></tr>
-    <tr><td>Piece defense (Fort Knox)</td><td class="n">3</td><td>Total defensive cover: defenders summed over every own piece. Counts <em>defences</em>, not pieces &mdash; this is the metric the Fort Knox slider uses.</td></tr>
-  </table>
-
-  <h3 style="margin:18px 0 0">Squares</h3>
-  <table>
-    <tr><th>Metric</th><th>k</th><th>What it counts</th></tr>
-    <tr><td>My weak squares</td><td class="n">5</td><td>Empty squares with no own attacker, over the whole board and unweighted &mdash; the Space cadet measurement without the centre weighting.</td></tr>
-    <tr><td>Space in enemy half</td><td class="n">5</td><td>Empty squares in the opponent&rsquo;s half that the bot attacks, whether or not the opponent contests them.</td></tr>
-    <tr><td>Central square control</td><td class="n">3</td><td>Own attacks summed over d4, d5, e4 and e5. Counts attacks, so two attackers on one square score twice.</td></tr>
-  </table>
-
-  <h3 style="margin:18px 0 0">Rooks</h3>
-  <table>
-    <tr><th>Metric</th><th>k</th><th>What it counts</th></tr>
-    <tr><td>Rooks on open files</td><td class="n">1</td><td>Own rooks on a file with no pawn of either colour on it.</td></tr>
-    <tr><td>Rooks on the 7th rank</td><td class="n">1</td><td>Own rooks on the opponent&rsquo;s second rank.</td></tr>
-  </table>
-  <p class="note">
-    A custom control can also be gated on game phase, on whether the bot is winning or losing,
-    and on time pressure &mdash; in which case it only takes a share of the budget on the moves
-    where its condition actually holds.
   </p>
 </div>
 

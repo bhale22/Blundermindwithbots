@@ -1197,6 +1197,7 @@ function applyMoveAttractors(moveProbs, opts) {
   const gambitoVal    = attrVals['gambito']    || 0;
   const attackerVal   = attrVals['attacker']   || 0;
   const structureVal  = attrVals['structure']  || 0;
+  const chaosVal      = attrVals['chaos']      || 0;
   const grabberVal    = attrVals['grabber']    || 0;
   const kingSafetyVal = attrVals['kingsafety'] || 0;
   const prophylaxVal  = attrVals['prophylaxis']|| 0;
@@ -1207,6 +1208,7 @@ function applyMoveAttractors(moveProbs, opts) {
   const hasGambito = gambitoVal    !== 0;
   const hasAttacker = attackerVal  !== 0;
   const hasStructure = structureVal !== 0;
+  const hasChaos     = chaosVal      !== 0;
   const hasGrabber   = grabberVal    !== 0;
   const hasKingSafe  = kingSafetyVal !== 0;
   const hasProphylax = prophylaxVal  !== 0;
@@ -1291,7 +1293,7 @@ function applyMoveAttractors(moveProbs, opts) {
   // ── Per-move reweighting ──────────────────────────────────────────────────
   const needsPerMove = scale > 0 &&
     (hasPiece || hasTrade || hasSpace || hasFortkx || hasGambito || hasAttacker ||
-     hasStructure || hasGrabber || hasKingSafe || hasProphylax || hasCustom);
+     hasStructure || hasChaos || hasGrabber || hasKingSafe || hasProphylax || hasCustom);
   if (!needsPerMove) return _maybeStaleSeek(filtered);
 
   const PIECE_MAP   = { p:'pawn', n:'knight', b:'bishop', r:'rook', q:'queen', k:'king' };
@@ -1352,6 +1354,29 @@ function applyMoveAttractors(moveProbs, opts) {
     }
     return def;
   };
+  // ── Chaos: how much contact there is between the two armies ────────────────
+  // Every piece on the board, counted once for each enemy attacker bearing on
+  // it. In a quiet position almost nothing is touching anything and the number
+  // is near zero; in a melee where captures and recaptures are hanging over
+  // several squares at once it climbs fast. That is what a player means by a
+  // position being sharp, and unlike an engine's evaluation spread it can be
+  // read straight off the attack map that is already being built.
+  //
+  // It has to be cheap for a reason: the point of this control is to score the
+  // position each candidate move LEAVES BEHIND, so it runs once per legal move.
+  // Asking the engine how complex each resulting position is would mean a probe
+  // per candidate, forty times the work of the move itself.
+  const _tension = (bd, atk) => {
+    let t = 0;
+    for (let sq = 0; sq < 64; sq++) {
+      const p = bd[sq];
+      if (!p || !atk[sq]) continue;
+      const foe = p.color === botColorStr ? oppColorStr : botColorStr;
+      t += (atk[sq][foe] || []).length;
+    }
+    return t;
+  };
+
   // ── King safety: enemy attacks on the squares around the bot's king ────────
   // Same definition as the kingDanger custom metric, so the slider and the
   // custom control cannot disagree about what danger means.
@@ -1380,11 +1405,12 @@ function applyMoveAttractors(moveProbs, opts) {
   // actually have played.
   const _oppMobility = (bd) => _legalMoveCount(bd, oppColorStr);
 
-  let currentDefence = 0, currentKingDanger = 0, currentOppMobility = 0;
-  if (hasFortkx || hasKingSafe) {
+  let currentDefence = 0, currentKingDanger = 0, currentOppMobility = 0, currentTension = 0;
+  if (hasFortkx || hasKingSafe || hasChaos) {
     const curAtkFull = buildDirectAtk(board, _EMPTY, _EMPTY, _EMPTY, _EMPTY);
     if (hasFortkx)   currentDefence    = _defence(board, curAtkFull);
     if (hasKingSafe) currentKingDanger = _kingDanger(board, curAtkFull);
+    if (hasChaos)    currentTension    = _tension(board, curAtkFull);
   }
   if (hasProphylax) currentOppMobility = _oppMobility(board);
 
@@ -1613,6 +1639,17 @@ function applyMoveAttractors(moveProbs, opts) {
       const simPenalty = _pawnStructurePenalty(getSimBd(), botColorStr);
       const delta = currentStructPenalty - simPenalty;
       if (delta !== 0) logBoost += structureVal * scale * Math.tanh(delta / kf(1));
+    }
+
+    // ── Chaos agent / Simplifier ──────────────────────────────────────────────
+    // Scores the position the move leaves behind, not the one it was played
+    // from: a Chaos agent wants the board MORE tangled after its turn than
+    // before, a Simplifier wants it quieter. Judging the position it is already
+    // standing in cannot express either preference — every candidate move
+    // inherits the same score.
+    if (hasChaos) {
+      const tense = _tension(getSimBd(), getSimAtkCC());
+      logBoost += chaosVal * scale * Math.tanh((tense - currentTension) / kf(4));
     }
 
     // ── Pawn grabber / Principled ─────────────────────────────────────────────

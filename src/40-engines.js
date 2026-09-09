@@ -642,7 +642,7 @@ function _computeCplxScore(lines) {
 // Returns true if the complexity probe is worth running this move
 function _needsComplexity() {
   const av = window._bcpAttractorValues || {};
-  if ((av['chaos'] || 0) !== 0 || (av['compwin'] || 0) !== 0 || botTimeBehavior === 'complexity') {
+  if ((av['compwin'] || 0) !== 0 || botTimeBehavior === 'complexity') {
     return true;
   }
   // Stalemate seeking needs the eval to know when desperation kicks in
@@ -655,15 +655,9 @@ function _needsComplexity() {
 // Scales base Maia temperature up/down based on position complexity + attractor values
 function complexityAdjustedTemp(baseTemp) {
   const av = window._bcpAttractorValues || {};
-  const chaosV   = av['chaos']   || 0;
   const compwinV = av['compwin'] || 0;
-  if ((chaosV === 0 && compwinV === 0) || sfCplxScore === null) return baseTemp;
+  if (compwinV === 0 || sfCplxScore === null) return baseTemp;
   let temp = baseTemp;
-  if (chaosV !== 0) {
-    // Seek complexity when chaos>0, simplicity when chaos<0
-    const cplxSignal = Math.tanh((sfCplxScore - 0.5) * 4);
-    temp *= Math.exp(chaosV * 0.08 * cplxSignal);
-  }
   // Result-conditioned complexity. This is what makes the control distinct from
   // Chaos: Chaos likes sharp positions all the time, this one only cares once
   // the game has a direction.
