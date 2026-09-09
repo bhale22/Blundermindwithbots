@@ -2014,7 +2014,7 @@ const TOURS = {
     { sel:'#commitModeChip', title:'How your moves get played',
       body:'This chip sits with your clock and switches how a move is committed. <b>✋ Release to move</b> plays the move the moment you let go. <b>👆 Tap to confirm</b> instead <i>parks</i> the piece on the square with every overlay live, so you can take your finger off the board, read what the move actually does, and only then tap again to play it — or tap a different square to change your mind. On a phone your finger covers the very squares you moved there to read, so this is the difference between seeing the answer and guessing. Tap the chip to switch, even mid-game.' },
     { sel:'#quickBot', title:'Start a game',
-      body:'The fastest way in. The row underneath sets the two things that matter: which opponent — Flounder 750 is the gentlest, 2400 the strongest — and which colour you play. <b>Play as Random</b> re-rolls every game. Pick <b>Open Bot-Builder…</b> from the same list to build your own instead.' },
+      body:'The fastest way in. The row underneath sets the two things that matter: which opponent — Flounder 600 is the gentlest, 2400 the strongest — and which colour you play. <b>Play as Random</b> re-rolls every game. Pick <b>Open Bot-Builder…</b> from the same list to build your own instead.' },
     { sel:'#mpSidebarBtn', title:'Play a friend',
       body:'Two people, one board, over the internet. <b>Inviting a friend with a private link is the recommended way</b> — you know who you are playing. You can post an open challenge instead if you would rather take on a stranger. Either way it runs on the honour system: there is <b>no cheat detection</b>, and once a move is committed there are <b>no take-backs</b>.' },
     { sel:'#botSidebarBtn', title:'Bot Builder',
@@ -4221,10 +4221,15 @@ const SF_LEVEL_MAX = 20;
 //
 // The range is the MEASURED range and nothing more. Nine rungs were calibrated
 // by playing Flounder against Maia at the same rating and searching s for a 50%
-// score — 756 games, mean absolute error 39 Elo — and they span 732 to 2387.
-// The dial stops at 750 and 2400 so every position on it sits inside that
-// envelope: no part of this control is extrapolation the user cannot see.
-const FLOUNDER_ELO_MIN     = 750;
+// score — 756 games, mean absolute error 39 Elo — spanning 732 to 2387, plus a
+// tenth rung at 600 measured afterwards (40 games, implied 626).
+//
+// 600 matters more than the other end: it is the whole promise of this engine,
+// a bot a beginner can beat with nothing to download. It was briefly withheld
+// from the dial out of caution, on the grounds that the lowest MEASURED rung
+// was 732 — but the ladder's own extrapolation to 600 turned out to be right
+// when checked, so the caution was costing the product its floor for nothing.
+const FLOUNDER_ELO_MIN     = 600;
 const FLOUNDER_ELO_MAX     = 2400;
 const FLOUNDER_ELO_STEP    = 25;
 const FLOUNDER_ELO_DEFAULT = 1200;
@@ -4265,13 +4270,13 @@ const QUICK_FLOUNDER_MIN = FLOUNDER_ELO_MIN, QUICK_FLOUNDER_MAX = FLOUNDER_ELO_M
 
 // A first visit should start at the gentlest opponent, which is now the bottom
 // of the measured ladder rather than "level 1".
-const QUICK_FLOUNDER_DEFAULT = 750;
+const QUICK_FLOUNDER_DEFAULT = 600;
 
 // Coarser than the dial on purpose: a picker is for choosing an opponent, not
 // for tuning one. These are round steps the Maia list also uses, so the two
 // engines can be compared straight down the dropdown. Any other rating (one set
 // in the builder) still runs — quickBotSync just shows it as Custom.
-const QUICK_FLOUNDER_ELOS = [750, 900, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400];
+const QUICK_FLOUNDER_ELOS = [600, 800, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400];
 
 // Maia3 is one 44MB network that answers "what would a human of rating R play
 // here", so a rating is the whole choice — there is no separate strength dial

@@ -30,7 +30,8 @@ console.log('\n1   The ladder and selector exist');
     margin: typeof FLOUNDER_OVERSHOOT_MARGIN !== 'undefined' ? FLOUNDER_OVERSHOOT_MARGIN : null,
     gone: typeof sfReganProbs === 'undefined',
   }));
-  ok('nine measured points are present', r.ladder === 9, String(r.ladder));
+  // Nine from the 756-game adaptive run, plus 600 measured afterwards.
+  ok('ten measured points are present', r.ladder === 10, String(r.ladder));
   ok('the selector is defined', r.chooser);
   ok('flounderParams is defined', r.params);
   ok('the overshoot cap is set', r.margin === 0.5, String(r.margin));
@@ -46,6 +47,11 @@ console.log('\n2   Parameters track the measured ladder');
   });
   ok('732 reproduces its measured s exactly',
     Math.abs(r[732].s - 0.1133) < 1e-6, r[732].s.toFixed(5));
+  // 600 is the rung the product is really about: the opponent a beginner can
+  // beat with nothing to download. Measured separately at 40 games (implied
+  // 626) after the main run, so it gets checked by name.
+  ok('600 reproduces its measured s exactly',
+    Math.abs(r[600].s - 0.1196) < 1e-6, r[600].s.toFixed(5));
   ok('1118 reproduces its measured s exactly',
     Math.abs(r[1118].s - 0.1001) < 1e-6, r[1118].s.toFixed(5));
   const eloOrder = [600, 732, 1118, 1559, 2387, 2600];
@@ -59,7 +65,22 @@ console.log('\n2   Parameters track the measured ladder');
     r[600].c.toFixed(3) + ' -> ' + r[2600].c.toFixed(3));
 }
 
-console.log('\n3   It picks moves, and respects the overshoot cap');
+console.log('\n2b  Flounder 600 is reachable, not clamped away');
+{
+  const r = await page.evaluate(() => {
+    botSetTab('sf');
+    const el = document.getElementById('flounderElo');
+    if (el) el.value = 600;
+    return { min: FLOUNDER_ELO_MIN, sliderMin: el ? +el.min : null,
+             eff: botEffectiveElo(), quickLo: QUICK_FLOUNDER_ELOS[0] };
+  });
+  ok('the floor is 600', r.min === 600, String(r.min));
+  ok('the slider reaches it', r.sliderMin === 600, String(r.sliderMin));
+  ok('and the bot actually plays at it', r.eff === 600, String(r.eff));
+  ok('the quick picker offers it', r.quickLo === 600, String(r.quickLo));
+}
+
+console.log(String.fromCharCode(10) + '3   It picks moves, and respects the overshoot cap');
 {
   const r = await page.evaluate(async () => {
     if (!sfReady) await sfInit();

@@ -60,9 +60,19 @@ console.log('\n1   The hook is installed on both sides');
   const r = await page.evaluate(() => ({
     hook: typeof flounderApplyPersonality === 'function',
     raw: applyMoveAttractors.length >= 2,
+    kern: typeof flounderTargetMean === 'function',
+    // The pull back toward the sampled cost must NOT scale with the CP Budget.
+    // When it did, raising the Budget widened the band and flattened the pull
+    // at the same time, so personality compounded and took over by 300.
+    arity: flounderApplyPersonality.length >= 6,
+    mean: typeof flounderTargetMean === 'function'
+      ? +flounderTargetMean(0.0885, 0.433).toFixed(4) : null,
   }));
   ok('flounderApplyPersonality exists', r.hook);
   ok('applyMoveAttractors takes the rawWeights option', r.raw);
+  ok('the target mean is available as the closeness kernel', r.kern);
+  ok('and the selector takes it rather than reusing the band', r.arity);
+  ok('the kernel is a plausible cost scale', r.mean > 0.05 && r.mean < 1, String(r.mean));
   ok('the probe returned usable positions', probe.length >= 3, probe.length + ' positions');
 }
 
@@ -90,8 +100,12 @@ const run = (cfg) => page.evaluate(([probe, cfg]) => {
         if (gg < gap) { gap = gg; k0 = i; }
       }
       if (k0 < 0) continue;
+      // The kernel is the mean of the target distribution, exactly as
+      // flounderChooseMove computes it. Omitting it would silently exercise
+      // the fallback path instead of the one that ships.
+      const kern = flounderTargetMean(0.0885, 0.433);
       const k = _botWithPosition(bd, t, ep, cst,
-        () => flounderApplyPersonality(pos.moves, pos.d, tau, k0, MARGIN));
+        () => flounderApplyPersonality(pos.moves, pos.d, tau, k0, MARGIN, kern));
       rows.push({ tau, k0, k, d0: pos.d[k0], dk: pos.d[k], cap: tau + MARGIN });
     }
   }

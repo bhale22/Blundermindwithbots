@@ -66,7 +66,12 @@ const browser = await chromium.launch();
     ok('and a blend has no book toggle to get wrong', r.bookRowHidden);
   }
 
-  console.log('\n3   One Elometer, wearing the selected engine');
+  const ENGINE_RANGE = await page.evaluate(() => {
+  selEngineMode(document.querySelector('#engine-mode-grid .mcard[data-engine="stockfish"]'));
+  return engineEloRange();
+});
+
+console.log('\n3   One Elometer, wearing the selected engine');
   {
     const r = await page.evaluate(() => {
       const pick = e => selEngineMode(
@@ -85,46 +90,63 @@ const browser = await chromium.launch();
       return { m, f };
     });
     ok('Maia brands it Maia', /Maia/.test(r.m.brand), r.m.brand);
-    ok('and spans the range the network was conditioned over',
-      r.m.min === 600 && r.m.max === 2600, r.m.min + '-' + r.m.max);
     ok('Flounder brands it Flounder', /Flounder/.test(r.f.brand), r.f.brand);
-    ok('and stops at the measured range',
-      r.f.min === 750 && r.f.max === 2400, r.f.min + '-' + r.f.max);
-    ok('the typed input agrees with the dial',
-      r.f.inpMin === 750 && r.f.inpMax === 2400, r.f.inpMin + '-' + r.f.inpMax);
+    // The FACE is identical on both, so a rating sits at the same place on the
+    // arc whichever engine is selected — they are the same quantity and should
+    // not look like two different ones. Only the reachable span differs.
+    ok('the markings never move', r.m.min === 600 && r.m.max === 2600 &&
+      r.f.min === 600 && r.f.max === 2600,
+      r.m.min + '-' + r.m.max + ' / ' + r.f.min + '-' + r.f.max);
+    ok('the typed input follows the engine reach',
+      r.f.inpMin === ENGINE_RANGE.lo && r.f.inpMax === ENGINE_RANGE.hi,
+      r.f.inpMin + '-' + r.f.inpMax);
     ok('Maia carries the maiachess credit', r.m.maiaCredit && !r.m.flCredit);
     ok('Flounder carries the Stockfish credit', r.f.flCredit && !r.f.maiaCredit);
   }
 
-  console.log('\n4   A rating outside the new range is pulled in, not kept');
+  console.log('\n4   A rating outside the reachable span is pulled in, not kept');
   {
     const r = await page.evaluate(() => {
       selEngineMode(document.querySelector('#engine-mode-grid .mcard[data-engine="maia3"]'));
       setElo(2600);
       selEngineMode(document.querySelector('#engine-mode-grid .mcard[data-engine="stockfish"]'));
       const high = currentElo;
-      setElo(750);
       selEngineMode(document.querySelector('#engine-mode-grid .mcard[data-engine="maia3"]'));
       setElo(600);
       selEngineMode(document.querySelector('#engine-mode-grid .mcard[data-engine="stockfish"]'));
-      return { high, low: currentElo };
+      const low = currentElo;
+      const lockHi = getComputedStyle(document.getElementById('speedo-locked-hi')).display !== 'none';
+      const lockLo = getComputedStyle(document.getElementById('speedo-locked-lo')).display !== 'none';
+      return { high, low, lockHi, lockLo };
     });
-    ok('Maia 2600 becomes Flounder 2400', r.high === 2400, String(r.high));
-    ok('Maia 600 becomes Flounder 750', r.low === 750, String(r.low));
+    ok('a rating above the reach comes back to the top of it',
+      r.high === ENGINE_RANGE.hi, String(r.high));
+    ok('and one below it, to the bottom', r.low === ENGINE_RANGE.lo, String(r.low));
+    ok('the unreachable span is drawn rather than silently absent',
+      (ENGINE_RANGE.hi < 2600) === r.lockHi && (ENGINE_RANGE.lo > 600) === r.lockLo,
+      'hi:' + r.lockHi + ' lo:' + r.lockLo);
   }
 
   console.log('\n5   The download overlay belongs to Maia, not to the dial');
   {
     const r = await page.evaluate(() => {
-      bcpMaiaSetStatus('no-cache', false);
+      const shown = id => getComputedStyle(document.getElementById(id)).display !== 'none';
+      bcpMaiaSetStatus('no-cache', false);   // a private window, or a first visit
       selEngineMode(document.querySelector('#engine-mode-grid .mcard[data-engine="maia3"]'));
-      const onMaia = getComputedStyle(document.getElementById('bcp-speedo-overlay')).display !== 'none';
+      const onMaia = shown('bcp-speedo-overlay');
       selEngineMode(document.querySelector('#engine-mode-grid .mcard[data-engine="stockfish"]'));
-      const onFlounder = getComputedStyle(document.getElementById('bcp-speedo-overlay')).display !== 'none';
-      return { onMaia, onFlounder };
+      const onFlounder = shown('bcp-speedo-overlay');
+      // The overlay's PARENT carries .overlay-on, and that class hides the dial
+      // itself. Hiding only the overlay element left an empty box where the
+      // Elometer should be — invisible on any machine with Maia already cached,
+      // which is why it shipped.
+      const dialUp = shown('speedo-svg');
+      const wrapCls = document.getElementById('bcp-speedo-overlay').parentElement.className;
+      return { onMaia, onFlounder, dialUp, wrapCls };
     });
     ok('with no model, Maia asks for the download', r.onMaia);
     ok('but Flounder never does — it has nothing to download', !r.onFlounder);
+    ok('and the Elometer is actually on screen for it', r.dialUp, r.wrapCls);
   }
 
   console.log('\n6   Save and load survive the new shape');

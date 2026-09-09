@@ -1081,7 +1081,7 @@ function _ccPressureMatch(cond, botClock, oppClock) {
 // Residual leak, known and deliberate: a personality whose preferences
 // correlate with cost (one that likes sacrifices) still drifts downward.
 // Symmetry makes that second-order and measurable instead of guaranteed.
-function flounderApplyPersonality(moves, d, tau, k0, margin) {
+function flounderApplyPersonality(moves, d, tau, k0, margin, kernel) {
   try {
     const budget = window._bcpCpBudget != null ? +window._bcpCpBudget : 0;
     if (!(budget > 0)) return k0;
@@ -1093,6 +1093,25 @@ function flounderApplyPersonality(moves, d, tau, k0, margin) {
     // ln(1 + budget/100) is exactly "budget centipawns at an equal position".
     const w = Math.log(1 + budget / 100);
     if (!(w > 0)) return k0;
+
+    // How steeply the choice is pulled back toward the sampled cost. This is
+    // NOT the band width, and the difference is the whole behaviour of the
+    // control.
+    //
+    // It used to be the band width, which made the Budget do two things at
+    // once: widen the set of eligible moves AND flatten the pull toward the
+    // target. Those compound, so personality grew far faster than the number
+    // on the dial suggested — at Budget 300 the bot played its favourite 97%
+    // of the time and the rating had effectively stopped participating. The
+    // histogram is what exposed it; the arithmetic had looked reasonable.
+    //
+    // The yardstick is the bot's own typical error instead: the mean of the
+    // target distribution. Budget still widens what is eligible and still
+    // scales how hard the attractors push (through applyMoveAttractors), but
+    // it no longer also weakens the rating's grip. So the two stay in
+    // proportion the way they do on the Maia path, where the pull is the
+    // log-probability gap and the Budget does not touch it.
+    const wk = (kernel > 0 && isFinite(kernel)) ? kernel : w;
 
     const band = [];
     for (let i = 0; i < moves.length; i++) {
@@ -1118,7 +1137,7 @@ function flounderApplyPersonality(moves, d, tau, k0, margin) {
       // the attractor weight. With neutral attractors every aw is equal and the
       // argmax is simply the move nearest the target — bit for bit the rule the
       // 756-game ladder measured. That reduction is the whole safety argument.
-      const score = Math.log(aw) - Math.abs(d[i] - tau) / w;
+      const score = Math.log(aw) - Math.abs(d[i] - tau) / wk;
       if (score > bestScore) { bestScore = score; bestI = i; }
     }
     return bestI;
@@ -1628,7 +1647,7 @@ function sfPickLevel(targetLevel) {
 // The distribution is symmetric (p(-1) = p(+1)), so this widens the spread of
 // an opponent's play without moving its average strength — which is what the
 // control claims to do. At the very ends of the dial the clamp makes it
-// slightly one-sided; there is no calibration outside 750-2400 to spend.
+// slightly one-sided; there is no calibration outside 600-2400 to spend.
 const FLOUNDER_VARIETY_STEP = 100;
 
 function flounderVarietyOffset() {

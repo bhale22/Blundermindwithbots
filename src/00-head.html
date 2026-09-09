@@ -3198,7 +3198,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
   <div class="bmw-tag">Stop getting blundermined.</div>
 
   <!-- PRIMARY. Starts whatever opponent the sidebar's quick-start block is
-       already holding — Flounder 750 on a first visit — with no builder in the
+       already holding — Flounder 600 on a first visit — with no builder in the
        way. The two selects are that block's own selects, mirrored by
        quickBotSync(): change one and the other moves. The panel therefore
        never starts a game the sidebar cannot account for afterwards. -->
@@ -4052,12 +4052,12 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <!-- Flounder panel -->
     <div id="bpanel-sf">
       <div style="margin-bottom:8px;">
-        <label style="font-size:9px;color:var(--text-dim);">Rating (750–2400)</label>
+        <label style="font-size:9px;color:var(--text-dim);">Rating (600–2400)</label>
         <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
-          <input type="range" id="flounderElo" min="750" max="2400" step="25" value="1200" style="flex:1;" oninput="document.getElementById('flounderEloVal').textContent=this.value">
+          <input type="range" id="flounderElo" min="600" max="2400" step="25" value="1200" style="flex:1;" oninput="document.getElementById('flounderEloVal').textContent=this.value">
           <span id="flounderEloVal" style="font-size:11px;font-weight:700;min-width:30px;">1200</span>
         </div>
-        <div style="font-size:8px;color:var(--text-dim);margin-top:2px;">Every rating on this dial was measured against Maia at the same rating — 756 games, ±74 each.</div>
+        <div style="font-size:8px;color:var(--text-dim);margin-top:2px;">Every rating on this dial was measured by playing it against Maia at the same rating — 796 games in all.</div>
       </div>
       <div style="background:rgba(74,159,212,0.08);border:0.5px solid rgba(74,159,212,0.2);border-radius:4px;padding:6px;margin-bottom:8px;font-size:8.5px;color:var(--text-secondary);">
         🎣 <strong>Flounder</strong> is built on <strong>Stockfish</strong> (GPL-3.0). It scores every legal

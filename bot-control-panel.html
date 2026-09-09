@@ -2746,7 +2746,7 @@ body.fj .picon{font-weight:500;}
           <div class="mcard" data-engine="stockfish" onclick="selEngineCard(this)">
             <div class="mdot"></div>
             <div class="mname">Flounder</div>
-            <div class="mdesc">Based on Stockfish, moves sampled with Flounder to tune ELO level. 750–2400, nothing to download.</div>
+            <div class="mdesc">Based on Stockfish, moves sampled with Flounder to tune ELO level. 600–2400, nothing to download.</div>
           </div>
           <div class="mcard" data-engine="hybrid" onclick="selEngineCard(this)">
             <div class="mdot"></div>
@@ -2822,6 +2822,16 @@ body.fj .picon{font-weight:500;}
                 </defs>
                 <path id="speedo-track" fill="none" stroke="#22262d" stroke-width="14" stroke-linecap="round"/>
                 <path id="speedo-fill" fill="none" stroke="url(#gold-arc)" stroke-width="14" stroke-linecap="butt" filter="url(#glow-f)"/>
+                <!-- AFTER the fill, deliberately. The gold always starts at the
+                     dial's minimum, so a locked LOW span drawn underneath would
+                     be painted over and read as available — the one direction
+                     this must never fail in. Hatched rather than merely darker:
+                     at dial size a slightly deeper grey reads as shadow, and
+                     "you cannot go here" has to survive being glanced at. -->
+                <path id="speedo-locked-lo" fill="none" stroke="#3a4048" stroke-width="14"
+                      stroke-dasharray="2 4" style="display:none;"/>
+                <path id="speedo-locked-hi" fill="none" stroke="#3a4048" stroke-width="14"
+                      stroke-dasharray="2 4" style="display:none;"/>
                 <circle id="speedo-tip" r="5.5" fill="#ffe9a0" filter="url(#glow-f)" style="display:none;"/>
                 <g id="speedo-ticks"></g>
                 <line id="speedo-needle" stroke="#e8aa40" stroke-width="2" stroke-linecap="round"/>
@@ -2839,6 +2849,7 @@ body.fj .picon{font-weight:500;}
             </div>
             </div><!-- /speedo flex row -->
             <div style="text-align:center;margin-top:4px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);">Click arc · drag needle · or type ELO · snaps to ±25</div>
+            <div id="speedo-range-note" style="text-align:center;margin-top:2px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);"></div>
 
             <!-- Strength guardrails — current Budget / Floor + one-click ELO recommendation -->
             <div class="cp-guardrails">
@@ -3851,10 +3862,34 @@ const SPEEDO = { min:600, max:2600, step:25, default:1500 };
 // Maia's range is the range its network was conditioned over. Flounder's is the
 // range that was actually measured — nine rungs from 732 to 2387 — and it stops
 // there rather than extrapolating past the evidence.
+// The FACE of the dial never changes: 600 to 2600, same ticks, same numbers,
+// whichever engine is selected. Only how much of it can be reached does.
+//
+// Re-scaling the arc per engine was worse than useless — it made 1500 sit in a
+// different place on Flounder than on Maia, so the two ratings looked like
+// different quantities when the whole point is that they are the same one.
+// The unreachable span is drawn as a dead segment instead, which also says
+// WHY it is unreachable rather than hiding that there is anything beyond.
 const SPEEDO_RANGES = {
-  maia3:     { min:600, max:2600, brand:'Maia 3 Elometer',  label:'Maia 3 — ELO' },
-  stockfish: { min:750, max:2400, brand:'Flounder Elometer', label:'Flounder — rating' },
+  maia3:     { brand:'Maia 3 Elometer',   label:'Maia 3 — ELO' },
+  stockfish: { brand:'Flounder Elometer', label:'Flounder — rating' },
 };
+
+// What each engine can actually be set to. Maia spans the range its network
+// was conditioned over. Flounder spans the range that was MEASURED — beyond
+// the ladder's ends the parameters are extrapolation, and a dial that lets you
+// select a number nobody has checked is exactly the kind of quiet fiction this
+// panel is supposed to avoid.
+const ENGINE_ELO_RANGE = {
+  maia3:     { lo:600, hi:2600 },
+  // 600 is measured (see FLOUNDER_LADDER), so the two engines start in the
+  // same place — which matters, because the whole point of Flounder is being
+  // the beatable opponent that needs no download.
+  stockfish: { lo:600, hi:2400 },
+};
+function engineEloRange(){
+  return ENGINE_ELO_RANGE[_isFlounderTab() ? 'stockfish' : 'maia3'] || ENGINE_ELO_RANGE.maia3;
+}
 // Speedometer geometry — viewBox 360×185, arc centered at (180,155), R=108
 // Orientation: 600 ELO at 9:15 (SVG 188°), 2600 ELO at 2:45 (SVG 353°)
 // Sweep = 165° clockwise through the bottom — opens upward like a dashboard gauge.
@@ -7214,7 +7249,14 @@ function sv(inp, displayId, fmt){
   if(el) el.textContent = fmt ? fmt(v) : v;
 }
 function snapElo(v){ return Math.round(v / SPEEDO.step) * SPEEDO.step; }
-function clampElo(v){ return Math.max(SPEEDO.min, Math.min(SPEEDO.max, snapElo(v))); }
+// Clamps to what the ENGINE can do; the drawing range (SPEEDO) is fixed and is
+// only ever the geometry. typeof-guarded because this file defines clampElo
+// well above engineEloRange, and a few boot paths call it early.
+function clampElo(v){
+  let lo = SPEEDO.min, hi = SPEEDO.max;
+  try { const r = engineEloRange(); if(r){ lo = r.lo; hi = r.hi; } } catch(e){}
+  return Math.max(lo, Math.min(hi, snapElo(v)));
+}
 
 /* ══════════════════════════════════════════════════════════════
    INTERACTIVE STYLE GAUGE
@@ -9648,10 +9690,16 @@ function applyEngineMode(){
     if(cf) cf.style.display = (baseEngine === 'maia3') ? 'none' : '';
     // The "download Maia first" overlay covers the dial, so it must not sit
     // over a Flounder rating — Flounder is the engine that needs no download.
-    const ov = document.getElementById('bcp-speedo-overlay');
-    if(ov && baseEngine !== 'maia3') ov.style.display = 'none';
-    else if(typeof bcpMaiaSyncOverlay === 'function') bcpMaiaSyncOverlay();
-    speedoSetRange(spec.min, spec.max);
+    //
+    // This used to hide the overlay ELEMENT directly and stop there, which was
+    // a bug with no symptom on a machine that already had Maia cached: the
+    // wrap keeps an `overlay-on` class, and `.speedo-dial.overlay-on
+    // .speedo-svg{display:none}` hides the dial itself. So on any profile
+    // WITHOUT the model — a private window, a first visit — selecting Flounder
+    // hid the overlay and the Elometer with it, leaving an empty box. One
+    // function owns both halves now.
+    if(typeof bcpMaiaSyncOverlay === 'function') bcpMaiaSyncOverlay();
+    speedoSyncRange();
   }
 
   document.getElementById('st-engine').textContent = engineStatusName();
@@ -9816,9 +9864,9 @@ function renderHybridSlots(){
           ? `<input type="number" min="600" max="2600" step="25" value="${s.elo}"
                style="width:64px;padding:3px 5px;font-family:var(--font-m);font-size:10px;color:var(--amber-bright);background:var(--carbon-raise);border:0.5px solid var(--border-amber);border-radius:2px;text-align:center;outline:none;"
                title="Maia ELO" oninput="hybridSlots[${i}].elo=+this.value">`
-          : `<input type="number" min="750" max="2400" step="25" value="${s.flounderElo || 1200}"
+          : `<input type="number" min="600" max="2400" step="25" value="${s.flounderElo || 1200}"
                style="width:64px;padding:3px 5px;font-family:var(--font-m);font-size:10px;color:var(--amber-bright);background:var(--carbon-raise);border:0.5px solid var(--border-amber);border-radius:2px;text-align:center;outline:none;"
-               title="Flounder rating (750–2400, the measured range)"
+               title="Flounder rating (600–2400, the measured range)"
                oninput="hybridSlots[${i}].flounderElo=+this.value">`
         }
       </div>
@@ -9935,13 +9983,33 @@ function speedoRedraw(){
   if(inp){ inp.min = SPEEDO.min; inp.max = SPEEDO.max; }
 }
 
-// Point the dial at a different engine's range, keeping the current rating if
-// it still fits and pulling it to the nearest end if it does not.
-function speedoSetRange(min, max){
-  if(SPEEDO.min === min && SPEEDO.max === max) return;
-  SPEEDO.min = min; SPEEDO.max = max;
-  speedoRedraw();
-  setElo(clampElo(currentElo));
+// The face is fixed; this only marks off what the selected engine cannot reach
+// and pulls the needle back inside if it is standing outside.
+function speedoSyncRange(){
+  const r = engineEloRange();
+  const seg = (id, fromElo, toElo, on) => {
+    const el = document.getElementById(id);
+    if(!el) return;
+    if(!on){ el.style.display = 'none'; return; }
+    const f = e => ((e - SPEEDO.min) / (SPEEDO.max - SPEEDO.min)) * SP_SWEEP_DEG;
+    const a0 = f(fromElo), a1 = f(toElo);
+    el.setAttribute('d', arcPath(SP_CX, SP_CY, SP_R, SP_START_DEG + a0, Math.max(0, a1 - a0)));
+    el.style.display = '';
+  };
+  seg('speedo-locked-lo', SPEEDO.min, r.lo, r.lo > SPEEDO.min);
+  seg('speedo-locked-hi', r.hi, SPEEDO.max, r.hi < SPEEDO.max);
+
+  const inp = document.getElementById('elo-input');
+  if(inp){ inp.min = r.lo; inp.max = r.hi; }
+
+  const note = document.getElementById('speedo-range-note');
+  if(note){
+    note.textContent = (r.lo > SPEEDO.min || r.hi < SPEEDO.max)
+      ? 'Measured ' + r.lo + '–' + r.hi + '. The hatched arc is past that, so it cannot be selected.'
+      : '';
+  }
+  const clamped = clampElo(currentElo);
+  if(clamped !== currentElo) setElo(clamped); else updateSpeedo(currentElo);
 }
 
 function _initSpeedoDrag(svg){
@@ -10166,12 +10234,19 @@ const FLOUNDER_CHART_MOVES = [
 // so the blue bar is as strong as a real personality at full tilt and no
 // stronger. Re-measure it if the attractor scaling ever changes.
 const FLOUNDER_CHART_PREF = [0, -1, 1, 0, 0];
-const FLOUNDER_CHART_PREF_GAIN = 0.29;
+// Shared with the Maia chart below: both engines put their attractors through
+// the same applyMoveAttractors scaling, so the same damping applies to both.
+// The Maia chart had the identical overstatement and nobody had noticed,
+// because there was nothing to compare it against until Flounder grew a chart
+// of its own that had to agree with it.
+const CHART_PREF_GAIN = 0.29;
+const FLOUNDER_CHART_PREF_GAIN = CHART_PREF_GAIN;
 
 // The shipped ladder, copied from src/40-engines.js. The panel is a separate
 // document and cannot call into the app, so this is a duplicate — if the ladder
 // is ever refitted, both copies move together.
 const PANEL_FLOUNDER_LADDER = [
+  [600, 0.1196],
   [732, 0.1133], [884, 0.1065], [1118, 0.1001], [1289, 0.0941], [1559, 0.0885],
   [1696, 0.0832], [1959, 0.0782], [2204, 0.0735], [2387, 0.0691],
 ];
@@ -10208,7 +10283,21 @@ const _panelScale = cp => Math.log(1 + Math.max(0, cp) / 100);
 
 // One selection, given a drawn target. Mirrors flounderChooseMove +
 // flounderApplyPersonality exactly, including the overshoot cap.
-function _flounderPickIdx(d, tau, band, prefs){
+// Mirrors flounderTargetMean in src/40-engines.js.
+function _panelLgamma(x){
+  const g = 7, C = [0.99999999999980993, 676.5203681218851, -1259.1392167224028,
+    771.32342877765313, -176.61502916214059, 12.507343278686905,
+    -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7];
+  if(x < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * x)) - _panelLgamma(1 - x);
+  x -= 1;
+  let a = C[0];
+  const t = x + g + 0.5;
+  for(let i = 1; i < g + 2; i++) a += C[i] / (x + i);
+  return 0.5 * Math.log(2 * Math.PI) + (x + 0.5) * Math.log(t) - t + Math.log(a);
+}
+const _panelTargetMean = (s, c) => s * Math.exp(_panelLgamma(1 + 1 / c));
+
+function _flounderPickIdx(d, tau, band, prefs, kernel){
   let k = -1, gap = Infinity;
   for(let i = 0; i < d.length; i++){
     if(d[i] > tau + PANEL_FLOUNDER_MARGIN) continue;
@@ -10221,7 +10310,7 @@ function _flounderPickIdx(d, tau, band, prefs){
     for(let i = 0; i < d.length; i++){
       if(d[i] > tau + PANEL_FLOUNDER_MARGIN) continue;
       if(Math.abs(d[i] - d[k]) > band) continue;
-      const score = (prefs[i] || 0) - Math.abs(d[i] - tau) / band;
+      const score = (prefs[i] || 0) - Math.abs(d[i] - tau) / kernel;
       if(score > bestScore){ bestScore = score; best = i; }
     }
     k = best;
@@ -10234,11 +10323,12 @@ function _flounderPickIdx(d, tau, band, prefs){
 // rather than a simulation that wobbles every redraw.
 function _flounderSelProbs(d, s, c, band, prefs){
   const N = 3000;
+  const kernel = _panelTargetMean(s, c);
   const out = new Array(d.length).fill(0);
   for(let j = 0; j < N; j++){
     const u = (j + 0.5) / N;
     const tau = s * Math.pow(-Math.log(1 - u), 1 / c);
-    out[_flounderPickIdx(d, tau, band, prefs)] += 1 / N;
+    out[_flounderPickIdx(d, tau, band, prefs, kernel)] += 1 / N;
   }
   return out;
 }
@@ -10354,7 +10444,12 @@ const PERS_CHART_PREF = [0, -0.6, 1.0, 0.4, 0];
 // prob × exp((budget/150) × signal) — the same 150cp-per-log-unit gain.
 function _persAdjusted(adjProbs, budgetCp){
   if(!budgetCp) return adjProbs.slice();
-  const g = budgetCp / 150;
+  // CHART_PREF_GAIN is the tanh(...) damping every real attractor carries.
+  // Without it this bar claimed a maxed personality was worth e^2 on the liked
+  // move at Budget 300, where the engine's own weights top out near e^0.58 —
+  // an overstatement of about 3.4x, and the reason the illustrated bot looked
+  // like it barely consulted its rating.
+  const g = CHART_PREF_GAIN * budgetCp / 150;
   const w = adjProbs.map((p,i)=> p * Math.exp(g * (PERS_CHART_PREF[i] || 0)));
   const s = w.reduce((a,b)=>a+b, 0) || 1;
   return w.map(v=> v/s);
@@ -12692,6 +12787,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   renderPersonalities();
   renderHybridSlots();
   initSpeedo();
+  speedoSyncRange();
   applyEngineMode();
   // setElo resizes the drop track, but it does not run on a default boot —
   // markup alone can't size a track that depends on the starting ELO.

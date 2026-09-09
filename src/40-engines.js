@@ -354,7 +354,24 @@ const REGAN_PROBE_TIMEOUT_MAX_MS = 7000;
 // THIS TABLE IS SPECIFIC TO STOCKFISH 18 lite AT PROBE DEPTH 8. Any change of
 // engine, network or depth invalidates it. scripts/fit-flounder-adaptive-refine
 // is how it gets rebuilt.
+//
+// The 600 rung was added later and is worth its own note. It sits exactly on
+// the slope the table already extrapolated, so it changes no behaviour — what
+// changed is that it is now MEASURED rather than assumed, which is what lets
+// the dial offer 600 at all. 40 games against Maia 600 under the shipped rule:
+//
+//   s = 0.1196  ->  54%  (implied 626)   <- this value, the extrapolation
+//   s = 0.1320  ->  54%  (implied 626)
+//   s = 0.1438  ->  36%  (implied 502)
+//
+// Two things worth carrying forward. The earlier nine-anchor run put 600 at
+// s = 0.1438; under the shipped selection rule that is a 500, not a 600, so
+// the old figure must not be reintroduced. And 0.1196 and 0.1320 measured
+// identically, which is the badly-conditioned bottom end showing up again —
+// down here a wide range of s buys the same strength, so precision in s is
+// not worth chasing.
 const FLOUNDER_LADDER = [
+  [600, 0.1196],
   [732, 0.1133], [884, 0.1065], [1118, 0.1001], [1289, 0.0941], [1559, 0.0885],
   [1696, 0.0832], [1959, 0.0782], [2204, 0.0735], [2387, 0.0691],
 ];
@@ -423,6 +440,28 @@ function flounderTempAdjustedC(c) {
   } catch (e) { T = 1; }
   if (!(T > 0) || Math.abs(T - 1) < 1e-9) return c;
   return Math.max(0.28, Math.min(0.55, c - FLOUNDER_TEMP_C_GAIN * Math.log(T)));
+}
+
+// log-gamma (Lanczos), needed only for the mean of the target distribution.
+function _lgamma(x){
+  const g = 7, C = [0.99999999999980993, 676.5203681218851, -1259.1392167224028,
+    771.32342877765313, -176.61502916214059, 12.507343278686905,
+    -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7];
+  if (x < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * x)) - _lgamma(1 - x);
+  x -= 1;
+  let a = C[0];
+  const t = x + g + 0.5;
+  for (let i = 1; i < g + 2; i++) a += C[i] / (x + i);
+  return 0.5 * Math.log(2 * Math.PI) + (x + 0.5) * Math.log(t) - t + Math.log(a);
+}
+
+// Mean of Weibull(shape c, scale s) — the size of a typical turn's cost at this
+// rating. It is the natural yardstick for "how far from the sampled target am I
+// willing to drift for style", and unlike the CP Budget it does not grow when
+// the personality allowance does. See flounderApplyPersonality for why that
+// distinction turned out to matter.
+function flounderTargetMean(s, c) {
+  return s * Math.exp(_lgamma(1 + 1 / c));
 }
 
 // How far past the sampled target a move may sit and still be chosen.
@@ -524,7 +563,8 @@ async function flounderChooseMove(fen, elo, depth) {
     // it needs the attractor machinery; when no personality is configured it
     // returns k unchanged, so this file's behaviour is untouched by default.
     if (typeof flounderApplyPersonality === 'function') {
-      const alt = flounderApplyPersonality(scored, d, tau, k, FLOUNDER_OVERSHOOT_MARGIN);
+      const alt = flounderApplyPersonality(scored, d, tau, k, FLOUNDER_OVERSHOOT_MARGIN,
+        flounderTargetMean(s, cEff));
       if (Number.isInteger(alt) && alt >= 0 && alt < scored.length) k = alt;
     }
     return { uci: scored[k], cp: best - evals[scored[k]], tau };

@@ -163,8 +163,16 @@ console.log('\nPHONE  390×844');
     await page.evaluate(() => document.getElementById('tt-3').textContent));
   ok('the dial re-brands to the selected engine', await page.evaluate(() =>
     /Flounder/.test(document.getElementById('speedo-brand').textContent)));
-  ok('and takes the measured range', await page.evaluate(() =>
-    SPEEDO.min === 750 && SPEEDO.max === 2400), await page.evaluate(() => SPEEDO.min + '-' + SPEEDO.max));
+  // The markings stay 600-2600 on both engines so a rating sits in the same
+  // place on the arc either way; only the reachable span differs, and the part
+  // that cannot be reached is drawn rather than removed.
+  ok('the markings stay put', await page.evaluate(() =>
+    SPEEDO.min === 600 && SPEEDO.max === 2600),
+    await page.evaluate(() => SPEEDO.min + '-' + SPEEDO.max));
+  ok('but the reach is the measured span', await page.evaluate(() => {
+    const r = engineEloRange();
+    return r.lo >= 600 && r.hi <= 2600 && (r.lo > 600 || r.hi < 2600);
+  }), await page.evaluate(() => { const r = engineEloRange(); return r.lo + '-' + r.hi; }));
   ok('the opening book is a toggle, not two more engine cards', await page.evaluate(() => {
     setEngineBook('on');
     const lcsf = currentEngine === 'lcsf';
