@@ -9261,7 +9261,7 @@ const BOT_TOUR = [
       return lead +
         '<br><br><b>Flounder</b> — Stockfish scoring every legal move, with a layer on top that decides how much the turn should cost and plays accordingly. Its ratings were <i>measured</i>, by playing each rung against Maia at the same rating. Nothing to download.' +
         '<br><br><b>Maia 3</b> — predicts the move a human of a given rating would actually play, so it reproduces human habits rather than human error rates. It is the better opponent when you want the moves to feel familiar rather than merely fallible.' +
-        '<br><br><b>Every control on this page works on both.</b> That used to be the real split: personality reshaped a probability distribution, and only Maia produced one. Flounder now hands the attractors a band of moves either side of the cost it sampled, so the CP Budget, the presets, the custom rules and the temperature all reach it' +
+        '<br><br><b>Every control on this page works on both</b>, by different routes. Maia returns a distribution over moves and the personality reshapes it. Flounder samples how much the turn should cost and hands the personality a band of moves either side of that, to choose within. Either way the CP Budget, the presets, the custom rules and the temperature all reach the bot' +
         (_bcpMaiaReady
           ? '.'
           : ' — and a Flounder bot needs no download to use any of them.') +
@@ -10553,7 +10553,7 @@ function _syncTempScaleLabels(){
     : 'The pipeline in the order the bot runs it: <b>Maia</b>\'s raw odds, then an '
       + '<em>illustrative</em> personality (loves c4, dislikes d4) reweighting them by the '
       + '<b>CP Budget</b>, then <b>temperature</b> sampling what is left. Personality comes '
-      + 'first because that is where applyMoveAttractors sits. Turning temperature down '
+      + 'first because that is where the personality is applied. Turning temperature down '
       + 'does not switch personality off — it makes it DECISIVE: the bot plays the top of '
       + 'the distribution personality just reshaped, every time. Raise the <b>Budget</b> past '
       + 'about 145 here and c4 overtakes e4; from then on a cold bot plays c4 and means it. '

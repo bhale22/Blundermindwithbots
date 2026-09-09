@@ -242,14 +242,12 @@ console.log('\n7   Metrics measure the thing they are named after');
       });
     };
     const atk = delta('attackedPieces');
-    const holes = delta('enemyWeakSquares');
     // rawAttacks over-counts pawns; the real move list is what mobility means.
     let raw = 0;
     for (let sq = 0; sq < 64; sq++) { const q = bd[sq];
       if (q && q.color === 'b') raw += (rawAttacks(sq, bd) || []).length; }
     return {
       atkMax: Math.max(...atk),
-      holesLive: holes.filter(d => d !== 0).length, holesTotal: holes.length,
       mobLegal: _ccMetrics.mobility.fn(bd, ctxFor(bd)), mobRaw: raw,
       opPawnProof: outp('r2q1rk1/pp4pp/2p1p3/3pNp2/8/2P1P3/PP3PPP/R1BQ1RK1 w - - 0 12'),
       opEvictable: outp('r2q1rk1/pp3ppp/2p1p3/3pN3/8/2P1P3/PP3PPP/R1BQ1RK1 w - - 0 12'),
@@ -259,9 +257,6 @@ console.log('\n7   Metrics measure the thing they are named after');
   // A second attacker on an already-attacked piece has to register, which is
   // invisible if the metric counts PIECES rather than attacks.
   ok('attacks on enemy pieces counts attacks, not pieces', r.atkMax >= 2, '+' + r.atkMax);
-  // It used to be a fact about the opponent that the bot could not act on.
-  ok('holes-I-control responds to the bot\'s own move',
-    r.holesLive >= 6, r.holesLive + '/' + r.holesTotal);
   ok('mobility counts moves, not attacked squares', r.mobLegal < r.mobRaw,
     r.mobLegal + ' legal vs ' + r.mobRaw + ' attacked');
   ok('a pawn-proof square is an outpost even unsupported', r.opPawnProof === 1,

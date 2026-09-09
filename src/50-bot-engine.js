@@ -647,17 +647,28 @@ const _ccMetrics = {
     }
   },
   pawnAdvance: {
+    // Measured as distance still to travel, negated, rather than distance
+    // covered. The two are the same number up to a constant while every pawn is
+    // on the board, and they differ in exactly one place: promotion.
+    //
+    // A pawn that promotes leaves the board. Counting distance covered, its
+    // contribution vanishes with it and queening reads as a large step
+    // BACKWARDS. Counting distance remaining, a pawn one square from the end
+    // contributes -1 and the piece it becomes contributes 0, so promoting scores
+    // the same +1 as any other pawn move. Nothing else can remove one of the
+    // bot's own pawns inside a single move of its own, so there is no other case
+    // to confuse it with.
     label: 'Pawn advancement', needsAtk: false, k: 4,
     fn(bd, ctx) {
       const me = ctx.me;
-      let s = 0;
+      let remaining = 0;
       for (let sq = 0; sq < 64; sq++) {
         const p = bd[sq];
         if (!p || p.piece !== 'P' || p.color !== me) continue;
-        const r = (sq / 8) | 0;
-        s += me === 'w' ? (6 - r) : (r - 1); // ranks advanced from the pawn's start
+        const r = (sq / 8) | 0;                    // 0 = 8th rank
+        remaining += me === 'w' ? r : (7 - r);     // squares short of promotion
       }
-      return s;
+      return -remaining;
     }
   },
   kingZoneAttackers: {
@@ -966,30 +977,6 @@ const _ccMetrics = {
         const p = bd[sq];
         if (!p || p.color !== me || p.piece === 'K' || !atk[sq]) continue;
         if ((atk[sq][me] || []).length > 0) c++;
-      }
-      return c;
-    }
-  },
-  enemyWeakSquares: {
-    // Was: every hole in the enemy half, whether or not the bot could do
-    // anything about it. Which holes exist is a fact about the OPPONENT's
-    // pieces, so the bot's own move barely moved the number — measured, only
-    // 3 of 47 candidate moves changed it at all, and each by 1, in the wrong
-    // direction: stepping onto a hole removed it from the count.
-    //
-    // A hole the bot has covered is a square it can use. That is the version
-    // a move can actually improve.
-    label: 'Holes I control in enemy camp', needsAtk: true, k: 3,
-    fn(bd, ctx) {
-      const me = ctx.me, opp = ctx.opp, atk = ctx.atk;
-      if (!atk) return 0;
-      let c = 0;
-      for (let sq = 0; sq < 64; sq++) {
-        if (bd[sq] || !atk[sq]) continue;
-        const r = (sq / 8) | 0;
-        const inEnemyHalf = me === 'w' ? (r <= 3) : (r >= 4);
-        if (!inEnemyHalf) continue;
-        if ((atk[sq][opp] || []).length === 0 && (atk[sq][me] || []).length > 0) c++;
       }
       return c;
     }

@@ -58,14 +58,30 @@ test('passedPawns: lone pawn is passed; an enemy pawn on an adjacent file blocks
   assert.equal(metric('passedPawns', '8/1p6/8/P7/8/8/8/8 w - - 0 1'), 0); // black b7 covers a-passer
 });
 
-test('pawnAdvance: sums ranks advanced from the start rank', () => {
-  assert.equal(metric('pawnAdvance', '8/8/8/P7/8/8/8/8 w - - 0 1'), 3); // a-pawn on rank 5 = 3 steps
-  assert.equal(metric('pawnAdvance', 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w - - 0 1'), 0);
+test('pawnAdvance: counts the distance still to travel, negated', () => {
+  assert.equal(metric('pawnAdvance', '8/8/8/P7/8/8/8/8 w - - 0 1'), -3);   // a5 is 3 short
+  assert.equal(metric('pawnAdvance', 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w - - 0 1'), -48);
 });
 
-test('outpost: supported, unchallengeable minor counts; an enemy pawn that can challenge cancels it', () => {
-  assert.equal(metric('outpost', '8/8/8/3N4/4P3/8/8/8 w - - 0 1'), 1); // Nd5 backed by e4-pawn
-  assert.equal(metric('outpost', '4p3/8/8/3N4/4P3/8/8/8 w - - 0 1'), 0); // black e-pawn can come to challenge
+test('pawnAdvance: promoting is progress, not a loss', () => {
+  // Measured as distance covered, a promoted pawn takes its whole contribution
+  // off the board with it and queening reads as a large step backwards. This is
+  // the case the metric is shaped around.
+  const beforePromo = metric('pawnAdvance', '8/P7/8/8/8/8/8/8 w - - 0 1');  // a7, one short
+  const afterPromo  = metric('pawnAdvance', 'Q7/8/8/8/8/8/8/8 w - - 0 1');  // queened
+  assert.equal(beforePromo, -1);
+  assert.equal(afterPromo, 0);
+  assert.ok(afterPromo > beforePromo, 'promoting must score as an advance');
+});
+
+test('outpost: a square no enemy pawn can reach, whether or not a pawn defends it', () => {
+  assert.equal(metric('outpost', '8/8/8/3N4/4P3/8/8/8 w - - 0 1'), 1);  // Nd5, nothing can challenge
+  assert.equal(metric('outpost', '4p3/8/8/3N4/4P3/8/8/8 w - - 0 1'), 0); // black e-pawn can come to e6
+  // Pawn support is not what makes an outpost. A knight on a square no pawn can
+  // ever attack is on one; a knight a pawn can still be pushed at is not, however
+  // well defended it happens to be.
+  assert.equal(metric('outpost', '8/8/8/3N4/8/8/8/8 w - - 0 1'), 1);     // unsupported, unchallengeable
+  assert.equal(metric('outpost', '2p5/8/8/3N4/4P3/8/8/8 w - - 0 1'), 0); // c7 pawn can come to c6
 });
 
 test('centralization: central pieces score higher than rim pieces', () => {
