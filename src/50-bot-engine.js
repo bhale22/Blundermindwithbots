@@ -593,6 +593,31 @@ function botOppClockDeficit(clockMs) {
 //               the metric sets needsAtk:true, else null.
 // Higher return = "more of this feature for the bot"; k scales the tanh response.
 const _CC_PIECEVAL = { P: 1, N: 3, B: 3, R: 5, Q: 9, K: 0 };
+// Counting a side's real moves.
+//
+// rawAttacks was the cheap stand-in and it is wrong in a way that matters: a
+// pawn ATTACKS two squares and MOVES to one, so a board full of pawns reads as
+// almost twice as mobile as it is. On a normal middlegame position rawAttacks
+// says 60 where the truth is 32.
+//
+// En passant and castling are deliberately left out (ep = -1, no rights). The
+// simulated boards these run on do not track castling rights, so including them
+// would let a king that has just moved still look able to castle — and since
+// both the before and after counts make the same assumption, the DELTA, which
+// is all any control uses, is unaffected.
+//
+// This costs about 40x what rawAttacks did, and is only paid by bots that
+// switch on a control which asks for it.
+const _NO_CASTLE = { wK:false, wQ:false, bK:false, bQ:false };
+function _legalMoveCount(bd, colour) {
+  let n = 0;
+  for (let sq = 0; sq < 64; sq++) {
+    const p = bd[sq];
+    if (p && p.color === colour) n += legalMovesFor(sq, bd, -1, _NO_CASTLE).length;
+  }
+  return n;
+}
+
 const _ccMetrics = {
   passedPawns: {
     label: 'Passed pawns', needsAtk: false, k: 1,
@@ -660,14 +685,17 @@ const _ccMetrics = {
     }
   },
   attackedPieces: {
-    label: 'Enemy pieces attacked', needsAtk: true, k: 2,
+    // Counts ATTACKS, not pieces. Piling a second attacker onto an enemy piece
+    // that is already attacked once and defended once is exactly the move this
+    // control should want, and counting pieces made it invisible.
+    label: 'Attacks on enemy pieces', needsAtk: true, k: 3,
     fn(bd, ctx) {
       const me = ctx.me, opp = ctx.opp, atk = ctx.atk;
       if (!atk) return 0;
       let cnt = 0;
       for (let sq = 0; sq < 64; sq++) {
         const p = bd[sq];
-        if (p && p.color === opp && atk[sq] && (atk[sq][me] || []).length > 0) cnt++;
+        if (p && p.color === opp && atk[sq]) cnt += (atk[sq][me] || []).length;
       }
       return cnt;
     }
@@ -719,7 +747,6 @@ const _ccMetrics = {
     label: 'Knight/bishop outposts', needsAtk: false, k: 1,
     fn(bd, ctx) {
       const me = ctx.me, opp = ctx.opp;
-      const fwd = me === 'w' ? -1 : 1; // Δr the bot's pawns advance (r=0 is rank 8)
       let count = 0;
       for (let sq = 0; sq < 64; sq++) {
         const p = bd[sq];
@@ -727,17 +754,13 @@ const _ccMetrics = {
         const f = sq % 8, r = (sq / 8) | 0;
         // Must be advanced past the middle into enemy territory.
         if (me === 'w' ? (r > 4) : (r < 3)) continue;
-        // Supported by a friendly pawn one rank behind, diagonally.
-        const br = r - fwd;
-        let supported = false;
-        for (const df of [-1, 1]) {
-          const bf = f + df;
-          if (bf < 0 || bf > 7 || br < 0 || br > 7) continue;
-          const q = bd[br * 8 + bf];
-          if (q && q.piece === 'P' && q.color === me) { supported = true; break; }
-        }
-        if (!supported) continue;
-        // No enemy pawn on an adjacent file can ever advance to challenge it.
+        // What makes a square an outpost is that NO ENEMY PAWN CAN EVER REACH
+        // the square that attacks it — they have all gone past it, or off the
+        // board. Being defended by one of your own pawns is nice and is not the
+        // definition: a knight sitting on a pawn-supported square that a pawn
+        // can still be pushed at is not on an outpost, it is on a square it is
+        // about to be evicted from. The support test used to be required here,
+        // which counted exactly those squares and missed the real ones.
         let challengeable = false;
         for (let s2 = 0; s2 < 64 && !challengeable; s2++) {
           const q = bd[s2];
@@ -875,16 +898,8 @@ const _ccMetrics = {
 
   // ── Piece placement & activity ─────────────────────────────────────────────
   mobility: {
-    label: 'My piece mobility', needsAtk: false, k: 8,
-    fn(bd, ctx) {
-      const me = ctx.me;
-      let m = 0;
-      for (let sq = 0; sq < 64; sq++) {
-        const p = bd[sq];
-        if (p && p.color === me) { const a = rawAttacks(sq, bd); m += a ? a.length : 0; }
-      }
-      return m;
-    }
+    label: 'My piece mobility', needsAtk: false, k: 5,
+    fn(bd, ctx) { return _legalMoveCount(bd, ctx.me); }
   },
   bishopPair: {
     label: 'Bishop pair', needsAtk: false, k: 1,
@@ -956,16 +971,25 @@ const _ccMetrics = {
     }
   },
   enemyWeakSquares: {
-    label: 'Holes in enemy camp', needsAtk: true, k: 5,
+    // Was: every hole in the enemy half, whether or not the bot could do
+    // anything about it. Which holes exist is a fact about the OPPONENT's
+    // pieces, so the bot's own move barely moved the number — measured, only
+    // 3 of 47 candidate moves changed it at all, and each by 1, in the wrong
+    // direction: stepping onto a hole removed it from the count.
+    //
+    // A hole the bot has covered is a square it can use. That is the version
+    // a move can actually improve.
+    label: 'Holes I control in enemy camp', needsAtk: true, k: 3,
     fn(bd, ctx) {
       const me = ctx.me, opp = ctx.opp, atk = ctx.atk;
       if (!atk) return 0;
       let c = 0;
       for (let sq = 0; sq < 64; sq++) {
-        if (bd[sq]) continue;
+        if (bd[sq] || !atk[sq]) continue;
         const r = (sq / 8) | 0;
         const inEnemyHalf = me === 'w' ? (r <= 3) : (r >= 4);
-        if (inEnemyHalf && atk[sq] && (atk[sq][opp] || []).length === 0) c++;
+        if (!inEnemyHalf) continue;
+        if ((atk[sq][opp] || []).length === 0 && (atk[sq][me] || []).length > 0) c++;
       }
       return c;
     }
@@ -1362,16 +1386,12 @@ function applyMoveAttractors(moveProbs, opts) {
     return c;
   };
   // ── Prophylaxis: how much room the OPPONENT has ────────────────────────────
-  // Reuses the mobility metric's definition (raw attacked squares summed over
-  // the side's pieces), pointed at the opponent instead of the bot.
-  const _oppMobility = (bd) => {
-    let m = 0;
-    for (let sq = 0; sq < 64; sq++) {
-      const p = bd[sq];
-      if (p && p.color === oppColorStr) { const a = rawAttacks(sq, bd); m += a ? a.length : 0; }
-    }
-    return m;
-  };
+  // Their LEGAL MOVES, not the squares their pieces bear on. A pawn attacks two
+  // squares and moves to one, so counting attacks made a position full of pawns
+  // look nearly twice as free as it is — on a normal middlegame position, 60
+  // against a true 32. Restricting somebody means taking away moves they could
+  // actually have played.
+  const _oppMobility = (bd) => _legalMoveCount(bd, oppColorStr);
 
   let currentDefence = 0, currentKingDanger = 0, currentOppMobility = 0;
   if (hasFortkx || hasKingSafe) {

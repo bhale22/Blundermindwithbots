@@ -301,10 +301,22 @@ logBoost += v &times; scale &times; tanh( (danger(before) &minus; danger(after))
       at itself, and it is the difference between a bot playing its own game and one playing
       against you.
     </p>
-    <span class="f">theirRoom(board) = &Sigma; over enemy pieces of (squares that piece attacks)
+    <span class="f">theirMoves(board) = number of LEGAL MOVES the opponent has
 
-logBoost += v &times; scale &times; tanh( (theirRoom(before) &minus; theirRoom(after)) / 3 )</span>
-    <p class="when"><b>Applies to:</b> every move.</p>
+logBoost += v &times; scale &times; tanh( (theirMoves(before) &minus; theirMoves(after)) / 3 )</span>
+    <p class="note" style="margin:9px 0 0">
+      Legal moves, not attacked squares. A pawn <em>attacks</em> two squares and <em>moves</em>
+      to one, so counting attacks made a position full of pawns read as nearly twice as free as
+      it was &mdash; 60 against a true 32 on an ordinary middlegame position. Restricting
+      somebody means taking away moves they could actually have played. Castling and en passant
+      are excluded from both counts, since the simulated board does not track castling rights;
+      the difference is what the control uses, so it is unaffected.
+    </p>
+    <p class="when">
+      <b>Applies to:</b> every move. It is the most expensive control here &mdash; it generates
+      the opponent's whole move list for every candidate &mdash; and only bots that switch it
+      on pay for it.
+    </p>
   </div>
 
   <div class="a">
@@ -486,7 +498,7 @@ temperature = base + fraction &times; multiplier &times; (ceiling &minus; base)<
   <table>
     <tr><th>Metric</th><th>k</th><th>What it counts</th></tr>
     <tr><td>Passed pawns</td><td class="n">1</td><td>Own pawns with no enemy pawn ahead of them on their own or either adjacent file.</td></tr>
-    <tr><td>Pawn advancement</td><td class="n">4</td><td>Total ranks advanced from the starting rank, summed over all own pawns.</td></tr>
+    <tr><td>Pawn advancement</td><td class="n">4</td><td>Total ranks advanced from the starting rank, summed over all own pawns. Any pawn move raises it, from any square &mdash; one for a single step, two for a double. <em>Promotion is a blind spot:</em> the promoted pawn leaves the board, so the count drops. A board metric cannot tell a promoted pawn from a captured one. The CP&nbsp;Budget check is what stops it mattering &mdash; declining a queen costs far more than any budget allows.</td></tr>
     <tr><td>Doubled pawns</td><td class="n">1</td><td>Pawns beyond the first on any file: <code>&Sigma;<sub>files</sub> max(0, count &minus; 1)</code>.</td></tr>
     <tr><td>Isolated pawns</td><td class="n">1</td><td>Pawns on a file with no own pawn on either adjacent file.</td></tr>
     <tr><td>Pawn islands</td><td class="n">1</td><td>Groups of occupied files separated by at least one empty file.</td></tr>
@@ -512,14 +524,14 @@ temperature = base + fraction &times; multiplier &times; (ceiling &minus; base)<
     <tr><td>Bishop pair</td><td class="n">1</td><td>1 while the bot still holds two bishops, else 0.</td></tr>
     <tr><td>Developed minor pieces</td><td class="n">2</td><td>Own knights and bishops no longer on the back rank.</td></tr>
     <tr><td>Piece centralization</td><td class="n">3</td><td>Summed closeness to the centre over own non-pawn, non-king pieces: <code>(3.5 &minus; |file &minus; 3.5|) + (3.5 &minus; |rank &minus; 3.5|)</code>.</td></tr>
-    <tr><td>Knight/bishop outposts</td><td class="n">1</td><td>Own knights and bishops past the middle of the board standing on a square defended by one of the bot&rsquo;s own pawns.</td></tr>
-    <tr><td>My piece mobility</td><td class="n">8</td><td>Squares attacked, summed over every own piece. The same measurement Prophylaxis points at the opponent.</td></tr>
+    <tr><td>Knight/bishop outposts</td><td class="n">1</td><td>Own knights and bishops past the middle of the board on a square <strong>no enemy pawn can ever attack</strong> &mdash; every pawn that could have challenged it has gone past or been captured. Being defended by one of your own pawns is not required and never was the point: a piece on a supported square that a pawn can still be pushed at is not on an outpost, it is on a square it is about to be evicted from.</td></tr>
+    <tr><td>My piece mobility</td><td class="n">5</td><td>The number of legal moves available, counted properly rather than by attacked squares. The same measurement Prophylaxis points at the opponent.</td></tr>
   </table>
 
   <h3 style="margin:18px 0 0">Threats and defence</h3>
   <table>
     <tr><th>Metric</th><th>k</th><th>What it counts</th></tr>
-    <tr><td>Enemy pieces attacked</td><td class="n">2</td><td>Enemy pieces with at least one own attacker. Counts pieces, not attacks.</td></tr>
+    <tr><td>Attacks on enemy pieces</td><td class="n">3</td><td>Attackers summed over every enemy piece &mdash; it counts <em>attacks</em>, so piling a second attacker onto a piece that is already attacked once and defended once is rewarded, which is exactly the move this control should want.</td></tr>
     <tr><td>My hanging pieces</td><td class="n">2</td><td>Own pieces (king aside) that are attacked and defended zero times.</td></tr>
     <tr><td>Loose enemy pieces</td><td class="n">1</td><td>The same test on the other side: enemy pieces the bot attacks and the opponent does not defend.</td></tr>
     <tr><td>My defended pieces</td><td class="n">3</td><td>Own pieces (king aside) with at least one own defender. Counts pieces.</td></tr>
@@ -530,9 +542,9 @@ temperature = base + fraction &times; multiplier &times; (ceiling &minus; base)<
   <table>
     <tr><th>Metric</th><th>k</th><th>What it counts</th></tr>
     <tr><td>My weak squares</td><td class="n">5</td><td>Empty squares with no own attacker, over the whole board and unweighted &mdash; the plain version of what the Space cadet slider weights.</td></tr>
-    <tr><td>Holes in enemy camp</td><td class="n">5</td><td>Empty squares in the opponent&rsquo;s half that the <em>opponent</em> does not attack.</td></tr>
+    <tr><td>Space in enemy half</td><td class="n">5</td><td>Empty squares in the opponent&rsquo;s half that the bot attacks, whether or not the opponent contests them.</td></tr>
+    <tr><td>Holes I control in enemy camp</td><td class="n">3</td><td>Empty squares in the opponent&rsquo;s half that the opponent does not attack <em>and the bot does</em> &mdash; holes it can actually use. Without that last condition the number was a fact about the opponent&rsquo;s pieces that the bot&rsquo;s own move barely touched: 3 candidate moves in 47 changed it at all, each by one, and stepping onto a hole <em>lowered</em> the count.</td></tr>
     <tr><td>Central square control</td><td class="n">3</td><td>Own attacks summed over d4, d5, e4 and e5. Counts attacks, so two attackers on one square score twice.</td></tr>
-    <tr><td>Space in enemy half</td><td class="n">5</td><td>Empty squares in the opponent&rsquo;s half that the bot does attack.</td></tr>
   </table>
 
   <h3 style="margin:18px 0 0">Rooks</h3>

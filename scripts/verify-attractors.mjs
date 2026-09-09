@@ -224,6 +224,53 @@ console.log('\n6   The two poles really are opposites');
   ok('Rigid dislikes it, not merely fails to reward it', r.stNeg);
 }
 
+console.log('\n7   Metrics measure the thing they are named after');
+{
+  const r = await page.evaluate(() => {
+    const E = new Set();
+    const ctxFor = bd => ({ me:'w', opp:'b', atk: buildDirectAtk(bd, E, E, E, E) });
+    const outp = fen => _ccMetrics.outpost.fn(parseFen(fen), { me:'w', opp:'b' });
+    const fen = 'r1bq1rk1/pp2bppp/2n1pn2/2pp4/3P1B2/2PBPN2/PP1N1PPP/R2Q1RK1 w - - 0 9';
+    const bd = parseFen(fen), ep = epSq;
+    const moves = _fenLegalUcis(fen);
+    const delta = key => {
+      const b0 = _ccMetrics[key].fn(bd, ctxFor(bd));
+      return moves.map(m => {
+        const f = fileRankToSq(m.slice(0,2)), t = fileRankToSq(m.slice(2,4));
+        const nb = applyMove(f, t, bd, ep, 'Q');
+        return _ccMetrics[key].fn(nb, ctxFor(nb)) - b0;
+      });
+    };
+    const atk = delta('attackedPieces');
+    const holes = delta('enemyWeakSquares');
+    // rawAttacks over-counts pawns; the real move list is what mobility means.
+    let raw = 0;
+    for (let sq = 0; sq < 64; sq++) { const q = bd[sq];
+      if (q && q.color === 'b') raw += (rawAttacks(sq, bd) || []).length; }
+    return {
+      atkMax: Math.max(...atk),
+      holesLive: holes.filter(d => d !== 0).length, holesTotal: holes.length,
+      mobLegal: _ccMetrics.mobility.fn(bd, ctxFor(bd)), mobRaw: raw,
+      opPawnProof: outp('r2q1rk1/pp4pp/2p1p3/3pNp2/8/2P1P3/PP3PPP/R1BQ1RK1 w - - 0 12'),
+      opEvictable: outp('r2q1rk1/pp3ppp/2p1p3/3pN3/8/2P1P3/PP3PPP/R1BQ1RK1 w - - 0 12'),
+      opOwnHalf:   outp('r2q1rk1/pp3ppp/2p1p3/3p4/8/2P1PN2/PP3PPP/R1BQ1RK1 w - - 0 12'),
+    };
+  });
+  // A second attacker on an already-attacked piece has to register, which is
+  // invisible if the metric counts PIECES rather than attacks.
+  ok('attacks on enemy pieces counts attacks, not pieces', r.atkMax >= 2, '+' + r.atkMax);
+  // It used to be a fact about the opponent that the bot could not act on.
+  ok('holes-I-control responds to the bot\'s own move',
+    r.holesLive >= 6, r.holesLive + '/' + r.holesTotal);
+  ok('mobility counts moves, not attacked squares', r.mobLegal < r.mobRaw,
+    r.mobLegal + ' legal vs ' + r.mobRaw + ' attacked');
+  ok('a pawn-proof square is an outpost even unsupported', r.opPawnProof === 1,
+    String(r.opPawnProof));
+  ok('a square a pawn can still be pushed at is not', r.opEvictable === 0,
+    String(r.opEvictable));
+  ok('and neither is one on your own half', r.opOwnHalf === 0, String(r.opOwnHalf));
+}
+
 ok('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
 
 await browser.close();
