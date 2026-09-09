@@ -65,7 +65,39 @@ console.log('\n2   Parameters track the measured ladder');
     r[600].c.toFixed(3) + ' -> ' + r[2600].c.toFixed(3));
 }
 
-console.log('\n2b  Flounder 600 is reachable, not clamped away');
+console.log('\n2b  Temperature moves c, and nothing on this path uses T directly');
+{
+  const r = await page.evaluate(() => {
+    const c0 = flounderTempAdjustedC(0.436, 1.0);
+    return {
+      neutral: c0,
+      hot: flounderTempAdjustedC(0.436, 3.0),
+      cold: flounderTempAdjustedC(0.436, 0.3),
+      // flounderChooseMove must ACCEPT the effective temperature rather than
+      // reaching for botMaiaBaseTemp() itself — that got the base only, so
+      // curve B and the complexity dial were inert on this engine.
+      takesTemp: flounderChooseMove.length >= 4,
+      searchTakesThink: flounderMoveOrSearch.length >= 3,
+      // and the closeness kernel must be built from the ADJUSTED c, not the
+      // calibrated one, or temperature would move the sampling and leave the
+      // personality band behind.
+      kernelHot: flounderTargetMean(0.0885, flounderTempAdjustedC(0.436, 3.0)),
+      kernelCold: flounderTargetMean(0.0885, flounderTempAdjustedC(0.436, 0.3)),
+    };
+  });
+  ok('T = 1 leaves the measured shape alone', Math.abs(r.neutral - 0.436) < 1e-9,
+    String(r.neutral));
+  ok('a hotter setting thins c (thicker tail)', r.hot < r.neutral,
+    r.hot.toFixed(4) + ' < ' + r.neutral.toFixed(4));
+  ok('a colder setting raises it', r.cold > r.neutral,
+    r.cold.toFixed(4) + ' > ' + r.neutral.toFixed(4));
+  ok('the selector takes an effective temperature', r.takesTemp);
+  ok('and the fallback path takes a think time to derive one', r.searchTakesThink);
+  ok('the personality kernel follows the adjusted c', r.kernelHot > r.kernelCold,
+    r.kernelHot.toFixed(4) + ' vs ' + r.kernelCold.toFixed(4));
+}
+
+console.log(String.fromCharCode(10) + '2c  Flounder 600 is reachable, not clamped away');
 {
   const r = await page.evaluate(() => {
     botSetTab('sf');

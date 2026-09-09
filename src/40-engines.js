@@ -433,11 +433,18 @@ function flounderParams(elo) {
 // measured ladder untouched.
 const FLOUNDER_TEMP_C_GAIN = 0.027;
 
-function flounderTempAdjustedC(c) {
-  let T = 1;
-  try {
-    if (typeof botMaiaBaseTemp === 'function') T = botMaiaBaseTemp();
-  } catch (e) { T = 1; }
+// `temp` is the EFFECTIVE temperature for this move — base, then curve B's
+// time-pressure escalation, then the complexity adjustment — exactly the value
+// the Maia paths hand to pickFromProbs. It is passed in rather than fetched
+// here, because reaching for botMaiaBaseTemp() got only the BASE: curve B and
+// the complexity dial were both visible, both toggleable, and both inert on
+// this engine. A control that does nothing is worse than one that is absent.
+function flounderTempAdjustedC(c, temp) {
+  let T = temp;
+  if (!Number.isFinite(T)) {
+    try { if (typeof botMaiaBaseTemp === 'function') T = botMaiaBaseTemp(); }
+    catch (e) { T = 1; }
+  }
   if (!(T > 0) || Math.abs(T - 1) < 1e-9) return c;
   return Math.max(0.28, Math.min(0.55, c - FLOUNDER_TEMP_C_GAIN * Math.log(T)));
 }
@@ -527,7 +534,7 @@ function _fenLegalUcis(fen) {
 // Measured, that version's ratings were worth ~120 real Elo per 400 labelled.
 //
 // Returns { uci, cp, tau } or null so the caller can fall back to a plain search.
-async function flounderChooseMove(fen, elo, depth) {
+async function flounderChooseMove(fen, elo, depth, effTemp) {
   try {
     if (!sfReady) { try { await sfInit(); } catch (e) { return null; } }
     const moves = _fenLegalUcis(fen);
@@ -544,7 +551,7 @@ async function flounderChooseMove(fen, elo, depth) {
     const d = scored.map(m => gBest - _flounderScale(evals[m]));
 
     const { s, c } = flounderParams(elo);
-    const cEff = flounderTempAdjustedC(c);
+    const cEff = flounderTempAdjustedC(c, effTemp);
     // Weibull inverse-CDF sample. The heavy tail at c < 1/2 is the point: most
     // turns cost almost nothing and a rare one costs a piece.
     const tau = s * Math.pow(-Math.log(1 - Math.random()), 1 / cEff);

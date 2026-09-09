@@ -3513,10 +3513,10 @@ body.fj .picon{font-weight:500;}
           </div>
           <!-- RIGHT: Temperature curve -->
           <div id="tp-col-b">
-            <div class="dlbl"><span>Move sampling temperature — drag points</span><label class="tog" title="Temperature escalation under time pressure — on/off"><input type="checkbox" id="pressure-off-b" checked onchange="_setPressureOffB(!this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
+            <div class="dlbl"><span id="tp-b-title">Move sampling temperature — drag points</span><label class="tog" title="Temperature escalation under time pressure — on/off"><input type="checkbox" id="pressure-off-b" checked onchange="_setPressureOffB(!this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label></div>
             <div class="chart-box">
               <div class="chart-title-row">
-                <div class="chart-title" style="flex:1;margin:0;">Sampling temperature vs think time — base temp at the time control&rsquo;s pace</div>
+                <div class="chart-title" style="flex:1;margin:0;" id="tp-b-caption">Sampling temperature vs think time — base temp at the time control&rsquo;s pace</div>
                 <button class="xsbtn" id="xsB-lin" onclick="setScaleB('lin')">Linear</button>
                 <button class="xsbtn active" id="xsB-log" onclick="setScaleB('log')">Log</button>
               </div>
@@ -10409,30 +10409,53 @@ function _syncTempScaleLabels(){
     const el = document.getElementById('tt-' + (i + 1));
     if(el) el.textContent = n;
   });
+  // Both ends, not just one. The high end kept reading "4.0" — the slider's own
+  // coordinate — on an engine where that number means nothing.
   const lo = document.getElementById('temp-end-lo');
-  if(lo) lo.textContent = fl ? '▲ Tighter tail' : '▲ Top move';
+  if(lo) lo.textContent = fl ? '▲ Tighter tail, fewer blunders' : '▲ Top move';
+  const hi = document.getElementById('temp-end-hi');
+  if(hi) hi.textContent = fl ? 'Thicker tail, more blunder prone ▲' : '4.0 ▲';
   const ttl = document.getElementById('temp-section-title');
   if(ttl) ttl.textContent = fl ? 'Error shape — the tail of the mistake distribution'
                                : 'Move sampling — temperature';
+  // Curve B is part of the same control, one panel down.
+  const bT = document.getElementById('tp-b-title');
+  if(bT) bT.textContent = fl ? 'Error shape under time pressure — drag points'
+                             : 'Move sampling temperature — drag points';
+  const bC = document.getElementById('tp-b-caption');
+  if(bC) bC.innerHTML = fl
+    ? 'Error shape (c) vs think time. The line rising means the tail thickening, so the numbers on the axis FALL as it climbs — a lower c is a blunder-prone c.'
+    : 'Sampling temperature vs think time — base temp at the time control&rsquo;s pace';
+  if(typeof drawB === 'function'){ try{ drawB(); }catch(e){} }
+
   const hint = document.getElementById('temp-chart-hint');
   if(hint) hint.innerHTML = fl
     ? 'Bars are the <em>real</em> chance of each move being played: the rule that picks them is run across the whole target distribution. '
       + 'The number after each move is what it throws away, in centipawns. <b>At rating</b> is the shape this rating was measured with; '
       + '<b>Temp</b> is where the slider has moved it — that <em>changes real strength</em>, unlike the Budget; '
       + '<b>Pers.</b> adds an illustrative personality (likes d4, dislikes Bb5) choosing within ± the CP Budget of the cost the rating asked for.'
-    : 'Same dial as the Personality section\'s Centipawmeter — move either one. The third (blue) bar shows an <em>illustrative</em> personality (loves c4, dislikes d4) pushing the temperature-shaped distribution: the push grows with Budget, and in play a Stockfish check caps the real cost of any personality pick at the Budget.';
+    : 'The pipeline in the order the bot runs it: <b>Maia</b>\'s raw odds, then an '
+      + '<em>illustrative</em> personality (loves c4, dislikes d4) reweighting them by the '
+      + '<b>CP Budget</b>, then <b>temperature</b> sampling what is left. Personality comes '
+      + 'first because that is where applyMoveAttractors sits — so turning temperature down '
+      + 'does not switch personality off, it makes it decisive, by taking the top of the '
+      + 'distribution personality just reshaped. The Budget dial here is the same one as the '
+      + 'Personality section\'s Centipawmeter; move either.';
 }
 
-// Apply temperature scaling to the reference distribution
-function _tempAdjusted(moves, T){
+// Apply temperature scaling to a distribution.
+function _tempAdjustedP(probs, T){
   if(T < 0.15){ // argmax
-    const max = Math.max(...moves.map(m=>m.p));
-    return moves.map(m=> m.p >= max - 1e-9 ? 1 : 0);
+    const max = Math.max(...probs);
+    const hit = probs.map(p => (p >= max - 1e-9 ? 1 : 0));
+    const n = hit.reduce((a,b)=>a+b, 0) || 1;
+    return hit.map(v => v / n);
   }
-  const scaled = moves.map(m=> Math.pow(m.p, 1/T));
-  const sum = scaled.reduce((a,b)=>a+b, 0);
-  return scaled.map(v=> v/sum);
+  const scaled = probs.map(p => Math.pow(p, 1/T));
+  const sum = scaled.reduce((a,b)=>a+b, 0) || 1;
+  return scaled.map(v => v/sum);
 }
+function _tempAdjusted(moves, T){ return _tempAdjustedP(moves.map(m=>m.p), T); }
 
 // Illustrative personality signal per chart move (e4, d4, c4, e3, h3):
 // this demo personality loves c4, likes e3, dislikes d4. In play the real
@@ -10497,6 +10520,18 @@ function drawTempChart(T){
   // smallest moves (1% and 4% bars, invisible at this size anyway).
   const _fl = _isFlounderTab();
   const budgetNow = +(document.getElementById('r-style')?.value || 0);
+  // Three stages, in the order the ENGINE applies them — which is not the same
+  // order on the two engines, because the engines are not the same shape.
+  //
+  //   Maia:     raw probabilities -> personality reweights -> temperature samples
+  //   Flounder: rating samples a cost -> temperature moved c -> personality picks
+  //
+  // The Maia chart used to run temperature second. That is backwards:
+  // applyMoveAttractors reshapes the distribution and pickFromProbs samples the
+  // RESHAPED one. Drawn the wrong way round, setting temperature to zero zeroed
+  // every move but the raw favourite and the chart announced that personality
+  // had no effect — when in fact T -> 0 is where personality is most decisive,
+  // because the argmax is taken over the distribution it just reshaped.
   let moves, base, adj, pers;
   if(_fl){
     // Bars are the real selection probabilities: at the rating's own calibrated
@@ -10514,8 +10549,8 @@ function drawTempChart(T){
   } else {
     moves = _ph ? TEMP_CHART_MOVES.slice(0, 3) : TEMP_CHART_MOVES;
     base  = moves.map(m => m.p);
-    adj   = _tempAdjusted(moves, T);
-    pers  = _persAdjusted(adj, budgetNow);
+    adj   = _persAdjusted(base, budgetNow);   // personality first
+    pers  = _tempAdjustedP(adj, T);           // then temperature samples it
   }
   const nM    = moves.length;
   const colW  = chartW / nM;
@@ -10545,27 +10580,28 @@ function drawTempChart(T){
     ctx.fillStyle = C_MAIA;
     ctx.fillRect(mX, padT + chartH - mH, barW, mH);
 
-    // Bar 2 (middle): temperature-adjusted
+    // Bar 2 (middle): whichever stage runs second on this engine.
+    const C_MID = _fl ? C_ADJ : C_PERS;
     const aX = cx - barW/2;
     if(adjP >= maiaP - 5e-4){
-      // Same or higher: amber base up to Maia height, teal gain above
-      ctx.fillStyle = C_ADJ;
+      // Same or higher: stage colour up to the reference height, teal gain above
+      ctx.fillStyle = C_MID;
       ctx.fillRect(aX, padT + chartH - mH, barW, mH);
       if(aH > mH + 0.5){
         ctx.fillStyle = C_GAIN;
         ctx.fillRect(aX, padT + chartH - aH, barW, aH - mH);
       }
     } else {
-      // Lower: dim-red for lost region, bright amber for kept region
+      // Lower: dim-red for the lost region, stage colour for the kept region
       ctx.fillStyle = C_LOST;
       ctx.fillRect(aX, padT + chartH - mH, barW, mH - aH);
-      ctx.fillStyle = C_ADJ;
+      ctx.fillStyle = C_MID;
       ctx.fillRect(aX, padT + chartH - aH, barW, aH);
     }
 
-    // Bar 3 (right): personality-reweighted (illustrative, scaled by CP budget)
+    // Bar 3 (right): the final stage — what the bot actually plays from.
     const pX = cx + barW/2 + sep;
-    ctx.fillStyle = C_PERS;
+    ctx.fillStyle = _fl ? C_PERS : C_ADJ;
     ctx.fillRect(pX, padT + chartH - pH, barW, pH);
 
     // Row 1: move label
@@ -10579,7 +10615,7 @@ function drawTempChart(T){
     ctx.font = _chartFont(7);
     ctx.fillText(Math.round(maiaP*100)+'%', mX + barW/2, H - padB + rowPct);
 
-    // Row 2: temperature % (middle column)
+    // Row 2: middle-stage % (middle column)
     const adjPct = Math.round(adjP*100);
     const adjColor = adjP > maiaP + 0.005 ? 'rgba(74,185,124,0.9)'
                    : adjP < maiaP - 0.005 ? 'rgba(235,160,0,0.88)'
@@ -10587,16 +10623,16 @@ function drawTempChart(T){
     ctx.fillStyle = adjColor;
     ctx.fillText(adjP < 0.005 ? '~0' : adjPct+'%', aX + barW/2, H - padB + rowPct);
 
-    // Row 2: personality % (right column, blue)
-    ctx.fillStyle = C_PERS;
+    // Row 2: final-stage % (right column)
+    ctx.fillStyle = _fl ? C_PERS : C_ADJ;
     ctx.fillText(perP < 0.005 ? '~0' : Math.round(perP*100)+'%', pX + barW/2, H - padB + rowPct);
 
     // Row 3: column labels (M / T / P)
     ctx.fillStyle = _tDim;
     ctx.font = _chartFont(6.5);
     ctx.fillText(_fl ? 'R' : 'M', mX + barW/2, H - padB + rowMTP);
-    ctx.fillText('T', aX + barW/2, H - padB + rowMTP);
-    ctx.fillText('P', pX + barW/2, H - padB + rowMTP);
+    ctx.fillText(_fl ? 'T' : 'P', aX + barW/2, H - padB + rowMTP);
+    ctx.fillText(_fl ? 'P' : 'T', pX + barW/2, H - padB + rowMTP);
   });
 
   // Legend: Maia → Temperature → Personality, as a strip along the top.
@@ -10605,8 +10641,13 @@ function drawTempChart(T){
   const legTop = _ph ? 6 : 4;
   let lx = padL;
   ctx.textAlign = 'left';
+  // Blue is personality on BOTH charts, amber is temperature on both. The
+  // stages appear in a different ORDER per engine, so the colours have to
+  // follow the meaning rather than the position or they would swap sense
+  // between two charts sitting one click apart.
   [['rgba(235,140,0,0.3)', _fl ? 'At rating' : 'Maia'],
-   ['rgba(235,160,0,0.88)','Temp'],[C_PERS,'Pers.']]
+   [_fl ? C_ADJ : C_PERS, _fl ? 'Temp' : 'Pers.'],
+   [_fl ? C_PERS : C_ADJ, _fl ? 'Pers.' : 'Temp']]
     .forEach(([col,label]) => {
       ctx.fillStyle = col;
       ctx.fillRect(lx, legTop, swatch, swatch);
@@ -12211,12 +12252,15 @@ function syncMaxTempMark(){
   const t0 = Math.max(0.1, +_currentTempValue || 1.0);
   const frac = mx > mn ? Math.max(0, Math.min(1, (t0 - mn) / (mx - mn))) : 0;
   trk.style.setProperty('--mk', String(frac));
-  trk.title = 'Game-start temperature: T ' + t0.toFixed(1);
+  const fl = _isFlounderTab();
+  const at0 = fl ? ('c ' + _panelFlounderC(t0).toFixed(3)) : ('T ' + t0.toFixed(1));
+  const noun = fl ? 'error shape' : 'temperature';
+  trk.title = 'Game-start ' + noun + ': ' + at0;
   const hint = document.getElementById('maxtemp-hint');
   if(hint) hint.textContent = maxTempCeiling() <= t0
-    ? 'Ceiling is at or below the game-start temperature (T ' + t0.toFixed(1)
-      + ') — temperature stays flat, so escalation is effectively off.'
-    : 'Marker shows the game-start temperature (T ' + t0.toFixed(1)
+    ? 'Ceiling is at or below the game-start ' + noun + ' (' + at0
+      + ') — it stays flat, so escalation is effectively off.'
+    : 'Marker shows the game-start ' + noun + ' (' + at0
       + '). Below it the ceiling has no effect.';
 }
 // ── Max ELO drop: range follows the base ELO ─────────────────────────────────
@@ -12586,12 +12630,23 @@ function drawA(){
   drawCurve('cvA', ctrlA, reganEloA, yMin, currentElo + 50,
     v=>v, '#c8922a', 'rgba(200,146,42,0.08)', 'tipA', scaleA);
 }
+// One curve, two readings. The control points stay in T — that is the number
+// timePressureTempByThink consumes, on every engine — but T is not what
+// Flounder does with it, so the axis is labelled in c there. Note that c runs
+// the OTHER way: the curve rising means the tail thickening, which is c
+// falling. The chart title says so rather than leaving it to be inferred.
+function _curveBFmt(){
+  return _isFlounderTab()
+    ? (v => _panelFlounderC(Math.max(0.1, v)).toFixed(3))
+    : (v => v.toFixed(1));
+}
+
 function drawB(){
   if(!document.getElementById('cvB')) return;
   const t0 = Math.max(0.1, +_currentTempValue || 1.0);
   syncMaxTempMark();
   drawCurve('cvB', ctrlB, sigB, Math.max(0, t0-0.5), effTempCeiling()+0.5,
-    v=>v.toFixed(1), '#5dade2', 'rgba(41,128,185,0.08)', 'tipB', scaleB);
+    _curveBFmt(), '#5dade2', 'rgba(41,128,185,0.08)', 'tipB', scaleB);
 }
 function reDraw(){ initPts(); drawA(); drawB(); }
 

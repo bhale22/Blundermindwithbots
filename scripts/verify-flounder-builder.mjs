@@ -16,6 +16,7 @@ const ok = (label, cond, detail) => {
 };
 
 const browser = await chromium.launch();
+let PANEL_C = null;   // the panel's T -> c map, checked against the engine's below
 
 // ── The panel on its own ────────────────────────────────────────────────────
 {
@@ -177,6 +178,39 @@ console.log('\n3   One Elometer, wearing the selected engine');
       r.legacy.base + ' @ ' + r.legacy.elo);
   }
 
+  console.log('\n6b  The temperature control names c on Flounder, at both ends');
+  {
+    const r = await page.evaluate(() => {
+      const pick = e => selEngineMode(
+        document.querySelector('#engine-mode-grid .mcard[data-engine="' + e + '"]'));
+      const read = () => ({
+        lo: document.getElementById('temp-end-lo').textContent,
+        hi: document.getElementById('temp-end-hi').textContent,
+        bTitle: document.getElementById('tp-b-title').textContent,
+        axis1: _curveBFmt()(1.0), axis3: _curveBFmt()(3.0),
+        mark: document.getElementById('maxtemp-track').title,
+      });
+      pick('stockfish'); setElo(1600); onTempSlider(1.0);
+      const fl = read();
+      pick('maia3'); onTempSlider(1.0);
+      const ma = read();
+      // Both documents carry their own copy of the T -> c map. If they ever
+      // drift, the panel draws a bot that is not the one that plays.
+      const panelC = [0.3, 1.0, 2.0, 3.0].map(t => +_panelFlounderC(t).toFixed(6));
+      return { fl, ma, panelC, elo: 1600 };
+    });
+    PANEL_C = r.panelC;
+    ok('the low end names the tail, not the slider', /Tighter tail/.test(r.fl.lo), r.fl.lo);
+    ok('and so does the high end', /Thicker tail/.test(r.fl.hi), r.fl.hi);
+    ok('Maia keeps its own ends', r.ma.lo === '\u25b2 Top move' && r.ma.hi === '4.0 \u25b2',
+      r.ma.lo + ' | ' + r.ma.hi);
+    ok('the degradation curve is titled in c', /Error shape/.test(r.fl.bTitle), r.fl.bTitle);
+    ok('its axis reads c, and falls as the tail thickens',
+      +r.fl.axis3 < +r.fl.axis1 && +r.fl.axis1 < 1, r.fl.axis1 + ' -> ' + r.fl.axis3);
+    ok('Maia keeps T on the same axis', r.ma.axis1 === '1.0', r.ma.axis1);
+    ok('the game-start marker names c too', /c 0\./.test(r.fl.mark), r.fl.mark);
+  }
+
   console.log('\n7   Personality is no longer switched off by the engine');
   {
     const r = await page.evaluate(() => {
@@ -217,6 +251,16 @@ console.log('\n3   One Elometer, wearing the selected engine');
     ok('the dial holds the rating', r.dial === 1725, String(r.dial));
     ok('the bot plays at it', r.eff === 1725, String(r.eff));
     ok('and the panel reads it back', r.shown === '1725', r.shown);
+  }
+
+  console.log('\n8b  The panel and the engine agree on the T -> c map');
+  {
+    const engineC = await page.evaluate(() =>
+      [0.3, 1.0, 2.0, 3.0].map(t => +flounderTempAdjustedC(
+        Math.max(0.28, Math.min(0.55, 0.436 + (1600 - 1600) * 0.00007)), t).toFixed(6)));
+    ok('the two copies of the map match', PANEL_C &&
+      engineC.every((v, i) => Math.abs(v - PANEL_C[i]) < 1e-6),
+      JSON.stringify(PANEL_C) + ' vs ' + JSON.stringify(engineC));
   }
 
   console.log('\n9   An old share link still lands somewhere sane');

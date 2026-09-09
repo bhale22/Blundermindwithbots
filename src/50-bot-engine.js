@@ -1697,9 +1697,17 @@ function flounderEffectiveElo(clockMs, thinkSec) {
 // MultiPV probe failing because the engine is busy — where any legal move beats
 // stalling. Stockfish still does all the evaluating; it just no longer pretends
 // that turning its search down is the same thing as playing worse.
-async function flounderMoveOrSearch(fen, elo) {
+// `thinkSec` is optional. When the caller knows how long this move is being
+// thought about, the temperature chain can include curve B's escalation — the
+// same chain the primary paths build. When it does not, the base temperature is
+// the honest input, for the same reason the premove path uses it: there is no
+// think time to derive an escalation from.
+async function flounderMoveOrSearch(fen, elo, thinkSec) {
   const e = Math.max(600, Math.min(2600, Math.round(elo) || 1500));
-  const pick = await flounderChooseMove(fen, e);
+  const t = Number.isFinite(thinkSec)
+    ? complexityAdjustedTemp(timePressureTempByThink(botMaiaBaseTemp(), thinkSec))
+    : botMaiaBaseTemp();
+  const pick = await flounderChooseMove(fen, e, undefined, t);
   if (pick && pick.uci) { lastBotMoveSource = 'Flounder'; return pick.uci; }
   const lvl = Math.max(SF_LEVEL_MIN, Math.min(SF_LEVEL_MAX,
     Math.round(1 + (e - 650) * 19 / 1950)));
@@ -2232,7 +2240,26 @@ async function botMakeMove() {
       // average — the same plumbing every Maia path uses.
       const sfRoughThinkSec = botThinkTime(null, clockMs) / 1000;
       const sfElo = flounderEffectiveElo(clockMs, sfRoughThinkSec);
-      const pick  = await flounderChooseMove(fen, sfElo);
+
+      // The complexity probe, on the same terms as the Maia paths: only when an
+      // attractor actually reads it. complexityAdjustedTemp is a no-op while
+      // sfCplxScore is null, so skipping it costs nothing but a flat curve.
+      if (_needsComplexity()) {
+        const cr = await sfGetComplexity(fen);
+        sfCplxScore = cr ? cr.cplx : null;
+        sfCplxEval  = cr ? cr.eval  : null;
+      } else {
+        sfCplxScore = sfCplxEval = null;
+      }
+
+      // Base temperature, then curve B's time-pressure escalation, then the
+      // complexity adjustment — the identical chain every Maia path builds.
+      // Flounder turns the result into the Weibull shape c rather than an
+      // exponent on a probability, but it is the same control reading the same
+      // curves, which is what makes one Temperature dial honest across engines.
+      const sfTemp = complexityAdjustedTemp(
+        timePressureTempByThink(botMaiaBaseTemp(), sfRoughThinkSec));
+      const pick  = await flounderChooseMove(fen, sfElo, undefined, sfTemp);
 
       if (pick && pick.uci) {
         // Pass null to botThinkTime, not a one-entry distribution: a single
@@ -2318,7 +2345,7 @@ async function botMakeMove() {
         // model. The old code dropped to Stockfish at rating/200 as a "rough
         // mapping", which is the exact substitution the ladder work disproved.
         await sfInit();
-        uciMove = await flounderMoveOrSearch(fen, maia3SelectedRating);
+        uciMove = await flounderMoveOrSearch(fen, maia3SelectedRating, m3RoughThinkSec);
       }
 
     } else if (botTab === 'maia') {
@@ -2385,7 +2412,8 @@ async function botMakeMove() {
         // Off book. The fallback slider is still the user's stated strength for
         // this case, so honour it — just as a rating rather than a skill level.
         await sfInit();
-        uciMove = await flounderMoveOrSearch(fen, flounderEloFromLegacyLevel(lcFallbackLevel()));
+        uciMove = await flounderMoveOrSearch(fen, flounderEloFromLegacyLevel(lcFallbackLevel()),
+          botThinkTime(null, clockMs) / 1000);
       }
 
     } else if (botTab === 'lcsf') {
@@ -2440,7 +2468,8 @@ async function botMakeMove() {
         _botMoveThinkSec = null;
       } else {
         await sfInit();
-        uciMove = await flounderMoveOrSearch(fen, flounderEloFromLegacyLevel(lcsfFallbackLevel()));
+        uciMove = await flounderMoveOrSearch(fen, flounderEloFromLegacyLevel(lcsfFallbackLevel()),
+          botThinkTime(null, clockMs) / 1000);
       }
 
     } else if (botTab === 'hybrid') {
@@ -2504,7 +2533,13 @@ async function botMakeMove() {
             // Maia3 not downloaded or failed — Flounder at the slot's own ELO,
             // which keeps the blend's identity intact instead of replacing one
             // slot with an unrated engine.
-            uciMove = await flounderMoveOrSearch(fen, slotElo);
+            //
+            // The think estimate is recomputed rather than borrowed: the one
+            // above is scoped to the branch where Maia actually answered, and
+            // it is derived from that answer's entropy, which does not exist
+            // here.
+            uciMove = await flounderMoveOrSearch(fen, slotElo,
+              botThinkTime(null, clockMs) / 1000);
           }
         } else {
           // A Flounder slot is a rating, exactly like a Maia slot, so it
@@ -2515,7 +2550,7 @@ async function botMakeMove() {
           const delay = botThinkTime(null, clockMs);
           await new Promise(res => setTimeout(res, delay));
           uciMove = await flounderMoveOrSearch(fen,
-            pressureSlotEloByThink(slotFlounderElo, delay / 1000));
+            pressureSlotEloByThink(slotFlounderElo, delay / 1000), delay / 1000);
         }
       }
     }
