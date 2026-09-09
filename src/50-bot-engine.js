@@ -1321,27 +1321,25 @@ function applyMoveAttractors(moveProbs, opts) {
   // 0.4 well behind — and it stays inside the tanh, so the bound still holds.
   const tradeCtx = 1 + 0.6 * Math.tanh((_matBot - _matOpp) / 4);
 
-  // ── Fort Knox: baseline LOOSENESS before the move ──────────────────────────
-  // Was: the total number of times the bot's pieces defend each other, which
-  // counted a rook guarding an unattacked knight on b1 exactly as heavily as
-  // covering a piece that was hanging. Most of that total is inherited from the
-  // position and never moves, so most of the signal was noise.
+  // ── Fort Knox: total defensive cover, before and after ─────────────────────
+  // Every bot piece counts, attacked or not. That is deliberate and it is the
+  // difference between the two poles: a square that nobody is attacking YET is
+  // still a square you can be driven to, so Fort Knox dislikes stepping onto an
+  // undefended one and Glass cannon is perfectly happy to.
   //
-  // Looseness asks the question a solid player actually asks: is anything of
-  // mine under-defended where it matters. Only pieces the opponent is actually
-  // attacking contribute, and each contributes by how far the attackers
-  // outnumber the defenders.
-  const _looseness = (bd, atk) => {
-    let loose = 0;
+  // This was briefly narrowed to count only pieces the opponent was already
+  // attacking, on the theory that the rest was noise. It measured a little
+  // cleaner and modelled the wrong player: it made Fort Knox indifferent to
+  // walking a piece somewhere loose, right up until the moment somebody aimed
+  // at it.
+  const _defence = (bd, atk) => {
+    let def = 0;
     for (let sq = 0; sq < 64; sq++) {
       const p = bd[sq];
       if (!p || p.color !== botColorStr || !atk[sq]) continue;
-      const att = (atk[sq][oppColorStr] || []).length;
-      if (att === 0) continue;
-      const def = (atk[sq][botColorStr] || []).length;
-      loose += Math.max(0, att - def);
+      def += (atk[sq][botColorStr] || []).length;
     }
-    return loose;
+    return def;
   };
   // ── King safety: enemy attacks on the squares around the bot's king ────────
   // Same definition as the kingDanger custom metric, so the slider and the
@@ -1375,10 +1373,10 @@ function applyMoveAttractors(moveProbs, opts) {
     return m;
   };
 
-  let currentLooseness = 0, currentKingDanger = 0, currentOppMobility = 0;
+  let currentDefence = 0, currentKingDanger = 0, currentOppMobility = 0;
   if (hasFortkx || hasKingSafe) {
     const curAtkFull = buildDirectAtk(board, _EMPTY, _EMPTY, _EMPTY, _EMPTY);
-    if (hasFortkx)  currentLooseness  = _looseness(board, curAtkFull);
+    if (hasFortkx)   currentDefence    = _defence(board, curAtkFull);
     if (hasKingSafe) currentKingDanger = _kingDanger(board, curAtkFull);
   }
   if (hasProphylax) currentOppMobility = _oppMobility(board);
@@ -1406,12 +1404,12 @@ function applyMoveAttractors(moveProbs, opts) {
   // ── Space Cadet: baseline weak-square count for the bot ─────────────────────
   // Weak square = empty square with zero bot attackers (atkMap[sq][botColorStr].length === 0).
   // Matches the overlay definition so the attractor and the visual are consistent.
-  let currentBotWeakCount = 0;   // counted over _CONTESTED only, as below
+  let currentBotWeakCount = 0;   // weighted by _SQ_WEIGHT, as below
   if (hasSpace && atkMap) {
     for (let sq = 0; sq < 64; sq++) {
-      if (!_CONTESTED[sq]) continue;   // must match the per-move loop exactly
+      // Weighted exactly as the per-move loop does, or the delta is nonsense.
       if (!board[sq] && atkMap[sq] && (atkMap[sq][botColorStr] || []).length === 0) {
-        currentBotWeakCount++;
+        currentBotWeakCount += _SQ_WEIGHT[sq];
       }
     }
   }
@@ -1540,21 +1538,23 @@ function applyMoveAttractors(moveProbs, opts) {
       const simAtk   = getSimAtkCC();
       let simBotWeakCount = 0;
       for (let sq = 0; sq < 64; sq++) {
-        if (!_CONTESTED[sq]) continue;
         if (!simBd_[sq] && simAtk[sq] && (simAtk[sq][botColorStr] || []).length === 0) {
-          simBotWeakCount++;
+          simBotWeakCount += _SQ_WEIGHT[sq];
         }
       }
       const delta = currentBotWeakCount - simBotWeakCount; // positive = fewer weak squares
-      if (delta !== 0) logBoost += spaceCadetVal * scale * Math.tanh(delta / kf(3));
+      if (delta !== 0) logBoost += spaceCadetVal * scale * Math.tanh(delta / kf(4));
     }
 
     // ── Fort Knox: total friendly defender count delta ────────────────────────
     // buildDirectAtk without pins is fast and sufficient for a positional heuristic.
     // tanh((postDefs - preDefs) / 3) maps the delta to a smooth −1..+1 signal.
+    // Positive (Fort Knox) rewards moves that raise total cover and, by the same
+    // arithmetic, punishes moves that lower it. Negative (Glass cannon) does the
+    // reverse — it is not merely indifferent to leaving pieces loose, it likes it.
     if (hasFortkx) {
-      const loose = _looseness(getSimBd(), getSimAtkCC());
-      logBoost += fortKxVal * scale * Math.tanh((currentLooseness - loose) / kf(1.5));
+      const def = _defence(getSimBd(), getSimAtkCC());
+      logBoost += fortKxVal * scale * Math.tanh((def - currentDefence) / kf(3));
     }
 
     // ── Gambito: ECO gambit continuation / structural fallback ───────────────
@@ -1671,21 +1671,24 @@ function applyMoveAttractors(moveProbs, opts) {
       : moveProbs);
 }
 
-// The squares Space Cadet is allowed to care about: ranks 3 to 6.
+// What a weak square is worth to Space Cadet.
 //
-// It used to count every empty square on the board that the bot did not attack,
-// which meant the opponent's back rank and the squares behind their own pawns
-// carried the same weight as the centre. Most of the count was squares nobody
-// will ever contest, and the control measured weakest of the whole set as a
-// result. This is the band where space is actually fought over, and it is
-// symmetric, so it means the same thing for either colour.
-const _CONTESTED = (() => {
-  const m = new Array(64).fill(false);
-  for (let sq = 0; sq < 64; sq++) {
-    const r = (sq / 8) | 0;          // 0 = 8th rank
-    if (r >= 2 && r <= 5) m[sq] = true;
+// EVERY square counts, including both back ranks. This was briefly narrowed to
+// the four middle ranks on the reasoning that nobody fights over the rest — but
+// a hole on your own back rank is not a square nobody wants, it is a mating
+// square, and a control that cannot see one is worse than no control.
+//
+// The centre is worth more rather than being the only thing worth anything:
+// d4, d5, e4 and e5 because that is where the game is decided, and f3 and f6
+// because they are the classic soft squares in front of a castled king, one for
+// each colour. Everything else counts once.
+const _SQ_WEIGHT = (() => {
+  const w = new Array(64).fill(1);
+  for (const name of ['d4', 'd5', 'e4', 'e5', 'f3', 'f6']) {
+    const sq = fileRankToSq(name);
+    if (sq >= 0) w[sq] = 1.5;
   }
-  return m;
+  return w;
 })();
 
 // ── Pawn-structure penalty: islands + doubled + isolated (lower = tighter) ──

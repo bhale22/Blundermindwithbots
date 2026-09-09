@@ -166,6 +166,64 @@ console.log('\n5   Responses scale with the material left on the board');
     'full ' + r.full.toFixed(2) + ' / thin ' + r.thin.toFixed(2));
 }
 
+console.log('\n6   The two poles really are opposites');
+{
+  const r = await page.evaluate(() => {
+    const fen = 'r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R w KQkq - 4 5';
+    const bd = parseFen(fen);
+    const t = turn, ep = epSq, cst = castling;
+    botPlayerColor = 'black';
+    const moves = _fenLegalUcis(fen);
+    botMinProbPct = 0; botBadDayMode = false; botDayLower = 0; botDayUpper = 100;
+    window._bcpCustomControls = []; window._bcpPieceValues = {};
+    const boosts = (vals) => {
+      window._bcpCpBudget = 300; window._bcpAttractorValues = vals;
+      const uni = {}; moves.forEach(m => uni[m] = 1 / moves.length);
+      const shaped = _botWithPosition(bd, t, ep, cst,
+        () => applyMoveAttractors(uni, { rawWeights: true }));
+      const n = moves.length; const o = {};
+      moves.forEach(m => o[m] = Math.log(Math.max(1e-12, shaped[m] || 0) * n));
+      return o;
+    };
+    const E = new Set();
+    // Moves landing somewhere undefended AND unattacked. Fort Knox must dislike
+    // these: a square nobody is attacking yet is still one you can be driven
+    // off, and a version that only looked at already-attacked pieces was blind
+    // to exactly this move.
+    const undef = [];
+    for (const m of moves) {
+      const f = fileRankToSq(m.slice(0, 2)), to = fileRankToSq(m.slice(2, 4));
+      const nb = applyMove(f, to, bd, ep, 'Q');
+      const a = buildDirectAtk(nb, E, E, E, E);
+      const def = (a[to] && (a[to]['w'] || []).length) || 0;
+      const att = (a[to] && (a[to]['b'] || []).length) || 0;
+      if (def === 0 && att === 0) undef.push(m);
+    }
+    const fk = boosts({ fortkx: 5 }), gc = boosts({ fortkx: -5 });
+    // Pawn moves that make the formation worse. Rigid must dislike these.
+    const before = _pawnStructurePenalty(bd, 'w');
+    const worse = [];
+    for (const m of moves) {
+      const f = fileRankToSq(m.slice(0, 2)), to = fileRankToSq(m.slice(2, 4));
+      if (!bd[f] || bd[f].piece !== 'P') continue;
+      if (_pawnStructurePenalty(applyMove(f, to, bd, ep, 'Q'), 'w') > before) worse.push(m);
+    }
+    const st = boosts({ structure: 5 });
+    return {
+      nUndef: undef.length,
+      fkNeg: undef.every(m => fk[m] < 0),
+      gcPos: undef.every(m => gc[m] > 0),
+      nWorse: worse.length,
+      stNeg: worse.every(m => st[m] < 0),
+    };
+  });
+  ok('the position offers a move onto an undefended square', r.nUndef > 0, String(r.nUndef));
+  ok('Fort Knox dislikes stepping onto one', r.fkNeg);
+  ok('and Glass cannon actively likes it', r.gcPos);
+  ok('the position offers a structure-wrecking pawn move', r.nWorse > 0, String(r.nWorse));
+  ok('Rigid dislikes it, not merely fails to reward it', r.stNeg);
+}
+
 ok('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
 
 await browser.close();
