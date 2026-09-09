@@ -575,7 +575,7 @@ app.get('/robots.txt', (req, res) => {
 
 app.get('/sitemap.xml', (req, res) => {
   const origin = reqOrigin(req);
-  const urls = ['/', '/privacy', '/credits'];
+  const urls = ['/', '/privacy', '/credits', '/attractors'];
   res.type('application/xml').set('Cache-Control', 'public, max-age=3600').send(
     '<?xml version="1.0" encoding="UTF-8"?>' +
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' +
@@ -641,6 +641,18 @@ app.get('/credits', (req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'public, max-age=3600');
   res.sendFile(path.join(__dirname, 'credits.html'));
+});
+
+// ── How the personality controls work ───────────────────────────────────────
+// Every attractor, what it measures, and the formula it uses. Linked from the
+// Personality panel. It exists because a slider labelled "Fort Knox" tells you
+// nothing about what the bot will do with it, and a bot builder whose controls
+// cannot be understood is a toy rather than a tool.
+app.get('/attractors.html', (req, res) => res.redirect(301, '/attractors'));
+app.get('/attractors', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.sendFile(path.join(__dirname, 'attractors.html'));
 });
 
 // ── Digital Asset Links — proves this domain and the Android app are ours ───

@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>How the personality controls work — Blundermind</title>
+<meta name="description" content="Every personality attractor in Blundermind's bot builder: what it measures, the exact formula used, and when it applies.">
+<meta name="theme-color" content="#0e0f11">
+<style>
+  :root{
+    --bg:#0e0f11; --panel:#16181c; --border:#2a2e35;
+    --text:#e8e6e3; --dim:#a8b0bd; --accent:#5ad490; --code:#1c1f24;
+  }
+  @media(prefers-color-scheme:light){
+    :root{
+      --bg:#fbfbfa; --panel:#ffffff; --border:#dcdcd8;
+      --text:#1b1c1e; --dim:#55595f; --accent:#12784a; --code:#f2f2ef;
+    }
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; padding:32px 20px 72px;
+    background:var(--bg); color:var(--text);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-text-size-adjust:100%;
+  }
+  main{max-width:46rem; margin:0 auto;}
+  h1{font-size:26px; line-height:1.25; margin:0 0 6px;}
+  h2{font-size:18px; margin:34px 0 10px;}
+  h3{font-size:15px; margin:0 0 4px;}
+  .sub{color:var(--dim); font-size:14px; margin:0 0 28px;}
+  a{color:var(--accent);}
+  ul{padding-left:22px; margin:10px 0;} li{margin:6px 0;}
+  .card{
+    background:var(--panel); border:1px solid var(--border);
+    border-radius:10px; padding:16px 18px; margin:22px 0;
+  }
+  .card h2{margin-top:0;}
+  code,.f{
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    background:var(--code); border:1px solid var(--border); border-radius:5px;
+  }
+  code{padding:1px 5px; font-size:.88em;}
+  .f{display:block; padding:9px 11px; margin:9px 0 0; font-size:13px;
+     line-height:1.5; overflow-x:auto; white-space:pre;}
+  .a{border-top:1px solid var(--border); padding-top:16px; margin-top:16px;}
+  .a:first-of-type{border-top:0; padding-top:0; margin-top:0;}
+  .poles{font-size:12.5px; color:var(--dim); margin:0 0 7px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
+  .when{font-size:13px; color:var(--dim); margin:8px 0 0;}
+  .when b{color:var(--text); font-weight:600;}
+  table{border-collapse:collapse; width:100%; font-size:14px; margin-top:10px;}
+  th,td{text-align:left; padding:6px 10px; border-bottom:1px solid var(--border);
+        vertical-align:top;}
+  th{color:var(--dim); font-weight:600; font-size:12.5px; text-transform:uppercase;
+     letter-spacing:.06em;}
+  tr:last-child td{border-bottom:0;}
+  .note{font-size:14px; color:var(--dim);}
+</style>
+</head>
+<body>
+<main>
+
+<h1>How the personality controls work</h1>
+<p class="sub">
+  Every slider in the bot builder&rsquo;s Personality panel, what it actually measures,
+  and the formula it uses. Nothing here is a simplification for the sake of the page &mdash;
+  these are the expressions the engine evaluates.
+</p>
+
+<div class="card">
+  <h2>The shared machinery</h2>
+  <p>
+    Each slider runs from &minus;5 to +5. Zero means the control has no opinion and costs
+    nothing. Everything else is scored per candidate move and turned into a single number,
+    <code>logBoost</code>, which multiplies that move&rsquo;s probability:
+  </p>
+  <span class="f">weight(move) = probability(move) &times; exp(logBoost(move))</span>
+  <p style="margin-top:12px">
+    <strong>The CP Budget divides itself between whatever is switched on.</strong> A control
+    set to &plusmn;5 while everything else sits at zero gets the whole budget; two controls at
+    &plusmn;5 get half each. That is what <code>scale</code> below means:
+  </p>
+  <span class="f">scale = CP&nbsp;Budget / ( &Sigma;|slider values| &times; 150 )
+
+logBoost = slider&nbsp;value &times; scale &times; response(position)</span>
+  <p style="margin-top:12px">
+    The 150 sets the unit: 150&nbsp;cp of budget spent on one control is worth
+    <code>exp(1)</code> &mdash; a 2.7&times; push on the move it likes best. At the maximum
+    budget of 300&nbsp;cp that becomes <code>exp(2)</code>, or 7.4&times;.
+  </p>
+  <p>
+    <code>response(position)</code> is each control&rsquo;s own measurement, always bounded to
+    &minus;1&hellip;+1 by <code>tanh</code>, so no single control can run away. In practice a
+    control delivers about <strong>0.89</strong> of its nominal push to the move it most wants;
+    the rest of the range is used to grade the moves it likes less.
+  </p>
+  <p class="note">
+    <strong>The budget is also a hard limit, not just a volume knob.</strong> Whatever the
+    sliders say, the move finally played is checked against the engine: if the personality&rsquo;s
+    choice would cost more than the CP Budget compared with the move the bot would otherwise
+    have made, it is rejected and the next preference is tried. Style can never spend more than
+    you allowed it to.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Position controls</h2>
+  <p class="note" style="margin-top:0">
+    These score every candidate move individually. <code>v</code> is the slider value.
+  </p>
+
+  <div class="a">
+    <h3>Attacker &middot; Peacemaker</h3>
+    <p class="poles">&minus;5 Peacemaker &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Attacker +5</p>
+    <p>
+      Counts how many enemy pieces the bot&rsquo;s pieces attack, before and after the move,
+      and scores the <em>difference</em>. A move that puts two more enemy pieces under fire
+      scores well; one that walks away from threats scores badly. Positive seeks threats,
+      negative avoids them.
+    </p>
+    <span class="f">threats(board) = &Sigma; over enemy pieces of (number of bot pieces attacking it)
+
+logBoost += v &times; scale &times; tanh( (threats(after) &minus; threats(before)) / 2 )</span>
+    <p class="when"><b>Applies to:</b> every move.</p>
+  </div>
+
+  <div class="a">
+    <h3>Fort Knox &middot; Glass cannon</h3>
+    <p class="poles">&minus;5 Glass cannon &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Fort Knox +5</p>
+    <p>
+      The mirror image of Attacker, pointed at the bot&rsquo;s own pieces: it counts how many
+      times its pieces defend each other. Fort Knox likes moves that leave everything mutually
+      protected; Glass cannon likes leaving pieces loose.
+    </p>
+    <span class="f">defenders(board) = &Sigma; over bot pieces of (number of bot pieces defending it)
+
+logBoost += v &times; scale &times; tanh( (defenders(after) &minus; defenders(before)) / 3 )</span>
+    <p class="when"><b>Applies to:</b> every move.</p>
+  </div>
+
+  <div class="a">
+    <h3>Trade seeker &middot; Trade avoider</h3>
+    <p class="poles">&minus;5 Trade avoider &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Trade seeker +5</p>
+    <p>
+      Captures get the control&rsquo;s full weight outright. A move that is not a capture is
+      scored instead by how many enemy pieces the moved piece now attacks from its new square
+      &mdash; an offer to trade rather than a trade.
+    </p>
+    <span class="f">capture (including en passant):
+  logBoost += v &times; scale
+
+otherwise, with n = enemy pieces the moved piece now attacks:
+  logBoost += v &times; scale &times; tanh( n / 2 )</span>
+    <p class="when"><b>Applies to:</b> every move.</p>
+  </div>
+
+  <div class="a">
+    <h3>Rigid &middot; Loose pawn structure</h3>
+    <p class="poles">&minus;5 Loose &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Rigid +5</p>
+    <p>
+      Scores the bot&rsquo;s own pawn formation with a penalty count &mdash; lower is tighter
+      &mdash; and rewards moves that reduce it. A pawn counts as <em>connected</em> when a
+      friendly pawn stands on an adjacent file within one rank of it: the side-by-side duo and
+      the diagonal chain. Rigid keeps the pawns holding hands; Loose breaks formation.
+    </p>
+    <span class="f">penalty(board) = islands + doubled + isolated + unconnected
+
+  islands     groups of occupied files with a gap between them
+  doubled     pawns beyond the first on any file
+  isolated    pawns with no friendly pawn on either adjacent file
+  unconnected pawns with no friendly pawn on an adjacent file
+              within one rank
+
+logBoost += v &times; scale &times; tanh( penalty(before) &minus; penalty(after) )</span>
+    <p class="when">
+      <b>Applies to:</b> the bot&rsquo;s own pawn moves only &mdash; nothing else can change
+      where its pawns stand, so no other move is scored.
+    </p>
+  </div>
+
+  <div class="a">
+    <h3>Space cadet &middot; Space waster</h3>
+    <p class="poles">&minus;5 Space waster &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Space cadet +5</p>
+    <p>
+      A <em>weak square</em> is an empty square the bot attacks zero times. Space cadet prefers
+      moves that leave fewer of them &mdash; a board it has a say over. This is the same
+      definition the board-vision overlay draws, so the control and the picture agree.
+    </p>
+    <span class="f">weak(board) = number of empty squares with no bot attacker
+
+logBoost += v &times; scale &times; tanh( (weak(before) &minus; weak(after)) / 5 )</span>
+    <p class="when"><b>Applies to:</b> every move.</p>
+  </div>
+
+  <div class="a">
+    <h3>Gambito &middot; Gambit shy</h3>
+    <p class="poles">&minus;5 Gambit shy &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Gambito +5</p>
+    <p>
+      Prefers to keep playing a known gambit once the opening has entered one. When the ECO
+      opening data has not loaded, it falls back to the shape of a gambit rather than the name
+      of one: a pawn pushed to a square the opponent attacks and the bot does not defend.
+    </p>
+    <span class="f">ECO available and this move continues a known gambit line:
+  logBoost += v &times; scale
+
+fallback, for pawn moves only, when the destination square is
+attacked by the opponent and defended by no bot piece:
+  logBoost += v &times; scale</span>
+    <p class="when">
+      <b>Applies to:</b> the first 20 plies (10 moves each) only. After that it is silent.
+    </p>
+  </div>
+
+  <div class="a">
+    <h3>Piece preferences</h3>
+    <p class="poles">&minus;5 avoid &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; favour +5, per piece type</p>
+    <p>
+      A flat like or dislike for moving a given kind of piece &mdash; a knight-hopper, a bishop
+      fan, someone who will not move the queen. There is no positional measurement here, so
+      there is no <code>tanh</code>: every move by that piece type gets the same push.
+    </p>
+    <span class="f">logBoost += pieceValue[type of moving piece] &times; scale</span>
+    <p class="when"><b>Applies to:</b> every move, by the type of the piece being moved.</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Controls that act on the whole turn</h2>
+  <p class="note" style="margin-top:0">
+    These four do not score individual moves. They still take a share of the CP Budget, because
+    they are still part of the personality.
+  </p>
+
+  <div class="a">
+    <h3>Chaos agent &middot; Simplifier</h3>
+    <p class="poles">&minus;5 Simplifier &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Chaos agent +5</p>
+    <p>
+      Measures how <em>sharp</em> the position is by asking Stockfish for its top moves and
+      taking the spread of their evaluations. A wide spread means the position is tactical and
+      one move matters much more than another; a narrow one means it is quiet. Chaos raises
+      the sampling temperature in sharp positions, so the bot reaches further down its own
+      move list exactly where that is most dangerous. Simplifier does the reverse.
+    </p>
+    <span class="f">complexity = 0.6 &times; normalised&nbsp;&sigma;(top-N evaluations)
+           + 0.4 &times; normalised gap to the second-best move
+
+temperature &times;= exp( v &times; 0.08 &times; tanh( (complexity &minus; 0.5) &times; 4 ) )</span>
+    <p class="when"><b>Applies to:</b> the whole turn, by changing temperature.</p>
+  </div>
+
+  <div class="a">
+    <h3>Complicate &middot; Simplify when winning</h3>
+    <p class="poles">&minus;5 Simplify when winning &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Complicate when winning +5</p>
+    <p>
+      The same measurement as Chaos, but only consulted when the bot is actually ahead. Some
+      players muddy the water once they are winning; others trade everything off.
+    </p>
+    <span class="f">only when the bot's evaluation is better than +50 cp:
+  temperature &times;= exp( v &times; 0.08 &times; tanh( (complexity &minus; 0.5) &times; 4 ) )</span>
+    <p class="when"><b>Applies to:</b> the whole turn, and only while winning.</p>
+  </div>
+
+  <div class="a">
+    <h3>Coffeehouse hustler &middot; Overthinker</h3>
+    <p class="poles">&minus;5 Overthinker &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Hustler +5</p>
+    <p>
+      Pure tempo: how long the bot sits before moving. A hustler bangs moves out to put you
+      under time pressure; an overthinker takes its time over everything.
+    </p>
+    <span class="f">thinkTime &times;= ( 1 &minus; v &times; 0.15 )</span>
+    <p class="when">
+      <b>Applies to:</b> the clock, not the move. At +5 the bot moves in a quarter of its
+      normal time; at &minus;5 it takes nearly twice as long.
+    </p>
+  </div>
+
+  <div class="a">
+    <h3>Bad day &middot; Good day</h3>
+    <p class="poles">&minus;5 Good day &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Bad day +5</p>
+    <p>
+      Slides the whole band of moves the bot is willing to consider up or down its own
+      preference list. On a good day it draws from the top of the list; on a bad day it is
+      working from further down, and playing below itself all game.
+    </p>
+    <span class="f">lower = clamp( dayLower &minus; v &times; 4 , 0 , 95 )
+upper = clamp( dayUpper &minus; v &times; 4 , lower+5 , 100 )
+
+moves outside the [lower, upper] percentile band are discarded
+before anything else is scored</span>
+    <p class="when"><b>Applies to:</b> the candidate list, before scoring.</p>
+  </div>
+
+  <div class="a">
+    <h3>Panicky &middot; Calm under pressure</h3>
+    <p class="poles">&minus;5 Calm &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Panicky +5</p>
+    <p>
+      How hard the time-pressure curve bites. It does not change any move on its own &mdash; it
+      multiplies how far along the temperature-escalation curve a low clock pushes the bot.
+      Calm ignores the clock entirely; panicky reaches the curve&rsquo;s ceiling early.
+    </p>
+    <span class="f">calm   &rarr; multiplier 0    (time pressure has no effect)
+normal &rarr; multiplier 1.0
+panicky&rarr; multiplier 2.5
+
+temperature = base + fraction &times; multiplier &times; (ceiling &minus; base)</span>
+    <p class="when">
+      <b>Applies to:</b> timed games only. In an untimed game it does nothing at all.
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Where personality sits in the move pipeline</h2>
+  <p>
+    The two engines are different shapes, so the personality attaches at a different point in
+    each. Both are bounded by the same CP Budget.
+  </p>
+  <table>
+    <tr><th>Maia</th><th>Flounder</th></tr>
+    <tr>
+      <td>Maia returns a probability for every move &mdash; how often humans of that rating
+        play it.</td>
+      <td>Stockfish scores every legal move, and the rating draws a target for how much the
+        turn should cost.</td>
+    </tr>
+    <tr>
+      <td><strong>Personality reweights those probabilities</strong> by <code>exp(logBoost)</code>.</td>
+      <td><strong>Personality chooses within a band</strong> of moves lying either side of the
+        cost the rating asked for.</td>
+    </tr>
+    <tr>
+      <td>Temperature then samples the reshaped distribution.</td>
+      <td>Temperature has already acted, by reshaping the error distribution the target was
+        drawn from.</td>
+    </tr>
+  </table>
+  <p class="note" style="margin-top:14px">
+    One consequence worth knowing on the Maia side: because personality is applied
+    <em>before</em> temperature, turning temperature down does not switch personality off. It
+    makes it decisive &mdash; the bot plays the top of the distribution personality just
+    reshaped, every time. If a trait has lifted its favourite move above the crowd, a cold bot
+    plays that move and means it.
+  </p>
+  <p class="note">
+    On the Flounder side the band is deliberately <em>symmetric</em>: it reaches moves that cost
+    a little more than the rating asked for and moves that cost a little less. A real trait
+    makes you play below your rating on some moves and above it on others, so a one-sided band
+    would turn every personality into a handicap.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Custom controls</h2>
+  <p>
+    Beyond the named sliders, a bot can carry custom controls built from any of the metrics
+    below. Each is scored the same way &mdash; the change the move makes to that metric, bounded
+    by <code>tanh</code>:
+  </p>
+  <span class="f">logBoost += v &times; scale &times; tanh( (metric(after) &minus; metric(before)) / k )</span>
+  <p style="margin-top:12px">
+    <code>k</code> is a per-metric constant that sets what counts as a big change for that
+    measurement. The available metrics are:
+  </p>
+  <ul>
+    <li><strong>Pawns:</strong> passed pawns, pawn advancement, doubled pawns, isolated pawns,
+      pawn islands, connected pawns, overall pawn structure</li>
+    <li><strong>King safety:</strong> king-zone attackers, king danger, king shield, gives check</li>
+    <li><strong>Material and pieces:</strong> material, piece count, queens, bishop pair,
+      developed pieces, centralisation, outposts, mobility</li>
+    <li><strong>Threats:</strong> attacked pieces, hanging pieces, enemy hanging pieces,
+      defended pieces, piece defence</li>
+    <li><strong>Squares:</strong> weak squares, enemy weak squares, centre control, space control</li>
+    <li><strong>Rooks:</strong> rooks on open files, rooks on the seventh</li>
+  </ul>
+  <p class="note">
+    A custom control can also be gated on game phase, on whether the bot is winning or losing,
+    and on time pressure &mdash; in which case it only takes a share of the budget on the moves
+    where its condition actually holds.
+  </p>
+</div>
+
+<p class="note" style="margin-top:34px">
+  Blundermind is free software under the GNU GPL v3 or later, so none of the above has to be
+  taken on trust &mdash; the expressions on this page live in <code>src/50-bot-engine.js</code>
+  in the <a href="https://github.com/bhale22/Blundermindwithbots" target="_blank" rel="noopener">public
+  repository</a>. See also the <a href="/credits">credits and licences</a>.
+</p>
+
+</main>
+</body>
+</html>

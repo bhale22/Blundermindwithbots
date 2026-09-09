@@ -137,8 +137,10 @@
     That layer scores every legal move in one MultiPV probe, puts the evaluations on the
     perceptual scale <code>g(v) = sign(v)·ln(1+|v|/100)</code>, then samples how much the
     turn should <em>cost</em> from a Weibull distribution and plays the move nearest that
-    cost. The curve is the human-error model of Kenneth&nbsp;W.&nbsp;Regan and
-    Guy&nbsp;McC.&nbsp;Haworth, <em>Intrinsic Chess Ratings</em> (AAAI 2011); the shape
+    cost. The curve is the human-error model of
+    <a href="#regan">Kenneth&nbsp;W.&nbsp;Regan</a> and
+    <a href="https://chessprogramming.org/Guy_Haworth" target="_blank" rel="noopener">Guy&nbsp;McC.&nbsp;Haworth</a>,
+    <em>Intrinsic Chess Ratings</em> (AAAI 2011); the shape
     parameter is their fitted column, and the scale was measured here by playing each
     rating against Maia at the same rating — 756 games across nine rungs.
   </p>
@@ -165,7 +167,7 @@
 </div>
 
 <div class="card">
-  <h2>IM Prof. Kenneth Regan — time and rating</h2>
+  <h2 id="regan">IM Prof. Kenneth Regan — time and rating</h2>
   <p>
     The time-pressure model, how a bot's effective strength degrades as its thinking time is shortened,  is based on 
     IM Prof. Kenneth Regan's (University at Buffalo) models for

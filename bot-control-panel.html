@@ -3060,6 +3060,14 @@ body.fj .picon{font-weight:500;}
 
       <!-- Current engine header -->
       <div id="attract-engine-header" style="font-family:var(--font-u);font-size:10px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:var(--amber);margin-bottom:10px;"></div>
+
+      <!-- A slider labelled "Fort Knox" says nothing about what the bot will
+           actually do with it. Every control on this panel is written out on
+           that page, measurement and formula both. -->
+      <div style="font-family:var(--font-m);font-size:8.5px;color:var(--text-dim);margin:-4px 0 10px;">
+        Every control below is documented &mdash;
+        <a href="/attractors" target="_blank" rel="noopener" style="color:var(--amber);text-decoration:none;border-bottom:1px solid rgba(232,170,64,0.4);">what it measures and the exact formula it uses</a>.
+      </div>
       <!-- Engine-gating note: personality is Maia/LC-only (set by updatePersonalityGating) -->
       <div id="attract-engine-note" class="attract-engine-note" style="display:none;"></div>
 
@@ -7318,10 +7326,12 @@ function _setGaugeValue(val){
   // Keep the Floor ≥ Budget invariant (no auto-following — user-driven only)
   if(typeof _hfClamp === 'function') _hfClamp(true);
   if(typeof updateCpIndicators === 'function') updateCpIndicators();
-  // Budget drives the third bar of the engine-panel distribution chart
+  // Budget drives the personality bar of the engine-panel distribution chart,
+  // and the wording of the temperature notice mentions the Budget too.
   if(typeof drawTempChart === 'function' && typeof _currentTempValue !== 'undefined'){
     try{ drawTempChart(_currentTempValue); }catch(e){}
   }
+
 }
 
 function onGaugeSliderInput(val){
@@ -10228,18 +10238,25 @@ const FLOUNDER_CHART_MOVES = [
 // Without it the illustration overstated personality in the loud direction:
 // selection here is an argmax, so an undamped preference wins EVERY draw.
 //
-// MEASURED, not chosen. A maxed single attractor (attacker: 5) on a real
-// middlegame position produces top log-weights of +0.199 / +0.392 / +0.580 at
-// CP Budget 100 / 200 / 300. This gain reproduces all three to within 0.01,
-// so the blue bar is as strong as a real personality at full tilt and no
-// stronger. Re-measure it if the attractor scaling ever changes.
+// MEASURED, not chosen — by scripts/measure-attractor-realisation.mjs, which
+// prints exactly this number. A maxed attractor's nominal push is
+// exp(budget/150) on its favourite move; averaged over Attacker, Fort Knox,
+// Trade, Space Cadet and Gambito on real middlegame positions, what it actually
+// delivers is 0.892 of that (Structure included, now that it works). So the illustrated personality is as strong as a
+// real one at full tilt, and no stronger.
+//
+// It read 0.29 before, which was wrong twice over: measured on Attacker alone —
+// then the weakest of the five, because it scored an absolute threat count
+// instead of a delta — and with log(w / mean(w)), which is not linear in the
+// scale, because exp is convex and the mean is dragged around by the largest
+// weight. Both are fixed. Re-run the script rather than reasoning about it.
 const FLOUNDER_CHART_PREF = [0, -1, 1, 0, 0];
 // Shared with the Maia chart below: both engines put their attractors through
 // the same applyMoveAttractors scaling, so the same damping applies to both.
 // The Maia chart had the identical overstatement and nobody had noticed,
 // because there was nothing to compare it against until Flounder grew a chart
 // of its own that had to agree with it.
-const CHART_PREF_GAIN = 0.29;
+const CHART_PREF_GAIN = 0.892;
 const FLOUNDER_CHART_PREF_GAIN = CHART_PREF_GAIN;
 
 // The shipped ladder, copied from src/40-engines.js. The panel is a separate
@@ -10335,12 +10352,22 @@ function _flounderSelProbs(d, s, c, band, prefs){
 
 const _isFlounderTab = () => (typeof baseEngine !== 'undefined' && baseEngine === 'stockfish');
 
+// A distribution with a real contest in it. The old one was 60/25/10/4/1 — so
+// peaked that no personality could ever overturn it, which made the chart
+// quietly imply that the top move always wins. It does not: personality is
+// applied BEFORE temperature, so a trait that lifts its favourite above the
+// crowd hands temperature a different move to sharpen onto.
+//
+// With these numbers and the illustrative trait below, c4 passes e4 at around
+// CP Budget 145. Below that the top move holds and personality only shades the
+// odds; above it the bot has changed its mind about what the best move is. Drag
+// the Budget slider and the crossover happens on screen.
 const TEMP_CHART_MOVES = [
-  { label:'e4', p:0.60 },
-  { label:'d4', p:0.25 },
-  { label:'c4', p:0.10 },
-  { label:'e3', p:0.04 },
-  { label:'h3', p:0.01 },
+  { label:'e4', p:0.42 },
+  { label:'d4', p:0.30 },
+  { label:'c4', p:0.18 },
+  { label:'e3', p:0.07 },
+  { label:'h3', p:0.03 },
 ];
 
 let _currentTempValue = 1.0; // float T, 0.1–4.0
@@ -10437,9 +10464,11 @@ function _syncTempScaleLabels(){
     : 'The pipeline in the order the bot runs it: <b>Maia</b>\'s raw odds, then an '
       + '<em>illustrative</em> personality (loves c4, dislikes d4) reweighting them by the '
       + '<b>CP Budget</b>, then <b>temperature</b> sampling what is left. Personality comes '
-      + 'first because that is where applyMoveAttractors sits — so turning temperature down '
-      + 'does not switch personality off, it makes it decisive, by taking the top of the '
-      + 'distribution personality just reshaped. The Budget dial here is the same one as the '
+      + 'first because that is where applyMoveAttractors sits. Turning temperature down '
+      + 'does not switch personality off — it makes it DECISIVE: the bot plays the top of '
+      + 'the distribution personality just reshaped, every time. Raise the <b>Budget</b> past '
+      + 'about 145 here and c4 overtakes e4; from then on a cold bot plays c4 and means it. '
+      + 'The Budget dial here is the same one as the '
       + 'Personality section\'s Centipawmeter; move either.';
 }
 
@@ -10468,10 +10497,9 @@ const PERS_CHART_PREF = [0, -0.6, 1.0, 0.4, 0];
 function _persAdjusted(adjProbs, budgetCp){
   if(!budgetCp) return adjProbs.slice();
   // CHART_PREF_GAIN is the tanh(...) damping every real attractor carries.
-  // Without it this bar claimed a maxed personality was worth e^2 on the liked
-  // move at Budget 300, where the engine's own weights top out near e^0.58 —
-  // an overstatement of about 3.4x, and the reason the illustrated bot looked
-  // like it barely consulted its rating.
+  // Without it this bar claimed a maxed personality reaches its full nominal
+  // push on its favourite move; measured, it reaches 0.892 of it. Small, but
+  // the whole point of the bar is that it is not a guess.
   const g = CHART_PREF_GAIN * budgetCp / 150;
   const w = adjProbs.map((p,i)=> p * Math.exp(g * (PERS_CHART_PREF[i] || 0)));
   const s = w.reduce((a,b)=>a+b, 0) || 1;

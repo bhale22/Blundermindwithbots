@@ -565,6 +565,10 @@ function botOppClockDeficit(clockMs) {
 //     alloc_cp(v) = round(budget × |v| / Σ|all v|)
 //     logBoost    = v × (budget / (totalAbs × CP_PER_LOG_UNIT))
 //   where CP_PER_LOG_UNIT = 150 → 150 cp of budget on one attractor ≈ exp(1) ≈ 2.7× boost.
+//   That is the NOMINAL push. Each attractor multiplies it by tanh(<its own
+//   metric>), so what a move actually receives depends on how strongly the
+//   position separates it from the alternatives — measured, the delta-based
+//   attractors deliver roughly 0.5-0.65 of nominal to their favourite move.
 //   At budget = 0, all attractor effects are zero regardless of slider positions.
 //
 // Board piece format: board[sq] = {piece:'P'|'N'|..., color:'w'|'b'} or undefined.
@@ -1283,6 +1287,26 @@ function applyMoveAttractors(moveProbs, opts) {
     }
   }
 
+  // ── Attacker / Peacemaker: baseline threat count before the move ───────────
+  // Attacker used to score the ABSOLUTE number of opponent pieces the bot
+  // attacks after a move. Almost all of that total is inherited from the
+  // position rather than created by the move, so every candidate scored nearly
+  // the same and the attractor could barely tell them apart — measured, it was
+  // the weakest of the six, and sharpening its response made it worse rather
+  // than better, because saturating a number every move shares removes what
+  // little separation there was. Every other attractor scores a DELTA. This one
+  // does now too.
+  let currentOppThreats = 0;
+  if (hasAttacker) {
+    const curAtk = buildDirectAtk(board, _EMPTY, _EMPTY, _EMPTY, _EMPTY);
+    for (let sq = 0; sq < 64; sq++) {
+      const p = board[sq];
+      if (p && p.color === oppColorStr && curAtk[sq]) {
+        currentOppThreats += (curAtk[sq][botColorStr] || []).length;
+      }
+    }
+  }
+
   // ── Space Cadet: baseline weak-square count for the bot ─────────────────────
   // Weak square = empty square with zero bot attackers (atkMap[sq][botColorStr].length === 0).
   // Matches the overlay definition so the attractor and the visual are consistent.
@@ -1462,8 +1486,10 @@ function applyMoveAttractors(moveProbs, opts) {
       }
     }
 
-    // ── Attacker / Peacemaker: total opponent pieces under threat after move ─────
-    // Sums bot-piece attack counts on every opponent piece on the sim board.
+    // ── Attacker / Peacemaker: threats this move CREATES ────────────────────────
+    // Sums bot-piece attack counts on every opponent piece on the sim board and
+    // subtracts the same count before the move, so the score is what this move
+    // adds rather than what the position already had.
     // buildDirectAtk is called lazily — only when this attractor is active.
     if (hasAttacker) {
       const simBd_ = getSimBd();
@@ -1475,13 +1501,17 @@ function applyMoveAttractors(moveProbs, opts) {
           totalOppThreats += (simAtk[sq][botColorStr] || []).length;
         }
       }
-      logBoost += attackerVal * scale * Math.tanh(totalOppThreats / 6);
+      logBoost += attackerVal * scale *
+        Math.tanh((totalOppThreats - currentOppThreats) / 2);
     }
 
     // ── Structure: pawn-structure penalty delta (own pawn moves only) ────────
-    // delta > 0 = move tightens the structure (fewer islands/doubled/isolated).
-    // Positive (Rigid) boosts tightening moves; negative (Loose) boosts
-    // structure-opening moves.
+    // delta > 0 = move tightens the structure (fewer islands, doubled, isolated
+    // or disconnected pawns). Positive (Rigid) boosts tightening moves;
+    // negative (Loose) boosts structure-opening moves.
+    //
+    // Gated on own pawn moves because nothing else can change own pawn
+    // placement — a piece move has no opinion here, and should not pretend to.
     if (hasStructure && pieceLetter === 'p') {
       const simPenalty = _pawnStructurePenalty(getSimBd(), botColorStr);
       const delta = currentStructPenalty - simPenalty;
@@ -1514,11 +1544,36 @@ function applyMoveAttractors(moveProbs, opts) {
 // ── Pawn-structure penalty: islands + doubled + isolated (lower = tighter) ──
 // Cheap stand-in for the brief's "SF pawn eval delta" — same direction, no
 // engine call needed per candidate move.
+// Structural cost of a pawn formation. Lower is tighter.
+//
+// The first three terms are the classical file-based faults. On their own they
+// were useless as an ATTRACTOR metric, and measurably so — the Structure dial
+// scored 0.006 where its neighbours scored 1.2, i.e. it did nothing at all.
+//
+// The reason is that islands, doubled and isolated are all computed from the
+// file-occupancy vector, which is rank-blind: pushing a pawn up its own file
+// leaves the vector byte-identical. Since every pawn move except a capture
+// stays on its file, the delta was zero for almost every move the attractor was
+// ever asked about, and Rigid/Loose could only express an opinion about pawn
+// captures.
+//
+// `unconnected` fixes that. A pawn is connected when a friendly pawn sits on an
+// adjacent file within one rank — the side-by-side duo and the diagonal chain,
+// which is what "pawn structure" means to a player in the first place. Pushing
+// a pawn away from its neighbours breaks that support and pushing one into line
+// restores it, so ordinary advances now move the number. Isolated pawns are
+// necessarily unconnected too and so count twice, which is intended: a pawn
+// with no neighbours anywhere on the board is worse than one that has merely
+// stepped out of formation.
 function _pawnStructurePenalty(bd, colorStr) {
   const files = [0,0,0,0,0,0,0,0];
+  const pawns = [];
   for (let sq = 0; sq < 64; sq++) {
     const p = bd[sq];
-    if (p && p.piece === 'P' && p.color === colorStr) files[sq % 8]++;
+    if (p && p.piece === 'P' && p.color === colorStr) {
+      files[sq % 8]++;
+      pawns.push({ f: sq % 8, r: Math.floor(sq / 8) });
+    }
   }
   let islands = 0, doubled = 0, isolated = 0, inIsland = false;
   for (let f = 0; f < 8; f++) {
@@ -1530,7 +1585,16 @@ function _pawnStructurePenalty(bd, colorStr) {
       inIsland = false;
     }
   }
-  return islands + doubled + isolated;
+  let unconnected = 0;
+  for (const a of pawns) {
+    let joined = false;
+    for (const b of pawns) {
+      if (b === a) continue;
+      if (Math.abs(b.f - a.f) === 1 && Math.abs(b.r - a.r) <= 1) { joined = true; break; }
+    }
+    if (!joined) unconnected++;
+  }
+  return islands + doubled + isolated + unconnected;
 }
 
 function sampleFromProbs(moveProbs, temperature) {
