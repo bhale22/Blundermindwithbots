@@ -2684,8 +2684,38 @@ async function botMakeMove() {
       }
 
     } else if (botTab === 'hybrid') {
+      // The book sits IN FRONT of the blend, not inside it. A slot is a choice
+      // of engine; the book is a different source of moves altogether, so it is
+      // consulted before any slot is drawn and hands over for good the moment
+      // the position leaves the database. Personality still applies — the
+      // explorer returns a distribution, which is exactly what the attractors
+      // reshape.
+      if (botEngineBook && lichessExplorerActive) {
+        const bookProbs = await maiaGetMoveProbs(fen);
+        if (bookProbs && Object.keys(bookProbs).length) {
+          lastBotMoveSource = 'LC Explorer';
+          const targetDelay = botThinkTime(bookProbs, clockMs);
+          const preciseThinkSecBk = targetDelay / 1000;
+          const bkTemp = complexityAdjustedTemp(
+            timePressureTempByThink(botMaiaBaseTemp(), preciseThinkSecBk));
+          const spent = Date.now() - _botMoveStartMs;
+          const wait  = Math.max(0, targetDelay - spent);
+          if (wait > 0) await new Promise(r => setTimeout(r, wait));
+          _botMoveClockMs  = clockMs;
+          _botMoveThinkSec = preciseThinkSecBk;
+          const bkShaped = applyMoveAttractors(bookProbs);
+          uciMove = pickFromProbs(bkShaped, bkTemp);
+          uciMove = await applyCpBudgetAcceptance(fen, uciMove, bookProbs, bkShaped);
+          uciMove = await applyDegradationEvalGuard(fen, uciMove, bookProbs);
+          uciMove = await applyHardFloorBackstop(fen, uciMove, bookProbs);
+          _botMoveThinkSec = null;
+        } else {
+          lichessExplorerActive = false;   // off book — do not ask again this game
+          _explorerConfidence = 0;
+        }
+      }
       const slots = botHybridSlots.filter(s => s.weight > 0);
-      if (slots.length) {
+      if (!uciMove && slots.length) {
         const total = slots.reduce((s, sl) => s + sl.weight, 0);
         let r2 = Math.random() * total;
         let chosen = slots[slots.length - 1];

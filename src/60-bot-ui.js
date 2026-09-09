@@ -1977,6 +1977,12 @@ window.addEventListener('message', function(e) {
   var pressEl = document.getElementById('sfPressureLevel');
   if (pressEl) { pressEl.value = pressLvl; document.getElementById('sfPressureVal').textContent = pressLvl; }
 
+  // Lichess opening book. For maia3/stockfish the engine mode already encodes
+  // it (lcmaia / lcsf); a blend has no such mode, so the flag is what tells the
+  // hybrid branch to look.
+  botEngineBook = !!cfg.openingBook ||
+                  cfg.engine === 'lcsf' || cfg.engine === 'lcmaia';
+
   // SF Variety: store slider percentages directly so sfPickLevel uses them
   botSfVar1 = cfg.sfvar1 || 0;
   botSfVar2 = cfg.sfvar2 || 0;

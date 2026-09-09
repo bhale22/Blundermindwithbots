@@ -123,6 +123,10 @@ let botSfTempLevel = 2;            // temperature tier 0-4 (legacy; superseded b
 let botSfVar1 = 0;                 // % of SF calls at ±1 level (0–50)
 let botSfVar2 = 0;                 // % of SF calls at ±2 level (0–20)
 let botTimePressureMaxDrop = null; // max ELO drop from r-drop; null = use DOM slider
+// Lichess opening book in front of the engine. The lcsf/lcmaia modes encode it
+// in the mode itself; a blend cannot, because its slots are already the engine
+// choice — so the flag rides alongside for that case.
+let botEngineBook = false;
 let botMinProbPct       = 0;      // min absolute probability % — 0 = off (default); set by panel
 let botBadDayMode       = false;  // Grandmaster Bad Day: pick lowest-probability move above minProbPct threshold
 let botPressureCurveA   = null;   // ctrlA points [{x,y}] — ELO degradation vs think-time (s); seeded on the Regan model by the panel

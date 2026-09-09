@@ -33,7 +33,7 @@ let PANEL_C = null;   // the panel's T -> c map, checked against the engine's be
     const r = await page.evaluate(() => ({
       cards: [...document.querySelectorAll('#engine-mode-grid .mcard')].map(c => c.dataset.engine),
       names: [...document.querySelectorAll('#engine-mode-grid .mname')].map(c => c.textContent.trim()),
-      book: !!document.getElementById('engine-book-seg'),
+      book: !!document.getElementById('engine-book-cb'),
     }));
     ok('exactly three engine cards', r.cards.length === 3, r.cards.join(','));
     ok('and they are Maia, Flounder, Hybrid',
@@ -41,6 +41,15 @@ let PANEL_C = null;   // the panel's T -> c map, checked against the engine's be
     ok('the Stockfish card is called Flounder',
       r.names.some(n => /^Flounder/.test(n)), r.names.join(' | '));
     ok('the opening book is its own control', r.book);
+    // It was a full-width segmented bar, which at that width read as a heading
+    // with two words in it rather than as something you could press. It is set
+    // at the same weight as the engine names because it decides where the moves
+    // come from for the whole first phase of the game.
+    ok('and is weighted like an engine name, not a caption',
+      await page.evaluate(() =>
+        getComputedStyle(document.querySelector('.ob-lbl')).fontSize ===
+        getComputedStyle(document.querySelector('#engine-mode-grid .mname')).fontSize),
+      await page.evaluate(() => getComputedStyle(document.querySelector('.ob-lbl')).fontSize));
   }
 
   console.log('\n2   The three controls reach all five engine modes');
@@ -56,7 +65,7 @@ let PANEL_C = null;   // the panel's T -> c map, checked against the engine's be
       pick('stockfish'); setEngineBook('off'); out.stockfish = currentEngine;
       /* book on */      setEngineBook('on');  out.lcsf = currentEngine;
       pick('hybrid');                          out.hybrid = currentEngine;
-      out.bookRowHidden = getComputedStyle(document.getElementById('engine-book-row')).display === 'none';
+      out.bookRowShown = getComputedStyle(document.getElementById('engine-book-row')).display !== 'none';
       return out;
     });
     ok('Maia, book off  -> maia3',     r.maia3 === 'maia3', r.maia3);
@@ -64,7 +73,9 @@ let PANEL_C = null;   // the panel's T -> c map, checked against the engine's be
     ok('Flounder, off   -> stockfish', r.stockfish === 'stockfish', r.stockfish);
     ok('Flounder, on    -> lcsf',      r.lcsf === 'lcsf', r.lcsf);
     ok('Hybrid          -> hybrid',    r.hybrid === 'hybrid', r.hybrid);
-    ok('and a blend has no book toggle to get wrong', r.bookRowHidden);
+    // The book is not an engine — it sits in front of whichever one the blend
+    // draws — so there was never a reason a mixed bot could not have one.
+    ok('and a blend is offered the book too', r.bookRowShown);
   }
 
   const ENGINE_RANGE = await page.evaluate(() => {
@@ -209,6 +220,60 @@ console.log('\n3   One Elometer, wearing the selected engine');
       +r.fl.axis3 < +r.fl.axis1 && +r.fl.axis1 < 1, r.fl.axis1 + ' -> ' + r.fl.axis3);
     ok('Maia keeps T on the same axis', r.ma.axis1 === '1.0', r.ma.axis1);
     ok('the game-start marker names c too', /c 0\./.test(r.fl.mark), r.fl.mark);
+  }
+
+  console.log('\n6c  A blend shows the picture of what is actually in its slots');
+  {
+    const r = await page.evaluate(() => {
+      const pick = e => selEngineMode(
+        document.querySelector('#engine-mode-grid .mcard[data-engine="' + e + '"]'));
+      pick('hybrid');
+      const out = {};
+      hybridSlots = [{type:'maia',elo:1500,pct:50},{type:'sf',flounderElo:1200,pct:50}];
+      out.mixed = _chartEngine();
+      hybridSlots = [{type:'sf',flounderElo:1400,pct:60},{type:'sf',flounderElo:2000,pct:40}];
+      out.allFlounder = _chartEngine();
+      out.blendElo = _chartFlounderElo();
+      hybridSlots = [{type:'maia',elo:1500,pct:100}];
+      out.allMaia = _chartEngine();
+      hybridSlots = [{type:'maia',elo:1500,pct:50},{type:'sf',flounderElo:1600,pct:50}];
+      out.lead = _tempLabel(1.0).lead;
+      // hybrid + book has to survive a save and load, because 'hybrid' cannot
+      // encode the book in the engine mode the way lcsf and lcmaia do.
+      setEngineBook('on');
+      const saved = getBotConfig();
+      setEngineBook('off'); pick('maia3');
+      applyBotConfig(saved);
+      out.restored = { base: baseEngine, book: engineBook, emitted: saved.openingBook };
+      return out;
+    });
+    ok('a mixed blend draws the Maia picture', r.mixed === 'maia', r.mixed);
+    ok('an all-Flounder blend draws the Flounder one', r.allFlounder === 'flounder', r.allFlounder);
+    ok('an all-Maia blend draws Maia', r.allMaia === 'maia', r.allMaia);
+    ok('at the blend of its own slot ratings', r.blendElo === 1640, String(r.blendElo));
+    ok('and the readout names both parameters', /T\s*=\s*[\d.]+[\s\S]*c\s*=\s*[\d.]+/.test(r.lead), r.lead);
+    ok('hybrid + book survives save and load',
+      r.restored.base === 'hybrid' && r.restored.book === 'on' && r.restored.emitted === true,
+      JSON.stringify(r.restored));
+  }
+
+  console.log('\n6d  The start bar does not move when the engine does');
+  {
+    const r = await page.evaluate(() => {
+      const pick = e => selEngineMode(
+        document.querySelector('#engine-mode-grid .mcard[data-engine="' + e + '"]'));
+      const zone = () => +document.querySelector('.qs-engine-zone')
+        .getBoundingClientRect().width.toFixed(1);
+      const seen = [];
+      pick('maia3');     setEngineBook('off'); setElo(1500); seen.push(zone());
+      pick('stockfish'); setEngineBook('on');  setElo(2400); seen.push(zone());
+      pick('hybrid');                                        seen.push(zone());
+      const pill = document.getElementById('qs-engine-pill');
+      return { seen, clipped: pill.scrollWidth > pill.clientWidth + 1 };
+    });
+    ok('the engine zone is the same width whatever is selected',
+      r.seen.every(w => w === r.seen[0]), r.seen.join(' / '));
+    ok('and the longest label still fits inside it', !r.clipped);
   }
 
   console.log('\n7   Personality is no longer switched off by the engine');
