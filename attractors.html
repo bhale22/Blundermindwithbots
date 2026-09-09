@@ -92,8 +92,23 @@ logBoost = slider&nbsp;value &times; scale &times; response(position)</span>
   <p>
     <code>response(position)</code> is each control&rsquo;s own measurement, always bounded to
     &minus;1&hellip;+1 by <code>tanh</code>, so no single control can run away. In practice a
-    control delivers about <strong>0.89</strong> of its nominal push to the move it most wants;
+    control delivers about <strong>0.81</strong> of its nominal push to the move it most wants;
     the rest of the range is used to grade the moves it likes less.
+  </p>
+  <p>
+    <strong>Every divisor below scales with the material left on the board.</strong> A
+    two-defender swing in a queenless endgame is enormous and the same swing in a full
+    middlegame is nothing, so a fixed constant would make each personality loud in the
+    middlegame and mute in the endgame &mdash; which is backwards, since most players&rsquo;
+    style shows up more as the board empties. Where a formula says <code>k</code>, the value
+    actually used is:
+  </p>
+  <span class="f">phase = clamp( material still on the board / 78 , 0.35 , 1 )
+k&nbsp;used = k &times; phase</span>
+  <p class="note" style="margin-top:12px">
+    <strong>One control takes no share of the budget:</strong> Panicky, because it scales the
+    time-pressure curve rather than scoring any move. Everything else splits the budget in
+    proportion to how far its slider is pushed.
   </p>
   <p class="note">
     <strong>The budget is also a hard limit, not just a volume knob.</strong> Whatever the
@@ -129,13 +144,20 @@ logBoost += v &times; scale &times; tanh( (threats(after) &minus; threats(before
     <h3>Fort Knox &middot; Glass cannon</h3>
     <p class="poles">&minus;5 Glass cannon &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Fort Knox +5</p>
     <p>
-      The mirror image of Attacker, pointed at the bot&rsquo;s own pieces: it counts how many
-      times its pieces defend each other. Fort Knox likes moves that leave everything mutually
-      protected; Glass cannon likes leaving pieces loose.
+      The mirror image of Attacker, pointed at the bot&rsquo;s own pieces &mdash; but it only
+      counts pieces the opponent is <em>actually attacking</em>, and only by how far the
+      attackers outnumber the defenders. Fort Knox wants nothing loose that matters; Glass
+      cannon is happy to leave pieces hanging and get on with the game.
     </p>
-    <span class="f">defenders(board) = &Sigma; over bot pieces of (number of bot pieces defending it)
+    <span class="f">looseness(board) = &Sigma; over bot pieces the opponent attacks
+                   of max(0, attackers &minus; defenders)
 
-logBoost += v &times; scale &times; tanh( (defenders(after) &minus; defenders(before)) / 3 )</span>
+logBoost += v &times; scale &times; tanh( (looseness(before) &minus; looseness(after)) / 1.5 )</span>
+    <p class="note" style="margin:9px 0 0">
+      It used to count total defenders across every piece, so a rook guarding an unattacked
+      knight scored the same as covering a piece that was hanging. Most of that total was
+      inherited from the position and never moved, so most of the signal was noise.
+    </p>
     <p class="when"><b>Applies to:</b> every move.</p>
   </div>
 
@@ -143,15 +165,19 @@ logBoost += v &times; scale &times; tanh( (defenders(after) &minus; defenders(be
     <h3>Trade seeker &middot; Trade avoider</h3>
     <p class="poles">&minus;5 Trade avoider &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Trade seeker +5</p>
     <p>
-      Captures get the control&rsquo;s full weight outright. A move that is not a capture is
-      scored instead by how many enemy pieces the moved piece now attacks from its new square
-      &mdash; an offer to trade rather than a trade.
+      Captures and offers to trade &mdash; but weighted by whether trading is a good idea right
+      now. Trading is contextual: you do it when you are ahead, or to kill an attack. A player
+      who simply takes everything is not a trade-seeker, they are a weak player, so the control
+      leans harder into exchanges when the bot is up material and warier when it is down.
     </p>
-    <span class="f">capture (including en passant):
-  logBoost += v &times; scale
+    <span class="f">context = 1 + 0.6 &times; tanh( (my material &minus; their material) / 4 )
+          &rarr; 1.0 when level, up to 1.6 well ahead, down to 0.4 well behind
+
+capture (including en passant):
+  logBoost += v &times; scale &times; tanh( context )
 
 otherwise, with n = enemy pieces the moved piece now attacks:
-  logBoost += v &times; scale &times; tanh( n / 2 )</span>
+  logBoost += v &times; scale &times; tanh( context &times; n / 2 )</span>
     <p class="when"><b>Applies to:</b> every move.</p>
   </div>
 
@@ -184,12 +210,14 @@ logBoost += v &times; scale &times; tanh( penalty(before) &minus; penalty(after)
     <p class="poles">&minus;5 Space waster &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Space cadet +5</p>
     <p>
       A <em>weak square</em> is an empty square the bot attacks zero times. Space cadet prefers
-      moves that leave fewer of them &mdash; a board it has a say over. This is the same
-      definition the board-vision overlay draws, so the control and the picture agree.
+      moves that leave fewer of them &mdash; a board it has a say over. Only the four middle
+      ranks count: the back ranks and the squares behind either side&rsquo;s own pawns are not
+      what anybody is fighting over, and counting them buried the signal under squares that
+      never change hands.
     </p>
-    <span class="f">weak(board) = number of empty squares with no bot attacker
+    <span class="f">weak(board) = empty squares on ranks 3-6 with no bot attacker
 
-logBoost += v &times; scale &times; tanh( (weak(before) &minus; weak(after)) / 5 )</span>
+logBoost += v &times; scale &times; tanh( (weak(before) &minus; weak(after)) / 3 )</span>
     <p class="when"><b>Applies to:</b> every move.</p>
   </div>
 
@@ -210,6 +238,59 @@ attacked by the opponent and defended by no bot piece:
     <p class="when">
       <b>Applies to:</b> the first 20 plies (10 moves each) only. After that it is silent.
     </p>
+  </div>
+
+  <div class="a">
+    <h3>Pawn grabber &middot; Principled</h3>
+    <p class="poles">&minus;5 Principled &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Pawn grabber +5</p>
+    <p>
+      Materialism, weighted by what is actually won &mdash; and drawn especially to the capture
+      it probably should not make. The second term fires when the capturing piece lands on a
+      square the opponent still attacks: that is the poisoned pawn, and taking it is the whole
+      personality. Different from Trade, which is about exchanging at all rather than about
+      what is won.
+    </p>
+    <span class="f">grabbed  = value of the captured piece (P1 N3 B3 R5 Q9), 0 if no capture
+poisoned = 1 if the opponent still attacks the destination square, else 0
+
+logBoost += v &times; scale &times; tanh( (grabbed + 2 &times; poisoned) / 3 )</span>
+    <p class="when">
+      <b>Applies to:</b> captures. How badly it can end is still bounded by the CP Budget, so a
+      grabber takes the pawns it can afford and no others.
+    </p>
+  </div>
+
+  <div class="a">
+    <h3>King safety &middot; Bravado</h3>
+    <p class="poles">&minus;5 Bravado &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; King safety +5</p>
+    <p>
+      How much the bot minds its own king being in a draught. Counts enemy attacks on the nine
+      squares around its king, before and after the move. Positive keeps the king tucked up;
+      negative leaves it airy and gets on with its own plans.
+    </p>
+    <span class="f">danger(board) = &Sigma; over the 9 squares around my king
+                of (number of enemy pieces attacking that square)
+
+logBoost += v &times; scale &times; tanh( (danger(before) &minus; danger(after)) / 1 )</span>
+    <p class="when">
+      <b>Applies to:</b> every move. It is naturally quiet while the king is safe and loud once
+      it is not, which is the point.
+    </p>
+  </div>
+
+  <div class="a">
+    <h3>Prophylaxis &middot; Own plans</h3>
+    <p class="poles">&minus;5 Own plans &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Prophylaxis +5</p>
+    <p>
+      Scores a move by how much room it takes away from the <em>opponent</em>, rather than how
+      much it gains for the bot. It is the one idea here that looks across the board instead of
+      at itself, and it is the difference between a bot playing its own game and one playing
+      against you.
+    </p>
+    <span class="f">theirRoom(board) = &Sigma; over enemy pieces of (squares that piece attacks)
+
+logBoost += v &times; scale &times; tanh( (theirRoom(before) &minus; theirRoom(after)) / 3 )</span>
+    <p class="when"><b>Applies to:</b> every move.</p>
   </div>
 
   <div class="a">
@@ -250,15 +331,23 @@ temperature &times;= exp( v &times; 0.08 &times; tanh( (complexity &minus; 0.5) 
   </div>
 
   <div class="a">
-    <h3>Complicate &middot; Simplify when winning</h3>
-    <p class="poles">&minus;5 Simplify when winning &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Complicate when winning +5</p>
+    <h3>Front-runner &middot; Swindler</h3>
+    <p class="poles">&minus;5 Swindler &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Front-runner +5</p>
     <p>
-      The same measurement as Chaos, but only consulted when the bot is actually ahead. Some
-      players muddy the water once they are winning; others trade everything off.
+      The same measurement as Chaos, but consulted only once the game has a direction &mdash;
+      and it points opposite ways depending on which direction that is. A <strong>front-runner</strong>
+      pushes their luck when ahead and folds when behind. A <strong>swindler</strong> converts
+      cleanly when winning and muddies the water when losing, which is where most saved games
+      come from.
     </p>
-    <span class="f">only when the bot's evaluation is better than +50 cp:
-  temperature &times;= exp( v &times; 0.08 &times; tanh( (complexity &minus; 0.5) &times; 4 ) )</span>
-    <p class="when"><b>Applies to:</b> the whole turn, and only while winning.</p>
+    <span class="f">when the bot is better than +50 cp:
+  temperature &times;= exp(  v &times; 0.08 &times; tanh( (complexity &minus; 0.5) &times; 4 ) )
+
+when the bot is worse than &minus;50 cp:
+  temperature &times;= exp( &minus;v &times; 0.08 &times; tanh( (complexity &minus; 0.5) &times; 4 ) )
+
+between the two, it does nothing</span>
+    <p class="when"><b>Applies to:</b> the whole turn, once the game is decided one way or the other.</p>
   </div>
 
   <div class="a">
@@ -305,7 +394,8 @@ panicky&rarr; multiplier 2.5
 
 temperature = base + fraction &times; multiplier &times; (ceiling &minus; base)</span>
     <p class="when">
-      <b>Applies to:</b> timed games only. In an untimed game it does nothing at all.
+      <b>Applies to:</b> timed games only. In an untimed game it does nothing at all, and it
+      takes no share of the centipawn budget in any game &mdash; it scores no moves.
     </p>
   </div>
 </div>

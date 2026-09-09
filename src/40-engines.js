@@ -664,10 +664,21 @@ function complexityAdjustedTemp(baseTemp) {
     const cplxSignal = Math.tanh((sfCplxScore - 0.5) * 4);
     temp *= Math.exp(chaosV * 0.08 * cplxSignal);
   }
-  if (compwinV !== 0 && sfCplxEval !== null && sfCplxEval > 50) {
-    // When winning (+50cp+), seek complexity to complicate; avoid when losing
+  // Result-conditioned complexity. This is what makes the control distinct from
+  // Chaos: Chaos likes sharp positions all the time, this one only cares once
+  // the game has a direction.
+  //
+  // The losing half never existed. The condition was `> 50` alone, so the
+  // comment's own promise to "avoid when losing" was never code, and the most
+  // recognisably human thing the control could do — muddying the water when
+  // you are getting beaten — could not happen at all.
+  //
+  //   positive (Front-runner): complicate while winning, simplify while losing
+  //   negative (Swindler):     simplify while winning, complicate while losing
+  if (compwinV !== 0 && sfCplxEval !== null) {
     const cplxSignal = Math.tanh((sfCplxScore - 0.5) * 4);
-    temp *= Math.exp(compwinV * 0.08 * cplxSignal);
+    if (sfCplxEval > 50)        temp *= Math.exp( compwinV * 0.08 * cplxSignal);
+    else if (sfCplxEval < -50)  temp *= Math.exp(-compwinV * 0.08 * cplxSignal);
   }
   return Math.max(0.1, Math.min(5.0, temp));
 }

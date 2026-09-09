@@ -1186,6 +1186,9 @@ function applyMoveAttractors(moveProbs, opts) {
   const gambitoVal    = attrVals['gambito']    || 0;
   const attackerVal   = attrVals['attacker']   || 0;
   const structureVal  = attrVals['structure']  || 0;
+  const grabberVal    = attrVals['grabber']    || 0;
+  const kingSafetyVal = attrVals['kingsafety'] || 0;
+  const prophylaxVal  = attrVals['prophylaxis']|| 0;
   const hasPiece   = Object.values(pieceVals).some(v => v !== 0);
   const hasTrade   = tradeVal      !== 0;
   const hasSpace   = spaceCadetVal !== 0;
@@ -1193,6 +1196,9 @@ function applyMoveAttractors(moveProbs, opts) {
   const hasGambito = gambitoVal    !== 0;
   const hasAttacker = attackerVal  !== 0;
   const hasStructure = structureVal !== 0;
+  const hasGrabber   = grabberVal    !== 0;
+  const hasKingSafe  = kingSafetyVal !== 0;
+  const hasProphylax = prophylaxVal  !== 0;
 
   // ── Min-probability filter (Maia3 / LC modes) ─────────────────────────────
   // Absolute popularity floor — an honest distribution control. The old
@@ -1215,7 +1221,17 @@ function applyMoveAttractors(moveProbs, opts) {
   // where at least one control is active. (Attractors without per-move logic —
   // luck, hustle, pressure — still count so they keep their budget share.)
   const CP_PER_LOG_UNIT = 150;
-  const allVals  = [...Object.values(attrVals), ...Object.values(pieceVals)];
+  // `pressure` is excluded from the split, deliberately. It has no per-move
+  // logic at all — it scales how hard the time-pressure curve bites, which is a
+  // property of the clock rather than of the move. Leaving it in the divisor
+  // meant a bot that merely described itself as panicky quietly took centipawns
+  // away from every control that actually scores moves.
+  const BUDGETLESS_ATTRACTORS = ['pressure'];
+  const allVals  = [
+    ...Object.entries(attrVals)
+        .filter(([k]) => !BUDGETLESS_ATTRACTORS.includes(k))
+        .map(([, v]) => v),
+    ...Object.values(pieceVals)];
   const ccAbs    = activeCC.reduce((s, c) => s + Math.abs(c.value || 0), 0);
   const totalAbs = allVals.reduce((s, v) => s + Math.abs(v || 0), 0) + ccAbs;
   const scale = (cpBudget > 0 && totalAbs > 0)
@@ -1263,7 +1279,8 @@ function applyMoveAttractors(moveProbs, opts) {
 
   // ── Per-move reweighting ──────────────────────────────────────────────────
   const needsPerMove = scale > 0 &&
-    (hasPiece || hasTrade || hasSpace || hasFortkx || hasGambito || hasAttacker || hasStructure || hasCustom);
+    (hasPiece || hasTrade || hasSpace || hasFortkx || hasGambito || hasAttacker ||
+     hasStructure || hasGrabber || hasKingSafe || hasProphylax || hasCustom);
   if (!needsPerMove) return _maybeStaleSeek(filtered);
 
   const PIECE_MAP   = { p:'pawn', n:'knight', b:'bishop', r:'rook', q:'queen', k:'king' };
@@ -1275,17 +1292,96 @@ function applyMoveAttractors(moveProbs, opts) {
   // Shared empty Set for buildDirectAtk — pin-free is fine for a heuristic
   const _EMPTY = new Set();
 
-  // ── Fort Knox: baseline defender count from current atkMap ───────────────
-  // atkMap[sq].w / .b = squares of pieces of that color attacking sq.
-  // Summing over all bot pieces gives total "protection coverage" before the move.
-  let currentTotalDefs = 0;
-  if (hasFortkx && atkMap) {
-    for (let sq = 0; sq < 64; sq++) {
-      if (board[sq] && board[sq].color === botColorStr && atkMap[sq]) {
-        currentTotalDefs += (atkMap[sq][botColorStr] || []).length;
-      }
-    }
+
+  // ── How much board is left ────────────────────────────────────────────────
+  // Every response below is a tanh of some delta over a constant, and those
+  // constants were fixed. A two-defender swing in a queenless endgame is
+  // enormous; the same swing in a full middlegame is nothing — so a fixed
+  // divisor made every personality loud in the middlegame and mute exactly
+  // where a player's style shows most. Scaling the divisor with the material
+  // still on the board keeps one setting meaning the same thing all game.
+  //
+  // Floored at 0.35 so a bare king-and-pawn ending does not divide by nearly
+  // zero and saturate every control at once.
+  const _PVAL = { P:1, N:3, B:3, R:5, Q:9, K:0 };
+  let _matAll = 0, _matBot = 0, _matOpp = 0;
+  for (let sq = 0; sq < 64; sq++) {
+    const p = board[sq];
+    if (!p) continue;
+    const v = _PVAL[p.piece] || 0;
+    _matAll += v;
+    if (p.color === botColorStr) _matBot += v; else _matOpp += v;
   }
+  const phase = Math.max(0.35, Math.min(1, _matAll / 78));   // 78 = both armies, no kings
+  const kf = k => k * phase;                                  // phase-scaled divisor
+
+  // Trade is conditioned on the material balance: a trade-seeker should be
+  // keener when ahead and warier when behind, because trading into a lost
+  // endgame is not a style, it is a mistake. 1.0 at level, 1.6 well ahead,
+  // 0.4 well behind — and it stays inside the tanh, so the bound still holds.
+  const tradeCtx = 1 + 0.6 * Math.tanh((_matBot - _matOpp) / 4);
+
+  // ── Fort Knox: baseline LOOSENESS before the move ──────────────────────────
+  // Was: the total number of times the bot's pieces defend each other, which
+  // counted a rook guarding an unattacked knight on b1 exactly as heavily as
+  // covering a piece that was hanging. Most of that total is inherited from the
+  // position and never moves, so most of the signal was noise.
+  //
+  // Looseness asks the question a solid player actually asks: is anything of
+  // mine under-defended where it matters. Only pieces the opponent is actually
+  // attacking contribute, and each contributes by how far the attackers
+  // outnumber the defenders.
+  const _looseness = (bd, atk) => {
+    let loose = 0;
+    for (let sq = 0; sq < 64; sq++) {
+      const p = bd[sq];
+      if (!p || p.color !== botColorStr || !atk[sq]) continue;
+      const att = (atk[sq][oppColorStr] || []).length;
+      if (att === 0) continue;
+      const def = (atk[sq][botColorStr] || []).length;
+      loose += Math.max(0, att - def);
+    }
+    return loose;
+  };
+  // ── King safety: enemy attacks on the squares around the bot's king ────────
+  // Same definition as the kingDanger custom metric, so the slider and the
+  // custom control cannot disagree about what danger means.
+  const _kingDanger = (bd, atk) => {
+    let ksq = -1;
+    for (let sq = 0; sq < 64; sq++) {
+      const p = bd[sq];
+      if (p && p.piece === 'K' && p.color === botColorStr) { ksq = sq; break; }
+    }
+    if (ksq < 0) return 0;
+    const kfile = ksq % 8, krank = (ksq / 8) | 0;
+    let c = 0;
+    for (let df = -1; df <= 1; df++) for (let dr = -1; dr <= 1; dr++) {
+      const f = kfile + df, r = krank + dr;
+      if (f < 0 || f > 7 || r < 0 || r > 7) continue;
+      const sq2 = r * 8 + f;
+      if (atk[sq2]) c += (atk[sq2][oppColorStr] || []).length;
+    }
+    return c;
+  };
+  // ── Prophylaxis: how much room the OPPONENT has ────────────────────────────
+  // Reuses the mobility metric's definition (raw attacked squares summed over
+  // the side's pieces), pointed at the opponent instead of the bot.
+  const _oppMobility = (bd) => {
+    let m = 0;
+    for (let sq = 0; sq < 64; sq++) {
+      const p = bd[sq];
+      if (p && p.color === oppColorStr) { const a = rawAttacks(sq, bd); m += a ? a.length : 0; }
+    }
+    return m;
+  };
+
+  let currentLooseness = 0, currentKingDanger = 0, currentOppMobility = 0;
+  if (hasFortkx || hasKingSafe) {
+    const curAtkFull = buildDirectAtk(board, _EMPTY, _EMPTY, _EMPTY, _EMPTY);
+    if (hasFortkx)  currentLooseness  = _looseness(board, curAtkFull);
+    if (hasKingSafe) currentKingDanger = _kingDanger(board, curAtkFull);
+  }
+  if (hasProphylax) currentOppMobility = _oppMobility(board);
 
   // ── Attacker / Peacemaker: baseline threat count before the move ───────────
   // Attacker used to score the ABSOLUTE number of opponent pieces the bot
@@ -1310,9 +1406,10 @@ function applyMoveAttractors(moveProbs, opts) {
   // ── Space Cadet: baseline weak-square count for the bot ─────────────────────
   // Weak square = empty square with zero bot attackers (atkMap[sq][botColorStr].length === 0).
   // Matches the overlay definition so the attractor and the visual are consistent.
-  let currentBotWeakCount = 0;
+  let currentBotWeakCount = 0;   // counted over _CONTESTED only, as below
   if (hasSpace && atkMap) {
     for (let sq = 0; sq < 64; sq++) {
+      if (!_CONTESTED[sq]) continue;   // must match the per-move loop exactly
       if (!board[sq] && atkMap[sq] && (atkMap[sq][botColorStr] || []).length === 0) {
         currentBotWeakCount++;
       }
@@ -1320,7 +1417,7 @@ function applyMoveAttractors(moveProbs, opts) {
   }
 
   // ── Structure: baseline pawn-structure penalty for the bot's pawns ────────
-  // Penalty = islands + doubled + isolated (lower = tighter). Positive slider
+  // Penalty = islands + doubled + isolated + unconnected (lower = tighter). Positive slider
   // (Rigid) boosts moves that reduce the penalty; negative (Loose) boosts
   // moves that open the structure. Only own pawn moves can change it, so the
   // per-move check below is gated on pieceLetter === 'p'.
@@ -1425,12 +1522,12 @@ function applyMoveAttractors(moveProbs, opts) {
         ? toPiece.color === oppColorStr
         : (pieceLetter === 'p' && uciMove[0] !== uciMove[2]); // en passant
       if (isCapture) {
-        logBoost += tradeVal * scale;
+        logBoost += tradeVal * scale * Math.tanh(tradeCtx);
       } else {
         // Non-capture: score by how many opponent pieces the piece now threatens
         const newThreats = getSimToAtk()
           .filter(sq => { const p = getSimBd()[sq]; return p && p.color === oppColorStr; }).length;
-        if (newThreats > 0) logBoost += tradeVal * scale * Math.tanh(newThreats / 2);
+        if (newThreats > 0) logBoost += tradeVal * scale * Math.tanh(tradeCtx * newThreats / kf(2));
       }
     }
 
@@ -1440,31 +1537,24 @@ function applyMoveAttractors(moveProbs, opts) {
     // tanh(delta/5): reducing weak squares by 5 → 0.76; by 10 → 0.96.
     if (hasSpace) {
       const simBd_   = getSimBd();
-      const simAtk   = buildDirectAtk(simBd_, _EMPTY, _EMPTY, _EMPTY, _EMPTY);
+      const simAtk   = getSimAtkCC();
       let simBotWeakCount = 0;
       for (let sq = 0; sq < 64; sq++) {
+        if (!_CONTESTED[sq]) continue;
         if (!simBd_[sq] && simAtk[sq] && (simAtk[sq][botColorStr] || []).length === 0) {
           simBotWeakCount++;
         }
       }
       const delta = currentBotWeakCount - simBotWeakCount; // positive = fewer weak squares
-      if (delta !== 0) logBoost += spaceCadetVal * scale * Math.tanh(delta / 5);
+      if (delta !== 0) logBoost += spaceCadetVal * scale * Math.tanh(delta / kf(3));
     }
 
     // ── Fort Knox: total friendly defender count delta ────────────────────────
     // buildDirectAtk without pins is fast and sufficient for a positional heuristic.
     // tanh((postDefs - preDefs) / 3) maps the delta to a smooth −1..+1 signal.
     if (hasFortkx) {
-      const simBd_  = getSimBd();
-      const simAtk  = buildDirectAtk(simBd_, _EMPTY, _EMPTY, _EMPTY, _EMPTY);
-      let totalDefs = 0;
-      for (let sq = 0; sq < 64; sq++) {
-        const p = simBd_[sq];
-        if (p && p.color === botColorStr && simAtk[sq]) {
-          totalDefs += (simAtk[sq][botColorStr] || []).length;
-        }
-      }
-      logBoost += fortKxVal * scale * Math.tanh((totalDefs - currentTotalDefs) / 3);
+      const loose = _looseness(getSimBd(), getSimAtkCC());
+      logBoost += fortKxVal * scale * Math.tanh((currentLooseness - loose) / kf(1.5));
     }
 
     // ── Gambito: ECO gambit continuation / structural fallback ───────────────
@@ -1502,7 +1592,7 @@ function applyMoveAttractors(moveProbs, opts) {
         }
       }
       logBoost += attackerVal * scale *
-        Math.tanh((totalOppThreats - currentOppThreats) / 2);
+        Math.tanh((totalOppThreats - currentOppThreats) / kf(2));
     }
 
     // ── Structure: pawn-structure penalty delta (own pawn moves only) ────────
@@ -1515,7 +1605,47 @@ function applyMoveAttractors(moveProbs, opts) {
     if (hasStructure && pieceLetter === 'p') {
       const simPenalty = _pawnStructurePenalty(getSimBd(), botColorStr);
       const delta = currentStructPenalty - simPenalty;
-      if (delta !== 0) logBoost += structureVal * scale * Math.tanh(delta);
+      if (delta !== 0) logBoost += structureVal * scale * Math.tanh(delta / kf(1));
+    }
+
+    // ── Pawn grabber / Principled ─────────────────────────────────────────────
+    // Materialism, weighted by what is actually won, and MORE attracted to the
+    // capture it probably should not make: the second term fires when the
+    // capturing piece lands on a square the opponent still attacks. That is the
+    // poisoned pawn, and taking it is the whole personality. Distinct from
+    // Trade, which is about exchanging at all rather than about what is won.
+    //
+    // How badly this can end is still bounded by the CP Budget check, so a
+    // grabber takes the pawns it can afford and no others.
+    if (hasGrabber) {
+      const captured = board[mv.to];
+      let grabVal = captured && captured.color === oppColorStr ? (_PVAL[captured.piece] || 0)
+                  : (pieceLetter === 'p' && uciMove[0] !== uciMove[2]) ? 1   // en passant
+                  : 0;
+      if (grabVal > 0) {
+        const poisoned = (getSimAtkCC()[mv.to] &&
+          (getSimAtkCC()[mv.to][oppColorStr] || []).length > 0) ? 1 : 0;
+        logBoost += grabberVal * scale * Math.tanh((grabVal + 2 * poisoned) / kf(3));
+      }
+    }
+
+    // ── King safety / Bravado ─────────────────────────────────────────────────
+    // Enemy attacks on the nine squares around the bot's own king, before and
+    // after. Positive keeps the king out of the draught; negative is happy to
+    // leave it airy and get on with its own plans.
+    if (hasKingSafe) {
+      const danger = _kingDanger(getSimBd(), getSimAtkCC());
+      logBoost += kingSafetyVal * scale * Math.tanh((currentKingDanger - danger) / kf(1));
+    }
+
+    // ── Prophylaxis / Own plans ───────────────────────────────────────────────
+    // Scores the move by how much room it takes AWAY from the opponent, rather
+    // than how much it gains for the bot. It is the one positional idea here
+    // that looks across the board rather than at itself, and it is what
+    // separates a bot playing its own game from one playing against you.
+    if (hasProphylax) {
+      const oppMob = _oppMobility(getSimBd());
+      logBoost += prophylaxVal * scale * Math.tanh((currentOppMobility - oppMob) / kf(3));
     }
 
     // ── Custom controls: metric delta on the simulated board ──────────────────
@@ -1540,6 +1670,23 @@ function applyMoveAttractors(moveProbs, opts) {
       : Object.keys(filtered).length ? filtered
       : moveProbs);
 }
+
+// The squares Space Cadet is allowed to care about: ranks 3 to 6.
+//
+// It used to count every empty square on the board that the bot did not attack,
+// which meant the opponent's back rank and the squares behind their own pawns
+// carried the same weight as the centre. Most of the count was squares nobody
+// will ever contest, and the control measured weakest of the whole set as a
+// result. This is the band where space is actually fought over, and it is
+// symmetric, so it means the same thing for either colour.
+const _CONTESTED = (() => {
+  const m = new Array(64).fill(false);
+  for (let sq = 0; sq < 64; sq++) {
+    const r = (sq / 8) | 0;          // 0 = 8th rank
+    if (r >= 2 && r <= 5) m[sq] = true;
+  }
+  return m;
+})();
 
 // ── Pawn-structure penalty: islands + doubled + isolated (lower = tighter) ──
 // Cheap stand-in for the brief's "SF pawn eval delta" — same direction, no

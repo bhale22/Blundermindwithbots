@@ -24,7 +24,8 @@ const FENS = [
   '2rq1rk1/pb1nbppp/1p2pn2/8/2BP4/2N1PN2/PP2QPPP/R1B2RK1 w - - 2 12',
   'r2q1rk1/pp1nbppp/2p1pn2/3p4/2PP4/2N1PN2/PPQ1BPPP/R1B2RK1 b - - 4 9',
 ];
-const ATTRACTORS = ['attacker', 'fortkx', 'trade', 'spacecadet', 'gambito', 'structure'];
+const ATTRACTORS = ['attacker', 'fortkx', 'trade', 'spacecadet', 'gambito', 'structure',
+                    'grabber', 'kingsafety', 'prophylaxis'];
 const BUDGET = 300;
 
 const browser = await chromium.launch();

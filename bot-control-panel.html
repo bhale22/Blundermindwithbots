@@ -3946,7 +3946,7 @@ const PIECE_DESCS = {
 
 const ATTRACTORS = [
   { id:'chaos',      labelLeft:'Simplifier',          labelRight:'Chaos Agent',           default:0 },
-  { id:'compwin',    labelLeft:'Simplify when winning',labelRight:'Complicate when winning',default:0 },
+  { id:'compwin',    labelLeft:'Swindler',            labelRight:'Front-runner',          default:0 },
   { id:'spacecadet', labelLeft:'Space waster',  labelRight:'Space cadet', default:0 },
   { id:'fortkx',     labelLeft:'Glass cannon',  labelRight:'Fort Knox',   default:0 },
   { id:'gambito',    labelLeft:'Gambit shy',    labelRight:'Gambito',     default:0 },
@@ -3956,6 +3956,9 @@ const ATTRACTORS = [
   { id:'luck',       labelLeft:'Good day',             labelRight:'Bad day',               default:0 },
   { id:'pressure',   labelLeft:'Calm under pressure',  labelRight:'Panicky',               default:0 },
   { id:'attacker',   labelLeft:'Peacemaker',           labelRight:'Attacker',              default:0 },
+  { id:'grabber',    labelLeft:'Principled',           labelRight:'Pawn grabber',          default:0 },
+  { id:'kingsafety', labelLeft:'Bravado',              labelRight:'King safety',           default:0 },
+  { id:'prophylaxis',labelLeft:'Own plans',            labelRight:'Prophylaxis',           default:0 },
 ];
 
 // ── Piece types ──────────────────────────────────────────────
@@ -7599,10 +7602,19 @@ function drawStyleGauge(val){
 /* ══════════════════════════════════════════════════════════════
    ATTRACTOR CP ALLOCATION DISPLAY
 ══════════════════════════════════════════════════════════════ */
+// Controls that take no share of the centipawn budget, because they do not
+// score moves. `pressure` scales how hard the time-pressure curve bites, which
+// is a property of the clock rather than of any move — leaving it in the split
+// meant a bot that merely called itself panicky quietly took centipawns away
+// from every control that does choose moves. Mirrors BUDGETLESS_ATTRACTORS in
+// src/50-bot-engine.js; the two lists must agree or this display lies.
+const BUDGETLESS_ATTRACTORS = ['pressure'];
+
 function updateAttrCpDisplays(){
   const budget = +(document.getElementById('r-style')?.value ?? 100);
   const entries = [
-    ...ATTRACTORS.map(a => ({ absVal: Math.abs(attractorValues[a.id] ?? 0), domId: 'attrval-' + a.id, phase: null })),
+    ...ATTRACTORS.filter(a => !BUDGETLESS_ATTRACTORS.includes(a.id))
+      .map(a => ({ absVal: Math.abs(attractorValues[a.id] ?? 0), domId: 'attrval-' + a.id, phase: null })),
     ...PIECE_TYPES.map(p => ({ absVal: Math.abs(pieceValues[p.id] ?? 0), domId: 'pieceval-' + p.id, phase: null })),
     ...customControls.map(c => ({ absVal: Math.abs(c.value ?? 0), domId: 'ccval-' + c.id, phase: c.phase || 'all' })),
   ];
@@ -10242,7 +10254,7 @@ const FLOUNDER_CHART_MOVES = [
 // prints exactly this number. A maxed attractor's nominal push is
 // exp(budget/150) on its favourite move; averaged over Attacker, Fort Knox,
 // Trade, Space Cadet and Gambito on real middlegame positions, what it actually
-// delivers is 0.892 of that (Structure included, now that it works). So the illustrated personality is as strong as a
+// delivers is 0.813 of that, averaged over all nine position controls. So the illustrated personality is as strong as a
 // real one at full tilt, and no stronger.
 //
 // It read 0.29 before, which was wrong twice over: measured on Attacker alone —
@@ -10256,7 +10268,7 @@ const FLOUNDER_CHART_PREF = [0, -1, 1, 0, 0];
 // The Maia chart had the identical overstatement and nobody had noticed,
 // because there was nothing to compare it against until Flounder grew a chart
 // of its own that had to agree with it.
-const CHART_PREF_GAIN = 0.892;
+const CHART_PREF_GAIN = 0.813;
 const FLOUNDER_CHART_PREF_GAIN = CHART_PREF_GAIN;
 
 // The shipped ladder, copied from src/40-engines.js. The panel is a separate
