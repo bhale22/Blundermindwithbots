@@ -58,7 +58,7 @@ const strength = await page.evaluate(async ({ fens, attrs }) => {
   }
   return out;
 }, { fens: FENS, attrs: ['attacker','fortkx','trade','spacecadet','gambito','structure',
-                         'grabber','kingsafety','prophylaxis','chaos'] });
+                         'grabber','kingsafety','prophylaxis','tension'] });
 
 console.log('\n1   Every position control actually moves a move');
 {
@@ -266,7 +266,7 @@ console.log('\n7   Metrics measure the thing they are named after');
   ok('and neither is one on your own half', r.opOwnHalf === 0, String(r.opOwnHalf));
 }
 
-console.log(String.fromCharCode(10) + '8   Chaos scores the position the move leaves behind');
+console.log(String.fromCharCode(10) + '8   Tension scores the position the move leaves behind');
 {
   const r = await page.evaluate(() => {
     const E = new Set();
@@ -289,7 +289,7 @@ console.log(String.fromCharCode(10) + '8   Chaos scores the position the move le
     };
     const t0 = tension(bd);
     const boosts = v => {
-      window._bcpCpBudget = 300; window._bcpAttractorValues = { chaos: v };
+      window._bcpCpBudget = 300; window._bcpAttractorValues = { tension: v };
       const uni = {}; moves.forEach(m => uni[m] = 1 / moves.length);
       const sh = _botWithPosition(bd, t, ep, cst,
         () => applyMoveAttractors(uni, { rawWeights: true }));
@@ -311,8 +311,57 @@ console.log(String.fromCharCode(10) + '8   Chaos scores the position the move le
   // Judging the position it is standing IN gives every candidate the same score,
   // which is no preference at all. It has to judge what each move leaves behind.
   ok('the position offers both sharpening and quieting moves', r.spread);
-  ok('Chaos wants the sharper board and Simplifier the quieter one, on every move',
+  ok('Tension seeker wants the tangled board and Defuser the quiet one, every move',
     r.agree);
+}
+
+console.log(String.fromCharCode(10) + '9   Complexity reads the depth data the probe already produced');
+{
+  const r = await page.evaluate(async () => {
+    if (!sfReady) await sfInit();
+    const fen = 'r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R w KQkq - 4 5';
+    const bd = parseFen(fen);
+    const t = turn, ep = epSq, cst = castling;
+    botPlayerColor = 'black';
+    botMinProbPct = 0; botBadDayMode = false; botDayLower = 0; botDayUpper = 100;
+    window._bcpCustomControls = []; window._bcpPieceValues = {};
+    const moves = _fenLegalUcis(fen);
+    sfMoveComplexity = null;
+    const t0 = performance.now();
+    await sfEvalMoves(fen, moves, REGAN_PROBE_DEPTH);
+    const probeMs = performance.now() - t0;
+    const cx = sfMoveComplexity;
+    if (!cx) return { populated: false };
+    const vals = Object.values(cx);
+    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const boosts = v => {
+      window._bcpCpBudget = 300; window._bcpAttractorValues = { complexity: v };
+      const uni = {}; moves.forEach(m => uni[m] = 1 / moves.length);
+      const sh = _botWithPosition(bd, t, ep, cst,
+        () => applyMoveAttractors(uni, { rawWeights: true }));
+      const n = moves.length; const o = {};
+      moves.forEach(m => o[m] = Math.log(Math.max(1e-12, sh[m] || 0) * n));
+      return o;
+    };
+    const ch = boosts(5), cl = boosts(-5), off = boosts(0);
+    const rows = moves.filter(m => cx[m] != null).map(m => ({ v: cx[m], ch: ch[m], cl: cl[m] }));
+    return {
+      populated: true, covered: rows.length, total: moves.length,
+      probeMs: Math.round(probeMs),
+      spread: Math.max(...vals) - Math.min(...vals),
+      agree: rows.every(x => Math.abs(x.v - mean) < 0.01 ||
+        (x.v > mean ? x.ch > 0 && x.cl < 0 : x.ch < 0 && x.cl > 0)),
+      silent: moves.every(m => Math.abs(off[m]) < 1e-9),
+    };
+  });
+  // The whole point is that this costs no extra engine time: the probe that
+  // Flounder already runs emits every candidate at every depth, and only the
+  // deepest line was ever being kept.
+  ok('the probe supplies a number for every candidate', r.populated &&
+    r.covered === r.total, r.covered + '/' + r.total);
+  ok('and the candidates genuinely differ in it', r.spread > 5, r.spread.toFixed(1));
+  ok('Chaos agent wants the murky move, Clarity the clear one', r.agree);
+  ok('and the control is silent at zero', r.silent);
 }
 
 ok('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));

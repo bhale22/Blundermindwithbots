@@ -253,19 +253,44 @@ attacked by the opponent and defended by no bot piece:
   </div>
 
   <div class="a">
-    <h3>Chaos agent &middot; Simplifier</h3>
-    <p class="poles">&minus;5 Simplifier &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Chaos agent +5</p>
+    <h3>Tension seeker &middot; Defuser</h3>
+    <p class="poles">&minus;5 Defuser &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Tension seeker +5</p>
     <p>
-      Measures how much contact there is between the two armies: every piece on the board,
-      counted once for each enemy attacker bearing on it. A quiet position scores near zero;
-      one where captures and recaptures are hanging over several squares at once scores high.
-      It is judged on the position the move <em>leaves behind</em>, so a Chaos agent picks the
-      move that tangles the board and a Simplifier the one that untangles it.
+      How much contact there is between the two armies: every piece on the board, counted once
+      for each enemy attacker bearing on it. A quiet position scores near zero; one where
+      captures and recaptures hang over several squares at once scores high. Judged on the
+      position the move <em>leaves behind</em>, so a tension seeker picks the move that tangles
+      the board and a defuser the one that untangles it.
     </p>
     <span class="f">tension(board) = &Sigma; over every piece of (enemy pieces attacking it)
 
 logBoost += v &times; scale &times; tanh( (tension(after) &minus; tension(before)) / 4 )</span>
-    <p class="when"><b>Applies to:</b> every move.</p>
+    <p class="when"><b>Applies to:</b> every move. Costs nothing and gives the same answer every time.</p>
+  </div>
+
+  <div class="a">
+    <h3>Chaos agent &middot; Clarity</h3>
+    <p class="poles">&minus;5 Clarity &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Chaos agent +5</p>
+    <p>
+      Whether the position after the move is <em>hard to judge</em>, which is a different
+      question from how much wood is in contact. A queen trade can be all tension and no
+      difficulty; a quiet knight move can leave a mess. The measure is how much the engine
+      changes its mind about a move as it searches deeper: a move settled by depth three leads
+      somewhere clear, one whose score is still moving at depth eight does not.
+    </p>
+    <span class="f">volatility(move) = average |change in the move's score| per extra ply
+
+logBoost += v &times; scale &times; tanh( (volatility(move) &minus; average volatility) / 25 )</span>
+    <p class="note" style="margin:9px 0 0">
+      It is scored against the other candidates rather than an absolute scale, because what
+      counts as a hard position is different in an endgame and a middlegame.
+    </p>
+    <p class="when">
+      <b>Applies to:</b> every move, and it is <b>approximate</b>. The same position measured
+      twice agrees about two thirds of the time &mdash; a shallow search does not divide its
+      effort the same way twice. Tension is the steady one; this is the truer one. That is why
+      they are two sliders and not one, and why a bot can hold both opinions at once.
+    </p>
   </div>
 
   <div class="a">
@@ -348,7 +373,7 @@ logBoost += v &times; scale &times; tanh( (theirMoves(before) &minus; theirMoves
 <div class="card">
   <h2>Controls that act on the whole turn</h2>
   <p class="note" style="margin-top:0">
-    These three do not score individual moves. They still take a share of the CP Budget, because
+    These four do not score individual moves. They still take a share of the CP Budget, because
     they are still part of the personality.
   </p>
 

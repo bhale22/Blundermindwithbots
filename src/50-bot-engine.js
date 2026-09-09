@@ -1197,7 +1197,11 @@ function applyMoveAttractors(moveProbs, opts) {
   const gambitoVal    = attrVals['gambito']    || 0;
   const attackerVal   = attrVals['attacker']   || 0;
   const structureVal  = attrVals['structure']  || 0;
-  const chaosVal      = attrVals['chaos']      || 0;
+  // `chaos` is the id these two grew out of; a bot saved under it carries the
+  // tension behaviour it had then, so that is where it maps.
+  const tensionVal    = attrVals['tension'] != null ? attrVals['tension']
+                      : (attrVals['chaos'] || 0);
+  const complexityVal = attrVals['complexity'] || 0;
   const grabberVal    = attrVals['grabber']    || 0;
   const kingSafetyVal = attrVals['kingsafety'] || 0;
   const prophylaxVal  = attrVals['prophylaxis']|| 0;
@@ -1208,7 +1212,10 @@ function applyMoveAttractors(moveProbs, opts) {
   const hasGambito = gambitoVal    !== 0;
   const hasAttacker = attackerVal  !== 0;
   const hasStructure = structureVal !== 0;
-  const hasChaos     = chaosVal      !== 0;
+  const hasTension   = tensionVal    !== 0;
+  // Only scoreable where a probe has actually supplied per-move numbers.
+  const moveCplx     = (typeof sfMoveComplexity !== 'undefined') ? sfMoveComplexity : null;
+  const hasCplx      = complexityVal !== 0 && !!moveCplx;
   const hasGrabber   = grabberVal    !== 0;
   const hasKingSafe  = kingSafetyVal !== 0;
   const hasProphylax = prophylaxVal  !== 0;
@@ -1293,7 +1300,8 @@ function applyMoveAttractors(moveProbs, opts) {
   // ── Per-move reweighting ──────────────────────────────────────────────────
   const needsPerMove = scale > 0 &&
     (hasPiece || hasTrade || hasSpace || hasFortkx || hasGambito || hasAttacker ||
-     hasStructure || hasChaos || hasGrabber || hasKingSafe || hasProphylax || hasCustom);
+     hasStructure || hasTension || hasCplx || hasGrabber || hasKingSafe ||
+     hasProphylax || hasCustom);
   if (!needsPerMove) return _maybeStaleSeek(filtered);
 
   const PIECE_MAP   = { p:'pawn', n:'knight', b:'bishop', r:'rook', q:'queen', k:'king' };
@@ -1354,7 +1362,16 @@ function applyMoveAttractors(moveProbs, opts) {
     }
     return def;
   };
-  // ── Chaos: how much contact there is between the two armies ────────────────
+  // The average volatility across the candidates, so Complexity scores a move
+  // against the alternatives on offer rather than against an absolute scale that
+  // means different things in different positions.
+  let meanCplx = 0;
+  if (hasCplx) {
+    const vals = Object.values(moveCplx);
+    if (vals.length) meanCplx = vals.reduce((a, b) => a + b, 0) / vals.length;
+  }
+
+  // ── Tension: how much contact there is between the two armies ──────────────
   // Every piece on the board, counted once for each enemy attacker bearing on
   // it. In a quiet position almost nothing is touching anything and the number
   // is near zero; in a melee where captures and recaptures are hanging over
@@ -1406,11 +1423,11 @@ function applyMoveAttractors(moveProbs, opts) {
   const _oppMobility = (bd) => _legalMoveCount(bd, oppColorStr);
 
   let currentDefence = 0, currentKingDanger = 0, currentOppMobility = 0, currentTension = 0;
-  if (hasFortkx || hasKingSafe || hasChaos) {
+  if (hasFortkx || hasKingSafe || hasTension) {
     const curAtkFull = buildDirectAtk(board, _EMPTY, _EMPTY, _EMPTY, _EMPTY);
     if (hasFortkx)   currentDefence    = _defence(board, curAtkFull);
     if (hasKingSafe) currentKingDanger = _kingDanger(board, curAtkFull);
-    if (hasChaos)    currentTension    = _tension(board, curAtkFull);
+    if (hasTension)  currentTension    = _tension(board, curAtkFull);
   }
   if (hasProphylax) currentOppMobility = _oppMobility(board);
 
@@ -1641,15 +1658,23 @@ function applyMoveAttractors(moveProbs, opts) {
       if (delta !== 0) logBoost += structureVal * scale * Math.tanh(delta / kf(1));
     }
 
-    // ── Chaos agent / Simplifier ──────────────────────────────────────────────
+    // ── Tension seeker / Defuser ──────────────────────────────────────────────
     // Scores the position the move leaves behind, not the one it was played
-    // from: a Chaos agent wants the board MORE tangled after its turn than
-    // before, a Simplifier wants it quieter. Judging the position it is already
-    // standing in cannot express either preference — every candidate move
-    // inherits the same score.
-    if (hasChaos) {
+    // from: a tension seeker wants the board more tangled after its turn than
+    // before, a defuser wants it quieter.
+    if (hasTension) {
       const tense = _tension(getSimBd(), getSimAtkCC());
-      logBoost += chaosVal * scale * Math.tanh((tense - currentTension) / kf(4));
+      logBoost += tensionVal * scale * Math.tanh((tense - currentTension) / kf(4));
+    }
+
+    // ── Chaos agent / Clarity ─────────────────────────────────────────────────
+    // How hard the position after this move is to judge, measured against the
+    // other candidates. Tension asks how much wood is in contact; this asks
+    // whether the answer is obvious. They part company often — a queen trade can
+    // be all contact and no difficulty, a quiet knight move can leave a mess.
+    if (hasCplx && moveCplx[uciMove] != null) {
+      logBoost += complexityVal * scale *
+        Math.tanh((moveCplx[uciMove] - meanCplx) / 25);
     }
 
     // ── Pawn grabber / Principled ─────────────────────────────────────────────
@@ -1941,6 +1966,25 @@ function flounderEffectiveElo(clockMs, thinkSec) {
 
   const dropped = pressureSlotEloByThink(base, thinkSec);
   return Math.max(floorElo, Math.min(base, dropped));
+}
+
+// Complexity is read off a MultiPV probe's per-depth output, so it only exists
+// where such a probe has run. Flounder's own probe already supplies it. The Maia
+// paths have to ask, and they ask over the moves the personality could actually
+// choose between rather than every legal move, which is what keeps it to a
+// single affordable probe instead of one per candidate.
+//
+// Silent no-op when the control is at zero, so nobody pays for a measurement
+// their bot does not read.
+async function _ensureMoveComplexity(fen, probs) {
+  if (typeof sfMoveComplexity === 'undefined' || sfMoveComplexity) return;
+  const v = (window._bcpAttractorValues || {})['complexity'] || 0;
+  if (!v || !probs) return;
+  const top = Object.entries(probs)
+    .sort((a, b) => b[1] - a[1]).slice(0, 10).map(e => e[0]);
+  if (top.length < 2) return;
+  if (!sfReady) { try { await sfInit(); } catch (e) { return; } }
+  try { await sfEvalMoves(fen, top, REGAN_PROBE_DEPTH); } catch (e) {}
 }
 
 // ── Flounder, with a plain search only as a safety net ───────────────────────
@@ -2484,6 +2528,9 @@ async function botMakeMove() {
     }
     // ── End opening book layer ────────────────────────────────────────────
 
+    // Whatever the last probe left behind belongs to the last position.
+    if (typeof sfMoveComplexity !== 'undefined') sfMoveComplexity = null;
+
     if (botTab === 'sf') {
       await sfInit();
       // ── Flounder: Stockfish at a target rating ──────────────────────────
@@ -2590,6 +2637,7 @@ async function botMakeMove() {
         _botMoveClockMs = clockMs; // clock fallback for the ctrlB cutoff
         _botMoveThinkSec = preciseThinkSecM3; // actual think drives curve B
         const adjTemp = complexityAdjustedTemp(m3EffTemp);
+        await _ensureMoveComplexity(fen, m3Probs);
         const m3Shaped = applyMoveAttractors(m3Probs);
         uciMove = pickFromProbs(m3Shaped, adjTemp);
         uciMove = await applyCpBudgetAcceptance(fen, uciMove, m3Probs, m3Shaped);
@@ -2660,6 +2708,7 @@ async function botMakeMove() {
         if (delay > 0) await new Promise(r => setTimeout(r, delay));
         _botMoveClockMs = clockMs;
         _botMoveThinkSec = preciseThinkSec;
+        await _ensureMoveComplexity(fen, probs);
         const maiaShaped = applyMoveAttractors(probs);
         uciMove = pickFromProbs(maiaShaped, complexityAdjustedTemp(effectiveTemp));
         uciMove = await applyCpBudgetAcceptance(fen, uciMove, probs, maiaShaped);
@@ -2718,6 +2767,7 @@ async function botMakeMove() {
         if (delay > 0) await new Promise(r => setTimeout(r, delay));
         _botMoveClockMs = clockMs;
         _botMoveThinkSec = preciseThinkSecLcsf;
+        await _ensureMoveComplexity(fen, lcsfProbs);
         const lcsfShaped = applyMoveAttractors(lcsfProbs);
         uciMove = pickFromProbs(lcsfShaped, lcsfEffTemp);
         uciMove = await applyCpBudgetAcceptance(fen, uciMove, lcsfProbs, lcsfShaped);
@@ -2750,6 +2800,7 @@ async function botMakeMove() {
           if (wait > 0) await new Promise(r => setTimeout(r, wait));
           _botMoveClockMs  = clockMs;
           _botMoveThinkSec = preciseThinkSecBk;
+          await _ensureMoveComplexity(fen, bookProbs);
           const bkShaped = applyMoveAttractors(bookProbs);
           uciMove = pickFromProbs(bkShaped, bkTemp);
           uciMove = await applyCpBudgetAcceptance(fen, uciMove, bookProbs, bkShaped);
@@ -2811,6 +2862,7 @@ async function botMakeMove() {
             if (delay > 0) await new Promise(res => setTimeout(res, delay));
             _botMoveClockMs = clockMs;
             _botMoveThinkSec = preciseThinkSecHyb;
+            await _ensureMoveComplexity(fen, probs);
             const hybShaped = applyMoveAttractors(probs);
             uciMove = pickFromProbs(hybShaped, effectiveTemp);
             uciMove = await applyCpBudgetAcceptance(fen, uciMove, probs, hybShaped);

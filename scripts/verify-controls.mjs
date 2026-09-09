@@ -78,7 +78,7 @@ console.log('\nPHONE  390×844');
   ok('chip reads Neutral when nothing is set', (await chip()) === 'Neutral', await chip());
 
   // The old averaging bug: one attractor at ±5, everything else centred.
-  await page.evaluate(() => { attrSetValue('attr-chaos', 5); });
+  await page.evaluate(() => { attrSetValue('attr-tension', 5); });
   await page.waitForTimeout(200);
   const one = await chip();
   ok('a single maxed attractor is NOT "Neutral"', !/Neutral/.test(one), one);

@@ -3974,7 +3974,8 @@ const PIECE_DESCS = {
 };
 
 const ATTRACTORS = [
-  { id:'chaos',      labelLeft:'Simplifier',          labelRight:'Chaos Agent',           default:0 },
+  { id:'tension',    labelLeft:'Defuser',             labelRight:'Tension seeker',        default:0 },
+  { id:'complexity', labelLeft:'Clarity',             labelRight:'Chaos agent',           default:0 },
   { id:'compwin',    labelLeft:'Swindler',            labelRight:'Front-runner',          default:0 },
   { id:'spacecadet', labelLeft:'Space waster',  labelRight:'Space cadet', default:0 },
   { id:'fortkx',     labelLeft:'Glass cannon',  labelRight:'Fort Knox',   default:0 },
@@ -8615,6 +8616,14 @@ function applyBotConfig(cfg){
   // Attractors + piece values (sliders are rendered with defaults — set each)
   grp(() => {
     attractorValues = Object.assign({}, attractorValues, cfg.attractorValues || {});
+    // Bots saved before Tension and Complexity were separate carry a single
+    // `chaos` value, and what it did then is what Tension does now.
+    if (attractorValues.chaos != null) {
+      if (cfg.attractorValues && cfg.attractorValues.tension == null) {
+        attractorValues.tension = attractorValues.chaos;
+      }
+      delete attractorValues.chaos;
+    }
     pieceValues     = Object.assign({}, pieceValues,     cfg.pieceValues     || {});
     Object.keys(attractorValues).forEach(id => {
       const el = document.getElementById('attr-' + id);
