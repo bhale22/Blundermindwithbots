@@ -1863,6 +1863,14 @@ function openBotModal() {
           ready: _maiaReady, progress: _maiaProgress || 0
         }, location.origin);
         frame.contentWindow.postMessage({ type: 'botTourAuto' }, location.origin);
+        // A quick-block pick made before the iframe was ready: repeat it once,
+        // then forget it, so an edit made in here is not overwritten the next
+        // time the panel opens.
+        if (window._quickBotPanelPick) {
+          const qp = window._quickBotPanelPick;
+          window._quickBotPanelPick = null;
+          frame.contentWindow.postMessage({ type: 'quickPick', engine: qp.engine, elo: qp.elo }, location.origin);
+        }
         // Push current palette so the panel always matches the app's active BG theme.
         if (typeof _syncPanelTheme === 'function') {
           const t = (typeof BG_THEMES !== 'undefined' && typeof currentBgTheme !== 'undefined')

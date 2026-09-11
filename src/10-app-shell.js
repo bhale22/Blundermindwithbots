@@ -2018,7 +2018,7 @@ const TOURS = {
     { sel:'#commitModeChip', title:'How your moves get played',
       body:'This chip sits with your clock and switches how a move is committed. <b>✋ Release to move</b> plays the move the moment you let go. <b>👆 Tap to confirm</b> instead <i>parks</i> the piece on the square with every overlay live, so you can take your finger off the board, read what the move actually does, and only then tap again to play it — or tap a different square to change your mind. On a phone your finger covers the very squares you moved there to read, so this is the difference between seeing the answer and guessing. Tap the chip to switch, even mid-game.' },
     { sel:'#quickBot', title:'Start a game',
-      body:'The fastest way in. The row underneath sets the two things that matter: which opponent — Flounder 600 is the gentlest, 2400 the strongest — and which colour you play. <b>Play as Random</b> re-rolls every game. Pick <b>Open Bot-Builder…</b> from the same list to build your own instead.' },
+      body:'The fastest way in. The row underneath sets the two things that matter: which opponent — 600 is the gentlest, 1400 the strongest offered here; the builder goes on up to 2400 — and which colour you play. Picking here changes only the engine and its rating: a bot you built keeps its personality, and the line under the picker shows it. <b>Play as Random</b> re-rolls every game. Pick <b>Open Bot-Builder…</b> from the same list to build your own instead.' },
     { sel:'#mpSidebarBtn', title:'Play a friend',
       body:'Two people, one board, over the internet. <b>Inviting a friend with a private link is the recommended way</b> — you know who you are playing. You can post an open challenge instead if you would rather take on a stranger. Either way it runs on the honour system: there is <b>no cheat detection</b>, and once a move is committed there are <b>no take-backs</b>.' },
     { sel:'#botSidebarBtn', title:'Bot Builder',
@@ -4277,10 +4277,12 @@ const QUICK_FLOUNDER_MIN = FLOUNDER_ELO_MIN, QUICK_FLOUNDER_MAX = FLOUNDER_ELO_M
 const QUICK_FLOUNDER_DEFAULT = 600;
 
 // Coarser than the dial on purpose: a picker is for choosing an opponent, not
-// for tuning one. These are round steps the Maia list also uses, so the two
-// engines can be compared straight down the dropdown. Any other rating (one set
-// in the builder) still runs — quickBotSync just shows it as Custom.
-const QUICK_FLOUNDER_ELOS = [600, 800, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400];
+// for tuning one. The same five steps as the Maia list below, so the two
+// engines read straight across the dropdown and neither offers a strength the
+// other does not: this block is on the training board, and someone who wants a
+// 2400 opponent is already in the builder. Any other rating (one set in the
+// builder) still runs — quickBotSync just shows it under the bot's name.
+const QUICK_FLOUNDER_ELOS = [600, 800, 1000, 1200, 1400];
 
 // Maia3 is one 44MB network that answers "what would a human of rating R play
 // here", so a rating is the whole choice — there is no separate strength dial
@@ -4430,6 +4432,7 @@ function quickBotSync(){
   // are painted from the same config here — the panel can never announce an
   // opponent the block would then contradict.
   document.querySelectorAll('#quickBotSel, #bmwBotSel').forEach(_quickBotPaintSel);
+  _quickBotPaintPersona();
   if(typeof botColorPref === 'undefined') return;
   document.querySelectorAll('#quickBotColor, #bmwBotColor').forEach(function(c){
     if(c.value !== botColorPref) c.value = botColorPref;
@@ -4448,12 +4451,12 @@ function _quickBotPaintSel(sel){
   // the player box both said "Test Bot".
   const _nameEl = document.getElementById('botNameInput');
   const _named  = !!(_nameEl && _nameEl.value.trim());
-  const plainSf = !_named && (typeof botTab === 'undefined' || botTab === 'sf') &&
+  const plainSf = !_named && (typeof botTab === 'undefined' || botTab === 'sf' || botTab === 'lcsf') &&
                   QUICK_FLOUNDER_ELOS.includes(elo);
   // The same test one tab over. Gated on the model actually being here: with
   // Maia absent the tab falls back to Flounder, so resting the picker on
   // "Maia 1000" would name an opponent that is not the one playing.
-  const plainMaia = !_named && typeof botTab !== 'undefined' && botTab === 'maia3' &&
+  const plainMaia = !_named && typeof botTab !== 'undefined' && (botTab === 'maia3' || botTab === 'maia') &&
                     typeof maia3SelectedRating !== 'undefined' &&
                     QUICK_MAIA_RATINGS.includes(maia3SelectedRating) &&
                     typeof _maiaStatus !== 'undefined' && _maiaStatus === 'ready';
@@ -4480,34 +4483,75 @@ function _quickBotPaintSel(sel){
   }
 }
 
-// Everything a quick-start opponent is NOT.
+// The quick block is the builder's engine card and rating dial, on the board.
+// It changes WHICH engine plays and HOW STRONG — nothing else. A bot someone
+// spent time giving a personality keeps it when they turn the rating up here,
+// exactly as it would if they moved the dial in the builder; the readout under
+// the picker says so. (An earlier version reset the whole bot to a plain
+// engine on every pick, which made the most prominent control on the page a
+// personality eraser.)
 //
-// The builder writes to these same globals, so a bot made there leaves its
-// personality attractors, its bad-day flag and its time-pressure curves behind
-// on the config the quick block then labels "Flounder 1200" or "Maia 1000".
-// Those leftovers are not cosmetic: attractors reshape a Maia distribution
-// move by move, and a pressure curve floors Stockfish's effective level once a
-// clock is running — which this block can now start. Without clearing them the
-// picker would be naming one opponent while another played.
-//
-// Draw behaviour is set rather than cleared: a quick-start bot is the casual
-// opponent, so it takes a draw unless it is genuinely winning. 400cp is roughly
-// a clear piece up.
-function _quickBotPlainConfig(){
+// The one thing set here is draw behaviour on a first visit: a casual opponent
+// takes a draw unless it is genuinely winning (400cp is roughly a clear piece
+// up). Once a builder config has been applied, the builder's own draw settings
+// are the bot's and are left alone.
+function _quickBotFirstVisitDefaults(){
+  if(window._lastAppliedBotConfig) return;
   botAcceptDraws          = true;
   botDrawAcceptMargin     = 400;
   botDrawUseObjectiveEval = true;
-  window._bcpAttractorValues = {};
-  window._bcpPieceValues     = {};
-  botBadDayMode     = false;
-  botPressureCurveA = null;
-  botPressureCurveB = null;
-  botTimePressure   = 'steady';
-  // A level or rating chosen here replaces any custom name the builder was
-  // carrying, otherwise the block would announce "Panicky Hybrid Bot" and
-  // start SF 3.
+}
+
+// Does the current config carry a personality at all? Anything the attractor
+// machinery would act on: attractor or piece preferences, custom controls, the
+// bad-day or hustler modes. The CP budget alone is not one — with nothing to
+// spend it on it is inert.
+function _quickBotPersonaInfo(){
+  const av = window._bcpAttractorValues || {}, pv = window._bcpPieceValues || {};
+  const cc = Array.isArray(window._bcpCustomControls) ? window._bcpCustomControls : [];
+  const nz = o => Object.keys(o).some(k => +o[k]);
+  let badDay = false, hustler = false;
+  try{ badDay = !!botBadDayMode; }catch(e){}
+  hustler = !!window._bcpHustlerTempMode;
+  const has = nz(av) || nz(pv) || cc.length > 0 || badDay || hustler;
+  const budget = (window._bcpCpBudget != null) ? Math.max(0, +window._bcpCpBudget || 0) : 0;
   const nameEl = document.getElementById('botNameInput');
-  if(nameEl) nameEl.value = '';
+  const name = nameEl ? nameEl.value.trim() : '';
+  let book = false;
+  try{ book = !!botEngineBook; }catch(e){}
+  return { has: has, budget: has ? budget : 0, name: name, book: book };
+}
+
+// The readout under the opponent picker. Two jobs: tell someone who built a
+// bot that its personality is still riding along at the new rating, and tell
+// a first-time visitor that "0 cp" is a dial they have not touched yet.
+function _quickBotPaintPersona(){
+  const p = _quickBotPersonaInfo();
+  const text = p.has
+    ? (p.name ? p.name + ' · ' : 'Personality · ') + p.budget + ' cp budget' + (p.book ? ' · book' : '')
+    : 'No personality · 0 cp' + (p.book ? ' · book' : '') + ' — build one…';
+  document.querySelectorAll('#quickBotPersona, #bmwBotPersona').forEach(function(el){
+    el.textContent = text;
+    el.classList.toggle('has', p.has);
+    el.title = p.has
+      ? 'This bot keeps its personality at whatever rating you pick here. Click to open the Bot-Builder.'
+      : 'A plain engine at this rating. Click to give it a personality in the Bot-Builder.';
+  });
+}
+
+// Tell the builder what the quick block just chose. The builder is an iframe
+// with its own state; before this it opened on whatever it last showed (Maia
+// 1500 on a fresh visit) while the board was about to start Flounder 600 — two
+// controls naming two opponents. The iframe may not have finished loading when
+// the start-up pick runs, so the flag lets openBotModal repeat the push once.
+function _quickBotPushToPanel(engine, elo){
+  window._quickBotPanelPick = { engine: engine, elo: elo };
+  try{
+    const f = document.getElementById('botModalFrame');
+    if(f && f.contentWindow){
+      f.contentWindow.postMessage({ type: 'quickPick', engine: engine, elo: elo }, location.origin);
+    }
+  }catch(e){}
 }
 
 function quickBotPick(v){
@@ -4537,30 +4581,42 @@ function quickBotPick(v){
       if(typeof maiaDownloadModel === 'function') maiaDownloadModel();
       return;
     }
-    if(typeof botSetTab === 'function') botSetTab('maia3');
-    if(typeof maia3SetRating === 'function') maia3SetRating(parseInt(maiaPick[1], 10));
-    // Maia's own sampling, undistorted. The builder's slider is the same value,
-    // so it is moved too rather than left showing a temperature nothing uses.
-    botMaiaTempValue = QUICK_MAIA_TEMP;
-    const tEl  = document.getElementById('maia3Temp');
-    if(tEl) tEl.value = QUICK_MAIA_TEMP;
-    const tOut = document.getElementById('maia3TempVal');
-    if(tOut) tOut.textContent = QUICK_MAIA_TEMP.toFixed(1);
-    _quickBotPlainConfig();
+    const mr = parseInt(maiaPick[1], 10);
+    // With the builder's book in front, the same engine runs under the
+    // book-fronted tab; the book's own rating follows when it is pinned.
+    if(typeof botSetTab === 'function') botSetTab(botEngineBook ? 'maia' : 'maia3');
+    if(typeof maia3SetRating === 'function') maia3SetRating(mr);
+    _quickBotSyncBookRating(mr);
+    _quickBotFirstVisitDefaults();
+    _quickBotPushToPanel('maia3', mr);
     quickBotSync();
     return;
   }
   const elo = Math.max(QUICK_FLOUNDER_MIN,
               Math.min(QUICK_FLOUNDER_MAX, parseInt(v, 10) || QUICK_FLOUNDER_DEFAULT));
-  if(typeof botSetTab === 'function') botSetTab('sf');
+  if(typeof botSetTab === 'function') botSetTab(botEngineBook ? 'lcsf' : 'sf');
   const eloEl = document.getElementById('flounderElo');
   if(eloEl){
     eloEl.value = elo;
     const out = document.getElementById('flounderEloVal');
     if(out) out.textContent = elo;
   }
-  _quickBotPlainConfig();
+  _quickBotSyncBookRating(elo);
+  _quickBotFirstVisitDefaults();
+  _quickBotPushToPanel('stockfish', elo);
   quickBotSync();
+}
+
+// The builder's book rating is pinned to the engine's unless its config says
+// otherwise, so a rating picked here moves the book's band with it — the same
+// thing the pin does inside the builder.
+function _quickBotSyncBookRating(elo){
+  if(!botEngineBook) return;
+  const cfg = window._lastAppliedBotConfig;
+  if(cfg && cfg.lcMaiaEloLinked === false) return;
+  const band = (typeof _snapToLcBand === 'function') ? _snapToLcBand(elo) : String(elo);
+  if(typeof lcsfSetRating === 'function') lcsfSetRating(band);
+  if(typeof lcSetRating   === 'function') lcSetRating(band);
 }
 
 function quickBotStart(){

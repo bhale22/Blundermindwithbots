@@ -1462,6 +1462,13 @@ canvas{
   border:1px solid var(--border);border-radius:6px;cursor:pointer;
 }
 .bmw-sel:hover{border-color:var(--accent);color:var(--text-primary);}
+.bmw-persona{
+  flex:1 1 100%;border:0;background:transparent;padding:0 2px;margin-top:-2px;
+  font-family:inherit;font-size:10px;color:var(--text-dim);text-align:left;cursor:pointer;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.bmw-persona.has{color:var(--text-secondary);}
+.bmw-persona:hover{color:var(--accent);}
 .bmw-sel:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
 
 .bmw-or{
@@ -1591,6 +1598,19 @@ canvas{
   font-family:inherit;font-size:11px;font-weight:600;padding:4px 3px;cursor:pointer;
 }
 .qb-row .qb-sel + .qb-sel{border-left:1px solid rgba(74,171,116,0.55);}
+/* The personality readout. A button because it opens the builder, styled as
+   a caption because it is one. "has" lights it: a bot with a personality
+   reads as a thing someone made; 0 cp reads as a dial not yet touched. */
+.qb-persona{
+  display:block;width:100%;border:0;border-top:1px solid rgba(74,171,116,0.35);
+  background:transparent;color:var(--st-go-fg,#1d6b41);opacity:.72;
+  font-family:inherit;font-size:9.5px;font-weight:600;letter-spacing:0.02em;
+  padding:3px 6px;text-align:left;cursor:pointer;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.qb-persona.has{opacity:1;}
+.qb-persona:hover{background:var(--st-go-hv,rgba(90,212,144,0.22));}
+.qb-persona:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
 .qb-sel:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
 
 /* ── Indicator state key ────────────────────────────────────────────────────
@@ -3213,6 +3233,8 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <optgroup label="Flounder — rated engine" id="bmwBotLevels"></optgroup>
       <option value="builder">Open Bot-Builder…</option>
     </select>
+    <button type="button" class="bmw-persona" id="bmwBotPersona"
+            onclick="bmWelcomeChoose('bot')"></button>
     <select class="bmw-sel" id="bmwBotColor" onchange="botSetPlayerColor(this.value)"
             aria-label="Choose which colour you play">
       <option value="random">Play as Random</option>
@@ -3614,6 +3636,11 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
           <option value="builder">Open Bot-Builder…</option>
         </select>
       </div>
+      <!-- What rides along with the pick: the personality (or the absence of
+           one), its CP budget, and the book. The picker above sets only the
+           engine and rating, and this is the line that says so. -->
+      <button type="button" class="qb-persona" id="quickBotPersona"
+              onclick="if(typeof openBotModal==='function')openBotModal()"></button>
       <div class="qb-row">
         <select class="qb-sel" id="quickBotColor" onchange="botSetPlayerColor(this.value)"
                 aria-label="Choose which colour you play">

@@ -635,18 +635,47 @@ input[type=range]::-webkit-slider-thumb:active{cursor:grabbing;}
    full-width segmented bar, which at that width read as a heading with two
    words in it rather than as something you could press. */
 .ob-row{
-  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;
   margin:8px 0 4px;padding:10px 12px;
   background:var(--carbon-surface);border:0.5px solid var(--border);
   border-radius:var(--r);
 }
 .ob-row.on{border-color:var(--amber);}
+/* Same type as the engine card names (.mname) in every format, so the book
+   reads as a peer of the engines rather than a heading over them. */
 .ob-lbl{
   font-family:var(--font-u);font-size:15px;font-weight:500;letter-spacing:0.09em;
   text-transform:uppercase;color:var(--text-secondary);line-height:1.4;
   transition:color 0.2s;
 }
 .ob-row.on .ob-lbl{color:var(--amber);}
+/* The blurb drops under the whole row so the toggle can sit beside the name. */
+.ob-row .tog-desc{flex-basis:100%;margin-top:0;}
+/* The explorer's rating, to the right of the switch. Only there while the book
+   is on — off, nothing reads it. */
+.ob-elo{display:none;align-items:center;gap:6px;}
+.ob-row.on .ob-elo{display:flex;}
+.ob-elo-lbl{font-family:var(--font-m);font-size:8.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-dim);white-space:nowrap;}
+.ob-elo input{
+  width:62px;padding:4px 6px;font-family:var(--font-m);font-size:11px;color:var(--amber-bright);
+  background:var(--carbon-surface);border:0.5px solid var(--border-amber);border-radius:2px;
+  text-align:center;outline:none;
+}
+.ob-elo input:disabled{color:var(--amber);opacity:.75;}
+/* Pin: "same as the engine's ELO". Upright and lit when pinned; tilted out of
+   the surface when the book has a rating of its own. */
+.ob-pin{
+  flex:0 0 auto;display:flex;align-items:center;justify-content:center;
+  width:22px;height:22px;background:none;border:0.5px solid transparent;border-radius:3px;
+  padding:0;margin:0;cursor:pointer;color:var(--text-dim);transition:color .15s,border-color .15s;
+}
+.ob-pin svg{width:14px;height:14px;display:block;transform:rotate(38deg);transition:transform .18s ease;}
+.ob-pin svg path{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linejoin:round;stroke-linecap:round;}
+.ob-pin.linked{color:var(--amber);border-color:var(--border-amber);}
+.ob-pin.linked svg{transform:rotate(0deg);}
+.ob-pin.linked svg .pin-head{fill:currentColor;}
+.ob-pin:hover{color:var(--amber-bright);}
+.ob-pin:focus-visible{outline:1px solid var(--amber);outline-offset:2px;}
 @media (max-width:820px){ .ob-lbl{font-size:12px;letter-spacing:0.04em;} }
 .seg-btn{flex:1;padding:7px 10px;font-family:var(--font-m);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;background:var(--carbon-surface);border:0.5px solid var(--border);cursor:pointer;color:var(--text-dim);transition:all 0.15s;text-align:center;}
 .seg-btn:first-child{border-radius:var(--r) 0 0 var(--r);}
@@ -1494,10 +1523,10 @@ body.fj .tag{font-size:13.5px;}
 /* --font-u name tier: italic Fraunces 500, sentence case. The brief kept these
    at their original size, but 10px italic serif engine/persona names proved too
    small in practice — bump them into the readable range. */
-body.fj .sec-label,body.fj .mname,body.fj .pname{
+body.fj .sec-label,body.fj .mname,body.fj .ob-lbl,body.fj .pname{
   font-style:italic;font-weight:500;text-transform:none;letter-spacing:0;
 }
-body.fj .mname{font-size:15px;}
+body.fj .mname,body.fj .ob-lbl{font-size:15px;}
 body.fj .pname{font-size:14px;}
 body.fj .sec-label{font-size:15px;}
 
@@ -2786,14 +2815,27 @@ body.fj .picon{font-weight:500;}
              made "LC + Stockfish" look like a third kind of engine rather than
              the same engine with a book in front of it. -->
         <div class="ob-row" id="engine-book-row">
-          <div>
-            <div class="ob-lbl">Lichess opening book</div>
-            <div class="tog-desc">While the game is still in book, play what real players of this rating actually chose</div>
-          </div>
+          <div class="ob-lbl">Lichess Opening Book</div>
           <label class="tog">
             <input type="checkbox" id="engine-book-cb" onchange="setEngineBook(this.checked ? 'on' : 'off')">
             <div class="tog-track"><div class="tog-thumb"></div></div>
           </label>
+          <!-- One rating for the explorer, whichever engine sits behind it. The
+               pin locks it to the Elometer; unpinned, the book can be a
+               master-level opening on a club-level middlegame, or the reverse. -->
+          <div class="ob-elo" id="book-elo-wrap">
+            <span class="ob-elo-lbl">Lichess ELO</span>
+            <input type="number" min="600" max="2600" step="25" value="1500" id="book-elo"
+                   oninput="onBookEloInput()" aria-label="Lichess explorer rating">
+            <button type="button" id="book-elo-pin" class="ob-pin linked" onclick="toggleBookEloPin()"
+                    aria-pressed="true" title="Pinned to the engine's ELO. Click to set the book's rating separately.">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path class="pin-head" d="M6 2h4v5l1.5 2h-7L6 7z"/>
+                <path d="M8 9v5"/>
+              </svg>
+            </button>
+          </div>
+          <div class="tog-desc">While the game is still in book, play what real players of this rating actually chose</div>
         </div>
       </div>
 
@@ -2850,7 +2892,13 @@ body.fj .picon{font-weight:500;}
                   </linearGradient>
                 </defs>
                 <path id="speedo-track" fill="none" stroke="#22262d" stroke-width="14" stroke-linecap="round"/>
-                <path id="speedo-fill" fill="none" stroke="url(#gold-arc)" stroke-width="14" stroke-linecap="butt" filter="url(#glow-f)"/>
+                <!-- The fill is the SAME arc as the track, round cap and all,
+                     revealed by a wedge from the hub out to the needle. Drawn as
+                     its own shorter arc it had square ends, and at the bottom
+                     of the range that was a thin block laid over the rounded
+                     start of the track rather than the track filling up. -->
+                <clipPath id="speedo-fill-clip"><path id="speedo-fill-clip-path" d="M 0 0"/></clipPath>
+                <path id="speedo-fill" fill="none" stroke="url(#gold-arc)" stroke-width="14" stroke-linecap="round" filter="url(#glow-f)" clip-path="url(#speedo-fill-clip)"/>
                 <!-- AFTER the fill, deliberately. The gold always starts at the
                      dial's minimum, so a locked LOW span drawn underneath would
                      be painted over and read as available — the one direction
@@ -2943,12 +2991,7 @@ body.fj .picon{font-weight:500;}
           <!-- LC + SF sub-panel -->
           <div id="engine-sub-lcsf" style="display:none;">
             <div class="dlbl"><span>Opening book — Lichess explorer</span></div>
-            <div class="ctrl">
-              <span class="ctrl-lbl">Lichess ELO</span>
-              <input type="number" min="600" max="2600" step="25" value="1200" id="lcsf-lc-elo"
-                style="width:70px;padding:4px 6px;font-family:var(--font-m);font-size:11px;color:var(--amber-bright);background:var(--carbon-surface);border:0.5px solid var(--border-amber);border-radius:2px;text-align:center;outline:none;">
-            </div>
-            <div class="ctrl-hint" style="margin-top:8px;">The explorer plays the moves real players of that rating chose. When a position is not in the database, the engine above takes over at its own rating.</div>
+            <div class="ctrl-hint" style="margin-top:8px;">The explorer plays the moves real players of the rating set beside the book switch chose. When a position is not in the database, the engine above takes over at its own rating.</div>
             <div class="engine-credit" style="margin-top:10px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);line-height:1.6;">
               Lichess is free, open-source, and ad-free — opening explorer, engine analysis, puzzles, and more:
               <a href="https://lichess.org/analysis" target="_blank" rel="noopener" style="color:var(--amber);text-decoration:none;">lichess.org/analysis</a>
@@ -2958,36 +3001,6 @@ body.fj .picon{font-weight:500;}
           <!-- LC + Maia sub-panel -->
           <div id="engine-sub-lcmaia" style="display:none;">
             <div class="dlbl"><span>Opening book — Lichess explorer</span></div>
-            <!-- Two readings of one idea — "how strong is this opponent" — taken
-                 from the explorer's rating band and from Maia's own Elo. Joined
-                 by default, because wanting them apart is the rarer case. -->
-            <div class="elo-chain-group">
-              <div class="elo-chain-rows">
-                <div class="ctrl" style="margin-bottom:6px;">
-                  <span class="ctrl-lbl">Lichess ELO</span>
-                  <input type="number" min="600" max="2600" step="25" value="1200" id="lcmaia-lc-elo"
-                    oninput="onLcMaiaEloInput('lc')"
-                    style="width:70px;padding:4px 6px;font-family:var(--font-m);font-size:11px;color:var(--amber-bright);background:var(--carbon-surface);border:0.5px solid var(--border-amber);border-radius:2px;text-align:center;outline:none;">
-                </div>
-                <div class="ctrl" style="margin-bottom:0;">
-                  <span class="ctrl-lbl">Maia 3 ELO</span>
-                  <input type="number" min="600" max="2600" step="25" value="1500" id="lcmaia-maia-elo"
-                    oninput="onLcMaiaEloInput('maia')"
-                    style="width:70px;padding:4px 6px;font-family:var(--font-m);font-size:11px;color:var(--amber-bright);background:var(--carbon-surface);border:0.5px solid var(--border-amber);border-radius:2px;text-align:center;outline:none;">
-                </div>
-              </div>
-              <button type="button" id="lcmaia-chain" class="elo-chain linked"
-                      onclick="toggleLcMaiaChain()" aria-pressed="true"
-                      title="Linked — the two ELOs move together. Click to set them separately.">
-                <span class="elo-chain-bracket" aria-hidden="true"></span>
-                <svg class="elo-chain-icon" viewBox="0 0 20 34" aria-hidden="true">
-                  <!-- Offset horizontally as well as stacked: two rings on the
-                       same axis just read as a figure-8 at this size. -->
-                  <rect class="lk lk-a" x="2.5"  y="3"  width="9" height="15" rx="4.5"/>
-                  <rect class="lk lk-b" x="8.5" y="15" width="9" height="15" rx="4.5"/>
-                </svg>
-              </button>
-            </div>
             <div class="ctrl-hint" style="margin-top:8px;">While the position is still in the Lichess database the book supplies the moves; the engine you chose above takes over the moment it runs dry, and is not consulted before then.</div>
             <!-- Maia model status / download -->
             <div class="bcp-maia-block">
@@ -8450,10 +8463,12 @@ function getBotConfig(){
     badDayMode:        selectedPersonality === 'badday',
     calmPanickyValue:  attractorValues['pressure'] || 0,
     hybridSlots:     hybridSlots.map(s=>({...s})),
-    lcsfElo:         parseInt(document.getElementById('lcsf-lc-elo')?.value || '2000'),
-    lcMaiaLcElo:     parseInt(document.getElementById('lcmaia-lc-elo')?.value || '2000'),
-    lcMaiaMaiaElo:   parseInt(document.getElementById('lcmaia-maia-elo')?.value || '1500'),
-    lcMaiaEloLinked: lcMaiaEloLinked,
+    // One book rating, named twice because the app reads a different key per
+    // engine mode. Maia's own number is the Elometer, which is `elo` above.
+    lcsfElo:         bookElo(),
+    lcMaiaLcElo:     bookElo(),
+    lcMaiaMaiaElo:   currentElo,
+    lcMaiaEloLinked: bookEloLinked,
     // Curve-implied max drop (base ELO − curve minimum): consumed by the SF
     // level-floor mapping and legacy readers. The ctrlA spline is what runs.
     timePressureMaxDrop: Math.max(0, Math.round(currentElo - ctrlA.reduce((m, p) => Math.min(m, +p.y), currentElo))),
@@ -8539,24 +8554,24 @@ function applyBotConfig(cfg){
   });
   grp(() => setSFVariety(cfg.sfvar1 || 0, cfg.sfvar2 || 0));
   grp(() => {
-    const set = (id, v) => { const el = document.getElementById(id); if(el && v != null) el.value = v; };
-    // Restore the chain before the values, so the switch never contradicts the
-    // numbers under it.
+    // The book's rating is whichever key the saved engine mode wrote; a bot
+    // saved as one mode and reopened still finds its number under the other.
+    const saved = (baseEngine === 'stockfish')
+      ? (cfg.lcsfElo != null ? cfg.lcsfElo : cfg.lcMaiaLcElo)
+      : (cfg.lcMaiaLcElo != null ? cfg.lcMaiaLcElo : cfg.lcsfElo);
     if(cfg.lcMaiaEloLinked != null){
-      lcMaiaEloLinked = !!cfg.lcMaiaEloLinked;
-    }else if(cfg.lcMaiaLcElo != null && cfg.lcMaiaMaiaElo != null){
-      // Saved before the chain existed, so infer it from the values themselves:
-      // a bot whose two ELOs were deliberately different must not load showing
-      // a joined chain over unequal numbers. Equal values land on joined, which
-      // is what the default would have given anyway.
-      lcMaiaEloLinked = (cfg.lcMaiaLcElo === cfg.lcMaiaMaiaElo);
+      bookEloLinked = !!cfg.lcMaiaEloLinked;
+    }else if(saved != null){
+      // Saved before the pin existed, so infer it from the values themselves:
+      // a bot whose book was deliberately set apart from its engine must not
+      // load showing a pin over unequal numbers.
+      bookEloLinked = (saved === currentElo);
     }
-    _syncLcMaiaChainUi();
-    // Plain .value writes do not fire oninput, so the two boxes keep exactly
-    // the pair that was saved — the chain does not reconcile them on load.
-    set('lcsf-lc-elo',    cfg.lcsfElo);
-    set('lcmaia-lc-elo',  cfg.lcMaiaLcElo);
-    set('lcmaia-maia-elo',cfg.lcMaiaMaiaElo);
+    // Pinned adopts the Elometer (already set by the group above); unpinned
+    // keeps exactly the number that was saved.
+    if(bookEloLinked) setBookElo(currentElo);
+    else if(saved != null) setBookElo(saved);
+    _syncBookEloPinUi();
   });
 
   // Color + time control. State is set directly rather than through selectTC
@@ -9228,6 +9243,20 @@ window.addEventListener('message', function(e){
   if(e.data && e.data.type === 'setFormat'){
     setPanelFormat(e.data.format, true); // true = came from parent, don't echo
   }
+  // The board's quick-start block picked an engine at a rating. Show it here
+  // through the same controls a hand would use — the card and the dial — so
+  // opening the builder never names a different opponent from the one the
+  // Start button beside it is about to play. Nothing else moves: the book,
+  // the personality and the clock habits are the builder's and stay put.
+  if(e.data && e.data.type === 'quickPick'){
+    const eng = (e.data.engine === 'maia3') ? 'maia3' : 'stockfish';
+    const card = document.querySelector('#engine-mode-grid .mcard[data-engine="' + eng + '"]');
+    try{
+      if(card) selEngineMode(card);
+      const elo = parseInt(e.data.elo, 10);
+      if(Number.isFinite(elo)) setElo(clampElo(elo));
+    }catch(err){ console.warn('quickPick:', err); }
+  }
 });
 
 /* ══════════════════════════════════════════════════════════════
@@ -9623,9 +9652,22 @@ function arcPath(cx,cy,r,startDeg,sweepDeg){
   const x2=cx+r*Math.cos(a2), y2=cy+r*Math.sin(a2);
   return `M ${x1} ${y1} A ${r} ${r} 0 ${sweepDeg>180?1:0} 1 ${x2} ${y2}`;
 }
-function fillArcPath(cx,cy,r,startDeg,elo){
+function fillSweepDeg(elo){
   const fillSweep = ((elo-SPEEDO.min)/(SPEEDO.max-SPEEDO.min)) * SP_SWEEP_DEG;
-  return fillSweep > 0 ? arcPath(cx,cy,r,startDeg,Math.min(fillSweep,SP_SWEEP_DEG)) : '';
+  return Math.max(0, Math.min(fillSweep, SP_SWEEP_DEG));
+}
+// A wedge from the hub covering the dial from before its start to the current
+// rating. It reaches back past the start angle so the track's round cap is
+// inside it — that cap is what makes a low rating read as a filling arc — and
+// out past the stroke so the glow is not sheared off along the outer edge.
+function fillClipPath(cx,cy,r,startDeg,elo){
+  const sweep = fillSweepDeg(elo);
+  if(sweep <= 0) return '';
+  const lead = 12, rr = r + 24;
+  const a1 = (startDeg - lead) * DEG, a2 = (startDeg + sweep) * DEG;
+  const x1=cx+rr*Math.cos(a1), y1=cy+rr*Math.sin(a1);
+  const x2=cx+rr*Math.cos(a2), y2=cy+rr*Math.sin(a2);
+  return `M ${cx} ${cy} L ${x1} ${y1} A ${rr} ${rr} 0 ${(sweep+lead)>180?1:0} 1 ${x2} ${y2} Z`;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -9734,6 +9776,7 @@ function applyEngineMode(){
   // a mixed bot could not have one.
   const bookRow = document.getElementById('engine-book-row');
   if(bookRow) bookRow.style.display = '';
+  if(typeof _syncBookEloPinUi === 'function') _syncBookEloPinUi();
 
   // Which sub-panels are on screen. More than one can be: the rating dial is
   // shared, so a Flounder bot with a book shows the dial, its variety controls
@@ -10103,8 +10146,11 @@ function updateSpeedo(elo){
   const needle= document.getElementById('speedo-needle');
   const eloTxt= document.getElementById('speedo-elo-text');
   const tip   = document.getElementById('speedo-tip');
-  const fillPath = fillArcPath(SP_CX,SP_CY,SP_R,SP_START_DEG,elo);
+  const clipPath = fillClipPath(SP_CX,SP_CY,SP_R,SP_START_DEG,elo);
+  const fillPath = clipPath ? arcPath(SP_CX,SP_CY,SP_R,SP_START_DEG,SP_SWEEP_DEG) : '';
   fill.setAttribute('d', fillPath || 'M 0 0');
+  const clip = document.getElementById('speedo-fill-clip-path');
+  if(clip) clip.setAttribute('d', clipPath || 'M 0 0');
   const ang = eloToAngle(elo);
   // Bright highlight riding the leading edge of the fill — hidden at the very
   // bottom of the range where there is no fill to cap.
@@ -10119,85 +10165,80 @@ function updateSpeedo(elo){
   eloTxt.textContent = elo;
 }
 
-/* ── LC + Maia ELO chain ──────────────────────────────────────────────────
-   In LC+Maia the explorer supplies the opening book and Maia takes over when
-   the book dries up, so there are two Elo numbers for what is usually one
-   intention. Chained by default; break it for the deliberate case (a strong
-   master-level book with a club-level middlegame, or the reverse).
+/* ── Book ELO pin ─────────────────────────────────────────────────────────
+   With the explorer in front of an engine there are two Elo numbers for what
+   is usually one intention: the book's rating band and the engine's own. The
+   pin holds the book to the Elometer; pull it out for the deliberate case (a
+   strong master-level book with a club-level middlegame, or the reverse).
+   There is no second engine box — the Elometer is right there. */
+let bookEloLinked = true;
 
-   Maia's box is NOT a second quantity — it is the Elometer, shown again where
-   it is used. Those two always track each other in both directions. The chain
-   only governs whether the LICHESS number follows along. */
-let lcMaiaEloLinked = true;
-
-// setElo writes the boxes and the boxes call setElo, so every writer passes
-// through this guard rather than relying on value-equality to stop the loop.
-let _eloSyncing = false;
-
-function syncLcMaiaFromElometer(elo){
-  if(_eloSyncing) return;
-  _eloSyncing = true;
-  const m = document.getElementById('lcmaia-maia-elo');
-  if(m) m.value = elo;
-  if(lcMaiaEloLinked){
-    const l = document.getElementById('lcmaia-lc-elo');
-    if(l) l.value = elo;
-  }
-  _eloSyncing = false;
+const BOOK_ELO_MIN = 600, BOOK_ELO_MAX = 2600;
+function clampBookElo(v){
+  return Math.max(BOOK_ELO_MIN, Math.min(BOOK_ELO_MAX, snapElo(+v || 1500)));
+}
+function bookElo(){
+  const el = document.getElementById('book-elo');
+  return clampBookElo(el ? parseInt(el.value, 10) : currentElo);
+}
+function setBookElo(v){
+  const el = document.getElementById('book-elo');
+  if(el) el.value = clampBookElo(v);
 }
 
-function onLcMaiaEloInput(which){
-  if(_eloSyncing) return;
-  const src = document.getElementById(which === 'lc' ? 'lcmaia-lc-elo' : 'lcmaia-maia-elo');
-  if(!src) return;
-  const v = clampElo(parseInt(src.value, 10) || 1500);
-  if(lcMaiaEloLinked){
-    _eloSyncing = true;
-    const other = document.getElementById(which === 'lc' ? 'lcmaia-maia-elo' : 'lcmaia-lc-elo');
-    if(other) other.value = v;
-    _eloSyncing = false;
-  }
-  // Editing Maia's box moves the gauge because they are the same number.
-  // Editing the Lichess box only does so while the chain holds.
-  if(which === 'maia' || lcMaiaEloLinked) setElo(v);
+// The Elometer moved; a pinned book moves with it.
+function syncBookEloFromElometer(elo){
+  if(bookEloLinked) setBookElo(elo);
 }
 
-function toggleLcMaiaChain(){
-  lcMaiaEloLinked = !lcMaiaEloLinked;
-  try{ localStorage.setItem('bm_lcmaiaEloLink', lcMaiaEloLinked ? '1' : '0'); }catch(e){}
-  // Re-joining adopts MAIA's value. The alternative — adopting the book's —
-  // would drag the Elometer to whatever the book happened to be set to, which
-  // is a bigger surprise than the book moving.
-  if(lcMaiaEloLinked){
-    const m = document.getElementById('lcmaia-maia-elo');
-    const l = document.getElementById('lcmaia-lc-elo');
-    if(m && l){ _eloSyncing = true; l.value = m.value; _eloSyncing = false; }
-  }
-  _syncLcMaiaChainUi();
+function onBookEloInput(){
+  if(bookEloLinked) return;        // the box is read-only while pinned
+  const el = document.getElementById('book-elo');
+  if(!el) return;
+  const raw = parseInt(el.value, 10);
+  if(!Number.isFinite(raw)) return; // mid-edit; leave it until it is a number
+  if(raw < BOOK_ELO_MIN || raw > BOOK_ELO_MAX) el.value = clampBookElo(raw);
 }
 
-function _syncLcMaiaChainUi(){
-  const btn = document.getElementById('lcmaia-chain');
-  if(!btn) return;
-  btn.classList.toggle('linked', lcMaiaEloLinked);
-  btn.setAttribute('aria-pressed', lcMaiaEloLinked ? 'true' : 'false');
-  btn.title = lcMaiaEloLinked
-    ? 'Linked — the two ELOs move together. Click to set them separately.'
-    : 'Unlinked — book and Maia are set separately. Click to re-join them.';
+function toggleBookEloPin(){
+  bookEloLinked = !bookEloLinked;
+  try{ localStorage.setItem('bm_bookEloPin', bookEloLinked ? '1' : '0'); }catch(e){}
+  // Re-pinning adopts the ENGINE's value. The alternative — dragging the
+  // Elometer to whatever the book was set to — is the bigger surprise.
+  if(bookEloLinked) setBookElo(currentElo);
+  _syncBookEloPinUi();
 }
 
-function _initLcMaiaChain(){
+function _syncBookEloPinUi(){
+  const btn = document.getElementById('book-elo-pin');
+  const inp = document.getElementById('book-elo');
+  if(!btn || !inp) return;
+  // A blend has no single engine rating to pin to, so the pin goes away and
+  // the book keeps a rating of its own there.
+  const hybrid = (typeof baseEngine !== 'undefined' && baseEngine === 'hybrid');
+  const linked = bookEloLinked && !hybrid;
+  btn.style.display = hybrid ? 'none' : '';
+  btn.classList.toggle('linked', linked);
+  btn.setAttribute('aria-pressed', linked ? 'true' : 'false');
+  btn.title = linked
+    ? "Pinned to the engine's ELO. Click to set the book's rating separately."
+    : "Unpinned — the book has its own rating. Click to pin it to the engine's ELO.";
+  inp.disabled = linked;
+  inp.title = linked ? "Same as the engine's ELO (pinned)" : 'Lichess explorer rating band';
+}
+
+function _initBookEloPin(){
   let stored = null;
-  try{ stored = localStorage.getItem('bm_lcmaiaEloLink'); }catch(e){}
-  lcMaiaEloLinked = (stored === null) ? true : (stored === '1');   // default joined
-  _syncLcMaiaChainUi();
-  if(lcMaiaEloLinked) syncLcMaiaFromElometer(currentElo);
+  try{ stored = localStorage.getItem('bm_bookEloPin'); }catch(e){}
+  bookEloLinked = (stored === null) ? true : (stored === '1');   // default pinned
+  if(bookEloLinked) setBookElo(currentElo);
+  _syncBookEloPinUi();
 }
 
 function setElo(elo){
   currentElo = elo;
   updateSpeedo(elo);
-  syncLcMaiaFromElometer(elo);
+  syncBookEloFromElometer(elo);
   document.getElementById('elo-input').value = elo;
   const _nm = (typeof engineStatusName === 'function') ? engineStatusName() : `Maia 3 · ${elo}`;
   document.getElementById('st-engine').textContent = _nm;
@@ -12983,7 +13024,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   foldHowMoves();
   onDaySlider(); // init dual-range fill
   _updateEnginePanelHeader();
-  _initLcMaiaChain();        // restore the ELO chain, then seed both boxes from the Elometer
+  _initBookEloPin();         // restore the book pin, then seed the box from the Elometer
   _syncPressureOffUi();      // grey the curves out if the restored clock is Untimed
   updatePersonalityGating(); // reflect the initial engine in the personality section
   initPts();

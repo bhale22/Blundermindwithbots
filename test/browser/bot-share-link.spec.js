@@ -161,13 +161,13 @@ describe('shareable bot links', { concurrency: 1 }, () => {
     await page.goto(server.baseUrl, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#cv');
     await page.waitForTimeout(1800);
-    await page.evaluate(() => quickBotPick('10'));
+    await page.evaluate(() => quickBotPick('1000'));
     await page.waitForTimeout(300);
     const label = await page.evaluate(() => {
       const el = document.getElementById('quickBotSel');
       return el && el.selectedOptions[0] ? el.selectedOptions[0].textContent.trim() : null;
     });
-    assert.strictEqual(label, 'Stockfish 10');
+    assert.strictEqual(label, 'Flounder 1000');
     await ctx.close();
   });
 

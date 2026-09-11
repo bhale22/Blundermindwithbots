@@ -2775,8 +2775,12 @@ async function botMakeMove() {
         uciMove = await applyHardFloorBackstop(fen, uciMove, lcsfProbs);
         _botMoveThinkSec = null;
       } else {
+        // Off book: the engine is Flounder at the rating on the dial. The old
+        // fallback slider was a control the builder never wrote, so a
+        // "Flounder 2000 + book" bot dropped to level 5 (~1060) the moment the
+        // book ran dry.
         await sfInit();
-        uciMove = await flounderMoveOrSearch(fen, flounderEloFromLegacyLevel(lcsfFallbackLevel()),
+        uciMove = await flounderMoveOrSearch(fen, flounderSliderElo(),
           botThinkTime(null, clockMs) / 1000);
       }
 
