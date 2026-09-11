@@ -42,3 +42,8 @@ android/.gradle/
 *.aab
 *.idsig
 output-metadata.json
+
+# ── Personal scratch folder ────────────────────────────────────────────────
+# Lives on the Desktop. A copy landed here once and was committed by accident,
+# publishing 60-odd private files plus an API token. It never belongs in git.
+BlunderStash/
