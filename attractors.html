@@ -110,9 +110,10 @@ logBoost = slider&nbsp;value &times; scale &times; response(position)</span>
   <span class="f">phase = clamp( material still on the board / 78 , 0.35 , 1 )
 k&nbsp;used = k &times; phase</span>
   <p class="note" style="margin-top:12px">
-    <strong>One control takes no share of the budget:</strong> Panicky, because it scales the
-    time-pressure curve rather than scoring any move. Everything else splits the budget in
-    proportion to how far its slider is pushed.
+    <strong>Four controls take no share of the budget,</strong> because none of them scores a
+    move: Panicky scales the time-pressure curve, Coffeehouse hustler scales think time, Bad
+    day slides the distribution band, and Front-runner nudges temperature once the game is won
+    or lost. Everything else splits the budget in proportion to how far its slider is pushed.
   </p>
   <p class="note">
     <strong>The budget is also a hard limit, not just a volume knob.</strong> Whatever the
@@ -407,7 +408,9 @@ between the two, it does nothing</span>
     <span class="f">thinkTime &times;= ( 1 &minus; v &times; 0.15 )</span>
     <p class="when">
       <b>Applies to:</b> the clock, not the move. At +5 the bot moves in a quarter of its
-      normal time; at &minus;5 it takes nearly twice as long.
+      normal time; at &minus;5 it takes nearly twice as long. <b>Complexity-scaled timing
+      only</b> &mdash; Fixed interval, Mirror user and Instantaneous set the pace themselves,
+      and the builder greys this control out under them.
     </p>
   </div>
 
@@ -424,7 +427,8 @@ upper = clamp( dayUpper &minus; v &times; 4 , lower+5 , 100 )
 
 moves outside the [lower, upper] percentile band are discarded
 before anything else is scored</span>
-    <p class="when"><b>Applies to:</b> the candidate list, before scoring. <b>Maia only.</b></p>
+    <p class="when"><b>Applies to:</b> the candidate list, before scoring. <b>Maia, and the
+      Lichess opening book on any engine</b> &mdash; wherever moves come ranked by popularity.</p>
     <p class="note" style="margin:9px 0 0">
       <strong>Why this control belongs to Maia and has no Flounder equivalent.</strong> Maia
       orders its moves by how often humans <em>play</em> them, which is popularity, not quality
@@ -435,8 +439,9 @@ before anything else is scored</span>
       Flounder orders its moves by what they <em>cost</em>. Sliding a band down that list can
       only ever reach worse moves, every time, which is not a bad day &mdash; it is simply a
       lower rating, and the rating dial already does that with measurements behind it. The
-      control has no effect on Flounder, and the Move-quality range it lives on is hidden while
-      Flounder is selected.
+      control has no effect on Flounder&rsquo;s own moves, and the Move Distribution Range it
+      lives on is hidden for a bot that only ever plays Flounder. With the opening book on, it
+      still shapes the book&rsquo;s moves.
     </p>
   </div>
 
@@ -446,16 +451,20 @@ before anything else is scored</span>
     <p>
       How hard the time-pressure curve bites. It does not change any move on its own &mdash; it
       multiplies how far along the temperature-escalation curve a low clock pushes the bot.
-      Calm ignores the clock entirely; panicky reaches the curve&rsquo;s ceiling early.
+      At 0 the bot follows the curve as drawn, which is mild by default (a ceiling of T&nbsp;2).
+      Toward Calm it climbs less, and fully Calm under pressure leaves the temperature
+      untouched; toward Panicky it climbs faster and reaches the ceiling early.
     </p>
-    <span class="f">calm   &rarr; multiplier 0    (time pressure has no effect)
-normal &rarr; multiplier 1.0
-panicky&rarr; multiplier 2.5
+    <span class="f">multiplier = 1 + v / 5        for v &le; 0   (&minus;5 &rarr; 0, untouched)
+multiplier = 1 + 0.3 &times; v     for v &gt; 0   (+5 &rarr; 2.5)
 
 temperature = base + fraction &times; multiplier &times; (ceiling &minus; base)</span>
     <p class="when">
-      <b>Applies to:</b> timed games only. In an untimed game it does nothing at all, and it
-      takes no share of the centipawn budget in any game &mdash; it scores no moves.
+      <b>Applies to:</b> timed games where think time can really run short &mdash; Complexity-scaled
+      timing, which budgets from the clock, or Mirror user, which plays at your pace and so
+      speeds up (and cracks) when you do &mdash; with the temperature curve switched on. Under a
+      Fixed or Instantaneous pace there is no time pressure and it does nothing. It takes no
+      share of the centipawn budget in any game &mdash; it scores no moves.
     </p>
   </div>
 </div>

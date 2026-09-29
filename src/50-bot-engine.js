@@ -38,7 +38,7 @@ function pressureEffectiveMaiaElo(clockMs) {
 // a clock/remaining-moves average.  A hustler taking 0.3 s sees heavy curve
 // degradation; a grinder taking 15 s sees little.
 function pressureEffectiveMaiaEloByThink(thinkSec) {
-  if (!_pressureClockActive()) return maia3SelectedRating;
+  if (!_timePressureApplies()) return maia3SelectedRating;
   if (!botPressureCurveA || botPressureCurveA.length < 2) return maia3SelectedRating;
   const curveElo = evalPressureCurve(botPressureCurveA, thinkSec);
   if (curveElo === null) return maia3SelectedRating;
@@ -53,7 +53,7 @@ function pressureEffectiveMaiaEloByThink(thinkSec) {
 // slots' identity gap (e.g. Drunken Master stays "sharp half / wobbly half").
 function pressureSlotEloByThink(slotElo, thinkSec) {
   const clamped = Math.max(600, Math.min(2600, slotElo));
-  if (!_pressureClockActive()) return clamped;
+  if (!_timePressureApplies()) return clamped;
   if (!botPressureCurveA || botPressureCurveA.length < 2) return clamped;
   const atThink = evalPressureCurve(botPressureCurveA, thinkSec);
   if (atThink === null) return clamped;
@@ -66,53 +66,91 @@ function pressureSlotEloByThink(slotElo, thinkSec) {
 // ── Time-pressure temperature ramp ────────────────────────────────────────────
 // Curve B's y-axis is temperature (T), seeded from the user's own base
 // temperature at comfortable think time up to the panel's user-adjustable
-// "Max temp" slider ceiling (default 8) at minimal think time (initPtsB).
+// "Max temp" slider ceiling (default 2) at minimal think time (initPtsB).
 // Raising T flattens Maia's probabilities (p^(1/T)) toward uniform WITHOUT
 // reordering them — a near-forced move (e.g. 99/1) stays dominant even at a
 // high T, while a close call (e.g. 41/40) flattens fast. This is deliberately
 // margin-aware in a way the old rank/percentile quality-window cutoff wasn't,
 // which is why it replaced that mechanism.
-// botTimePressure (steady/normal/panicky) scales how far along that 0–1 ramp
-// fraction the bot actually travels — steady barely raises T even at 0s left;
-// panicky (2.5x) reaches the curve's own ceiling well before think time
-// bottoms out. The ceiling itself is read off the curve's highest point
-// (whatever the user set the Max temp slider to when the config was saved),
-// not a hardcoded constant, since that slider is now adjustable.
-const TIME_PRESSURE_TEMP_CEILING_DEFAULT = 8;
-
-// Time pressure is pressure from a CLOCK. With no clock there is nothing to be
-// short of, so neither degradation curve may fire — however those curves were
-// shaped, and whether they were seeded, hand-dragged, or restored from a bot
-// saved under a time control. Without this the bot still degraded in untimed
-// games whenever it happened to answer quickly, since both curves are driven by
-// think time alone. The panel greys the curves out for untimed play; this is
-// the half that makes that true of what actually runs.
 //
-// An undefined clockControl means we are outside the app — the unit tests load
-// this file into a bare VM, where the curves are the subject under test — so
-// only an explicit 'untimed' suppresses them.
-function _pressureClockActive() {
-  return typeof clockControl === 'undefined' || clockControl !== 'untimed';
+// How far along that 0–1 ramp the bot actually travels is set by the Calm ↔
+// Panicky slider, continuously (tempPressureMult): fully Calm leaves the
+// temperature untouched by time pressure, 0 follows the curve as drawn, fully
+// Panicky moves 2.5x as far and reaches the ceiling well before think time
+// bottoms out. The ceiling is read off the curve's highest point.
+//
+// This used to be three steps — below +1 no escalation at all, +1/+2 the curve,
+// +3 and up 2.5x — so at the default of 0 the drawn curve did nothing, and the
+// whole Calm half of the slider behaved exactly like 0.
+
+// −5 (Calm under pressure) → 0: temperature unaffected by time pressure.
+//  0                       → 1: the curve as drawn.
+// +5 (Panicky)             → 2.5.
+function tempPressureMult(v) {
+  const x = Math.max(-5, Math.min(5, +v || 0));
+  return x <= 0 ? 1 + x / 5 : 1 + 0.3 * x;
+}
+
+// The live multiplier. The app keeps it in botTempPressureMult (set from the
+// slider by the config handler); the legacy steady/normal/panicky string is the
+// fallback for anything that only sets that (the old sidebar buttons, and
+// scripts written against it).
+function _tempPressureMult() {
+  if (typeof botTempPressureMult === 'number' && isFinite(botTempPressureMult)) return botTempPressureMult;
+  const tp = (typeof botTimePressure !== 'undefined') ? botTimePressure : '';
+  return { steady: 0.0, normal: 1.0, panicky: 2.5 }[tp] || 0;
+}
+
+// Does time pressure apply to this bot at all?
+//
+// It is pressure from a CLOCK, felt by a bot whose pace comes from that clock.
+// So two things switch it off:
+//   • no clock (Untimed) — nothing to be short of. Without this the bot still
+//     degraded in untimed games whenever it happened to answer quickly, since
+//     both curves are driven by think time alone.
+//   • a pace the user set outright: Fixed interval and Instantaneous. A bot set
+//     to move every 2 seconds is not short of time in a 15-minute game, but the
+//     curves read 2 seconds of thought as a scramble — at the default Fixed 2 s
+//     every move of a 5+0 game lost ~260 ELO, and 300 in 15+10.
+// Mirror user KEEPS the curves. Its pace is the human's, so when the human
+// speeds up under time pressure the bot's think time falls with it and the
+// curves degrade it the way the clock is degrading them — a bot built to match
+// its user should crack under time pressure the same way its user does.
+// Complexity-scaled (and the legacy entropy pace) budget from the clock and
+// consult the curves too. The panel greys both curves out for Fixed and
+// Instantaneous, and says why; this is the half that makes that true of what
+// actually runs.
+//
+// Undefined globals mean we are outside the app — the unit tests load this file
+// into a bare VM, where the curves are the subject under test — so only an
+// explicit setting suppresses them.
+function _timePressureApplies() {
+  if (typeof clockControl !== 'undefined' && clockControl === 'untimed') return false;
+  if (typeof botTimeBehavior !== 'undefined' &&
+      (botTimeBehavior === 'fixed' || botTimeBehavior === 'instant')) {
+    return false;
+  }
+  return true;
 }
 
 function timePressureTempByThink(baseTemp, thinkSec) {
-  if (!_pressureClockActive()) return baseTemp;
-  const boostMult = { steady: 0.0, normal: 1.0, panicky: 2.5 }[botTimePressure] || 0;
-  if (boostMult === 0) return baseTemp;
-  let ceiling = baseTemp + TIME_PRESSURE_TEMP_CEILING_DEFAULT - 1; // fallback if no curve
-  let fraction;
-  if (botPressureCurveB && botPressureCurveB.length >= 2) {
-    let curveCeiling = -Infinity;
-    for (const p of botPressureCurveB) { if (p.y > curveCeiling) curveCeiling = p.y; }
-    ceiling = Math.max(baseTemp + 0.1, curveCeiling);
-    const curveTemp = evalPressureCurve(botPressureCurveB, thinkSec);
-    fraction = curveTemp === null ? null
-      : Math.max(0, Math.min(1, (curveTemp - baseTemp) / (ceiling - baseTemp)));
-  }
-  if (fraction === null || fraction === undefined) {
-    // Linear fallback: full ramp at 0 s, none at 30 s
-    fraction = Math.max(0, 1 - thinkSec / 30);
-  }
+  if (!_timePressureApplies()) return baseTemp;
+  const boostMult = _tempPressureMult();
+  if (!(boostMult > 0)) return baseTemp;
+  // No curve means no escalation. The panel's switch for curve B sends no
+  // curve, so "off" has to mean off here.
+  //
+  // This used to fall back to a hard-coded linear ramp — full escalation at
+  // 0 s, none at 30 s, ceiling base + 7 — so switching the curve OFF made a
+  // Panicky bot far wilder than leaving it on: at 10 s of thought the drawn
+  // curve gave T 1.0 and the fallback gave T 8.0.
+  if (!botPressureCurveB || botPressureCurveB.length < 2) return baseTemp;
+  let curveCeiling = -Infinity;
+  for (const p of botPressureCurveB) { if (p.y > curveCeiling) curveCeiling = p.y; }
+  const ceiling = Math.max(baseTemp + 0.1, curveCeiling);
+  const curveTemp = evalPressureCurve(botPressureCurveB, thinkSec);
+  if (curveTemp === null) return baseTemp;
+  const fraction = Math.max(0, Math.min(1, (curveTemp - baseTemp) / (ceiling - baseTemp)));
   return Math.min(ceiling, baseTemp + fraction * boostMult * (ceiling - baseTemp));
 }
 
@@ -379,8 +417,15 @@ let _lastEvalProbe = null;
 // with this number, so it's a probe-depth/latency tradeoff, not free.
 const CP_BUDGET_WALK_SIZE = 15;
 
-async function applyCpBudgetAcceptance(fen, chosenUci, rawProbs, shapedProbs) {
+// `strict` (the three guards below all take it): when a check cannot be
+// completed — the engine busy, the probe timed out — return null instead of
+// letting the move through. A move the bot is about to PLAY fails open, because
+// stalling the game is worse than an unverified pick; a premove fails closed,
+// because it is optional — if it cannot be checked the bot simply does not
+// premove, and thinks about the move normally instead.
+async function applyCpBudgetAcceptance(fen, chosenUci, rawProbs, shapedProbs, strict) {
   _cpBudgetVerifiedThisMove = false; // reset per move, before any early return
+  const failed = () => (strict ? null : chosenUci);
   try {
     if (!chosenUci || !rawProbs || !_attrReweightApplied) return chosenUci;
     // Stalemate-seeking moves deliberately throw material — exempt from budget
@@ -396,9 +441,9 @@ async function applyCpBudgetAcceptance(fen, chosenUci, rawProbs, shapedProbs) {
     const order = Object.entries(shapedProbs || {}).sort((a, b) => b[1] - a[1]).map(([m]) => m);
     const walk = [chosenUci, ...order.filter(m => m !== chosenUci && m !== topMove)]
       .slice(0, CP_BUDGET_WALK_SIZE);
-    if (!sfReady) { try { await sfInit(); } catch (e) { return chosenUci; } }
+    if (!sfReady) { try { await sfInit(); } catch (e) { return failed(); } }
     const evals = await sfEvalMoves(fen, [topMove, ...walk], 10);
-    if (!evals || evals[topMove] == null) return chosenUci; // fail-open on probe failure
+    if (!evals || evals[topMove] == null) return failed(); // fail-open on probe failure (unless strict)
     _lastEvalProbe = { fen: fen, evals: evals };
     let accepted = topMove;
     for (const m of walk) {
@@ -413,7 +458,7 @@ async function applyCpBudgetAcceptance(fen, chosenUci, rawProbs, shapedProbs) {
     _cpBudgetVerifiedThisMove = true; // accepted move is ≤ Budget (≤ Floor)
     return accepted;
   } catch (e) {
-    return chosenUci;
+    return failed();
   }
 }
 
@@ -433,15 +478,16 @@ async function applyCpBudgetAcceptance(fen, chosenUci, rawProbs, shapedProbs) {
 // (_attrReweightApplied) the pick may therefore beat the popular move by up to
 // the CP Budget — the same allowance applyCpBudgetAcceptance already grants on
 // the downside. Every other mechanism still gets zero upside.
-async function applyDegradationEvalGuard(fen, chosenUci, rawProbs) {
+async function applyDegradationEvalGuard(fen, chosenUci, rawProbs, strict) {
+  const failed = () => (strict ? null : chosenUci);
   try {
     if (!chosenUci || !rawProbs) return chosenUci;
     let topMove = null, topP = -1;
     for (const m in rawProbs) { if (rawProbs[m] > topP) { topP = rawProbs[m]; topMove = m; } }
     if (!topMove || topMove === chosenUci) return chosenUci;
-    if (!sfReady) { try { await sfInit(); } catch (e) { return chosenUci; } }
+    if (!sfReady) { try { await sfInit(); } catch (e) { return failed(); } }
     const evals = await sfEvalMoves(fen, [chosenUci, topMove]);
-    if (!evals || evals[chosenUci] == null || evals[topMove] == null) return chosenUci;
+    if (!evals || evals[chosenUci] == null || evals[topMove] == null) return failed();
     _lastEvalProbe = { fen: fen, evals: evals };
     // Upside allowance: the Budget for personality, zero for everything else.
     const upBudget = (_attrReweightApplied && window._bcpCpBudget != null)
@@ -455,7 +501,7 @@ async function applyDegradationEvalGuard(fen, chosenUci, rawProbs) {
     }
     return chosenUci;
   } catch (e) {
-    return chosenUci;
+    return failed();
   }
 }
 
@@ -468,7 +514,8 @@ async function applyDegradationEvalGuard(fen, chosenUci, rawProbs) {
 // is the point), and Floor = Off. Reuses the degradation guard's probe when
 // one was taken for the same position; otherwise pays for one shallow probe.
 // Fail-open like every other probe — a timeout never stalls the bot's move.
-async function applyHardFloorBackstop(fen, chosenUci, rawProbs) {
+async function applyHardFloorBackstop(fen, chosenUci, rawProbs, strict) {
+  const failed = () => (strict ? null : chosenUci);
   try {
     if (!chosenUci || !rawProbs) return chosenUci;
     if (_staleSeekThisMove) return chosenUci;
@@ -485,9 +532,9 @@ async function applyHardFloorBackstop(fen, chosenUci, rawProbs) {
         _lastEvalProbe.evals[chosenUci] != null && _lastEvalProbe.evals[topMove] != null) {
       evals = _lastEvalProbe.evals;
     } else {
-      if (!sfReady) { try { await sfInit(); } catch (e) { return chosenUci; } }
+      if (!sfReady) { try { await sfInit(); } catch (e) { return failed(); } }
       evals = await sfEvalMoves(fen, [chosenUci, topMove]);
-      if (!evals || evals[chosenUci] == null || evals[topMove] == null) return chosenUci;
+      if (!evals || evals[chosenUci] == null || evals[topMove] == null) return failed();
     }
     if (evals[topMove] - evals[chosenUci] > floor) {
       console.log('[HardFloor] pick', chosenUci, 'loses',
@@ -497,7 +544,7 @@ async function applyHardFloorBackstop(fen, chosenUci, rawProbs) {
     }
     return chosenUci;
   } catch (e) {
-    return chosenUci;
+    return failed();
   }
 }
 
@@ -1247,15 +1294,20 @@ function applyMoveAttractors(moveProbs, opts) {
   // conditions (phase / advantage / time-pressure) currently match (activeCC).
   // So a control that's the only active one in its phase gets the full budget —
   // the bot's "personality strength" stays at the set budget in every phase
-  // where at least one control is active. (Attractors without per-move logic —
-  // luck, hustle, pressure — still count so they keep their budget share.)
+  // where at least one control is active.
   const CP_PER_LOG_UNIT = 150;
-  // `pressure` is excluded from the split, deliberately. It has no per-move
-  // logic at all — it scales how hard the time-pressure curve bites, which is a
-  // property of the clock rather than of the move. Leaving it in the divisor
-  // meant a bot that merely described itself as panicky quietly took centipawns
-  // away from every control that actually scores moves.
-  const BUDGETLESS_ATTRACTORS = ['pressure'];
+  // Only controls that SCORE MOVES share the budget. Four do not, and are kept
+  // out of the split:
+  //   pressure — scales how hard curve B's time-pressure escalation bites;
+  //   hustle   — scales think time;
+  //   luck     — shifts the Move Distribution Range band;
+  //   compwin  — nudges temperature when the game is won or lost.
+  // None of them uses `scale`, so a budget share handed to one was spent on
+  // nothing — and taken away from every control that does choose moves. A bot
+  // that merely described itself as a hustler had quietly weaker opinions about
+  // everything else. The panel's cp readout keeps the same list (the two MUST
+  // agree, or it shows allocations that are not what runs).
+  const BUDGETLESS_ATTRACTORS = ['pressure', 'hustle', 'luck', 'compwin'];
   const allVals  = [
     ...Object.entries(attrVals)
         .filter(([k]) => !BUDGETLESS_ATTRACTORS.includes(k))
@@ -1956,10 +2008,18 @@ function flounderVarietyOffset() {
   return step * FLOUNDER_VARIETY_STEP;
 }
 
-function flounderEffectiveElo(clockMs, thinkSec) {
-  const base = Math.max(FLOUNDER_ELO_MIN, Math.min(FLOUNDER_ELO_MAX,
-    flounderSliderElo() + flounderVarietyOffset()));
-  if (clockMs === null || !_pressureClockActive()) return base;
+// `baseElo` is the rating this move starts from. Left out, it is the Flounder
+// dial, with the dial's own Variety jitter. A caller standing in for another
+// rating passes it explicitly — a Flounder slot in a blend, or a Maia rating
+// being played by Flounder because the model is not downloaded — and gets no
+// Variety, which is a control on the Flounder card and nowhere else.
+function flounderEffectiveElo(clockMs, thinkSec, baseElo) {
+  const ownDial = (baseElo == null);
+  const base = ownDial
+    ? Math.max(FLOUNDER_ELO_MIN, Math.min(FLOUNDER_ELO_MAX,
+        flounderSliderElo() + flounderVarietyOffset()))
+    : Math.max(600, Math.min(2600, Math.round(+baseElo) || 1500));
+  if (clockMs === null || !_timePressureApplies()) return base;
 
   // Floor: the visible curve's own maximum drop, never below the bottom of the
   // measured ladder — there is no calibration under 750 to degrade into.
@@ -1968,7 +2028,14 @@ function flounderEffectiveElo(clockMs, thinkSec) {
 
   // Weaponizer: the opponent is short of time, so play at the floor and make
   // them spend it. Inert in untimed games, where botOppClockMs is null.
-  if (botWeaponizerEnabled && botOppClockMs !== null &&
+  //
+  // Only while the ELO curve is on. On Maia the Weaponizer's rating drop has
+  // only ever come THROUGH that curve — its minimum move time reads curve A
+  // near its floor — so with the curve switched off a Maia Weaponizer changed
+  // pace and nothing else, while this jumped straight to the floor anyway. One
+  // switch now means one thing on both engines.
+  const curveA = (typeof botPressureCurveA !== 'undefined') && botPressureCurveA;
+  if (curveA && botWeaponizerEnabled && botOppClockMs !== null &&
       botOppClockMs <= botWeaponizerTriggerMs) {
     return floorElo;
   }
@@ -1996,34 +2063,86 @@ async function _ensureMoveComplexity(fen, probs) {
   try { await sfEvalMoves(fen, top, REGAN_PROBE_DEPTH); } catch (e) {}
 }
 
-// ── Flounder, with a plain search only as a safety net ───────────────────────
-// Every bot fallback in this file used to be sfGetMove at some skill level, and
-// a skill level is not a rating: levels -3 through 2 all measured as the same
-// bot, with level 1 scoring WORSE than level -3. So "Maia isn't downloaded,
-// drop to Stockfish 6" quietly handed the player an opponent whose strength
-// nobody had ever measured, under a label implying somebody had.
+// ── One Flounder move, on the same terms wherever Flounder plays ──────────────
+// The Flounder engine, Flounder behind the opening book once the book runs
+// dry, a Flounder slot in a blend, and every "Maia isn't downloaded" fallback
+// all play their moves through here, so all of them answer to the same
+// controls: the Move Timing mode (the move is not played before its think
+// time), the ELO degradation curve and the Weaponizer's floor, curve B and the
+// complexity adjustment through the Weibull shape, stalemate-seeking, move
+// blink — and Variety, when the rating is the Flounder dial's own.
 //
-// These paths now play Flounder at the rating the caller was already asking
-// for. sfGetMove survives only for the case Flounder itself cannot serve — the
+// `baseElo` is omitted for the dial's own rating; see flounderEffectiveElo.
+// `startMs` is when this turn began, so time already spent (a failed book
+// lookup, the probe itself) counts toward the think time instead of adding to
+// it.
+//
+// This used to be two things. The Flounder branch of botMakeMove did all of the
+// above; every other path called flounderMoveOrSearch, which played the move
+// the moment the probe returned and took the rating it was handed as final. So
+// a "Flounder + book" bot, from the first move out of book to the end of the
+// game, ignored its Move Timing settings, both Variety sliders, the ELO
+// degradation curve and the Weaponizer's rating drop — all of them on screen,
+// all of them saved into the bot.
+//
+// sfGetMove survives only for the case Flounder itself cannot serve — the
 // MultiPV probe failing because the engine is busy — where any legal move beats
-// stalling. Stockfish still does all the evaluating; it just no longer pretends
-// that turning its search down is the same thing as playing worse.
-// `thinkSec` is optional. When the caller knows how long this move is being
-// thought about, the temperature chain can include curve B's escalation — the
-// same chain the primary paths build. When it does not, the base temperature is
-// the honest input, for the same reason the premove path uses it: there is no
-// think time to derive an escalation from.
-async function flounderMoveOrSearch(fen, elo, thinkSec) {
-  const e = Math.max(600, Math.min(2600, Math.round(elo) || 1500));
-  const t = Number.isFinite(thinkSec)
-    ? complexityAdjustedTemp(timePressureTempByThink(botMaiaBaseTemp(), thinkSec))
-    : botMaiaBaseTemp();
-  const pick = await flounderChooseMove(fen, e, undefined, t);
-  if (pick && pick.uci) { lastBotMoveSource = 'Flounder'; return pick.uci; }
-  const lvl = Math.max(SF_LEVEL_MIN, Math.min(SF_LEVEL_MAX,
-    Math.round(1 + (e - 650) * 19 / 1950)));
-  lastBotMoveSource = 'SF';
-  return await sfGetMove(fen, lvl);
+// stalling. A skill level is not a rating (levels -3 through 2 all measured as
+// the same bot), so it is never the primary path.
+async function botFlounderTurn(fen, clockMs, startMs, baseElo) {
+  await sfInit();
+  // Rough think estimate BEFORE the probe, so the degradation curve reads the
+  // pace this move is actually being played at rather than a clock average —
+  // the same plumbing every Maia path uses.
+  const roughThinkSec = botThinkTime(null, clockMs, { rough: true }) / 1000;
+  const elo = flounderEffectiveElo(clockMs, roughThinkSec, baseElo);
+
+  // The complexity probe, on the same terms as the Maia paths: only when
+  // something reads it (Front-runner/Swindler, stalemate-seeking, a custom
+  // control gated on winning/losing, Complexity-scaled timing).
+  if (_needsComplexity()) {
+    const cr = await sfGetComplexity(fen);
+    sfCplxScore = cr ? cr.cplx : null;
+    sfCplxEval  = cr ? cr.eval  : null;
+  } else {
+    sfCplxScore = sfCplxEval = null;
+  }
+
+  // Base temperature, then curve B's time-pressure escalation, then the
+  // complexity adjustment — the identical chain every Maia path builds.
+  // Flounder turns the result into the Weibull shape c rather than an exponent
+  // on a probability, but it is the same control reading the same curves.
+  const temp = complexityAdjustedTemp(
+    timePressureTempByThink(botMaiaBaseTemp(), roughThinkSec));
+  const pick = await flounderChooseMove(fen, elo, undefined, temp, { staleSeek: true });
+
+  let uci, delay;
+  if (pick && pick.uci) {
+    uci = pick.uci;
+    lastBotMoveSource = 'Flounder';
+    // The CP-budget, degradation and hard-floor guards are deliberately NOT
+    // applied. All three exist because Maia's probabilities are popularity
+    // rather than quality, so a sampled move has to be checked against an
+    // evaluation. Here the move was chosen BY evaluation, and clamping the tail
+    // afterwards would remove exactly the occasional real mistake that the
+    // rating is supposed to produce. (The panel greys the Hard Floor out for a
+    // bot that only ever plays Flounder, and says why.)
+    //
+    // The think time is read off Flounder's own selection distribution — how
+    // likely this bot is to play each move here — which is what Maia's
+    // probabilities are to the Maia paths. That is what lets move blink work on
+    // this engine: a forced reply is one the bot is all but certain of.
+    delay = botThinkTime(pick.dist || null, clockMs);
+  } else {
+    const lvl = Math.max(SF_LEVEL_MIN, Math.min(SF_LEVEL_MAX,
+      Math.round(1 + (elo - 650) * 19 / 1950)));
+    uci = await sfGetMove(fen, lvl);
+    lastBotMoveSource = 'SF';
+    delay = botThinkTime(null, clockMs);
+  }
+  const wait = Math.max(0, delay - (Date.now() - startMs));
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  return uci;
 }
 
 // ── Effective Stockfish level (degrades under time pressure) ─────────────────
@@ -2127,7 +2246,9 @@ function botRecordMove(uciMove, sanMove) {
 //   'instant'    — 0 ms
 //   'fixed'      — botFixedDelayMs
 //   'mirror'     — rolling avg of human times × (1 + botMirrorOffsetPct/100)
-//   'complexity' — botCplxBase × lerp(botCplxMin, botCplxMax, entropy/4)
+//   'complexity' — average × botComplexityMult(complexity), the average being
+//                  the clock plan (botClockPlanSec, the builder's default) or
+//                  botCplxBase; book moves on the clock plan are quick
 //   'pace'       — original botPace slider entropy calculation
 // Human behaviour flags applied to complexity/pace/mirror paths:
 //   botBehavBlink       — near-instant for forced moves (entropy < 0.5, Maia3 only)
@@ -2205,9 +2326,20 @@ function openingFamiliarity(plies) {
 // Fixed and Mirror used to carry their own copy of the flat 30 s / 8 % rule,
 // which meant a change to the pressure model silently applied to some modes
 // and not others.
-function botApplyClockCaps(thinkMs, clockMs) {
-  const budgetSec = botTimeBudgetSec(clockMs);
-  if (budgetSec !== null) thinkMs = Math.min(thinkMs, budgetSec * 1000);
+//
+// `planSec` is the clock-based plan's average (botClockPlanSec) when that is
+// what set this move's time. The plan already IS a per-move budget, so the
+// Fischer-40 budget cap would only fight it — for a 40-move plan the two are the
+// same number, and every complex move would be clipped back to the average. The
+// plan's own ceiling is its most-complex move instead: average × max multiplier.
+// The emergency and can't-flag rules hold in every mode.
+function botApplyClockCaps(thinkMs, clockMs, planSec) {
+  if (planSec != null) {
+    thinkMs = Math.min(thinkMs, planSec * Math.max(1, botCplxMax) * 1000);
+  } else {
+    const budgetSec = botTimeBudgetSec(clockMs);
+    if (budgetSec !== null) thinkMs = Math.min(thinkMs, budgetSec * 1000);
+  }
   if (clockMs !== null && clockMs !== undefined) {
     const emergencyMs = (typeof botStartClockMs === 'number' && botStartClockMs > 0)
       ? Math.min(30000, botStartClockMs * 0.15) : 30000;
@@ -2225,11 +2357,104 @@ function botThinkCapMs() {
   return Math.max(6000, Math.min(45000, botStartClockMs * 0.02));
 }
 
-function botThinkTime(moveProbs, clockMs) {
+// ── The clock-based plan (Complexity-scaled, "From the clock") ──────────────
+// What a player budgeting a game of N moves can afford per move: the time left
+// plus the increment still to come, over the moves still to play.
+//
+//   movesLeft = N − moves already played        (N = 60 by default, or 40)
+//   plan      = (clock + movesLeft × increment) ÷ movesLeft
+//
+// e.g. 8 moves played in book, 24:00 left, +2 s: 52 left, (1440 + 104) ÷ 52 ≈
+// 29.7 s. Recomputed every move, so a bot that spends quickly banks time for
+// later and one that lingers hurries — the same arithmetic a human does.
+//
+// Past move N the plan keeps at least BOT_PLAN_MIN_MOVES_LEFT moves in hand, so
+// a long game never bets the whole clock on one move. Returns null when the
+// mode is not in use or there is no clock (the Base time slider applies then).
+const BOT_PLAN_MIN_MOVES_LEFT = 10;
+function botClockPlanSec(clockMs) {
+  if (typeof botCplxBaseMode === 'undefined' || botCplxBaseMode !== 'clock') return null;
+  if (clockMs === null || clockMs === undefined) return null;
+  const perGame = (typeof botCplxMovesPerGame === 'number' && botCplxMovesPerGame > 0)
+    ? botCplxMovesPerGame : 60;
+  // The bot's own moves so far; at its turn that is floor(plies / 2) whichever
+  // colour it plays. Counts the whole game, including any moves a game started
+  // from a position was given.
+  const plies = (typeof gameMovesAlgebraic !== 'undefined') ? gameMovesAlgebraic.length : 0;
+  const movesLeft = Math.max(BOT_PLAN_MIN_MOVES_LEFT, perGame - Math.floor(plies / 2));
+  const inc = (typeof clockInc === 'number') ? clockInc : 0;
+  return (clockMs / 1000 + movesLeft * inc) / movesLeft;
+}
+
+// ── How long a book move takes ────────────────────────────────────────────────
+// On the clock-based plan it follows the time control. In bullet and blitz a
+// player who knows the line plays it at once: 0.4–1.2 s. From about twenty
+// minutes up (20, 30, 40, 60) a good player still spends 5–15 s on moves they
+// know — that is when they decide which of the lines they know they want to go
+// into. Rapid games between the two scale smoothly.
+//
+// Every other timing mode keeps the flat 0.4–1.2 s the book has always used:
+// the default Fixed 2 s is meant to play like an ordinary bot until someone
+// starts customising, and Mirror and Instantaneous set their own pace.
+//
+// A time control is sized the way the builder names it (tcCategory in the
+// panel): base minutes + 0.5 × increment seconds. The panel quotes the same
+// range from the same arithmetic (_panelBookRangeSec) — keep the two in step.
+const BOOK_FAST_MS = [400, 1200];      // bullet and blitz
+const BOOK_SLOW_MS = [5000, 15000];    // twenty minutes and up
+const BOOK_FAST_UPTO_MIN = 8;          // ≤ this size: fast (the builder's blitz ceiling)
+const BOOK_SLOW_FROM_MIN = 20;         // ≥ this size: slow
+function botBookMoveRangeMs() {
+  const clockPlan = typeof botTimeBehavior !== 'undefined' && botTimeBehavior === 'complexity' &&
+                    typeof botCplxBaseMode !== 'undefined' && botCplxBaseMode === 'clock';
+  const startMs = (typeof botStartClockMs === 'number') ? botStartClockMs : 0;
+  if (!clockPlan || !(startMs > 0)) return BOOK_FAST_MS;
+  const inc  = (typeof clockInc === 'number') ? clockInc : 0;
+  const size = startMs / 60000 + 0.5 * inc;
+  const f = Math.max(0, Math.min(1, (size - BOOK_FAST_UPTO_MIN) / (BOOK_SLOW_FROM_MIN - BOOK_FAST_UPTO_MIN)));
+  return [BOOK_FAST_MS[0] + f * (BOOK_SLOW_MS[0] - BOOK_FAST_MS[0]),
+          BOOK_FAST_MS[1] + f * (BOOK_SLOW_MS[1] - BOOK_FAST_MS[1])];
+}
+// One book move's delay, inside the clock caps so a slow book can never flag.
+function botBookMoveDelayMs(clockMs) {
+  const [lo, hi] = botBookMoveRangeMs();
+  const ms = lo + Math.random() * (hi - lo);
+  return (clockMs != null) ? Math.max(200, botApplyClockCaps(ms, clockMs)) : ms;
+}
+
+// Complexity → multiplier, centred so a typical position (0.5) costs exactly
+// the average: simple positions shade down toward Min, complex ones up toward
+// Max. The straight line from Min to Max this replaced put a typical position
+// at 1.45× the Base time — the slider's hint ("average-complexity think time")
+// was never true — and on the clock-based plan it would overspend every move.
+function botComplexityMult(cplx) {
+  const c  = Math.max(0, Math.min(1, cplx));
+  const lo = Math.min(botCplxMin, 1), hi = Math.max(botCplxMax, 1);
+  return c <= 0.5 ? lo + (1 - lo) * (c / 0.5) : 1 + (hi - 1) * ((c - 0.5) / 0.5);
+}
+
+// opts.rough marks an ESTIMATE — the pre-inference guess every engine path
+// makes so the time-pressure curves can read this move's pace before it is
+// decided. Only the call that sets the real delay may collect a busted-premove
+// stall. That stall used to be collected by whichever call came first, and in
+// every path but two that was the rough estimate: the tax lengthened the guess
+// (so curve A even read the stalled bot as calmer and let it play stronger) and
+// the move itself was never delayed. It was also only added on the Complexity
+// and pace path, so Fixed, Mirror, Instantaneous, blink and Weaponizer moves
+// could not carry it at all. It now rides on the real delay in every mode,
+// still inside the clock caps, so it can never flag the bot.
+//
+// opts.book marks a move taken from the opening book. On the clock-based plan
+// those are played quickly — a player does not budget thinking time for moves
+// they know — so the clock is spent where the game actually starts.
+function botThinkTime(moveProbs, clockMs, opts) {
+  opts = opts || {};
   const entropy = moveProbs ? positionEntropy(moveProbs) : 2;
+  const bustTax = opts.rough ? 0 : botPremoveBustTaxMs();
+  const withTax = ms => bustTax > 0 ? botApplyClockCaps(ms + bustTax, clockMs) : ms;
 
   // ── Instant ──────────────────────────────────────────────────────────────
-  if (botTimeBehavior === 'instant') return 0;
+  if (botTimeBehavior === 'instant') return withTax(0);
 
   // ── Weaponizer: opponent low on clock → play at the minimum move time to
   // maximise time pressure. 0 = instant (as if pre-moved); higher values
@@ -2237,17 +2462,19 @@ function botThinkTime(moveProbs, clockMs) {
   // botOppClockMs is null in untimed games, which keeps this inert there.
   if (botWeaponizerEnabled && botOppClockMs !== null &&
       botOppClockMs <= botWeaponizerTriggerMs) {
-    return botWeaponizerMinMs;
+    return withTax(botWeaponizerMinMs);
   }
 
-  // ── Move blink: near-instant for forced/obvious positions (Maia3 only) ───
+  // ── Move blink: near-instant when the bot is all but certain of its move ──
+  // Maia's distribution, or Flounder's own selection distribution (see
+  // flounderSelectionProbs) — the same question asked of either engine.
   if (botBehavBlink && moveProbs && entropy < 0.5) {
-    return 200 + Math.random() * 300;
+    return withTax(200 + Math.random() * 300);
   }
 
   // ── Fixed ────────────────────────────────────────────────────────────────
   if (botTimeBehavior === 'fixed') {
-    return Math.max(200, botApplyClockCaps(botFixedDelayMs, clockMs));
+    return Math.max(200, botApplyClockCaps(botFixedDelayMs + bustTax, clockMs));
   }
 
   // ── Mirror ───────────────────────────────────────────────────────────────
@@ -2256,19 +2483,26 @@ function botThinkTime(moveProbs, clockMs) {
       const avg = botUserMoveTimestamps.reduce((a, b) => a + b, 0) / botUserMoveTimestamps.length;
       const jitter = 0.8 + Math.random() * 0.4;
       const offsetMul = 1 + (botMirrorOffsetPct / 100);
-      const mirrorMs = botApplyClockCaps(avg * jitter * offsetMul, clockMs);
-      return Math.max(200, Math.min(botThinkCapMs(), mirrorMs));
+      const mirrorMs = botApplyClockCaps(avg * jitter * offsetMul + bustTax, clockMs);
+      return Math.max(200, Math.min(botThinkCapMs() + bustTax, mirrorMs));
     }
     // No human moves yet — fall through to complexity/pace
   }
 
-  // ── Complexity: explicit base/min/max from new panel ─────────────────────
+  // ── Complexity: the average (from the clock, or the Base time slider),
+  //    scaled by how complex this position is ──────────────────────────────
   let thinkMs;
+  let planSec = null;
   if (botTimeBehavior === 'complexity') {
+    planSec = botClockPlanSec(clockMs);
+    // In book on the clock-based plan: scaled to the time control, like every
+    // other book path (botBookMoveDelayMs).
+    if (planSec !== null && opts.book) {
+      return withTax(botBookMoveDelayMs(clockMs));
+    }
     // Prefer sfCplxScore (MultiPV probe) over entropy fallback when available
     const cplx = (sfCplxScore !== null) ? sfCplxScore : Math.min(1, entropy / 4.0);
-    const mult = botCplxMin + cplx * (botCplxMax - botCplxMin);
-    thinkMs = botCplxBase * mult * 1000;
+    thinkMs = (planSec !== null ? planSec : botCplxBase) * botComplexityMult(cplx) * 1000;
   } else {
     // ── Pace (default): original entropy-based delay ──────────────────────
     const pace = parseInt(document.getElementById('botPace').value) || 40;
@@ -2334,7 +2568,7 @@ function botThinkTime(moveProbs, clockMs) {
   // take. Added BEFORE the clock caps below so it can never tax the bot into
   // flagging. This is the payoff for setting a trap: the user gains real time
   // on the clock, not just a better position.
-  thinkMs += botPremoveBustTaxMs();
+  thinkMs += bustTax;
 
   // ── Budget pressure ───────────────────────────────────────────────────────
   // Graduated hurrying as the per-move budget tightens. This is what replaces
@@ -2343,9 +2577,15 @@ function botThinkTime(moveProbs, clockMs) {
   // capped at 2.4 s, and that discontinuity is exactly what read as mechanical.
   // Measured against what THIS move wants, so a hustler and a grinder feel the
   // same shortfall proportionally.
-  const _pressure = botBudgetPressure(clockMs, thinkMs);
-  if (_pressure > 0 && botPressureDepth > 0) {
-    thinkMs *= Math.max(0.05, 1 - _pressure * botPressureDepth);
+  //
+  // Not on the clock-based plan: its average already IS the per-move budget,
+  // recomputed from the clock every move, so this would count the same
+  // shortfall twice and squash every complex move back to the average.
+  if (planSec === null) {
+    const _pressure = botBudgetPressure(clockMs, thinkMs);
+    if (_pressure > 0 && botPressureDepth > 0) {
+      thinkMs *= Math.max(0.05, 1 - _pressure * botPressureDepth);
+    }
   }
 
   // ── Ceilings ──────────────────────────────────────────────────────────────
@@ -2353,9 +2593,16 @@ function botThinkTime(moveProbs, clockMs) {
   // remaining per expected move allows. It scales itself to the time control,
   // so bullet and classical need no special-casing — and it subsumes the old
   // flat 8 %-of-remaining rule, which was only ever sane at ~12 moves left.
-  thinkMs = botApplyClockCaps(thinkMs, clockMs);
+  // (On the clock-based plan the plan sets the ceiling; see botApplyClockCaps.)
+  thinkMs = botApplyClockCaps(thinkMs, clockMs, planSec);
 
-  return Math.max(200, Math.min(botThinkCapMs(), thinkMs));
+  // The stall sits on top of the think ceiling rather than under it: the
+  // ceiling is about how long a thought runs, and the stall is not a thought.
+  // The flat 6–45 s ceiling is for the modes that do not budget from the clock;
+  // the plan is its own ceiling, or a classical game could never spend more
+  // than 45 s on its hardest move.
+  const ceiling = (planSec !== null) ? Infinity : botThinkCapMs();
+  return Math.max(200, Math.min(ceiling + bustTax, thinkMs));
 }
 
 // Consumes the pending bust flag and returns the extra think time it earns.
@@ -2370,10 +2617,20 @@ function botPremoveBustTaxMs() {
 // Phase is tracked by counting non-pawn, non-king pieces still on the board:
 //   14 pieces (full material) → opening → T=5
 //   ≤4 pieces remaining      → endgame → T=0.6
+//
+// `board` is an object keyed by square index (see parseFen), not an array. This
+// used to call board.filter(), which threw a TypeError on every call — and
+// every engine path reaches here through botMaiaBaseTemp() while the preset is
+// active, so a Coffeehouse Hustler bot froze on its first move out of book.
 function hustlerPhaseTemp() {
-  const piecesLeft = (typeof board !== 'undefined')
-    ? board.filter(p => p !== 0 && Math.abs(p) !== 1 && Math.abs(p) !== 6).length
-    : 14;
+  let piecesLeft = 14;
+  if (typeof board !== 'undefined' && board) {
+    piecesLeft = 0;
+    for (let sq = 0; sq < 64; sq++) {
+      const p = board[sq];
+      if (p && p.piece !== 'P' && p.piece !== 'K') piecesLeft++;
+    }
+  }
   // fraction 0=opening (14 pieces), 1=endgame (≤4 pieces)
   const fraction = Math.max(0, Math.min(1, 1 - (piecesLeft - 4) / 10));
   return 5.0 + fraction * (0.6 - 5.0); // 5.0 → 0.6
@@ -2381,6 +2638,15 @@ function hustlerPhaseTemp() {
 
 // ── Main bot move trigger ────────────────────────────────────────────────────
 async function botMakeMove() {
+  // A premove still being worked out for this turn goes first: it either fires
+  // (and this call then finds the turn already played) or gives way. Bounded,
+  // so a stuck inference can never hold the bot's move hostage.
+  if (_botPremoveArming) {
+    try {
+      await Promise.race([_botPremoveArming,
+        new Promise(r => setTimeout(r, PREMOVE_ARM_WAIT_MS))]);
+    } catch (e) {}
+  }
   if (!botActive || botThinking || gameOver) return;
   const botColor = botPlayerColor === 'white' ? 'b' : 'w';
   if (turn !== botColor) return; // not bot's turn
@@ -2430,19 +2696,42 @@ async function botMakeMove() {
         document.getElementById('botStatus').textContent = '';
         if (botActive && !gameOver) setTimeout(botMakeMove, 50);
         return;
-      } else if (botSanHistory.length >= (botOpeningConfig.maxBookDepth || 20)) {
+      } else if (botSanHistory.length >= (botOpeningConfig.maxBookDepth || 20) * 2) {
+        // Depth is in moves; botSanHistory holds plies (see botGetOpeningMove).
         preferredOpeningActive = false;
       } else {
         const preferredUci = obPreferredNextMoves(
           botSanHistory, slots, board, turn, epSq, castling
         );
         if (preferredUci.size) {
-          // Pick the highest-scored preferred move
+          // When the moves on offer belong to repertoire slots, their scores
+          // ARE the slots' percentages (obPreferredNextMoves splits each slot's
+          // share across its own continuations), so draw in proportion: a
+          // 70/30 repertoire plays the 30% opening three games in ten. Taking
+          // the top score instead meant the smaller share was never played at
+          // all — and while the builder's percentages were not reaching the
+          // app, every score tied and the bot played the first book move in
+          // file order (1...d5 for a Najdorf repertoire).
+          //
+          // With no slot line through this position — only a transposition
+          // back into book — the highest-scored move is still taken, as before.
           let bestUci = null, bestScore = -1;
-          preferredUci.forEach(u => {
-            const sc = preferredUci[u] || 1.0;
-            if (sc > bestScore) { bestScore = sc; bestUci = u; }
-          });
+          if (preferredUci._slotWeighted) {
+            let total = 0;
+            preferredUci.forEach(u => { total += (preferredUci[u] || 0); });
+            let r = Math.random() * total;
+            preferredUci.forEach(u => {
+              if (bestUci) return;
+              r -= (preferredUci[u] || 0);
+              if (r <= 0) bestUci = u;
+            });
+            if (!bestUci) preferredUci.forEach(u => { bestUci = u; });
+          } else {
+            preferredUci.forEach(u => {
+              const sc = preferredUci[u] || 1.0;
+              if (sc > bestScore) { bestScore = sc; bestUci = u; }
+            });
+          }
           if (bestUci) {
             uciMove = bestUci;
             lastBotMoveSource = 'ECO';
@@ -2459,7 +2748,9 @@ async function botMakeMove() {
               ? '♟ ' + matchedEntry.name + ' (' + matchedEntry.eco + ')'
               : '♟ Preferred Opening';
             document.getElementById('botStatus').textContent = label;
-            const bookDelay = 400 + Math.random() * 800;
+            // Scaled to the time control on the clock-based plan; the flat
+            // 0.4–1.2 s otherwise (botBookMoveDelayMs).
+            const bookDelay = Math.max(0, botBookMoveDelayMs(clockMs) - (Date.now() - _botMoveStartMs));
             await new Promise(r => setTimeout(r, bookDelay));
             if (_myGen !== _botGameGen) return; // game restarted mid-think — discard
             botThinking = false;
@@ -2502,7 +2793,8 @@ async function botMakeMove() {
         const _od = await openingExplorerFetch(botMoveHistory);
         _explorerConfidence = explorerConfidenceFromData(_od);
         document.getElementById('botStatus').textContent = botOpeningStatusText(_od);
-        const bookDelay = 400 + Math.random() * 800;
+        // The lookup itself counts toward the move's time (botBookMoveDelayMs).
+        const bookDelay = Math.max(0, botBookMoveDelayMs(clockMs) - (Date.now() - _botMoveStartMs));
         await new Promise(r => setTimeout(r, bookDelay));
         if (_myGen !== _botGameGen) return; // game restarted mid-think — discard
         botThinking = false;
@@ -2541,7 +2833,6 @@ async function botMakeMove() {
     if (typeof sfMoveComplexity !== 'undefined') sfMoveComplexity = null;
 
     if (botTab === 'sf') {
-      await sfInit();
       // ── Flounder: Stockfish at a target rating ──────────────────────────
       // Sample how much this turn should COST, then play the move nearest that
       // cost. The ladder behind flounderChooseMove is measured against Maia at
@@ -2549,58 +2840,7 @@ async function botMakeMove() {
       // statistic, because fitting to a statistic (Regan's move-match column)
       // reproduced his numbers exactly and still produced ratings worth about
       // 120 real Elo per 400 labelled.
-      // Rough think estimate BEFORE the probe, so the degradation curve reads
-      // the pace this move is actually being played at rather than a clock
-      // average — the same plumbing every Maia path uses.
-      const sfRoughThinkSec = botThinkTime(null, clockMs) / 1000;
-      const sfElo = flounderEffectiveElo(clockMs, sfRoughThinkSec);
-
-      // The complexity probe, on the same terms as the Maia paths: only when an
-      // attractor actually reads it. complexityAdjustedTemp is a no-op while
-      // sfCplxScore is null, so skipping it costs nothing but a flat curve.
-      if (_needsComplexity()) {
-        const cr = await sfGetComplexity(fen);
-        sfCplxScore = cr ? cr.cplx : null;
-        sfCplxEval  = cr ? cr.eval  : null;
-      } else {
-        sfCplxScore = sfCplxEval = null;
-      }
-
-      // Base temperature, then curve B's time-pressure escalation, then the
-      // complexity adjustment — the identical chain every Maia path builds.
-      // Flounder turns the result into the Weibull shape c rather than an
-      // exponent on a probability, but it is the same control reading the same
-      // curves, which is what makes one Temperature dial honest across engines.
-      const sfTemp = complexityAdjustedTemp(
-        timePressureTempByThink(botMaiaBaseTemp(), sfRoughThinkSec));
-      const pick  = await flounderChooseMove(fen, sfElo, undefined, sfTemp);
-
-      if (pick && pick.uci) {
-        // Pass null to botThinkTime, not a one-entry distribution: a single
-        // move has entropy 0, which the "blink" branch reads as forced and
-        // plays near-instantly. Same reasoning as the plain-search path below.
-        const targetDelay = botThinkTime(null, clockMs);
-        const spent = Date.now() - _botMoveStartMs;
-        const wait  = Math.max(0, targetDelay - spent);
-        if (wait > 0) await new Promise(r => setTimeout(r, wait));
-
-        uciMove = pick.uci;
-        lastBotMoveSource = 'Flounder';
-
-        // The CP-budget, degradation and hard-floor guards are deliberately NOT
-        // applied here. All three exist because Maia's probabilities are
-        // popularity rather than quality, so a sampled move has to be checked
-        // against an evaluation. Here the move was chosen BY evaluation, and
-        // clamping the tail afterwards would remove exactly the occasional real
-        // mistake that the rating is supposed to produce.
-      } else {
-        // Probe failed — engine busy, or fewer than two legal moves. Plain search.
-        const level = sfPickLevel(sfEffectiveLevel(clockMs));
-        uciMove = await sfGetMove(fen, level);
-        lastBotMoveSource = 'SF';
-        const delay = botThinkTime(null, clockMs);
-        await new Promise(r => setTimeout(r, delay));
-      }
+      uciMove = await botFlounderTurn(fen, clockMs, _botMoveStartMs);
 
     } else if (botTab === 'maia3') {
       // Pure Maia3 — no LC fallback, SF only if model not downloaded.
@@ -2612,7 +2852,7 @@ async function botMakeMove() {
       // Rough think estimate BEFORE inference so the ELO degradation curve
       // uses actual move pace (weaponizer/hustle/fixed included), not the
       // clock/remaining-moves average — same plumbing as the LC paths.
-      const m3RoughThinkSec = botThinkTime(null, clockMs) / 1000;
+      const m3RoughThinkSec = botThinkTime(null, clockMs, { rough: true }) / 1000;
       let m3Probs = null;
       // Kick off SF complexity probe in parallel with Maia inference (separate workers)
       if (_needsComplexity() && !sfReady) sfInit().catch(() => {}); // warm up SF for next move
@@ -2659,8 +2899,7 @@ async function botMakeMove() {
         // This is the case Flounder was built for: the same rating, no 44MB
         // model. The old code dropped to Stockfish at rating/200 as a "rough
         // mapping", which is the exact substitution the ladder work disproved.
-        await sfInit();
-        uciMove = await flounderMoveOrSearch(fen, maia3SelectedRating, m3RoughThinkSec);
+        uciMove = await botFlounderTurn(fen, clockMs, _botMoveStartMs, maia3SelectedRating);
       }
 
     } else if (botTab === 'maia') {
@@ -2674,7 +2913,7 @@ async function botMakeMove() {
 
       // Step 1: rough think estimate (no probs yet, entropy defaults to 2) so
       // the ELO degradation curve uses actual move pace, not clock/40 average.
-      const roughThinkSec = botThinkTime(null, clockMs) / 1000;
+      const roughThinkSec = botThinkTime(null, clockMs, { rough: true }) / 1000;
 
       let probs = null;
       // Start complexity probe before LC/Maia calls — runs in parallel on sfWorker
@@ -2708,7 +2947,7 @@ async function botMakeMove() {
       }
       if (probs && Object.keys(probs).length) {
         // Step 3: precise think time now that we have entropy from real probs
-        const targetDelay = botThinkTime(probs, clockMs);
+        const targetDelay = botThinkTime(probs, clockMs, { book: lastBotMoveSource === 'LC Explorer' });
         const preciseThinkSec = targetDelay / 1000;
         // Step 4: pressure curves keyed on actual think time, not clock average
         const effectiveTemp = timePressureTempByThink(baseTemp, preciseThinkSec);
@@ -2725,11 +2964,13 @@ async function botMakeMove() {
         uciMove = await applyHardFloorBackstop(fen, uciMove, probs);
         _botMoveThinkSec = null;
       } else {
-        // Off book. The fallback slider is still the user's stated strength for
-        // this case, so honour it — just as a rating rather than a skill level.
-        await sfInit();
-        uciMove = await flounderMoveOrSearch(fen, flounderEloFromLegacyLevel(lcFallbackLevel()),
-          botThinkTime(null, clockMs) / 1000);
+        // Off book with no Maia model to hand over to: Flounder at the rating
+        // on the dial, the same substitution the pure Maia 3 path makes.
+        //
+        // This used to read lcFallbackLevel() — a 1–20 slider in the old
+        // sidebar that the builder never writes — so an LC+Maia 2000 bot
+        // without the model dropped to about 1060 the moment the book ran dry.
+        uciMove = await botFlounderTurn(fen, clockMs, _botMoveStartMs, maia3SelectedRating);
       }
 
     } else if (botTab === 'lcsf') {
@@ -2740,7 +2981,7 @@ async function botMakeMove() {
         : (typeof botMaiaTempValue !== 'undefined' && botMaiaTempValue > 0)
           ? botMaiaTempValue
           : (parseFloat(document.getElementById('maiaTemp')?.value) || 1.0);
-      const roughThinkSecLcsf = botThinkTime(null, clockMs) / 1000;
+      const roughThinkSecLcsf = botThinkTime(null, clockMs, { rough: true }) / 1000;
       // SF probe in parallel with the explorer fetch — needed here for
       // stalemate-seek and complexity-scaled timing (both live outside the
       // personality section, which is greyed for LC+SF).
@@ -2768,7 +3009,7 @@ async function botMakeMove() {
         sfCplxScore = sfCplxEval = null;
       }
       if (lcsfProbs && Object.keys(lcsfProbs).length) {
-        const targetDelay = botThinkTime(lcsfProbs, clockMs);
+        const targetDelay = botThinkTime(lcsfProbs, clockMs, { book: true });   // always a book move here
         const preciseThinkSecLcsf = targetDelay / 1000;
         const lcsfEffTemp = timePressureTempByThink(lcsfTemp, preciseThinkSecLcsf);
         const inferenceMs = Date.now() - _botMoveStartMs;
@@ -2778,19 +3019,18 @@ async function botMakeMove() {
         _botMoveThinkSec = preciseThinkSecLcsf;
         await _ensureMoveComplexity(fen, lcsfProbs);
         const lcsfShaped = applyMoveAttractors(lcsfProbs);
-        uciMove = pickFromProbs(lcsfShaped, lcsfEffTemp);
+        // complexityAdjustedTemp was missing here alone, so Front-runner /
+        // Swindler did nothing while a Flounder + book bot was still in book.
+        uciMove = pickFromProbs(lcsfShaped, complexityAdjustedTemp(lcsfEffTemp));
         uciMove = await applyCpBudgetAcceptance(fen, uciMove, lcsfProbs, lcsfShaped);
         uciMove = await applyDegradationEvalGuard(fen, uciMove, lcsfProbs);
         uciMove = await applyHardFloorBackstop(fen, uciMove, lcsfProbs);
         _botMoveThinkSec = null;
       } else {
-        // Off book: the engine is Flounder at the rating on the dial. The old
-        // fallback slider was a control the builder never wrote, so a
-        // "Flounder 2000 + book" bot dropped to level 5 (~1060) the moment the
-        // book ran dry.
-        await sfInit();
-        uciMove = await flounderMoveOrSearch(fen, flounderSliderElo(),
-          botThinkTime(null, clockMs) / 1000);
+        // Off book: exactly the Flounder engine's own move — same dial, same
+        // Variety, same curves, same timing. See botFlounderTurn for what this
+        // path used to skip.
+        uciMove = await botFlounderTurn(fen, clockMs, _botMoveStartMs);
       }
 
     } else if (botTab === 'hybrid') {
@@ -2804,7 +3044,19 @@ async function botMakeMove() {
         const bookProbs = await maiaGetMoveProbs(fen);
         if (bookProbs && Object.keys(bookProbs).length) {
           lastBotMoveSource = 'LC Explorer';
-          const targetDelay = botThinkTime(bookProbs, clockMs);
+          // The complexity probe every other distribution path runs, for the
+          // same readers: Front-runner/Swindler, stalemate-seeking, custom
+          // controls gated on winning/losing, Complexity-scaled timing. This
+          // path had none, so those read whatever an earlier move left behind.
+          if (_needsComplexity()) {
+            if (!sfReady) { try { await sfInit(); } catch (e) {} }
+            const cr = sfReady ? await sfGetComplexity(fen) : null;
+            sfCplxScore = cr ? cr.cplx : null;
+            sfCplxEval  = cr ? cr.eval  : null;
+          } else {
+            sfCplxScore = sfCplxEval = null;
+          }
+          const targetDelay = botThinkTime(bookProbs, clockMs, { book: true });
           const preciseThinkSecBk = targetDelay / 1000;
           const bkTemp = complexityAdjustedTemp(
             timePressureTempByThink(botMaiaBaseTemp(), preciseThinkSecBk));
@@ -2848,7 +3100,7 @@ async function botMakeMove() {
           // drives the slot's curve-A drop; the SF probe (chaos/compwin temp,
           // stalemate-seek, result-gated custom controls, complexity timing)
           // runs in parallel with the inference. sfInit() ran just above.
-          const hybRoughThinkSec = botThinkTime(null, clockMs) / 1000;
+          const hybRoughThinkSec = botThinkTime(null, clockMs, { rough: true }) / 1000;
           const cplxPromiseHyb = (_needsComplexity() && sfReady) ? sfGetComplexity(fen) : null;
           let probs = null;
           if (_maiaReady) {
@@ -2886,24 +3138,19 @@ async function botMakeMove() {
             // Maia3 not downloaded or failed — Flounder at the slot's own ELO,
             // which keeps the blend's identity intact instead of replacing one
             // slot with an unrated engine.
-            //
-            // The think estimate is recomputed rather than borrowed: the one
-            // above is scoped to the branch where Maia actually answered, and
-            // it is derived from that answer's entropy, which does not exist
-            // here.
-            uciMove = await flounderMoveOrSearch(fen, slotElo,
-              botThinkTime(null, clockMs) / 1000);
+            uciMove = await botFlounderTurn(fen, clockMs, _botMoveStartMs, slotElo);
           }
         } else {
           // A Flounder slot is a rating, exactly like a Maia slot, so it
           // degrades under time pressure through the same curve every other
-          // rating uses rather than through skill-level arithmetic.
+          // rating uses rather than through skill-level arithmetic — and now
+          // through the same turn as the Flounder engine itself, which also
+          // gives a slot the complexity probe, stalemate-seeking and blink.
+          // (It used to wait out its think time BEFORE a probe that itself
+          // takes a few hundred ms, so every Flounder slot ran long.)
           const slotFlounderElo = (chosen.elo != null && chosen.elo > 0)
             ? chosen.elo : flounderEloFromLegacyLevel(chosen.level);
-          const delay = botThinkTime(null, clockMs);
-          await new Promise(res => setTimeout(res, delay));
-          uciMove = await flounderMoveOrSearch(fen,
-            pressureSlotEloByThink(slotFlounderElo, delay / 1000), delay / 1000);
+          uciMove = await botFlounderTurn(fen, clockMs, _botMoveStartMs, slotFlounderElo);
         }
       }
     }
@@ -3345,11 +3592,70 @@ function botPremoveShouldArm() {
   return Math.random() * 100 < botPremoveRatePct;
 }
 
+// The rating a premove is computed at — both the guess at the human's reply and
+// the bot's committed answer — or { skip: true } when this turn's move would not
+// come from Maia at all.
+//
+// Maia reads its rating from the lcSelectedRating global, which the normal move
+// paths set around each inference and put back. The premove path never set it,
+// so a Maia 2200 bot premoved with Maia at 1200 (the global's resting default),
+// and an LC+Maia bot premoved at its BOOK rating. The rating is now passed
+// straight to the inference instead of borrowing the global, which also keeps a
+// premove computed while the bot's own move is in flight from disturbing it.
+//
+// A Flounder bot has no distribution to premove from (the panel greys the
+// section out for it), and a blend premoves only on the turns it deals to a
+// Maia slot — at that slot's rating — so a premove never plays an engine the
+// blend was not going to play.
+//
+// A premove is a ONE-SECOND decision: committed before the clock for that move
+// even starts. So it is played at the rating and temperature the time-pressure
+// curves give for PREMOVE_THINK_SEC of thought — the same curves every other
+// move reads. Where time pressure does not apply (no clock, or a Fixed /
+// Instantaneous / Mirror pace) that is simply the bot's own rating.
+const PREMOVE_THINK_SEC = 1;
+function botPremoveRating() {
+  var tab = (typeof botTab !== 'undefined') ? botTab : null;
+  if (tab === 'sf' || tab === 'lcsf') return { skip: true };
+  if (tab === 'hybrid') {
+    var slots = ((typeof botHybridSlots !== 'undefined') ? botHybridSlots : [])
+      .filter(function(s) { return s.weight > 0; });
+    if (!slots.length) return { skip: true };
+    var total = slots.reduce(function(a, s) { return a + s.weight; }, 0);
+    var r = Math.random() * total, chosen = slots[slots.length - 1];
+    for (var i = 0; i < slots.length; i++) { r -= slots[i].weight; if (r <= 0) { chosen = slots[i]; break; } }
+    if (chosen.type !== 'maia') return { skip: true };
+    return { elo: chosen.elo ? pressureSlotEloByThink(chosen.elo, PREMOVE_THINK_SEC) : undefined };
+  }
+  // Outside the app (the unit-test VM) there is no rating to read; the stubbed
+  // inference ignores it anyway.
+  return { elo: (typeof maia3SelectedRating !== 'undefined')
+                ? pressureEffectiveMaiaEloByThink(PREMOVE_THINK_SEC) : undefined };
+}
+
+// The arming in flight, if any. botMakeMove waits for it: arming shapes the
+// reply through the same pipeline and guards a normal move uses, and those
+// keep per-move state (was this pick reshaped by personality? verified within
+// the Budget?) in module globals, so the two must not interleave. It also means
+// a premove still being worked out when the human moves gets to finish and
+// fire, instead of racing a second, fresh think for the same turn.
+var _botPremoveArming = null;
+const PREMOVE_ARM_WAIT_MS = 8000;   // never let a stuck arming hold the bot's move
+
 // Compute and arm a premove. Called right after the bot's own move completes,
 // while the human is on move. Never blocks the human: fully async, and the
 // human moving mid-computation just discards the result via the gen guard.
 async function botPremoveArm() {
   if (!botPremoveShouldArm()) return;
+  var pmRating = botPremoveRating();
+  if (pmRating.skip) return;
+  var run = _botPremoveArmRun(pmRating);
+  _botPremoveArming = run;
+  try { await run; }
+  finally { if (_botPremoveArming === run) _botPremoveArming = null; }
+}
+
+async function _botPremoveArmRun(pmRating) {
   var myGen = ++_botPremoveGen;
   var myGameGen = _botGameGen;
 
@@ -3376,7 +3682,7 @@ async function botPremoveArm() {
     // rating band would be ideal; the bot only knows its own, so it guesses
     // with the same model it plays with (a human premoving guesses from their
     // own understanding too).
-    var predProbs = await maia3GetMoveProbs(curFen);
+    var predProbs = await maia3GetMoveProbs(curFen, pmRating.elo);
     if (myGen !== _botPremoveGen || myGameGen !== _botGameGen) return;
     if (!predProbs) return;
 
@@ -3399,7 +3705,7 @@ async function botPremoveArm() {
     var hypCastle = updateCastling(pm.from, pm.to, snapBoard[pm.from], snapCastling);
     var hypFen    = boardToFen(hypBoard, hypTurn, hypCastle, hypEp, halfmoveClock, _fullmove);
 
-    var replyProbs = await maia3GetMoveProbs(hypFen);
+    var replyProbs = await maia3GetMoveProbs(hypFen, pmRating.elo);
     if (myGen !== _botPremoveGen || myGameGen !== _botGameGen) return;
     if (!replyProbs) return;
 
@@ -3407,26 +3713,41 @@ async function botPremoveArm() {
 
     // Pick the reply through the SAME pipeline a normal move uses — personality
     // attractors reweight the distribution, then the conviction pick samples it
-    // at the panel's temperature. Taking a bare argmax here (the original
-    // implementation) made premoved moves strictly top-move while ordinary
-    // moves were sampled, so the bot visibly changed character whenever it
-    // premoved. It also made near-ties decisive: in one real game Maia rated
-    // Bxd5 34.4% and Nxd5 32.4%, and argmax always took the former.
+    // at temperature. Taking a bare argmax here (the original implementation)
+    // made premoved moves strictly top-move while ordinary moves were sampled,
+    // so the bot visibly changed character whenever it premoved. It also made
+    // near-ties decisive: in one real game Maia rated Bxd5 34.4% and Nxd5
+    // 32.4%, and argmax always took the former.
     //
-    // Think-time-driven effects (the curve-B temperature ramp, complexity
-    // scaling) are deliberately NOT applied: a premove is decided before the
-    // clock for that move starts, so there is no think time to derive them
-    // from. Base temperature is the honest input here.
+    // The temperature is the one curve B gives for a 1-second think, like the
+    // rating above (PREMOVE_THINK_SEC). The complexity adjustment is left out:
+    // it reads the probe of the position before the human's move, which is not
+    // this one.
     // applyMoveAttractors scores each candidate by simulating it against the
     // LIVE globals (board/turn/epSq/castling/atkMap). The reply's candidates
     // belong to the hypothetical position, so the globals must point there for
     // the duration of the call — otherwise every candidate is scored against a
     // board where its piece isn't on the from-square. Swap, shape, restore.
+    var pmTemp = timePressureTempByThink(botMaiaBaseTemp(), PREMOVE_THINK_SEC);
+    var shapedReply = null;
     var replyUci = _botWithPosition(hypBoard, hypTurn, hypEp, hypCastle, function() {
-      var shaped = applyMoveAttractors(replyProbs);
-      return pickFromProbs(shaped, botMaiaBaseTemp());
+      shapedReply = applyMoveAttractors(replyProbs);
+      return pickFromProbs(shapedReply, pmTemp);
     });
     if (!replyUci) return;
+
+    // Held to the same limits as a move the bot thinks about: the CP Budget on
+    // a personality pick, no upgrade past the popular move for anything else,
+    // and the Hard Floor on everything. Strict: a check that cannot complete
+    // (engine busy) means no premove this turn, never an unchecked one. Each
+    // guard is a no-op when the pick is the popular move itself, so the common
+    // case costs no engine time at all.
+    replyUci = await applyCpBudgetAcceptance(hypFen, replyUci, replyProbs, shapedReply, true);
+    if (!replyUci || myGen !== _botPremoveGen || myGameGen !== _botGameGen) return;
+    replyUci = await applyDegradationEvalGuard(hypFen, replyUci, replyProbs, true);
+    if (!replyUci || myGen !== _botPremoveGen || myGameGen !== _botGameGen) return;
+    replyUci = await applyHardFloorBackstop(hypFen, replyUci, replyProbs, true);
+    if (!replyUci || myGen !== _botPremoveGen || myGameGen !== _botGameGen) return;
 
     var rm = uciToSq(replyUci);
     if (!rm || rm.from == null || rm.to == null) return;
@@ -3646,7 +3967,7 @@ function botPostMoveHook() {
         // the exact position the bot last fetched from the explorer (mainline mode).
         // Surprise fires only when the explorer is still active and cache has data.
         if (lichessExplorerActive && botMoveHistory.length > 0) {
-          const _preKey = botMoveHistory.join(',');
+          const _preKey = openingCacheKey(botMoveHistory);
           const _ed = _openingCache.get(_preKey);
           if (_ed && _ed.moves && _ed.moves.length) {
             const _total = _ed.moves.reduce((s, m) => s + m.white + m.draws + m.black, 0);

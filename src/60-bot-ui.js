@@ -206,8 +206,11 @@ function obPreferredNextMoves(sanHistory, slots, boardState, turnColor, epSq, ca
     }
   }
 
-  const EXACT_BONUS = 3.0;
-  const moveScores = {}; // sanMove → best score
+  // Each slot's continuations from here: the next move of every ECO line that
+  // matches the game so far and belongs to that slot — its exact code if it
+  // has any such line, otherwise its ECO family.
+  const slotNext = slots.map(() => ({ exact: new Set(), family: new Set() }));
+  const bookOnly = new Set(); // continuations that belong to no slot
 
   for (const entry of candidates) {
     if (entry.sanMoves.length <= sanHistory.length) continue; // too short
@@ -219,34 +222,44 @@ function obPreferredNextMoves(sanHistory, slots, boardState, turnColor, epSq, ca
     }
     if (!matches) continue;
 
-    // Does this ECO entry match any preferred slot?
-    let bestSlotScore = 0;
-    for (const slot of slots) {
-      const exact  = slot.exactEco     || null;
-      const family = slot.familyPrefix || (slot.eco ? slot.eco.slice(0,2) : null);
-      let tier = 0;
-      if (exact  && entry.eco.startsWith(exact))  tier = 2;
-      else if (family && entry.eco.startsWith(family)) tier = 1;
-      if (tier > 0) {
-        const normW = (slot.weight || 0) / totalPct;
-        const sc = (tier === 2 ? EXACT_BONUS : 1.0) * normW;
-        if (sc > bestSlotScore) bestSlotScore = sc;
-      }
-    }
-
-    // If no direct slot match but we're already inside a preferred line (e.g. B20→B30
-    // transposition in the Sicilian), give a weak score so we continue in book.
-    if (!bestSlotScore && insidePreferredLine) bestSlotScore = 0.2;
-
-    if (!bestSlotScore) continue;
-
-    // The next SAN move in this line is what we want to play
+    // The next SAN move in this line is what we would play
     const nextSan = entry.sanMoves[sanHistory.length];
     if (!nextSan) continue;
-    if (!moveScores[nextSan] || bestSlotScore > moveScores[nextSan]) {
-      moveScores[nextSan] = bestSlotScore;
-    }
+
+    let inSlot = false;
+    slots.forEach((slot, si) => {
+      const exact  = slot.exactEco     || null;
+      const family = slot.familyPrefix || (slot.eco ? slot.eco.slice(0,2) : null);
+      if (exact && entry.eco.startsWith(exact))        { slotNext[si].exact.add(nextSan);  inSlot = true; }
+      else if (family && entry.eco.startsWith(family)) { slotNext[si].family.add(nextSan); inSlot = true; }
+    });
+    if (!inSlot) bookOnly.add(nextSan);
   }
+
+  // Score = the share of games that should play each move. Every slot spends
+  // its own percentage, split evenly across its continuations, and a move that
+  // two slots share collects both shares — so a 40% London and a 30% Exchange
+  // Slav put 70% on 1.d4 and a 30% Four Knights puts 30% on 1.e4.
+  //
+  // This used to take the single best slot's score per move with a 3x bonus for
+  // an exact code, and the caller played the top score. So percentages decided
+  // only which opening ALWAYS got played, never how often — and the builder's
+  // slots arrive carrying `pct`, not the `weight` read here, so every score was
+  // zero and the ties fell to the first ECO line in the file.
+  const moveScores = {};
+  slots.forEach((slot, si) => {
+    const w = (slot.weight || 0) / totalPct;
+    const next = slotNext[si].exact.size ? slotNext[si].exact : slotNext[si].family;
+    if (!(w > 0) || !next.size) return;
+    const share = w / next.size;
+    next.forEach(san => { moveScores[san] = (moveScores[san] || 0) + share; });
+  });
+  const slotWeighted = Object.keys(moveScores).length > 0;
+
+  // No slot line continues from here, but the game is still inside one of the
+  // preferred openings (e.g. a B20 → B30 transposition in the Sicilian): stay in
+  // book on a weak score rather than dropping straight to the engine.
+  if (!slotWeighted && insidePreferredLine) bookOnly.forEach(san => { moveScores[san] = 0.2; });
 
   if (!Object.keys(moveScores).length) return new Set();
 
@@ -260,6 +273,9 @@ function obPreferredNextMoves(sanHistory, slots, boardState, turnColor, epSq, ca
       preferredUci[uci] = score; // piggyback score on the Set object
     }
   }
+  // Tells the caller whether the scores are slot percentages (draw in
+  // proportion) or the transposition fallback (take the best).
+  preferredUci._slotWeighted = slotWeighted;
   return preferredUci;
 }
 
@@ -582,6 +598,7 @@ function obRestorePreferredUI() {
 
 function botSetTpBtn(val) {
   botTimePressure = val;
+  botTempPressureMult = { steady: 0, normal: 1, panicky: 2.5 }[val] ?? 1;
   const descs = {
     steady: 'Stays near top move even when flagging',
     normal: 'Gradually widens move choice as clock drops',
@@ -2015,6 +2032,11 @@ window.addEventListener('message', function(e) {
   // LC mode ratings (snap continuous ELO to nearest Lichess rating band)
   if (cfg.engine === 'lcsf')   { lcsfSetRating(_snapToLcBand(cfg.lcsfElo || 2000)); }
   if (cfg.engine === 'lcmaia') { lcSetRating(_snapToLcBand(cfg.lcMaiaLcElo || 2000)); maia3SetRating(cfg.lcMaiaMaiaElo || 1500); }
+  // A blend's book asks the explorer at the same global LC+Maia uses, and
+  // nothing set it for a blend — so the Lichess ELO beside the book switch did
+  // nothing on Hybrid, and the book played at whatever band was left over
+  // (1200 on a fresh page).
+  if (cfg.engine === 'hybrid' && cfg.openingBook) lcSetRating(_snapToLcBand(cfg.lcMaiaLcElo || cfg.elo || 1500));
 
   // Temperature — store raw float; also update legacy maiaTemp DOM element for fallback reads
   if (cfg.tempValue != null) {
@@ -2034,6 +2056,12 @@ window.addEventListener('message', function(e) {
   botCplxBase = cfg.cplxBase || 3;
   botCplxMin  = cfg.cplxMin  || 0.4;
   botCplxMax  = cfg.cplxMax  || 2.5;
+  // Where Complexity-scaled timing gets its average: the clock ('clock', the
+  // builder's default — time left ÷ moves left in a game of N moves), or the
+  // Base time slider ('fixed'). A config from before the choice existed used
+  // the slider, so that is what an absent field means.
+  botCplxBaseMode     = (cfg.cplxBaseMode === 'clock') ? 'clock' : 'fixed';
+  botCplxMovesPerGame = (+cfg.cplxMovesPerGame === 40) ? 40 : 60;
 
   // Human behaviour modifiers
   botBehavReconsider  = cfg.behavReconsider  !== false;
@@ -2106,10 +2134,21 @@ window.addEventListener('message', function(e) {
     : 15000;
   botWeaponizerMinMs   = Math.max(0, Math.min(5, +cfg.weaponizerMinSec || 0)) * 1000;
 
-  // Calm/panicky (-5..+5) → botTimePressure
-  // Center (0) = steady (no boost); positive = panicky boost under pressure
-  var cp = cfg.calmPanickyValue || 0;
-  botTimePressure = cp >= 3 ? 'panicky' : cp >= 1 ? 'normal' : 'steady';
+  // Calm ↔ Panicky (-5..+5) → how far curve B's temperature escalation goes:
+  // fully Calm leaves temperature untouched by time pressure, 0 runs the curve
+  // as drawn, fully Panicky 2.5× (tempPressureMult, continuous).
+  //
+  // A config saved before that scale (no tempPressureScale) keeps exactly the
+  // behaviour it was saved with — below +1 nothing, +1/+2 the curve, +3 and up
+  // 2.5× — because its curve was drawn for that scale, up to T 8 by default,
+  // and reading it on the new one would make every neutral old bot wild. The
+  // panel does the same remap when it loads one, so the slider shows it.
+  var cp = +cfg.calmPanickyValue || 0;
+  botTempPressureMult = (cfg.tempPressureScale >= 2)
+    ? tempPressureMult(cp)
+    : (cp >= 3 ? 2.5 : cp >= 1 ? 1 : 0);
+  botTimePressure = botTempPressureMult < 0.5 ? 'steady'
+                  : botTempPressureMult < 1.75 ? 'normal' : 'panicky';
 
   // Opening — per-color modes (As White / As Black): off | mainline | repertoire.
   // The bot only plays one color per game, so the effective global botOpeningMode
@@ -2119,7 +2158,14 @@ window.addEventListener('message', function(e) {
   if (_owMode === undefined && _obMode === undefined && cfg.openingMode) {
     _owMode = _obMode = cfg.openingMode;
   }
-  var mapSlot = function(s) { return { eco: s.code, familyPrefix: (s.code || '').slice(0,2), name: s.name, pct: s.pct }; };
+  // `weight` and `exactEco` are the names the repertoire matcher reads
+  // (obPreferredNextMoves). This used to pass only `pct` and `eco`, so every
+  // builder slot scored zero: White's repertoire deactivated on move one and
+  // Black followed whichever ECO line came first in the file.
+  var mapSlot = function(s) {
+    return { eco: s.code, exactEco: s.code, familyPrefix: (s.code || '').slice(0,2),
+             name: s.name, pct: s.pct, weight: +s.pct || 0 };
+  };
   botOpeningConfig.white        = (cfg.repSlots && cfg.repSlots.white || []).map(mapSlot);
   botOpeningConfig.black        = (cfg.repSlots && cfg.repSlots.black || []).map(mapSlot);
   botOpeningConfig.source       = cfg.openingSource || 'masters';

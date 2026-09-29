@@ -1377,6 +1377,26 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
   transition:background 0.25s,border-color 0.25s;
 }
 #sec-timing .tog-row.auto-off{padding-left:8px;}
+
+/* ── Inert controls ────────────────────────────────────────────────────────
+   A control the configured bot will not consult — the engine has nothing for
+   it to act on, the timing mode never asks, there is no clock. It stays on
+   screen so a saved value is still visible, but it cannot be operated (the
+   interactive part carries the `inert` attribute) and it says why, in the same
+   amber the blink note uses. syncControlGating() is the only writer. */
+.inert-why{
+  display:none;margin-top:4px;font-family:var(--font-m);font-size:8px;
+  line-height:1.5;color:var(--amber);
+}
+.inert .inert-why, .has-why .inert-why{display:block;}
+.tog-row.inert .tog,
+.ctrl.inert input, .ctrl.inert .ctrl-val, .ctrl.inert .slider-scale,
+.attr-group.inert .attractor-row, .attr-group.inert .attr-steppers,
+.temp-slider-zone.inert, .inert-block{opacity:0.4;}
+.tog-row.inert .tog-lbl, .tog-row.inert .tog-desc,
+.ctrl.inert .ctrl-lbl, .attr-group.inert .attr-head{opacity:0.55;}
+.cpg-cell.inert{opacity:0.45;}
+@media (max-width:760px){ .inert-why{font-size:11px;} }
 .mode-compact .mdesc{font-size:7.5px;line-height:1.35;color:var(--text-secondary);margin-top:2px;}
 .mode-compact .mname{font-size:8px;}
 .mode-compact .mcard{padding:8px 8px;}
@@ -3209,7 +3229,7 @@ body.fj .picon{font-weight:500;}
               <!-- Clock tactics — synced with the same switches in Move Timing -->
               <div class="dlbl" style="margin-top:14px;"><span>Clock tactics</span></div>
               <div class="tog-row">
-                <div><div class="tog-lbl">Time Weaponizer</div><div class="tog-desc">When the opponent is low on clock, plays fast + drops ELO to pressure flagging. Fine-tune in Move Timing.</div></div>
+                <div><div class="tog-lbl">Time Weaponizer</div><div class="tog-desc">When the opponent is low on clock, plays fast to pressure flagging — and, with the ELO degradation curve on, at that curve's floor. Fine-tune in Move Timing.</div></div>
                 <label class="tog"><input type="checkbox" id="weaponizer-toggle-2" onchange="showWeaponizer(this.checked,'weaponizer-toggle-2')"><div class="tog-track"><div class="tog-thumb"></div></div></label>
               </div>
               <div class="tog-row">
@@ -3396,12 +3416,34 @@ body.fj .picon{font-weight:500;}
             <div class="mode-block" id="tb-complexity">
               <div class="mcard" data-g="timing" data-v="Complexity-scaled" onclick="selMode(this,'st-timing');showTimingCtrl('complexity')"><div class="mdot"></div><div class="mname">Complexity scaled</div><div class="mdesc">Scales with position complexity</div></div>
               <div class="mode-ctrl drawer" id="timing-complexity-ctrl">
-                <div class="ctrl">
-                  <span class="ctrl-lbl">Base time</span>
-                  <input type="range" id="r-cplx-base" min="0.5" max="15" value="3" step="0.5" oninput="sv(this,'v-cplx-base',v=>v+'s')">
-                  <span class="ctrl-val" id="v-cplx-base">3s</span>
+                <!-- Where the AVERAGE comes from. The clock is the default: the
+                     bot budgets like a player does, time left over moves left,
+                     so time pressure is real rather than a fixed pace mistaken
+                     for it. Fixed seconds is the older behaviour. -->
+                <div class="ctrl-lbl" style="margin-bottom:5px;">Average think time</div>
+                <div class="seg-row" id="cplx-base-mode" style="margin-bottom:8px;">
+                  <div class="seg-btn sel" data-v="clock" onclick="setCplxBaseMode('clock')">From the clock</div>
+                  <div class="seg-btn"     data-v="fixed" onclick="setCplxBaseMode('fixed')">Fixed seconds</div>
                 </div>
-                <div class="ctrl-hint" style="margin-bottom:8px;">Average-complexity think time. Simple = faster; complex = slower.</div>
+                <div id="cplx-clock-ctrl">
+                  <!-- A label line and its own row, like "Average think time"
+                       above — inside a .ctrl flex line the phone layer reorders
+                       it and the label ends up after its buttons. -->
+                  <div class="ctrl-lbl" style="margin-bottom:5px;">Plan for a game of</div>
+                  <div class="seg-row" id="cplx-moves" style="margin-bottom:6px;">
+                    <div class="seg-btn sel" data-v="60" onclick="setCplxMovesPerGame(60)">60 moves</div>
+                    <div class="seg-btn"     data-v="40" onclick="setCplxMovesPerGame(40)">40 moves</div>
+                  </div>
+                  <div class="ctrl-hint" id="cplx-clock-hint" style="margin-bottom:8px;"></div>
+                </div>
+                <div id="cplx-fixed-ctrl" style="display:none;">
+                  <div class="ctrl">
+                    <span class="ctrl-lbl">Base time</span>
+                    <input type="range" id="r-cplx-base" min="0.5" max="15" value="3" step="0.5" oninput="sv(this,'v-cplx-base',v=>v+'s');updateQsThinkTime()">
+                    <span class="ctrl-val" id="v-cplx-base">3s</span>
+                  </div>
+                  <div class="ctrl-hint" id="cplx-fixed-hint" style="margin-bottom:8px;">Think time for a position of average complexity. Simple = faster; complex = slower.</div>
+                </div>
                 <div class="ctrl">
                   <span class="ctrl-lbl">Min multiplier</span>
                   <input type="range" id="r-cplx-min" min="0.1" max="1" value="0.4" step="0.1" oninput="sv(this,'v-cplx-min',v=>v+'×')">
@@ -3412,7 +3454,7 @@ body.fj .picon{font-weight:500;}
                   <input type="range" id="r-cplx-max" min="1" max="6" value="2.5" step="0.5" oninput="sv(this,'v-cplx-max',v=>v+'×')">
                   <span class="ctrl-val" id="v-cplx-max">2.5×</span>
                 </div>
-                <div class="ctrl-hint">Range: <strong>0.4×</strong> (obvious moves) → <strong>2.5×</strong> (highly complex).</div>
+                <div class="ctrl-hint">Multipliers on the average: <strong>Min</strong> for obvious moves, <strong>1×</strong> for a typical position, <strong>Max</strong> for highly complex ones.</div>
               </div>
             </div>
 
@@ -3479,7 +3521,7 @@ body.fj .picon{font-weight:500;}
                 <button type="button" class="info-i" aria-label="About busted-premove delay" onclick="infoToggle(this,event)">i</button>
                 <div class="info-pop">Seconds of extra thinking when you bust a premove — the "didn't see that coming" stall. This is your reward for springing a trap: the bot burns its own clock. <strong>0</strong> = no penalty. Never allowed to flag the bot.</div>
               </div>
-              <div class="ctrl-hint" style="margin-top:8px;">Requires <strong>Maia 3</strong>. This game: <span id="premove-stats" style="color:var(--blue);">none yet</span>.</div>
+              <div class="ctrl-hint" style="margin-top:8px;">Requires <strong>Maia 3</strong>. A premove is a one-second decision: it plays at the rating and temperature the time-pressure curves give for 1 s, and must pass the CP Budget and Hard Floor like any other move — if the engine can’t check it, the bot thinks normally instead. This game: <span id="premove-stats" style="color:var(--blue);">none yet</span>.</div>
             </div>
           </div>
 
@@ -3500,7 +3542,7 @@ body.fj .picon{font-weight:500;}
           <div class="tog-row">
             <div>
               <div class="tog-lbl">Enable Time Weaponizer</div>
-              <div class="tog-desc">When the opponent is low on clock, plays fast + drops ELO to pressure flagging. Opt-in.</div>
+              <div class="tog-desc">When the opponent is low on clock, plays fast to pressure flagging — and, with the ELO degradation curve on, at that curve's floor. Opt-in.</div>
             </div>
             <label class="tog"><input type="checkbox" id="weaponizer-toggle" onchange="showWeaponizer(this.checked,'weaponizer-toggle')"><div class="tog-track"><div class="tog-thumb"></div></div></label>
           </div>
@@ -3606,13 +3648,13 @@ body.fj .picon{font-weight:500;}
               <span class="ctrl-lbl">Max temp</span>
               <span class="slider-scale-wrap">
                 <span class="rng-track" id="maxtemp-track">
-                  <input type="range" id="r-maxtemp" min="0" max="8" step="0.1" value="8" oninput="sv(this,'v-maxtemp',v=>'T '+(+v).toFixed(1));syncMaxTempMark();initPtsB();drawB()">
+                  <input type="range" id="r-maxtemp" min="0" max="8" step="0.1" value="2" oninput="sv(this,'v-maxtemp',v=>'T '+(+v).toFixed(1));syncMaxTempMark();initPtsB();drawB()">
                   <i class="rng-dead" aria-hidden="true"></i>
                   <i class="rng-mark" aria-hidden="true"></i>
                 </span>
                 <span class="slider-scale"><span>0</span><span>8</span></span>
               </span>
-              <span class="ctrl-val" id="v-maxtemp">T 8.0</span>
+              <span class="ctrl-val" id="v-maxtemp">T 2.0</span>
             </div>
             <div class="ctrl-hint" id="maxtemp-hint"></div>
           </div>
@@ -3623,7 +3665,7 @@ body.fj .picon{font-weight:500;}
           <div class="stat"><div class="stat-l">Start ELO</div><div class="stat-v" id="pS0">1500</div></div>
           <div class="stat"><div class="stat-l">ELO @ 3s</div><div class="stat-v" id="pS3">—</div></div>
           <div class="stat"><div class="stat-l">Min ELO</div><div class="stat-v" id="pS1">—</div></div>
-          <div class="stat"><div class="stat-l">Max Temp</div><div class="stat-v" id="pSF">8.0</div></div>
+          <div class="stat"><div class="stat-l">Max Temp</div><div class="stat-v" id="pSF">2.0</div></div>
         </div>
 
         <!-- One toggle, so no section header: a full-width "Options" rule over
@@ -3660,7 +3702,8 @@ body.fj .picon{font-weight:500;}
             The bot simulates a rated player under time pressure using two complementary mechanisms:<br>
             <span style="color:var(--amber);">▸ ELO reduction</span> — Full credit to Professor Regan for his work, full blame to me for extrapolating his data-based findings based on full games under different time controls to this unsubstantiated estimation of ELO drop for individual moves under different time constraints.  
             Maia is called at a lower ELO as think time shrinks under time pressure: full ELO at the time control’s nominal pace (base/60 + increment seconds per move), degrading below it following the curve shown above —every point is draggable if you want a shape different from the formula<br>
-            <span style="color:#5dade2;">▸ Temperature escalation</span> — ELO stays fixed but sampling temperature rises as think time shrinks, flattening Maia's move probabilities toward uniform without ever reordering them: a near-forced move stays the near-certain pick, while a genuine toss-up becomes far less predictable (instinctive, less creative play — typical of a strong player with no time to calculate). A quick engine check ensures a degraded pick never improves on Maia's top choice.<br>
+            <span style="color:#5dade2;">▸ Temperature escalation</span> — ELO stays fixed but sampling temperature rises as think time shrinks, flattening Maia's move probabilities toward uniform without ever reordering them: a near-forced move stays the near-certain pick, while a genuine toss-up becomes far less predictable (instinctive, less creative play — typical of a strong player with no time to calculate). A quick engine check ensures a degraded pick never improves on Maia's top choice. How far up the curve the bot actually goes is set by <strong>Calm ↔ Panicky</strong> in Personality: at 0 it follows the curve as drawn (mild by default — Max temp 2), toward Calm it rises less, fully Calm leaves the temperature untouched, and fully Panicky rises 2.5× as fast.<br>
+            <span style="color:var(--amber);">▸ Only when time is really short</span> — both curves describe a bot being forced to move faster than it would like. With <strong>Fixed interval</strong> or <strong>Instantaneous</strong> timing the pace is a number you set, not something the clock forced, so neither curve runs. <strong>Complexity scaled</strong> (From the clock) budgets from the clock and uses them; so does <strong>Mirror user</strong>, which plays at your pace — when you speed up under time pressure it speeds up with you, and degrades the way you do. Premoves are one-second decisions, and play at the rating and temperature these curves give for 1 s.<br>
             Each curve has its own <strong>ON/OFF</strong> toggle next to its title, so you can run either mechanism alone, both together, or switch both off for constant strength regardless of clock.
           </div>
         </div>
@@ -3983,27 +4026,35 @@ const TEMP_PRESETS = [
    ATTRACTOR & PIECE HOVER DESCRIPTIONS
    Each entry: one sentence of context + the core formula.
 ══════════════════════════════════════════════════════════════ */
+// Hover text (desktop) and the open-row description (phone). Kept short and
+// written from the code — /attractors (attractors.html) is the long form with
+// every formula, and the two must say the same thing. A description of a
+// mechanism that is not running is worse than none.
 const ATTRACTOR_DESCS = {
-  complexity: `Position complexity is scored via Stockfish MultiPV: <code>σ(eval₁…evalₙ)</code> — std. deviation of the top-N move evaluations. High σ = branching, tactical positions; low σ = forcing or drawish lines. Slider biases candidate sampling toward high-σ (chaos) or low-σ (simplifying) moves.`,
-  compwin:  `Activates when engine eval ≥ +100 cp (configurable). Positive values upweight candidates that <em>increase</em> MultiPV variance — keeping complications alive; negative values prefer forcing continuations that reduce material and trade into a clear winning ending.`,
-  spacecadet:`Measures board control by counting your <em>weak squares</em> — empty squares none of your pieces attack — before and after each candidate move. Uses a full board attack map so discovered attacks (a pawn advances, revealing a bishop's diagonal) and blocking moves (a pawn steps in front of a bishop) are correctly counted. Positive (Space Cadet) favours moves that reduce your weak squares; negative (Space Waster) accepts ceding space for other priorities.`,
-  fortkx:   `Scores the resulting position for defensive solidity: sums the total defender count across all your pieces after each candidate move. Positive (Fort Knox) favours moves that maximise defensive support and keep pieces protected. Negative (Glass Cannon) accepts exposed, aggressive piece placement.`,
-  gambito:  `Opening phase only (first 20 moves). Uses ECO opening names: if a matching gambit line (opening name contains "gambit") exists in the database, the bot boosts the specific next moves from that line. Falls back to structural pawn-sacrifice detection (pawn to opponent-attacked, undefended square) when outside known gambit lines. Positive (Gambito) boosts gambit play; negative (Gambit Shy) suppresses it, preferring solid material balance.`,
-  trade:    `Reweights candidates by capture and threat value. Positive (right, Trade seeker) boosts captures and moves that create new threats on opponent pieces; negative (left, Trade avoider) suppresses exchanges, preferring piece complexity on the board.`,
-  structure:`Scores pawn structure delta via Stockfish's internal pawn evaluation: isolated pawns, doubled pawns, pawn islands. Formula: <code>Δ_structure = SF_pawn_eval(after) − SF_pawn_eval(before)</code>. Negative (loose) selects moves yielding open, mobile structures; positive (rigid) prefers structural consolidation.`,
-  hustle:   `Scales think-time allocation per move: <code>t = base_time × (1 − v × 0.15)</code>. Positive (hustler): shorter pauses, speed over depth. Negative (Overthinker): longer deliberation, preference for candidates with superior positional or deeper-search scores.`,
-  luck:     `Shifts which segment of Maia3's probability-ranked move list is sampled: <code>draw from [lower, upper]%</code> of ranked candidates. Positive = top of the distribution (engine-preferred); negative = tail of the distribution (off-form play). Works in conjunction with the Move Quality Range dual slider.`,
-  pressure: `Scales steepness of the time-pressure ELO degradation curve: <code>elo(t) = E₀ − Δ · σ(k·(log t − 0.33))</code> where k is multiplied by this slider. Positive steepens the slope — sharper ELO drop in the final seconds; negative flattens it — consistent play regardless of clock.`,
-  attacker: `Scores each candidate move by the total number of opponent pieces under attack from all bot pieces after the move. <code>score += w × tanh(Σ_threats / 6)</code> where Σ_threats sums attack counts on each opponent piece. Positive (Attacker) maximises threat coverage; negative (Peacemaker) minimises it, preferring quiet positions.`,
+  tension:    `How much contact there is between the two armies — every piece counted once per enemy attacker bearing on it — in the position the move leaves behind. <code>tanh((tension(after) − tension(before)) / 4)</code>. Tension seeker tangles the board; Defuser untangles it.`,
+  complexity: `Whether the position after the move is hard to judge: how much the engine keeps changing its mind about that move as it searches deeper, against the other candidates. <code>tanh((volatility(move) − average) / 25)</code>. Chaos agent heads for murky positions; Clarity for clear ones.`,
+  compwin:    `Consulted only once the game has a direction (engine eval beyond ±50 cp), and it adjusts temperature rather than scoring moves. Front-runner complicates when ahead and plays safe when behind; Swindler converts cleanly when ahead and muddies the water when behind. <code>T × exp(±v × 0.08 × tanh((complexity − 0.5) × 4))</code>. Takes no share of the CP Budget.`,
+  spacecadet: `A weak square is an empty square the bot attacks zero times; the centre and the squares in front of a castled king count 1.5×. <code>tanh((weak(before) − weak(after)) / 4)</code>. Space cadet takes squares over; Space waster cedes them for other priorities.`,
+  fortkx:     `How many times the bot's pieces defend each other, before and after the move — every piece, attacked or not. <code>tanh((defence(after) − defence(before)) / 3)</code>. Fort Knox won't step onto an undefended square; Glass cannon is glad to.`,
+  gambito:    `Opening only (first 20 plies). Boosts the next move of a known gambit line (an ECO name containing “gambit”); without the ECO data, a pawn pushed to a square the opponent attacks and the bot does not defend. Gambit shy suppresses the same moves.`,
+  trade:      `Captures, and moves that attack enemy pieces — leaning harder into exchanges when ahead on material and warier when behind: <code>context = 1 + 0.6 × tanh(material balance / 4)</code>. Trade seeker exchanges; Trade avoider keeps the pieces on.`,
+  structure:  `The bot's pawn formation as a penalty count — islands + doubled + isolated + unconnected pawns — scored on its own pawn moves. <code>tanh(penalty(before) − penalty(after))</code>. Rigid keeps the pawns holding hands; Loose breaks formation.`,
+  hustle:     `Pure tempo: how long the bot sits before moving, <code>think × (1 − v × 0.15)</code>. Only Complexity-scaled timing reads it — Fixed, Mirror and Instantaneous set the pace themselves. Takes no share of the CP Budget.`,
+  luck:       `Slides the Move Distribution Range band by <code>v × 4</code> percentage points. Bad day (positive) works from further down the popularity list; Good day (negative) stays near the top. Popularity distributions only — Maia and the opening book. Takes no share of the CP Budget.`,
+  pressure:   `How far the temperature curve in Time Pressure climbs as think time runs out. Fully Calm leaves temperature untouched by time pressure, 0 follows the curve as drawn, fully Panicky climbs 2.5× as fast. Only when time can really run short — Complexity-scaled or Mirror user timing, not a Fixed or Instantaneous pace. Takes no share of the CP Budget.`,
+  attacker:   `How many times the bot's pieces attack enemy pieces, before and after the move. <code>tanh((threats(after) − threats(before)) / 2)</code>. Attacker creates threats; Peacemaker avoids them.`,
+  grabber:    `Materialism weighted by what is won, and drawn to the capture it probably shouldn't make — landing on a square the opponent still attacks. <code>tanh((captured value + 2 × poisoned) / 3)</code>. Still capped by the CP Budget.`,
+  kingsafety: `Enemy attacks on the nine squares around the bot's own king, before and after the move. <code>tanh(danger(before) − danger(after))</code>. King safety keeps the king tucked up; Bravado leaves it airy.`,
+  prophylaxis:`How much room the move takes away from the opponent — their legal moves, before and after. <code>tanh((theirMoves(before) − theirMoves(after)) / 3)</code>. Prophylaxis plays against your plans; Own plans gets on with its own.`,
 };
 
 const PIECE_DESCS = {
-  pawn:   `<code>score += w × P(pawn is primary piece in candidate move)</code>. Rightward = higher probability weight on pawn advances; leftward = suppress pawn moves in favour of piece activity. Does not affect forced captures.`,
-  knight: `<code>score += w × P(knight participates in candidate move)</code>. Knights reward closed, blocked positions — combine with rigid structure preference for maximum effect. Rightward = knight manoeuvres prioritised; leftward = de-prioritise knight hops.`,
-  bishop: `<code>score += w × P(bishop participates in candidate move)</code>. Bishops thrive on open diagonals — combine with loose pawn structure preference. Rightward = diagonal play and bishop-pair exploitation; leftward = passive bishop, keep in reserve.`,
-  rook:   `<code>score += w × P(rook participates in candidate move)</code>. Rooks want open or half-open files. Rightward = aggressive rook lifts and file seizure; leftward = keep rooks passive and avoid early rook trades.`,
-  queen:  `<code>score += w × P(queen participates in candidate move)</code>. Rightward = active queen, early development, queen-led attacks — high-risk, high-reward. Leftward = conservative queen, avoid premature activation, minimise queen exposure.`,
-  king:   `<code>score += w × P(king is active piece in candidate move)</code>. Rightward = king activity and endgame aggression — useful in winning endings. Leftward = king safety priority: prefer castled position and avoid exposing the king in the middlegame.`,
+  pawn:   `A flat like or dislike for moving the pawn: every pawn move gets the same push, <code>v × scale</code>, whatever the position. Right = favour, left = avoid.`,
+  knight: `A flat like or dislike for moving the knight: every knight move gets the same push, <code>v × scale</code>, whatever the position. Right = favour, left = avoid.`,
+  bishop: `A flat like or dislike for moving the bishop: every bishop move gets the same push, <code>v × scale</code>, whatever the position. Right = favour, left = avoid.`,
+  rook:   `A flat like or dislike for moving the rook: every rook move gets the same push, <code>v × scale</code>, whatever the position. Right = favour, left = avoid.`,
+  queen:  `A flat like or dislike for moving the queen: every queen move gets the same push, <code>v × scale</code>, whatever the position. Right = favour, left = avoid.`,
+  king:   `A flat like or dislike for moving the king: every king move gets the same push, <code>v × scale</code>, whatever the position. Right = favour, left = avoid. Castling counts as a king move.`,
 };
 
 const ATTRACTORS = [
@@ -7666,12 +7717,13 @@ function drawStyleGauge(val){
    ATTRACTOR CP ALLOCATION DISPLAY
 ══════════════════════════════════════════════════════════════ */
 // Controls that take no share of the centipawn budget, because they do not
-// score moves. `pressure` scales how hard the time-pressure curve bites, which
-// is a property of the clock rather than of any move — leaving it in the split
-// meant a bot that merely called itself panicky quietly took centipawns away
-// from every control that does choose moves. Mirrors BUDGETLESS_ATTRACTORS in
+// score moves: Panicky scales the time-pressure curve, Hustle think time, Bad
+// day the distribution band, Front-runner the temperature when the game is won
+// or lost. Leaving them in the split meant a bot that merely called itself a
+// hustler quietly took centipawns away from every control that does choose
+// moves. Their rows show no cp figure. Mirrors BUDGETLESS_ATTRACTORS in
 // src/50-bot-engine.js; the two lists must agree or this display lies.
-const BUDGETLESS_ATTRACTORS = ['pressure'];
+const BUDGETLESS_ATTRACTORS = ['pressure', 'hustle', 'luck', 'compwin'];
 
 function updateAttrCpDisplays(){
   const budget = +(document.getElementById('r-style')?.value ?? 100);
@@ -7702,7 +7754,19 @@ function updateAttrCpDisplays(){
     el.textContent = txt;
     if(mirror) mirror.textContent = txt;
   });
+  // The controls outside the split say so, rather than showing a figure that
+  // is not being spent.
+  BUDGETLESS_ATTRACTORS.forEach(id => {
+    const el = document.getElementById('attrval-' + id);
+    if(!el) return;
+    const txt = (attractorValues[id] ?? 0) === 0 ? '—' : 'no cp';
+    el.textContent = txt;
+    el.title = 'Takes no share of the CP Budget — it does not score moves';
+    const mirror = document.getElementById('attrval-' + id + '-m');
+    if(mirror) mirror.textContent = txt;
+  });
   syncAttrHeads();
+  syncControlGating();
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -8084,6 +8148,7 @@ function applyTC(){
   renderTC();
   initPts(); drawA(); drawB();
   if(typeof _syncPressureOffUi === 'function') _syncPressureOffUi();
+  if(typeof _syncCplxBaseUi === 'function') _syncCplxBaseUi();   // the clock plan's example
 }
 
 function selectTC(t, inc){
@@ -8207,6 +8272,7 @@ function showPremoveClock(on, sourceId){
   const sub = document.getElementById('premove-clock-ctrl');
   if(sub) sub.style.display = on ? 'block' : 'none';
   try { localStorage.setItem('bm_premoveLowClock', on ? '1' : '0'); } catch(e){}
+  if(typeof syncControlGating === 'function') syncControlGating();   // untimed note
 }
 function syncPremoveRate(raw, sourceId){
   _syncPair(raw, sourceId, ['r-premove-rate','n-premove-rate'], 0, 100,
@@ -8466,6 +8532,8 @@ function getBotConfig(){
     cplxBase:          parseFloat(document.getElementById('r-cplx-base')?.value || '3'),
     cplxMin:           parseFloat(document.getElementById('r-cplx-min')?.value  || '0.4'),
     cplxMax:           parseFloat(document.getElementById('r-cplx-max')?.value  || '2.5'),
+    cplxBaseMode:      cplxBaseMode,        // 'clock' | 'fixed'
+    cplxMovesPerGame:  cplxMovesPerGame,    // 60 | 40
     behavReconsider:   document.getElementById('cb-reconsidered')?.checked !== false,
     behavBlink:        document.getElementById('cb-blink')?.checked        !== false,
     behavClockMirror:  document.getElementById('cb-clock-mirror')?.checked !== false,
@@ -8482,6 +8550,10 @@ function getBotConfig(){
     personalityId:     selectedPersonality,
     badDayMode:        selectedPersonality === 'badday',
     calmPanickyValue:  attractorValues['pressure'] || 0,
+    // Calm ↔ Panicky is continuous from here on (−5 untouched … 0 as drawn …
+    // +5 2.5×). Its absence marks a bot saved on the old three-step scale,
+    // which the app and applyBotConfig map so that it plays as it was saved.
+    tempPressureScale: 2,
     hybridSlots:     hybridSlots.map(s=>({...s})),
     // One book rating, named twice because the app reads a different key per
     // engine mode. Maia's own number is the Elometer, which is `elo` above.
@@ -8492,7 +8564,7 @@ function getBotConfig(){
     // Curve-implied max drop (base ELO − curve minimum): consumed by the SF
     // level-floor mapping and legacy readers. The ctrlA spline is what runs.
     timePressureMaxDrop: Math.max(0, Math.round(currentElo - ctrlA.reduce((m, p) => Math.min(m, +p.y), currentElo))),
-    timePressureMaxTemp: parseFloat(document.getElementById('r-maxtemp')?.value || '8'),
+    timePressureMaxTemp: parseFloat(document.getElementById('r-maxtemp')?.value || '2'),
     minProbPct:          parseInt(document.getElementById('day-lower')?.value || '0'),
     ctrlA:               ctrlA.map(p => ({x: p.x, y: p.y})),
     ctrlB:               ctrlB.map(p => ({x: p.x, y: p.y})),
@@ -8693,7 +8765,16 @@ function applyBotConfig(cfg){
       : [];
     renderCustomControls();
   });
-  grp(() => onCalmPanickyChange(cfg.calmPanickyValue || 0));
+  // Calm ↔ Panicky. A bot saved before the continuous scale (no
+  // tempPressureScale) is moved onto the value that behaves as it did: its
+  // three steps — below +1 no escalation, +1/+2 the curve, +3 and up 2.5× — are
+  // −5, 0 and +5 now. The number on the slider changes; the bot does not. (The
+  // app makes the same mapping for a config that reaches it directly.)
+  grp(() => {
+    let cp = +cfg.calmPanickyValue || 0;
+    if(!(cfg.tempPressureScale >= 2)) cp = cp >= 3 ? 5 : cp >= 1 ? 0 : -5;
+    onCalmPanickyChange(cp);
+  });
 
   // Restore a selected preset personality (the attractor block cleared it). This
   // also drives badDayMode, which getBotConfig() re-derives from the selection.
@@ -8733,6 +8814,10 @@ function applyBotConfig(cfg){
     _setRange('r-cplx-base', cfg.cplxBase);
     _setRange('r-cplx-min',  cfg.cplxMin);
     _setRange('r-cplx-max',  cfg.cplxMax);
+    // A bot saved before the clock-based average existed used the Base time
+    // slider, so an absent field restores that — the bot plays as it did.
+    setCplxBaseMode(cfg.cplxBaseMode === 'clock' ? 'clock' : 'fixed');
+    setCplxMovesPerGame(+cfg.cplxMovesPerGame === 40 ? 40 : 60);
   });
 
   // Human behaviour toggles + weaponizer
@@ -9035,6 +9120,7 @@ function bcpMaiaSetStatus(status, ready, progress){
   _bcpMaiaStatus = status || 'idle';
   _bcpMaiaReady  = !!ready;
   bcpMaiaSyncOverlay();
+  syncControlGating();   // premove waits on the model
   const labels = {
     idle:        'Checking storage…',
     loading:     'Checking storage…',
@@ -9838,10 +9924,8 @@ function applyEngineMode(){
 
   document.getElementById('st-engine').textContent = engineStatusName();
   document.getElementById('qs-engine-pill').textContent = engineStatusName();
-  // Hide with visibility (not display) so the right column keeps its size and
-  // the panel stays visually stable across engine selections.
-  const mqr = document.getElementById('move-quality-range');
-  if(mqr) mqr.style.visibility = (['maia3','lcmaia','hybrid'].includes(currentEngine)) ? '' : 'hidden';
+  // The Move Distribution Range's visibility (and every other engine-dependent
+  // control) is decided in syncControlGating, called at the end of this.
   const tempCol = document.getElementById('engine-temp-col');
   // Temperature reaches Flounder now: it maps to the Weibull shape c, which is
   // the same trade Maia's temperature makes — wilder, less consistent, and a
@@ -9863,6 +9947,7 @@ function applyEngineMode(){
   }, 0);
   updateEngineDescTail();
   updatePersonalityGating();
+  syncControlGating();
 }
 
 /* ══ Personality gating ══════════════════════════════════════════════════════
@@ -9908,6 +9993,221 @@ function updatePersonalityGating(){
   } else {
     note.style.display = 'none';
   }
+}
+
+/* ══ Control gating ══════════════════════════════════════════════════════════
+   Every control on this panel either changes what the bot does, or it is
+   greyed out and says why. This decides which, from the four things that can
+   leave a control with nothing to act on:
+     • the engine — a bot that only ever plays Flounder has no popularity
+       distribution (no Move Distribution Range, no Bad day) and no Maia to
+       premove with, and its moves are chosen by evaluation, so the Hard Floor
+       never caps them;
+     • the timing mode — botThinkTime returns before the human-behaviour
+       modifiers under Fixed, Mirror and Instantaneous;
+     • the clock — an Untimed game has nobody to flag and nothing to pressure;
+     • a preset that takes a control over — Coffeehouse Hustler sets the
+       temperature itself.
+   Each rule below names the engine-side fact that makes it true, so if the
+   engine changes, the rule that has to change with it is easy to find.
+
+   Called wherever one of those inputs changes — applyEngineMode,
+   updateHybridTotal, showTimingCtrl, _syncPressureOffUi (time control and the
+   curve switches), updateAttrCpDisplays and updateQsPersonality (attractors,
+   presets, loaded bots), bcpMaiaSetStatus — so it cannot drift. */
+function _gatingState(){
+  const book = engineBook === 'on';
+  const maiaWeight = baseEngine === 'hybrid'
+    ? hybridSlots.filter(s => s.type === 'maia').reduce((a, s) => a + (+s.pct || 0), 0)
+    : (baseEngine === 'maia3' ? 100 : 0);
+  const totalWeight = baseEngine === 'hybrid'
+    ? hybridSlots.reduce((a, s) => a + (+s.pct || 0), 0) : 100;
+  return {
+    book, maiaWeight, totalWeight,
+    // Every move of the game is Flounder's: no book and no Maia weight.
+    flounderOnly: !book && maiaWeight === 0,
+    mode: _getTimingMode(),
+    timed: isTimedGame(),
+    // Fixed / Instantaneous / Mirror set the pace themselves, so the engine
+    // does not read time pressure at all (_timePressureApplies).
+    paced: _curvesInertKind() === 'timing',
+    hustler: selectedPersonality === 'hustler',
+  };
+}
+
+const _TIMING_WHY = {
+  fixed:   'Fixed interval plays every move at its set duration, so this is never consulted.',
+  mirror:  'Mirror user copies your pace move for move, so this is never consulted.',
+  instant: 'Instantaneous has no think time for this to change.',
+};
+const _HUSTLE_WHY = {
+  fixed:   'Hustle only changes how long the bot thinks, and Fixed interval plays every move at its set duration.',
+  mirror:  'Hustle only changes how long the bot thinks, and Mirror user copies your pace instead.',
+  instant: 'Hustle only changes how long the bot thinks, and Instantaneous has no think time.',
+};
+const _UNTIMED_WHY = 'No clock in an Untimed game — pick a time control to use this.';
+
+// One control's gate. `why` empty = live. `inert` false = a note that explains
+// without disabling (the control still does something, just not everything
+// its label suggests). `target` is what you would operate — it gets the
+// `inert` attribute, so it cannot be clicked, dragged or tabbed to. The note
+// goes in `noteHost`, or after the element when `after` is set (a .ctrl row is
+// a flex line with no room for a sentence).
+function _setWhy(el, why, opts){
+  if(!el) return;
+  opts = opts || {};
+  const disable = !!why && opts.inert !== false;
+  el.classList.toggle('inert', disable);
+  el.classList.toggle('has-why', !!why && !disable);
+  [].concat(opts.target || []).forEach(t => { if(t) t.inert = disable; });
+  let note = null;
+  if(opts.after){
+    const nx = el.nextElementSibling;
+    note = (nx && nx.classList.contains('inert-why')) ? nx : null;
+    if(!note && why){ note = document.createElement('div'); note.className = 'inert-why'; el.after(note); }
+    if(note) note.style.display = why ? 'block' : '';
+  } else {
+    const host = opts.noteHost || el;
+    note = host.querySelector(':scope > .inert-why');
+    if(!note && why){ note = document.createElement('div'); note.className = 'inert-why'; host.appendChild(note); }
+  }
+  if(note) note.textContent = why || '';
+}
+
+// A toggle row: the switch is the target, the note sits under its description.
+function _setTogWhy(inputId, why, inert){
+  const inp = document.getElementById(inputId);
+  const row = inp ? inp.closest('.tog-row') : null;
+  if(!row) return;
+  _setWhy(row, why, { target: row.querySelector('label.tog'),
+                      noteHost: row.firstElementChild, inert });
+}
+
+// An attractor row (Strategic preferences): slider and phone steppers are the
+// target; the note joins the row's description.
+function _setAttrWhy(id, why, inert){
+  const grp = document.getElementById('attrg-attr-' + id);
+  if(!grp) return;
+  _setWhy(grp, why, { target: [grp.querySelector('.attractor-row'), grp.querySelector('.attr-steppers')],
+                      noteHost: grp.querySelector('.attr-body'), inert });
+}
+
+// Radar axes follow the same rules as their sliders.
+function _radarAxisWhy(key){
+  let g;
+  try { g = _gatingState(); } catch(e){ return ''; }
+  if(key === 'luck' && g.flounderOnly)
+    return 'Bad day shifts the Move Distribution Range, and a bot that only plays Flounder has no distribution to shift.';
+  if(key === 'hustle') return _HUSTLE_WHY[g.mode] || '';
+  if(key === 'pressure'){
+    if(!g.timed) return _UNTIMED_WHY;
+    if(g.paced) return (_PACE_NAME[g.mode] || 'The timing mode') + ' sets the pace, so there is no time pressure for Panicky to scale.';
+    if(pressureOffB) return 'Panicky only scales temperature escalation, which is switched off in Time Pressure.';
+  }
+  return '';
+}
+
+function syncControlGating(){
+  let g;
+  try { g = _gatingState(); } catch(e){ return; }   // boot: state not declared yet
+
+  // ── Engine ────────────────────────────────────────────────────────────────
+  // Hard Floor — applyHardFloorBackstop runs on Maia and book picks only;
+  // Flounder's moves are chosen by evaluation and never capped (botFlounderTurn).
+  const floorWhy = g.flounderOnly
+    ? 'Flounder picks each move by its evaluation, so nothing here caps it — its rating decides how bad a move can get. The floor applies to Maia and opening-book moves.'
+    : '';
+  _setWhy(document.getElementById('hard-floor-row'), floorWhy,
+          { target: document.getElementById('r-hardfloor'), after: true });
+  const floorTile = document.getElementById('ind-cp-floor');
+  const floorCell = floorTile ? floorTile.closest('.cpg-cell') : null;
+  if(floorCell){
+    floorCell.classList.toggle('inert', !!floorWhy);
+    floorCell.title = floorWhy || 'Adjust in the Personality panel';
+  }
+
+  // Move Distribution Range — a slice of a POPULARITY distribution, Maia's or
+  // the book's; applyMoveAttractors skips it for Flounder (rawWeights). Hidden
+  // rather than dimmed, as before, so the column keeps its size. It used to be
+  // hidden for Flounder + book too, while still filtering every book move.
+  const mqr = document.getElementById('move-quality-range');
+  if(mqr) mqr.style.visibility = g.flounderOnly ? 'hidden' : '';
+
+  // Temperature — Coffeehouse Hustler replaces it with a schedule by game phase
+  // (hustlerPhaseTemp, which botMaiaBaseTemp reads first on every engine).
+  const tz = document.querySelector('#engine-temp-col .temp-slider-zone');
+  _setWhy(tz, g.hustler
+      ? 'Coffeehouse Hustler sets the temperature itself, by game phase: 5.0 in the opening, easing to 0.6 by the endgame. Move any personality slider, or pick another preset, to set it here.'
+      : '', { target: document.getElementById('temp-t-slider'), after: true });
+
+  // ── Timing ────────────────────────────────────────────────────────────────
+  // botThinkTime returns before these under Fixed, Mirror (once it has seen a
+  // human move) and Instantaneous; only Complexity-scaled consults them.
+  const tWhy = _TIMING_WHY[g.mode] || '';
+  _setTogWhy('cb-reconsidered', tWhy);
+  const mirrorWhy = !g.timed ? _UNTIMED_WHY : tWhy;
+  _setTogWhy('cb-clock-mirror', mirrorWhy);
+  _setTogWhy('cb-clock-mirror-2', mirrorWhy);
+  // Blink under Fixed is applyBlinkSuppression's (it switches blink off and
+  // says so, and lets the user overrule it); under Instantaneous every move is
+  // already instant.
+  _setTogWhy('cb-blink', g.mode === 'instant' ? _TIMING_WHY.instant : '');
+  _setAttrWhy('hustle', _HUSTLE_WHY[g.mode] || '');
+
+  // ── Clock ─────────────────────────────────────────────────────────────────
+  _setTogWhy('cb-flag', g.timed ? '' : _UNTIMED_WHY);
+  // Weaponizer: nobody to flag without a clock; under Instantaneous the bot
+  // already moves at once, and at that pace the ELO curve already sits at
+  // its floor — nothing left for it to add.
+  const weapWhy = !g.timed ? 'No clock in an Untimed game — nobody can be flagged.'
+    : g.mode === 'instant' ? 'Instantaneous already plays every move at once, so the Weaponizer has nothing to add.'
+    : '';
+  _setTogWhy('weaponizer-toggle', weapWhy);
+  _setTogWhy('weaponizer-toggle-2', weapWhy);
+  const wSub = document.getElementById('weaponizer-sub');
+  if(wSub){ wSub.classList.toggle('inert-block', !!weapWhy); wSub.inert = !!weapWhy; }
+
+  // ── Premove ───────────────────────────────────────────────────────────────
+  // botPremoveArm guesses the human's reply with Maia and commits Maia's
+  // answer at the bot's own rating; it skips Flounder turns (botPremoveRating).
+  const pmWhy = (baseEngine === 'stockfish' || (baseEngine === 'hybrid' && g.maiaWeight === 0))
+      ? 'Premove guesses your reply with Maia and commits Maia’s answer — a bot that only plays Flounder has neither, so it never premoves.'
+    : !_bcpMaiaReady
+      ? 'Premove needs the Maia 3 model — download it in the Engine section.'
+    : '';
+  const pmShare = (baseEngine === 'hybrid' && g.totalWeight > 0 && g.maiaWeight < g.totalWeight)
+    ? Math.round(100 * g.maiaWeight / g.totalWeight) : null;
+  _setTogWhy('cb-premove', pmWhy || (pmShare != null
+      ? 'In this blend it premoves only on the turns a Maia slot plays — about ' + pmShare + '% of them.'
+      : ''), pmWhy ? true : false);
+  const pmSub = document.getElementById('premove-sub');
+  if(pmSub){ pmSub.classList.toggle('inert-block', !!pmWhy); pmSub.inert = !!pmWhy; }
+  // "Only when low on clock" in an Untimed game: the triggers can never fire,
+  // and with the switch on the bot never premoves at all. The switch itself
+  // stays live — turning it off is the fix.
+  const lowClk = document.getElementById('cb-premove-clock');
+  _setTogWhy('cb-premove-clock', (!pmWhy && !g.timed)
+      ? (lowClk && lowClk.checked
+          ? 'No clock in an Untimed game, so with this on the bot never premoves. Switch it off to premove without a clock.'
+          : 'No clock in an Untimed game — the triggers below can never fire.')
+      : '', false);
+  const pmClk = document.getElementById('premove-clock-ctrl');
+  if(pmClk){ const off = !pmWhy && !g.timed; pmClk.classList.toggle('inert-block', off); pmClk.inert = off; }
+
+  // ── Time pressure ─────────────────────────────────────────────────────────
+  // Calm ↔ Panicky does one thing: it scales curve B's escalation, from none
+  // at fully Calm through the curve as drawn at 0 to 2.5× at fully Panicky. So
+  // it is inert without a clock, when the timing mode sets the pace, or with
+  // that curve switched off.
+  const pressWhy = !g.timed ? _UNTIMED_WHY
+    : g.paced ? (_PACE_NAME[g.mode] || 'The timing mode') + ' sets the pace, so there is no time pressure for this to scale.'
+    : pressureOffB ? 'This only scales temperature escalation, which is switched off in Time Pressure.'
+    : '';
+  _setAttrWhy('pressure', pressWhy, true);
+  // Curve B's idle state reads the same slider.
+  if(typeof _syncPressureOffUi === 'function') _syncPressureOffUi(true);
+
+  if(typeof drawRadar === 'function') drawRadar();
 }
 
 // Jump from the inactive-personality note to the engine section so the user can
@@ -10039,8 +10339,10 @@ function updateHybridTotal(){
   if(!el) return;
   el.textContent = 'Total: ' + total + '%';
   el.className = 'hybrid-total ' + (total===100?'ok':'err');
-  // Slot mix affects whether personality is full / partial / inactive.
+  // Slot mix affects whether personality is full / partial / inactive, and
+  // whether any Maia is left for the controls that need a distribution.
   updatePersonalityGating();
+  syncControlGating();
 }
 
 function initSpeedo(){
@@ -11110,8 +11412,10 @@ function onCalmPanickyChange(val){
   attractorValues['pressure'] = +val;
   if(document.getElementById('attr-pressure')){
     document.getElementById('attr-pressure').value = val;
-    document.getElementById('attrval-pressure').textContent = +val===0?'0':+val>0?'+'+val:val;
   }
+  // Through the shared hook, so the readout, the heads, curve B's idle state
+  // and the gating all follow — this used to repaint only the number.
+  updateAttrCpDisplays();
   drawRadar();
   maybePersHybridAlert();
 }
@@ -11478,7 +11782,9 @@ const RADAR_AXES = [
   { label:'Hustle',    key:'hustle' },
   { label:'Bad day',   key:'luck' },
   { label:'Panicky',   key:'pressure' },
-  { label:'Grinder',   key:'compwin' },
+  // The positive pole, like every other axis. This read "Grinder", a name the
+  // slider it drives has not carried since it became Swindler ↔ Front-runner.
+  { label:'Front-runner', key:'compwin' },
 ];
 
 let _radarDragIdx  = -1;   // axis index currently being dragged (-1 = none)
@@ -11543,7 +11849,11 @@ function drawRadar(){
     ctx.fillStyle = isActive ? amberColor : nodeInact;
     ctx.textAlign='center';
     ctx.textBaseline='middle';
+    // An axis the configured bot will not consult is drawn faded, and cannot
+    // be dragged (see _radarAxisWhy) — same rule as every other control.
+    ctx.globalAlpha = _radarAxisWhy(ax.key) ? 0.35 : 1;
     ctx.fillText(ax.label, lx, ly);
+    ctx.globalAlpha = 1;
   });
 
   // Data polygon (fill + stroke)
@@ -11654,6 +11964,7 @@ function _radarSetAxis(axIdx, val){
   // Deselect personality preset
   document.querySelectorAll('.pcard').forEach(c=>c.classList.remove('sel'));
   selectedPersonality=null;
+  syncControlGating();
 }
 
 /* ── Radar on phones: a display, not an editor ─────────────────────────────
@@ -11677,6 +11988,8 @@ function _radarNavigate(axIdx){
   const ax = RADAR_AXES[axIdx];
   if(!ax) return;
   if(ax.key === 'luck'){
+    // A Flounder-only bot has no distribution range to open — it is hidden.
+    if(_radarAxisWhy('luck')){ alert(_radarAxisWhy('luck')); return; }
     switchItab('attract', 'quality');
     setTimeout(() => {
       const el = document.getElementById('move-quality-range');
@@ -11712,6 +12025,7 @@ function initRadarInteraction(){
     const {mx,my}=_radarCanvasPos(canvas,e.clientX,e.clientY);
     const idx=_radarNearestAxis(mx,my);
     if(idx<0) return;
+    if(_radarAxisWhy(RADAR_AXES[idx].key)) return;   // inert: the hover title says why
     _radarDragIdx=idx;
     _radarHoverIdx=-1;
     canvas.style.cursor='grabbing';
@@ -11728,7 +12042,9 @@ function initRadarInteraction(){
         _radarHoverIdx=idx;
         drawRadar();
       }
-      canvas.style.cursor = idx>=0 ? 'grab' : 'default';
+      const why = idx>=0 ? _radarAxisWhy(RADAR_AXES[idx].key) : '';
+      canvas.title = why;
+      canvas.style.cursor = idx<0 ? 'default' : (why ? 'not-allowed' : 'grab');
     }
   });
 
@@ -11757,8 +12073,10 @@ function initRadarInteraction(){
     const idx=_radarNearestAxis(mx,my);
     if(idx<0) return;
     // Phone: navigate to the axis's own control instead of setting it here.
-    // _radarDragIdx stays -1, so touchmove can't drag a value either.
+    // _radarDragIdx stays -1, so touchmove can't drag a value either. The row
+    // it opens carries the reason when the axis is inert.
     if(_isPhoneLayout()){ _radarNavigate(idx); return; }
+    if(_radarAxisWhy(RADAR_AXES[idx].key)) return;
     _radarDragIdx=idx;
     _radarSetAxis(idx, _radarAxisValue(mx,my,idx));
   },{passive:false});
@@ -11794,6 +12112,9 @@ function updateQsPersonality(){
       || customControls.some(c => (c.value??0) !== 0);
     pill.textContent = isCustom ? 'Custom' : 'None';
   }
+  // Runs after every change of preset — including the deselect that moving a
+  // slider causes — so the Hustler's hold on the temperature lifts with it.
+  syncControlGating();
 }
 
 function updateQsCpBudget(){
@@ -11822,7 +12143,12 @@ function updateQsThinkTime(){
   const sel  = document.querySelector('#timing-mode-grid .mcard.sel');
   const mode = sel?.dataset.v || 'Fixed interval';
   if(mode === 'Instantaneous')    { pill.textContent = 'Instant';       return; }
-  if(mode === 'Complexity-scaled'){ pill.textContent = 'By complexity'; return; }
+  if(mode === 'Complexity-scaled'){
+    pill.textContent = (typeof cplxBaseMode !== 'undefined' && cplxBaseMode === 'clock' && isTimedGame())
+      ? 'Clock · ~' + _fmtSec(_cplxStartAvgSec())
+      : 'By complexity';
+    return;
+  }
   if(mode === 'Mirror user')      { pill.textContent = 'Mirrors you';   return; }
   const secs = +(document.getElementById('r-fixed')?.value || 2);
   pill.textContent = secs + ' sec';
@@ -11903,6 +12229,21 @@ function _bdApply(){
    hints. Click-triggered (not hover): works on touch, and these are
    read-once-or-twice explanations, not tooltips. */
 const INFO_POPS = {
+  pressureTiming: {
+    title: 'Time pressure needs a pace that can run short',
+    body:
+      '<p>Both curves describe what happens as the bot is <b>made</b> to move faster than ' +
+      'it would like — its clock running down. With <b>Fixed interval</b> or ' +
+      '<b>Instantaneous</b> timing the pace is a number you set, not something the clock ' +
+      'forced: a bot told to move every 2 seconds is not short of time in a 15-minute game. ' +
+      'Read as time pressure, that pace would take a couple of hundred ELO off every move. ' +
+      'So neither curve is consulted, and premoves play at the bot’s own rating.</p>' +
+      '<p><b>To use them, choose Complexity scaled</b> in Move Timing — on its default ' +
+      '<b>From the clock</b> setting the bot budgets its own time from the clock and the ' +
+      'moves left, and these curves take over as that budget runs down — or ' +
+      '<b>Mirror user</b>, which plays at your pace and degrades as you speed up under ' +
+      'time pressure, the way you do.</p>',
+  },
   pressureUntimed: {
     title: 'No clock, no time pressure',
     body:
@@ -11945,7 +12286,12 @@ const INFO_POPS = {
       'the check. Desperation moves from stalemate-seeking are exempt — throwing ' +
       'material is the point. Slide it to the top (<b>Off</b>) and nothing is capped ' +
       '— hung queens included. The Engine panel shows both values beside the ' +
-      'Elometer, with a one-click ELO-based recommendation.</p>'
+      'Elometer, with a one-click ELO-based recommendation.</p>' +
+      '<p><b>On Flounder</b> the Budget is the width of the band of similarly-costly ' +
+      'moves the personality may choose among, and it scales the push the same way. ' +
+      'The Hard Floor does not apply to Flounder’s own moves: they are chosen by ' +
+      'evaluation, and the occasional real mistake is part of the rating. It still ' +
+      'covers opening-book moves and any Maia slots in a blend.</p>'
   },
   distrange: {
     title: 'Move Distribution Range',
@@ -11955,9 +12301,16 @@ const INFO_POPS = {
       'them, <em>not</em> engine quality. Excluding the low end doesn’t remove ' +
       'blunders; it removes rare choices, and sharp tactics often live in that ' +
       'unexpected tail. Excluding the top end forces the bot off the mainstream picks.</p>' +
-      '<p>Under time pressure, curve&nbsp;B can narrow this window further; the Luck ' +
-      'slider shifts it move to move. Restrict the band only if you want more ' +
-      'predictable, book-standard play.</p>'
+      '<p><b>Exclude lowest</b> does two things at once, deliberately: it trims the ' +
+      'bottom X% of the distribution’s weight, and it drops any single move whose own ' +
+      'probability is under X%. So “exclude lowest 10%” removes every move fewer than one ' +
+      'player in ten would choose here, however many of them there are.</p>' +
+      '<p>A personality’s <b>Bad day</b> trait (set by presets and on the radar) ' +
+      'shifts this window toward the rare end; Good day shifts it toward the mainstream. ' +
+      'Restrict the band only if you want more predictable, book-standard play.</p>' +
+      '<p>It applies wherever moves come from a popularity distribution — Maia, and the ' +
+      'Lichess opening book on any engine. Flounder ranks moves by evaluation instead, ' +
+      'so a bot that only plays Flounder has no window to set, and this control is hidden.</p>'
   },
 };
 function openInfoPop(id){
@@ -12261,6 +12614,7 @@ function showTimingCtrl(mode){
   });
   applyBlinkSuppression(mode);
   updateQsThinkTime();
+  syncControlGating();
 }
 
 // Fixed interval promises a specific duration, but Move blink is evaluated
@@ -12294,6 +12648,65 @@ function applyBlinkSuppression(mode){
     _blinkPreFixed = null;
   }
 }
+// ── Complexity scaled: where the average comes from ──────────────────────────
+// 'clock' (default): the bot budgets like a player — (time left + increment
+// still to come) ÷ moves left in a game of `cplxMovesPerGame` moves, recomputed
+// every move, quick while in book. See botClockPlanSec in 50-bot-engine.js.
+// 'fixed': the Base time slider. Without a clock there is nothing to budget
+// from, so an untimed game uses the slider whichever is chosen.
+// var, not let: read by updateQsThinkTime and applyTC, which can run during boot
+// before this line — and typeof on a let still in its dead zone throws.
+var cplxBaseMode = 'clock';
+var cplxMovesPerGame = 60;
+
+function setCplxBaseMode(mode){
+  cplxBaseMode = (mode === 'fixed') ? 'fixed' : 'clock';
+  document.querySelectorAll('#cplx-base-mode .seg-btn')
+    .forEach(b => b.classList.toggle('sel', b.dataset.v === cplxBaseMode));
+  _syncCplxBaseUi();
+}
+function setCplxMovesPerGame(n){
+  cplxMovesPerGame = (+n === 40) ? 40 : 60;
+  document.querySelectorAll('#cplx-moves .seg-btn')
+    .forEach(b => b.classList.toggle('sel', +b.dataset.v === cplxMovesPerGame));
+  _syncCplxBaseUi();
+}
+// Seconds a move at the start of the selected time control, on the clock plan.
+function _cplxStartAvgSec(){
+  const base = (+tcTime || 0) * 60, inc = +tcInc || 0;
+  return (base + cplxMovesPerGame * inc) / cplxMovesPerGame;
+}
+function _fmtSec(s){ return s >= 90 ? (Math.round(s / 6) / 10) + ' min' : (Math.round(s * 10) / 10) + ' s'; }
+// Book-move time on the clock plan for the selected time control: 0.4–1.2 s in
+// bullet and blitz, 5–15 s from twenty minutes up, scaled between. MIRRORS
+// botBookMoveRangeMs in src/50-bot-engine.js (same size measure as tcCategory:
+// minutes + 0.5 × increment) — keep the two in step.
+function _panelBookRangeSec(){
+  const size = (+tcTime || 0) + 0.5 * (+tcInc || 0);
+  const f = Math.max(0, Math.min(1, (size - 8) / (20 - 8)));
+  return [0.4 + f * (5 - 0.4), 1.2 + f * (15 - 1.2)];
+}
+function _syncCplxBaseUi(){
+  const timed = isTimedGame();
+  const clockOn = cplxBaseMode === 'clock';
+  const cc = document.getElementById('cplx-clock-ctrl');
+  const fc = document.getElementById('cplx-fixed-ctrl');
+  if(cc) cc.style.display = clockOn ? '' : 'none';
+  // Untimed + clock: the engine falls back to Base time, so show it.
+  if(fc) fc.style.display = (!clockOn || !timed) ? '' : 'none';
+  const hint = document.getElementById('cplx-clock-hint');
+  const [bLo, bHi] = _panelBookRangeSec();
+  const bookTxt = (Math.round(bLo * 10) / 10) + '–' + (Math.round(bHi * 10) / 10) + ' s';
+  if(hint) hint.textContent = !timed
+    ? 'No clock in an Untimed game, so there is nothing to budget from — the Base time below is used instead.'
+    : 'Averages about ' + _fmtSec(_cplxStartAvgSec()) + ' a move at the start of this ' + tcTime + '+' + tcInc +
+      ' game: (clock + ' + cplxMovesPerGame + ' × increment) ÷ ' + cplxMovesPerGame +
+      ' moves, recomputed from the clock every move. Book moves take ' + bookTxt +
+      ' here — quick in bullet and blitz, 5–15 s from 20-minute games up, where a good player' +
+      ' still decides which of the lines they know to go into.';
+  updateQsThinkTime();
+}
+
 // Manual toggle wins over the automatic suppression.
 function onBlinkToggle(on){
   const row = document.getElementById('row-blink');
@@ -12411,11 +12824,12 @@ function _sigmoid(t){
 }
 // Curve B's y-axis: temperature. Ramps from the user's own Temperature-slider
 // value (base T, comfortable think time) up to the user-adjustable "Max temp"
-// ceiling (r-maxtemp, default 8, minimal think time). Raising T flattens
+// ceiling (r-maxtemp, default 2 — deliberately mild, since 0 on Calm ↔ Panicky
+// now runs this curve as drawn — at minimal think time). Raising T flattens
 // Maia's move probabilities toward uniform without ever reordering them —
 // margin-aware degradation instead of a rank cutoff (see src/50-bot-engine.js
 // timePressureTempByThink for the runtime use).
-const TEMP_PRESSURE_CEILING_DEFAULT = 8;
+const TEMP_PRESSURE_CEILING_DEFAULT = 2;
 function maxTempCeiling(){
   const el = document.getElementById('r-maxtemp');
   return el ? +el.value : TEMP_PRESSURE_CEILING_DEFAULT;
@@ -12739,7 +13153,11 @@ function drawCurve(canvasId, ctrl, sigFn, yMin, yMax, yFmt, lineColor, fillColor
   ctx.fillStyle=_curveDimColor; ctx.font=_chartFont(8); ctx.textAlign='center';
   ctx.fillText('Think time per move', w/2, CH-2);
   ctx.save(); ctx.translate(11, CH/2); ctx.rotate(-Math.PI/2);
-  ctx.fillText(canvasId==='cvA'?'Effective ELO':'Available distribution %', 0, 0);
+  // Curve B's axis is temperature (Flounder reads it through the error shape c;
+  // its caption says so). It used to be labelled with the distribution % it
+  // measured before it became a temperature.
+  ctx.fillText(canvasId==='cvA' ? 'Effective ELO'
+             : (typeof _isFlounderTab === 'function' && _isFlounderTab() ? 'Error shape (via T)' : 'Temperature T'), 0, 0);
   ctx.restore();
 
   // ── Flag zone (ELO chart only, when can-flag is checked)
@@ -12840,47 +13258,136 @@ function reDraw(){ initPts(); drawA(); drawB(); }
 // ── Per-curve ON/OFF ──────────────────────────────────────────────────────────
 // Each mechanism toggles independently. Toggling re-anchors only its own
 // control points (flat when off, sigmoid when back on).
-function _syncPressureOffUi(){
+// `fromGating` is set when syncControlGating calls this, so the two can each
+// refresh the other without looping.
+function _syncPressureOffUi(fromGating){
+  // Curve B is also idle when Calm ↔ Panicky is fully Calm: that leaves the
+  // temperature untouched by time pressure (_panelTempPressureMult = 0).
+  let pressVal = 0;
+  try { pressVal = +attractorValues['pressure'] || 0; } catch(e){}
+  const idleB = !pressureOffB && !(_panelTempPressureMult(pressVal) > 0);
   const states = [
-    { btn:'pressure-off-a', col:'tp-col-a', off:pressureOffA },
-    { btn:'pressure-off-b', col:'tp-col-b', off:pressureOffB },
+    { btn:'pressure-off-a', col:'tp-col-a', off:pressureOffA, idle:false },
+    { btn:'pressure-off-b', col:'tp-col-b', off:pressureOffB, idle:idleB },
   ];
-  const untimed = !isTimedGame();
+  const inertKind = _curvesInertKind();
+  const untimed = inertKind === 'untimed';
+  const paced   = inertKind === 'timing';
   states.forEach(s => {
     // Android-style switch: checked (thumb right) = mechanism ON
     const cb = document.getElementById(s.btn);
     if(cb) cb.checked = !s.off;
-    // Dim the chart + slider while off, and equally while the clock is off —
-    // there is nothing for either curve to describe without one.
+    // Dim the chart + slider while off, and equally while the clock is off or
+    // the timing mode sets the pace — neither curve has anything to describe.
     const col = document.getElementById(s.col);
     if(col) col.querySelectorAll('.chart-box,.ctrl').forEach(el => {
-      el.style.opacity = (s.off || untimed) ? '0.45' : '';
-      // Untimed KEEPS pointer events: a grabbed curve that simply does not move
-      // teaches nothing, so the drag is caught and answered with the reason.
-      // The off switch is a real disable, so that one still swallows events.
-      el.style.pointerEvents = s.off ? 'none' : '';
+      el.style.opacity = (s.off || s.idle || untimed || paced) ? '0.45' : '';
+      // Untimed and a set pace KEEP pointer events on the chart: a grabbed
+      // curve that simply does not move teaches nothing, so the drag is caught
+      // and answered with the reason. The off switch is a real disable, so that
+      // one still swallows events, and so does an idle curve — its note says
+      // why, above the chart. A set pace also freezes the Max sliders, which
+      // would otherwise re-seed a curve the engine is not going to read.
+      el.style.pointerEvents = (s.off || s.idle) ? 'none' : '';
+      if(el.classList.contains('ctrl')) el.inert = paced && !(s.off || s.idle);
     });
   });
+  // One sentence at the top of the section for a set pace, where the reason
+  // is somewhere else entirely (Move Timing).
+  const secPanel = document.querySelector('#sec-pressure .pr');
+  if(secPanel){
+    let note = document.getElementById('tp-paced-note');
+    if(!note){
+      note = document.createElement('div');
+      note.id = 'tp-paced-note';
+      note.className = 'inert-why';
+      secPanel.insertBefore(note, secPanel.children[1] || null);
+    }
+    const m = _getTimingMode();
+    note.style.display = paced ? 'block' : '';
+    note.innerHTML = paced
+      ? 'Off — <strong>' + (_PACE_NAME[m] || 'This timing mode') + '</strong> sets the bot’s pace, so it is never short of time and neither curve is consulted (premoves play at its own rating too). ' +
+        'Choose <strong>Complexity scaled</strong> in Move Timing to have it budget from the clock, or <strong>Mirror user</strong> to have it play — and crack — at your pace. ' +
+        '<span class="hint-link" onclick="openThinkTimeSection()">Go to Move Timing ▸</span>'
+      : '';
+  }
+  // While curve B is idle its switch cannot change anything either.
+  const bTog = document.getElementById('pressure-off-b');
+  const bTogLbl = bTog ? bTog.closest('label.tog') : null;
+  if(bTogLbl){ bTogLbl.inert = idleB; bTogLbl.style.opacity = idleB ? '0.4' : ''; }
+  const colB = document.getElementById('tp-col-b');
+  if(colB){
+    let note = document.getElementById('tp-b-idle-note');
+    if(!note){
+      note = document.createElement('div');
+      note.id = 'tp-b-idle-note';
+      note.className = 'inert-why';
+      const dl = colB.querySelector('.dlbl');
+      if(dl) dl.after(note); else colB.prepend(note);
+    }
+    note.style.display = (idleB && !untimed && !paced) ? 'block' : '';
+    note.innerHTML = idleB
+      ? 'Idle — <strong>Calm under pressure</strong> is at its limit (−5) in Personality, which leaves the temperature untouched by time pressure. ' +
+        'Move it toward the middle to use this curve: 0 runs it as drawn, Panicky up to 2.5×. ' +
+        '<span class="hint-link" onclick="jumpToAttractor(\'pressure\')">Go to the slider ▸</span>'
+      : '';
+  }
+  const liveB = !pressureOffB && !idleB;
   const lbl = document.getElementById('pressure-off-lbl');
   if(lbl) lbl.textContent =
     untimed ? 'No clock — neither curve runs. Pick a time control to use them.'
-    : pressureOffA && pressureOffB ? 'OFF — bot plays at constant strength regardless of clock'
-    : pressureOffA ? 'Temperature escalation only — ELO stays constant'
-    : pressureOffB ? 'ELO degradation only — sampling temperature stays at base'
-    : 'Both curves active — bot degrades with clock';
+    : paced ? 'Off — ' + (_PACE_NAME[_getTimingMode()] || 'the timing mode') + ' sets the pace, so there is no time pressure'
+    : !pressureOffA && liveB ? 'Both curves active — bot degrades with clock'
+    : !pressureOffA ? (idleB
+        ? 'ELO degradation only — Calm under pressure keeps the temperature steady'
+        : 'ELO degradation only — sampling temperature stays at base')
+    : liveB ? 'Temperature escalation only — ELO stays constant'
+    : 'OFF — bot plays at constant strength regardless of clock';
   const st = document.getElementById('st-pressure');
   if(st) st.textContent =
     untimed ? 'Untimed'
-    : pressureOffA && pressureOffB ? 'Off'
-    : pressureOffA ? 'Temp only'
-    : pressureOffB ? 'ELO only'
-    : 'Dual curve';
+    : paced ? 'Off · set pace'
+    : !pressureOffA && liveB ? 'Dual curve'
+    : !pressureOffA ? 'ELO only'
+    : liveB ? 'Temp only'
+    : 'Off';
+  if(!fromGating && typeof syncControlGating === 'function') syncControlGating();
+}
+
+// Open the Personality section on one strategic slider.
+function jumpToAttractor(key){
+  openAttrSection();
+  const idx = RADAR_AXES.findIndex(a => a.key === key);
+  // After the section's 0.45 s open animation, or the row lands under the header.
+  if(idx >= 0) setTimeout(() => _radarNavigate(idx), 480);
 }
 
 // Answer a drag on a curve that cannot do anything. Reuses the ⓘ popup the rest
 // of the panel explains itself with, rather than inventing a second mechanism.
 function pressureUntimedNote(){
-  if(typeof openInfoPop === 'function') openInfoPop('pressureUntimed');
+  if(typeof openInfoPop === 'function')
+    openInfoPop(_curvesInertKind() === 'timing' ? 'pressureTiming' : 'pressureUntimed');
+}
+
+// Why neither time-pressure curve can run, or '' when they can:
+//   'untimed' — no clock to be short of;
+//   'timing'  — a pace the user set outright (Fixed / Instantaneous), which the
+//               engine does not read as time pressure (_timePressureApplies).
+// Mirror user keeps the curves: it plays at the human's pace, so it degrades as
+// they speed up under time pressure.
+function _curvesInertKind(){
+  if(!isTimedGame()) return 'untimed';
+  const m = _getTimingMode();
+  return (m === 'fixed' || m === 'instant') ? 'timing' : '';
+}
+const _PACE_NAME = { fixed:'Fixed interval', instant:'Instantaneous' };
+
+// Calm ↔ Panicky → how far curve B escalates. MIRRORS tempPressureMult in
+// src/50-bot-engine.js — the two must agree, or this panel draws a bot that is
+// not the one that plays. −5 → 0 (untouched), 0 → 1 (as drawn), +5 → 2.5.
+function _panelTempPressureMult(v){
+  const x = Math.max(-5, Math.min(5, +v || 0));
+  return x <= 0 ? 1 + x / 5 : 1 + 0.3 * x;
 }
 function _setPressureOffA(off){
   pressureOffA = !!off;
@@ -12954,13 +13461,13 @@ function setupDrag(canvasId, getCtrl, getSigFn, isElo, tipId, getScale){
   }
 
   cv.addEventListener('mousedown', e=>{
-    // Untimed: the curve is inert, so say why instead of letting the user drag
-    // a shape that will never be consulted.
-    if(!isTimedGame()){ e.preventDefault(); pressureUntimedNote(); return; }
+    // Untimed, or a pace the timing mode sets: the curve is inert, so say why
+    // instead of letting the user drag a shape that will never be consulted.
+    if(_curvesInertKind()){ e.preventDefault(); pressureUntimedNote(); return; }
     const {cx,cy}=pt(e); drag=nearest(cx,cy); if(drag!==null) e.preventDefault();
   });
   cv.addEventListener('mousemove', e=>{
-    if(!isTimedGame()){ cv.style.cursor='help'; return; }
+    if(_curvesInertKind()){ cv.style.cursor='help'; return; }
     const {cx,cy}=pt(e);
     if(drag!==null){ e.preventDefault(); doMove(cx,cy); }
     else { cv.style.cursor = nearest(cx,cy)!==null ? 'ns-resize' : 'crosshair'; }
@@ -12969,7 +13476,7 @@ function setupDrag(canvasId, getCtrl, getSigFn, isElo, tipId, getScale){
   cv.addEventListener('mouseup', up);
   cv.addEventListener('mouseleave', up);
   cv.addEventListener('touchstart', e=>{
-    if(!isTimedGame()){ e.preventDefault(); pressureUntimedNote(); return; }
+    if(_curvesInertKind()){ e.preventDefault(); pressureUntimedNote(); return; }
     const {cx,cy}=pt(e); drag=nearest(cx,cy); if(drag!==null) e.preventDefault();
   },{passive:false});
   cv.addEventListener('touchmove',  e=>{ if(drag===null)return; e.preventDefault(); const {cx,cy}=pt(e); doMove(cx,cy); },{passive:false});
@@ -13046,6 +13553,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   _updateEnginePanelHeader();
   _initBookEloPin();         // restore the book pin, then seed the box from the Elometer
   _syncPressureOffUi();      // grey the curves out if the restored clock is Untimed
+  _syncCplxBaseUi();         // Complexity: clock-plan example for the selected time control
   updatePersonalityGating(); // reflect the initial engine in the personality section
   initPts();
   setupDrag('cvA', ()=>ctrlA, reganEloA, true,  'tipA', ()=>scaleA);

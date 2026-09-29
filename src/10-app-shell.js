@@ -21,7 +21,11 @@ let botPlayerColor = 'white';
 // last touched (which is what the old resolve-on-click behaviour gave).
 let botColorPref = 'random';
 let botTab = 'sf';
-let botTimePressure = 'steady';
+let botTimePressure = 'steady';   // label only now; botTempPressureMult is what runs
+// How far curve B's temperature escalation goes: 0 = unaffected by time
+// pressure (fully Calm), 1 = the curve as drawn, 2.5 = fully Panicky. Set from
+// the Calm ↔ Panicky slider by the botConfig handler (tempPressureMult).
+let botTempPressureMult = 1;
 let botSelectedTC = 'untimed';
 let botHybridSlots = [];
 let sfWorker = null;
@@ -68,7 +72,7 @@ let preferredOpeningActive = false;
 let lichessExplorerActive = false;
 let botOpeningConfig = {
   source: 'masters',       // 'masters' | 'lichess'
-  maxBookDepth: 20,        // stop using book after this many half-moves
+  maxBookDepth: 20,        // stop using book after this many MOVES (each side; plies = ×2)
   fallbackToEngine: true,
   // loyalty-specific
   ecoPrefix: '',
@@ -103,6 +107,10 @@ let botMirrorOffsetPct = 0;        // % speed offset for 'mirror' mode (-100..+1
 let botCplxBase = 3;               // complexity mode: base think time (s)
 let botCplxMin  = 0.4;             // complexity mode: min multiplier (simple moves)
 let botCplxMax  = 2.5;             // complexity mode: max multiplier (complex moves)
+// complexity mode: where the average think time comes from — 'clock' (time left
+// ÷ moves left in a game of botCplxMovesPerGame moves) or 'fixed' (botCplxBase).
+let botCplxBaseMode     = 'fixed';
+let botCplxMovesPerGame = 60;
 let botBehavReconsider  = true;    // human behaviour: reconsideration pauses
 let botBehavBlink       = true;    // human behaviour: instant play on forced moves
 let botBehavClockMirror = true;    // human behaviour: speed up when opponent is low

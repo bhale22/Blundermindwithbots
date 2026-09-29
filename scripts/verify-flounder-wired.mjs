@@ -77,7 +77,12 @@ console.log('\n2b  Temperature moves c, and nothing on this path uses T directly
       // reaching for botMaiaBaseTemp() itself — that got the base only, so
       // curve B and the complexity dial were inert on this engine.
       takesTemp: flounderChooseMove.length >= 4,
-      searchTakesThink: flounderMoveOrSearch.length >= 3,
+      // Every Flounder move — the engine, Flounder behind the book, blend
+      // slots, the no-Maia fallbacks — goes through one turn function, which
+      // takes the clock and the turn's start so it can build the temperature
+      // chain and hold the move to its think time.
+      searchTakesThink: typeof botFlounderTurn === 'function' && botFlounderTurn.length >= 3
+        && typeof flounderMoveOrSearch === 'undefined',
       // and the closeness kernel must be built from the ADJUSTED c, not the
       // calibrated one, or temperature would move the sampling and leave the
       // personality band behind.
@@ -92,7 +97,7 @@ console.log('\n2b  Temperature moves c, and nothing on this path uses T directly
   ok('a colder setting raises it', r.cold > r.neutral,
     r.cold.toFixed(4) + ' > ' + r.neutral.toFixed(4));
   ok('the selector takes an effective temperature', r.takesTemp);
-  ok('and the fallback path takes a think time to derive one', r.searchTakesThink);
+  ok('and every Flounder path shares one turn that builds it', r.searchTakesThink);
   ok('the personality kernel follows the adjusted c', r.kernelHot > r.kernelCold,
     r.kernelHot.toFixed(4) + ' vs ' + r.kernelCold.toFixed(4));
 }

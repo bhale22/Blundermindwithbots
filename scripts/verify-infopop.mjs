@@ -104,8 +104,10 @@ ok(backState === '1,000', 'right endpoint back to 1,000 below max (got ' + backS
 
 // 9c. Clickable hint links open the popups (open the Personality section
 // first — collapsed sections cover the link, exactly as for a real user)
-const linkCount = await page.locator('.hint-link').count();
-ok(linkCount === 2, 'two .hint-link spans (got ' + linkCount + ')');
+// Scoped to the links that open a popup: other hint links navigate instead
+// (curve B's idle note links to the Calm ↔ Panicky slider).
+const linkCount = await page.locator('.hint-link[onclick*="openInfoPop"]').count();
+ok(linkCount === 2, 'two popup .hint-link spans (got ' + linkCount + ')');
 await page.evaluate(() => {
   const sec = document.getElementById('sec-attract');
   if (sec && !sec.classList.contains('open')) toggleSec('attract');

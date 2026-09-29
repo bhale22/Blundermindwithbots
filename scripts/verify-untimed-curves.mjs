@@ -49,14 +49,31 @@ const state = () => page.evaluate(() => {
   };
 });
 
-console.log('timed (5+0):');
+console.log('timed (5+0), default Fixed interval:');
 await clickTC(5, 0);
 let s = await state();
 ok(s.timed, 'isTimedGame() is true');
+// A pace the user set is not time pressure, so under the default Fixed timing
+// both curves are greyed and the section says why (_timePressureApplies).
+ok(s.opA !== '1' && s.opB !== '1', `both charts greyed under a set pace (${s.opA} / ${s.opB})`);
+ok(/sets the pace/i.test(s.label), 'label: "' + s.label + '"');
+
+console.log('\ntimed (5+0), Complexity scaled:');
+await page.evaluate(() => document.querySelector('#timing-mode-grid .mcard[data-v="Complexity-scaled"]').click());
+await page.waitForTimeout(250);
+s = await state();
 ok(s.A > 50, `ELO curve slopes (spread ${s.A})`);
-ok(s.B > 1, `temperature curve slopes (spread ${s.B})`);
-ok(s.opA === '1' && s.opB === '1', 'both charts at full opacity');
+// Mild by default: base T 1 up to a ceiling of T 2.
+ok(s.B > 0.5, `temperature curve slopes (spread ${s.B})`);
+// Calm ↔ Panicky at 0 runs curve B as drawn.
+ok(s.opA === '1' && s.opB === '1', `both charts live at Panicky 0 (${s.opA} / ${s.opB})`);
 ok(/both curves active/i.test(s.label), 'label: "' + s.label + '"');
+await page.evaluate(() => onAttractorChange('pressure', -5));
+await page.waitForTimeout(150);
+s = await state();
+ok(s.opA === '1' && s.opB !== '1', `fully Calm: curve B idle, greyed (${s.opA} / ${s.opB})`);
+await page.evaluate(() => onAttractorChange('pressure', 0));
+await page.waitForTimeout(150);
 
 console.log('\nuntimed:');
 await clickTC(0, 0);
@@ -94,7 +111,7 @@ await clickTC(10, 5);
 s = await state();
 ok(s.timed, 'isTimedGame() is true again');
 ok(s.A > 50, `ELO curve re-seeds and slopes again (spread ${s.A})`);
-ok(s.B > 1, `temperature curve slopes again (spread ${s.B})`);
+ok(s.B > 0.5, `temperature curve slopes again (spread ${s.B})`);
 ok(s.opA === '1' && s.opB === '1', 'both charts un-greyed');
 
 const dragWorks = await page.evaluate(async () => {
@@ -139,8 +156,14 @@ const engine = await page.evaluate(() => {
   });
   clockControl = 'untimed';   const untimed = read();
   clockControl = 'blitz5';    const timed   = read();
-  return { untimed, timed };
+  // A pace the user set is not time pressure, clock or no clock.
+  const beh = botTimeBehavior;
+  botTimeBehavior = 'fixed';  const paced   = read();
+  botTimeBehavior = beh;
+  return { untimed, timed, paced };
 });
+ok(engine.paced.eloFast === 2000 && engine.paced.tempFast === 1,
+   `timed but Fixed interval: no time pressure (${engine.paced.eloFast}, T ${engine.paced.tempFast})`);
 ok(engine.untimed.eloFast === 2000 && engine.untimed.eloSlow === 2000,
    `untimed: ELO stays at the configured rating (${engine.untimed.eloFast})`);
 ok(engine.untimed.slotFast === 1800,

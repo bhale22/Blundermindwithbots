@@ -491,6 +491,34 @@ function flounderTargetMean(s, c) {
 // measurement precision. Confirmed live over 20 bracketed games at 732.
 const FLOUNDER_OVERSHOOT_MARGIN = 0.5;
 
+// How likely this bot is to play each candidate: the share of the target-cost
+// distribution that lands on each move under the same nearest-without-
+// overshooting rule flounderChooseMove applies. Stratified quantiles rather
+// than random draws, so it is deterministic and costs n × moves comparisons.
+//
+// It answers the question Maia's probabilities answer — how often would a
+// player of this rating choose this move here — which is what the rest of the
+// bot needs from an engine: move blink asks whether the bot is all but certain
+// of its move, and stalemate-seeking reweights the moves the bot might play.
+// Personality is not included; it is applied to the move, not to this.
+const FLOUNDER_SEL_QUANTILES = 256;
+function flounderSelectionProbs(d, s, cEff) {
+  const n = FLOUNDER_SEL_QUANTILES;
+  const counts = new Array(d.length).fill(0);
+  for (let j = 0; j < n; j++) {
+    const tau = s * Math.pow(-Math.log(1 - (j + 0.5) / n), 1 / cEff);
+    let k = -1, gap = Infinity;
+    for (let i = 0; i < d.length; i++) {
+      if (d[i] > tau + FLOUNDER_OVERSHOOT_MARGIN) continue;
+      const g = Math.abs(d[i] - tau);
+      if (g < gap) { gap = g; k = i; }
+    }
+    if (k < 0) { let lo = Infinity; for (let i = 0; i < d.length; i++) if (d[i] < lo) { lo = d[i]; k = i; } }
+    counts[k]++;
+  }
+  return counts.map(c => c / n);
+}
+
 // FEN → legal moves, WITHOUT touching game state.
 //
 // parseFen() assigns to the `turn`, `castling` and `epSq` globals as a side
@@ -539,13 +567,18 @@ function _fenLegalUcis(fen) {
 // faithful but means the same s produces a different agent in every position.
 // Measured, that version's ratings were worth ~120 real Elo per 400 labelled.
 //
-// Returns { uci, cp, tau } or null so the caller can fall back to a plain search.
-async function flounderChooseMove(fen, elo, depth, effTemp) {
+// Returns { uci, cp, tau, dist } or null so the caller can fall back to a plain
+// search. `dist` is flounderSelectionProbs keyed by move.
+//
+// `opts.staleSeek` lets stalemate-seeking take over when it is active. Only the
+// bot's own turn passes it: the desperation scoring reads the LIVE board, so
+// it must not run for a position that is not the one on the board.
+async function flounderChooseMove(fen, elo, depth, effTemp, opts) {
   try {
     if (!sfReady) { try { await sfInit(); } catch (e) { return null; } }
     const moves = _fenLegalUcis(fen);
     if (!moves.length) return null;
-    if (moves.length === 1) return { uci: moves[0], cp: 0, tau: 0 };
+    if (moves.length === 1) return { uci: moves[0], cp: 0, tau: 0, dist: { [moves[0]]: 1 } };
     const evals = await sfEvalMoves(fen, moves, depth || REGAN_PROBE_DEPTH);
     if (!evals) return null;
     const scored = moves.filter(m => evals[m] != null);
@@ -571,6 +604,28 @@ async function flounderChooseMove(fen, elo, depth, effTemp) {
     // d = 0 always qualifies, so this is belt-and-braces.
     if (k < 0) { let lo = Infinity; for (let i = 0; i < d.length; i++) if (d[i] < lo) { lo = d[i]; k = i; } }
 
+    const sel = flounderSelectionProbs(d, s, cEff);
+    const dist = {};
+    for (let i = 0; i < scored.length; i++) if (sel[i] > 0) dist[scored[i]] = sel[i];
+
+    // DESPERATION. When stalemate-seeking is active (lost, past its move
+    // number), it chooses this move instead of the personality band — exactly
+    // as it does on Maia, where it reweights the whole distribution rather than
+    // a slice of it. The bot's own selection distribution plays the part of
+    // Maia's, reweighted toward moves that lock its pieces or dump material,
+    // then sampled.
+    //
+    // Before this, the only route to it was through the band, which is empty
+    // at a CP Budget of 0 and capped by the overshoot rule otherwise — so on
+    // Flounder the switch did nothing, or next to nothing.
+    if (opts && opts.staleSeek && typeof _staleSeekActiveNow === 'function' &&
+        _staleSeekActiveNow()) {
+      const shaped = _maybeStaleSeek(dist);
+      const pickUci = sampleFromProbs(shaped, 1);
+      const ki = scored.indexOf(pickUci);
+      if (ki >= 0) return { uci: scored[ki], cp: best - evals[scored[ki]], tau, dist };
+    }
+
     // PERSONALITY. The rating has now decided how much this turn throws away;
     // personality decides which way. The hook lives in 50-bot-engine.js because
     // it needs the attractor machinery; when no personality is configured it
@@ -580,7 +635,7 @@ async function flounderChooseMove(fen, elo, depth, effTemp) {
         flounderTargetMean(s, cEff));
       if (Number.isInteger(alt) && alt >= 0 && alt < scored.length) k = alt;
     }
-    return { uci: scored[k], cp: best - evals[scored[k]], tau };
+    return { uci: scored[k], cp: best - evals[scored[k]], tau, dist };
   } catch (e) {
     return null;
   }
@@ -1183,14 +1238,17 @@ function _maiaUpdateStatusUI() {
 }
 
 // Main Maia3 inference — returns move probs dict or null
-async function maia3GetMoveProbs(fen) {
+// `elo` is optional. Without it the rating comes from the lcSelectedRating
+// global, which the move paths set around each call; a caller that is not part
+// of that dance (the premove) passes its rating here instead of borrowing it.
+async function maia3GetMoveProbs(fen, elo) {
   if (!_maiaReady || !_maiaWorker) return null;
   if (!_maia3MoveIndex) {
     var ok = await _maiaLoadMappings();
     if (!ok) return null;
   }
   try {
-    var eloSelf = parseInt(lcSelectedRating) || 1200;
+    var eloSelf = parseInt(elo != null ? elo : lcSelectedRating) || 1200;
     var eloOppo = eloSelf;
 
     var encoded = _maiaEncode(fen);
@@ -1482,13 +1540,53 @@ const ECO_PRESETS = (() => {
 // Tries the masters DB via our server-side proxy first (no CORS issues),
 // falls back to the Lichess games DB if masters returns no moves.
 // Returns { moves: [{uci, white, draws, black}], opening: {eco, name} } or null.
+// The rating the Main Line book asks the Lichess database for: the bot's own —
+// the Elometer or Flounder dial, or for a blend the slot-weighted mean, which is
+// the rating the blend plays at on average.
+function botBookRatingElo() {
+  try {
+    if (typeof botTab !== 'undefined' && botTab === 'hybrid' &&
+        typeof botHybridSlots !== 'undefined') {
+      const slots = botHybridSlots.filter(s => s.weight > 0);
+      const tot = slots.reduce((a, s) => a + s.weight, 0);
+      if (tot > 0) return Math.round(slots.reduce((a, s) => a + s.weight * (s.elo || 1500), 0) / tot);
+    }
+    return (typeof botEffectiveElo === 'function') ? botEffectiveElo() : 1500;
+  } catch (e) { return 1500; }
+}
+
+// Honours the Opening Behavior section's Main Line settings: which database
+// (Masters, or Lichess games at the bot's rating), and Modern (2020+ only).
+//
+// Both used to be stored and never read. Every lookup asked Masters first with
+// no date filter and fell back to Lichess at a fixed 1200–1800 band, whatever
+// the two buttons said. The proxy already accepted `since` on both routes.
+function _openingBookQuery() {
+  const cfgBook = (typeof botOpeningConfig !== 'undefined' && botOpeningConfig) || {};
+  return {
+    src:     cfgBook.source === 'lichess' ? 'lichess' : 'masters',
+    since:   cfgBook.since || null,                        // 'YYYY-MM'
+    ratings: lcRatingParam(botBookRatingElo()),
+  };
+}
+// The cache is keyed by everything that changes the answer, not just the moves.
+// Anything else reading it (the surprise check in botPostMoveHook) must build
+// its key here too, or it will miss every time.
+function openingCacheKey(moveHistory) {
+  const q = _openingBookQuery();
+  return [q.src, q.since || '', q.ratings, moveHistory.join(',')].join('|');
+}
+
 async function openingExplorerFetch(moveHistory) {
-  const cacheKey = moveHistory.join(',');
+  const { src, since, ratings } = _openingBookQuery();
+  const cacheKey = openingCacheKey(moveHistory);
   if (_openingCache.has(cacheKey)) return _openingCache.get(cacheKey);
 
   async function fetchMasters() {
     const play = moveHistory.join(',');
-    const url = '/api/masters?play=' + encodeURIComponent(play) + '&moves=10';
+    // Masters dates are whole YEARS (see the /api/masters route).
+    const url = '/api/masters?play=' + encodeURIComponent(play) + '&moves=10' +
+                (since ? '&since=' + since.slice(0, 4) : '');
     const resp = await bookFetch(url);
     if (!resp.ok) throw new Error('masters proxy ' + resp.status);
     return resp.json();
@@ -1499,19 +1597,23 @@ async function openingExplorerFetch(moveHistory) {
     // Proxied, never called direct — see the /api/lichess route in server.js.
     const url = '/api/lichess' +
                 '?play=' + encodeURIComponent(play) +
-                '&speeds=blitz,rapid,classical&ratings=1200,1400,1600,1800&moves=10';
+                '&speeds=blitz,rapid,classical&ratings=' + encodeURIComponent(ratings) +
+                '&moves=10' + (since ? '&since=' + since : '');
     const resp = await bookFetch(url);
     if (!resp.ok) throw new Error('lichess explorer ' + resp.status);
     return resp.json();
   }
 
   try {
-    // Try masters first; fall back to lichess if empty or error
+    // Masters: try it first and fall back to Lichess when it is empty or
+    // unavailable (master games run out a few moves in). Lichess: ask it only.
     let data = null;
-    try {
-      data = await fetchMasters();
-    } catch(e) {
-      console.warn('Masters proxy unavailable, falling back to Lichess DB:', e.message);
+    if (src === 'masters') {
+      try {
+        data = await fetchMasters();
+      } catch(e) {
+        console.warn('Masters proxy unavailable, falling back to Lichess DB:', e.message);
+      }
     }
     if (!data || !data.moves || !data.moves.length) {
       data = await fetchLichess();
@@ -1535,7 +1637,10 @@ async function openingExplorerFetch(moveHistory) {
 // Main opening book entry point — called at the top of botMakeMove().
 // Returns a UCI string if the book has a move, or null to fall through to engine.
 async function botGetOpeningMove(moveHistory) {
-  const maxDepth = botOpeningConfig.maxBookDepth || 20;
+  // The depth is in MOVES, as the builder labels it ("Depth 20 mv") and as a
+  // player means it; moveHistory counts plies, both sides. This used to compare
+  // the two directly, so a book set to 20 moves left after 10.
+  const maxDepth = (botOpeningConfig.maxBookDepth || 20) * 2;
   if (botOpeningMode === 'none') return null;
   if (moveHistory.length >= maxDepth) return null;
 
