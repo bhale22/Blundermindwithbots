@@ -2031,22 +2031,33 @@ const TOURS = {
       body:'Two people, one board, over the internet. <b>Inviting a friend with a private link is the recommended way</b> — you know who you are playing. You can post an open challenge instead if you would rather take on a stranger. Either way it runs on the honour system: there is <b>no cheat detection</b>, and once a move is committed there are <b>no take-backs</b>.' },
     { sel:'#botSidebarBtn', title:'Bot Builder',
       body:'Build an opponent rather than pick one. Choose the engine — including <b>Maia-3</b>, which is trained on human games and blunders like a person instead of like a weakened engine — then set a rating, an opening repertoire, and how it behaves under time pressure. Give it a personality and a name, and you get opponents like <i>Attacky McTackerson</i>. Whatever you build becomes the bot the Start button plays.' },
-    { sel:'.ind-grid', title:'Board-vision indicators', indSection:true,
-      body:'These overlays draw what a stronger player sees — threats, pins, forks and more. We’ll light each one up on a sample position so you can see exactly what it does.' },
-    { sel:'#ib-threats', title:'Three ways to show an indicator', indSection:true, modes:'threats',
-      body:'Every indicator button carries three states, and its colour says which one it is in — the key at the top of this panel spells them out. Watch it cycle: <b>off</b> — <b>while exploring</b>, drawn only while you explore a move — <b>always on</b>, drawn all the time. <b>Click</b> to step through them. Or <b>press and hold</b> to peek: the overlay flips on if it was off (and off if it was on) for as long as you hold, then goes straight back. While the button is blue, nothing you are doing will stick.' },
-    { sel:'.ind-grid', title:'How to train with these', indSection:true,
+    // On a phone the overlay grid is not on the page: it lives in the
+    // board-vision panel, and what the page shows instead is the pinned strip
+    // under the board. selPhone points these steps at the strip and its chips,
+    // or the filter in startTour() drops all of them. "Three ways" is about one
+    // chip, so it is skipped on a phone where threats has been unpinned.
+    { sel:'.ind-grid', selPhone:'#pinStrip', title:'Board-vision indicators', indSection:true,
+      body:'These overlays draw what a stronger player sees — threats, pins, forks and more. We’ll light each one up on a sample position so you can see exactly what it does.',
+      bodyPhone:'These overlays draw what a stronger player sees — threats, pins, forks and more. On a phone they live in this strip under the board: each chip is one overlay, and <b>+</b> opens the full list to choose from. We’ll light each one up on a sample position so you can see exactly what it does.' },
+    { sel:'#ib-threats', selPhone:'#pin-threats', title:'Three ways to show an indicator', indSection:true, modes:'threats',
+      body:'Every indicator button carries three states, and its colour says which one it is in — the key at the top of this panel spells them out. Watch it cycle: <b>off</b> — <b>while exploring</b>, drawn only while you explore a move — <b>always on</b>, drawn all the time. <b>Click</b> to step through them. Or <b>press and hold</b> to peek: the overlay flips on if it was off (and off if it was on) for as long as you hold, then goes straight back. While the button is blue, nothing you are doing will stick.',
+      bodyPhone:'Every chip carries three states, and its colour says which one it is in. Watch this one cycle: <b>off</b> — <b>while exploring</b>, drawn only while you explore a move — <b>always on</b>, drawn all the time. <b>Tap</b> a chip to step through them. Or <b>press and hold</b> to peek: the overlay flips on if it was off (and off if it was on) for as long as you hold, then goes straight back. While the chip is blue, nothing you are doing will stick.' },
+    { sel:'.ind-grid', selPhone:'#pinStrip', title:'How to train with these', indSection:true,
       body:'Best habit: <b>look first and try to spot it yourself</b> — plan your move and picture the threats and replies in your head. <i>Then</i> switch an indicator on as instant feedback to catch anything you missed.' },
     // One step the visitor drives, replacing thirteen they had to sit through.
     // Reading a paragraph per overlay is the slow way round, and it made the
     // tour long enough that people skipped it before reaching anything else.
+    // On a phone it spotlights the board and the chips come to the panel (see
+    // _tourBoardFocus), so it needs no selPhone.
     { sel:'.ind-grid', title:'Try them yourself', indSection:true, explore:true,
-      body:'Thirteen overlays — and the fast way to learn them is to press one. <b>Any button in the highlighted panel</b> switches fully on, the board shows what it draws, and its explanation appears here. Go in any order, try as many as you like, then press Next when you have had enough.' },
+      body:'Thirteen overlays — and the fast way to learn them is to press one. <b>Any button in the highlighted panel</b> switches fully on, the board shows what it draws, and its explanation appears here. Go in any order, try as many as you like, then press Next when you have had enough.',
+      bodyPhone:'Thirteen overlays — and the fast way to learn them is to press one. <b>Tap any chip above</b> and it switches fully on, the board shows what it draws, and its explanation appears here. Go in any order, try as many as you like, then press Next when you have had enough.' },
     { sel:'#soloGhostDepth', title:'Ghost moves',
       body:'Hover a destination square and the bot shows the most likely replies as faint “ghost” pieces — handy for training your calculation.' },
     { sel:'#distPanel', title:'Maia move odds',
       body:'Everything else here shows you the position <i>before</i> you commit. This closes the loop <i>after</i>: expand <b>📊 Maia move odds</b> and it shows the move just played, from the position it was played in, against how a real human pool weighted the options there — one tall bar means the move was near-forced, several close bars mean it was a genuine decision. Playing a Maia bot reads the odds at <b>that bot’s rating</b>, so it is your actual opponent’s judgement, not a generic one. <b>Collapsed by default</b>; it reviews the move behind you rather than helping with the one in front of you.' },
-    { sel:'#bs-open', title:'Board settings & appearance',
+    // #pbSettings is the phone bar's ⚙, which opens the same panel.
+    { sel:'#bs-open', selPhone:'#pbSettings', title:'Board settings & appearance',
       body:'Sound, legal-move dots and the two rules that decide what counts as a threat live here — and so does <b>Theme & pieces</b>: colors, piece sets, Carbon vs Journal format, and the switch between this Training board and the clean Expert board.' },
     { sel:'#site-name', title:'Home',
       body:'Click the Blundermind logo anytime to return Home and switch between the Beginner and Expert boards.' },
@@ -2129,7 +2140,7 @@ function _tourExploreStart(){
 // the first pick, or there is nothing to tap on a phone.
 function _tourExploreSeedBody(step){
   const b = document.getElementById('tourBody');
-  if(b) b.innerHTML = _tourExploreChips(null) + step.body;
+  if(b) b.innerHTML = _tourExploreChips(null) + _tourBody(step);
 }
 
 // Total overlays offered, so the counter matches what is on screen.
@@ -2220,32 +2231,6 @@ function _tourRestoreBoard(){
   if(typeof render === 'function') render();
 }
 
-// On phones the board-vision settings live in a collapsed drawer, so their
-// elements have zero width — and the filter below would drop every indicator
-// step, cutting the tour from 21 steps to 4 and losing the part that actually
-// teaches the product. Open the drawer for the duration of the tour and put it
-// back afterwards.
-let _tourOpenedBv = false;
-function _tourOpenBoardSettings(){
-  const box = document.getElementById('board-settings');
-  const btn = document.getElementById('bv-toggle');
-  if(!box || !btn) return;
-  if(getComputedStyle(btn).display === 'none') return;   // desktop: always open
-  if(!box.classList.contains('open')){
-    box.classList.add('open');
-    btn.setAttribute('aria-expanded', 'true');
-    _tourOpenedBv = true;
-  }
-}
-function _tourRestoreBoardSettings(){
-  if(!_tourOpenedBv) return;
-  _tourOpenedBv = false;
-  const box = document.getElementById('board-settings');
-  const btn = document.getElementById('bv-toggle');
-  if(box) box.classList.remove('open');
-  if(btn) btn.setAttribute('aria-expanded', 'false');
-}
-
 // Started from the landing, the tour opens on the landing itself: the board
 // choice is the first decision the site asks for, and explaining it after
 // dismissing the page that offers it would be backwards. The step is prepended
@@ -2259,18 +2244,17 @@ function startTour(opts){
   _tourShell = (typeof proMode !== 'undefined' && proMode) ? 'pro' : 'amateur';
   _tourDidDemo = false; _tourSavedFen = null;
   if(_tourShell === 'amateur') _tourSnapshotInd();
-  _tourOpenBoardSettings();   // must run BEFORE the visibility filter below
   const all = (opts && opts.fromLanding)
     ? [_TOUR_LANDING_STEP].concat(TOURS[_tourShell] || [])
     : (TOURS[_tourShell] || []);
   // Keep only steps whose target is present and visible (drops hidden chrome).
-  // _tourSel picks selPhone at phone width, so a step is only dropped when it
-  // genuinely has nothing to point at rather than when its desktop target
-  // happens to be laid out differently here.
+  // _tourTarget picks selPhone at phone width, and the board for a step that
+  // spotlights it, so a step is only dropped when it genuinely has nothing to
+  // point at rather than when its desktop target happens to be laid out
+  // differently here.
   _tourSteps = all.filter(s => {
-    const sel = _tourSel(s);
-    if(!sel) return true;
-    const el = document.querySelector(sel);
+    if(!_tourSel(s)) return true;
+    const el = _tourTarget(s);
     return el && el.getBoundingClientRect().width > 0;
   });
   if(!_tourSteps.length) return;
@@ -2353,7 +2337,6 @@ function endTour(completed){
   _tourExploring = false;
   if(_tourModeTimer){ clearInterval(_tourModeTimer); _tourModeTimer = null; }
   if(_tourShell === 'amateur') _tourRestoreBoard();
-  _tourRestoreBoardSettings();
   try{ localStorage.setItem('bm_tour_' + _tourShell, '1'); }catch(e){}
   // Reaching the end offers the other tour; skipping out just closes. Passing
   // the distinction in rather than inferring it from _tourIdx keeps "Skip tour"
@@ -2364,17 +2347,15 @@ function endTour(completed){
 function tourNext(){ if(_tourIdx < _tourSteps.length - 1){ _tourIdx++; _renderTourStep(); } else endTour(true); }
 function tourPrev(){ if(_tourIdx > 0){ _tourIdx--; _renderTourStep(); } }
 
-// ── Phone: point the indicator steps at the board, not at the button ─────────
-// On a phone the board-vision controls sit in a drawer below the board, far
-// enough away that scrolling the button into view pushes the board off screen.
-// Every step from "Check threats" on describes an overlay drawn *on the board*,
-// so the user was reading a description of something they could not see.
+// ── Phone: point the overlay step at the board, not at the buttons ───────────
+// On a phone the board-vision buttons are not on the page at all — they are in
+// a panel that slides over the board. The overlay step is about what gets
+// drawn *on the board*, so there the spotlight goes to the board and the
+// controls come to the user, inside the tour panel. Desktop keeps pointing at
+// the real buttons — there both are on screen at once, and the real ones are
+// better. The steps that introduce the controls point at the pinned strip
+// under the board instead (their selPhone).
 //
-// For those steps the spotlight goes to the board and a copy of the control
-// comes to the user, inside the panel. Desktop keeps pointing at the real
-// button — there both are on screen at once, and the real one is better.
-// Steps 4-6 introduce the grid itself rather than an overlay, and have no
-// `ind`, so they still point where they should.
 // Which selector this step should point at, at this width. A step without a
 // selPhone uses its one selector everywhere.
 function _tourSel(step){
@@ -2383,10 +2364,27 @@ function _tourSel(step){
   return step.sel || null;
 }
 
+// The words to go with that target: a step aimed at a different control on a
+// phone describes that control, not the desktop one.
+function _tourBody(step){
+  if(step.bodyPhone && window.matchMedia('(max-width:760px)').matches) return step.bodyPhone;
+  return step.body;
+}
+
 function _tourBoardFocus(step){
   return !!(step && (step.ind || step.explore)) &&
          window.innerWidth <= 760 &&
          !!document.getElementById('cv');
+}
+
+// The element a step rings. startTour() keeps a step only if this has a box
+// and _renderTourStep() rings it, so the two cannot disagree — they did, and
+// the overlay step was dropped on phones for its hidden grid even though it
+// was going to spotlight the board.
+function _tourTarget(step){
+  if(_tourBoardFocus(step)) return document.getElementById('cv');
+  const sel = _tourSel(step);
+  return sel ? document.querySelector(sel) : null;
 }
 
 // A non-interactive copy of the control this step is about, in whatever state
@@ -2450,18 +2448,7 @@ function _renderTourStep(){
   // Cloned after the indicator block above has lit the control, so the copy in
   // the panel is in the same state as the overlay now on the board.
   const boardFocus = _tourBoardFocus(step);
-  const _sel = _tourSel(step);
-  const el = boardFocus
-    ? document.getElementById('cv')
-    : (_sel ? document.querySelector(_sel) : null);
-  // On a phone the overlay controls are not in the page at all — they are in
-  // the board-vision panel, and the sidebar copies are display:none. A step
-  // pointing at one would ring a box with no layout, so open the panel and
-  // ring that instead.
-  if (!boardFocus && el && typeof visIsPhone === 'function' && visIsPhone() &&
-      el.closest && el.closest('#sidebar') && el.getBoundingClientRect().width === 0) {
-    if (typeof visPanelOpen === 'function') visPanelOpen();
-  }
+  const el = _tourTarget(step);
   let rect = null;
   if(el){ try{ el.scrollIntoView({block:'nearest'}); }catch(e){} rect = el.getBoundingClientRect(); }
   const _tp = document.getElementById('tourPanel');
@@ -2486,7 +2473,7 @@ function _renderTourStep(){
   const bEl = document.getElementById('tourBody');
   if(bEl){
     if(step.explore) _tourExploreSeedBody(step);
-    else bEl.innerHTML = (boardFocus ? _tourControlReplica(step) : '') + step.body;
+    else bEl.innerHTML = (boardFocus ? _tourControlReplica(step) : '') + _tourBody(step);
   }
   const pv = document.getElementById('tourPrev'); if(pv) pv.style.visibility = _tourIdx === 0 ? 'hidden' : 'visible';
   const nx = document.getElementById('tourNext'); if(nx) nx.textContent = (_tourIdx === _tourSteps.length - 1) ? 'Done ✓' : 'Next →';

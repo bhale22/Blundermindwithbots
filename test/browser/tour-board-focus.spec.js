@@ -202,6 +202,21 @@ describe('board tour on a phone', { concurrency: 1 }, () => {
     await ctx.close();
   });
 
+  // The phone rework moved the overlay grid off the page into a panel, the
+  // steps pointing at it had no box, and the filter in startTour() dropped all
+  // five without a word. Every test above then failed only indirectly.
+  test('a phone gets every step desktop gets', async () => {
+    const titles = async (phone) => {
+      const { ctx, page } = await openTour({ phone });
+      const t = await page.evaluate(() => _tourSteps.map((s) => s.title));
+      await ctx.close();
+      return t;
+    };
+    const desktop = await titles(false);
+    const phone = await titles(true);
+    assert.deepStrictEqual(phone, desktop);
+  });
+
   test('no page errors were raised', () => {
     assert.deepStrictEqual(errs, []);
   });

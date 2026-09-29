@@ -142,39 +142,62 @@ describe('pro shell layout stability', { concurrency: 1 }, () => {
   test('a long bot name does not wrap and shift the clock', async () => {
     // Build-A-Bot names can be long ("The Drunken Master Mk II"). A wrapped
     // name would add a line to the player row and push the clock down.
-    await page.evaluate(() => {
-      const n = document.getElementById('proNameTop');
-      const r = document.getElementById('proRatingTop');
-      if (n) n.textContent = 'The Drunken Master Mk II, Scourge of the Open File';
-      if (r) r.textContent = 'Maia 1700 · aggressive · hustle +4 · budget 175cp';
-    });
+    //
+    // Measured against the same row holding SHORT text rather than against
+    // `start`. The app never writes the rating line, and an empty one is
+    // display:none, so comparing with `start` counted the line merely
+    // appearing (11px) as if the name had wrapped.
+    const fill = ([name, rating]) => page.evaluate(([n, r]) => {
+      document.getElementById('proNameTop').textContent = n;
+      document.getElementById('proRatingTop').textContent = r;
+    }, [name, rating]);
+    const orig = await page.evaluate(() => [
+      document.getElementById('proNameTop').textContent,
+      document.getElementById('proRatingTop').textContent,
+    ]);
+    await fill(['Maia', '1700']);
+    await page.waitForTimeout(200);
+    const short = await layout();
+    await fill(['The Drunken Master Mk II, Scourge of the Open File',
+                'Maia 1700 · aggressive · hustle +4 · budget 175cp']);
     await page.waitForTimeout(200);
     const now = await layout();
-    assert.strictEqual(now.bottomY, start.bottomY, 'clock moved under a long bot name');
-    assert.strictEqual(now.topY, start.topY);
+    await fill(orig);   // put the row back as the app had it
+    await page.waitForTimeout(200);
+    assert.strictEqual(now.bottomY, short.bottomY, 'clock moved under a long bot name');
+    assert.strictEqual(now.topY, short.topY);
   });
 
-  test('the commit chip sits in the player clock panel in pro mode', async () => {
+  test('the commit chip sits under the player clock panel in pro mode', async () => {
+    // It used to be stacked inside the player row, which made your row taller
+    // than your opponent's. It has its own mount directly under the row now.
     const where = await page.evaluate(() => {
       const chip = document.getElementById('commitModeChip');
+      const row = document.getElementById('proPlayerBottom');
       return {
-        inClockPanel: !!document.getElementById('proPlayerBottom').contains(chip),
+        inMount: !!document.getElementById('proChipMount').contains(chip),
+        belowRow: !!chip && chip.getBoundingClientRect().top >= row.getBoundingClientRect().bottom - 1,
         visible: !!(chip && chip.offsetParent !== null),
       };
     });
-    assert.ok(where.inClockPanel, 'chip should be mounted in the player clock panel');
+    assert.ok(where.inMount, 'chip should be mounted in #proChipMount');
+    assert.ok(where.belowRow, 'chip should sit below the player clock panel');
     assert.ok(where.visible, 'chip should be visible');
   });
 
   test('the chip still toggles from its new home', async () => {
     const before = await page.evaluate(() => boardCommitMode);
+    // Measured just before the click, so this checks the click and nothing
+    // the tests above did to the side column.
+    const pre = await layout();
     await page.locator('#commitModeChip').click();
     await page.waitForTimeout(250);
     const after = await page.evaluate(() => boardCommitMode);
     assert.notStrictEqual(after, before, 'clicking the chip should switch mode');
     // And doing so must not disturb the layout.
     const now = await layout();
-    assert.strictEqual(now.bottomY, start.bottomY, 'clock moved when the chip toggled');
+    assert.strictEqual(now.bottomY, pre.bottomY, 'clock moved when the chip toggled');
+    assert.strictEqual(now.topY, pre.topY, 'opponent clock moved when the chip toggled');
   });
 
   test('switching back to the amateur shell moves the chip to that clock box', async () => {
