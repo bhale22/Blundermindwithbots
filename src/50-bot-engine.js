@@ -1197,11 +1197,20 @@ function applyMoveAttractors(moveProbs, opts) {
   const gambitoVal    = attrVals['gambito']    || 0;
   const attackerVal   = attrVals['attacker']   || 0;
   const structureVal  = attrVals['structure']  || 0;
-  // `chaos` is the id these two grew out of; a bot saved under it carries the
-  // tension behaviour it had then, so that is where it maps.
-  const tensionVal    = attrVals['tension'] != null ? attrVals['tension']
+  // `chaos` is the id these two grew out of, and Complexity is its heir: the
+  // pole is still called Chaos agent and the old slider's description — MultiPV
+  // sigma, branching vs forcing — is Complexity's now. A bot saved under the old
+  // id therefore lands on Complexity, and Tension starts neutral rather than
+  // inheriting a value that was never about tension.
+  //
+  // This used to send `chaos` to Tension instead, which disagreed with the
+  // panel's own load-time migration, its presets and its radar. The presets
+  // never reached either axis: _applyPersonality writes every current
+  // attractor, so it set BOTH to 0 and the explicit zero shadowed this
+  // fallback. Ten of thirteen presets lost a non-zero chaos value that way.
+  const tensionVal    = attrVals['tension'] || 0;
+  const complexityVal = attrVals['complexity'] != null ? attrVals['complexity']
                       : (attrVals['chaos'] || 0);
-  const complexityVal = attrVals['complexity'] || 0;
   const grabberVal    = attrVals['grabber']    || 0;
   const kingSafetyVal = attrVals['kingsafety'] || 0;
   const prophylaxVal  = attrVals['prophylaxis']|| 0;

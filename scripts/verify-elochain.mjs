@@ -17,16 +17,19 @@ page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
 page.on('dialog', (d) => d.accept());
 
-// The chain lives inside the LC+Maia sub-panel, which only exists on screen once
-// that engine is picked — so open the Engine section and select it, the way a
-// user reaching this control would.
-const openLcMaia = async () => {
+// The book's rating and its PIN. This used to be a chain button between two
+// ELO boxes in an "LC+Maia" sub-panel; that panel is gone. Five engine cards
+// were never five engines, and the book was never an engine at all — it is a
+// layer in front of whichever engine is chosen, so it now has one rating box
+// and a pin, in the engine section's book row. Same question as before: is the
+// book's rating welded to the engine's, or its own?
+const openBook = async () => {
   await page.evaluate(() => {
     const sec = document.getElementById('sec-engine');
     if (sec && !sec.classList.contains('open')) toggleSec('engine');
-    if (sec) sec.classList.remove('eng-collapsed');
-    const card = document.querySelector('#engine-mode-grid .mcard[data-engine="lcmaia"]');
+    const card = document.querySelector('#engine-mode-grid .mcard[data-engine="maia3"]');
     if (card) selEngineCard(card);
+    setEngineBook('on');
   });
   await page.waitForTimeout(350);
 };
@@ -35,18 +38,18 @@ await page.goto(BASE + '/bot-control-panel.html', { waitUntil: 'networkidle' });
 await page.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
 await page.reload({ waitUntil: 'networkidle' });
 await page.waitForTimeout(500);
-await openLcMaia();
-ok(await page.locator('#lcmaia-chain').isVisible(), 'the chain button is visible in the LC+Maia panel');
+await openBook();
+ok(await page.locator('#book-elo-pin').isVisible(), 'the pin is visible in the book row');
 
 const state = () => page.evaluate(() => ({
-  lc:     +document.getElementById('lcmaia-lc-elo').value,
-  maia:   +document.getElementById('lcmaia-maia-elo').value,
+  book:   +document.getElementById('book-elo').value,
   gauge:  currentElo,
-  linked: lcMaiaEloLinked,
-  cls:    document.getElementById('lcmaia-chain').classList.contains('linked'),
-  aria:   document.getElementById('lcmaia-chain').getAttribute('aria-pressed'),
+  linked: bookEloLinked,
+  cls:    document.getElementById('book-elo-pin').classList.contains('linked'),
+  aria:   document.getElementById('book-elo-pin').getAttribute('aria-pressed'),
+  ro:     document.getElementById('book-elo').disabled,
 }));
-// Type into a box the way a user does, so the oninput handler actually runs.
+// Type into the box the way a user does, so the oninput handler actually runs.
 const type = (id, v) => page.evaluate(([i, val]) => {
   const el = document.getElementById(i);
   el.value = val;
@@ -55,105 +58,103 @@ const type = (id, v) => page.evaluate(([i, val]) => {
 
 console.log('default:');
 let s = await state();
-ok(s.linked === true, 'chain starts connected');
-ok(s.cls && s.aria === 'true', 'the button renders its linked state');
-ok(s.lc === s.maia && s.maia === s.gauge,
-   `all three start in step (lc ${s.lc} · maia ${s.maia} · gauge ${s.gauge})`);
+ok(s.linked === true, 'the book starts pinned to the engine');
+ok(s.cls && s.aria === 'true', 'the pin renders its linked state');
+ok(s.book === s.gauge, `book and engine start in step (book ${s.book} · gauge ${s.gauge})`);
+// Pinned means ONE rating, so the box is not a second place to type one.
+ok(s.ro === true, 'and the box is read-only while pinned');
 
-console.log('\nlinked — one edit moves everything:');
-await type('lcmaia-lc-elo', '1800');
-s = await state();
-ok(s.maia === 1800, 'editing Lichess ELO pulls Maia ELO with it');
-ok(s.gauge === 1800, 'and moves the Elometer (' + s.gauge + ')');
-
-await type('lcmaia-maia-elo', '1200');
-s = await state();
-ok(s.lc === 1200, 'editing Maia ELO pulls Lichess ELO with it');
-ok(s.gauge === 1200, 'and moves the Elometer (' + s.gauge + ')');
-
+console.log('\npinned — the engine drives the book:');
 await page.evaluate(() => setElo(2200));
 s = await state();
-ok(s.maia === 2200 && s.lc === 2200, 'moving the Elometer drives both boxes');
+ok(s.book === 2200, 'moving the Elometer moves the book with it (' + s.book + ')');
 
-console.log('\nbroken:');
-await page.click('#lcmaia-chain');
+console.log('\nunpinned:');
+await page.click('#book-elo-pin');
 s = await state();
-ok(s.linked === false, 'clicking the chain breaks it');
-ok(!s.cls && s.aria === 'false', 'the button renders its broken state');
+ok(s.linked === false, 'clicking the pin releases it');
+ok(!s.cls && s.aria === 'false', 'the pin renders its released state');
+ok(s.ro === false, 'and the box becomes editable');
 
-await type('lcmaia-lc-elo', '2500');
+await type('book-elo', '2500');
 s = await state();
-ok(s.lc === 2500, 'Lichess ELO takes its own value');
-ok(s.maia === 2200, 'Maia ELO stays put (' + s.maia + ')');
-ok(s.gauge === 2200, 'and the Elometer is not dragged along (' + s.gauge + ')');
+ok(s.book === 2500, 'the book takes its own value');
+ok(s.gauge === 2200, 'without dragging the Elometer (' + s.gauge + ')');
 
-// Maia's box IS the Elometer, so those two stay welded even when unlinked.
-await type('lcmaia-maia-elo', '900');
-s = await state();
-ok(s.gauge === 900, 'Maia ELO still moves the Elometer while unlinked');
-ok(s.lc === 2500, 'without disturbing the Lichess ELO (' + s.lc + ')');
 await page.evaluate(() => setElo(1600));
 s = await state();
-ok(s.maia === 1600, 'and the Elometer still drives Maia ELO');
-ok(s.lc === 2500, 'still leaving the book alone (' + s.lc + ')');
+ok(s.gauge === 1600, 'and the Elometer still moves on its own');
+ok(s.book === 2500, 'leaving the book alone (' + s.book + ')');
 
-console.log('\nre-joining:');
-await page.click('#lcmaia-chain');
+console.log('\nre-pinning:');
+await page.click('#book-elo-pin');
 s = await state();
-ok(s.linked === true, 'clicking again re-joins');
-ok(s.lc === 1600 && s.maia === 1600,
-   'the book adopts Maia\'s value rather than dragging the gauge (' + s.lc + ')');
+ok(s.linked === true, 'clicking again re-pins');
+ok(s.book === 1600,
+   "the book adopts the ENGINE's value rather than dragging the gauge (" + s.book + ')');
 
 console.log('\npersistence + config round-trip:');
-await page.click('#lcmaia-chain');           // break it
+await page.click('#book-elo-pin');            // release it
 await page.reload({ waitUntil: 'networkidle' });
 await page.waitForTimeout(500);
-await openLcMaia();
+await openBook();
 s = await state();
-ok(s.linked === false, 'broken state survives a reload');
-await page.click('#lcmaia-chain');           // re-join
+ok(s.linked === false, 'the released state survives a reload');
+await page.click('#book-elo-pin');            // re-pin
 await page.reload({ waitUntil: 'networkidle' });
 await page.waitForTimeout(500);
-await openLcMaia();
+await openBook();
 s = await state();
-ok(s.linked === true, 'and so does the joined state');
+ok(s.linked === true, 'and so does the pinned state');
 
 const trip = await page.evaluate(() => {
-  document.getElementById('lcmaia-chain').click();          // unlink
-  const set = (i, v) => { const e = document.getElementById(i); e.value = v; e.dispatchEvent(new Event('input')); };
-  set('lcmaia-lc-elo', 2400);
-  set('lcmaia-maia-elo', 1100);
+  document.getElementById('book-elo-pin').click();   // unpin
+  setElo(1100);
+  const e = document.getElementById('book-elo');
+  e.value = 2400; e.dispatchEvent(new Event('input'));
   const saved = getBotConfig();
   // Scramble, then restore
-  document.getElementById('lcmaia-chain').click();          // re-link (forces equality)
-  set('lcmaia-lc-elo', 1500);
+  document.getElementById('book-elo-pin').click();   // re-pin (forces equality)
+  setElo(1500);
   applyBotConfig(saved);
   return {
     savedFlag: saved.lcMaiaEloLinked, savedLc: saved.lcMaiaLcElo, savedMaia: saved.lcMaiaMaiaElo,
-    linked: lcMaiaEloLinked,
-    lc: +document.getElementById('lcmaia-lc-elo').value,
-    maia: +document.getElementById('lcmaia-maia-elo').value,
+    linked: bookEloLinked,
+    book: +document.getElementById('book-elo').value,
+    gauge: currentElo,
   };
 });
-ok(trip.savedFlag === false, 'config carries lcMaiaEloLinked');
+ok(trip.savedFlag === false, 'config carries the pin state');
 ok(trip.savedLc === 2400 && trip.savedMaia === 1100,
-   'config carries both ELOs independently (' + trip.savedLc + '/' + trip.savedMaia + ')');
-ok(trip.linked === false, 'save→load restores the broken chain');
-ok(trip.lc === 2400 && trip.maia === 1100,
-   'save→load restores both values unreconciled (' + trip.lc + '/' + trip.maia + ')');
+   'config carries book and engine ELOs independently (' + trip.savedLc + '/' + trip.savedMaia + ')');
+ok(trip.linked === false, 'save→load restores the released pin');
+ok(trip.book === 2400 && trip.gauge === 1100,
+   'save→load restores both values unreconciled (' + trip.book + '/' + trip.gauge + ')');
 
-// A bot saved before the chain existed carries no flag — infer it, so the
-// switch never contradicts the numbers underneath it.
+// A bot saved before the pin existed carries no flag — infer it, so the pin
+// never contradicts the numbers underneath it.
 const legacy = await page.evaluate(() => {
   const out = {};
   applyBotConfig({ engine: 'lcmaia', elo: 1500, lcMaiaLcElo: 2000, lcMaiaMaiaElo: 1200 });
-  out.differing = lcMaiaEloLinked;
-  applyBotConfig({ engine: 'lcmaia', elo: 1500, lcMaiaLcElo: 1700, lcMaiaMaiaElo: 1700 });
-  out.equal = lcMaiaEloLinked;
+  out.differing = bookEloLinked;
+  applyBotConfig({ engine: 'lcmaia', elo: 1700, lcMaiaLcElo: 1700, lcMaiaMaiaElo: 1700 });
+  out.equal = bookEloLinked;
   return out;
 });
-ok(legacy.differing === false, 'legacy bot with differing ELOs loads unlinked');
-ok(legacy.equal === true, 'legacy bot with equal ELOs loads linked');
+ok(legacy.differing === false, 'legacy bot with differing ELOs loads unpinned');
+ok(legacy.equal === true, 'legacy bot with equal ELOs loads pinned');
+
+// A blend has no single engine rating to pin to, so the pin goes away and the
+// book keeps a rating of its own.
+const blend = await page.evaluate(() => {
+  const card = document.querySelector('#engine-mode-grid .mcard[data-engine="hybrid"]');
+  if (card) selEngineCard(card);
+  const btn = document.getElementById('book-elo-pin');
+  return { hidden: getComputedStyle(btn).display === 'none',
+           editable: !document.getElementById('book-elo').disabled };
+});
+ok(blend.hidden, 'a blend hides the pin — there is no one rating to pin to');
+ok(blend.editable, 'and leaves the book its own rating');
 
 // ── App side: what a typed ELO actually asks Lichess for ────────────────────
 // The chain decides the number; _snapToLcBand picks the band button and

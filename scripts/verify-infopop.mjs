@@ -151,14 +151,31 @@ ok(src.slotDrop, 'pressureSlotEloByThink present');
 ok(src.pawnGone, 'dead pawnStrat attractor removed');
 
 // functional: slot ELO relative drop (curve top 2000 → drop 800 at 0.1s think)
+//
+// The curve only runs on a CLOCK: pressureSlotEloByThink opens with
+// _pressureClockActive(), so an untimed game keeps its rating however little
+// think time a move got — there is no time to be short of. This used to set a
+// curve and call the function with clockControl still on its 'untimed' default,
+// so the guard returned the rating untouched and the drop never ran. Arm a
+// clock, and check the guard itself rather than tripping over it.
 const slotVals = await page2.evaluate(() => {
+  const prevClock = clockControl;
   botPressureCurveA = [{ x: 0.1, y: 1200 }, { x: 10, y: 2000 }];
+
+  clockControl = 'untimed';
+  const untimed = pressureSlotEloByThink(2400, 0.1);
+
+  clockControl = 'blitz5';
   const relaxed = pressureSlotEloByThink(2400, 10);
   const pressured = pressureSlotEloByThink(2400, 0.1);
   const floor = pressureSlotEloByThink(700, 0.1); // clamps at 600
+
   botPressureCurveA = null;
-  return { relaxed, pressured, floor };
+  clockControl = prevClock;
+  return { untimed, relaxed, pressured, floor };
 });
+ok(slotVals.untimed === 2400,
+  'no clock, no curve: an untimed slot keeps its rating (got ' + slotVals.untimed + ')');
 ok(slotVals.relaxed === 2400, 'slot ELO unchanged at relaxed think (got ' + slotVals.relaxed + ')');
 ok(slotVals.pressured === 1600, 'slot ELO drops by curve delta under pressure (got ' + slotVals.pressured + ')');
 ok(slotVals.floor === 600, 'slot ELO clamps at 600 (got ' + slotVals.floor + ')');

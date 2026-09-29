@@ -1950,8 +1950,20 @@ window.addEventListener('message', function(e) {
   const engineMap = { maia3: 'maia3', stockfish: 'sf', hybrid: 'hybrid', lcsf: 'lcsf', lcmaia: 'maia' };
   botSetTab(engineMap[cfg.engine] || 'sf');
 
-  // Player color (resolved in botStart if 'random')
-  botPlayerColor = cfg.color || 'random';
+  // Player color (resolved in botStart if 'random').
+  //
+  // This used to assign botPlayerColor directly — which botStart then threw
+  // away. botStart reads botColorPref in preference to botPlayerColor, and
+  // botColorPref was still 'random' from page load, so it re-rolled the colour
+  // the builder had just been told to play: a bot built as Black started as
+  // White about half the time, and the quick-start colour select went on
+  // reading "Random" while the board did something else.
+  //
+  // botSetPlayerColor is the one function that sets BOTH variables and
+  // repaints every mirror of the choice (the pcolor buttons, the sidebar
+  // select, the welcome panel's), so the controls agree with what Start will
+  // actually deal. It maps anything unrecognised to 'random' on its own.
+  botSetPlayerColor(cfg.color || 'random');
 
   // Time control — build a 'custom' entry so clockInit() finds a valid key
   if (cfg.tcTime > 0) {

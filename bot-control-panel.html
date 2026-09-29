@@ -2400,64 +2400,84 @@ body.fj .picon{font-weight:500;}
   .tcm-opt .tcm-sub{font-size:11px;letter-spacing:0.04em;}
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+/* ════════════════════════════════════════════════════════════════════════════
    PHONE — ENGINE PICKER
-   ───────────────────────────────────────────────────────────────────────────
-   Desktop puts five engine cards on one row with the sub-panels in a column
-   beside them, so the controls for whichever engine you pick are always in
-   view. Stacked on a phone that ordering inverts: all five cards render first
-   and the ELO dial for the one you chose sits below four engines you just
-   rejected — about 400px of scrolling past the wrong answers.
+   ────────────────────────────────────────────────────────────────────────────
+   The three engines are a TAB STRIP, the same shape as the Personality tabs:
+   all three names stay together on one row and the chosen engine’s controls
+   open underneath them.
 
-   So the sub-panel moves up under its own card and the rejected engines move
-   below it. Done with flex `order` over a display:contents chain rather than
-   by moving nodes: .pr, #engine-mode-grid, .panel-2col and #engine-sub-col all
-   drop out of the box tree, which makes the cards, the sub-panels and the
-   shared quality column siblings in one flex column that can be ordered. No
-   JS reparenting, no desktop DOM difference — same trick the pro board shell
-   uses for #proSide.
-   ═══════════════════════════════════════════════════════════════════════════ */
+   This replaces an accordion. That version moved the selected card to the top
+   and pushed the two rejected engines below its whole sub-panel with flex
+   `order`, on the reasoning that the controls you just asked for should not
+   sit behind two engines you declined. It read well for configuring a bot and
+   badly for choosing one: measured at 390px, Flounder and Hybrid sat 1472px
+   below Maia — nearly two screens of scrolling past a rating dial, a
+   temperature histogram and a blurb to reach the other two options. Switching
+   engines is a comparison, and a comparison wants its choices side by side.
+
+   So #engine-mode-grid stays a real grid here (it is the one thing that does
+   NOT flatten) while .pr, .panel-2col and #engine-sub-col still drop out of
+   the box tree with display:contents — that makes the strip, the sub-panels,
+   the temperature column and the blurb siblings in one flex column, which is
+   what lets `order` put them in reading order. No JS, no desktop DOM
+   difference; desktop already showed all three on one row.
+   ════════════════════════════════════════════════════════════════════════════ */
 @media (max-width:760px){
   #sec-engine .panel{display:flex;flex-direction:column;gap:10px;}
   #sec-engine .panel > .pr,
-  #sec-engine #engine-mode-grid,
   #sec-engine .panel > .panel-2col,
   #sec-engine #engine-sub-col{display:contents;}
 
-  /* Everything that configures the chosen engine comes before the engines you
-     didn't choose. Temperature and its histogram are part of that setup, not
-     an afterthought: left at the end they sat below four rejected engine
-     cards, off the bottom of the screen. Order is therefore
-     card → Elometer/sub-panel → temperature+histogram → blurb → the rest. */
+  /* Reading order: what am I picking → the three choices → the book that sits
+     in front of whichever one I picked → its settings → what it is. */
   #sec-engine .dlbl{order:0;}
-  #sec-engine .mcard{order:5;}          /* the engines you didn't pick */
-  #sec-engine .mcard.sel{order:1;}
-  #sec-engine [id^="engine-sub-"]{order:2;}
-  #sec-engine #engine-temp-col{order:3;}
-  #sec-engine #engine-desc-tail{order:4;}
+  #sec-engine #engine-mode-grid{order:1;}
+  #sec-engine #engine-book-row{order:2;}
+  #sec-engine [id^="engine-sub-"]{order:3;}
+  #sec-engine #engine-temp-col{order:4;}
+  #sec-engine #engine-desc-tail{order:5;}
 
   /* On desktop the shared column is hidden with visibility so the two-column
-     grid keeps its size. Stacked, that would leave a tall empty gap in the
-     middle of the run — between the engine's own controls and the other
-     cards — so here it comes out of the flow entirely. */
+     grid keeps its size. Stacked, that would leave a tall empty gap mid-run,
+     so here it comes out of the flow entirely. */
   #sec-engine #engine-temp-col.tc-hidden{display:none;}
 
-  /* Tapping the selected card again folds its controls away — selEngineCard.
-     !important because selEngineMode sets `style.display = 'block'` on the
-     active sub-panel inline, which an ordinary rule cannot beat. */
-  #sec-engine.eng-collapsed [id^="engine-sub-"]{display:none !important;}
-  #sec-engine.eng-collapsed #engine-desc-tail,
-  #sec-engine.eng-collapsed #engine-temp-col{display:none;}
-
-  /* The selected card reads as the open accordion header. */
-  #sec-engine .mcard{min-height:56px;padding:11px 12px;}
-  #sec-engine .mcard.sel{
-    border-color:var(--amber);background:var(--carbon-raise);
-    border-left:2px solid var(--amber);
+  /* ── The strip ──
+     ID + ID beats the blanket `.mode-grid-3{grid-template-columns:1fr}` that
+     stacks every other mode grid on a phone. Three names this short
+     (Maia 3 / Flounder / Hybrid) fit across 390px, so they get a row each
+     rather than the 2+1 the Personality strip falls back to. */
+  #sec-engine #engine-mode-grid{
+    display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:0;
   }
-  /* Its blurb is repeated below the controls instead — see #engine-desc-tail. */
-  #sec-engine .mcard.sel .mdesc{display:none;}
-  #sec-engine.eng-collapsed .mcard.sel .mdesc{display:block;}
+  #sec-engine .mcard{
+    min-height:44px;padding:8px 5px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;gap:2px;
+  }
+  /* A tab is named by being lit, not by a bullet beside it. */
+  #sec-engine .mcard .mdot{display:none;}
+  #sec-engine .mcard .mname{font-size:11.5px;letter-spacing:0.03em;line-height:1.2;}
+  /* The pill does not fit inside a third of a phone next to the name, and it
+     is a footnote to it — so it drops to its own line as plain text. It stays
+     at the 11px phone type floor (see verify-typefloor): shrinking a footnote
+     until it fits is how a label becomes unreadable, and at this width the
+     word fits on its own line anyway. */
+  #sec-engine .mcard .mrec{
+    display:block;margin-left:0;padding:0;background:none;border:none;
+    font-size:11px;letter-spacing:0;line-height:1.15;
+  }
+  /* Descriptions are what made the cards tall. All three are hidden and the
+     selected one is restated below the controls instead — #engine-desc-tail,
+     via updateEngineDescTail. */
+  #sec-engine .mcard .mdesc{display:none;}
+  #sec-engine .mcard.sel{
+    border-color:var(--amber);background:var(--amber-glow);
+    color:var(--amber-bright);
+  }
+  #sec-engine .mcard.sel .mname{color:var(--amber-bright);}
+
   /* Scoped through #sec-engine (2,0,0) on purpose. The base rule that hides
      this on desktop is `.temp-head,#engine-desc-tail{display:none}` — same
      (1,0,0) specificity as a bare #engine-desc-tail here, and it sits LATER in
@@ -3964,7 +3984,7 @@ const TEMP_PRESETS = [
    Each entry: one sentence of context + the core formula.
 ══════════════════════════════════════════════════════════════ */
 const ATTRACTOR_DESCS = {
-  chaos:    `Position complexity is scored via Stockfish MultiPV: <code>σ(eval₁…evalₙ)</code> — std. deviation of the top-N move evaluations. High σ = branching, tactical positions; low σ = forcing or drawish lines. Slider biases candidate sampling toward high-σ (chaos) or low-σ (simplifying) moves.`,
+  complexity: `Position complexity is scored via Stockfish MultiPV: <code>σ(eval₁…evalₙ)</code> — std. deviation of the top-N move evaluations. High σ = branching, tactical positions; low σ = forcing or drawish lines. Slider biases candidate sampling toward high-σ (chaos) or low-σ (simplifying) moves.`,
   compwin:  `Activates when engine eval ≥ +100 cp (configurable). Positive values upweight candidates that <em>increase</em> MultiPV variance — keeping complications alive; negative values prefer forcing continuations that reduce material and trade into a clear winning ending.`,
   spacecadet:`Measures board control by counting your <em>weak squares</em> — empty squares none of your pieces attack — before and after each candidate move. Uses a full board attack map so discovered attacks (a pawn advances, revealing a bishop's diagonal) and blocking moves (a pawn steps in front of a bishop) are correctly counted. Positive (Space Cadet) favours moves that reduce your weak squares; negative (Space Waster) accepts ceding space for other priorities.`,
   fortkx:   `Scores the resulting position for defensive solidity: sums the total defender count across all your pieces after each candidate move. Positive (Fort Knox) favours moves that maximise defensive support and keep pieces protected. Negative (Glass Cannon) accepts exposed, aggressive piece placement.`,
@@ -4073,31 +4093,31 @@ const CUSTOM_PRESSURE = [['any','Any clock'],['self','Bot time-pressured'],['opp
 // Add a new personality: one entry here, nothing else changes
 const PERSONALITIES = [
   { id:'entropy',    name:'Captain Entropy',   icon:'⚡', tag:'Chaos',      desc:'Maximises position complexity and open lines.',
-    attractors:{chaos:4,compwin:4,spacecadet:2,fortkx:-1,gambito:3,trade:2,structure:-3,hustle:-3,luck:1,pressure:0,attacker:2} },
+    attractors:{complexity:4,compwin:4,spacecadet:2,fortkx:-1,gambito:3,trade:2,structure:-3,hustle:-3,luck:1,pressure:0,attacker:2} },
   { id:'norm',       name:'Norm',              icon:'◼', tag:'Order',      desc:'Prefers closed, simplified positions.',
-    attractors:{chaos:-4,compwin:-4,spacecadet:0,fortkx:3,gambito:-2,trade:-1,structure:4,hustle:2,luck:-1,pressure:-1,attacker:-2} },
+    attractors:{complexity:-4,compwin:-4,spacecadet:0,fortkx:3,gambito:-2,trade:-1,structure:4,hustle:2,luck:-1,pressure:-1,attacker:-2} },
   { id:'attacky',    name:'Attacky McTackerson',icon:'⚔', tag:'Captures',  desc:'Favours captures within centipawn ceiling.',
-    attractors:{chaos:2,compwin:1,spacecadet:1,fortkx:-2,gambito:1,trade:4,structure:-1,hustle:-2,luck:0,pressure:1,attacker:3} },
+    attractors:{complexity:2,compwin:1,spacecadet:1,fortkx:-2,gambito:1,trade:4,structure:-1,hustle:-2,luck:0,pressure:1,attacker:3} },
   { id:'grinder',    name:'Overthinker',         icon:'◈', tag:'Methodical', desc:'Deliberate. Thinks long — likely gets into time trouble.',
-    attractors:{chaos:-3,compwin:-2,spacecadet:3,fortkx:2,gambito:-1,trade:0,structure:3,hustle:-4,luck:-1,pressure:-3,attacker:0} },
+    attractors:{complexity:-3,compwin:-2,spacecadet:3,fortkx:2,gambito:-1,trade:0,structure:3,hustle:-4,luck:-1,pressure:-3,attacker:0} },
   { id:'hustler',    name:'Coffeehouse Hustler',icon:'☕', tag:'Fast',       desc:'Fast imprecise early play, tightens in endgame.',
-    attractors:{chaos:1,compwin:-1,spacecadet:0,fortkx:-1,gambito:2,trade:1,structure:-2,hustle:5,luck:2,pressure:2,attacker:1} },
+    attractors:{complexity:1,compwin:-1,spacecadet:0,fortkx:-1,gambito:2,trade:1,structure:-2,hustle:5,luck:2,pressure:2,attacker:1} },
   { id:'blunderer',  name:'The Blunderer',      icon:'∿', tag:'Human',      desc:'Plays well then cracks unexpectedly under pressure.',
-    attractors:{chaos:0,compwin:0,spacecadet:0,fortkx:0,gambito:0,trade:0,structure:0,hustle:0,luck:3,pressure:5,attacker:0} },
+    attractors:{complexity:0,compwin:0,spacecadet:0,fortkx:0,gambito:0,trade:0,structure:0,hustle:0,luck:3,pressure:5,attacker:0} },
   { id:'hoarder',    name:'The Hoarder',        icon:'◉', tag:'Material',   desc:'Never sacrifices material voluntarily.',
-    attractors:{chaos:-2,compwin:-1,spacecadet:0,fortkx:2,gambito:-3,trade:-3,structure:1,hustle:2,luck:-2,pressure:-1,attacker:-2} },
+    attractors:{complexity:-2,compwin:-1,spacecadet:0,fortkx:2,gambito:-3,trade:-3,structure:1,hustle:2,luck:-2,pressure:-1,attacker:-2} },
   { id:'pawnchain',  name:'Pawn Chain Gang',    icon:'♟', tag:'Pawns',      desc:'Maximises connected pawns and pawn structure.',
-    attractors:{chaos:-1,compwin:-2,spacecadet:0,fortkx:1,gambito:-1,trade:0,structure:5,hustle:1,luck:0,pressure:0,attacker:0} },
+    attractors:{complexity:-1,compwin:-2,spacecadet:0,fortkx:1,gambito:-1,trade:0,structure:5,hustle:1,luck:0,pressure:0,attacker:0} },
   { id:'spitecheck', name:'Spite Check',        icon:'†', tag:'Checks',     desc:'Always checks if a legal check exists.',
-    attractors:{chaos:3,compwin:2,spacecadet:1,fortkx:-2,gambito:0,trade:2,structure:-2,hustle:-2,luck:1,pressure:1,attacker:3} },
+    attractors:{complexity:3,compwin:2,spacecadet:1,fortkx:-2,gambito:0,trade:2,structure:-2,hustle:-2,luck:1,pressure:1,attacker:3} },
   { id:'clock',      name:'Clock Watcher',      icon:'⧗', tag:'Clock',      desc:'Conservative when ahead on time, reckless when behind.',
-    attractors:{chaos:0,compwin:-2,spacecadet:0,fortkx:0,gambito:0,trade:-1,structure:0,hustle:0,luck:0,pressure:-3,attacker:0} },
+    attractors:{complexity:0,compwin:-2,spacecadet:0,fortkx:0,gambito:0,trade:-1,structure:0,hustle:0,luck:0,pressure:-3,attacker:0} },
   { id:'badday',     name:'Grandmaster Bad Day', icon:'👑',tag:'Human',      desc:'Maia 2400 but picks the lowest-probability move above 4% — never accidentally brilliant.',
-    attractors:{chaos:0,compwin:0,spacecadet:0,fortkx:0,gambito:0,trade:0,structure:0,hustle:0,luck:5,pressure:2,attacker:0} },
+    attractors:{complexity:0,compwin:0,spacecadet:0,fortkx:0,gambito:0,trade:0,structure:0,hustle:0,luck:5,pressure:2,attacker:0} },
   { id:'drunken',    name:'Drunken Master',      icon:'🍺', tag:'Human',      desc:'Was that a brilliant tactical move — or was it thinking about kittens? Each move: 50% Maia 2400, 50% Maia 1000.',
-    attractors:{chaos:3,compwin:2,spacecadet:1,fortkx:-3,gambito:3,trade:1,structure:-2,hustle:2,luck:2,pressure:1,attacker:4} },
+    attractors:{complexity:3,compwin:2,spacecadet:1,fortkx:-3,gambito:3,trade:1,structure:-2,hustle:2,luck:2,pressure:1,attacker:4} },
   { id:'drawmeister',name:'The Drawmeister',     icon:'½', tag:'Human',      desc:'Plays for the draw: solid drawish openings, simplifies everything, and offers a draw whenever things look level.',
-    attractors:{chaos:-4,compwin:-3,spacecadet:0,fortkx:3,gambito:-3,trade:4,structure:2,hustle:0,luck:-1,pressure:-2,attacker:-3} },
+    attractors:{complexity:-4,compwin:-3,spacecadet:0,fortkx:3,gambito:-3,trade:4,structure:2,hustle:0,luck:-1,pressure:-2,attacker:-3} },
 ];
 
 /* ══════════════════════════════════════════════════════════════
@@ -8632,10 +8652,15 @@ function applyBotConfig(cfg){
   grp(() => {
     attractorValues = Object.assign({}, attractorValues, cfg.attractorValues || {});
     // Bots saved before Tension and Complexity were separate carry a single
-    // `chaos` value, and what it did then is what Tension does now.
+    // `chaos` value. Complexity is the axis that inherited it: it is the one
+    // whose right pole is still called Chaos agent, and the old slider's
+    // description — MultiPV sigma, high-sigma branching vs low-sigma forcing —
+    // is now Complexity's, word for word. (This used to map to Tension, which
+    // left the three other places the split was never propagated disagreeing
+    // with it; one heir, chosen once, everywhere.)
     if (attractorValues.chaos != null) {
-      if (cfg.attractorValues && cfg.attractorValues.tension == null) {
-        attractorValues.tension = attractorValues.chaos;
+      if (cfg.attractorValues && cfg.attractorValues.complexity == null) {
+        attractorValues.complexity = attractorValues.chaos;
       }
       delete attractorValues.chaos;
     }
@@ -9700,21 +9725,16 @@ let sfLevel = 5;
 // switch and from the phone layer.
 function equalizeEngineSubHeights(){ /* panels stack now; nothing to equalize */ }
 
-/* Click handler for the five engine cards.
+/* Click handler for the three engine cards.
 
-   On a phone the selected card's sub-panel opens directly beneath it and the
-   four rejected engines move below that (see PHONE — ENGINE PICKER), so the
-   card behaves like an accordion header: tapping the one that is already
-   selected folds its controls away and brings the other four back into view.
-   Desktop has all five cards on one row with the sub-panel in a column beside
-   them, where there is nothing to fold — so it just selects. */
+   It used to carry a phone-only branch: back when the rejected engines were
+   pushed below the selected one's sub-panel, tapping the selected card again
+   folded those controls away to bring the other two back into view. The cards
+   are a tab strip now (see PHONE — ENGINE PICKER) and never leave the top of
+   the section, so there is nothing to dig out from under — and a tab that
+   blanks its own pane when you tap it is a trap, not a shortcut. Both layouts
+   just select. */
 function selEngineCard(card){
-  const sec = document.getElementById('sec-engine');
-  if(_isPhoneLayout() && card.classList.contains('sel') && sec){
-    sec.classList.toggle('eng-collapsed');
-    return;
-  }
-  if(sec) sec.classList.remove('eng-collapsed');
   selEngineMode(card);
 }
 
@@ -10882,7 +10902,7 @@ function selTemp(card, id){
    `display:none` / `display:contents` in the ≤760px layer is what decides
    which presentation runs, so the desktop box tree is unchanged.
 
-   `inputId` is the range input's own id ('attr-chaos' / 'piece-knight') — it
+   `inputId` is the range input's own id ('attr-complexity' / 'piece-knight') — it
    is the key for everything here, so both lists share one component. */
 function _attrRowDef(inputId){
   const i = inputId.indexOf('-');
@@ -11448,7 +11468,7 @@ function onCustomControlName(id, val){
    RADAR CHART — interactive (drag nodes or click axis to set)
 ══════════════════════════════════════════════════════════════ */
 const RADAR_AXES = [
-  { label:'Chaos',     key:'chaos' },
+  { label:'Chaos',     key:'complexity' },
   { label:'Captures',  key:'trade' },
   { label:'Attacker',  key:'attacker' },
   { label:'Space',     key:'spacecadet' },

@@ -318,6 +318,40 @@ console.log('\n3   One Elometer, wearing the selected engine');
     ok('and the panel reads it back', r.shown === '1725', r.shown);
   }
 
+  console.log('\n8a  A bot built as a colour arrives at that colour');
+  {
+    // Regression: the config set botPlayerColor, but botStart resolves the seat
+    // from botColorPref and that was still 'random' from page load — so a bot
+    // built as Black opened as White about half the time. A coin flip is an
+    // awful thing to have to notice, and nothing here covered it, which is how
+    // it survived. botColorPref is the variable botStart actually reads, so it
+    // is the one worth asserting.
+    const seat = async (pg, want) => pg.evaluate(async (want) => {
+      window.postMessage({ type: 'botConfig', engine: 'stockfish', flounderElo: 1500,
+                           elo: 1500, sfLevel: 5, color: want, _applyOnly: true },
+                         location.origin);
+      await new Promise(r => setTimeout(r, 400));
+      return { pref: botColorPref, concrete: botPlayerColor,
+               sel: (document.getElementById('quickBotColor') || {}).value };
+    }, want);
+
+    const black = await seat(page, 'black');
+    ok('black reaches the variable botStart reads', black.pref === 'black', black.pref);
+    ok('...and the concrete seat with it', black.concrete === 'black', black.concrete);
+    ok('...and the quick-start select stops saying Random', black.sel === 'black', black.sel);
+
+    const white = await seat(page, 'white');
+    ok('white does the same', white.pref === 'white' && white.concrete === 'white',
+      white.pref + ' / ' + white.concrete);
+
+    // 'random' must still mean random: botStart does the authoritative roll, so
+    // the preference stays 'random' rather than being resolved here.
+    const rnd = await seat(page, 'random');
+    ok('random is left for botStart to roll', rnd.pref === 'random', rnd.pref);
+    ok('...but the concrete seat stays a real colour',
+      rnd.concrete === 'white' || rnd.concrete === 'black', rnd.concrete);
+  }
+
   console.log('\n8b  The panel and the engine agree on the T -> c map');
   {
     const engineC = await page.evaluate(() =>

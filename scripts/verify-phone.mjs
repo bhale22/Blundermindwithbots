@@ -76,13 +76,18 @@ async function openBuilder(page, shellIdx) {
 
 async function startGame(page, frame) {
   await frame.evaluate(() => { const b = document.querySelector('.start-btn'); if (b) b.click(); });
-  // KNOWN FLAKE, and not a slow one: this waits on the BOT's first move, and it
-  // times out at 90s as readily as at 30s, at a different call site each run
-  // (162, 167, 215 and 263 all seen). So the bot is not starting at all rather
-  // than starting late, and raising the budget only makes the failure slower.
-  // It reproduces identically on unmodified src/, so it is not a layout
-  // regression — every assertion AFTER this helper is what the script is for,
-  // and those pass on a run that gets through. Left at 30s deliberately.
+  // This waits on the BOT's first move, so it only returns when the human has
+  // the second move — i.e. when the colour picked in openBuilder actually took.
+  //
+  // It used to fail about half the time, at a different call site each run, and
+  // was written off as a known flake. It was not: the builder's colour never
+  // reached the board. applyBotConfig set botPlayerColor, but botStart reads
+  // botColorPref in preference and that was still 'random' from page load, so
+  // the colour was re-rolled and the human got White half the time — leaving
+  // the bot correctly waiting for a move that this helper was never going to
+  // make. Fixed by routing the config through botSetPlayerColor, which sets
+  // both. If this starts timing out again, suspect that plumbing first rather
+  // than the timeout, which was never the problem.
   await page.waitForFunction(() => typeof gameMovesAlgebraic !== 'undefined' && gameMovesAlgebraic.length > 0,
                              null, { timeout: 30000 });
   await page.waitForTimeout(600);
@@ -220,10 +225,18 @@ console.log('\nPHONE 390×844');
   p2.on('dialog', d => d.accept());
   p2.on('pageerror', e => errs.push(e.message));
   await startGame(p2, await openBuilder(p2, 0));
+  // Every bar that can carry a game action, not just the sidebar's: on a phone
+  // #gameActions is hidden outright (`body:not(.pro-mode) #sidebar
+  // #gameActions`) and Resign lives on the board's own #phoneBar, where it is
+  // reachable without opening anything. Looking only in the sidebar found no
+  // buttons at all and read that as "Resign is missing". The assertion is
+  // about there being exactly ONE of it, so it has to search everywhere it
+  // could legitimately appear — that is what would catch a duplicate.
   const labels = await p2.evaluate(() =>
-    [...document.querySelectorAll('#gameActions button, #bottom-controls .ctrl-row button')]
+    [...document.querySelectorAll(
+      '#phoneBar button, #gameActions button, #bottom-controls .ctrl-row button')]
       .filter(b => b.offsetParent !== null).map(b => b.textContent.trim()));
-  ok('Resign appears exactly once',
+  ok('Resign appears exactly once, on the board bar',
      labels.filter(l => /resign/i.test(l)).length === 1, JSON.stringify(labels));
   // The human is Black here, so the board is flipped and White is the side at
   // the top — the boxes follow the pieces, not the colours.

@@ -92,7 +92,14 @@ console.log('\nBlundermind landing — unchanged');
 
 console.log('\nTour picker on the landing');
 {
-  const { ctx, page, errs } = await landing('amateur');
+  // The landing overlay is the PRO front door. The two products get different
+  // first impressions (00-head.html): buildabotchess/pro opens the full landing,
+  // blundermind/amateur opens the live board with #bmWelcome over it, because
+  // there the board IS the pitch. So the tour button this section clicks only
+  // ever renders on 'pro' — asking for it on 'amateur' waited 30s for a button
+  // inside an overlay that is display:none by design, and took the rest of the
+  // file down with it.
+  const { ctx, page, errs } = await landing('pro');
   ok('picker starts hidden',
      await page.evaluate(() => document.getElementById('landingTourPick').hasAttribute('hidden')));
   await page.click('.landing-tour-btn');
@@ -124,29 +131,37 @@ console.log('\nTour picker on the landing');
     count: document.getElementById('tourCount').textContent,
     title: document.getElementById('tourTitle').textContent,
     body: document.getElementById('tourBody').textContent,
-    ringOnPicker: (() => {
+    hasLandingStep: _tourSteps.some(st => st.landing),
+    ringOnStep: (() => {
+      const step = _tourSteps[0];
+      const el = step && step.sel && document.querySelector(step.sel);
+      if (!el) return null;
       const r = document.getElementById('tourRing').getBoundingClientRect();
-      const p = document.querySelector('.landing-shell-pick').getBoundingClientRect();
-      return Math.abs(r.top - (p.top - 5)) < 3 && Math.abs(r.left - (p.left - 5)) < 3;
+      const b = el.getBoundingClientRect();
+      return Math.abs(r.top - (b.top - 5)) < 3 && Math.abs(r.left - (b.left - 5)) < 3;
     })(),
   }));
   ok('board tour starts', t.overlay === 'block', t.overlay);
-  ok('it opens ON the landing, not after it', t.landing !== 'none', t.landing);
+  // These five used to assert the opposite: that the tour opened ON the landing
+  // with a first step explaining the board choice, ring on the shell picker.
+  // landingStartTour changed that deliberately, and says why — staying on the
+  // landing after pressing "tour of the visualization board" reads as the tour
+  // having failed to start, because the landing is still what fills the screen.
+  // It now sets the shell, dismisses the landing, and opens on the board.
+  ok('it leaves the landing rather than opening on top of it', t.landing === 'none', t.landing);
   ok('first step is step 1', /^1\s*\/\s*\d+/.test(t.count.trim()), t.count);
-  ok('first step explains the board choice',
-     /two boards/i.test(t.title) && /visualization/i.test(t.body) && /expert/i.test(t.body),
-     t.title);
-  ok('it says the choice is reversible', /switched at any time|not a decision/i.test(t.body));
-  ok('the ring points at the board picker', t.ringOnPicker);
+  ok('the landing-only step is not in the running order', t.hasLandingStep === false);
+  ok('the first step is about the board', !!t.title.trim(), t.title);
+  ok("the ring points at that step's own target", t.ringOnStep === true, String(t.ringOnStep));
 
+  const landingGone = () => page.evaluate(() =>
+    getComputedStyle(document.getElementById('landingOverlay')).display === 'none');
   await page.evaluate(() => tourNext());
   await page.waitForTimeout(900);
-  ok('moving on dismisses the landing',
-     await page.evaluate(() => getComputedStyle(document.getElementById('landingOverlay')).display === 'none'));
+  ok('the landing stays gone as you move on', await landingGone());
   await page.evaluate(() => tourPrev());
   await page.waitForTimeout(800);
-  ok('stepping back brings the landing back',
-     await page.evaluate(() => getComputedStyle(document.getElementById('landingOverlay')).display !== 'none'));
+  ok('and stepping back does not resurrect it', await landingGone());
   ok('no console errors', errs.length === 0, errs.slice(0, 2).join(' | '));
   await ctx.close();
 }
@@ -274,8 +289,37 @@ console.log('\nBot-tour panel must not cover what it describes');
     await page.waitForTimeout(700);
     const n = await page.evaluate(() => _bt.length);
     const bad = [];
+    // Wait for the panel to STOP MOVING rather than sleeping a fixed 950ms and
+    // hoping. Each step scrolls its target into view and then repositions the
+    // panel; measuring mid-flight caught it over the target it was still moving
+    // away from, so this assertion failed on roughly every other run — at a
+    // different step each time, which is the signature of a race, not a layout
+    // bug. (It only started showing up because the file used to die before
+    // reaching this section at all.)
+    // Two matching reads is not enough: the panel sits still for a moment BEFORE
+    // its step transition starts, so a naive stability check returns during that
+    // lull and measures the OLD position — which made this worse, not better.
+    // Require the position to hold across several consecutive samples, after
+    // giving the transition time to begin. Verified against a deliberately
+    // generous 3s-per-step run, where no step exceeds its limit at all: the
+    // overlaps this used to report were never a layout fault.
+    const STILL_FOR = 4;      // consecutive identical samples
+    const settle = async () => {
+      await page.waitForTimeout(320);   // let the transition actually start
+      let last = null, same = 0;
+      for (let tries = 0; tries < 60; tries++) {
+        const now = await page.evaluate(() => {
+          const b = document.getElementById('btPanel').getBoundingClientRect();
+          return [Math.round(b.top), Math.round(b.left), Math.round(b.height), Math.round(window.scrollY)].join(',');
+        });
+        same = (now === last) ? same + 1 : 0;
+        if (same >= STILL_FOR) return;
+        last = now;
+        await page.waitForTimeout(90);
+      }
+    };
     for (let i = 0; i < n; i++) {
-      await page.waitForTimeout(950);
+      await settle();
       const r = await page.evaluate(() => {
         const s = _bt[_btIdx];
         const el = s.sel ? document.querySelector(s.sel) : null;

@@ -22,6 +22,13 @@ await page.goto(BASE, { waitUntil: 'networkidle' });
 await page.waitForTimeout(900);
 await page.evaluate(() => landingChoose('solo'));
 await page.waitForTimeout(700);
+// The first-visit welcome panel is painted over the board. Everything above
+// drives the premove functions directly, so it never mattered; the live-input
+// section at the bottom clicks real canvas coordinates, and those landed on
+// #bmWelcome instead of the knight — the geometry was right all along, the
+// board was simply covered.
+await page.evaluate(() => { try { bmWelcomeDismiss(); } catch (e) {} });
+await page.waitForTimeout(250);
 
 console.log('wiring:');
 const wiring = await page.evaluate(() => ({

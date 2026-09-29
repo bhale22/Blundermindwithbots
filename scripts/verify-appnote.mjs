@@ -38,12 +38,19 @@ async function probe(url, label) {
   const { state, errors } = await probe(BASE + '/', 'web');
   console.log('\n[browser context]');
   ok('bmIsAppContext() is false', state.appCtx === false);
-  ok('aboutAppNote exists', state.appNote.present);
-  ok('aboutAppNote is VISIBLE', state.appNote.hidden === false);
+  // The web-side notice — "there is an Android app, here is how to join the
+  // test" — is PARKED while the app is in closed testing (27d9651), so on the
+  // web there is nothing to reveal and bmRevealWebNotes has no web-only branch.
+  // These used to assert the notice was present, visible, and recruiting
+  // testers by Google account email.
+  //
+  // This is a park, not a deletion: when the app reaches open testing or
+  // production the element comes back and these assertions come back with it.
+  // Until then the honest check is that the web shows NO app notice at all —
+  // which is also what catches it reappearing by accident.
+  ok('the Android notice stays parked on the web', !state.appNote.present);
   ok('aboutWebNote stays hidden', state.webNote.hidden === true);
   ok('landingWebNote stays hidden', state.landing.hidden === true);
-  ok('note mentions closed testing', /closed testing/i.test(state.noteText));
-  ok('note asks for Play Store email', /google account email/i.test(state.noteText));
   ok('privacy policy link present', state.privacyHref);
   ok('no page errors', errors.length === 0, errors[0] || '');
 }
@@ -55,7 +62,10 @@ async function probe(url, label) {
   ok('bmIsAppContext() is true', state.appCtx === true);
   ok('aboutWebNote is VISIBLE', state.webNote.hidden === false);
   ok('landingWebNote is VISIBLE', state.landing.hidden === false);
-  ok('aboutAppNote stays HIDDEN (not circular)', state.appNote.hidden === true);
+  // Parked, so it cannot be circular in here either — but assert it is absent
+  // rather than merely hidden, since "hidden" on a missing element reads as
+  // undefined and would pass for the wrong reason.
+  ok('and is absent in the app too, not just hidden', !state.appNote.present);
   ok('no page errors', errors.length === 0, errors[0] || '');
 }
 
