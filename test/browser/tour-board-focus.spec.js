@@ -41,6 +41,7 @@ describe('board tour on a phone', { concurrency: 1 }, () => {
     await page.goto(server.baseUrl, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => typeof startTour === 'function');
     await H.dismissLanding(page);
+    if (opts.before) await opts.before(page);   // e.g. start a game first
     await page.evaluate(() => startTour());
     await page.waitForTimeout(800);
     return { ctx, page };
@@ -199,6 +200,197 @@ describe('board tour on a phone', { concurrency: 1 }, () => {
     }));
     assert.strictEqual(after.active, true, 'pressing the real button must not end the tour');
     assert.deepStrictEqual(after.lit, ['unprotected']);
+    await ctx.close();
+  });
+
+  // Walk to a step by title, pressing Next as a visitor would.
+  async function stepToTitle(page, title) {
+    for (let i = 0; i < 30; i++) {
+      const cur = await page.evaluate(() => ({
+        title: _tourSteps[_tourIdx].title,
+        last: _tourIdx === _tourSteps.length - 1,
+      }));
+      if (cur.title === title) return;
+      if (cur.last) break;
+      await page.evaluate(() => tourNext());
+      await page.waitForTimeout(420);
+    }
+    throw new Error('never reached the step "' + title + '"');
+  }
+
+  const ghostPixels = (page) => page.evaluate(() => {
+    const g = document.getElementById('ghostCanvas');
+    const d = g.getContext('2d').getImageData(0, 0, g.width, g.height).data;
+    let n = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++;
+    return n;
+  });
+
+  for (const phone of [true, false]) {
+    const where = phone ? 'phone' : 'desktop';
+
+    // A target that is laid out but off screen passes the filter in
+    // startTour() and then rings nothing. Ghost moves did that on every screen
+    // size, pointing into the Board settings panel while it was closed.
+    test('every step points at something on screen (' + where + ')', async () => {
+      const { ctx, page } = await openTour({ phone });
+      const n = await page.evaluate(() => _tourSteps.length);
+      const off = [];
+      for (let i = 0; i < n; i++) {
+        const s = await page.evaluate(() => {
+          const st = _tourSteps[_tourIdx];
+          const el = _tourTarget(st);
+          const r = el ? el.getBoundingClientRect() : null;
+          const x = r ? r.left + r.width / 2 : -1, y = r ? r.top + r.height / 2 : -1;
+          return { title: st.title, ok: x >= 0 && x <= innerWidth && y >= 0 && y <= innerHeight };
+        });
+        if (!s.ok) off.push(s.title);
+        await page.evaluate(() => tourNext());
+        await page.waitForTimeout(420);
+      }
+      assert.deepStrictEqual(off, [], 'these steps point off screen');
+      await ctx.close();
+    });
+
+    test('the ghost step draws real ghosts and pictures where to turn them on (' + where + ')', async () => {
+      const { ctx, page } = await openTour({ phone });
+      await stepToTitle(page, 'Ghost moves');
+      await page.waitForTimeout(300);
+      assert.strictEqual((await geometry(page)).ringOnBoard, true, 'the spotlight should be on the board');
+      assert.ok(await ghostPixels(page) > 1000, 'the ghosts should be drawn on the board');
+      const s = await page.evaluate(() => {
+        const shot = document.querySelector('#tourBody .tour-shot');
+        const h3 = previewBoard && previewBoard[5 * 8 + 7];
+        return {
+          exploring: premoveFrom === 6 * 8 + 7 && premoveTo === 5 * 8 + 7 &&
+                     !!(h3 && h3.color === 'w' && h3.piece === 'P'),
+          control: !!(shot && shot.querySelector('.ghost-one select')),
+          ids: shot ? shot.querySelectorAll('[id]').length : -1,
+          handlers: shot ? Array.from(shot.querySelectorAll('*')).filter((n) =>
+            Array.from(n.attributes).some((a) => /^on/i.test(a.name))).length : -1,
+          realUnique: document.querySelectorAll('#soloGhostDepth').length,
+        };
+      });
+      assert.ok(s.exploring, 'h3 should be shown being explored');
+      assert.ok(await page.evaluate(() => !!document.querySelector('#tourBody .tour-demo-note')),
+        'the card should say what the board is showing');
+      assert.ok(s.control, 'the card should picture the Ghost replies control');
+      assert.strictEqual(s.ids, 0, 'ids must not be duplicated into the document');
+      assert.strictEqual(s.handlers, 0, 'the picture must carry no handlers');
+      assert.strictEqual(s.realUnique, 1, 'the real control is still the only #soloGhostDepth');
+
+      // The picture shows the setting as the player has it, not a fixed image.
+      const shown = await page.evaluate(() => {
+        const real = document.getElementById('soloGhostDepth');
+        real.value = '8';
+        ghostSyncUI();
+        _renderTourStep();
+        const copy = document.querySelector('#tourBody .tour-shot .ghost-one');
+        const r = { on: copy.classList.contains('on'), choice: copy.querySelector('select').value };
+        real.value = '0';
+        ghostSyncUI();
+        return r;
+      });
+      assert.deepStrictEqual(shown, { on: true, choice: '8' });
+
+      // Leaving the step takes the explored move and its ghosts with it.
+      await page.evaluate(() => tourNext());
+      await page.waitForTimeout(400);
+      assert.strictEqual(await ghostPixels(page), 0, 'ghosts must not outlive their step');
+      assert.strictEqual(await page.evaluate(() => previewBoard), null, 'nor the explored move');
+      await ctx.close();
+    });
+
+    // Pressing an empty square PLAYS a move being explored, and on the ghost
+    // step the explored move is the tour's: a stray press put h3 into the move
+    // list behind the tour.
+    test('a stray press on the board during the ghost step plays nothing (' + where + ')', async () => {
+      const { ctx, page } = await openTour({ phone });
+      await stepToTitle(page, 'Ghost moves');
+      await page.waitForTimeout(300);
+      const input = phone ? H.touchDriver(await ctx.newCDPSession(page), page) : H.mouseDriver(page);
+      await input.tap(await H.squareCentre(page, 4, 3));   // e3, empty
+      await assertUntouched(page);
+      await ctx.close();
+    });
+
+    // A knight only the sample position has, moved in the real move list:
+    // the tour then put the old position back under a game that began 1.Nb5.
+    test('a piece on the sample position cannot be moved (' + where + ')', async () => {
+      const { ctx, page } = await openTour({ phone });
+      await stepToTitle(page, 'Board-vision indicators');
+      assert.strictEqual(await page.evaluate(() => _tourDidDemo), true,
+        'an idle board should get the sample position');
+      const input = phone ? H.touchDriver(await ctx.newCDPSession(page), page) : H.mouseDriver(page);
+      await input.drag(await H.squareCentre(page, 2, 3), await H.squareCentre(page, 1, 5));   // Nc3-b5
+      await assertUntouched(page);
+      await ctx.close();
+    });
+  }
+
+  // No move recorded, and once the tour is gone the board is the one it found.
+  async function assertUntouched(page) {
+    const mid = await page.evaluate(() => ({ moves: gameMovesAlgebraic.length, turn }));
+    assert.strictEqual(mid.moves, 0, 'no move may be played on the sample');
+    assert.strictEqual(mid.turn, 'w');
+    await page.evaluate(() => { if (_tourActive) endTour(); });
+    await page.waitForTimeout(300);
+    const end = await page.evaluate(() => ({
+      moves: gameMovesAlgebraic.length, exploring: !!previewBoard,
+      placement: boardToFen(board, turn, castling, epSq).split(' ')[0],
+    }));
+    assert.deepStrictEqual(end, {
+      moves: 0, exploring: false, placement: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR',
+    });
+  }
+
+  // "No moves yet" used to count as safe, so a tour at the start of a game put
+  // the sample on the board under a live game: the bot played its first move
+  // on the sample (Kh1), the tour restored the old position under it, and the
+  // bot never moved again.
+  test('a tour at the start of a bot game leaves the game alone', async () => {
+    const { ctx, page } = await openTour({ phone: false, before: (p) => p.evaluate(() => {
+      quickBotPick('1'); quickBotSetTime('5+0'); botSetPlayerColor('black'); quickBotStart();
+    }) });
+    await stepToTitle(page, 'Board-vision indicators');
+    assert.strictEqual(await page.evaluate(() => _tourDidDemo), false,
+      'no sample position under a live game');
+    await page.waitForFunction(() => gameMovesAlgebraic.length >= 1, null, { timeout: 20000 });
+
+    // The ghost step has no sample to explore, so it draws nothing and does
+    // not describe a demonstration that is not there.
+    await stepToTitle(page, 'Ghost moves');
+    await page.waitForTimeout(300);
+    const g = await page.evaluate(() => ({
+      exploring: !!previewBoard,
+      note: !!document.querySelector('#tourBody .tour-demo-note'),
+      picture: !!document.querySelector('#tourBody .tour-shot'),
+    }));
+    assert.deepStrictEqual(g, { exploring: false, note: false, picture: true });
+    assert.strictEqual(await ghostPixels(page), 0);
+
+    const before = await page.evaluate(() => boardToFen(board, turn, castling, epSq));
+    await page.evaluate(() => endTour());
+    await page.waitForTimeout(300);
+    const after = await page.evaluate(() => ({
+      fen: boardToFen(board, turn, castling, epSq), moves: gameMovesAlgebraic.length,
+    }));
+    assert.strictEqual(after.fen, before, 'ending the tour must not touch the game');
+    assert.ok(after.moves >= 1, 'the bot move stays played');
+    assert.notStrictEqual(after.fen.split(' ')[0], 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR',
+      'the bot move is on the real board');
+    await ctx.close();
+  });
+
+  // A standing challenge or an open room can turn into a game mid-tour, on
+  // the other player's click, with no warning here.
+  test('an online room keeps the sample off the board', async () => {
+    const { ctx, page } = await openTour({ phone: false, before: (p) => p.evaluate(() => {
+      mpRoomId = 'test-room'; mpMode = 'lobby-waiting';
+    }) });
+    await stepToTitle(page, 'Board-vision indicators');
+    assert.strictEqual(await page.evaluate(() => _tourDidDemo), false);
+    await page.evaluate(() => { endTour(); mpRoomId = null; mpMode = 'idle'; });
     await ctx.close();
   });
 

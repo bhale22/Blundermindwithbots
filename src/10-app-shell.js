@@ -2037,8 +2037,8 @@ const TOURS = {
     // or the filter in startTour() drops all of them. "Three ways" is about one
     // chip, so it is skipped on a phone where threats has been unpinned.
     { sel:'.ind-grid', selPhone:'#pinStrip', title:'Board-vision indicators', indSection:true,
-      body:'These overlays draw what a stronger player sees — threats, pins, forks and more. We’ll light each one up on a sample position so you can see exactly what it does.',
-      bodyPhone:'These overlays draw what a stronger player sees — threats, pins, forks and more. On a phone they live in this strip under the board: each chip is one overlay, and <b>+</b> opens the full list to choose from. We’ll light each one up on a sample position so you can see exactly what it does.' },
+      body:'These overlays draw what a stronger player sees — threats, pins, forks and more. We’ll light each one up on the board so you can see exactly what it does.',
+      bodyPhone:'These overlays draw what a stronger player sees — threats, pins, forks and more. On a phone they live in this strip under the board: each chip is one overlay, and <b>+</b> opens the full list to choose from. We’ll light each one up on the board so you can see exactly what it does.' },
     { sel:'#ib-threats', selPhone:'#pin-threats', title:'Three ways to show an indicator', indSection:true, modes:'threats',
       body:'Every indicator button carries three states, and its colour says which one it is in — the key at the top of this panel spells them out. Watch it cycle: <b>off</b> — <b>while exploring</b>, drawn only while you explore a move — <b>always on</b>, drawn all the time. <b>Click</b> to step through them. Or <b>press and hold</b> to peek: the overlay flips on if it was off (and off if it was on) for as long as you hold, then goes straight back. While the button is blue, nothing you are doing will stick.',
       bodyPhone:'Every chip carries three states, and its colour says which one it is in. Watch this one cycle: <b>off</b> — <b>while exploring</b>, drawn only while you explore a move — <b>always on</b>, drawn all the time. <b>Tap</b> a chip to step through them. Or <b>press and hold</b> to peek: the overlay flips on if it was off (and off if it was on) for as long as you hold, then goes straight back. While the chip is blue, nothing you are doing will stick.' },
@@ -2052,8 +2052,15 @@ const TOURS = {
     { sel:'.ind-grid', title:'Try them yourself', indSection:true, explore:true,
       body:'Thirteen overlays — and the fast way to learn them is to press one. <b>Any button in the highlighted panel</b> switches fully on, the board shows what it draws, and its explanation appears here. Go in any order, try as many as you like, then press Next when you have had enough.',
       bodyPhone:'Thirteen overlays — and the fast way to learn them is to press one. <b>Tap any chip above</b> and it switches fully on, the board shows what it draws, and its explanation appears here. Go in any order, try as many as you like, then press Next when you have had enough.' },
-    { sel:'#soloGhostDepth', title:'Ghost moves',
-      body:'Hover a destination square and the bot shows the most likely replies as faint “ghost” pieces — handy for training your calculation.' },
+    // The one ghost control is in Board settings, a panel the tour keeps
+    // closed, and ghosts are off until it is used — so this step brings both
+    // halves to the user: a copy of that control in the card, and real ghosts
+    // drawn on the demo position (see _tourGhostDemoStart).
+    { sel:'#cv', title:'Ghost moves', ghostDemo:true, wide:true,
+      body:'Pick up a piece and hover it over a square: after a moment, the bot’s likeliest replies appear as faint “ghost” pieces — outlined blue for its first choice, purple for its second. Ghosts start switched off: turn them on in <b>⚙ Board settings</b>, pictured above, where you also pick the engine.',
+      bodyPhone:'Drag a piece onto a square and hold it there: after a moment, the bot’s likeliest replies appear as faint “ghost” pieces — outlined blue for its first choice, purple for its second. With <b>👆 Tap to confirm</b> on, once they are up you can let go and they stay. Ghosts start switched off: turn them on in <b>⚙ Board settings</b>, pictured above, where you also pick the engine.',
+      // Only when the demo is on the board; during a game there is none.
+      demoNote:'On the board, White is weighing <b>h3</b>, and the ghosts say the bishop takes on f3 or drops back to e6.' },
     { sel:'#distPanel', title:'Maia move odds',
       body:'Everything else here shows you the position <i>before</i> you commit. This closes the loop <i>after</i>: expand <b>📊 Maia move odds</b> and it shows the move just played, from the position it was played in, against how a real human pool weighted the options there — one tall bar means the move was near-forced, several close bars mean it was a genuine decision. Playing a Maia bot reads the odds at <b>that bot’s rating</b>, so it is your actual opponent’s judgement, not a generic one. <b>Collapsed by default</b>; it reviews the move behind you rather than helping with the one in front of you.' },
     // #pbSettings is the phone bar's ⚙, which opens the same panel.
@@ -2086,10 +2093,26 @@ let _tourSteps = [], _tourIdx = 0, _tourActive = false, _tourShell = 'amateur';
 // ── Indicator demo: light each overlay on a sample position during the tour ──
 // A tactic-rich position so threats/pins/counts/weak-squares actually appear.
 const _TOUR_DEMO_FEN = 'r2q1rk1/ppp2ppp/2np1n2/2b1p1B1/2B1P1b1/2NP1N2/PPP2PPP/R2Q1RK1 w - - 0 1';
+// The move the Ghost moves step explores in that position, and the two replies
+// the ghost engine gives it: Stockfish's first and second choice at depth 8,
+// the level the dropdown restores to (depth 12 agrees). Canned so the step
+// never waits on an engine, and the step's text names them — change all three
+// together.
+const _TOUR_GHOST_DEMO = { move:'h2h3', replies:['g4f3', 'g4e6'] };
 let _tourSavedInd = null, _tourSavedFen = null, _tourDidDemo = false, _tourModeTimer = null;
 
+// The sample position is only for a board with nothing on it that matters.
+// "No moves yet" is not enough: a game is running from the moment it starts.
+// The bot can be thinking about White's first move (it played that move on the
+// sample board, then stalled when the tour put the old position back), an
+// online opponent can be about to send theirs, and a standing challenge can be
+// accepted mid-tour. In any of those, a replay, or a game under way, the tour
+// demonstrates on the board as it is instead.
 function _tourSafeToDemo(){
-  // Never disturb a live game — only swap in the demo position from a fresh/idle board.
+  if(typeof _isLiveGame === 'function' && _isLiveGame()) return false;
+  if(typeof mpRoomId !== 'undefined' && mpRoomId) return false;   // waiting, playing, or a rematch away
+  if(typeof clockActive !== 'undefined' && clockActive) return false;
+  if(typeof inReplay !== 'undefined' && inReplay) return false;
   return (typeof gameMovesAlgebraic === 'undefined' || !gameMovesAlgebraic.length ||
           (typeof gameOver !== 'undefined' && gameOver));
 }
@@ -2231,6 +2254,68 @@ function _tourRestoreBoard(){
   if(typeof render === 'function') render();
 }
 
+// ── Ghost replies, drawn for real on the demo position ───────────────────────
+// The demo move is explored the way a player explores one (startPreview: the
+// piece on its new square, its old square dimmed), and the replies go through
+// the same drawing code and styles as in play. Every move is checked for
+// legality first, so a changed demo position draws nothing rather than
+// nonsense. Only on the demo position — never over a live game.
+let _tourGhosting = false;
+
+function _tourGhostDemoStart(){
+  // startPreview on a live board is exactly what must never happen, so the
+  // safety test is asked again rather than trusted from when the sample went up.
+  if(!_tourDidDemo || !_tourSafeToDemo() || typeof startPreview !== 'function' ||
+     typeof _drawGhostReply !== 'function' || typeof uciToSq !== 'function') return;
+  const mv = uciToSq(_TOUR_GHOST_DEMO.move);
+  if(!mv || !legalMovesFor(mv.from, board, epSq, castling).includes(mv.to)) return;
+  // Only the ghosts: overlays set to "while exploring" would draw as well, all
+  // over the move being explored. The tour puts them back on the way out.
+  if(typeof IND !== 'undefined'){
+    Object.keys(IND).forEach(k => { IND[k].on = false; IND[k].pre = false; IND[k].pressing = false; });
+  }
+  if(typeof ibRefreshAll === 'function') ibRefreshAll();
+  startPreview(mv.from, mv.to);
+  _tourGhosting = true;
+  // A frame later: after the preview's own redraw, and after any resize has
+  // re-sized the ghost layer, which clears it.
+  requestAnimationFrame(() => {
+    if(!_tourGhosting || !previewBoard) return;
+    if(typeof clearGhostPieces === 'function') clearGhostPieces();
+    _TOUR_GHOST_DEMO.replies.forEach((u, rank) => {
+      const r = uciToSq(u);
+      if(r && legalMovesFor(r.from, previewBoard, previewEpSq, previewCastling).includes(r.to)){
+        _drawGhostReply(previewBoard, r.from, r.to, rank);
+      }
+    });
+  });
+}
+
+function _tourGhostDemoStop(){
+  if(!_tourGhosting) return;
+  _tourGhosting = false;
+  if(typeof clearGhostPieces === 'function') clearGhostPieces();
+  if(typeof clearPreview === 'function') clearPreview();
+  if(typeof render === 'function') render();
+}
+
+// While the sample position is up, the board is a picture, not a game. A move
+// made on it went into the real move list — a knight that exists only in the
+// sample, or on the ghost step the explored h3, which a press on an empty
+// square commits — and the tour then put the old position back underneath.
+// So presses on the board go nowhere until the real position is back. Capture
+// phase, so the board's own handlers never see them; a desktop click still
+// reaches the tour, which ends it as before. Touch is cancelled outright, as
+// the board itself does, so no mouse events or click are made from it.
+['mousedown', 'mouseup', 'touchstart', 'touchmove', 'touchend'].forEach(function(type){
+  document.addEventListener(type, function(e){
+    if(!_tourActive || !_tourDidDemo || !e.target.closest ||
+       !e.target.closest('#board-canvas-wrap')) return;
+    if(type.indexOf('touch') === 0 && e.cancelable) e.preventDefault();
+    e.stopPropagation();
+  }, { capture:true, passive:false });
+});
+
 // Started from the landing, the tour opens on the landing itself: the board
 // choice is the first decision the site asks for, and explaining it after
 // dismissing the page that offers it would be backwards. The step is prepended
@@ -2336,6 +2421,7 @@ function endTour(completed){
   if(_back) _back.style.display = 'none';
   _tourExploring = false;
   if(_tourModeTimer){ clearInterval(_tourModeTimer); _tourModeTimer = null; }
+  _tourGhostDemoStop();
   if(_tourShell === 'amateur') _tourRestoreBoard();
   try{ localStorage.setItem('bm_tour_' + _tourShell, '1'); }catch(e){}
   // Reaching the end offers the other tour; skipping out just closes. Passing
@@ -2387,6 +2473,58 @@ function _tourTarget(step){
   return sel ? document.querySelector(sel) : null;
 }
 
+// Ids would be duplicated into the document, and handlers would make a
+// decorative copy clickable. Strip both, and keep the copy out of the tab
+// order: it is hidden from assistive tech, so it must not take focus either.
+function _tourInert(clone){
+  [clone].concat(Array.from(clone.querySelectorAll('*'))).forEach(n => {
+    n.removeAttribute('id');
+    Array.from(n.attributes).forEach(a => { if(/^on/i.test(a.name)) n.removeAttribute(a.name); });
+    if(/^(BUTTON|SELECT|INPUT|A)$/.test(n.tagName)) n.setAttribute('tabindex', '-1');
+  });
+  return clone;
+}
+
+// Where ghosts are switched on, pictured: the Ghost replies group copied out of
+// Board settings under a copy of that panel's title, in whatever state the
+// player has it. Built from the real markup, so it cannot drift from it. The ⋯
+// stands for the groups above it in the panel.
+function _tourGhostShot(){
+  const ctl = document.getElementById('ib-ghost');
+  const group = ctl && ctl.closest('.bs-group');
+  if(!group) return '';
+  const copy = group.cloneNode(true);
+  // The heading and the control only: the multiplayer note and the Maia
+  // download prompt are passing states, not part of where the control is.
+  Array.from(copy.childNodes).forEach(n => {
+    const keep = n.nodeType === 1 &&
+      (n.classList.contains('bs-head') || n.classList.contains('ghost-one'));
+    if(!keep) n.remove();
+  });
+  // A <select>'s current choice is a property, which cloning does not carry.
+  const real = document.getElementById('soloGhostDepth');
+  const sel = copy.querySelector('select');
+  if(real && sel){
+    Array.from(sel.options).forEach((o, i) => o.toggleAttribute('selected', i === real.selectedIndex));
+  }
+  _tourInert(copy);
+  const title = document.querySelector('#boardSettingsPanel .panel-title');
+  const wrap = document.createElement('div');
+  wrap.className = 'tour-replica tour-shot';
+  wrap.setAttribute('aria-hidden', 'true');
+  const card = document.createElement('div');
+  card.className = 'tour-shot-card';
+  const hd = document.createElement('div');
+  hd.className = 'tour-shot-hd';
+  hd.textContent = title ? title.textContent : '⚙ Board settings';
+  const gap = document.createElement('div');
+  gap.className = 'tour-shot-gap';
+  gap.textContent = '⋯';
+  card.append(hd, gap, copy);
+  wrap.appendChild(card);
+  return wrap.outerHTML;
+}
+
 // A non-interactive copy of the control this step is about, in whatever state
 // the step just put it in — so the lit button in the panel matches the overlay
 // now on the board.
@@ -2394,15 +2532,7 @@ function _tourControlReplica(step){
   const _sel = _tourSel(step);
   const src = _sel ? document.querySelector(_sel) : null;
   if(!src) return '';
-  const clone = src.cloneNode(true);
-  // Ids would be duplicated into the document, and handlers would make a
-  // decorative copy clickable. Strip both.
-  clone.removeAttribute('id');
-  clone.removeAttribute('onclick');
-  clone.querySelectorAll('[id]').forEach(n => n.removeAttribute('id'));
-  clone.querySelectorAll('*').forEach(n => {
-    Array.from(n.attributes).forEach(a => { if(/^on/i.test(a.name)) n.removeAttribute(a.name); });
-  });
+  const clone = _tourInert(src.cloneNode(true));
   const wrap = document.createElement('div');
   wrap.className = 'tour-replica';
   wrap.setAttribute('aria-hidden', 'true');
@@ -2434,13 +2564,15 @@ function _renderTourStep(){
   if(_tourModeTimer){ clearInterval(_tourModeTimer); _tourModeTimer = null; }
   if(_tourShell === 'amateur'){
     if(step.explore !== true) _tourExploreStop();
-    if(step.indSection){
+    _tourGhostDemoStop();          // the explored move and its ghosts are one step's
+    if(step.indSection || step.ghostDemo){
       _tourEnsureDemo();
       if(step.explore) _tourExploreStart();
       else if(step.modes) _tourCycleModes(step.modes);
+      else if(step.ghostDemo){ _tourShowIndicator(null); _tourGhostDemoStart(); }
       else _tourShowIndicator(step.ind || null);
     } else if(_tourDidDemo){
-      _tourRestoreBoard();         // left the indicator section — restore the board
+      _tourRestoreBoard();         // left the demo steps — restore the board
     } else {
       _tourShowIndicator(null);    // earlier steps: keep the board free of overlays
     }
@@ -2454,6 +2586,7 @@ function _renderTourStep(){
   const _tp = document.getElementById('tourPanel');
   if(_tp){
     _tp.classList.toggle('tour-explore', !!step.explore);
+    _tp.classList.toggle('tour-wide', !!step.wide);
     if(!step.explore) _tp.style.maxHeight = '';   // inline cap is explore-only
   }
   if(rect && rect.width > 0){
@@ -2473,7 +2606,9 @@ function _renderTourStep(){
   const bEl = document.getElementById('tourBody');
   if(bEl){
     if(step.explore) _tourExploreSeedBody(step);
-    else bEl.innerHTML = (boardFocus ? _tourControlReplica(step) : '') + _tourBody(step);
+    else bEl.innerHTML = (boardFocus ? _tourControlReplica(step) : '') +
+      (step.ghostDemo ? _tourGhostShot() : '') + _tourBody(step) +
+      (step.demoNote && _tourGhosting ? '<p class="tour-demo-note">' + step.demoNote + '</p>' : '');
   }
   const pv = document.getElementById('tourPrev'); if(pv) pv.style.visibility = _tourIdx === 0 ? 'hidden' : 'visible';
   const nx = document.getElementById('tourNext'); if(nx) nx.textContent = (_tourIdx === _tourSteps.length - 1) ? 'Done ✓' : 'Next →';

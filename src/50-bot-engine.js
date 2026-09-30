@@ -3328,7 +3328,7 @@ async function ghostShowForSquare(fromSq, toSq) {
     var uciHi = topHi[0][0];
     var mvHi = uciToSq(uciHi);
     if (!mvHi || mvHi.from == null || mvHi.to == null) return;
-    _drawGhost(hypBoard, mvHi.from, mvHi.to, 0.50, 'rgba(74,159,212,0.90)');
+    _drawGhostReply(hypBoard, mvHi.from, mvHi.to, 0);
 
     // Second ghost: 1500's top move; when both Elos agree, fall back to
     // 1500's runner-up — but only if it's plausible (>10%). When the top
@@ -3341,7 +3341,7 @@ async function ghostShowForSquare(fromSq, toSq) {
       var mvLo = uciToSq(uciLo);
       if (mvLo && mvLo.from != null && mvLo.to != null &&
           !(mvLo.from === mvHi.from && mvLo.to === mvHi.to)) {
-        _drawGhost(hypBoard, mvLo.from, mvLo.to, 0.25, 'rgba(180,140,255,0.60)');
+        _drawGhostReply(hypBoard, mvLo.from, mvLo.to, 1);
       }
     }
     return;
@@ -3370,7 +3370,7 @@ async function ghostShowForSquare(fromSq, toSq) {
   if (!mv1 || mv1.from == null || mv1.to == null) return;
 
   // Draw first response (more opaque — primary suggestion)
-  _drawGhost(hypBoard, mv1.from, mv1.to, 0.50, 'rgba(74,159,212,0.90)');
+  _drawGhostReply(hypBoard, mv1.from, mv1.to, 0);
 
   // Fetch second response, explicitly excluding first move via UCI searchmoves
   var uci2 = await sfGhostGetMove(hypFen, ghostDepth(), uci1, hypBoard, hypTurn, -1, castling);
@@ -3382,9 +3382,21 @@ async function ghostShowForSquare(fromSq, toSq) {
     if (mv2 && mv2.from != null && mv2.to != null &&
         !(mv2.from === mv1.from && mv2.to === mv1.to)) {
       // Draw second response (more transparent — secondary suggestion)
-      _drawGhost(hypBoard, mv2.from, mv2.to, 0.25, 'rgba(180,140,255,0.60)');
+      _drawGhostReply(hypBoard, mv2.from, mv2.to, 1);
     }
   }
+}
+
+// The two ghosts' looks: the first choice stronger and outlined blue, the
+// second fainter and outlined purple. One table, so the tour's demonstration
+// of them (_tourGhostDemoStart) can only ever look like the real thing.
+var GHOST_STYLES = [
+  { alpha: 0.50, outline: 'rgba(74,159,212,0.90)' },
+  { alpha: 0.25, outline: 'rgba(180,140,255,0.60)' },
+];
+function _drawGhostReply(bd, fromSq, toSq, rank) {
+  var st = GHOST_STYLES[rank] || GHOST_STYLES[0];
+  _drawGhost(bd, fromSq, toSq, st.alpha, st.outline);
 }
 
 function _drawGhost(bd, fromSq, toSq, alpha, outlineColor) {

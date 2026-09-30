@@ -1308,6 +1308,25 @@ canvas{
 /* The "?" opens help — meaningless on a copy, and a tap target that does
    nothing is worse than no tap target. */
 .tour-replica .ib-help { display:none; }
+/* A control that lives in a panel the tour keeps closed, pictured in place:
+   the panel's own group, under a copy of the panel's title, framed like the
+   panel so it reads as "in there". Full card width, unlike a lone button. */
+.tour-shot { max-width:none; }
+/* A step carrying such a picture gets a wider card, so the copied control has
+   room for its label (the real panel is wider still). Phones are full width. */
+#tourPanel.tour-wide { width:340px; }
+.tour-shot-card {
+  background:var(--bg-panel2);border:1px solid var(--border);border-radius:8px;
+  padding:0 10px 9px;
+}
+.tour-shot-hd {
+  font-size:11px;font-weight:600;color:var(--text-primary);
+  margin:0 -10px 4px;padding:6px 10px 5px;border-bottom:0.5px solid var(--border);
+}
+.tour-shot-gap { font-size:11px;line-height:1;color:var(--text-dim);margin:0 0 4px; }
+.tour-shot .bs-group { margin-bottom:0; }
+/* What the board is showing, when it shows the demo rather than your game. */
+.tour-demo-note { margin:7px 0 0; }
 .tour-actions { display:flex;align-items:center;gap:8px; }
 .tour-btn { font-size:11px;padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);cursor:pointer;transition:all 0.15s; }
 .tour-btn:hover { border-color:var(--accent);color:var(--accent); }
@@ -1935,10 +1954,11 @@ body.pro-mode .bs-vision{ display:none !important; }
 .bs-row:hover{border-color:var(--accent);}
 
 /* Ghost replies inside the settings panel: the control came from a grid two
-   columns wide, so it needs its own width rule here. */
-#boardSettingsPanel .ghost-one{width:100%;}
-#boardSettingsPanel .ghost-one .ib-main{height:auto;min-height:40px;}
-#boardSettingsPanel #soloGhostDepth{width:100%;margin-top:4px;}
+   columns wide, so it needs its own width rule here. The tour's picture of the
+   panel (.tour-shot) is the same control, so it takes the same rules. */
+#boardSettingsPanel .ghost-one, .tour-shot .ghost-one{width:100%;}
+#boardSettingsPanel .ghost-one .ib-main, .tour-shot .ghost-one .ib-main{height:auto;min-height:40px;}
+#boardSettingsPanel #soloGhostDepth, .tour-shot .ghost-one select{width:100%;margin-top:4px;}
 
 /* ── Board settings launcher ────────────────────────────────────────────────
    Moved out of the top of the column and re-sited between the two overlay
@@ -1991,13 +2011,14 @@ body.pro-mode .bs-vision{ display:none !important; }
   box-shadow:0 0 0 1.5px var(--st-on-ring,rgba(34,168,90,0.18));
 }
 .ghost-one.on .ib-main{background:transparent;color:var(--st-on-fg,#14713c);}
-#soloGhostDepth{
+/* .tour-shot select: the tour's copy of this control carries no id. */
+#soloGhostDepth, .tour-shot .ghost-one select{
   flex:1;min-width:0;font-family:inherit;font-size:10px;
   border:0;border-left:0.5px solid var(--border2);border-radius:0;
   background:transparent;color:var(--text-secondary);cursor:pointer;padding:2px 3px;
 }
-.ghost-one.on #soloGhostDepth{color:var(--st-on-fg,#14713c);border-left-color:var(--st-on-bd,rgba(34,168,90,0.45));}
-#soloGhostDepth:disabled{opacity:0.55;cursor:default;}
+.ghost-one.on #soloGhostDepth, .tour-shot .ghost-one.on select{color:var(--st-on-fg,#14713c);border-left-color:var(--st-on-bd,rgba(34,168,90,0.45));}
+#soloGhostDepth:disabled, .tour-shot .ghost-one select:disabled{opacity:0.55;cursor:default;}
 
 /* ── Indicator utility row ──────────────────────────────────────────────────
    Clear, Hide, Peek and Show all read as one family. Three of the four do
