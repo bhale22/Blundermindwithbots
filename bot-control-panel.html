@@ -857,6 +857,47 @@ body.rs-highvis{
   font-weight:500;
   letter-spacing:0.01em;
 }
+/* High-vis lifts this text to 11px. It has to be a FLOOR, and !important made
+   it a fixed size instead: it also pulled DOWN everything that sizes these
+   larger — Journal's 15–16.5px labels and values, and the phone layer's 12px
+   labels and 14px values. High-vis and Journal are both the defaults, so a
+   first-time phone user saw every slider readout ("2s" for Move Timing's
+   Duration) at 11px. So the lift is withheld exactly where something larger
+   already applies: Journal for the five classes it sizes, and phones for the
+   labels and values. Everything else keeps it. */
+body.rs-highvis .ctrl-hint,
+body.rs-highvis .attr-desc,
+body.rs-highvis .cc-headers span,
+body.rs-highvis .cc-mm,
+body.rs-highvis .attr-left,
+body.rs-highvis .attr-right,
+body.rs-highvis .day-vals,
+body.rs-highvis .dual-range-labels,
+body.rs-highvis:not(.fj) .formula-body,
+body.rs-highvis:not(.fj) .sec-sub,
+body.rs-highvis:not(.fj) .dlbl{font-size:11px !important;}
+/* On a phone the floor is 12px: the phone layer already sets most of this
+   text at 11px, so an 11px floor lifted nothing there. The greyed-out
+   explanations and notes join it; they are what says why a control is off. */
+@media (max-width:760px){
+  body.rs-highvis .ctrl-hint,
+  body.rs-highvis .attr-desc,
+  body.rs-highvis .cc-headers span,
+  body.rs-highvis .cc-mm,
+  body.rs-highvis .attr-left,
+  body.rs-highvis .attr-right,
+  body.rs-highvis .day-vals,
+  body.rs-highvis .dual-range-labels,
+  body.rs-highvis .tog-note,
+  body.rs-highvis .inert-why,
+  body.rs-highvis:not(.fj) .formula-body,
+  body.rs-highvis:not(.fj) .sec-sub,
+  body.rs-highvis:not(.fj) .dlbl{font-size:12px !important;}
+}
+@media (min-width:761px){
+  body.rs-highvis:not(.fj) .ctrl-lbl,
+  body.rs-highvis:not(.fj) .ctrl-val{font-size:11px !important;}
+}
 body.rs-highvis .ctrl-hint,
 body.rs-highvis .attr-desc,
 body.rs-highvis .formula-body,
@@ -869,7 +910,7 @@ body.rs-highvis .ctrl-val,
 body.rs-highvis .attr-left,
 body.rs-highvis .attr-right,
 body.rs-highvis .day-vals,
-body.rs-highvis .dual-range-labels{font-size:11px !important;line-height:1.45;}
+body.rs-highvis .dual-range-labels{line-height:1.45;}
 body.rs-highvis .cc-field,body.rs-highvis .cc-select{font-size:12px !important;}
 /* Selection cards are headings for the controls they govern, but High-vis
    only ever lifted .ctrl-lbl/.ctrl-val to 11px — every card name and blurb
@@ -1774,6 +1815,13 @@ body.fj .picon{font-weight:500;}
   .mode-stack .mdesc{font-size:11px;}
   .sub-title{font-size:11px;}
   .info-pop{font-size:11.5px;}
+  /* The two that never got a phone size: the preset row's buttons ran 8px,
+     and the section ⓘ was a 15px circle with 9px type. */
+  .preset-btn{font-size:12px;}
+  .info-btn{width:24px;height:24px;font-size:12px;}
+  /* The time-pressure charts' captions, scale buttons and stats ran 8–10px. */
+  .chart-title,.formula-title,.xsbtn,.leg-item{font-size:11px;}
+  .stat-v{font-size:13px;}
 
   /* ── Control rows stack when the label + slider + value + ⓘ won't fit ──
      Keeps the slider full-width and thumb-reachable instead of crushing it

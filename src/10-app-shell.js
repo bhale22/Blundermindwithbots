@@ -575,7 +575,13 @@ function _syncPanelTheme(t) {
     '--text-dim':       light ? t.textDim : t.textSec,
     '--border':         t.border,
     '--amber':          ac.main,
-    '--amber-bright':   ac.bright,
+    // On a light surface "bright" has to mean MORE contrast, not a lighter
+    // shade. It is the colour of every value readout and emphasised word in
+    // the panel, and the lighter amber (#c8922a) measured 1.6:1 on a selected
+    // card, so the Duration readout under Fixed interval was all but
+    // invisible. The dark shade reads at about 4.7:1 or better on every light
+    // theme. Dark themes keep the bright one, which is what it was made for.
+    '--amber-bright':   light ? ac.dim : ac.bright,
     '--amber-dim':      ac.dim,
     '--amber-glow':     ac.glow,
     '--amber-glow-s':   ac.glowS,

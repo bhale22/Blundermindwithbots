@@ -121,48 +121,55 @@
   <!-- 1 -->
   <h2 id="engine">1 · Engine Selection</h2>
   <p>The Engine section determines <em>which brain</em> generates move candidates and <em>how strong</em> it plays.
-  All engines share the same Centipawmeter strength dial (ELO 600–2600).</p>
-  <div class="grid g2">
+  There are three engines, and one strength dial — the Elometer — serves all of them: Maia runs ELO 600–2600,
+  Flounder ELO 600–2400.</p>
+  <div class="grid g3">
     <div class="card">
-      <h4>Maia (Neural Net)</h4>
+      <h4>Maia 3 (Neural Net)</h4>
       <p>A neural network trained on tens of millions of human Lichess games. Maia produces a ranked probability
       distribution over legal moves rather than a single best move, which makes it uniquely suited for human-like,
-      stylistic play. Strength is set directly in ELO — the network itself is selected to match.</p>
+      stylistic play. Strength is set directly in ELO — the network itself is conditioned on it. A one-time 44&nbsp;MB
+      download; until it is downloaded, a Maia bot plays Flounder at the same rating.</p>
       <div class="chips"><span class="chip">ELO 600–2600</span><span class="chip">Probabilistic output</span><span class="chip">Human-pattern moves</span></div>
     </div>
     <div class="card">
-      <h4>Stockfish (Traditional)</h4>
-      <p>Stockfish 18 Lite (WASM). Alpha-beta search with NNUE evaluation. Strength is controlled via Skill Level
-      (0–20) mapped from the ELO dial. Deterministic by default; temperature sampling can be applied on top of
-      Stockfish's MultiPV output to add variety.</p>
-      <div class="chips"><span class="chip">Skill 0–20</span><span class="chip">Alpha-beta + NNUE</span><span class="chip">MultiPV ready</span></div>
-    </div>
-  </div>
-  <div class="grid g3" style="margin-top:16px">
-    <div class="card">
-      <h4>Lichess-Maia</h4>
-      <p>Opens from the Lichess Masters or Lichess community database for a configurable number of moves, then hands
-      off to Maia for the midgame. The opening ELO and Maia ELO are set separately.</p>
-      <div class="chips"><span class="chip">Explorer + Maia</span></div>
-    </div>
-    <div class="card">
-      <h4>Lichess-SF</h4>
-      <p>Same opening-book phase as Lichess-Maia, then falls back to Stockfish. Good for bots that should know their
-      theory but play engine-style after the opening.</p>
-      <div class="chips"><span class="chip">Explorer + SF</span></div>
+      <h4>Flounder (built on Stockfish)</h4>
+      <p>Stockfish&nbsp;18 lite does the chess; Flounder decides which of Stockfish's evaluated moves to play. Each turn
+      one Stockfish search scores every legal move, Flounder draws how much the move should <em>cost</em> from a
+      human-error curve measured for the chosen rating, and plays the legal move nearest that cost — so a 1200 Flounder
+      makes mistakes of the size, and at the rate, a 1200 player does. Each rating was measured by playing it against
+      Maia at the same rating. Nothing to download.</p>
+      <div class="chips"><span class="chip">ELO 600–2400</span><span class="chip">Stockfish evaluation</span><span class="chip">Measured against Maia</span></div>
     </div>
     <div class="card">
       <h4>Hybrid</h4>
-      <p>Blends Maia and Stockfish by weight for every move. A 70/30 Maia/SF split plays mostly human-style but with
-      occasional engine precision.</p>
-      <div class="chips"><span class="chip">Weight blend</span></div>
+      <p>Blends Flounder and Maia by weight, move by move, each slot at its own rating. A 70/30 Maia/Flounder split
+      plays mostly human-style, with Flounder's rated choices mixed in.</p>
+      <div class="chips"><span class="chip">Weight blend</span><span class="chip">Per-slot ratings</span></div>
     </div>
   </div>
+  <div class="card" style="margin-top:16px">
+    <h4>Lichess Opening Book (a switch, not an engine)</h4>
+    <p>Puts an opening book in front of whichever engine is chosen. While the position is still in the Lichess explorer
+    at the book's rating, the bot plays what real players of that rating chose, in proportion to how often they chose
+    it; once the game leaves the book, Maia or Flounder takes over for the rest of the game. The book's rating is
+    pinned to the Elometer by default, or can be set on its own — a master-level opening on a club-level middlegame,
+    or the reverse.</p>
+    <div class="chips"><span class="chip">Explorer + Maia</span><span class="chip">Explorer + Flounder</span></div>
+  </div>
+  <p class="note">Flounder is not a Stockfish release and is not endorsed by or affiliated with the Stockfish project.
+  The name and the mistakes are Blundermind's; the chess is Stockfish's. See the <a href="/credits#flounder">credits</a>
+  for the full attribution and licence.</p>
 
   <!-- 2 -->
   <h2 id="temperature">2 · Move Sampling — Temperature</h2>
-  <p>Temperature reshapes Maia's probability distribution before sampling. It has no effect when using pure Stockfish
-  without MultiPV.</p>
+  <p>On Maia, temperature reshapes Maia's probability distribution before sampling — the formula and presets below.</p>
+  <p>On Flounder there is no probability distribution to flatten, so the same slider sets the <strong>shape of its
+  mistakes</strong> instead, and the panel labels it that way (<em>Error shape</em>: Steady · Neutral · Streaky ·
+  Wild). Toward Wild, Flounder plays more moves that cost nothing at all, punctuated by rarer but bigger blunders;
+  toward Steady, its mistakes are smaller and more even. Neutral leaves the measured rating exactly as calibrated;
+  away from Neutral the rating moves too — an estimated 100–150 ELO at the ends, not yet measured — so the readout
+  shows the shape parameter it is actually setting.</p>
   <div class="formula">p'(m) = p(m)^(1/T) / Σ p(i)^(1/T)
 
 T &lt; 1 (Focused): sharpens the distribution — top-ranked moves get even more weight
@@ -184,21 +191,25 @@ argmax (Top move): always picks the single highest-probability move (determinist
   </div>
   <p class="note">The slider accepts any value from 0.1 to 4.0. The live chart shows the full per-move pipeline on a
   reference position: Maia's raw distribution → after temperature → after the personality reweighting scaled by the CP
-  Budget. Note that temperature governs only the sampled 70% of moves — 30% of the time the bot plays its top-ranked
-  choice outright.</p>
+  Budget. Note that on Maia, temperature governs only the sampled 70% of moves — 30% of the time the bot plays its
+  top-ranked choice outright. Flounder has no such split: every move is drawn from its error curve.</p>
 
   <!-- 3 -->
   <h2 id="personality">3 · Personality — The Centipawmeter &amp; Attractors</h2>
-  <p class="lead">The personality layer operates on the ranked list of candidate moves produced by the Maia engine.</p>
+  <p class="lead">On Maia, the personality layer operates on the ranked list of candidate moves Maia produces. On
+  Flounder it works inside a band: Flounder's rating picks a move, the band holds every legal move within the CP Budget
+  of that move's cost, and the attractors choose among them — so a strong personality can pull a Flounder bot toward
+  better moves as well as worse ones.</p>
 
   <h3>Centipawn Budget</h3>
   <p>The Centipawmeter sets the personality's allowance: the most real, <strong>engine-calculated</strong> centipawns a
   personality-driven pick may lose versus Maia's most-popular move. It does double duty — it scales how hard the
-  attractor sliders push, and it is enforced literally: when the personality's pick differs from the popular move,
-  Stockfish evaluates both, and a pick over budget is rejected (the bot walks down its preference list until a move
-  fits). At 0 cp personality traits are effectively disabled; at 300 cp the bot can genuinely sacrifice a knight to
-  satisfy its style. On each move the bot plays its top-ranked choice outright 30% of the time and temperature-samples
-  the other 70% — opinionated, but never perfectly predictable.</p>
+  attractor sliders push, and on Maia it is enforced literally: when the personality's pick differs from the popular
+  move, a quick Stockfish evaluation checks both, and a pick over budget is rejected (the bot walks down its
+  preference list until a move fits). On Flounder the budget is the width of the band described above, so no pick can
+  leave it. At 0 cp personality traits are effectively disabled; at 300 cp the bot can genuinely sacrifice a knight to
+  satisfy its style. On each move a Maia bot plays its top-ranked choice outright 30% of the time and
+  temperature-samples the other 70% — opinionated, but never perfectly predictable.</p>
 
   <h3>Hard Floor</h3>
   <p>A separate slider (always ≥ Budget) that is the absolute backstop on <em>everything else</em> — temperature
@@ -207,7 +218,10 @@ argmax (Top move): always picks the single highest-probability move (determinist
   beginner-level bot can genuinely hang its queen, which keeps games winnable and fun for novices. The Engine panel
   shows both values beside the Elometer, with a one-click recommendation matched to the chosen ELO. Budget and Floor
   get separate ELO-scaled recommendations: Budget is the persistent per-move style spend (10&nbsp;cp at master level
-  up to ~120&nbsp;cp for novices), while the Floor bounds the worst single move (80&nbsp;cp up to ~520&nbsp;cp).</p>
+  up to ~120&nbsp;cp for novices), while the Floor bounds the worst single move (80&nbsp;cp up to ~520&nbsp;cp).
+  The Floor applies to Maia moves only, and the panel greys it out for a bot that only ever plays Flounder, saying
+  why: Flounder chooses its moves <em>by</em> Stockfish's evaluation, and its occasional real mistake is the rating
+  working as measured, so capping it afterwards would remove exactly what the rating is supposed to produce.</p>
 
   <h3>Move Distribution Range</h3>
   <p>A dual-thumb slider that selects a band within the candidate list ranked by Maia <em>probability</em> — how often
@@ -236,7 +250,7 @@ argmax (Top move): always picks the single highest-probability move (determinist
       <tr><td>Fort Knox</td><td>Glass Cannon</td><td>Fort Knox</td><td>Sums total defender count across all own pieces. Positive = maximise defensive support; negative = expose pieces aggressively.</td></tr>
       <tr><td>Gambito</td><td>Gambit Shy</td><td>Gambito</td><td>Opening phase only (first 20 moves). Boosts ECO-matched gambit lines; falls back to pawn-sacrifice detection (pawn moving to an opponent-attacked, undefended square).</td></tr>
       <tr><td>Trade Seeker</td><td>Trade Avoider</td><td>Trade Seeker</td><td>Reweights by capture and threat value. Positive = boost captures and new threats; negative = avoid exchanges.</td></tr>
-      <tr><td>Structure</td><td>Loose structure</td><td>Rigid structure</td><td>Pawn structure delta via Stockfish's pawn evaluation (isolated, doubled, pawn islands). Positive = consolidate; negative = open, mobile structure.</td></tr>
+      <tr><td>Structure</td><td>Loose structure</td><td>Rigid structure</td><td>Pawn-structure penalty counted before and after the move (pawn islands, doubled and isolated pawns); only the bot's own pawn moves can change it. Positive = consolidate; negative = open, mobile structure.</td></tr>
       <tr><td>Hustle</td><td>Overthinker</td><td>Coffeehouse Hustler</td><td>Scales think-time allocation: t = base × (1 − v × 0.15). Also feeds directly into the degradation curve input — a hustler at +5 thinks ~0.3 s and sees steep ELO drops.</td></tr>
       <tr><td>Luck</td><td>Good day</td><td>Bad day</td><td>Shifts the sampling window within Maia's ranked list. Positive = sample from the tail (off-form, lower-probability moves); negative = sample from the top of the distribution.</td></tr>
       <tr><td>Panicky</td><td>Calm under pressure</td><td>Panicky</td><td>Scales the steepness of the time-pressure ELO degradation curve. Positive = sharper ELO drop in the final seconds; negative = flat curve regardless of clock.</td></tr>
@@ -352,7 +366,7 @@ argmax (Top move): always picks the single highest-probability move (determinist
     <tbody>
       <tr><td>Fixed interval</td><td>Constant pause between all moves. Set the delay in seconds. Simplest and most predictable.</td></tr>
       <tr><td>Instantaneous</td><td>Responds at engine speed (effectively 0 delay). Useful for analysis or speed variants.</td></tr>
-      <tr><td>Complexity scaled</td><td>Think time scales with position complexity (measured as Stockfish MultiPV variance). Tactical positions get more time; forced sequences get less. Mimics human time allocation.</td></tr>
+      <tr><td>Complexity scaled</td><td>Think time scales with position complexity (measured as the spread of Stockfish's top evaluations). Tactical positions get more time; forced sequences get less. Mimics human time allocation.</td></tr>
       <tr><td>Mirror user</td><td>Bot matches the human's move rhythm ± a configurable offset. If you played fast the bot plays fast; if you took 30 seconds it will too. Creates a psychologically realistic feel.</td></tr>
     </tbody>
   </table>
@@ -496,12 +510,12 @@ argmax (Top move): always picks the single highest-probability move (determinist
     <thead><tr><th>Goal</th><th>Key settings</th></tr></thead>
     <tbody>
       <tr><td>Human-like club player</td><td>Maia 1200–1500 · Neutral temp · Luck +2 · Panicky +1 · Fixed timing 3–8 s</td></tr>
-      <tr><td>Tactical slugger</td><td>Maia or SF 1800 · Varied temp · Attacker +4 · Chaos +3 · Trade +3</td></tr>
-      <tr><td>Positional grinder</td><td>SF 1600 · Top move or Focused temp · Structure +3 · Fort Knox +2 · Hustle −3</td></tr>
+      <tr><td>Tactical slugger</td><td>Maia or Flounder 1800 · Varied temp · Attacker +4 · Chaos +3 · Trade +3</td></tr>
+      <tr><td>Positional grinder</td><td>Flounder 1600 · Steady error shape · Structure +3 · Fort Knox +2 · Hustle −3</td></tr>
       <tr><td>Gambit specialist</td><td>Maia 1400 · Varied temp · Gambito +4 · Chaos +2 · Repertoire openings</td></tr>
       <tr><td>Time-trouble simulator</td><td>Any engine · Pressure degradation enabled · Panicky +3 · Hustle +3</td></tr>
-      <tr><td>Openings trainer</td><td>Lichess-SF 2200 · Repertoire with target lines · Depth 25 · Instant timing</td></tr>
-      <tr><td>Endgame trainer</td><td>SF 2000 · Top move · Pawn-advancement custom control (Endgame gate)</td></tr>
+      <tr><td>Openings trainer</td><td>Flounder 2200 + Lichess Opening Book · Repertoire with target lines · Depth 25 · Instant timing</td></tr>
+      <tr><td>Endgame trainer</td><td>Flounder 2000 · Steady error shape · Pawn-advancement custom control (Endgame gate)</td></tr>
       <tr><td>Bad-day Grandmaster</td><td>Maia 2400 · Wild temp · Luck +5 · Panicky +2 · "Grandmaster Bad Day" preset</td></tr>
     </tbody>
   </table>
