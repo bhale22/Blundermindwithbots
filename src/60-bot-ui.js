@@ -1346,10 +1346,10 @@ function _landingApplyShellStyle(s) {
 //
 // Deliberately NOT auto-tour. This panel already names every path through the
 // product, and every button on it is someone choosing one; firing a tour
-// anyway after they picked Explore would override a choice just made. Its
-// Overview link opens the page that describes both boards and offers both
-// tours (bmOverviewOpen). The landing (Expert board) is a different front door
-// and keeps its own auto-tour.
+// anyway after they picked Explore would override a choice just made. Its lead
+// button, "Overview · Getting Started", opens the page that describes both
+// boards and offers a tour of each (bmOverviewOpen). The landing (Expert
+// board) is a different front door and keeps its own auto-tour.
 
 function bmWelcomeIsOpen() {
   const w = document.getElementById('bmWelcome');
@@ -1436,9 +1436,10 @@ function bmWelcomeInit() {
     bmWelcomeChoose('solo');
     document.removeEventListener('keydown', onEsc);
   });
-  // Focus the primary action so keyboard and screen-reader users land on it.
-  const play = document.querySelector('#bmWelcome .bmw-play');
-  if (play) setTimeout(() => { try { play.focus({ preventScroll: true }); } catch (e) {} }, 60);
+  // Focus the primary action (the Overview) so keyboard and screen-reader
+  // users land on it.
+  const lead = document.querySelector('#bmWelcome .bmw-ov');
+  if (lead) setTimeout(() => { try { lead.focus({ preventScroll: true }); } catch (e) {} }, 60);
 }
 document.addEventListener('DOMContentLoaded', bmWelcomeInit);
 
@@ -1522,46 +1523,48 @@ window.addEventListener('keydown', function (e) {
 }, true);
 
 // Every way out of the page leaves the front door too, whichever one it was:
-//   'blundermind' → the Visualization board,  'buildabot' → the Expert board,
-//   'tour-board'  → the overlay tour,          'tour-bot'  → the builder tour.
+//   'blundermind' → the Visualization board,
+//   'builder'     → the Bot Builder, over the Expert (pro) board,
+//   'tour-board'  → the Visualization board's tour,
+//   'tour-pro'    → the Expert (pro) board's tour.
+// There is deliberately no way onto the bare pro board: by itself it is a
+// plain board that explains nothing. The builder runs its own tour the first
+// time it opens, and the pro board tour's outro offers the builder tour too.
 function bmOverviewGo(dest) {
   bmOverviewClose();
   if (bmWelcomeIsOpen()) bmWelcomeDismiss();
-  if (dest === 'tour-board' || dest === 'tour-bot') {
-    landingStartTour(dest === 'tour-bot' ? 'bot' : 'board');
+  if (dest === 'tour-board' || dest === 'tour-pro') {
+    landingStartTour(dest === 'tour-pro' ? 'pro' : 'board');
     return;
   }
-  landingSetShell(dest === 'buildabot' ? 'pro' : 'amateur');
+  const builder = (dest === 'builder');
+  landingSetShell(builder ? 'pro' : 'amateur');
   const lov = document.getElementById('landingOverlay');
-  if (lov && lov.style.display !== 'none') landingDismiss();
+  const fromLanding = !!lov && lov.style.display !== 'none';
+  if (fromLanding) landingDismiss();
+  // Past whichever door's fade-out (landing 420ms, welcome 260ms), so the
+  // builder does not open underneath it.
+  if (builder) setTimeout(function () { openBotModal(); }, fromLanding ? 440 : 280);
 }
 
-// 'board' runs the overlay tour for whichever shell is active; 'bot' opens the
-// panel and runs the tour that lives inside its iframe.
+// Leave the landing, show the board this tour is about, then start on its
+// first step: 'board' tours the Visualization board, 'pro' the Expert board.
+// TOURS.pro points at chrome that only exists in pro mode, so the shell has to
+// switch before startTour() filters the steps.
+//
+// This used to keep the landing up and open with a step explaining the board
+// choice. However well that reads on paper, in use it looks like the tour
+// never started — you press "tour of the visualization board" and you are
+// still staring at the landing page you just chose to leave. Raising the tour
+// above the landing made the panel visible but did not fix the impression,
+// because the landing is still what fills the screen.
 function landingStartTour(which) {
-  try {
-    localStorage.setItem('bm_shell', (typeof proMode !== 'undefined' && proMode) ? 'pro' : 'amateur');
-  } catch (e) {}
-  if (which === 'bot') {
-    landingDismiss();
-    setTimeout(function () { openBotModal(); startBotTour(); }, 340);
-  } else {
-    // Mirror the bot branch: leave the landing, show the board this tour is
-    // about, then start on its first step.
-    //
-    // This used to keep the landing up and open with a step explaining the
-    // board choice. However well that reads on paper, in use it looks like the
-    // tour never started — you press "tour of the visualization board" and you
-    // are still staring at the landing page you just chose to leave. Raising
-    // the tour above the landing made the panel visible but did not fix the
-    // impression, because the landing is still what fills the screen.
-    if (typeof landingSetShell === 'function') landingSetShell('amateur');
-    landingDismiss();
-    // Past the landing's 420ms fade, so the tour opens on the board itself.
-    setTimeout(function () {
-      if (typeof startTour === 'function') startTour();
-    }, 460);
-  }
+  if (typeof landingSetShell === 'function') landingSetShell(which === 'pro' ? 'pro' : 'amateur');
+  landingDismiss();
+  // Past the landing's 420ms fade, so the tour opens on the board itself.
+  setTimeout(function () {
+    if (typeof startTour === 'function') startTour();
+  }, 460);
 }
 
 // Force the panel's own tour. openBotModal() also sends botTourAuto, which the

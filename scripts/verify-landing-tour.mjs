@@ -5,8 +5,9 @@
 //    watermark only — never on the title glyph as well
 //  2 Blundermind landing is untouched: pawn title, no watermark
 //  3 the landing copy is short enough to leave the watermark room
-//  4 "Overview" opens a page describing both boards, with a way into each
-//    and a tour of each; both tours start from it
+//  4 "Overview" opens a page describing both boards, with the way into
+//    Blundermind and the Bot Builder (never the bare pro board) and a tour of
+//    each board; every one of them starts from it
 //  5 finishing the board tour offers the bot tour (and vice versa), while
 //    skipping just closes
 //  6 the cross-frame handshake: panel -> parent -> board tour
@@ -113,12 +114,16 @@ console.log('\nOverview on the landing');
              tours: [...el.querySelectorAll('.bmo-tour')].map(txt) };
   });
   ok('the Overview line opens the Overview', shown.open);
-  ok('it offers a way into each board', shown.gos.length === 2 &&
+  // Build-A-Bot has no Go button onto the bare pro board: it goes into the
+  // builder, which runs its own tour the first time it opens.
+  ok('it offers Blundermind and the Bot Builder', shown.gos.length === 2 &&
      /Blundermind for visualization training/.test(shown.gos[0]) &&
-     /Build-A-Bot pro board for customized bot building and playing without visualization aids/.test(shown.gos[1]),
+     /Go to the Bot Builder/.test(shown.gos[1]),
      JSON.stringify(shown.gos));
-  ok('and a tour of each', shown.tours.length === 2 &&
-     /tour of Blundermind visualizations/i.test(shown.tours[0]) && /tour of Bot Builder/i.test(shown.tours[1]),
+  ok('and nothing onto the bare pro board', !shown.gos.some(g => /Go to Build-A-Bot pro board/.test(g)),
+     JSON.stringify(shown.gos));
+  ok('and a tour of each board', shown.tours.length === 2 &&
+     /tour of Blundermind visualizations/i.test(shown.tours[0]) && /tour of the pro board/i.test(shown.tours[1]),
      JSON.stringify(shown.tours));
 
   await page.click('.bmo-back');
@@ -169,6 +174,48 @@ console.log('\nOverview on the landing');
   await page.evaluate(() => tourPrev());
   await page.waitForTimeout(800);
   ok('and stepping back does not resurrect it', await landingGone());
+  ok('no console errors', errs.length === 0, errs.slice(0, 2).join(' | '));
+  await ctx.close();
+}
+
+console.log('\nOverview → the pro board tour, and the Bot Builder');
+{
+  // From the Visualization board's door (the welcome), so the tour has to
+  // switch shells itself: TOURS.pro points at chrome only the pro board has.
+  let { ctx, page, errs } = await landing('amateur');
+  await page.click('#bmWelcome .bmw-ov');
+  await page.waitForTimeout(200);
+  await page.click(`button[onclick="bmOverviewGo('tour-pro')"]`);
+  await page.waitForTimeout(1100);
+  const t = await page.evaluate(() => ({
+    pro: proMode, shell: _tourShell, n: _tourSteps.length,
+    overlay: getComputedStyle(document.getElementById('tourOverlay')).display,
+    welcome: document.getElementById('bmWelcome').hidden,
+  }));
+  ok('the pro board tour switches to the pro board', t.pro === true);
+  ok('and runs all four of its steps', t.overlay === 'block' && t.shell === 'pro' && t.n === 4, JSON.stringify(t));
+  ok('with the welcome gone', t.welcome === true);
+  ok('no console errors', errs.length === 0, errs.slice(0, 2).join(' | '));
+  await ctx.close();
+
+  ({ ctx, page, errs } = await landing('pro'));
+  await page.click('.landing-overview-btn');
+  await page.waitForTimeout(200);
+  await page.click(`button[onclick="bmOverviewGo('builder')"]`);
+  await page.waitForTimeout(1600);
+  const b = await page.evaluate(() => ({
+    pro: proMode,
+    modal: getComputedStyle(document.getElementById('botModal')).display,
+    landing: getComputedStyle(document.getElementById('landingOverlay')).display,
+  }));
+  ok('Go to the Bot Builder opens the builder', b.modal === 'block', b.modal);
+  ok('over the pro board, with the landing gone', b.pro === true && b.landing === 'none', JSON.stringify(b));
+  const f = page.frames().find(x => x.url().includes('bot-control-panel'));
+  if (f) {
+    await page.waitForTimeout(900);
+    ok('and the builder runs its own tour on a first visit',
+       await f.evaluate(() => getComputedStyle(document.getElementById('botTourOverlay')).display === 'block'));
+  } else ok('the panel iframe is present', false);
   ok('no console errors', errs.length === 0, errs.slice(0, 2).join(' | '));
   await ctx.close();
 }

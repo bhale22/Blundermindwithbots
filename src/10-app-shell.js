@@ -491,7 +491,7 @@ const BG_THEMES = {
   burgundy:   {bg:'#1f0d0d', panel:'#150808', panel2:'#0a0404', border:'#3a1a1a', border2:'#220d0d', text:'#dcc0c0', textDim:'#b38181', textSec:'#ad8484', name:'Burgundy'},
   slate:      {bg:'#0d1520', panel:'#0a1018', panel2:'#060a10', border:'#1a2a3a', border2:'#101820', text:'#c0ccd8', textDim:'#7d93a8', textSec:'#84929f', name:'Slate'},
 };
-let currentBoardTheme = 'blue';
+let currentBoardTheme = 'slate';
 let currentBgTheme = 'lightblue';
 
 function applyBoardTheme(name) {
@@ -755,26 +755,29 @@ function openHelp(key, e) {
 const PIECE_VALUE = {K:0,Q:9,R:5,B:3,N:3,P:1};
 
 const IND = {
-  // Indicators INITIALIZE to preview-on (`pre:true`) so a first-time user sees
-  // them in action while exploring a move and learns how they work. Nothing is
-  // always-on (`on:false`). ibRefreshAll() syncs every button's highlight to
-  // these flags, so what the buttons show always matches what actually renders —
-  // and the user can switch any of them off. A few overlays init off because
-  // they're noisier or gated by their own checkbox (xray/weak*/battery).
-  checkthreats:  {on:false,pre:true, pressing:false},
+  // A first visit starts with exactly three overlays set to "while exploring"
+  // (`pre:true`): Threats & captures, Threat/defense counts and Unprotected —
+  // enough to show what the overlays are for without covering the first move
+  // someone explores in nine layers. Nothing is always-on (`on:false`), and
+  // every other button starts off and is one tap away. ibRefreshAll() syncs
+  // every button's highlight to these flags, so what the buttons show always
+  // matches what actually renders. A returning visitor gets their own saved
+  // state instead (bm_ind, loadPrefs).
+  checkthreats:  {on:false,pre:false,pressing:false},
   threats:       {on:false,pre:true, pressing:false},
   // captures merged into threats button
   unprotected:   {on:false,pre:true, pressing:false},
-  pins:          {on:false,pre:true, pressing:false},
-  forksw:        {on:false,pre:true, pressing:false},
-  forksb:        {on:false,pre:true, pressing:false},
-  discoveredopp: {on:false,pre:true, pressing:false},
-  discoveredself:{on:false,pre:true, pressing:false},
+  pins:          {on:false,pre:false,pressing:false},
+  forksw:        {on:false,pre:false,pressing:false},
+  forksb:        {on:false,pre:false,pressing:false},
+  discoveredopp: {on:false,pre:false,pressing:false},
+  discoveredself:{on:false,pre:false,pressing:false},
   xray:          {on:false,pre:false,pressing:false},
   overloaded:    {on:false,pre:false,pressing:false},
   weakw:         {on:false,pre:false,pressing:false},
   weakb:         {on:false,pre:false,pressing:false},
-  rings:         {on:false,pre:true, pressing:false},
+  // No button and no drawing ("Halos disabled" in drawPieceUnder), so off.
+  rings:         {on:false,pre:false,pressing:false},
   counts:        {on:false,pre:true, pressing:false},
   influence:     {on:false,pre:true, pressing:false},
   battery:       {on:false,pre:false,pressing:false},
@@ -1117,7 +1120,10 @@ function visIsPhone(){
 // has to be too, or a chip would come back in a state you never left it in.
 const PIN_STORE = 'bm_pins';
 let pinnedInds = [];               // keys, in the order they were added
-const PIN_FIRST_RUN = ['threats','counts','unprotected','pins'];
+// First visit: the "start with these" four as chips beside the board. Three
+// draw while you explore a move; Pins sits there switched off, one tap away —
+// the same as its button in the desktop sidebar.
+const PIN_FIRST_RUN = [['threats',2],['counts',2],['unprotected',2],['pins',1]];
 
 function visState(key){
   const ind = IND[key];
@@ -1161,10 +1167,7 @@ function pinLoad(){
   } else if(Array.isArray(stored)){
     entries = stored.map(function(k){ return [k, 1]; });   // older format
   } else {
-    // First visit: the four the panel calls "start with these", set to draw
-    // while you explore a move. Enough to show what the overlays are for
-    // without covering a first board in thirteen layers.
-    entries = PIN_FIRST_RUN.map(function(k){ return [k, 2]; });
+    entries = PIN_FIRST_RUN.map(function(e){ return e.slice(); });
   }
   entries.forEach(function(pair){
     const k = pair[0], st = pair[1] | 0;
@@ -4822,6 +4825,8 @@ function ghostToggle(){
 // ── Show All button — hold to see board with every indicator active ──────────
 let showAllActive = false;
 let showAllSavedStates = {};
+let showAllSavedChecks = {};
+const SHOW_ALL_CHECKS = ['cbBattery','cbQPins','cbEnPassant','cbInfluenceToggle'];
 
 function showAllDown(e){
   if(e) e.preventDefault();
@@ -4842,10 +4847,13 @@ function showAllDown(e){
     IND[k].pre = true;
     IND[k].pressing = false;
   });
-  // Also turn on all checkboxes (battery, queen pins, etc.)
-  ['cbBattery','cbQPins','cbEnPassant','cbInfluenceToggle'].forEach(id=>{
+  // Also turn on all checkboxes (battery, queen pins, etc.) — remembering how
+  // they were, because this is a hold that springs back, and it used to leave
+  // them all ticked afterwards (Influence, off for a first visit, stuck on).
+  showAllSavedChecks = {};
+  SHOW_ALL_CHECKS.forEach(id=>{
     const el=document.getElementById(id);
-    if(el) el.checked=true;
+    if(el){ showAllSavedChecks[id]=el.checked; el.checked=true; }
   });
   const btn=document.getElementById('btnShowAll');
   if(btn){btn.style.borderColor='var(--accent)';btn.style.color='var(--accent)';}
@@ -4863,6 +4871,11 @@ function showAllUp(){
       IND[k].pressing = showAllSavedStates[k].pressing;
     }
   });
+  Object.keys(showAllSavedChecks).forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.checked=showAllSavedChecks[id];
+  });
+  showAllSavedChecks = {};
   const btn=document.getElementById('btnShowAll');
   if(btn){btn.style.borderColor='';btn.style.color='';}
   ibRefreshAll(); indApply();
