@@ -1344,12 +1344,12 @@ function _landingApplyShellStyle(s) {
 // builder. The old #welcomeCard this replaces offered three options and no way
 // to actually play, which is why it went back to being the landing.
 //
-// Deliberately NOT auto-tour. This panel IS the tour's first step — it is the
-// first thing a visitor reads, and it names every path through the product —
-// so "Take a tour" here CONTINUES that tour rather than starting one, and
-// every other button is someone choosing to leave it. Firing a tour anyway
-// after they picked Explore would override a choice just made. The landing
-// (Expert board) is a different front door and keeps its own auto-tour.
+// Deliberately NOT auto-tour. This panel already names every path through the
+// product, and every button on it is someone choosing one; firing a tour
+// anyway after they picked Explore would override a choice just made. Its
+// Overview link opens the page that describes both boards and offers both
+// tours (bmOverviewOpen). The landing (Expert board) is a different front door
+// and keeps its own auto-tour.
 
 function bmWelcomeIsOpen() {
   const w = document.getElementById('bmWelcome');
@@ -1392,8 +1392,6 @@ function bmWelcomeChoose(mode) {
       if (typeof openBotModal === 'function') openBotModal();
     } else if (mode === 'mp') {
       if (typeof openPanel === 'function') openPanel('mpPanel');
-    } else if (mode === 'tour') {
-      if (typeof startTour === 'function') startTour();
     } else if (mode === 'pgn') {
       const el = document.getElementById('pgnFileInput');
       if (el) el.click();
@@ -1480,25 +1478,67 @@ function landingChoose(mode) {
   }
 }
 
-// ── Guided tours from the landing ────────────────────────────────────────────
-// "Take a guided tour" asks which one first rather than guessing: the board
-// overlays and the bot builder are separate skills, and which one a visitor
-// wants depends on why they came.
-function landingTourPick(show) {
-  const el = document.getElementById('landingTourPick');
-  if (!el) return;
-  el.hidden = !show;
-  if (show) {
-    const first = el.querySelector('.ltp-opt');
-    if (first) first.focus();
-    el.scrollIntoView({ block: 'nearest' });
+// ── Overview — the orientation page on both front doors ─────────────────────
+// Opened from the landing's Overview button and the welcome panel's Overview
+// link, over whichever of the two is up; closing it goes back there. It
+// replaced starting a tour from those doors: the board overlays and the bot
+// builder are separate skills, and a first-time visitor needs to know what the
+// two boards are before a tour of either one means anything. Both tours are on
+// the page itself.
+function bmOverviewIsOpen() {
+  const o = document.getElementById('bmOverview');
+  return !!o && !o.hidden;
+}
+
+function bmOverviewOpen() {
+  const o = document.getElementById('bmOverview');
+  if (!o) return;
+  // Match the door underneath: carbon over the Expert landing, otherwise the
+  // theme, with bright accent text when the theme is a dark one.
+  const lov = document.getElementById('landingOverlay');
+  const overExpert = !!lov && lov.style.display !== 'none' && lov.classList.contains('landing-expert');
+  let dark = false;
+  try { dark = !_isLightTheme(BG_THEMES[currentBgTheme] || BG_THEMES.navy); } catch (e) {}
+  o.classList.toggle('bmo-expert', overExpert);
+  o.classList.toggle('bmo-dark', !overExpert && dark);
+  o.hidden = false;
+  o.scrollTop = 0;
+  const go = o.querySelector('.bmo-go');
+  if (go) setTimeout(() => { try { go.focus({ preventScroll: true }); } catch (e) {} }, 60);
+}
+
+function bmOverviewClose() {
+  const o = document.getElementById('bmOverview');
+  if (o) o.hidden = true;
+}
+
+// Esc closes the Overview and only the Overview. Capture phase on window, so
+// it runs before the welcome panel's own Esc listener on document — which
+// would otherwise take the same keypress as "dismiss the welcome too".
+window.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape' || !bmOverviewIsOpen()) return;
+  e.stopImmediatePropagation();
+  bmOverviewClose();
+}, true);
+
+// Every way out of the page leaves the front door too, whichever one it was:
+//   'blundermind' → the Visualization board,  'buildabot' → the Expert board,
+//   'tour-board'  → the overlay tour,          'tour-bot'  → the builder tour.
+function bmOverviewGo(dest) {
+  bmOverviewClose();
+  if (bmWelcomeIsOpen()) bmWelcomeDismiss();
+  if (dest === 'tour-board' || dest === 'tour-bot') {
+    landingStartTour(dest === 'tour-bot' ? 'bot' : 'board');
+    return;
   }
+  landingSetShell(dest === 'buildabot' ? 'pro' : 'amateur');
+  const lov = document.getElementById('landingOverlay');
+  if (lov && lov.style.display !== 'none') landingDismiss();
 }
 
 // 'board' runs the overlay tour for whichever shell is active; 'bot' opens the
 // panel and runs the tour that lives inside its iframe.
 function landingStartTour(which) {
-  landingTourPick(false);
   try {
     localStorage.setItem('bm_shell', (typeof proMode !== 'undefined' && proMode) ? 'pro' : 'amateur');
   } catch (e) {}
@@ -2191,9 +2231,13 @@ window.addEventListener('message', function(e) {
         // Both slot types now carry a real ELO: a Flounder slot is a rating,
         // exactly like a Maia slot, rather than a skill level pretending to be
         // one. `level` stays for the plain-search fallback path only.
-        elo:    isSf ? (s.flounderElo != null ? Math.round(s.flounderElo)
+        // Clamped to the range each engine is set over (the panel's slot boxes
+        // enforce the same), so a config saved before they did — a "20" typed
+        // into a Maia slot — cannot reach the engine as a rating.
+        elo:    isSf ? (s.flounderElo != null
+                        ? Math.max(FLOUNDER_ELO_MIN, Math.min(FLOUNDER_ELO_MAX, Math.round(s.flounderElo)))
                         : flounderEloFromLegacyLevel(Math.min(20, Math.max(1, (s.sfLevel || s.level || 5) * 2))))
-                     : (s.elo || 1500),
+                     : Math.max(600, Math.min(2600, s.elo || 1500)),
         level:  isSf ? Math.min(20, Math.max(1, (s.sfLevel || s.level || 5) * 2))
                      : Math.round((s.elo || 1500) / 200),
         weight: s.pct || 0

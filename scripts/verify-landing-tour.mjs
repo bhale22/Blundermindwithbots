@@ -5,7 +5,8 @@
 //    watermark only — never on the title glyph as well
 //  2 Blundermind landing is untouched: pawn title, no watermark
 //  3 the landing copy is short enough to leave the watermark room
-//  4 "Take a guided tour" asks which one, and both options start a tour
+//  4 "Overview" opens a page describing both boards, with a way into each
+//    and a tour of each; both tours start from it
 //  5 finishing the board tour offers the bot tour (and vice versa), while
 //    skipping just closes
 //  6 the cross-frame handshake: panel -> parent -> board tour
@@ -90,7 +91,7 @@ console.log('\nBlundermind landing — unchanged');
   await ctx.close();
 }
 
-console.log('\nTour picker on the landing');
+console.log('\nOverview on the landing');
 {
   // The landing overlay is the PRO front door. The two products get different
   // first impressions (00-head.html): buildabotchess/pro opens the full landing,
@@ -100,30 +101,36 @@ console.log('\nTour picker on the landing');
   // inside an overlay that is display:none by design, and took the rest of the
   // file down with it.
   const { ctx, page, errs } = await landing('pro');
-  ok('picker starts hidden',
-     await page.evaluate(() => document.getElementById('landingTourPick').hasAttribute('hidden')));
-  await page.click('.landing-tour-btn');
+  ok('the Overview starts hidden',
+     await page.evaluate(() => document.getElementById('bmOverview').hidden));
+  await page.click('.landing-overview-btn');
   await page.waitForTimeout(200);
   const shown = await page.evaluate(() => {
-    const el = document.getElementById('landingTourPick');
-    return { open: !el.hasAttribute('hidden'),
-             opts: [...el.querySelectorAll('.ltp-opt')].map(o => o.textContent.replace(/\s+/g, ' ').trim()) };
+    const el = document.getElementById('bmOverview');
+    const txt = n => n.textContent.replace(/\s+/g, ' ').trim();
+    return { open: !el.hidden,
+             gos: [...el.querySelectorAll('.bmo-go')].map(txt),
+             tours: [...el.querySelectorAll('.bmo-tour')].map(txt) };
   });
-  ok('tapping the tour line opens the picker', shown.open);
-  ok('it offers exactly two tours', shown.opts.length === 2, JSON.stringify(shown.opts));
-  ok('one is the board', /visualization/i.test(shown.opts.join(' ')));
-  ok('one is the bot builder', /bot-building/i.test(shown.opts.join(' ')));
+  ok('the Overview line opens the Overview', shown.open);
+  ok('it offers a way into each board', shown.gos.length === 2 &&
+     /Blundermind for visualization training/.test(shown.gos[0]) &&
+     /Build-A-Bot pro board for customized bot building and playing without visualization aids/.test(shown.gos[1]),
+     JSON.stringify(shown.gos));
+  ok('and a tour of each', shown.tours.length === 2 &&
+     /tour of Blundermind visualizations/i.test(shown.tours[0]) && /tour of Bot Builder/i.test(shown.tours[1]),
+     JSON.stringify(shown.tours));
 
-  await page.click('.ltp-cancel');
+  await page.click('.bmo-back');
   await page.waitForTimeout(150);
-  ok('"Not now" closes it',
-     await page.evaluate(() => document.getElementById('landingTourPick').hasAttribute('hidden')));
+  ok('Back closes it and leaves the landing up',
+     await page.evaluate(() => document.getElementById('bmOverview').hidden &&
+       getComputedStyle(document.getElementById('landingOverlay')).display !== 'none'));
 
-  // Board tour from the picker — opens ON the landing, explaining the choice
-  // the landing itself offers.
-  await page.click('.landing-tour-btn');
+  // Board tour from the Overview.
+  await page.click('.landing-overview-btn');
   await page.waitForTimeout(150);
-  await page.evaluate(() => landingStartTour('board'));
+  await page.click(`button[onclick="bmOverviewGo('tour-board')"]`);
   await page.waitForTimeout(900);
   const t = await page.evaluate(() => ({
     overlay: getComputedStyle(document.getElementById('tourOverlay')).display,
@@ -345,7 +352,7 @@ console.log('\nPhone — 390x844');
 {
   const { ctx, page, errs } = await landing('pro', 390, 844, true);
   const p = await page.evaluate(() => {
-    const b = document.querySelector('.landing-tour-btn');
+    const b = document.querySelector('.landing-overview-btn');
     const mark = document.querySelector('.bab-mark');
     return {
       btnH: Math.round(b.getBoundingClientRect().height),
@@ -354,16 +361,18 @@ console.log('\nPhone — 390x844');
       overflow: document.documentElement.scrollWidth > window.innerWidth,
     };
   });
-  ok('tour line is a 44px target', p.btnH >= 44, String(p.btnH));
+  ok('Overview line is a 44px target', p.btnH >= 44, String(p.btnH));
   ok('its label clears the 11px floor', p.btnFs >= 11, String(p.btnFs));
   ok('watermark is scaled down', p.markScaled !== 'none', p.markScaled);
   ok('no horizontal overflow', !p.overflow);
 
-  await page.click('.landing-tour-btn');
+  await page.click('.landing-overview-btn');
   await page.waitForTimeout(250);
-  const opts = await page.evaluate(() =>
-    [...document.querySelectorAll('.ltp-opt')].map(o => Math.round(o.getBoundingClientRect().height)));
-  ok('both tour options are 44px targets', opts.length === 2 && opts.every(h => h >= 44), JSON.stringify(opts));
+  const opts = await page.evaluate(() => ({
+    hs: [...document.querySelectorAll('#bmOverview .bmo-go, #bmOverview .bmo-tour')].map(o => Math.round(o.getBoundingClientRect().height)),
+    over: document.getElementById('bmOverview').scrollWidth > window.innerWidth }));
+  ok('every Overview action is a 44px target', opts.hs.length === 4 && opts.hs.every(h => h >= 44), JSON.stringify(opts.hs));
+  ok('the Overview has no horizontal overflow', !opts.over);
   ok('no console errors', errs.length === 0, errs.slice(0, 2).join(' | '));
   await ctx.close();
 }

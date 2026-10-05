@@ -1853,6 +1853,17 @@ function proRenderNotation(){
   else el.scrollTop = el.scrollHeight;
 }
 
+// The rating the bot's engine is set to, as the Expert board shows it: the
+// Flounder dial for Flounder (book or not), the Elometer for Maia. A Hybrid
+// blend plays a different rating move by move and has no one number, so it
+// shows none rather than an average it never plays at.
+function proBotRatingText(){
+  if(typeof botTab === 'undefined' || botTab === 'hybrid') return '';
+  if(botTab === 'sf' || botTab === 'lcsf') return 'ELO ' + flounderSliderElo();
+  const r = parseInt(maia3SelectedRating, 10);
+  return Number.isFinite(r) ? 'ELO ' + r : '';
+}
+
 // Mirror live game state into the pro side column (clocks, names, turn, moves)
 function proSync(){
   if(!proMode) return;
@@ -1880,6 +1891,16 @@ function proSync(){
   if(nb) nb.textContent = topIsWhite ? bName : wName;
   if(at) at.textContent = topIsWhite ? '♔' : '♚';
   if(ab) ab.textContent = topIsWhite ? '♚' : '♔';
+  // The bot's rating, beside its name, for the whole of a bot game. The name
+  // carries it only when it was generated ("Flounder 1200"); a bot with a
+  // name of its own showed no rating anywhere on this board.
+  const vsBot = (typeof botActive !== 'undefined') && botActive;
+  let botRating = '';
+  if(vsBot){ try{ botRating = proBotRatingText(); }catch(e){} }
+  const botOnTop = vsBot && ((botPlayerColor === 'white') !== topIsWhite);
+  const rt = document.getElementById('proRatingTop'), rb = document.getElementById('proRatingBottom');
+  if(rt) rt.textContent = botOnTop ? botRating : '';
+  if(rb) rb.textContent = (vsBot && !botOnTop) ? botRating : '';
   // Material advantage
   if(typeof computeMaterial === 'function' && typeof board !== 'undefined'){
     const mat = computeMaterial(board);

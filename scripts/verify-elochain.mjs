@@ -61,8 +61,14 @@ let s = await state();
 ok(s.linked === true, 'the book starts pinned to the engine');
 ok(s.cls && s.aria === 'true', 'the pin renders its linked state');
 ok(s.book === s.gauge, `book and engine start in step (book ${s.book} · gauge ${s.gauge})`);
-// Pinned means ONE rating, so the box is not a second place to type one.
-ok(s.ro === true, 'and the box is read-only while pinned');
+// Pinned means ONE rating. It used to follow that the box was read-only, but
+// then the one place a visitor looks for the book's rating could not be typed
+// in (Ben, Oct 2026). Now it is a second handle on the same number: typing
+// there moves the Elometer too.
+ok(s.ro === false, 'the box can be typed in while pinned');
+await type('book-elo', '1900');
+s = await state();
+ok(s.gauge === 1900 && s.book === 1900, 'typing in the pinned box moves the Elometer too (gauge ' + s.gauge + ')');
 
 console.log('\npinned — the engine drives the book:');
 await page.evaluate(() => setElo(2200));
