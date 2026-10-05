@@ -1543,8 +1543,11 @@ function render(){
   };
   for(let i=0;i<8;i++){
     if(_boardFlipped){
-      // files sit on display row 7; flipped, file (7-i) is at display col (7-i)
-      _coord(String.fromCharCode(97+7-i),(480-((i+1)*SQ))+4,7*SQ+SQ-4, 7, 7-i);
+      // files sit on display row 7; flipped, file i is at display col (7-i)
+      // (sqCanvas mirrors c → 7-c), so h reads at the left and a at the right.
+      // This drew letter (7-i) there, which labelled the flipped board a..h
+      // left to right — every game played as Black had its files backwards.
+      _coord(String.fromCharCode(97+i),(480-((i+1)*SQ))+4,7*SQ+SQ-4, 7, 7-i);
       // ranks sit on display col 7 when flipped
       _coord(String(i+1),480-SQ+4,i*SQ+14, i, 7);
     } else {

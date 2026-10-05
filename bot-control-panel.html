@@ -1477,6 +1477,57 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 .ctrl.inert .ctrl-lbl, .attr-group.inert .attr-head{opacity:0.55;}
 .cpg-cell.inert{opacity:0.45;}
 @media (max-width:760px){ .inert-why{font-size:11px;} }
+
+/* ── Time pressure: off because Move Timing sets the pace ─────────────────
+   The reason lives in another section, so the one-line .inert-why was not
+   enough: it read as a footnote and the curves below looked merely broken.
+   A banner with a heading and a real button instead, at the top of the
+   section, so why it is off and how to turn it on are the first things seen. */
+.tp-gate{
+  display:none;margin:0 0 14px;padding:12px 14px;
+  border:1px solid var(--border-amber);border-left:3px solid var(--amber);
+  border-radius:var(--r);background:var(--amber-glow);
+}
+.tp-gate-t{font-family:var(--font-u);font-size:12px;font-weight:600;color:var(--amber-bright);margin-bottom:4px;}
+.tp-gate-b{font-family:var(--font-m);font-size:10px;line-height:1.6;color:var(--text-secondary);}
+.tp-gate-b strong{color:var(--text-primary);}
+.tp-gate-go{
+  margin-top:10px;padding:7px 14px;border-radius:var(--r);cursor:pointer;
+  border:1px solid var(--amber);background:var(--amber);color:var(--carbon);
+  font-family:var(--font-u);font-size:11px;font-weight:600;letter-spacing:0.04em;
+  transition:filter 0.15s;
+}
+.tp-gate-go:hover{filter:brightness(1.1);}
+.tp-gate-go:focus-visible{outline:2px solid var(--amber-bright);outline-offset:2px;}
+body.fj .tp-gate-t{font-size:16.5px;}
+body.fj .tp-gate-b{font-size:14px;font-style:normal;}
+body.fj .tp-gate-go{font-size:14px;letter-spacing:0;}
+@media (max-width:760px){
+  .tp-gate-t{font-size:14px;}
+  .tp-gate-b{font-size:12px;}
+  .tp-gate-go{min-height:44px;width:100%;font-size:13px;}
+}
+/* Where the banner's button lands: the two timing modes that budget from a
+   clock, lit for a few seconds so the choice is obvious on arrival. */
+.mode-block.gate-hint .mcard{animation:gateHint 0.9s ease-in-out 3;box-shadow:0 0 0 2px var(--amber);}
+@keyframes gateHint{50%{box-shadow:0 0 0 4px var(--amber-glow-s);}}
+@media (prefers-reduced-motion:reduce){ .mode-block.gate-hint .mcard{animation:none;} }
+
+/* "Match Regan model": one press puts Curve A back on the dashed line. */
+.regan-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;margin-top:10px;}
+.regan-row[hidden]{display:none;}
+.regan-btn{
+  padding:5px 12px;border-radius:var(--r);cursor:pointer;
+  border:1px solid var(--amber);background:var(--amber-glow);color:var(--amber-bright);
+  font-family:var(--font-u);font-size:10px;font-weight:600;letter-spacing:0.05em;
+  transition:background 0.15s;
+}
+.regan-btn:hover{background:var(--amber-glow-s);}
+.regan-btn:focus-visible{outline:2px solid var(--amber-bright);outline-offset:2px;}
+.regan-btn.on{border-color:var(--border-amber);background:transparent;color:var(--text-dim);cursor:default;}
+.regan-row .ctrl-hint{flex:1;min-width:180px;margin:0;}
+body.fj .regan-btn{font-size:14px;letter-spacing:0;}
+@media (max-width:760px){ .regan-btn{min-height:44px;width:100%;font-size:13px;} }
 .mode-compact .mdesc{font-size:7.5px;line-height:1.35;color:var(--text-secondary);margin-top:2px;}
 .mode-compact .mname{font-size:8px;}
 .mode-compact .mcard{padding:8px 8px;}
@@ -3716,6 +3767,14 @@ body.fj .picon{font-weight:500;}
               <span class="ctrl-val" id="v-drop">300 ELO</span>
             </div>
             <div class="ctrl-hint" id="drop-hint"></div>
+            <!-- A button, not a mode: it opens Max ELO drop to the model's full
+                 drop for this rating and time control and puts every point on
+                 the dashed line. Drag one afterwards and it is your curve again,
+                 and the button says so. Hidden while neither curve can run. -->
+            <div class="regan-row" id="regan-row">
+              <button type="button" class="regan-btn" id="btn-regan-a" onclick="matchReganA()">Match Regan model</button>
+              <span class="ctrl-hint" id="regan-note"></span>
+            </div>
           </div>
           <!-- RIGHT: Temperature curve -->
           <div id="tp-col-b">
@@ -3795,7 +3854,7 @@ body.fj .picon{font-weight:500;}
           <div class="formula-body" style="text-align:left;line-height:1.75;">
             The bot simulates a rated player under time pressure using two complementary mechanisms:<br>
             <span style="color:var(--amber);">▸ ELO reduction</span> — Full credit to Professor Regan for his work, full blame to me for extrapolating his data-based findings based on full games under different time controls to this unsubstantiated estimation of ELO drop for individual moves under different time constraints.  
-            Maia is called at a lower ELO as think time shrinks under time pressure: full ELO at the time control’s nominal pace (base/60 + increment seconds per move), degrading below it following the curve shown above —every point is draggable if you want a shape different from the formula<br>
+            Maia is called at a lower ELO as think time shrinks under time pressure: full ELO at the time control’s nominal pace (base/60 + increment seconds per move), degrading below it following the curve shown above. Every point is draggable if you want a shape different from the formula, and <strong>Match Regan model</strong> puts them all back on it — the Max ELO drop slider caps how deep the curve goes, so at its default the curve stops short of the model in faster time controls<br>
             <span style="color:#5dade2;">▸ Temperature escalation</span> — ELO stays fixed but sampling temperature rises as think time shrinks, flattening Maia's move probabilities toward uniform without ever reordering them: a near-forced move stays the near-certain pick, while a genuine toss-up becomes far less predictable (instinctive, less creative play — typical of a strong player with no time to calculate). A quick engine check ensures a degraded pick never improves on Maia's top choice. How far up the curve the bot actually goes is set by <strong>Calm ↔ Panicky</strong> in Personality: at 0 it follows the curve as drawn (mild by default — Max temp 2), toward Calm it rises less, fully Calm leaves the temperature untouched, and fully Panicky rises 2.5× as fast.<br>
             <span style="color:var(--amber);">▸ Only when time is really short</span> — both curves describe a bot being forced to move faster than it would like. With <strong>Fixed interval</strong> or <strong>Instantaneous</strong> timing the pace is a number you set, not something the clock forced, so neither curve runs. <strong>Complexity scaled</strong> (From the clock) budgets from the clock and uses them; so does <strong>Mirror user</strong>, which plays at your pace — when you speed up under time pressure it speeds up with you, and degrades the way you do. Premoves are one-second decisions, and play at the rating and temperature these curves give for 1 s.<br>
             Each curve has its own <strong>ON/OFF</strong> toggle next to its title, so you can run either mechanism alone, both together, or switch both off for constant strength regardless of clock.
@@ -13528,6 +13587,7 @@ function drawA(){
   const yMin = Math.max(600, Math.min(currentElo, 2600) - gv('r-drop')) - 60;
   drawCurve('cvA', ctrlA, reganEloA, yMin, currentElo + 50,
     v=>v, '#c8922a', 'rgba(200,146,42,0.08)', 'tipA', scaleA);
+  _syncReganBtn();
 }
 // One curve, two readings. The control points stay in T — that is the number
 // timePressureTempByThink consumes, on every engine — but T is not what
@@ -13586,25 +13646,31 @@ function _syncPressureOffUi(fromGating){
       if(el.classList.contains('ctrl')) el.inert = paced && !(s.off || s.idle);
     });
   });
-  // One sentence at the top of the section for a set pace, where the reason
-  // is somewhere else entirely (Move Timing).
+  // A banner at the top of the section for a set pace, because the reason is
+  // somewhere else entirely (Move Timing) — and a button that goes there.
   const secPanel = document.querySelector('#sec-pressure .pr');
   if(secPanel){
     let note = document.getElementById('tp-paced-note');
     if(!note){
       note = document.createElement('div');
       note.id = 'tp-paced-note';
-      note.className = 'inert-why';
+      note.className = 'tp-gate';
+      note.setAttribute('role', 'note');
       secPanel.insertBefore(note, secPanel.children[1] || null);
     }
     const m = _getTimingMode();
     note.style.display = paced ? 'block' : '';
     note.innerHTML = paced
-      ? 'Off — <strong>' + (_PACE_NAME[m] || 'This timing mode') + '</strong> sets the bot’s pace, so it is never short of time and neither curve is consulted (premoves play at its own rating too). ' +
-        'Choose <strong>Complexity scaled</strong> in Move Timing to have it budget from the clock, or <strong>Mirror user</strong> to have it play — and crack — at your pace. ' +
-        '<span class="hint-link" onclick="openThinkTimeSection()">Go to Move Timing ▸</span>'
+      ? '<div class="tp-gate-t">Time pressure is off for this bot</div>' +
+        '<div class="tp-gate-b"><strong>' + (_PACE_NAME[m] || 'This timing mode') + '</strong> in Move Timing sets the bot’s pace, so it is never short of time, and neither curve below is used (premoves play at its own rating too). ' +
+        'To turn time pressure on, choose <strong>Complexity scaled</strong> to have it budget from the clock, or <strong>Mirror user</strong> to have it play — and crack — at your pace.</div>' +
+        '<button type="button" class="tp-gate-go" onclick="jumpToTimingForPressure()">Change Move Timing ▸</button>'
       : '';
   }
+  // Match Regan model: only where Curve A can run at all.
+  const rr = document.getElementById('regan-row');
+  if(rr) rr.hidden = !!(untimed || paced);
+  _syncReganBtn();
   // While curve B is idle its switch cannot change anything either.
   const bTog = document.getElementById('pressure-off-b');
   const bTogLbl = bTog ? bTog.closest('label.tog') : null;
@@ -13654,6 +13720,69 @@ function jumpToAttractor(key){
   const idx = RADAR_AXES.findIndex(a => a.key === key);
   // After the section's 0.45 s open animation, or the row lands under the header.
   if(idx >= 0) setTimeout(() => _radarNavigate(idx), 480);
+}
+
+// The time-pressure banner's button: open Move Timing and light the two modes
+// that budget from a clock, so the choice is obvious on arrival.
+function jumpToTimingForPressure(){
+  openThinkTimeSection();
+  const blocks = ['tb-complexity', 'tb-mirror']
+    .map(id => document.getElementById(id)).filter(Boolean);
+  // After the section's 0.45 s open animation, or the scroll lands short.
+  setTimeout(() => {
+    document.getElementById('timing-mode-grid')
+      ?.scrollIntoView({ behavior:'smooth', block:'center' });
+    blocks.forEach(b => b.classList.add('gate-hint'));
+    setTimeout(() => blocks.forEach(b => b.classList.remove('gate-hint')), 2800);
+  }, 480);
+}
+
+// ── Match Regan model ─────────────────────────────────────────────────────────
+// The model's full ELO drop by think time t for the current rating and time
+// control. reganEloA() reads flat while Curve A is switched off, so this is
+// computed from the model directly.
+function _reganDropAt(t){
+  const anchor = reganAnchorSec();
+  if(anchor <= 0) return 0;
+  const e0  = Math.max(600, Math.min(currentElo, 2600));
+  const raw = currentElo + reganD(t) - reganD(anchor);
+  return Math.max(0, Math.round(e0 - Math.max(600, Math.min(e0, raw))));
+}
+// Put Curve A on the model: Max ELO drop set to the model's own drop by 1 s
+// (rounded DOWN to the slider's step, so the curve never goes deeper than the
+// model), and the eight points re-seeded onto the dashed line. Switches the
+// curve on if it was off — that is what pressing it asks for.
+function matchReganA(){
+  if(_curvesInertKind()) return;
+  if(pressureOffA) _setPressureOffA(false);
+  const inp = document.getElementById('r-drop');
+  if(!inp) return;
+  const step = +inp.step || 25;
+  inp.value = String(Math.min(+inp.max, Math.floor(_reganDropAt(X_MIN) / step) * step));
+  sv(inp, 'v-drop', v => v + ' ELO');
+  syncDropHint(); initPtsA(); drawA();
+}
+// Within one slider step of the model at every point counts as on it — that
+// is as close as Max ELO drop can put it.
+function _curveAOnRegan(){
+  if(pressureOffA || !ctrlA || !ctrlA.length) return false;
+  const tol = +(document.getElementById('r-drop')?.step) || 25;
+  return ctrlA.every(p => Math.abs(p.y - reganEloA(p.x)) <= tol);
+}
+function _syncReganBtn(){
+  const btn = document.getElementById('btn-regan-a');
+  if(!btn) return;
+  const on = _curveAOnRegan();
+  btn.classList.toggle('on', on);
+  btn.disabled = on;
+  btn.textContent = on ? '✓ On the Regan model' : 'Match Regan model';
+  const note = document.getElementById('regan-note');
+  if(!note) return;
+  const drop = _reganDropAt(X_MIN);
+  note.textContent = on
+    ? 'Every point is on the dashed line: down ' + drop + ' ELO by 1 s a move at this rating and time control. Drag any point to make the curve your own.'
+    : 'The dashed line is the model: down ' + drop + ' ELO by 1 s a move at this rating and time control. '
+      + (pressureOffA ? 'This switches the curve on, sets' : 'This sets') + ' Max ELO drop to match and puts every point on it.';
 }
 
 // Answer a drag on a curve that cannot do anything. Reuses the ⓘ popup the rest
