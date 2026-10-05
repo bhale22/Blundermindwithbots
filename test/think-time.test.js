@@ -213,3 +213,52 @@ test('fixed and mirror modes obey the same ceilings as the main path', () => {
   });
   assert.ok(think(mirror, clockMs) <= budgetMs + 1, 'mirror mode must respect the budget');
 });
+
+// ── Which timing modes feel time pressure ────────────────────────────────────
+// A pace the user set outright (Fixed, Instantaneous) is not time pressure;
+// Mirror plays at the human's pace and cracks when they do; Complexity budgets
+// from the clock.
+test('time pressure applies to Complexity and Mirror, not to a Fixed or Instant pace', () => {
+  const on  = m => makeCtx({ botTimeBehavior: m, clockControl: 'custom' })._timePressureApplies();
+  assert.strictEqual(on('complexity'), true);
+  assert.strictEqual(on('mirror'),     true, 'Mirror should degrade as the human speeds up');
+  assert.strictEqual(on('fixed'),      false);
+  assert.strictEqual(on('instant'),    false);
+  assert.strictEqual(makeCtx({ botTimeBehavior: 'complexity', clockControl: 'untimed' })._timePressureApplies(),
+    false, 'no clock, no time pressure');
+});
+
+// ── The clock-based plan ─────────────────────────────────────────────────────
+test('the clock plan: (time left + increment to come) ÷ moves left', () => {
+  const ctx = makeCtx({ botCplxBaseMode: 'clock', botCplxMovesPerGame: 60, clockInc: 2,
+                        gameMovesAlgebraic: new Array(16).fill('e4') });   // 8 moves in book
+  // 24:00 left, +2 s: (1440 + 52 × 2) / 52
+  assert.ok(Math.abs(ctx.botClockPlanSec(24 * 60000) - 1544 / 52) < 1e-9);
+  ctx.botCplxMovesPerGame = 40;
+  assert.ok(Math.abs(ctx.botClockPlanSec(24 * 60000) - (1440 + 64) / 32) < 1e-9);
+  ctx.botCplxBaseMode = 'fixed';
+  assert.strictEqual(ctx.botClockPlanSec(24 * 60000), null, 'Fixed seconds uses the Base time instead');
+});
+
+// ── Book moves follow the time control on the clock plan ─────────────────────
+test('book moves: fast in bullet and blitz, 5–15 s from twenty minutes up', () => {
+  const range = (minutes, inc, extra) => [...makeCtx(Object.assign({
+    botCplxBaseMode: 'clock', botStartClockMs: minutes * 60000, clockInc: inc }, extra)).botBookMoveRangeMs()];   // spread: a test-realm array
+  assert.deepStrictEqual(range(1, 0),  [400, 1200], 'bullet');
+  assert.deepStrictEqual(range(5, 3),  [400, 1200], 'blitz');
+  for (const m of [20, 30, 40, 60]) assert.deepStrictEqual(range(m, 0), [5000, 15000], m + ' min');
+  const rapid = range(10, 0);
+  assert.ok(rapid[0] > 400 && rapid[0] < 5000 && rapid[1] > 1200 && rapid[1] < 15000,
+    'rapid scales between the two: ' + rapid.join('–'));
+  // Every other timing mode keeps the flat book time — the default Fixed 2 s
+  // should play like an ordinary bot.
+  assert.deepStrictEqual(range(30, 0, { botTimeBehavior: 'fixed' }), [400, 1200], 'Fixed interval');
+  assert.deepStrictEqual(range(30, 0, { botTimeBehavior: 'mirror' }), [400, 1200], 'Mirror user');
+  assert.deepStrictEqual(range(30, 0, { botCplxBaseMode: 'fixed' }), [400, 1200], 'Fixed seconds');
+});
+
+test('a slow book move still respects the clock', () => {
+  const ctx = makeCtx({ botCplxBaseMode: 'clock', botStartClockMs: 30 * 60000, clockInc: 0 });
+  const t = ctx.botBookMoveDelayMs(10000);   // 10 s left on a 30-minute clock
+  assert.ok(t <= 1000 + 1, 'emergency rule caps it at 10% of the clock: ' + Math.round(t));
+});

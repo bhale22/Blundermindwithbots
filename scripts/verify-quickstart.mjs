@@ -174,6 +174,8 @@ console.log('\n6   Picking a Maia rating configures Maia, at temperature 1');
       badDay: botBadDayMode,
       curveA: botPressureCurveA, curveB: botPressureCurveB,
       name: document.getElementById('botNameInput').value,
+      persona: document.getElementById('quickBotPersona').textContent.trim(),
+      personaLit: document.getElementById('quickBotPersona').classList.contains('has'),
     };
   });
   ok('the Maia3 engine is selected', got.tab === 'maia3', got.tab);
@@ -181,19 +183,33 @@ console.log('\n6   Picking a Maia rating configures Maia, at temperature 1');
   ok('temperature is Maia own default 1.0', got.temp === 1.0, String(got.temp));
   ok('and the builder slider shows it', got.slider === 1.0 && got.readout === '1.0',
     got.slider + ' / ' + got.readout);
-  ok('leftover personality attractors are cleared', got.attrs === 0 && got.pieces === 0,
+  // The quick picker changes WHICH engine plays and HOW STRONG — nothing else.
+  // It used to reset the bot to a plain engine on every pick, which made the
+  // most prominent control on the page a personality eraser; these four used to
+  // assert that erasure. A bot you spent time building now keeps what you gave
+  // it when you turn the rating up, exactly as if you moved the builder's dial.
+  ok('a built personality SURVIVES the rating pick', got.attrs === 2 && got.pieces === 1,
     got.attrs + ' / ' + got.pieces);
-  ok('the bad-day flag is cleared', got.badDay === false);
-  ok('and the time-pressure curves with it',
-    got.curveA === null && got.curveB === null, JSON.stringify([got.curveA, got.curveB]));
-  ok('a leftover bot name does not survive', got.name === '', got.name);
+  ok('the bad-day flag survives with it', got.badDay === true);
+  ok('and so do the time-pressure curves',
+    got.curveA !== null && got.curveB !== null, JSON.stringify([got.curveA, got.curveB]));
+  ok('the bot keeps its name', got.name === 'Captain Entropy', got.name);
+  // Surviving silently would be its own trap: the readout under the picker is
+  // what tells you the personality is still riding along at the new rating.
+  ok('and the readout says so, by name', /Captain Entropy/.test(got.persona), got.persona);
+  ok('...and is lit as carrying one', got.personaLit === true);
 
   const painted = await page.evaluate(() => ({
     sel: document.getElementById('quickBotSel').value,
     mirror: document.getElementById('bmwBotSel').value,
+    curLabel: (document.querySelector('#quickBotSel option[value="__current"]') || {}).textContent || '',
   }));
-  ok('and the picker rests on that Maia rating',
-    painted.sel === 'maia:1000' && painted.mirror === 'maia:1000', JSON.stringify(painted));
+  // A bot somebody NAMED is called that, whatever engine is under it — resting
+  // on "Maia 1000" would let the picker contradict the readout beside it.
+  ok('the picker rests on the named bot, not a bare rating',
+    painted.sel === '__current' && painted.mirror === '__current', JSON.stringify(painted));
+  ok('...and that option carries its name', /Captain Entropy/.test(painted.curLabel),
+    painted.curLabel);
   ok('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
   await ctx.close();
 }
@@ -213,25 +229,26 @@ console.log('\n7   A stale Maia pick cannot start Stockfish under a Maia label')
   await ctx.close();
 }
 
-console.log('\n8   Stockfish picks still work, and are plain');
+console.log('\n8   Flounder picks still work, and keep what was built');
 {
   const { ctx, page, errs } = await open();
   const got = await page.evaluate(() => {
     window._bcpAttractorValues = { chaos: 5 };
     botPressureCurveA = [{ x: 1, y: 600 }, { x: 60, y: 1500 }];
-    quickBotPick('7');
+    quickBotPick('1400');
     return {
-      tab: botTab, lvl: parseInt(document.getElementById('sfLevel').value, 10),
+      tab: botTab, elo: parseInt(document.getElementById('flounderElo').value, 10),
       sel: document.getElementById('quickBotSel').value,
       attrs: Object.keys(window._bcpAttractorValues).length,
       curveA: botPressureCurveA,
       draws: [botAcceptDraws, botDrawAcceptMargin],
     };
   });
-  ok('Stockfish 7 selects Stockfish 7', got.tab === 'sf' && got.lvl === 7, JSON.stringify(got));
-  ok('the picker rests on it', got.sel === '7', got.sel);
-  ok('with no leftover attractors', got.attrs === 0, String(got.attrs));
-  ok('and no leftover pressure curve floor on its level', got.curveA === null);
+  ok('Flounder 1400 selects Flounder 1400', got.tab === 'sf' && got.elo === 1400,
+    JSON.stringify(got));
+  ok('the picker rests on it', got.sel === '1400', got.sel);
+  ok('an unnamed bot still keeps its personality', got.attrs === 1, String(got.attrs));
+  ok('and its pressure curve', got.curveA !== null);
   ok('casual draw behaviour is kept', got.draws[0] === true && got.draws[1] === 400,
     JSON.stringify(got.draws));
   ok('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));

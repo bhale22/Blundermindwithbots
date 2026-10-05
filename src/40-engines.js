@@ -34,6 +34,8 @@ function sfInit() {
             var probeResult;
             if (sfProbeMode === 'evalmoves') {
               probeResult = _parseEvalMovesScores(sfCplxInfoLines);
+              // Free, from lines that were already being thrown away.
+              sfMoveComplexity = _parseEvalMovesVolatility(sfCplxInfoLines);
             } else {
               var result = _computeCplxScore(sfCplxInfoLines);
               sfCplxScore = result ? result.cplx : null;
@@ -194,7 +196,13 @@ function sfGetMove(fen, levelOrDepth, isDepth=false) {
       }
     }
     sfWorker.postMessage('position fen ' + fen);
-    const depth = isDepth ? levelOrDepth : (levelOrDepth <= 4 ? 5 : levelOrDepth <= 10 ? 8 : 12);
+    // Levels at or below 0 run Skill 0 (the clamp above floors there) and are
+    // separated by depth alone: 0 -> 4 ply, -1 -> 3, -2 -> 2, -3 -> 1.
+    const depth = isDepth ? levelOrDepth
+                : levelOrDepth <= 0  ? Math.max(1, 4 + levelOrDepth)
+                : levelOrDepth <= 4  ? 5
+                : levelOrDepth <= 10 ? 8
+                :                      12;
     sfWorker.postMessage('go depth ' + depth);
     // Safety timeout — resolve null after 5s to prevent hangs
     setTimeout(() => {
@@ -252,6 +260,10 @@ function sfGetComplexity(fen) {
 // only one probe runs at a time, and probes never run while a move request is
 // in flight.
 var sfProbeMode = 'cplx'; // 'cplx' | 'evalmoves' — how to parse the probe result
+
+// {uci: volatility} from the most recent evalmoves probe. Reset per bot move by
+// botMakeMove so a stale position's numbers can never be scored against a new one.
+var sfMoveComplexity = null;
 function sfEvalMoves(fen, moves, depth) {
   return new Promise((resolve) => {
     if (!sfWorker || !sfReady || !moves || moves.length < 2) { resolve(null); return; }
@@ -273,7 +285,7 @@ function sfEvalMoves(fen, moves, depth) {
     // candidate count since a wider MultiPV probe (CP-budget acceptance can
     // send well over a dozen moves) genuinely takes longer than the 2-move
     // degradation-guard probe; capped so a large list still fails open promptly.
-    const timeoutMs = Math.min(4500, 2000 + moves.length * 150);
+    const timeoutMs = Math.min(REGAN_PROBE_TIMEOUT_MAX_MS, 2000 + moves.length * 150);
     setTimeout(() => {
       if (sfCplxPending === resolve) {
         sfCplxActive  = false;
@@ -286,6 +298,398 @@ function sfEvalMoves(fen, moves, depth) {
       }
     }, timeoutMs);
   });
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// REGAN MOVE-CHOICE MODEL — turning Stockfish into a distribution engine
+// ══════════════════════════════════════════════════════════════════════════
+// Kenneth Regan & Guy Haworth, "Intrinsic Chess Ratings" (AAAI 2011), fitted
+// against 6,000+ games at each Elo milepost at 13 ply / 50 PV. The same author
+// whose rating-vs-time-control data seeds Curve A.
+//
+// Equation (1) of the paper. For each legal move i with evaluation shortfall
+// delta_i from the best move:
+//
+//     y_i = exp( -(delta_i / s)^c )        p_i = y_i / sum(y_j)
+//
+//   s  sensitivity — discrimination between near-equal moves. SMALLER is
+//      stronger (it raises delta/s, pushing inferior moves down).
+//   c  consistency — the exponent, governing how reliably bad moves are
+//      avoided.
+//
+// WHY THIS SHAPE AND NOT A BELL CURVE. The fitted c sits around 0.44-0.51, so
+// the tail decays like e^-sqrt(d). A Gaussian is c = 2 (e^-d^2); a plain
+// exponential is c = 1. At c ~ 1/2 the tail is enormously fatter than either —
+// which is the formal statement of "humans occasionally play something awful".
+// A Gaussian on centipawn loss would also be symmetric (loss cannot go below
+// zero) and would miss the huge spike AT zero: even 1600s play the engine's
+// top move ~43% of the time. All three properties fall out of this curve for
+// free, which is why the model samples moves directly rather than sampling a
+// target loss and hunting for a move that matches it.
+//
+// Depth of the wide MultiPV probe that scores every legal move. Shallow and
+// wide beats deep and narrow here: the model needs a score for the BAD moves
+// too (they are the ones a beatable bot plays), and their relative ordering is
+// stable long before the top move's evaluation settles.
+const REGAN_PROBE_DEPTH = 8;
+
+// Ceiling on the shared eval probe. Raised from 4500 when the legal-move probe
+// (30+ moves) started hitting it; measured below.
+const REGAN_PROBE_TIMEOUT_MAX_MS = 7000;
+
+// ── The Flounder ladder ───────────────────────────────────────────────────
+// MEASURED, not derived. Nine points, 756 games, each one calibrated by playing
+// against Maia at the SAME rating and searching s for a 50% score, bracketed
+// +/-100 so the rating is pinned from both sides. Every point is +/-74 at 95%.
+//
+// Why measured and not fitted: s is violently steep (the whole 600-2400 range
+// lives between 0.069 and 0.113) and the relationship is not log-linear. A
+// straight-line fit through these points is ~100 Elo out in places.
+//
+//   elo    s          elo    s
+//   732    0.1133     1696   0.0832
+//   884    0.1065     1959   0.0782
+//   1118   0.1001     2204   0.0735
+//   1289   0.0941     2387   0.0691
+//   1559   0.0885
+//
+// Adaptive subdivision found the curve SMOOTH — all four midpoint tests landed
+// inside a 75 Elo tolerance on the first try, so no interval needed splitting.
+// Outside 732-2387 the values are extrapolated and provisional.
+//
+// THIS TABLE IS SPECIFIC TO STOCKFISH 18 lite AT PROBE DEPTH 8. Any change of
+// engine, network or depth invalidates it. scripts/fit-flounder-adaptive-refine
+// is how it gets rebuilt.
+//
+// The 600 rung was added later and is worth its own note. It sits exactly on
+// the slope the table already extrapolated, so it changes no behaviour — what
+// changed is that it is now MEASURED rather than assumed, which is what lets
+// the dial offer 600 at all. 40 games against Maia 600 under the shipped rule:
+//
+//   s = 0.1196  ->  54%  (implied 626)   <- this value, the extrapolation
+//   s = 0.1320  ->  54%  (implied 626)
+//   s = 0.1438  ->  36%  (implied 502)
+//
+// Two things worth carrying forward. The earlier nine-anchor run put 600 at
+// s = 0.1438; under the shipped selection rule that is a 500, not a 600, so
+// the old figure must not be reintroduced. And 0.1196 and 0.1320 measured
+// identically, which is the badly-conditioned bottom end showing up again —
+// down here a wide range of s buys the same strength, so precision in s is
+// not worth chasing.
+const FLOUNDER_LADDER = [
+  [600, 0.1196],
+  [732, 0.1133], [884, 0.1065], [1118, 0.1001], [1289, 0.0941], [1559, 0.0885],
+  [1696, 0.0832], [1959, 0.0782], [2204, 0.0735], [2387, 0.0691],
+];
+
+// c is Regan's cfit column as a closed form — no games needed. It sets the tail
+// weight, which is what makes low ratings play mostly-clean chess punctuated by
+// real mistakes rather than bleeding mediocrity evenly.
+//
+// Below 1600 this is extrapolation past his data, and his data contains almost
+// no blunders at all (FIDE 1600+, lopsided positions excluded), so the far tail
+// is model rather than measurement. Maia's own error rates are the empirical
+// check on it: 78cp expected loss at 600 falling to 17cp at 2600.
+const flounderC = elo =>
+  Math.max(0.28, Math.min(0.55, 0.436 + (elo - 1600) * 0.00007));
+
+// Regan's perceptual scale, applied to the EVALUATION and then differenced —
+// not to the difference. That ordering is what discounts errors made in an
+// already-decided position, which is the winning/losing/equal conditioning.
+const _flounderScale = v => Math.sign(v) * Math.log(1 + Math.abs(v) / 100);
+
+// Interpolate ln(s) between measured points; extrapolate on the end slopes.
+function flounderParams(elo) {
+  const T = FLOUNDER_LADDER, e = elo || 1500;
+  const c = flounderC(e);
+  const ln = Math.log;
+  if (e <= T[0][0]) {
+    const m = (ln(T[1][1]) - ln(T[0][1])) / (T[1][0] - T[0][0]);
+    return { s: Math.exp(ln(T[0][1]) + (e - T[0][0]) * m), c };
+  }
+  const last = T.length - 1;
+  if (e >= T[last][0]) {
+    const m = (ln(T[last][1]) - ln(T[last-1][1])) / (T[last][0] - T[last-1][0]);
+    return { s: Math.exp(ln(T[last][1]) + (e - T[last][0]) * m), c };
+  }
+  for (let i = 0; i < last; i++) if (e >= T[i][0] && e <= T[i+1][0]) {
+    const t = (e - T[i][0]) / (T[i+1][0] - T[i][0]);
+    return { s: Math.exp(ln(T[i][1]) + t * (ln(T[i+1][1]) - ln(T[i][1]))), c };
+  }
+  return { s: T[last][1], c };
+}
+
+// ── Temperature, on an engine that has no distribution to flatten ────────────
+// Maia's Temperature raises p^(1/T): the probabilities flatten, the bot picks
+// less-popular moves more often, and it plays wilder and somewhat worse.
+//
+// Flounder samples a cost rather than a move, so there is nothing to flatten.
+// The analogue is the Weibull SHAPE c. Below 1, lowering c simultaneously puts
+// more mass at zero and fattens the tail: more moves that cost nothing at all,
+// punctuated by rarer but larger disasters. Consistency falls, and the mean
+// cost rises with it — which is the same trade Maia's temperature makes.
+//
+// THIS MOVES REAL STRENGTH, and the label on the control has to say so. The CP
+// Budget band is rating-neutral by construction because it is symmetric; this
+// is not. At the ends of the slider it is worth on the order of 100-150 Elo,
+// and the ladder's own rungs are +/-74, so it is deliberately kept modest:
+// c shifts by at most about 0.03 across the whole range.
+//
+// Symmetric in log-temperature, so T = 1 is exactly neutral and leaves the
+// measured ladder untouched.
+const FLOUNDER_TEMP_C_GAIN = 0.027;
+
+// `temp` is the EFFECTIVE temperature for this move — base, then curve B's
+// time-pressure escalation, then the complexity adjustment — exactly the value
+// the Maia paths hand to pickFromProbs. It is passed in rather than fetched
+// here, because reaching for botMaiaBaseTemp() got only the BASE: curve B and
+// the complexity dial were both visible, both toggleable, and both inert on
+// this engine. A control that does nothing is worse than one that is absent.
+function flounderTempAdjustedC(c, temp) {
+  let T = temp;
+  if (!Number.isFinite(T)) {
+    try { if (typeof botMaiaBaseTemp === 'function') T = botMaiaBaseTemp(); }
+    catch (e) { T = 1; }
+  }
+  if (!(T > 0) || Math.abs(T - 1) < 1e-9) return c;
+  return Math.max(0.28, Math.min(0.55, c - FLOUNDER_TEMP_C_GAIN * Math.log(T)));
+}
+
+// log-gamma (Lanczos), needed only for the mean of the target distribution.
+function _lgamma(x){
+  const g = 7, C = [0.99999999999980993, 676.5203681218851, -1259.1392167224028,
+    771.32342877765313, -176.61502916214059, 12.507343278686905,
+    -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7];
+  if (x < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * x)) - _lgamma(1 - x);
+  x -= 1;
+  let a = C[0];
+  const t = x + g + 0.5;
+  for (let i = 1; i < g + 2; i++) a += C[i] / (x + i);
+  return 0.5 * Math.log(2 * Math.PI) + (x + 0.5) * Math.log(t) - t + Math.log(a);
+}
+
+// Mean of Weibull(shape c, scale s) — the size of a typical turn's cost at this
+// rating. It is the natural yardstick for "how far from the sampled target am I
+// willing to drift for style", and unlike the CP Budget it does not grow when
+// the personality allowance does. See flounderApplyPersonality for why that
+// distinction turned out to matter.
+function flounderTargetMean(s, c) {
+  return s * Math.exp(_lgamma(1 + 1 / c));
+}
+
+// How far past the sampled target a move may sit and still be chosen.
+//
+// Without this the sampler takes whichever move is NEAREST the target in
+// absolute distance, which in a forced position can mean answering "throw away
+// about 40cp" by hanging a rook, because the rook was the closest thing on
+// offer. Erring toward a better move is harmless; erring far toward a worse one
+// reads as broken, and Stockfish never does it at any skill level.
+//
+// Measured: fires on ~0.1% of moves, and only about a third of those are in
+// positions still live enough for it to matter, so the rating effect is bounded
+// at +7 Elo at the bottom of the ladder and +2 at the top — a tenth of the
+// measurement precision. Confirmed live over 20 bracketed games at 732.
+const FLOUNDER_OVERSHOOT_MARGIN = 0.5;
+
+// How likely this bot is to play each candidate: the share of the target-cost
+// distribution that lands on each move under the same nearest-without-
+// overshooting rule flounderChooseMove applies. Stratified quantiles rather
+// than random draws, so it is deterministic and costs n × moves comparisons.
+//
+// It answers the question Maia's probabilities answer — how often would a
+// player of this rating choose this move here — which is what the rest of the
+// bot needs from an engine: move blink asks whether the bot is all but certain
+// of its move, and stalemate-seeking reweights the moves the bot might play.
+// Personality is not included; it is applied to the move, not to this.
+const FLOUNDER_SEL_QUANTILES = 256;
+function flounderSelectionProbs(d, s, cEff) {
+  const n = FLOUNDER_SEL_QUANTILES;
+  const counts = new Array(d.length).fill(0);
+  for (let j = 0; j < n; j++) {
+    const tau = s * Math.pow(-Math.log(1 - (j + 0.5) / n), 1 / cEff);
+    let k = -1, gap = Infinity;
+    for (let i = 0; i < d.length; i++) {
+      if (d[i] > tau + FLOUNDER_OVERSHOOT_MARGIN) continue;
+      const g = Math.abs(d[i] - tau);
+      if (g < gap) { gap = g; k = i; }
+    }
+    if (k < 0) { let lo = Infinity; for (let i = 0; i < d.length; i++) if (d[i] < lo) { lo = d[i]; k = i; } }
+    counts[k]++;
+  }
+  return counts.map(c => c / n);
+}
+
+// FEN → legal moves, WITHOUT touching game state.
+//
+// parseFen() assigns to the `turn`, `castling` and `epSq` globals as a side
+// effect, so calling it mid-move would silently rewrite the live game.
+function _fenLegalUcis(fen) {
+  const parts = String(fen).split(' ');
+  const bd = {};
+  const rows = parts[0].split('/');
+  for (let r = 0; r < 8; r++) {
+    let c = 0;
+    for (const ch of rows[r]) {
+      if ('12345678'.includes(ch)) { c += +ch; }
+      else { bd[r * 8 + c] = { piece: ch.toUpperCase(), color: ch === ch.toUpperCase() ? 'w' : 'b' }; c++; }
+    }
+  }
+  const tn = parts[1] || 'w';
+  const cs = parts[2] || '-';
+  const cst = { wK: cs.includes('K'), wQ: cs.includes('Q'), bK: cs.includes('k'), bQ: cs.includes('q') };
+  const ep = (parts[3] && parts[3] !== '-') ? fileRankToSq(parts[3]) : -1;
+  const out = [];
+  for (let sq = 0; sq < 64; sq++) {
+    const p = bd[sq];
+    if (!p || p.color !== tn) continue;
+    for (const d of legalMovesFor(sq, bd, ep, cst)) {
+      const promo = (p.piece === 'P' && (Math.floor(d / 8) === 0 || Math.floor(d / 8) === 7)) ? 'q' : '';
+      out.push(sqName(sq) + sqName(d) + promo);
+    }
+  }
+  return out;
+}
+
+// ── Flounder: pick a move for a bot of the given rating ───────────────────
+//
+// Sample how much this turn should COST, then play the move closest to that.
+//
+//   1. one MultiPV probe scores every legal move
+//   2. each evaluation goes on the perceptual scale, then differences give the
+//      shortfall of each move
+//   3. draw a target from Weibull(shape c, scale s) — Regan's curve IS this
+//      distribution's survival function, so this is his model expressed as a
+//      continuous law over cost rather than a discrete law over moves
+//   4. play the nearest move that does not overshoot the target
+//
+// Sampling a cost rather than a move is what makes the rating dial tractable:
+// Regan's own normalisation over the move list adapts to the position, which is
+// faithful but means the same s produces a different agent in every position.
+// Measured, that version's ratings were worth ~120 real Elo per 400 labelled.
+//
+// Returns { uci, cp, tau, dist } or null so the caller can fall back to a plain
+// search. `dist` is flounderSelectionProbs keyed by move.
+//
+// `opts.staleSeek` lets stalemate-seeking take over when it is active. Only the
+// bot's own turn passes it: the desperation scoring reads the LIVE board, so
+// it must not run for a position that is not the one on the board.
+async function flounderChooseMove(fen, elo, depth, effTemp, opts) {
+  try {
+    if (!sfReady) { try { await sfInit(); } catch (e) { return null; } }
+    const moves = _fenLegalUcis(fen);
+    if (!moves.length) return null;
+    if (moves.length === 1) return { uci: moves[0], cp: 0, tau: 0, dist: { [moves[0]]: 1 } };
+    const evals = await sfEvalMoves(fen, moves, depth || REGAN_PROBE_DEPTH);
+    if (!evals) return null;
+    const scored = moves.filter(m => evals[m] != null);
+    if (scored.length < 2) return scored.length ? { uci: scored[0], cp: 0, tau: 0 } : null;
+
+    let best = -Infinity;
+    for (const m of scored) if (evals[m] > best) best = evals[m];
+    const gBest = _flounderScale(best);
+    const d = scored.map(m => gBest - _flounderScale(evals[m]));
+
+    const { s, c } = flounderParams(elo);
+    const cEff = flounderTempAdjustedC(c, effTemp);
+    // Weibull inverse-CDF sample. The heavy tail at c < 1/2 is the point: most
+    // turns cost almost nothing and a rare one costs a piece.
+    const tau = s * Math.pow(-Math.log(1 - Math.random()), 1 / cEff);
+
+    let k = -1, gap = Infinity;
+    for (let i = 0; i < scored.length; i++) {
+      if (d[i] > tau + FLOUNDER_OVERSHOOT_MARGIN) continue;
+      const g = Math.abs(d[i] - tau);
+      if (g < gap) { gap = g; k = i; }
+    }
+    // d = 0 always qualifies, so this is belt-and-braces.
+    if (k < 0) { let lo = Infinity; for (let i = 0; i < d.length; i++) if (d[i] < lo) { lo = d[i]; k = i; } }
+
+    const sel = flounderSelectionProbs(d, s, cEff);
+    const dist = {};
+    for (let i = 0; i < scored.length; i++) if (sel[i] > 0) dist[scored[i]] = sel[i];
+
+    // DESPERATION. When stalemate-seeking is active (lost, past its move
+    // number), it chooses this move instead of the personality band — exactly
+    // as it does on Maia, where it reweights the whole distribution rather than
+    // a slice of it. The bot's own selection distribution plays the part of
+    // Maia's, reweighted toward moves that lock its pieces or dump material,
+    // then sampled.
+    //
+    // Before this, the only route to it was through the band, which is empty
+    // at a CP Budget of 0 and capped by the overshoot rule otherwise — so on
+    // Flounder the switch did nothing, or next to nothing.
+    if (opts && opts.staleSeek && typeof _staleSeekActiveNow === 'function' &&
+        _staleSeekActiveNow()) {
+      const shaped = _maybeStaleSeek(dist);
+      const pickUci = sampleFromProbs(shaped, 1);
+      const ki = scored.indexOf(pickUci);
+      if (ki >= 0) return { uci: scored[ki], cp: best - evals[scored[ki]], tau, dist };
+    }
+
+    // PERSONALITY. The rating has now decided how much this turn throws away;
+    // personality decides which way. The hook lives in 50-bot-engine.js because
+    // it needs the attractor machinery; when no personality is configured it
+    // returns k unchanged, so this file's behaviour is untouched by default.
+    if (typeof flounderApplyPersonality === 'function') {
+      const alt = flounderApplyPersonality(scored, d, tau, k, FLOUNDER_OVERSHOOT_MARGIN,
+        flounderTargetMean(s, cEff));
+      if (Number.isInteger(alt) && alt >= 0 && alt < scored.length) k = alt;
+    }
+    return { uci: scored[k], cp: best - evals[scored[k]], tau, dist };
+  } catch (e) {
+    return null;
+  }
+}
+
+// The personality hook above is flounderApplyPersonality in 50-bot-engine.js.
+// It takes the band of moves within +/- CP Budget of the selected move's cost
+// and picks among them by closeness-to-target times attractor weight. With
+// neutral attractors the closeness term is the only one, so the argmax is the
+// nearest move to the target — bit for bit the rule the 756-game ladder was
+// measured on. That equivalence is not a nicety: break it and the ladder stops
+// describing the shipped bot.
+
+// How hard is the position each candidate leads to?
+//
+// A MultiPV probe emits every candidate at EVERY depth it passes through — 304
+// info lines for 38 moves at depth 8 — and _parseEvalMovesScores keeps only the
+// deepest and drops the rest. Those discarded lines are a per-move difficulty
+// measure sitting in plain view: a move whose evaluation keeps moving as the
+// search looks deeper leads somewhere genuinely hard to assess, and one whose
+// score is settled by depth 3 does not. It costs no engine time at all, because
+// the search has already been paid for.
+//
+// Averaged per depth step rather than summed, so a probe that happened to
+// report more iterations does not look more chaotic than one that reported
+// fewer.
+//
+// HONEST LIMIT, measured: this reproduces at about 0.65 rank correlation
+// between repeat probes of the same position. Shallow MultiPV does not allocate
+// its nodes the same way twice. Four other formulations were tried — end to end,
+// full range, deep plies only — and none beat it. Tension is the deterministic
+// control; this one is the truer measure and the noisier one, which is why they
+// are separate sliders rather than one blended number.
+function _parseEvalMovesVolatility(lines) {
+  var series = {};
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var dm  = line.match(/\bdepth (\d+)/);
+    var pvm = line.match(/\bpv ([a-h][1-8][a-h][1-8][qrbn]?)/);
+    var cm  = line.match(/\bscore cp (-?\d+)/);
+    var mm  = line.match(/\bscore mate (-?\d+)/);
+    if (!dm || !pvm) continue;
+    var cp = cm ? +cm[1] : mm ? (+mm[1] > 0 ? 10000 - +mm[1] : -10000 - +mm[1]) : null;
+    if (cp === null) continue;
+    (series[pvm[1]] = series[pvm[1]] || []).push([+dm[1], cp]);
+  }
+  var out = {};
+  for (var uci in series) {
+    var a = series[uci].sort(function (x, y) { return x[0] - y[0]; });
+    var sum = 0, n = 0;
+    for (var j = 1; j < a.length; j++) { sum += Math.abs(a[j][1] - a[j - 1][1]); n++; }
+    out[uci] = n ? sum / n : 0;
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 // Parse MultiPV info lines into {uci: cp} using the deepest score seen for the
@@ -342,7 +746,7 @@ function _computeCplxScore(lines) {
 // Returns true if the complexity probe is worth running this move
 function _needsComplexity() {
   const av = window._bcpAttractorValues || {};
-  if ((av['chaos'] || 0) !== 0 || (av['compwin'] || 0) !== 0 || botTimeBehavior === 'complexity') {
+  if ((av['compwin'] || 0) !== 0 || botTimeBehavior === 'complexity') {
     return true;
   }
   // Stalemate seeking needs the eval to know when desperation kicks in
@@ -355,19 +759,24 @@ function _needsComplexity() {
 // Scales base Maia temperature up/down based on position complexity + attractor values
 function complexityAdjustedTemp(baseTemp) {
   const av = window._bcpAttractorValues || {};
-  const chaosV   = av['chaos']   || 0;
   const compwinV = av['compwin'] || 0;
-  if ((chaosV === 0 && compwinV === 0) || sfCplxScore === null) return baseTemp;
+  if (compwinV === 0 || sfCplxScore === null) return baseTemp;
   let temp = baseTemp;
-  if (chaosV !== 0) {
-    // Seek complexity when chaos>0, simplicity when chaos<0
+  // Result-conditioned complexity. This is what makes the control distinct from
+  // Chaos: Chaos likes sharp positions all the time, this one only cares once
+  // the game has a direction.
+  //
+  // The losing half never existed. The condition was `> 50` alone, so the
+  // comment's own promise to "avoid when losing" was never code, and the most
+  // recognisably human thing the control could do — muddying the water when
+  // you are getting beaten — could not happen at all.
+  //
+  //   positive (Front-runner): complicate while winning, simplify while losing
+  //   negative (Swindler):     simplify while winning, complicate while losing
+  if (compwinV !== 0 && sfCplxEval !== null) {
     const cplxSignal = Math.tanh((sfCplxScore - 0.5) * 4);
-    temp *= Math.exp(chaosV * 0.08 * cplxSignal);
-  }
-  if (compwinV !== 0 && sfCplxEval !== null && sfCplxEval > 50) {
-    // When winning (+50cp+), seek complexity to complicate; avoid when losing
-    const cplxSignal = Math.tanh((sfCplxScore - 0.5) * 4);
-    temp *= Math.exp(compwinV * 0.08 * cplxSignal);
+    if (sfCplxEval > 50)        temp *= Math.exp( compwinV * 0.08 * cplxSignal);
+    else if (sfCplxEval < -50)  temp *= Math.exp(-compwinV * 0.08 * cplxSignal);
   }
   return Math.max(0.1, Math.min(5.0, temp));
 }
@@ -829,14 +1238,17 @@ function _maiaUpdateStatusUI() {
 }
 
 // Main Maia3 inference — returns move probs dict or null
-async function maia3GetMoveProbs(fen) {
+// `elo` is optional. Without it the rating comes from the lcSelectedRating
+// global, which the move paths set around each call; a caller that is not part
+// of that dance (the premove) passes its rating here instead of borrowing it.
+async function maia3GetMoveProbs(fen, elo) {
   if (!_maiaReady || !_maiaWorker) return null;
   if (!_maia3MoveIndex) {
     var ok = await _maiaLoadMappings();
     if (!ok) return null;
   }
   try {
-    var eloSelf = parseInt(lcSelectedRating) || 1200;
+    var eloSelf = parseInt(elo != null ? elo : lcSelectedRating) || 1200;
     var eloOppo = eloSelf;
 
     var encoded = _maiaEncode(fen);
@@ -1128,13 +1540,53 @@ const ECO_PRESETS = (() => {
 // Tries the masters DB via our server-side proxy first (no CORS issues),
 // falls back to the Lichess games DB if masters returns no moves.
 // Returns { moves: [{uci, white, draws, black}], opening: {eco, name} } or null.
+// The rating the Main Line book asks the Lichess database for: the bot's own —
+// the Elometer or Flounder dial, or for a blend the slot-weighted mean, which is
+// the rating the blend plays at on average.
+function botBookRatingElo() {
+  try {
+    if (typeof botTab !== 'undefined' && botTab === 'hybrid' &&
+        typeof botHybridSlots !== 'undefined') {
+      const slots = botHybridSlots.filter(s => s.weight > 0);
+      const tot = slots.reduce((a, s) => a + s.weight, 0);
+      if (tot > 0) return Math.round(slots.reduce((a, s) => a + s.weight * (s.elo || 1500), 0) / tot);
+    }
+    return (typeof botEffectiveElo === 'function') ? botEffectiveElo() : 1500;
+  } catch (e) { return 1500; }
+}
+
+// Honours the Opening Behavior section's Main Line settings: which database
+// (Masters, or Lichess games at the bot's rating), and Modern (2020+ only).
+//
+// Both used to be stored and never read. Every lookup asked Masters first with
+// no date filter and fell back to Lichess at a fixed 1200–1800 band, whatever
+// the two buttons said. The proxy already accepted `since` on both routes.
+function _openingBookQuery() {
+  const cfgBook = (typeof botOpeningConfig !== 'undefined' && botOpeningConfig) || {};
+  return {
+    src:     cfgBook.source === 'lichess' ? 'lichess' : 'masters',
+    since:   cfgBook.since || null,                        // 'YYYY-MM'
+    ratings: lcRatingParam(botBookRatingElo()),
+  };
+}
+// The cache is keyed by everything that changes the answer, not just the moves.
+// Anything else reading it (the surprise check in botPostMoveHook) must build
+// its key here too, or it will miss every time.
+function openingCacheKey(moveHistory) {
+  const q = _openingBookQuery();
+  return [q.src, q.since || '', q.ratings, moveHistory.join(',')].join('|');
+}
+
 async function openingExplorerFetch(moveHistory) {
-  const cacheKey = moveHistory.join(',');
+  const { src, since, ratings } = _openingBookQuery();
+  const cacheKey = openingCacheKey(moveHistory);
   if (_openingCache.has(cacheKey)) return _openingCache.get(cacheKey);
 
   async function fetchMasters() {
     const play = moveHistory.join(',');
-    const url = '/api/masters?play=' + encodeURIComponent(play) + '&moves=10';
+    // Masters dates are whole YEARS (see the /api/masters route).
+    const url = '/api/masters?play=' + encodeURIComponent(play) + '&moves=10' +
+                (since ? '&since=' + since.slice(0, 4) : '');
     const resp = await bookFetch(url);
     if (!resp.ok) throw new Error('masters proxy ' + resp.status);
     return resp.json();
@@ -1145,19 +1597,23 @@ async function openingExplorerFetch(moveHistory) {
     // Proxied, never called direct — see the /api/lichess route in server.js.
     const url = '/api/lichess' +
                 '?play=' + encodeURIComponent(play) +
-                '&speeds=blitz,rapid,classical&ratings=1200,1400,1600,1800&moves=10';
+                '&speeds=blitz,rapid,classical&ratings=' + encodeURIComponent(ratings) +
+                '&moves=10' + (since ? '&since=' + since : '');
     const resp = await bookFetch(url);
     if (!resp.ok) throw new Error('lichess explorer ' + resp.status);
     return resp.json();
   }
 
   try {
-    // Try masters first; fall back to lichess if empty or error
+    // Masters: try it first and fall back to Lichess when it is empty or
+    // unavailable (master games run out a few moves in). Lichess: ask it only.
     let data = null;
-    try {
-      data = await fetchMasters();
-    } catch(e) {
-      console.warn('Masters proxy unavailable, falling back to Lichess DB:', e.message);
+    if (src === 'masters') {
+      try {
+        data = await fetchMasters();
+      } catch(e) {
+        console.warn('Masters proxy unavailable, falling back to Lichess DB:', e.message);
+      }
     }
     if (!data || !data.moves || !data.moves.length) {
       data = await fetchLichess();
@@ -1181,7 +1637,10 @@ async function openingExplorerFetch(moveHistory) {
 // Main opening book entry point — called at the top of botMakeMove().
 // Returns a UCI string if the book has a move, or null to fall through to engine.
 async function botGetOpeningMove(moveHistory) {
-  const maxDepth = botOpeningConfig.maxBookDepth || 20;
+  // The depth is in MOVES, as the builder labels it ("Depth 20 mv") and as a
+  // player means it; moveHistory counts plies, both sides. This used to compare
+  // the two directly, so a book set to 20 moves left after 10.
+  const maxDepth = (botOpeningConfig.maxBookDepth || 20) * 2;
   if (botOpeningMode === 'none') return null;
   if (moveHistory.length >= maxDepth) return null;
 

@@ -61,43 +61,60 @@ console.log('\nPHONE  390×844');
   const { ctx, page } = await panelAt(390, 844, true);
 
   // ── Collapsed state ──
-  ok('11 strategic rows rendered',
-    await page.$$eval('#attractor-rows .attr-group', g => g.length) === 10 + 1 - 1,
-    'ATTRACTORS minus luck = 10');
+  // Read the expected count off the page's own ATTRACTORS rather than pinning a
+  // number here. This said "11" in the label while asserting 10, and the list
+  // has since grown to 15 (chaos split into tension + complexity, and grabber /
+  // kingsafety / prophylaxis arrived) — so it was wrong twice over and would
+  // have rotted again on the next one. Luck is the single entry that does not
+  // get a strategic row.
+  const wantRows = await page.evaluate(() => ATTRACTORS.filter(a => a.id !== 'luck').length);
+  ok(wantRows + ' strategic rows rendered',
+    await page.$$eval('#attractor-rows .attr-group', g => g.length) === wantRows,
+    'ATTRACTORS minus luck = ' + wantRows);
   ok('6 piece rows rendered',
     await page.$$eval('#piece-rows .attr-group', g => g.length) === 6);
-  ok('head is visible when collapsed', await shown(page, '#attrhead-attr-chaos'));
-  ok('body is hidden when collapsed', !(await shown(page, '#attrg-attr-chaos .attr-body')));
-  ok('slider not reachable when collapsed', !(await shown(page, '#attr-chaos')));
+  ok('head is visible when collapsed', await shown(page, '#attrhead-attr-complexity'));
+  ok('body is hidden when collapsed', !(await shown(page, '#attrg-attr-complexity .attr-body')));
+  ok('slider not reachable when collapsed', !(await shown(page, '#attr-complexity')));
 
-  const head = await box(page, '#attrhead-attr-chaos');
+  // Pole labels come off ATTRACTORS rather than being spelled here. They have
+  // already drifted once — this row was 'chaos' with poles Simplifier / Chaos
+  // Agent, and is now 'complexity' with Clarity / Chaos agent — and a test that
+  // hard-codes display copy fails for the one reason that does not matter.
+  const POLE = await page.evaluate(() => {
+    const a = ATTRACTORS.find(x => x.id === 'complexity');
+    return { left: a.labelLeft, right: a.labelRight };
+  });
+
+  const head = await box(page, '#attrhead-attr-complexity');
   ok('head is a 44px+ touch target', head.h >= 44, head.h + 'px');
   ok('head spans the column', head.w > 280, head.w + 'px');
 
   // ── Head content tracks state ──
   const at0 = await page.evaluate(() => ({
-    name: document.getElementById('attrname-attr-chaos').innerText.trim(),
-    set: document.getElementById('attrset-attr-chaos').textContent.trim(),
-    cp: document.getElementById('attrval-chaos-m').textContent.trim(),
-    barW: document.getElementById('attrbar-attr-chaos').style.width,
+    name: document.getElementById('attrname-attr-complexity').innerText.trim(),
+    set: document.getElementById('attrset-attr-complexity').textContent.trim(),
+    cp: document.getElementById('attrval-complexity-m').textContent.trim(),
+    barW: document.getElementById('attrbar-attr-complexity').style.width,
   }));
-  ok('centred head offers both poles', /Simplifier/.test(at0.name) && /Chaos Agent/.test(at0.name), at0.name);
+  ok('centred head offers both poles',
+    at0.name.includes(POLE.left) && at0.name.includes(POLE.right), at0.name);
   ok('centred head shows — for setting and cp', at0.set === '—' && at0.cp === '—');
   ok('centred bar has no fill', at0.barW === '0%', at0.barW);
 
-  await page.evaluate(() => attrSetValue('attr-chaos', 3));
+  await page.evaluate(() => attrSetValue('attr-complexity', 3));
   await page.waitForTimeout(120);
   const at3 = await page.evaluate(() => ({
-    name: document.getElementById('attrname-attr-chaos').innerText.trim(),
-    set: document.getElementById('attrset-attr-chaos').textContent.trim(),
-    cp: document.getElementById('attrval-chaos-m').textContent.trim(),
-    rowCp: document.getElementById('attrval-chaos').textContent.trim(),
-    barW: document.getElementById('attrbar-attr-chaos').style.width,
-    barL: document.getElementById('attrbar-attr-chaos').style.left,
-    slider: document.getElementById('attr-chaos').value,
-    state: attractorValues.chaos,
+    name: document.getElementById('attrname-attr-complexity').innerText.trim(),
+    set: document.getElementById('attrset-attr-complexity').textContent.trim(),
+    cp: document.getElementById('attrval-complexity-m').textContent.trim(),
+    rowCp: document.getElementById('attrval-complexity').textContent.trim(),
+    barW: document.getElementById('attrbar-attr-complexity').style.width,
+    barL: document.getElementById('attrbar-attr-complexity').style.left,
+    slider: document.getElementById('attr-complexity').value,
+    state: attractorValues.complexity,
   }));
-  ok('set head names the active pole only', at3.name === 'Chaos Agent', at3.name);
+  ok('set head names the active pole only', at3.name === POLE.right, at3.name);
   ok('setting reads +3', at3.set === '+3', at3.set);
   ok('cp mirror matches the row cp', at3.cp === at3.rowCp && /cp$/.test(at3.cp), at3.cp + ' vs ' + at3.rowCp);
   ok('bar fills right of centre', at3.barW === '30%' && at3.barL === '50%', at3.barW + ' @ ' + at3.barL);
@@ -114,39 +131,39 @@ console.log('\nPHONE  390×844');
   ok('bar fills left of centre', neg.barW === '50%' && neg.barL === '0%', neg.barW + ' @ ' + neg.barL);
 
   // cp is a share of one budget, so setting a second row must move the first.
-  const cpAfter = await page.evaluate(() => document.getElementById('attrval-chaos-m').textContent.trim());
+  const cpAfter = await page.evaluate(() => document.getElementById('attrval-complexity-m').textContent.trim());
   ok('cp re-splits across rows', cpAfter !== at3.cp, at3.cp + ' → ' + cpAfter);
 
   // ── Open state ──
-  await page.click('#attrhead-attr-chaos');
+  await page.click('#attrhead-attr-complexity');
   await page.waitForTimeout(200);
-  ok('tap opens the row', await shown(page, '#attr-chaos'));
-  const track = await box(page, '#attrg-attr-chaos .attr-slider-wrap');
+  ok('tap opens the row', await shown(page, '#attr-complexity'));
+  const track = await box(page, '#attrg-attr-complexity .attr-slider-wrap');
   ok('open track gets real width (>250px)', track.w > 250, track.w + 'px');
-  const wrap = await box(page, '#attrg-attr-chaos .attractor-row');
+  const wrap = await box(page, '#attrg-attr-complexity .attractor-row');
   ok('track is full row width', track.w >= wrap.w - 4, track.w + ' of ' + wrap.w);
-  const left = await box(page, '#attrg-attr-chaos .attr-left');
+  const left = await box(page, '#attrg-attr-complexity .attr-left');
   ok('pole label sits BELOW the track', left.y > track.y + track.h - 4, `poleY ${left.y} vs trackBottom ${track.y + track.h}`);
-  ok('row cp hidden (it is in the head)', !(await shown(page, '#attrg-attr-chaos .attr-val')));
-  ok('description is visible when open', await shown(page, '#attrg-attr-chaos .attr-desc'));
+  ok('row cp hidden (it is in the head)', !(await shown(page, '#attrg-attr-complexity .attr-val')));
+  ok('description is visible when open', await shown(page, '#attrg-attr-complexity .attr-desc'));
   const desc = await page.evaluate(() =>
-    getComputedStyle(document.querySelector('#attrg-attr-chaos .attr-desc')).position);
+    getComputedStyle(document.querySelector('#attrg-attr-complexity .attr-desc')).position);
   ok('description is in the flow, not a hover overlay', desc === 'static', desc);
 
   // ── Steppers ──
-  const step = await box(page, '#attrg-attr-chaos .attr-step');
+  const step = await box(page, '#attrg-attr-complexity .attr-step');
   ok('stepper is a 44px+ target', step.h >= 44, step.h + 'px');
-  await page.click('#attrg-attr-chaos .attr-steppers .attr-step:last-child');
+  await page.click('#attrg-attr-complexity .attr-steppers .attr-step:last-child');
   await page.waitForTimeout(120);
   ok('+ nudges to 4 through the real handler',
-    await page.evaluate(() => attractorValues.chaos === 4 && document.getElementById('attr-chaos').value === '4'));
-  await page.click('#attrg-attr-chaos .attr-step-mid');
+    await page.evaluate(() => attractorValues.complexity === 4 && document.getElementById('attr-complexity').value === '4'));
+  await page.click('#attrg-attr-complexity .attr-step-mid');
   await page.waitForTimeout(120);
   ok('Centre resets to 0',
-    await page.evaluate(() => attractorValues.chaos === 0 && document.getElementById('attrset-attr-chaos').textContent.trim() === '—'));
-  await page.evaluate(() => { attrNudge('attr-chaos', -9); });
+    await page.evaluate(() => attractorValues.complexity === 0 && document.getElementById('attrset-attr-complexity').textContent.trim() === '—'));
+  await page.evaluate(() => { attrNudge('attr-complexity', -9); });
   await page.waitForTimeout(120);
-  ok('nudge clamps at −5', await page.evaluate(() => attractorValues.chaos === -5));
+  ok('nudge clamps at −5', await page.evaluate(() => attractorValues.complexity === -5));
 
   // ── Accordion ──
   // Uses 'trade' (set to −5 above) rather than an untouched row: by this point
@@ -155,7 +172,7 @@ console.log('\nPHONE  390×844');
   await page.click('#attrhead-attr-trade');
   await page.waitForTimeout(200);
   ok('opening another row closes the first',
-    (await shown(page, '#attr-trade')) && !(await shown(page, '#attr-chaos')));
+    (await shown(page, '#attr-trade')) && !(await shown(page, '#attr-complexity')));
   await page.click('#attrhead-attr-trade');
   await page.waitForTimeout(200);
   ok('tapping an open row closes it', !(await shown(page, '#attr-trade')));
@@ -179,37 +196,49 @@ console.log('\nPHONE  390×844');
   await page.evaluate(() => { switchItab('attract', 'presets'); _applyPersonality('entropy'); switchItab('attract', 'pieces'); });
   await page.waitForTimeout(250);
   ok('preset repaints the heads',
-    await page.evaluate(() => document.getElementById('attrset-attr-chaos').textContent.trim() === '+4'
-      && document.getElementById('attrname-attr-chaos').innerText.trim() === 'Chaos Agent'));
+    await page.evaluate((right) => document.getElementById('attrset-attr-complexity').textContent.trim() === '+4'
+      && document.getElementById('attrname-attr-complexity').innerText.trim() === right, POLE.right));
   await page.evaluate(() => _radarSetAxis(0, -2));
   await page.waitForTimeout(200);
   ok('radar drag repaints the head',
-    await page.evaluate(() => document.getElementById('attrset-attr-chaos').textContent.trim() === '-2'
-      && document.getElementById('attrname-attr-chaos').innerText.trim() === 'Simplifier'));
+    await page.evaluate((left) => document.getElementById('attrset-attr-complexity').textContent.trim() === '-2'
+      && document.getElementById('attrname-attr-complexity').innerText.trim() === left, POLE.left));
 
   // ── Active-first partition ──
-  // Entropy leaves 'pressure' at 0, so exactly one strategic row is inactive.
+  // How many rows Entropy leaves at 0 is a property of the preset and the
+  // attractor list, both of which move — it was 1 when this was written and is
+  // 5 now. Count it rather than pinning it, so the assertion keeps testing the
+  // expander and stops testing the size of the catalogue.
   await page.evaluate(() => { switchItab('attract', 'presets'); _applyPersonality('entropy'); switchItab('attract', 'pieces'); });
   await page.waitForTimeout(250);
+  const part = await page.evaluate(() => {
+    const rows = ATTRACTORS.filter(a => a.id !== 'luck');
+    const idle = rows.filter(a => !attractorValues[a.id]);
+    return { idle: idle.length, used: rows.length - idle.length, anIdleId: idle[0] && idle[0].id };
+  });
   ok('list is partitioned once something is set',
     await page.evaluate(() => document.getElementById('attractor-rows').classList.contains('partitioned')));
-  ok('inactive row is folded away', !(await shown(page, '#attrg-attr-pressure')));
-  ok('active rows still shown', await shown(page, '#attrg-attr-chaos'));
+  ok('there are rows on each side of the split', part.idle > 0 && part.used > 0,
+    part.used + ' in use, ' + part.idle + ' idle');
+  ok('inactive row is folded away', !(await shown(page, '#attrg-attr-' + part.anIdleId)));
+  ok('active rows still shown', await shown(page, '#attrg-attr-complexity'));
   ok('active rows sort above the expander', await page.evaluate(() => {
-    const g = document.getElementById('attrg-attr-chaos');
+    const g = document.getElementById('attrg-attr-complexity');
     const b = document.getElementById('attrmore-attractor-rows');
     return getComputedStyle(g).order === '1' && getComputedStyle(b).order === '2';
   }));
   const moreTxt = await page.evaluate(() => document.getElementById('attrmore-attractor-rows').textContent.trim());
-  ok('expander counts the folded rows', /^Show 1 more$/.test(moreTxt), moreTxt);
+  ok('expander counts the folded rows', moreTxt === 'Show ' + part.idle + ' more', moreTxt);
   await page.click('#attrmore-attractor-rows');
   await page.waitForTimeout(200);
-  ok('expander reveals them', await shown(page, '#attrg-attr-pressure'));
-  ok('expander flips its label', await page.evaluate(() =>
-    /Show only the 9 in use/.test(document.getElementById('attrmore-attractor-rows').textContent)));
+  ok('expander reveals them', await shown(page, '#attrg-attr-' + part.anIdleId));
+  ok('expander flips its label', await page.evaluate(
+    used => document.getElementById('attrmore-attractor-rows').textContent
+              .includes('Show only the ' + used + ' in use'), part.used),
+    moreTxt);
   await page.click('#attrmore-attractor-rows');
   await page.waitForTimeout(200);
-  ok('expander folds them again', !(await shown(page, '#attrg-attr-pressure')));
+  ok('expander folds them again', !(await shown(page, '#attrg-attr-' + part.anIdleId)));
 
   // A list with nothing set must stay whole — folding everything behind one
   // button would greet a fresh bot with an empty tab. (Presets don't touch
@@ -238,6 +267,17 @@ console.log('\nPHONE  390×844');
   await page.waitForTimeout(200);
   ok('closing re-sorts it into the active group',
     await page.evaluate(() => document.getElementById('attrg-attr-pressure').classList.contains('part-active')));
+  // The expander only earns its place while something is folded behind it.
+  // Entropy used to leave exactly one row idle, so setting 'pressure' above was
+  // enough to empty that bucket; it now leaves several, so clear the rest
+  // before asserting the button retires — the claim is about an empty inactive
+  // bucket, not about how many rows one preset happens to skip.
+  await page.evaluate(() => {
+    ATTRACTORS.filter(a => a.id !== 'luck')
+      .filter(a => !attractorValues[a.id])
+      .forEach(a => attrSetValue('attr-' + a.id, 2));
+  });
+  await page.waitForTimeout(250);
   ok('nothing inactive left → expander retires',
     await page.evaluate(() => !document.getElementById('attractor-rows').classList.contains('partitioned')));
 
@@ -250,7 +290,7 @@ console.log('\nPHONE  390×844');
     const c = document.getElementById('radar-canvas');
     return c.getBoundingClientRect().width <= c.parentElement.getBoundingClientRect().width + 1;
   }));
-  const before = await page.evaluate(() => attractorValues.chaos);
+  const before = await page.evaluate(() => attractorValues.complexity);
   await page.evaluate(() => {
     // Tap the Chaos spoke (axis 0 = straight up from centre 160,130).
     const c = document.getElementById('radar-canvas'), r = c.getBoundingClientRect();
@@ -263,11 +303,11 @@ console.log('\nPHONE  390×844');
   });
   await page.waitForTimeout(500);
   ok('radar tap does NOT change the value',
-    await page.evaluate(v => attractorValues.chaos === v, before), 'was ' + before);
+    await page.evaluate(v => attractorValues.complexity === v, before), 'was ' + before);
   ok('radar tap switches to the Strategy tab',
     await page.evaluate(() => document.getElementById('itab-attract-pieces').classList.contains('active')));
   ok('radar tap opens that axis\'s row',
-    await page.evaluate(() => document.getElementById('attrg-attr-chaos').classList.contains('open')));
+    await page.evaluate(() => document.getElementById('attrg-attr-complexity').classList.contains('open')));
 
   // 'luck' has no row — ATTRACTORS is filtered by id !== 'luck' — so it routes
   // to the dual slider that actually governs Good day / Bad day.
@@ -324,35 +364,35 @@ console.log('\nDESKTOP  1440×900  (must be unchanged)');
 {
   const { ctx, page } = await panelAt(1440, 900, false);
 
-  ok('head does not render', !(await shown(page, '#attrhead-attr-chaos')));
-  ok('steppers do not render', !(await shown(page, '#attrg-attr-chaos .attr-steppers')));
-  ok('slider is directly visible (no tap needed)', await shown(page, '#attr-chaos'));
+  ok('head does not render', !(await shown(page, '#attrhead-attr-complexity')));
+  ok('steppers do not render', !(await shown(page, '#attrg-attr-complexity .attr-steppers')));
+  ok('slider is directly visible (no tap needed)', await shown(page, '#attr-complexity'));
   ok('.attr-body is display:contents',
-    await page.evaluate(() => getComputedStyle(document.querySelector('#attrg-attr-chaos .attr-body')).display) === 'contents');
+    await page.evaluate(() => getComputedStyle(document.querySelector('#attrg-attr-complexity .attr-body')).display) === 'contents');
 
   // Original geometry: pole label, track, pole label, cp — all on ONE line.
-  const l = await box(page, '#attrg-attr-chaos .attr-left');
-  const t = await box(page, '#attrg-attr-chaos .attr-slider-wrap');
-  const r = await box(page, '#attrg-attr-chaos .attr-right');
-  const v = await box(page, '#attrval-chaos');
+  const l = await box(page, '#attrg-attr-complexity .attr-left');
+  const t = await box(page, '#attrg-attr-complexity .attr-slider-wrap');
+  const r = await box(page, '#attrg-attr-complexity .attr-right');
+  const v = await box(page, '#attrval-complexity');
   ok('row is one line: left · track · right · cp',
     Math.abs(l.y - t.y) < 12 && Math.abs(r.y - t.y) < 12 && Math.abs(v.y - t.y) < 12,
     `ys ${l.y}/${t.y}/${r.y}/${v.y}`);
   ok('pole labels keep their 90px column', l.w === 90 && r.w === 90, l.w + '/' + r.w);
-  ok('cp readout still visible in the row', await shown(page, '#attrval-chaos'));
+  ok('cp readout still visible in the row', await shown(page, '#attrval-complexity'));
   ok('left pole is right-aligned as before',
-    await page.evaluate(() => getComputedStyle(document.querySelector('#attrg-attr-chaos .attr-left')).textAlign) === 'right');
+    await page.evaluate(() => getComputedStyle(document.querySelector('#attrg-attr-complexity .attr-left')).textAlign) === 'right');
 
   const pl = await box(page, '#attrg-piece-knight .attr-left');
   ok('piece label keeps its 70px column', pl.w === 70, pl.w + 'px');
 
   // The description stays a hover overlay on desktop.
-  ok('description hidden at rest', !(await shown(page, '#attrg-attr-chaos .attr-desc')));
-  await page.hover('#attrg-attr-chaos .attractor-row');
+  ok('description hidden at rest', !(await shown(page, '#attrg-attr-complexity .attr-desc')));
+  await page.hover('#attrg-attr-complexity .attractor-row');
   await page.waitForTimeout(150);
-  ok('description appears on hover', await shown(page, '#attrg-attr-chaos .attr-desc'));
+  ok('description appears on hover', await shown(page, '#attrg-attr-complexity .attr-desc'));
   const pos = await page.evaluate(() =>
-    getComputedStyle(document.querySelector('#attrg-attr-chaos .attr-desc')).position);
+    getComputedStyle(document.querySelector('#attrg-attr-complexity .attr-desc')).position);
   ok('description still absolutely positioned', pos === 'absolute', pos);
 
   // Sliders still drive state on desktop.
@@ -369,7 +409,7 @@ console.log('\nDESKTOP  1440×900  (must be unchanged)');
   ok('.attr-list is not a flex column',
     await page.evaluate(() => getComputedStyle(document.getElementById('attractor-rows')).display) !== 'flex');
   ok('rows keep DOM order (no reordering)',
-    await page.evaluate(() => getComputedStyle(document.getElementById('attrg-attr-chaos')).order) === '0');
+    await page.evaluate(() => getComputedStyle(document.getElementById('attrg-attr-complexity')).order) === '0');
 
   // The radar lives on the Quality tab — switch back before asserting on it.
   await page.evaluate(() => switchItab('attract', 'quality'));

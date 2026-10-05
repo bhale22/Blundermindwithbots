@@ -69,6 +69,10 @@ await page.evaluate(() => { tcTime = 30; tcInc = 0; initPtsA(); drawA(); });
 // track/thumb reflect the checkbox state (Android-style switch).
 await page.evaluate(() => toggleSec('pressure'));
 await page.waitForTimeout(700);
+// The curves only run on a clock-driven pace; the default Fixed interval greys
+// them (see verify-untimed-curves). Test them where they are live.
+await page.evaluate(() => document.querySelector('#timing-mode-grid .mcard[data-v="Complexity-scaled"]').click());
+await page.waitForTimeout(200);
 await page.evaluate(() => { const cb = document.getElementById('pressure-off-a'); cb.checked = false; cb.onchange(); });
 await page.waitForTimeout(150);
 const offState = await page.evaluate(() => ({
@@ -84,7 +88,17 @@ ok(offState.flat, 'off → curve flat at E0');
 ok(offState.dim, 'off → chart dimmed');
 // Renamed from "Dist only" when the label it summarises became "Temperature
 // escalation only" — _syncPressureOffUi sets both from the same branch.
-ok(offState.chip === 'Temp only', 'status chip: Temp only');
+// With curve A off, what is left depends on Calm ↔ Panicky: at the default 0
+// curve B runs as drawn, so the chip says Temp only; fully Calm leaves the
+// temperature untouched too, so nothing runs and it says Off.
+ok(offState.chip === 'Temp only', 'status chip at Panicky 0: Temp only (' + offState.chip + ')');
+const chipCalm = await page.evaluate(() => {
+  onAttractorChange('pressure', -5);
+  const c = document.getElementById('st-pressure').textContent;
+  onAttractorChange('pressure', 0);
+  return c;
+});
+ok(chipCalm === 'Off', 'status chip fully Calm: Off (' + chipCalm + ')');
 await page.evaluate(() => { const cb = document.getElementById('pressure-off-a'); cb.checked = true; cb.onchange(); });
 await page.waitForTimeout(150);
 ok(await page.evaluate(() => !pressureOffA && ctrlA.some(p => p.y < currentElo - 100)), 'switch on → Regan seed restored');

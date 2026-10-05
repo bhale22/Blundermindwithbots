@@ -1308,6 +1308,25 @@ canvas{
 /* The "?" opens help — meaningless on a copy, and a tap target that does
    nothing is worse than no tap target. */
 .tour-replica .ib-help { display:none; }
+/* A control that lives in a panel the tour keeps closed, pictured in place:
+   the panel's own group, under a copy of the panel's title, framed like the
+   panel so it reads as "in there". Full card width, unlike a lone button. */
+.tour-shot { max-width:none; }
+/* A step carrying such a picture gets a wider card, so the copied control has
+   room for its label (the real panel is wider still). Phones are full width. */
+#tourPanel.tour-wide { width:340px; }
+.tour-shot-card {
+  background:var(--bg-panel2);border:1px solid var(--border);border-radius:8px;
+  padding:0 10px 9px;
+}
+.tour-shot-hd {
+  font-size:11px;font-weight:600;color:var(--text-primary);
+  margin:0 -10px 4px;padding:6px 10px 5px;border-bottom:0.5px solid var(--border);
+}
+.tour-shot-gap { font-size:11px;line-height:1;color:var(--text-dim);margin:0 0 4px; }
+.tour-shot .bs-group { margin-bottom:0; }
+/* What the board is showing, when it shows the demo rather than your game. */
+.tour-demo-note { margin:7px 0 0; }
 .tour-actions { display:flex;align-items:center;gap:8px; }
 .tour-btn { font-size:11px;padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);cursor:pointer;transition:all 0.15s; }
 .tour-btn:hover { border-color:var(--accent);color:var(--accent); }
@@ -1462,6 +1481,13 @@ canvas{
   border:1px solid var(--border);border-radius:6px;cursor:pointer;
 }
 .bmw-sel:hover{border-color:var(--accent);color:var(--text-primary);}
+.bmw-persona{
+  flex:1 1 100%;border:0;background:transparent;padding:0 2px;margin-top:-2px;
+  font-family:inherit;font-size:10px;color:var(--text-dim);text-align:left;cursor:pointer;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.bmw-persona.has{color:var(--text-secondary);}
+.bmw-persona:hover{color:var(--accent);}
 .bmw-sel:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
 
 .bmw-or{
@@ -1591,6 +1617,19 @@ canvas{
   font-family:inherit;font-size:11px;font-weight:600;padding:4px 3px;cursor:pointer;
 }
 .qb-row .qb-sel + .qb-sel{border-left:1px solid rgba(74,171,116,0.55);}
+/* The personality readout. A button because it opens the builder, styled as
+   a caption because it is one. "has" lights it: a bot with a personality
+   reads as a thing someone made; 0 cp reads as a dial not yet touched. */
+.qb-persona{
+  display:block;width:100%;border:0;border-top:1px solid rgba(74,171,116,0.35);
+  background:transparent;color:var(--st-go-fg,#1d6b41);opacity:.72;
+  font-family:inherit;font-size:9.5px;font-weight:600;letter-spacing:0.02em;
+  padding:3px 6px;text-align:left;cursor:pointer;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.qb-persona.has{opacity:1;}
+.qb-persona:hover{background:var(--st-go-hv,rgba(90,212,144,0.22));}
+.qb-persona:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
 .qb-sel:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
 
 /* ── Indicator state key ────────────────────────────────────────────────────
@@ -1915,10 +1954,11 @@ body.pro-mode .bs-vision{ display:none !important; }
 .bs-row:hover{border-color:var(--accent);}
 
 /* Ghost replies inside the settings panel: the control came from a grid two
-   columns wide, so it needs its own width rule here. */
-#boardSettingsPanel .ghost-one{width:100%;}
-#boardSettingsPanel .ghost-one .ib-main{height:auto;min-height:40px;}
-#boardSettingsPanel #soloGhostDepth{width:100%;margin-top:4px;}
+   columns wide, so it needs its own width rule here. The tour's picture of the
+   panel (.tour-shot) is the same control, so it takes the same rules. */
+#boardSettingsPanel .ghost-one, .tour-shot .ghost-one{width:100%;}
+#boardSettingsPanel .ghost-one .ib-main, .tour-shot .ghost-one .ib-main{height:auto;min-height:40px;}
+#boardSettingsPanel #soloGhostDepth, .tour-shot .ghost-one select{width:100%;margin-top:4px;}
 
 /* ── Board settings launcher ────────────────────────────────────────────────
    Moved out of the top of the column and re-sited between the two overlay
@@ -1971,13 +2011,14 @@ body.pro-mode .bs-vision{ display:none !important; }
   box-shadow:0 0 0 1.5px var(--st-on-ring,rgba(34,168,90,0.18));
 }
 .ghost-one.on .ib-main{background:transparent;color:var(--st-on-fg,#14713c);}
-#soloGhostDepth{
+/* .tour-shot select: the tour's copy of this control carries no id. */
+#soloGhostDepth, .tour-shot .ghost-one select{
   flex:1;min-width:0;font-family:inherit;font-size:10px;
   border:0;border-left:0.5px solid var(--border2);border-radius:0;
   background:transparent;color:var(--text-secondary);cursor:pointer;padding:2px 3px;
 }
-.ghost-one.on #soloGhostDepth{color:var(--st-on-fg,#14713c);border-left-color:var(--st-on-bd,rgba(34,168,90,0.45));}
-#soloGhostDepth:disabled{opacity:0.55;cursor:default;}
+.ghost-one.on #soloGhostDepth, .tour-shot .ghost-one.on select{color:var(--st-on-fg,#14713c);border-left-color:var(--st-on-bd,rgba(34,168,90,0.45));}
+#soloGhostDepth:disabled, .tour-shot .ghost-one select:disabled{opacity:0.55;cursor:default;}
 
 /* ── Indicator utility row ──────────────────────────────────────────────────
    Clear, Hide, Peek and Show all read as one family. Three of the four do
@@ -3198,7 +3239,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
   <div class="bmw-tag">Stop getting blundermined.</div>
 
   <!-- PRIMARY. Starts whatever opponent the sidebar's quick-start block is
-       already holding — Stockfish 1 on a first visit — with no builder in the
+       already holding — Flounder 600 on a first visit — with no builder in the
        way. The two selects are that block's own selects, mirrored by
        quickBotSync(): change one and the other moves. The panel therefore
        never starts a game the sidebar cannot account for afterwards. -->
@@ -3210,9 +3251,11 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <select class="bmw-sel" id="bmwBotSel" onchange="bmWelcomeBotPick(this.value)"
             aria-label="Choose the opponent">
       <optgroup label="Maia — human-like" id="bmwBotMaia"></optgroup>
-      <optgroup label="Stockfish level" id="bmwBotLevels"></optgroup>
+      <optgroup label="Flounder — rated engine" id="bmwBotLevels"></optgroup>
       <option value="builder">Open Bot-Builder…</option>
     </select>
+    <button type="button" class="bmw-persona" id="bmwBotPersona"
+            onclick="bmWelcomeChoose('bot')"></button>
     <select class="bmw-sel" id="bmwBotColor" onchange="botSetPlayerColor(this.value)"
             aria-label="Choose which colour you play">
       <option value="random">Play as Random</option>
@@ -3610,10 +3653,15 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <select class="qb-sel" id="quickBotSel" onchange="quickBotPick(this.value)"
                 aria-label="Choose the opponent">
           <optgroup label="Maia — human-like" id="quickBotMaia"></optgroup>
-          <optgroup label="Stockfish level" id="quickBotLevels"></optgroup>
+          <optgroup label="Flounder — rated engine" id="quickBotLevels"></optgroup>
           <option value="builder">Open Bot-Builder…</option>
         </select>
       </div>
+      <!-- What rides along with the pick: the personality (or the absence of
+           one), its CP budget, and the book. The picker above sets only the
+           engine and rating, and this is the line that says so. -->
+      <button type="button" class="qb-persona" id="quickBotPersona"
+              onclick="if(typeof openBotModal==='function')openBotModal()"></button>
       <div class="qb-row">
         <select class="qb-sel" id="quickBotColor" onchange="botSetPlayerColor(this.value)"
                 aria-label="Choose which colour you play">
@@ -4040,23 +4088,30 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <!-- Opponent mode -->
     <h3 style="margin-bottom:6px;">Opponent Type</h3>
     <div style="display:flex;gap:4px;margin-bottom:4px;">
-      <button class="bot-tab active" id="btab-sf"      onclick="botSetTab('sf')">⚙ Stockfish</button>
+      <button class="bot-tab active" id="btab-sf"      onclick="botSetTab('sf')">🎣 Flounder</button>
       <button class="bot-tab"        id="btab-hybrid"  onclick="botSetTab('hybrid')">⚗ Hybrid</button>
-      <button class="bot-tab"        id="btab-lcsf"    onclick="botSetTab('lcsf')">📖 LC+SF</button>
+      <button class="bot-tab"        id="btab-lcsf"    onclick="botSetTab('lcsf')">📖 Book+Flounder</button>
     </div>
     <div style="display:flex;gap:4px;margin-bottom:10px;">
       <button class="bot-tab" id="btab-maia3" onclick="botSetTab('maia3')" style="opacity:0.5;" title="Download Maia3 model to enable">🧠 Maia3</button>
       <button class="bot-tab" id="btab-maia"  onclick="botSetTab('maia')"  style="opacity:0.5;" title="Download Maia3 model to enable">🔍 LC+Maia</button>
     </div>
 
-    <!-- Stockfish panel -->
+    <!-- Flounder panel -->
     <div id="bpanel-sf">
       <div style="margin-bottom:8px;">
-        <label style="font-size:9px;color:var(--text-dim);">Skill Level (1–20)</label>
+        <label style="font-size:9px;color:var(--text-dim);">Rating (600–2400)</label>
         <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
-          <input type="range" id="sfLevel" min="1" max="20" value="8" style="flex:1;" oninput="document.getElementById('sfLevelVal').textContent=this.value">
-          <span id="sfLevelVal" style="font-size:11px;font-weight:700;min-width:20px;">8</span>
+          <input type="range" id="flounderElo" min="600" max="2400" step="25" value="1200" style="flex:1;" oninput="document.getElementById('flounderEloVal').textContent=this.value">
+          <span id="flounderEloVal" style="font-size:11px;font-weight:700;min-width:30px;">1200</span>
         </div>
+        <div style="font-size:8px;color:var(--text-dim);margin-top:2px;">Every rating on this dial was measured by playing it against Maia at the same rating — 796 games in all.</div>
+      </div>
+      <div style="background:rgba(74,159,212,0.08);border:0.5px solid rgba(74,159,212,0.2);border-radius:4px;padding:6px;margin-bottom:8px;font-size:8.5px;color:var(--text-secondary);">
+        🎣 <strong>Flounder</strong> is built on <strong>Stockfish</strong> (GPL-3.0). It scores every legal
+        move with Stockfish, then samples how much the turn should cost from the error
+        curve in Regan &amp; Haworth, <em>Intrinsic Chess Ratings</em> — so it makes
+        human-shaped mistakes instead of playing a weakened search.
       </div>
       <div style="margin-bottom:8px;">
         <label style="font-size:9px;color:var(--text-dim);">Under Time Pressure — slide to level:</label>
@@ -4109,7 +4164,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div style="background:rgba(90,212,144,0.07);border:0.5px solid rgba(90,212,144,0.2);border-radius:4px;padding:6px;margin-bottom:8px;">
         <div style="font-size:8.5px;color:var(--text-secondary);margin-bottom:5px;">
           🧠 <strong>Real Maia3</strong> — human-like neural network (600–2600 Elo).<br>
-          Download once (~44MB), runs in your browser. Uses ~150–200MB RAM while active. Falls back to Stockfish if not downloaded.
+          Download once (~44MB), runs in your browser. Uses ~150–200MB RAM while active. Falls back to Flounder at the same rating if not downloaded.
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
           <button id="maia3DownloadBtn" onclick="maiaDownloadModel()"
@@ -4147,7 +4202,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         </div>
       </div>
       <div style="margin-bottom:8px;">
-        <label style="font-size:9px;color:var(--text-dim);">Stockfish fallback level</label>
+        <label style="font-size:9px;color:var(--text-dim);">Flounder fallback strength</label>
         <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
           <input type="range" id="lcsfFallbackLevel" min="1" max="20" value="5" style="flex:1;"
             oninput="document.getElementById('lcsfFallbackVal').textContent=this.value">
@@ -4156,7 +4211,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <div style="font-size:8px;color:var(--text-dim);">Used when position not in Lichess database</div>
       </div>
       <div style="background:rgba(74,159,212,0.08);border:0.5px solid rgba(74,159,212,0.2);border-radius:4px;padding:6px;font-size:8.5px;color:var(--text-secondary);">
-        ℹ️ Plays statistically common moves for that rating. Works well in openings; falls back to Stockfish in novel positions.
+        ℹ️ Plays statistically common moves for that rating. Works well in openings; falls back to Flounder at the strength above in novel positions.
       </div>
     </div>
 
@@ -4184,7 +4239,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <div style="font-size:8px;color:var(--text-dim);">Low = always plays top move · High = picks among plausible moves</div>
       </div>
       <div style="background:rgba(90,212,144,0.07);border:0.5px solid rgba(90,212,144,0.2);border-radius:4px;padding:6px;margin-bottom:8px;font-size:8.5px;color:var(--text-secondary);">
-        🧠 Falls back to <strong>Maia3</strong> (if downloaded) when position not in database, then Stockfish.
+        🧠 Falls back to <strong>Maia3</strong> (if downloaded) when position not in database, then Flounder.
       </div>
       <!-- Maia3 model download -->
       <div style="background:rgba(90,212,144,0.07);border:0.5px solid rgba(90,212,144,0.2);border-radius:4px;padding:6px;margin-bottom:8px;">
@@ -4202,7 +4257,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <div id="maiaStatusText" style="font-size:8px;color:var(--text-dim);margin-top:3px;">Not loaded</div>
       </div>
       <div style="background:rgba(74,159,212,0.08);border:0.5px solid rgba(74,159,212,0.2);border-radius:4px;padding:6px;margin-bottom:8px;font-size:8.5px;color:var(--text-secondary);">
-        ℹ️ Without Maia3 downloaded: falls back to Lichess game database (openings only), then Stockfish.<br><br>
+        ℹ️ Without Maia3 downloaded: falls back to Lichess game database (openings only), then Flounder.<br><br>
         🌐 Play Maia and access free learning tools at <a href="https://www.maiachess.com/" target="_blank" rel="noopener"
           style="color:var(--accent);text-decoration:underline;">maiachess.com</a>
       </div>
@@ -4843,7 +4898,8 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <div class="maia-alert">
           <div class="maia-alert-h">⚠ Maia3 model not downloaded</div>
           <div class="maia-alert-b">Maia is what makes ghosts and the Maia bots feel human. Until it
-            is downloaded, every one of them quietly falls back to Stockfish.</div>
+            is downloaded, every one of them quietly falls back to Flounder — which is
+            rated, so the opponent stays roughly the strength you asked for.</div>
           <button type="button" class="maia-alert-btn" onclick="maiaDownloadModel()">
             ↓ Download Maia3 (~44 MB) — one time
           </button>

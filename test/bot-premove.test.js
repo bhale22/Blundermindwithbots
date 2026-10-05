@@ -91,6 +91,18 @@ function stubMaia(ctx, humanProbs, botProbs) {
   ctx.maia3GetMoveProbs = async () => queue.shift() || null;
 }
 
+// A premoved reply passes the same engine checks as a normal move (CP Budget,
+// degradation guard, Hard Floor), which probe Stockfish whenever the pick is
+// not the most popular move. Stub the probe: `evals` gives a move's score (cp,
+// side to move), anything unlisted scores 0 — so by default every move is
+// equal and every check passes. Pass `null` to make the probe fail.
+function stubEngine(ctx, evals) {
+  ctx.sfReady = true;
+  ctx.sfEvalMoves = async (fen, moves) =>
+    evals === null ? null
+      : Object.fromEntries(moves.map(m => [m, (evals && evals[m] != null) ? evals[m] : 0]));
+}
+
 const sq = (ctx, n) => ctx.fileRankToSq(n);
 
 // ── Arming ───────────────────────────────────────────────────────────────────
@@ -494,6 +506,7 @@ test('the reply is temperature-sampled, not always the top move', async () => {
     ctx.botPremoveRatePct = 100;
     ctx.botMaiaTempValue = 1.0;
     stubMaia(ctx, { e2e4: 0.9 }, { e7e5: 0.344, c7c5: 0.324 });
+    stubEngine(ctx);   // both replies equal: the checks pass either one
     await ctx.botPremoveArm();
     if (ctx.botActivePremove) picks.add(ctx.botActivePremove.uci);
   }
@@ -534,12 +547,85 @@ test('personality attractors reweight the premoved reply', async () => {
     ctx.botMaiaTempValue = 1.0;
     ctx.window._bcpPieceValues = { knight: 5 };   // strongly favour knight moves
     stubMaia(ctx, { e2e4: 0.9 }, { e7e5: 0.7, g8f6: 0.3 });
+    stubEngine(ctx);   // the knight move costs nothing, so the Budget allows it
     await ctx.botPremoveArm();
     if (ctx.botActivePremove && ctx.botActivePremove.uci === 'g8f6') knightPicks++;
   }
   assert.ok(knightPicks > 5,
     'a knight attractor should lift the knight reply above its raw Maia share (' +
     knightPicks + '/50)');
+});
+
+// ── A premove answers to the same limits as a move the bot thinks about ──────
+
+test('a premoved personality pick that costs more than the CP Budget is replaced', async () => {
+  let knightPicks = 0, armed = 0;
+  for (let i = 0; i < 50; i++) {
+    const ctx = makeCtx();
+    setPos(ctx, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+    ctx.botPlayerColor = 'white';
+    ctx.botPremoveEnabled = true;
+    ctx.botPremoveRatePct = 100;
+    ctx.botMaiaTempValue = 1.0;
+    ctx.window._bcpPieceValues = { knight: 5 };
+    ctx.window._bcpCpBudget = 100;
+    stubMaia(ctx, { e2e4: 0.9 }, { e7e5: 0.7, g8f6: 0.3 });
+    stubEngine(ctx, { e7e5: 0, g8f6: -300 });   // the knight move loses 3 pawns
+    await ctx.botPremoveArm();
+    if (ctx.botActivePremove) { armed++; if (ctx.botActivePremove.uci === 'g8f6') knightPicks++; }
+  }
+  assert.ok(armed > 0, 'premoves should still arm');
+  assert.equal(knightPicks, 0, 'a 300 cp personality pick must never survive a 100 cp Budget');
+});
+
+test('a premove pick the engine cannot check is not armed at all', async () => {
+  let armedOffTop = 0;
+  for (let i = 0; i < 40; i++) {
+    const ctx = makeCtx();
+    setPos(ctx, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+    ctx.botPlayerColor = 'white';
+    ctx.botPremoveEnabled = true;
+    ctx.botPremoveRatePct = 100;
+    ctx.botMaiaTempValue = 1.0;
+    stubMaia(ctx, { e2e4: 0.9 }, { e7e5: 0.344, c7c5: 0.324 });
+    stubEngine(ctx, null);   // every probe fails
+    await ctx.botPremoveArm();
+    if (ctx.botActivePremove && ctx.botActivePremove.uci !== 'e7e5') armedOffTop++;
+  }
+  assert.equal(armedOffTop, 0,
+    'an unverified pick must fall back to thinking normally, never be committed');
+});
+
+test('a premove is played at the rating and temperature for a one-second think', async () => {
+  const ctx = makeCtx();
+  setPos(ctx, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+  ctx.botPlayerColor = 'white';
+  ctx.botPremoveEnabled = true;
+  ctx.botPremoveRatePct = 100;
+  ctx.maia3SelectedRating = 2000;
+  // Curve A: full 2000 at a relaxed pace, 1400 at one second.
+  ctx.botPressureCurveA = [{ x: 1, y: 1400 }, { x: 30, y: 2000 }, { x: 200, y: 2000 }];
+  const elos = [];
+  const queue = [{ e2e4: 0.9 }, { e7e5: 0.9 }];
+  ctx.maia3GetMoveProbs = async (fen, elo) => { elos.push(elo); return queue.shift() || null; };
+  await ctx.botPremoveArm();
+  assert.deepEqual(elos, [1400, 1400], 'both the guess and the reply use the 1-second rating');
+  assert.ok(ctx.botActivePremove, 'the premove should arm');
+
+  // With time pressure off (a Fixed pace), the same bot premoves at its own rating.
+  const ctx2 = makeCtx();
+  setPos(ctx2, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+  ctx2.botPlayerColor = 'white';
+  ctx2.botPremoveEnabled = true;
+  ctx2.botPremoveRatePct = 100;
+  ctx2.maia3SelectedRating = 2000;
+  ctx2.botTimeBehavior = 'fixed';
+  ctx2.botPressureCurveA = ctx.botPressureCurveA;
+  const elos2 = [];
+  const q2 = [{ e2e4: 0.9 }, { e7e5: 0.9 }];
+  ctx2.maia3GetMoveProbs = async (fen, elo) => { elos2.push(elo); return q2.shift() || null; };
+  await ctx2.botPremoveArm();
+  assert.deepEqual(elos2, [2000, 2000], 'no time pressure under a Fixed pace');
 });
 
 test('board globals are restored after shaping the hypothetical position', async () => {

@@ -5,7 +5,7 @@
 //  2 Custom Controls collapse to a head, tap to open
 //  3 Move Timing folds into groups
 //  4 Maia 3 is marked recommended
-//  5 Maia sub-panel opens under its own card, other engines below; tap folds
+//  5 The three engines are a tab strip: one row on top, controls underneath
 //  6 the selected engine's blurb moves below its controls
 //  7 the temperature setting is stated prominently
 //  8 slider thumbs are smaller but the control is still a 44px target
@@ -78,7 +78,7 @@ console.log('\nPHONE  390×844');
   ok('chip reads Neutral when nothing is set', (await chip()) === 'Neutral', await chip());
 
   // The old averaging bug: one attractor at ±5, everything else centred.
-  await page.evaluate(() => { attrSetValue('attr-chaos', 5); });
+  await page.evaluate(() => { attrSetValue('attr-tension', 5); });
   await page.waitForTimeout(200);
   const one = await chip();
   ok('a single maxed attractor is NOT "Neutral"', !/Neutral/.test(one), one);
@@ -102,13 +102,33 @@ console.log('\nPHONE  390×844');
   await ensureOpen(page, ['engine']);
   ok('Maia 3 is marked recommended', await page.evaluate(() =>
     /recommend/i.test(document.querySelector('.mcard[data-engine="maia3"] .mrec')?.textContent || '')));
-  ok('selected card sorts above its sub-panel', await order(page, '#sec-engine .mcard.sel') === '1');
-  ok('sub-panel sorts above the other engines', await order(page, '#engine-sub-maia3') === '2');
+  // The three engines are a TAB STRIP: one row, at the top of the section,
+  // with the chosen engine's controls underneath. Replaces the accordion that
+  // sorted the selected card to the top and pushed the other two below its
+  // whole sub-panel — measured at 1472px away, nearly two screens.
+  ok('the strip sorts above everything it configures',
+    await order(page, '#engine-mode-grid') === '1');
+  ok('the book toggle follows the strip', await order(page, '#engine-book-row') === '2');
+  ok('sub-panel sorts under the strip', await order(page, '#engine-sub-maia3') === '3');
   ok('temperature + histogram sit right under the Elometer',
-    await order(page, '#engine-temp-col') === '3');
+    await order(page, '#engine-temp-col') === '4');
   ok('description tail sits after the temperature control',
-    await order(page, '#engine-desc-tail') === '4');
-  ok('rejected engines sort below all of it', await order(page, '#sec-engine .mcard:not(.sel)') === '5');
+    await order(page, '#engine-desc-tail') === '5');
+  // The strip is the one grid that must NOT flatten on a phone, or the three
+  // engines stack into a column again.
+  ok('the strip stays a 3-up grid', await page.evaluate(() => {
+    const g = getComputedStyle(document.getElementById('engine-mode-grid'));
+    return g.display === 'grid' && g.gridTemplateColumns.split(/\s+/).length === 3;
+  }), await page.evaluate(() => getComputedStyle(document.getElementById('engine-mode-grid')).gridTemplateColumns));
+  ok('all three engines share one row', await page.evaluate(() =>
+    new Set([...document.querySelectorAll('#engine-mode-grid .mcard')]
+      .map(c => Math.round(c.getBoundingClientRect().top))).size === 1));
+  ok('every engine is a 44px touch target', await page.evaluate(() =>
+    [...document.querySelectorAll('#engine-mode-grid .mcard')]
+      .every(c => c.getBoundingClientRect().height >= 44)));
+  ok('no engine name is clipped', await page.evaluate(() =>
+    [...document.querySelectorAll('#engine-mode-grid .mcard')]
+      .every(c => c.scrollWidth <= c.clientWidth + 1)));
 
   const tail = await page.evaluate(() => document.getElementById('engine-desc-tail').textContent.trim());
   ok('tail carries the selected engine\'s blurb', /Human-like neural net/.test(tail), tail.slice(0, 40));
@@ -129,27 +149,63 @@ console.log('\nPHONE  390×844');
     return { sub: y('#engine-sub-maia3'), temp: y('#engine-temp-col'),
              tail: y('#engine-desc-tail'), other: y('#sec-engine .mcard:not(.sel)') };
   });
-  ok('Maia controls come before the other engine cards', geom.sub < geom.other,
-    `sub@${geom.sub} vs other@${geom.other}`);
-  ok('temperature follows the Elometer, not the rejected engines',
-    geom.temp > geom.sub && geom.temp < geom.other, `temp@${geom.temp}`);
+  ok('the engines you did not pick stay ABOVE the controls, not below them',
+    geom.other < geom.sub, `other@${geom.other} vs sub@${geom.sub}`);
+  ok('no engine is more than a screen from the selected one', await page.evaluate(() => {
+    const ys = [...document.querySelectorAll('#engine-mode-grid .mcard')]
+      .map(c => c.getBoundingClientRect().top + window.scrollY);
+    return Math.max(...ys) - Math.min(...ys) === 0;
+  }));
+  ok('temperature follows the Elometer', geom.temp > geom.sub, `temp@${geom.temp}`);
   ok('Maia blurb lands below the temperature control',
     geom.tail > geom.temp, `tail@${geom.tail} vs temp@${geom.temp}`);
 
-  // Tap the selected card again → fold.
+  // Re-tapping the ACTIVE tab used to fold its controls away — the accordion's
+  // escape hatch for reaching the engines buried underneath. Nothing is buried
+  // now, and a tab that blanks its own pane when tapped is a trap.
   await tap(page, '#sec-engine .mcard.sel');
-  ok('tapping the selected engine folds its controls', !(await shown(page, '#engine-sub-maia3')));
-  ok('...and the other engines are still there', await shown(page, '#sec-engine .mcard:not(.sel)'));
-  await tap(page, '#sec-engine .mcard.sel');
-  ok('tapping again reopens', await shown(page, '#engine-sub-maia3'));
+  ok('re-tapping the active engine does NOT fold its controls',
+    await shown(page, '#engine-sub-maia3'));
+  ok('...and it stays selected', await page.evaluate(() =>
+    document.querySelector('#engine-mode-grid .mcard.sel')?.dataset.engine === 'maia3'));
+  ok('...and the other engines never left', await shown(page, '#sec-engine .mcard:not(.sel)'));
 
   // Selecting a different engine swaps the sub-panel and never leaves it folded.
   await tap(page, '#sec-engine .mcard[data-engine="stockfish"]');
   ok('switching engine shows the new sub-panel', await shown(page, '#engine-sub-stockfish'));
-  ok('an engine with no temperature column leaves no gap', await page.evaluate(() =>
-    getComputedStyle(document.getElementById('engine-temp-col')).display === 'none'));
+  // Temperature reaches Flounder now — it maps to the Weibull shape c, which
+  // buys the same trade Maia's temperature does. It used to be hidden here.
+  ok('temperature is offered on Flounder too', await page.evaluate(() =>
+    getComputedStyle(document.getElementById('engine-temp-col')).display !== 'none'));
   ok('...and its blurb follows it', await page.evaluate(() =>
-    /Classical engine/.test(document.getElementById('engine-desc-tail').textContent)));
+    /sampled with Flounder/.test(document.getElementById('engine-desc-tail').textContent)),
+    await page.evaluate(() => document.getElementById('engine-desc-tail').textContent.slice(0, 60)));
+  // On Flounder the slider moves the Weibull shape, not a probability
+  // exponent, so the readout has to name c. Showing "T" here would be the
+  // control describing a mechanism that is not running.
+  ok('the readout names c, not T', await page.evaluate(() =>
+    /^c\s*=\s*0\.\d+/.test(_tempLabel(1.0).lead)), await page.evaluate(() => _tempLabel(1.0).lead));
+  ok('and the scale is renamed with it', await page.evaluate(() =>
+    document.getElementById('tt-3').textContent === 'Streaky'),
+    await page.evaluate(() => document.getElementById('tt-3').textContent));
+  ok('the dial re-brands to the selected engine', await page.evaluate(() =>
+    /Flounder/.test(document.getElementById('speedo-brand').textContent)));
+  // The markings stay 600-2600 on both engines so a rating sits in the same
+  // place on the arc either way; only the reachable span differs, and the part
+  // that cannot be reached is drawn rather than removed.
+  ok('the markings stay put', await page.evaluate(() =>
+    SPEEDO.min === 600 && SPEEDO.max === 2600),
+    await page.evaluate(() => SPEEDO.min + '-' + SPEEDO.max));
+  ok('but the reach is the measured span', await page.evaluate(() => {
+    const r = engineEloRange();
+    return r.lo >= 600 && r.hi <= 2600 && (r.lo > 600 || r.hi < 2600);
+  }), await page.evaluate(() => { const r = engineEloRange(); return r.lo + '-' + r.hi; }));
+  ok('the opening book is a toggle, not two more engine cards', await page.evaluate(() => {
+    setEngineBook('on');
+    const lcsf = currentEngine === 'lcsf';
+    setEngineBook('off');
+    return lcsf && currentEngine === 'stockfish';
+  }));
   await tap(page, '#sec-engine .mcard[data-engine="maia3"]');
 
   // ── 7. Temperature ──
@@ -161,7 +217,7 @@ console.log('\nPHONE  390×844');
     lit: document.querySelectorAll('.tt.tt-on').length,
   }));
   ok('badge names the preset', th.name.length > 2, th.name);
-  ok('badge shows T', /^T = \d/.test(th.t), th.t);
+  ok('badge shows T on Maia', /^T\s*=\s*\d/.test(th.t), th.t);
   ok('badge is the biggest thing in the control', th.size >= 14, th.size + 'px');
   ok('the active zone caption is lit', th.lit === 1, th.lit + ' lit');
   await page.evaluate(() => { const s = document.getElementById('temp-t-slider'); s.value = 3.0; onTempSlider(3.0); });

@@ -206,8 +206,11 @@ function obPreferredNextMoves(sanHistory, slots, boardState, turnColor, epSq, ca
     }
   }
 
-  const EXACT_BONUS = 3.0;
-  const moveScores = {}; // sanMove → best score
+  // Each slot's continuations from here: the next move of every ECO line that
+  // matches the game so far and belongs to that slot — its exact code if it
+  // has any such line, otherwise its ECO family.
+  const slotNext = slots.map(() => ({ exact: new Set(), family: new Set() }));
+  const bookOnly = new Set(); // continuations that belong to no slot
 
   for (const entry of candidates) {
     if (entry.sanMoves.length <= sanHistory.length) continue; // too short
@@ -219,34 +222,44 @@ function obPreferredNextMoves(sanHistory, slots, boardState, turnColor, epSq, ca
     }
     if (!matches) continue;
 
-    // Does this ECO entry match any preferred slot?
-    let bestSlotScore = 0;
-    for (const slot of slots) {
-      const exact  = slot.exactEco     || null;
-      const family = slot.familyPrefix || (slot.eco ? slot.eco.slice(0,2) : null);
-      let tier = 0;
-      if (exact  && entry.eco.startsWith(exact))  tier = 2;
-      else if (family && entry.eco.startsWith(family)) tier = 1;
-      if (tier > 0) {
-        const normW = (slot.weight || 0) / totalPct;
-        const sc = (tier === 2 ? EXACT_BONUS : 1.0) * normW;
-        if (sc > bestSlotScore) bestSlotScore = sc;
-      }
-    }
-
-    // If no direct slot match but we're already inside a preferred line (e.g. B20→B30
-    // transposition in the Sicilian), give a weak score so we continue in book.
-    if (!bestSlotScore && insidePreferredLine) bestSlotScore = 0.2;
-
-    if (!bestSlotScore) continue;
-
-    // The next SAN move in this line is what we want to play
+    // The next SAN move in this line is what we would play
     const nextSan = entry.sanMoves[sanHistory.length];
     if (!nextSan) continue;
-    if (!moveScores[nextSan] || bestSlotScore > moveScores[nextSan]) {
-      moveScores[nextSan] = bestSlotScore;
-    }
+
+    let inSlot = false;
+    slots.forEach((slot, si) => {
+      const exact  = slot.exactEco     || null;
+      const family = slot.familyPrefix || (slot.eco ? slot.eco.slice(0,2) : null);
+      if (exact && entry.eco.startsWith(exact))        { slotNext[si].exact.add(nextSan);  inSlot = true; }
+      else if (family && entry.eco.startsWith(family)) { slotNext[si].family.add(nextSan); inSlot = true; }
+    });
+    if (!inSlot) bookOnly.add(nextSan);
   }
+
+  // Score = the share of games that should play each move. Every slot spends
+  // its own percentage, split evenly across its continuations, and a move that
+  // two slots share collects both shares — so a 40% London and a 30% Exchange
+  // Slav put 70% on 1.d4 and a 30% Four Knights puts 30% on 1.e4.
+  //
+  // This used to take the single best slot's score per move with a 3x bonus for
+  // an exact code, and the caller played the top score. So percentages decided
+  // only which opening ALWAYS got played, never how often — and the builder's
+  // slots arrive carrying `pct`, not the `weight` read here, so every score was
+  // zero and the ties fell to the first ECO line in the file.
+  const moveScores = {};
+  slots.forEach((slot, si) => {
+    const w = (slot.weight || 0) / totalPct;
+    const next = slotNext[si].exact.size ? slotNext[si].exact : slotNext[si].family;
+    if (!(w > 0) || !next.size) return;
+    const share = w / next.size;
+    next.forEach(san => { moveScores[san] = (moveScores[san] || 0) + share; });
+  });
+  const slotWeighted = Object.keys(moveScores).length > 0;
+
+  // No slot line continues from here, but the game is still inside one of the
+  // preferred openings (e.g. a B20 → B30 transposition in the Sicilian): stay in
+  // book on a weak score rather than dropping straight to the engine.
+  if (!slotWeighted && insidePreferredLine) bookOnly.forEach(san => { moveScores[san] = 0.2; });
 
   if (!Object.keys(moveScores).length) return new Set();
 
@@ -260,6 +273,9 @@ function obPreferredNextMoves(sanHistory, slots, boardState, turnColor, epSq, ca
       preferredUci[uci] = score; // piggyback score on the Set object
     }
   }
+  // Tells the caller whether the scores are slot percentages (draw in
+  // proportion) or the transposition fallback (take the best).
+  preferredUci._slotWeighted = slotWeighted;
   return preferredUci;
 }
 
@@ -582,6 +598,7 @@ function obRestorePreferredUI() {
 
 function botSetTpBtn(val) {
   botTimePressure = val;
+  botTempPressureMult = { steady: 0, normal: 1, panicky: 2.5 }[val] ?? 1;
   const descs = {
     steady: 'Stays near top move even when flagging',
     normal: 'Gradually widens move choice as clock drops',
@@ -763,8 +780,7 @@ function botGenerateName() {
   var tpLabel = { steady: 'Steady', normal: 'Normal', panicky: 'Panicky' }[botTimePressure] || '';
   var tabLabel = '';
   if (botTab === 'sf') {
-    var lvl = parseInt(document.getElementById('sfLevel').value) || 8;
-    tabLabel = 'Stockfish ' + lvl;
+    tabLabel = 'Flounder ' + flounderSliderElo();
   } else if (botTab === 'maia3') {
     tabLabel = 'Maya ' + (maia3SelectedRating || '1200');
   } else if (botTab === 'maia') {
@@ -784,8 +800,8 @@ function botEngineTag() {
   // Before first move: show configured tab type only
   if (botTab === 'maia3')  return ' ‹Maia3›';
   if (botTab === 'maia')   return ' ‹LC+Maia›';
-  if (botTab === 'lcsf')   return ' ‹LC+SF›';
-  if (botTab === 'sf')     return ' ‹SF›';
+  if (botTab === 'lcsf')   return ' ‹Book+Flounder›';
+  if (botTab === 'sf')     return ' ‹Flounder›';
   if (botTab === 'hybrid') return ' ‹Hybrid›';
   return '';
 }
@@ -824,7 +840,7 @@ function _checkEngineReady(tab) {
   var maiaTabs = ['maia3','maia','lcmaia','hybrid'];
   if (sfTabs.includes(tab)) {
     if (sfWorker && !sfReady) {
-      showEngineWarning('⚠ Stockfish is loading — the first move may be delayed.');
+      showEngineWarning('⚠ The engine is loading — the first move may be delayed.');
     } else if (!sfWorker) {
       // Will be started by sfInit() — no warning needed, just inform
     }
@@ -1079,6 +1095,9 @@ function botCollectConfig(configName, botNameVal) {
     botName: botNameVal || '',
     tab: botTab,
     stockfish: {
+      // `elo` is the value that matters now; `level` is written alongside it
+      // only so a config saved here still opens in an older build.
+      elo: _num('flounderElo', FLOUNDER_ELO_DEFAULT),
       level: _num('sfLevel', 8),
       pressureLevel: _num('sfPressureLevel', 4),
       temperature: _num('sfTemperature', 0)
@@ -1162,8 +1181,13 @@ function botApplyConfig(cfg) {
       var _setTxt = function (id, v) { var e = document.getElementById(id); if (e) e.textContent = v; };
       if (cfg.tab) botSetTab(cfg.tab);
       if (cfg.stockfish) {
-        _setVal('sfLevel', cfg.stockfish.level || 8);
-        _setTxt('sfLevelVal', cfg.stockfish.level || 8);
+        // Configs saved before the rating dial existed carry only a 1-20 skill
+        // level, so convert rather than dropping them onto the default.
+        var _fElo = (cfg.stockfish.elo != null)
+          ? cfg.stockfish.elo
+          : flounderEloFromLegacyLevel(cfg.stockfish.level);
+        _setVal('flounderElo', _fElo);
+        _setTxt('flounderEloVal', _fElo);
         _setVal('sfPressureLevel', cfg.stockfish.pressureLevel || 4);
         _setTxt('sfPressureVal', cfg.stockfish.pressureLevel || 4);
         if (cfg.stockfish.temperature !== undefined) {
@@ -1856,6 +1880,14 @@ function openBotModal() {
           ready: _maiaReady, progress: _maiaProgress || 0
         }, location.origin);
         frame.contentWindow.postMessage({ type: 'botTourAuto' }, location.origin);
+        // A quick-block pick made before the iframe was ready: repeat it once,
+        // then forget it, so an edit made in here is not overwritten the next
+        // time the panel opens.
+        if (window._quickBotPanelPick) {
+          const qp = window._quickBotPanelPick;
+          window._quickBotPanelPick = null;
+          frame.contentWindow.postMessage({ type: 'quickPick', engine: qp.engine, elo: qp.elo }, location.origin);
+        }
         // Push current palette so the panel always matches the app's active BG theme.
         if (typeof _syncPanelTheme === 'function') {
           const t = (typeof BG_THEMES !== 'undefined' && typeof currentBgTheme !== 'undefined')
@@ -1935,8 +1967,20 @@ window.addEventListener('message', function(e) {
   const engineMap = { maia3: 'maia3', stockfish: 'sf', hybrid: 'hybrid', lcsf: 'lcsf', lcmaia: 'maia' };
   botSetTab(engineMap[cfg.engine] || 'sf');
 
-  // Player color (resolved in botStart if 'random')
-  botPlayerColor = cfg.color || 'random';
+  // Player color (resolved in botStart if 'random').
+  //
+  // This used to assign botPlayerColor directly — which botStart then threw
+  // away. botStart reads botColorPref in preference to botPlayerColor, and
+  // botColorPref was still 'random' from page load, so it re-rolled the colour
+  // the builder had just been told to play: a bot built as Black started as
+  // White about half the time, and the quick-start colour select went on
+  // reading "Random" while the board did something else.
+  //
+  // botSetPlayerColor is the one function that sets BOTH variables and
+  // repaints every mirror of the choice (the pcolor buttons, the sidebar
+  // select, the welcome panel's), so the controls agree with what Start will
+  // actually deal. It maps anything unrecognised to 'random' on its own.
+  botSetPlayerColor(cfg.color || 'random');
 
   // Time control — build a 'custom' entry so clockInit() finds a valid key
   if (cfg.tcTime > 0) {
@@ -1953,13 +1997,28 @@ window.addEventListener('message', function(e) {
     botSelectedTC = 'untimed';
   }
 
-  // Stockfish level: new panel 1–10 → existing 1–20 (multiply ×2)
+  // Flounder rating. The builder sends `flounderElo` directly; older panels
+  // (and older share links) send a 1–10 pip level, which doubles into the old
+  // 1–20 scale and then converts through the same legacy map as saved configs.
   const sfLvl20 = Math.min(20, Math.max(1, (cfg.sfLevel || 5) * 2));
-  var sfLvlEl = document.getElementById('sfLevel');
-  if (sfLvlEl) { sfLvlEl.value = sfLvl20; document.getElementById('sfLevelVal').textContent = sfLvl20; }
+  const fElo = (cfg.flounderElo != null) ? Math.max(FLOUNDER_ELO_MIN,
+                 Math.min(FLOUNDER_ELO_MAX, Math.round(cfg.flounderElo)))
+             : flounderEloFromLegacyLevel(sfLvl20);
+  var fEloEl = document.getElementById('flounderElo');
+  if (fEloEl) {
+    fEloEl.value = fElo;
+    var fEloOut = document.getElementById('flounderEloVal');
+    if (fEloOut) fEloOut.textContent = fElo;
+  }
   var pressLvl = Math.max(1, sfLvl20 - 4);
   var pressEl = document.getElementById('sfPressureLevel');
   if (pressEl) { pressEl.value = pressLvl; document.getElementById('sfPressureVal').textContent = pressLvl; }
+
+  // Lichess opening book. For maia3/stockfish the engine mode already encodes
+  // it (lcmaia / lcsf); a blend has no such mode, so the flag is what tells the
+  // hybrid branch to look.
+  botEngineBook = !!cfg.openingBook ||
+                  cfg.engine === 'lcsf' || cfg.engine === 'lcmaia';
 
   // SF Variety: store slider percentages directly so sfPickLevel uses them
   botSfVar1 = cfg.sfvar1 || 0;
@@ -1973,6 +2032,11 @@ window.addEventListener('message', function(e) {
   // LC mode ratings (snap continuous ELO to nearest Lichess rating band)
   if (cfg.engine === 'lcsf')   { lcsfSetRating(_snapToLcBand(cfg.lcsfElo || 2000)); }
   if (cfg.engine === 'lcmaia') { lcSetRating(_snapToLcBand(cfg.lcMaiaLcElo || 2000)); maia3SetRating(cfg.lcMaiaMaiaElo || 1500); }
+  // A blend's book asks the explorer at the same global LC+Maia uses, and
+  // nothing set it for a blend — so the Lichess ELO beside the book switch did
+  // nothing on Hybrid, and the book played at whatever band was left over
+  // (1200 on a fresh page).
+  if (cfg.engine === 'hybrid' && cfg.openingBook) lcSetRating(_snapToLcBand(cfg.lcMaiaLcElo || cfg.elo || 1500));
 
   // Temperature — store raw float; also update legacy maiaTemp DOM element for fallback reads
   if (cfg.tempValue != null) {
@@ -1992,6 +2056,12 @@ window.addEventListener('message', function(e) {
   botCplxBase = cfg.cplxBase || 3;
   botCplxMin  = cfg.cplxMin  || 0.4;
   botCplxMax  = cfg.cplxMax  || 2.5;
+  // Where Complexity-scaled timing gets its average: the clock ('clock', the
+  // builder's default — time left ÷ moves left in a game of N moves), or the
+  // Base time slider ('fixed'). A config from before the choice existed used
+  // the slider, so that is what an absent field means.
+  botCplxBaseMode     = (cfg.cplxBaseMode === 'clock') ? 'clock' : 'fixed';
+  botCplxMovesPerGame = (+cfg.cplxMovesPerGame === 40) ? 40 : 60;
 
   // Human behaviour modifiers
   botBehavReconsider  = cfg.behavReconsider  !== false;
@@ -2064,10 +2134,21 @@ window.addEventListener('message', function(e) {
     : 15000;
   botWeaponizerMinMs   = Math.max(0, Math.min(5, +cfg.weaponizerMinSec || 0)) * 1000;
 
-  // Calm/panicky (-5..+5) → botTimePressure
-  // Center (0) = steady (no boost); positive = panicky boost under pressure
-  var cp = cfg.calmPanickyValue || 0;
-  botTimePressure = cp >= 3 ? 'panicky' : cp >= 1 ? 'normal' : 'steady';
+  // Calm ↔ Panicky (-5..+5) → how far curve B's temperature escalation goes:
+  // fully Calm leaves temperature untouched by time pressure, 0 runs the curve
+  // as drawn, fully Panicky 2.5× (tempPressureMult, continuous).
+  //
+  // A config saved before that scale (no tempPressureScale) keeps exactly the
+  // behaviour it was saved with — below +1 nothing, +1/+2 the curve, +3 and up
+  // 2.5× — because its curve was drawn for that scale, up to T 8 by default,
+  // and reading it on the new one would make every neutral old bot wild. The
+  // panel does the same remap when it loads one, so the slider shows it.
+  var cp = +cfg.calmPanickyValue || 0;
+  botTempPressureMult = (cfg.tempPressureScale >= 2)
+    ? tempPressureMult(cp)
+    : (cp >= 3 ? 2.5 : cp >= 1 ? 1 : 0);
+  botTimePressure = botTempPressureMult < 0.5 ? 'steady'
+                  : botTempPressureMult < 1.75 ? 'normal' : 'panicky';
 
   // Opening — per-color modes (As White / As Black): off | mainline | repertoire.
   // The bot only plays one color per game, so the effective global botOpeningMode
@@ -2077,7 +2158,14 @@ window.addEventListener('message', function(e) {
   if (_owMode === undefined && _obMode === undefined && cfg.openingMode) {
     _owMode = _obMode = cfg.openingMode;
   }
-  var mapSlot = function(s) { return { eco: s.code, familyPrefix: (s.code || '').slice(0,2), name: s.name, pct: s.pct }; };
+  // `weight` and `exactEco` are the names the repertoire matcher reads
+  // (obPreferredNextMoves). This used to pass only `pct` and `eco`, so every
+  // builder slot scored zero: White's repertoire deactivated on move one and
+  // Black followed whichever ECO line came first in the file.
+  var mapSlot = function(s) {
+    return { eco: s.code, exactEco: s.code, familyPrefix: (s.code || '').slice(0,2),
+             name: s.name, pct: s.pct, weight: +s.pct || 0 };
+  };
   botOpeningConfig.white        = (cfg.repSlots && cfg.repSlots.white || []).map(mapSlot);
   botOpeningConfig.black        = (cfg.repSlots && cfg.repSlots.black || []).map(mapSlot);
   botOpeningConfig.source       = cfg.openingSource || 'masters';
@@ -2100,7 +2188,12 @@ window.addEventListener('message', function(e) {
       var isSf = (s.type === 'stockfish' || s.type === 'sf');
       return {
         type:   isSf ? 'sf' : 'maia',
-        elo:    isSf ? null : (s.elo || 1500), // Maia3 slot ELO, used directly by botMakeMove
+        // Both slot types now carry a real ELO: a Flounder slot is a rating,
+        // exactly like a Maia slot, rather than a skill level pretending to be
+        // one. `level` stays for the plain-search fallback path only.
+        elo:    isSf ? (s.flounderElo != null ? Math.round(s.flounderElo)
+                        : flounderEloFromLegacyLevel(Math.min(20, Math.max(1, (s.sfLevel || s.level || 5) * 2))))
+                     : (s.elo || 1500),
         level:  isSf ? Math.min(20, Math.max(1, (s.sfLevel || s.level || 5) * 2))
                      : Math.round((s.elo || 1500) / 200),
         weight: s.pct || 0

@@ -1,0 +1,631 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>How the personality controls work — Blundermind</title>
+<meta name="description" content="Every personality attractor in Blundermind's bot builder: what it measures, the exact formula used, and when it applies.">
+<meta name="theme-color" content="#0e0f11">
+<style>
+  :root{
+    --bg:#0e0f11; --panel:#16181c; --border:#2a2e35;
+    --text:#e8e6e3; --dim:#a8b0bd; --accent:#5ad490; --code:#1c1f24;
+  }
+  @media(prefers-color-scheme:light){
+    :root{
+      --bg:#fbfbfa; --panel:#ffffff; --border:#dcdcd8;
+      --text:#1b1c1e; --dim:#55595f; --accent:#12784a; --code:#f2f2ef;
+    }
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; padding:32px 20px 72px;
+    background:var(--bg); color:var(--text);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-text-size-adjust:100%;
+  }
+  main{max-width:46rem; margin:0 auto;}
+  h1{font-size:26px; line-height:1.25; margin:0 0 6px;}
+  h2{font-size:18px; margin:34px 0 10px;}
+  h3{font-size:15px; margin:0 0 4px;}
+  .sub{color:var(--dim); font-size:14px; margin:0 0 28px;}
+  a{color:var(--accent);}
+  ul{padding-left:22px; margin:10px 0;} li{margin:6px 0;}
+  .card{
+    background:var(--panel); border:1px solid var(--border);
+    border-radius:10px; padding:16px 18px; margin:22px 0;
+  }
+  .card h2{margin-top:0;}
+  code,.f{
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    background:var(--code); border:1px solid var(--border); border-radius:5px;
+  }
+  code{padding:1px 5px; font-size:.88em;}
+  .f{display:block; padding:9px 11px; margin:9px 0 0; font-size:13px;
+     line-height:1.5; overflow-x:auto; white-space:pre;}
+  .a{border-top:1px solid var(--border); padding-top:16px; margin-top:16px;}
+  .a:first-of-type{border-top:0; padding-top:0; margin-top:0;}
+  .poles{font-size:12.5px; color:var(--dim); margin:0 0 7px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
+  .when{font-size:13px; color:var(--dim); margin:8px 0 0;}
+  .when b{color:var(--text); font-weight:600;}
+  table{border-collapse:collapse; width:100%; font-size:14px; margin-top:10px;}
+  th,td{text-align:left; padding:6px 10px; border-bottom:1px solid var(--border);
+        vertical-align:top;}
+  th{color:var(--dim); font-weight:600; font-size:12.5px; text-transform:uppercase;
+     letter-spacing:.06em;}
+  tr:last-child td{border-bottom:0;}
+  .note{font-size:14px; color:var(--dim);}
+  .fx{display:block; margin-top:5px; font-size:12.5px; color:var(--dim);
+      font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
+  td.n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--dim);
+       text-align:center; width:3rem;}
+</style>
+</head>
+<body>
+<main>
+
+<h1>How the personality controls work</h1>
+<p class="sub">
+  Every slider in the bot builder&rsquo;s Personality panel, what it actually measures,
+  and the formula it uses. Nothing here is a simplification for the sake of the page &mdash;
+  these are the expressions the engine evaluates.
+</p>
+
+<div class="card">
+  <h2>The shared machinery</h2>
+  <p>
+    Each slider runs from &minus;5 to +5. Zero means the control has no opinion and costs
+    nothing. Everything else is scored per candidate move and turned into a single number,
+    <code>logBoost</code>, which multiplies that move&rsquo;s probability:
+  </p>
+  <span class="f">weight(move) = probability(move) &times; exp(logBoost(move))</span>
+  <p style="margin-top:12px">
+    <strong>The CP Budget divides itself between whatever is switched on.</strong> A control
+    set to &plusmn;5 while everything else sits at zero gets the whole budget; two controls at
+    &plusmn;5 get half each. That is what <code>scale</code> below means:
+  </p>
+  <span class="f">scale = CP&nbsp;Budget / ( &Sigma;|slider values| &times; 150 )
+
+logBoost = slider&nbsp;value &times; scale &times; response(position)</span>
+  <p style="margin-top:12px">
+    The 150 sets the unit: 150&nbsp;cp of budget spent on one control is worth
+    <code>exp(1)</code> &mdash; a 2.7&times; push on the move it likes best. At the maximum
+    budget of 300&nbsp;cp that becomes <code>exp(2)</code>, or 7.4&times;.
+  </p>
+  <p>
+    <code>response(position)</code> is each control&rsquo;s own measurement, always bounded to
+    &minus;1&hellip;+1 by <code>tanh</code>, so no single control can run away. In practice a
+    control delivers about <strong>0.81</strong> of its nominal push to the move it most wants;
+    the rest of the range is used to grade the moves it likes less.
+  </p>
+  <p>
+    <strong>Every divisor below scales with the material left on the board.</strong> A
+    two-defender swing in a queenless endgame is enormous and the same swing in a full
+    middlegame is nothing, so a fixed constant would make each personality loud in the
+    middlegame and mute in the endgame &mdash; which is backwards, since most players&rsquo;
+    style shows up more as the board empties. Where a formula says <code>k</code>, the value
+    actually used is:
+  </p>
+  <span class="f">phase = clamp( material still on the board / 78 , 0.35 , 1 )
+k&nbsp;used = k &times; phase</span>
+  <p class="note" style="margin-top:12px">
+    <strong>Four controls take no share of the budget,</strong> because none of them scores a
+    move: Panicky scales the time-pressure curve, Coffeehouse hustler scales think time, Bad
+    day slides the distribution band, and Front-runner nudges temperature once the game is won
+    or lost. Everything else splits the budget in proportion to how far its slider is pushed.
+  </p>
+  <p class="note">
+    <strong>The budget is also a hard limit, not just a volume knob.</strong> Whatever the
+    sliders say, the move finally played is checked against the engine: if the personality&rsquo;s
+    choice would cost more than the CP Budget compared with the move the bot would otherwise
+    have made, it is rejected and the next preference is tried. Style can never spend more than
+    you allowed it to.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Position controls</h2>
+  <p class="note" style="margin-top:0">
+    These score every candidate move individually. <code>v</code> is the slider value.
+  </p>
+
+  <div class="a">
+    <h3>Attacker &middot; Peacemaker</h3>
+    <p class="poles">&minus;5 Peacemaker &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Attacker +5</p>
+    <p>
+      Counts how many enemy pieces the bot&rsquo;s pieces attack, before and after the move,
+      and scores the <em>difference</em>. A move that puts two more enemy pieces under fire
+      scores well; one that walks away from threats scores badly. Positive seeks threats,
+      negative avoids them.
+    </p>
+    <span class="f">threats(board) = &Sigma; over enemy pieces of (number of bot pieces attacking it)
+
+logBoost += v &times; scale &times; tanh( (threats(after) &minus; threats(before)) / 2 )</span>
+    <p class="when"><b>Applies to:</b> every move.</p>
+  </div>
+
+  <div class="a">
+    <h3>Fort Knox &middot; Glass cannon</h3>
+    <p class="poles">&minus;5 Glass cannon &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Fort Knox +5</p>
+    <p>
+      The mirror image of Attacker, pointed at the bot&rsquo;s own pieces: how many times they
+      defend each other. Every piece counts, attacked or not &mdash; a square nobody is
+      attacking yet is still a square you can be driven off &mdash; so Fort Knox will not walk
+      a piece onto an undefended one, and Glass cannon is glad to.
+    </p>
+    <span class="f">defence(board) = &Sigma; over bot pieces of (number of bot pieces defending it)
+
+logBoost += v &times; scale &times; tanh( (defence(after) &minus; defence(before)) / 3 )</span>
+    <p class="note" style="margin:9px 0 0">
+      The two directions are the same arithmetic: whatever one pole rewards, the other
+      prefers the opposite of.
+    </p>
+    <p class="when"><b>Applies to:</b> every move.</p>
+  </div>
+
+  <div class="a">
+    <h3>Trade seeker &middot; Trade avoider</h3>
+    <p class="poles">&minus;5 Trade avoider &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Trade seeker +5</p>
+    <p>
+      Captures and offers to trade &mdash; but weighted by whether trading is a good idea right
+      now. Trading is contextual: you do it when you are ahead, or to kill an attack. A player
+      who simply takes everything is not a trade-seeker, they are a weak player, so the control
+      leans harder into exchanges when the bot is up material and warier when it is down.
+    </p>
+    <span class="f">context = 1 + 0.6 &times; tanh( (my material &minus; their material) / 4 )
+          &rarr; 1.0 when level, up to 1.6 well ahead, down to 0.4 well behind
+
+capture (including en passant):
+  logBoost += v &times; scale &times; tanh( context )
+
+otherwise, with n = enemy pieces the moved piece now attacks:
+  logBoost += v &times; scale &times; tanh( context &times; n / 2 )</span>
+    <p class="when"><b>Applies to:</b> every move.</p>
+  </div>
+
+  <div class="a">
+    <h3>Rigid &middot; Loose pawn structure</h3>
+    <p class="poles">&minus;5 Loose &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Rigid +5</p>
+    <p>
+      Scores the bot&rsquo;s own pawn formation with a penalty count &mdash; lower is tighter
+      &mdash; and rewards moves that reduce it. A pawn counts as <em>connected</em> when a
+      friendly pawn stands on an adjacent file within one rank of it: the side-by-side duo and
+      the diagonal chain. Rigid keeps the pawns holding hands; Loose breaks formation.
+    </p>
+    <span class="f">penalty(board) = islands + doubled + isolated + unconnected
+
+  islands     groups of occupied files with a gap between them
+  doubled     pawns beyond the first on any file
+  isolated    pawns with no friendly pawn on either adjacent file
+  unconnected pawns with no friendly pawn on an adjacent file
+              within one rank
+
+logBoost += v &times; scale &times; tanh( penalty(before) &minus; penalty(after) )</span>
+    <p class="note" style="margin:9px 0 0">
+      Rigid rewards a move that tightens the formation and dislikes one that loosens it. Loose
+      wants the opposite: it prefers the position broken up.
+    </p>
+    <p class="when">
+      <b>Applies to:</b> the bot&rsquo;s own pawn moves only &mdash; nothing else can change
+      where its pawns stand, so no other move is scored.
+    </p>
+  </div>
+
+  <div class="a">
+    <h3>Space cadet &middot; Space waster</h3>
+    <p class="poles">&minus;5 Space waster &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Space cadet +5</p>
+    <p>
+      A <em>weak square</em> is an empty square the bot attacks zero times. Space cadet prefers
+      moves that leave fewer of them &mdash; a board it has a say over.
+      Every square counts, including both back ranks &mdash; a hole on your own first rank is
+      a mating square, not an irrelevance &mdash; with the centre worth half as much again.
+    </p>
+    <span class="f">weight(square) = 1.5 on d4, d5, e4, e5, f3 and f6
+                 1   everywhere else
+
+weak(board) = &Sigma; over empty squares with no bot attacker of weight(square)
+
+logBoost += v &times; scale &times; tanh( (weak(before) &minus; weak(after)) / 4 )</span>
+    <p class="note" style="margin:9px 0 0">
+      d4, d5, e4 and e5 because that is where the game is decided; f3 and f6 because they are
+      the soft square in front of a castled king, one for each colour.
+    </p>
+    <p class="when"><b>Applies to:</b> every move.</p>
+  </div>
+
+  <div class="a">
+    <h3>Gambito &middot; Gambit shy</h3>
+    <p class="poles">&minus;5 Gambit shy &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Gambito +5</p>
+    <p>
+      Prefers to keep playing a known gambit once the opening has entered one. When the ECO
+      opening data has not loaded, it falls back to the shape of a gambit rather than the name
+      of one: a pawn pushed to a square the opponent attacks and the bot does not defend.
+    </p>
+    <span class="f">ECO available and this move continues a known gambit line:
+  logBoost += v &times; scale
+
+fallback, for pawn moves only, when the destination square is
+attacked by the opponent and defended by no bot piece:
+  logBoost += v &times; scale</span>
+    <p class="when">
+      <b>Applies to:</b> the first 20 plies (10 moves each) only. After that it is silent.
+    </p>
+  </div>
+
+  <div class="a">
+    <h3>Tension seeker &middot; Defuser</h3>
+    <p class="poles">&minus;5 Defuser &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Tension seeker +5</p>
+    <p>
+      How much contact there is between the two armies: every piece on the board, counted once
+      for each enemy attacker bearing on it. A quiet position scores near zero; one where
+      captures and recaptures hang over several squares at once scores high. Judged on the
+      position the move <em>leaves behind</em>, so a tension seeker picks the move that tangles
+      the board and a defuser the one that untangles it.
+    </p>
+    <span class="f">tension(board) = &Sigma; over every piece of (enemy pieces attacking it)
+
+logBoost += v &times; scale &times; tanh( (tension(after) &minus; tension(before)) / 4 )</span>
+    <p class="when"><b>Applies to:</b> every move. Costs nothing and gives the same answer every time.</p>
+  </div>
+
+  <div class="a">
+    <h3>Chaos agent &middot; Clarity</h3>
+    <p class="poles">&minus;5 Clarity &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Chaos agent +5</p>
+    <p>
+      Whether the position after the move is <em>hard to judge</em>, which is a different
+      question from how much wood is in contact. A queen trade can be all tension and no
+      difficulty; a quiet knight move can leave a mess. The measure is how much the engine
+      changes its mind about a move as it searches deeper: a move settled by depth three leads
+      somewhere clear, one whose score is still moving at depth eight does not.
+    </p>
+    <span class="f">volatility(move) = average |change in the move's score| per extra ply
+
+logBoost += v &times; scale &times; tanh( (volatility(move) &minus; average volatility) / 25 )</span>
+    <p class="note" style="margin:9px 0 0">
+      It is scored against the other candidates rather than an absolute scale, because what
+      counts as a hard position is different in an endgame and a middlegame.
+    </p>
+    <p class="when">
+      <b>Applies to:</b> every move, and it is <b>approximate</b>. The same position measured
+      twice agrees about two thirds of the time &mdash; a shallow search does not divide its
+      effort the same way twice. Tension is the steady one; this is the truer one. That is why
+      they are two sliders and not one, and why a bot can hold both opinions at once.
+    </p>
+  </div>
+
+  <div class="a">
+    <h3>Pawn grabber &middot; Principled</h3>
+    <p class="poles">&minus;5 Principled &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Pawn grabber +5</p>
+    <p>
+      Materialism, weighted by what is actually won &mdash; and drawn especially to the capture
+      it probably should not make. The second term fires when the capturing piece lands on a
+      square the opponent still attacks: that is the poisoned pawn, and taking it is the whole
+      personality. Different from Trade, which is about exchanging at all rather than about
+      what is won.
+    </p>
+    <span class="f">grabbed  = value of the captured piece (P1 N3 B3 R5 Q9), 0 if no capture
+poisoned = 1 if the opponent still attacks the destination square, else 0
+
+logBoost += v &times; scale &times; tanh( (grabbed + 2 &times; poisoned) / 3 )</span>
+    <p class="when">
+      <b>Applies to:</b> captures. How badly it can end is still bounded by the CP Budget, so a
+      grabber takes the pawns it can afford and no others.
+    </p>
+  </div>
+
+  <div class="a">
+    <h3>King safety &middot; Bravado</h3>
+    <p class="poles">&minus;5 Bravado &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; King safety +5</p>
+    <p>
+      How much the bot minds its own king being in a draught. Counts enemy attacks on the nine
+      squares around its king, before and after the move. Positive keeps the king tucked up;
+      negative leaves it airy and gets on with its own plans.
+    </p>
+    <span class="f">danger(board) = &Sigma; over the 9 squares around my king
+                of (number of enemy pieces attacking that square)
+
+logBoost += v &times; scale &times; tanh( (danger(before) &minus; danger(after)) / 1 )</span>
+    <p class="when">
+      <b>Applies to:</b> every move. It is naturally quiet while the king is safe and loud once
+      it is not, which is the point.
+    </p>
+  </div>
+
+  <div class="a">
+    <h3>Prophylaxis &middot; Own plans</h3>
+    <p class="poles">&minus;5 Own plans &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Prophylaxis +5</p>
+    <p>
+      Scores a move by how much room it takes away from the <em>opponent</em>, rather than how
+      much it gains for the bot. It is the one idea here that looks across the board instead of
+      at itself, and it is the difference between a bot playing its own game and one playing
+      against you.
+    </p>
+    <span class="f">theirMoves(board) = number of LEGAL MOVES the opponent has
+
+logBoost += v &times; scale &times; tanh( (theirMoves(before) &minus; theirMoves(after)) / 3 )</span>
+    <p class="note" style="margin:9px 0 0">
+      Legal moves rather than attacked squares, because restricting somebody means taking away
+      moves they could actually have played &mdash; a pawn attacks two squares and moves to
+      one. Castling and en passant sit outside both counts, since the position being tested has
+      no castling rights of its own to consult; the control uses the difference, which is
+      unaffected either way.
+    </p>
+    <p class="when">
+      <b>Applies to:</b> every move. It is the most expensive control here &mdash; it generates
+      the opponent's whole move list for every candidate &mdash; and only bots that switch it
+      on pay for it.
+    </p>
+  </div>
+
+  <div class="a">
+    <h3>Piece preferences</h3>
+    <p class="poles">&minus;5 avoid &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; favour +5, per piece type</p>
+    <p>
+      A flat like or dislike for moving a given kind of piece &mdash; a knight-hopper, a bishop
+      fan, someone who will not move the queen. There is no positional measurement here, so
+      there is no <code>tanh</code>: every move by that piece type gets the same push.
+    </p>
+    <span class="f">logBoost += pieceValue[type of moving piece] &times; scale</span>
+    <p class="when"><b>Applies to:</b> every move, by the type of the piece being moved.</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Controls that act on the whole turn</h2>
+  <p class="note" style="margin-top:0">
+    These four do not score individual moves. They still take a share of the CP Budget, because
+    they are still part of the personality.
+  </p>
+
+  <div class="a">
+    <h3>Front-runner &middot; Swindler</h3>
+    <p class="poles">&minus;5 Swindler &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Front-runner +5</p>
+    <p>
+      The same measurement as Chaos, but consulted only once the game has a direction &mdash;
+      and it points opposite ways depending on which direction that is. A <strong>front-runner</strong>
+      pushes their luck when ahead and folds when behind. A <strong>swindler</strong> converts
+      cleanly when winning and muddies the water when losing, which is where most saved games
+      come from.
+    </p>
+    <span class="f">when the bot is better than +50 cp:
+  temperature &times;= exp(  v &times; 0.08 &times; tanh( (complexity &minus; 0.5) &times; 4 ) )
+
+when the bot is worse than &minus;50 cp:
+  temperature &times;= exp( &minus;v &times; 0.08 &times; tanh( (complexity &minus; 0.5) &times; 4 ) )
+
+between the two, it does nothing</span>
+    <p class="when"><b>Applies to:</b> the whole turn, once the game is decided one way or the other.</p>
+  </div>
+
+  <div class="a">
+    <h3>Coffeehouse hustler &middot; Overthinker</h3>
+    <p class="poles">&minus;5 Overthinker &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Hustler +5</p>
+    <p>
+      Pure tempo: how long the bot sits before moving. A hustler bangs moves out to put you
+      under time pressure; an overthinker takes its time over everything.
+    </p>
+    <span class="f">thinkTime &times;= ( 1 &minus; v &times; 0.15 )</span>
+    <p class="when">
+      <b>Applies to:</b> the clock, not the move. At +5 the bot moves in a quarter of its
+      normal time; at &minus;5 it takes nearly twice as long. <b>Complexity-scaled timing
+      only</b> &mdash; Fixed interval, Mirror user and Instantaneous set the pace themselves,
+      and the builder greys this control out under them.
+    </p>
+  </div>
+
+  <div class="a">
+    <h3>Bad day &middot; Good day</h3>
+    <p class="poles">&minus;5 Good day &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Bad day +5</p>
+    <p>
+      Slides the whole band of moves the bot is willing to consider up or down its own
+      preference list. On a good day it draws from the top of the list; on a bad day it is
+      working from further down, and playing below itself all game.
+    </p>
+    <span class="f">lower = clamp( dayLower &minus; v &times; 4 , 0 , 95 )
+upper = clamp( dayUpper &minus; v &times; 4 , lower+5 , 100 )
+
+moves outside the [lower, upper] percentile band are discarded
+before anything else is scored</span>
+    <p class="when"><b>Applies to:</b> the candidate list, before scoring. <b>Maia, and the
+      Lichess opening book on any engine</b> &mdash; wherever moves come ranked by popularity.</p>
+    <p class="note" style="margin:9px 0 0">
+      <strong>Why this control belongs to Maia and has no Flounder equivalent.</strong> Maia
+      orders its moves by how often humans <em>play</em> them, which is popularity, not quality
+      &mdash; so sliding the band down reaches for less-obvious moves, and a less-obvious move
+      may turn out to be good or bad. That is what an off day actually feels like.
+    </p>
+    <p class="note">
+      Flounder orders its moves by what they <em>cost</em>. Sliding a band down that list can
+      only ever reach worse moves, every time, which is not a bad day &mdash; it is simply a
+      lower rating, and the rating dial already does that with measurements behind it. The
+      control has no effect on Flounder&rsquo;s own moves, and the Move Distribution Range it
+      lives on is hidden for a bot that only ever plays Flounder. With the opening book on, it
+      still shapes the book&rsquo;s moves.
+    </p>
+  </div>
+
+  <div class="a">
+    <h3>Panicky &middot; Calm under pressure</h3>
+    <p class="poles">&minus;5 Calm &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Panicky +5</p>
+    <p>
+      How hard the time-pressure curve bites. It does not change any move on its own &mdash; it
+      multiplies how far along the temperature-escalation curve a low clock pushes the bot.
+      At 0 the bot follows the curve as drawn, which is mild by default (a ceiling of T&nbsp;2).
+      Toward Calm it climbs less, and fully Calm under pressure leaves the temperature
+      untouched; toward Panicky it climbs faster and reaches the ceiling early.
+    </p>
+    <span class="f">multiplier = 1 + v / 5        for v &le; 0   (&minus;5 &rarr; 0, untouched)
+multiplier = 1 + 0.3 &times; v     for v &gt; 0   (+5 &rarr; 2.5)
+
+temperature = base + fraction &times; multiplier &times; (ceiling &minus; base)</span>
+    <p class="when">
+      <b>Applies to:</b> timed games where think time can really run short &mdash; Complexity-scaled
+      timing, which budgets from the clock, or Mirror user, which plays at your pace and so
+      speeds up (and cracks) when you do &mdash; with the temperature curve switched on. Under a
+      Fixed or Instantaneous pace there is no time pressure and it does nothing. It takes no
+      share of the centipawn budget in any game &mdash; it scores no moves.
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Custom controls</h2>
+  <p>
+    The named sliders are the ones worth having a name. Beyond them a bot can carry any number
+    of custom controls, built from the measurements below and scored in exactly the same way
+    &mdash; the change the move makes to that measurement, bounded by <code>tanh</code>:
+  </p>
+  <span class="f">logBoost += v &times; scale &times; tanh( (metric(after) &minus; metric(before)) / k )</span>
+  <p style="margin-top:12px">
+    <code>k</code> sets what counts as a big change for that measurement and is listed with
+    each one. A positive slider prefers moves that raise the metric, a negative one moves that
+    lower it. Everything is measured for the <em>bot&rsquo;s</em> side unless it says otherwise.
+    In the formulas, <code>me</code> is the bot and <code>them</code> the opponent.
+  </p>
+
+  <h3 style="margin:18px 0 0">Pawns</h3>
+  <table>
+    <tr><th>Metric</th><th>k</th><th>What it counts</th></tr>
+    <tr><td>Passed pawns</td><td class="n">1</td><td>Own pawns with no enemy pawn ahead of them on their own or either adjacent file.
+      <span class="fx">count of my pawns with no their-pawn ahead on files f&minus;1, f, f+1</span></td></tr>
+    <tr><td>Pawn advancement</td><td class="n">4</td><td>How far the pawns have come, measured as the distance they still have to travel. Any pawn move raises it, from any square, and so does promoting.
+      <span class="fx">&minus; &Sigma;<sub>my pawns</sub> (squares short of promotion)</span></td></tr>
+    <tr><td>Doubled pawns</td><td class="n">1</td><td>Pawns beyond the first on any file.
+      <span class="fx">&Sigma;<sub>files</sub> max(0, myPawnsOnFile &minus; 1)</span></td></tr>
+    <tr><td>Isolated pawns</td><td class="n">1</td><td>Pawns on a file with no own pawn on either adjacent file.
+      <span class="fx">&Sigma;<sub>files f with my pawns, none on f&minus;1 or f+1</sub> myPawnsOnFile</span></td></tr>
+    <tr><td>Pawn islands</td><td class="n">1</td><td>Groups of occupied files separated by at least one empty file.
+      <span class="fx">number of unbroken runs of files holding my pawns</span></td></tr>
+    <tr><td>Connected pawns</td><td class="n">2</td><td>Pawns with an own pawn on an adjacent file within one rank &mdash; the duo and the chain.
+      <span class="fx">count of my pawns with a my-pawn at |&Delta;file| = 1 and |&Delta;rank| &le; 1</span></td></tr>
+    <tr><td>Pawn structure health</td><td class="n">1</td><td>The Rigid/Loose penalty, negated, so higher is tidier.
+      <span class="fx">&minus;(islands + doubled + isolated + unconnected)</span></td></tr>
+  </table>
+
+  <h3 style="margin:18px 0 0">King safety</h3>
+  <table>
+    <tr><th>Metric</th><th>k</th><th>What it counts</th></tr>
+    <tr><td>Enemy pressure on my king</td><td class="n">3</td><td>Enemy attacks on the squares around the own king.
+      <span class="fx">&Sigma;<sub>9 squares around my king</sub> (their attackers on that square)</span></td></tr>
+    <tr><td>King-zone pressure</td><td class="n">3</td><td>The same sum around <em>their</em> king, counting own attacks.
+      <span class="fx">&Sigma;<sub>9 squares around their king</sub> (my attackers on that square)</span></td></tr>
+    <tr><td>Pawn shield on my king</td><td class="n">1</td><td>Own pawns on the six squares one and two ranks in front of the own king.
+      <span class="fx">count of my pawns at |&Delta;file| &le; 1 and 1 &le; &Delta;rank &le; 2 ahead of my king</span></td></tr>
+    <tr><td>Gives check</td><td class="n">1</td><td>Whether the move leaves the opponent in check.
+      <span class="fx">1 if they are in check, else 0</span></td></tr>
+  </table>
+
+  <h3 style="margin:18px 0 0">Material and development</h3>
+  <table>
+    <tr><th>Metric</th><th>k</th><th>What it counts</th></tr>
+    <tr><td>Material balance</td><td class="n">3</td><td>Own material minus the opponent&rsquo;s.
+      <span class="fx">&Sigma; my values &minus; &Sigma; their values, at P1 N3 B3 R5 Q9</span></td></tr>
+    <tr><td>Total pieces on board</td><td class="n">3</td><td>Every piece of either colour. Lower means a simplified position.
+      <span class="fx">count of occupied squares</span></td></tr>
+    <tr><td>Queens on board</td><td class="n">1</td><td>Queens of either colour, 0 to 2.
+      <span class="fx">count of queens, either colour</span></td></tr>
+    <tr><td>Bishop pair</td><td class="n">1</td><td>Whether the bot still holds two bishops.
+      <span class="fx">1 if my bishops &ge; 2, else 0</span></td></tr>
+    <tr><td>Developed minor pieces</td><td class="n">2</td><td>Own knights and bishops off the back rank.
+      <span class="fx">count of my N and B not on my first rank</span></td></tr>
+    <tr><td>Piece centralization</td><td class="n">3</td><td>How close the own pieces stand to the middle of the board. Pawns and the king are not counted.
+      <span class="fx">&Sigma;<sub>my N B R Q</sub> (3.5 &minus; |file &minus; 3.5|) + (3.5 &minus; |rank &minus; 3.5|)</span></td></tr>
+    <tr><td>Knight/bishop outposts</td><td class="n">1</td><td>Own knights and bishops past the middle of the board on a square no enemy pawn can ever attack: every pawn that might have challenged it has gone past or been captured.
+      <span class="fx">count of my N and B in their half with no their-pawn on file &plusmn;1 still behind the square</span></td></tr>
+    <tr><td>My piece mobility</td><td class="n">5</td><td>The number of legal moves available. The same measurement Prophylaxis points at the opponent.
+      <span class="fx">count of my legal moves</span></td></tr>
+  </table>
+
+  <h3 style="margin:18px 0 0">Threats and defence</h3>
+  <table>
+    <tr><th>Metric</th><th>k</th><th>What it counts</th></tr>
+    <tr><td>Attacks on enemy pieces</td><td class="n">3</td><td>Attackers summed over every enemy piece. Counting attacks rather than pieces means a second attacker on an already-attacked piece registers, which is usually the move worth finding.
+      <span class="fx">&Sigma;<sub>their pieces</sub> (my attackers on it)</span></td></tr>
+    <tr><td>My hanging pieces</td><td class="n">2</td><td>Own pieces, king aside, that are attacked and defended zero times.
+      <span class="fx">count of my pieces with their-attackers &gt; 0 and my-defenders = 0</span></td></tr>
+    <tr><td>Loose enemy pieces</td><td class="n">1</td><td>The same test on the other side.
+      <span class="fx">count of their pieces with my-attackers &gt; 0 and their-defenders = 0</span></td></tr>
+    <tr><td>My defended pieces</td><td class="n">3</td><td>Own pieces, king aside, with at least one own defender. Counts pieces.
+      <span class="fx">count of my pieces with my-defenders &ge; 1</span></td></tr>
+    <tr><td>Piece defense (Fort Knox)</td><td class="n">3</td><td>Total defensive cover. Counts <em>defences</em> rather than pieces &mdash; this is the measurement the Fort Knox slider uses.
+      <span class="fx">&Sigma;<sub>my pieces</sub> (my defenders on it)</span></td></tr>
+  </table>
+
+  <h3 style="margin:18px 0 0">Squares</h3>
+  <table>
+    <tr><th>Metric</th><th>k</th><th>What it counts</th></tr>
+    <tr><td>My weak squares</td><td class="n">5</td><td>Empty squares the bot does not attack, over the whole board &mdash; the Space cadet measurement without the centre weighting.
+      <span class="fx">count of empty squares with my-attackers = 0</span></td></tr>
+    <tr><td>Central square control</td><td class="n">3</td><td>Own attacks on the four centre squares. Counts attacks, so two attackers on one square score twice.
+      <span class="fx">&Sigma;<sub>d4 d5 e4 e5</sub> (my attackers on that square)</span></td></tr>
+    <tr><td>Space in enemy half</td><td class="n">5</td><td>Empty squares in the opponent&rsquo;s half that the bot attacks.
+      <span class="fx">count of empty squares in their half with my-attackers &ge; 1</span></td></tr>
+  </table>
+
+  <h3 style="margin:18px 0 0">Rooks</h3>
+  <table>
+    <tr><th>Metric</th><th>k</th><th>What it counts</th></tr>
+    <tr><td>Rooks on open files</td><td class="n">1</td><td>Own rooks on a file with no pawn of either colour.
+      <span class="fx">count of my rooks on files holding no pawns</span></td></tr>
+    <tr><td>Rooks on the 7th rank</td><td class="n">1</td><td>Own rooks on the opponent&rsquo;s second rank.
+      <span class="fx">count of my rooks on their 2nd rank</span></td></tr>
+  </table>
+
+  <p class="note">
+    A custom control can also be gated on game phase, on whether the bot is winning or losing,
+    and on time pressure &mdash; in which case it only takes a share of the budget on the moves
+    where its condition actually holds.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Where personality sits in the move pipeline</h2>
+  <p>
+    The two engines are different shapes, so the personality attaches at a different point in
+    each. Both are bounded by the same CP Budget.
+  </p>
+  <table>
+    <tr><th>Maia</th><th>Flounder</th></tr>
+    <tr>
+      <td>Maia returns a probability for every move &mdash; how often humans of that rating
+        play it.</td>
+      <td>Stockfish scores every legal move, and the rating draws a target for how much the
+        turn should cost.</td>
+    </tr>
+    <tr>
+      <td><strong>Personality reweights those probabilities</strong> by <code>exp(logBoost)</code>.</td>
+      <td><strong>Personality chooses within a band</strong> of moves lying either side of the
+        cost the rating asked for.</td>
+    </tr>
+    <tr>
+      <td>Temperature then samples the reshaped distribution.</td>
+      <td>Temperature has already acted, by reshaping the error distribution the target was
+        drawn from.</td>
+    </tr>
+  </table>
+  <p class="note" style="margin-top:14px">
+    One consequence worth knowing on the Maia side: because personality is applied
+    <em>before</em> temperature, turning temperature down does not switch personality off. It
+    makes it decisive &mdash; the bot plays the top of the distribution personality just
+    reshaped, every time. If a trait has lifted its favourite move above the crowd, a cold bot
+    plays that move and means it.
+  </p>
+  <p class="note">
+    On the Flounder side the band is deliberately <em>symmetric</em>: it reaches moves that cost
+    a little more than the rating asked for and moves that cost a little less. A real trait
+    makes you play below your rating on some moves and above it on others, so a one-sided band
+    would turn every personality into a handicap.
+  </p>
+</div>
+
+<p class="note" style="margin-top:34px">
+  Blundermind is free software under the GNU GPL v3 or later, so none of the above has to be
+  taken on trust &mdash; the expressions on this page live in <code>src/50-bot-engine.js</code>
+  in the <a href="https://github.com/bhale22/Blundermindwithbots" target="_blank" rel="noopener">public
+  repository</a>. See also the <a href="/credits">credits and licences</a>.
+</p>
+
+</main>
+</body>
+</html>

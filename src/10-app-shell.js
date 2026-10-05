@@ -21,7 +21,11 @@ let botPlayerColor = 'white';
 // last touched (which is what the old resolve-on-click behaviour gave).
 let botColorPref = 'random';
 let botTab = 'sf';
-let botTimePressure = 'steady';
+let botTimePressure = 'steady';   // label only now; botTempPressureMult is what runs
+// How far curve B's temperature escalation goes: 0 = unaffected by time
+// pressure (fully Calm), 1 = the curve as drawn, 2.5 = fully Panicky. Set from
+// the Calm ↔ Panicky slider by the botConfig handler (tempPressureMult).
+let botTempPressureMult = 1;
 let botSelectedTC = 'untimed';
 let botHybridSlots = [];
 let sfWorker = null;
@@ -68,7 +72,7 @@ let preferredOpeningActive = false;
 let lichessExplorerActive = false;
 let botOpeningConfig = {
   source: 'masters',       // 'masters' | 'lichess'
-  maxBookDepth: 20,        // stop using book after this many half-moves
+  maxBookDepth: 20,        // stop using book after this many MOVES (each side; plies = ×2)
   fallbackToEngine: true,
   // loyalty-specific
   ecoPrefix: '',
@@ -103,6 +107,10 @@ let botMirrorOffsetPct = 0;        // % speed offset for 'mirror' mode (-100..+1
 let botCplxBase = 3;               // complexity mode: base think time (s)
 let botCplxMin  = 0.4;             // complexity mode: min multiplier (simple moves)
 let botCplxMax  = 2.5;             // complexity mode: max multiplier (complex moves)
+// complexity mode: where the average think time comes from — 'clock' (time left
+// ÷ moves left in a game of botCplxMovesPerGame moves) or 'fixed' (botCplxBase).
+let botCplxBaseMode     = 'fixed';
+let botCplxMovesPerGame = 60;
 let botBehavReconsider  = true;    // human behaviour: reconsideration pauses
 let botBehavBlink       = true;    // human behaviour: instant play on forced moves
 let botBehavClockMirror = true;    // human behaviour: speed up when opponent is low
@@ -123,6 +131,10 @@ let botSfTempLevel = 2;            // temperature tier 0-4 (legacy; superseded b
 let botSfVar1 = 0;                 // % of SF calls at ±1 level (0–50)
 let botSfVar2 = 0;                 // % of SF calls at ±2 level (0–20)
 let botTimePressureMaxDrop = null; // max ELO drop from r-drop; null = use DOM slider
+// Lichess opening book in front of the engine. The lcsf/lcmaia modes encode it
+// in the mode itself; a blend cannot, because its slots are already the engine
+// choice — so the flag rides alongside for that case.
+let botEngineBook = false;
 let botMinProbPct       = 0;      // min absolute probability % — 0 = off (default); set by panel
 let botBadDayMode       = false;  // Grandmaster Bad Day: pick lowest-probability move above minProbPct threshold
 let botPressureCurveA   = null;   // ctrlA points [{x,y}] — ELO degradation vs think-time (s); seeded on the Regan model by the panel
@@ -563,7 +575,13 @@ function _syncPanelTheme(t) {
     '--text-dim':       light ? t.textDim : t.textSec,
     '--border':         t.border,
     '--amber':          ac.main,
-    '--amber-bright':   ac.bright,
+    // On a light surface "bright" has to mean MORE contrast, not a lighter
+    // shade. It is the colour of every value readout and emphasised word in
+    // the panel, and the lighter amber (#c8922a) measured 1.6:1 on a selected
+    // card, so the Duration readout under Fixed interval was all but
+    // invisible. The dark shade reads at about 4.7:1 or better on every light
+    // theme. Dark themes keep the bright one, which is what it was made for.
+    '--amber-bright':   light ? ac.dim : ac.bright,
     '--amber-dim':      ac.dim,
     '--amber-glow':     ac.glow,
     '--amber-glow-s':   ac.glowS,
@@ -2014,27 +2032,45 @@ const TOURS = {
     { sel:'#commitModeChip', title:'How your moves get played',
       body:'This chip sits with your clock and switches how a move is committed. <b>✋ Release to move</b> plays the move the moment you let go. <b>👆 Tap to confirm</b> instead <i>parks</i> the piece on the square with every overlay live, so you can take your finger off the board, read what the move actually does, and only then tap again to play it — or tap a different square to change your mind. On a phone your finger covers the very squares you moved there to read, so this is the difference between seeing the answer and guessing. Tap the chip to switch, even mid-game.' },
     { sel:'#quickBot', title:'Start a game',
-      body:'The fastest way in. The row underneath sets the two things that matter: which opponent — Stockfish 1 is the gentlest, 20 the strongest — and which colour you play. <b>Play as Random</b> re-rolls every game. Pick <b>Open Bot-Builder…</b> from the same list to build your own instead.' },
+      body:'The fastest way in. The row underneath sets the two things that matter: which opponent — 600 is the gentlest, 1400 the strongest offered here; the builder goes on up to 2400 — and which colour you play. Picking here changes only the engine and its rating: a bot you built keeps its personality, and the line under the picker shows it. <b>Play as Random</b> re-rolls every game. Pick <b>Open Bot-Builder…</b> from the same list to build your own instead.' },
     { sel:'#mpSidebarBtn', title:'Play a friend',
       body:'Two people, one board, over the internet. <b>Inviting a friend with a private link is the recommended way</b> — you know who you are playing. You can post an open challenge instead if you would rather take on a stranger. Either way it runs on the honour system: there is <b>no cheat detection</b>, and once a move is committed there are <b>no take-backs</b>.' },
     { sel:'#botSidebarBtn', title:'Bot Builder',
       body:'Build an opponent rather than pick one. Choose the engine — including <b>Maia-3</b>, which is trained on human games and blunders like a person instead of like a weakened engine — then set a rating, an opening repertoire, and how it behaves under time pressure. Give it a personality and a name, and you get opponents like <i>Attacky McTackerson</i>. Whatever you build becomes the bot the Start button plays.' },
-    { sel:'.ind-grid', title:'Board-vision indicators', indSection:true,
-      body:'These overlays draw what a stronger player sees — threats, pins, forks and more. We’ll light each one up on a sample position so you can see exactly what it does.' },
-    { sel:'#ib-threats', title:'Three ways to show an indicator', indSection:true, modes:'threats',
-      body:'Every indicator button carries three states, and its colour says which one it is in — the key at the top of this panel spells them out. Watch it cycle: <b>off</b> — <b>while exploring</b>, drawn only while you explore a move — <b>always on</b>, drawn all the time. <b>Click</b> to step through them. Or <b>press and hold</b> to peek: the overlay flips on if it was off (and off if it was on) for as long as you hold, then goes straight back. While the button is blue, nothing you are doing will stick.' },
-    { sel:'.ind-grid', title:'How to train with these', indSection:true,
+    // On a phone the overlay grid is not on the page: it lives in the
+    // board-vision panel, and what the page shows instead is the pinned strip
+    // under the board. selPhone points these steps at the strip and its chips,
+    // or the filter in startTour() drops all of them. "Three ways" is about one
+    // chip, so it is skipped on a phone where threats has been unpinned.
+    { sel:'.ind-grid', selPhone:'#pinStrip', title:'Board-vision indicators', indSection:true,
+      body:'These overlays draw what a stronger player sees — threats, pins, forks and more. We’ll light each one up on the board so you can see exactly what it does.',
+      bodyPhone:'These overlays draw what a stronger player sees — threats, pins, forks and more. On a phone they live in this strip under the board: each chip is one overlay, and <b>+</b> opens the full list to choose from. We’ll light each one up on the board so you can see exactly what it does.' },
+    { sel:'#ib-threats', selPhone:'#pin-threats', title:'Three ways to show an indicator', indSection:true, modes:'threats',
+      body:'Every indicator button carries three states, and its colour says which one it is in — the key at the top of this panel spells them out. Watch it cycle: <b>off</b> — <b>while exploring</b>, drawn only while you explore a move — <b>always on</b>, drawn all the time. <b>Click</b> to step through them. Or <b>press and hold</b> to peek: the overlay flips on if it was off (and off if it was on) for as long as you hold, then goes straight back. While the button is blue, nothing you are doing will stick.',
+      bodyPhone:'Every chip carries three states, and its colour says which one it is in. Watch this one cycle: <b>off</b> — <b>while exploring</b>, drawn only while you explore a move — <b>always on</b>, drawn all the time. <b>Tap</b> a chip to step through them. Or <b>press and hold</b> to peek: the overlay flips on if it was off (and off if it was on) for as long as you hold, then goes straight back. While the chip is blue, nothing you are doing will stick.' },
+    { sel:'.ind-grid', selPhone:'#pinStrip', title:'How to train with these', indSection:true,
       body:'Best habit: <b>look first and try to spot it yourself</b> — plan your move and picture the threats and replies in your head. <i>Then</i> switch an indicator on as instant feedback to catch anything you missed.' },
     // One step the visitor drives, replacing thirteen they had to sit through.
     // Reading a paragraph per overlay is the slow way round, and it made the
     // tour long enough that people skipped it before reaching anything else.
+    // On a phone it spotlights the board and the chips come to the panel (see
+    // _tourBoardFocus), so it needs no selPhone.
     { sel:'.ind-grid', title:'Try them yourself', indSection:true, explore:true,
-      body:'Thirteen overlays — and the fast way to learn them is to press one. <b>Any button in the highlighted panel</b> switches fully on, the board shows what it draws, and its explanation appears here. Go in any order, try as many as you like, then press Next when you have had enough.' },
-    { sel:'#soloGhostDepth', title:'Ghost moves',
-      body:'Hover a destination square and the bot shows the most likely replies as faint “ghost” pieces — handy for training your calculation.' },
+      body:'Thirteen overlays — and the fast way to learn them is to press one. <b>Any button in the highlighted panel</b> switches fully on, the board shows what it draws, and its explanation appears here. Go in any order, try as many as you like, then press Next when you have had enough.',
+      bodyPhone:'Thirteen overlays — and the fast way to learn them is to press one. <b>Tap any chip above</b> and it switches fully on, the board shows what it draws, and its explanation appears here. Go in any order, try as many as you like, then press Next when you have had enough.' },
+    // The one ghost control is in Board settings, a panel the tour keeps
+    // closed, and ghosts are off until it is used — so this step brings both
+    // halves to the user: a copy of that control in the card, and real ghosts
+    // drawn on the demo position (see _tourGhostDemoStart).
+    { sel:'#cv', title:'Ghost moves', ghostDemo:true, wide:true,
+      body:'Pick up a piece and hover it over a square: after a moment, the bot’s likeliest replies appear as faint “ghost” pieces — outlined blue for its first choice, purple for its second. Ghosts start switched off: turn them on in <b>⚙ Board settings</b>, pictured above, where you also pick the engine.',
+      bodyPhone:'Drag a piece onto a square and hold it there: after a moment, the bot’s likeliest replies appear as faint “ghost” pieces — outlined blue for its first choice, purple for its second. With <b>👆 Tap to confirm</b> on, once they are up you can let go and they stay. Ghosts start switched off: turn them on in <b>⚙ Board settings</b>, pictured above, where you also pick the engine.',
+      // Only when the demo is on the board; during a game there is none.
+      demoNote:'On the board, White is weighing <b>h3</b>, and the ghosts say the bishop takes on f3 or drops back to e6.' },
     { sel:'#distPanel', title:'Maia move odds',
       body:'Everything else here shows you the position <i>before</i> you commit. This closes the loop <i>after</i>: expand <b>📊 Maia move odds</b> and it shows the move just played, from the position it was played in, against how a real human pool weighted the options there — one tall bar means the move was near-forced, several close bars mean it was a genuine decision. Playing a Maia bot reads the odds at <b>that bot’s rating</b>, so it is your actual opponent’s judgement, not a generic one. <b>Collapsed by default</b>; it reviews the move behind you rather than helping with the one in front of you.' },
-    { sel:'#bs-open', title:'Board settings & appearance',
+    // #pbSettings is the phone bar's ⚙, which opens the same panel.
+    { sel:'#bs-open', selPhone:'#pbSettings', title:'Board settings & appearance',
       body:'Sound, legal-move dots and the two rules that decide what counts as a threat live here — and so does <b>Theme & pieces</b>: colors, piece sets, Carbon vs Journal format, and the switch between this Training board and the clean Expert board.' },
     { sel:'#site-name', title:'Home',
       body:'Click the Blundermind logo anytime to return Home and switch between the Beginner and Expert boards.' },
@@ -2063,10 +2099,26 @@ let _tourSteps = [], _tourIdx = 0, _tourActive = false, _tourShell = 'amateur';
 // ── Indicator demo: light each overlay on a sample position during the tour ──
 // A tactic-rich position so threats/pins/counts/weak-squares actually appear.
 const _TOUR_DEMO_FEN = 'r2q1rk1/ppp2ppp/2np1n2/2b1p1B1/2B1P1b1/2NP1N2/PPP2PPP/R2Q1RK1 w - - 0 1';
+// The move the Ghost moves step explores in that position, and the two replies
+// the ghost engine gives it: Stockfish's first and second choice at depth 8,
+// the level the dropdown restores to (depth 12 agrees). Canned so the step
+// never waits on an engine, and the step's text names them — change all three
+// together.
+const _TOUR_GHOST_DEMO = { move:'h2h3', replies:['g4f3', 'g4e6'] };
 let _tourSavedInd = null, _tourSavedFen = null, _tourDidDemo = false, _tourModeTimer = null;
 
+// The sample position is only for a board with nothing on it that matters.
+// "No moves yet" is not enough: a game is running from the moment it starts.
+// The bot can be thinking about White's first move (it played that move on the
+// sample board, then stalled when the tour put the old position back), an
+// online opponent can be about to send theirs, and a standing challenge can be
+// accepted mid-tour. In any of those, a replay, or a game under way, the tour
+// demonstrates on the board as it is instead.
 function _tourSafeToDemo(){
-  // Never disturb a live game — only swap in the demo position from a fresh/idle board.
+  if(typeof _isLiveGame === 'function' && _isLiveGame()) return false;
+  if(typeof mpRoomId !== 'undefined' && mpRoomId) return false;   // waiting, playing, or a rematch away
+  if(typeof clockActive !== 'undefined' && clockActive) return false;
+  if(typeof inReplay !== 'undefined' && inReplay) return false;
   return (typeof gameMovesAlgebraic === 'undefined' || !gameMovesAlgebraic.length ||
           (typeof gameOver !== 'undefined' && gameOver));
 }
@@ -2117,7 +2169,7 @@ function _tourExploreStart(){
 // the first pick, or there is nothing to tap on a phone.
 function _tourExploreSeedBody(step){
   const b = document.getElementById('tourBody');
-  if(b) b.innerHTML = _tourExploreChips(null) + step.body;
+  if(b) b.innerHTML = _tourExploreChips(null) + _tourBody(step);
 }
 
 // Total overlays offered, so the counter matches what is on screen.
@@ -2208,31 +2260,67 @@ function _tourRestoreBoard(){
   if(typeof render === 'function') render();
 }
 
-// On phones the board-vision settings live in a collapsed drawer, so their
-// elements have zero width — and the filter below would drop every indicator
-// step, cutting the tour from 21 steps to 4 and losing the part that actually
-// teaches the product. Open the drawer for the duration of the tour and put it
-// back afterwards.
-let _tourOpenedBv = false;
-function _tourOpenBoardSettings(){
-  const box = document.getElementById('board-settings');
-  const btn = document.getElementById('bv-toggle');
-  if(!box || !btn) return;
-  if(getComputedStyle(btn).display === 'none') return;   // desktop: always open
-  if(!box.classList.contains('open')){
-    box.classList.add('open');
-    btn.setAttribute('aria-expanded', 'true');
-    _tourOpenedBv = true;
+// ── Ghost replies, drawn for real on the demo position ───────────────────────
+// The demo move is explored the way a player explores one (startPreview: the
+// piece on its new square, its old square dimmed), and the replies go through
+// the same drawing code and styles as in play. Every move is checked for
+// legality first, so a changed demo position draws nothing rather than
+// nonsense. Only on the demo position — never over a live game.
+let _tourGhosting = false;
+
+function _tourGhostDemoStart(){
+  // startPreview on a live board is exactly what must never happen, so the
+  // safety test is asked again rather than trusted from when the sample went up.
+  if(!_tourDidDemo || !_tourSafeToDemo() || typeof startPreview !== 'function' ||
+     typeof _drawGhostReply !== 'function' || typeof uciToSq !== 'function') return;
+  const mv = uciToSq(_TOUR_GHOST_DEMO.move);
+  if(!mv || !legalMovesFor(mv.from, board, epSq, castling).includes(mv.to)) return;
+  // Only the ghosts: overlays set to "while exploring" would draw as well, all
+  // over the move being explored. The tour puts them back on the way out.
+  if(typeof IND !== 'undefined'){
+    Object.keys(IND).forEach(k => { IND[k].on = false; IND[k].pre = false; IND[k].pressing = false; });
   }
+  if(typeof ibRefreshAll === 'function') ibRefreshAll();
+  startPreview(mv.from, mv.to);
+  _tourGhosting = true;
+  // A frame later: after the preview's own redraw, and after any resize has
+  // re-sized the ghost layer, which clears it.
+  requestAnimationFrame(() => {
+    if(!_tourGhosting || !previewBoard) return;
+    if(typeof clearGhostPieces === 'function') clearGhostPieces();
+    _TOUR_GHOST_DEMO.replies.forEach((u, rank) => {
+      const r = uciToSq(u);
+      if(r && legalMovesFor(r.from, previewBoard, previewEpSq, previewCastling).includes(r.to)){
+        _drawGhostReply(previewBoard, r.from, r.to, rank);
+      }
+    });
+  });
 }
-function _tourRestoreBoardSettings(){
-  if(!_tourOpenedBv) return;
-  _tourOpenedBv = false;
-  const box = document.getElementById('board-settings');
-  const btn = document.getElementById('bv-toggle');
-  if(box) box.classList.remove('open');
-  if(btn) btn.setAttribute('aria-expanded', 'false');
+
+function _tourGhostDemoStop(){
+  if(!_tourGhosting) return;
+  _tourGhosting = false;
+  if(typeof clearGhostPieces === 'function') clearGhostPieces();
+  if(typeof clearPreview === 'function') clearPreview();
+  if(typeof render === 'function') render();
 }
+
+// While the sample position is up, the board is a picture, not a game. A move
+// made on it went into the real move list — a knight that exists only in the
+// sample, or on the ghost step the explored h3, which a press on an empty
+// square commits — and the tour then put the old position back underneath.
+// So presses on the board go nowhere until the real position is back. Capture
+// phase, so the board's own handlers never see them; a desktop click still
+// reaches the tour, which ends it as before. Touch is cancelled outright, as
+// the board itself does, so no mouse events or click are made from it.
+['mousedown', 'mouseup', 'touchstart', 'touchmove', 'touchend'].forEach(function(type){
+  document.addEventListener(type, function(e){
+    if(!_tourActive || !_tourDidDemo || !e.target.closest ||
+       !e.target.closest('#board-canvas-wrap')) return;
+    if(type.indexOf('touch') === 0 && e.cancelable) e.preventDefault();
+    e.stopPropagation();
+  }, { capture:true, passive:false });
+});
 
 // Started from the landing, the tour opens on the landing itself: the board
 // choice is the first decision the site asks for, and explaining it after
@@ -2247,18 +2335,17 @@ function startTour(opts){
   _tourShell = (typeof proMode !== 'undefined' && proMode) ? 'pro' : 'amateur';
   _tourDidDemo = false; _tourSavedFen = null;
   if(_tourShell === 'amateur') _tourSnapshotInd();
-  _tourOpenBoardSettings();   // must run BEFORE the visibility filter below
   const all = (opts && opts.fromLanding)
     ? [_TOUR_LANDING_STEP].concat(TOURS[_tourShell] || [])
     : (TOURS[_tourShell] || []);
   // Keep only steps whose target is present and visible (drops hidden chrome).
-  // _tourSel picks selPhone at phone width, so a step is only dropped when it
-  // genuinely has nothing to point at rather than when its desktop target
-  // happens to be laid out differently here.
+  // _tourTarget picks selPhone at phone width, and the board for a step that
+  // spotlights it, so a step is only dropped when it genuinely has nothing to
+  // point at rather than when its desktop target happens to be laid out
+  // differently here.
   _tourSteps = all.filter(s => {
-    const sel = _tourSel(s);
-    if(!sel) return true;
-    const el = document.querySelector(sel);
+    if(!_tourSel(s)) return true;
+    const el = _tourTarget(s);
     return el && el.getBoundingClientRect().width > 0;
   });
   if(!_tourSteps.length) return;
@@ -2340,8 +2427,8 @@ function endTour(completed){
   if(_back) _back.style.display = 'none';
   _tourExploring = false;
   if(_tourModeTimer){ clearInterval(_tourModeTimer); _tourModeTimer = null; }
+  _tourGhostDemoStop();
   if(_tourShell === 'amateur') _tourRestoreBoard();
-  _tourRestoreBoardSettings();
   try{ localStorage.setItem('bm_tour_' + _tourShell, '1'); }catch(e){}
   // Reaching the end offers the other tour; skipping out just closes. Passing
   // the distinction in rather than inferring it from _tourIdx keeps "Skip tour"
@@ -2352,17 +2439,15 @@ function endTour(completed){
 function tourNext(){ if(_tourIdx < _tourSteps.length - 1){ _tourIdx++; _renderTourStep(); } else endTour(true); }
 function tourPrev(){ if(_tourIdx > 0){ _tourIdx--; _renderTourStep(); } }
 
-// ── Phone: point the indicator steps at the board, not at the button ─────────
-// On a phone the board-vision controls sit in a drawer below the board, far
-// enough away that scrolling the button into view pushes the board off screen.
-// Every step from "Check threats" on describes an overlay drawn *on the board*,
-// so the user was reading a description of something they could not see.
+// ── Phone: point the overlay step at the board, not at the buttons ───────────
+// On a phone the board-vision buttons are not on the page at all — they are in
+// a panel that slides over the board. The overlay step is about what gets
+// drawn *on the board*, so there the spotlight goes to the board and the
+// controls come to the user, inside the tour panel. Desktop keeps pointing at
+// the real buttons — there both are on screen at once, and the real ones are
+// better. The steps that introduce the controls point at the pinned strip
+// under the board instead (their selPhone).
 //
-// For those steps the spotlight goes to the board and a copy of the control
-// comes to the user, inside the panel. Desktop keeps pointing at the real
-// button — there both are on screen at once, and the real one is better.
-// Steps 4-6 introduce the grid itself rather than an overlay, and have no
-// `ind`, so they still point where they should.
 // Which selector this step should point at, at this width. A step without a
 // selPhone uses its one selector everywhere.
 function _tourSel(step){
@@ -2371,10 +2456,79 @@ function _tourSel(step){
   return step.sel || null;
 }
 
+// The words to go with that target: a step aimed at a different control on a
+// phone describes that control, not the desktop one.
+function _tourBody(step){
+  if(step.bodyPhone && window.matchMedia('(max-width:760px)').matches) return step.bodyPhone;
+  return step.body;
+}
+
 function _tourBoardFocus(step){
   return !!(step && (step.ind || step.explore)) &&
          window.innerWidth <= 760 &&
          !!document.getElementById('cv');
+}
+
+// The element a step rings. startTour() keeps a step only if this has a box
+// and _renderTourStep() rings it, so the two cannot disagree — they did, and
+// the overlay step was dropped on phones for its hidden grid even though it
+// was going to spotlight the board.
+function _tourTarget(step){
+  if(_tourBoardFocus(step)) return document.getElementById('cv');
+  const sel = _tourSel(step);
+  return sel ? document.querySelector(sel) : null;
+}
+
+// Ids would be duplicated into the document, and handlers would make a
+// decorative copy clickable. Strip both, and keep the copy out of the tab
+// order: it is hidden from assistive tech, so it must not take focus either.
+function _tourInert(clone){
+  [clone].concat(Array.from(clone.querySelectorAll('*'))).forEach(n => {
+    n.removeAttribute('id');
+    Array.from(n.attributes).forEach(a => { if(/^on/i.test(a.name)) n.removeAttribute(a.name); });
+    if(/^(BUTTON|SELECT|INPUT|A)$/.test(n.tagName)) n.setAttribute('tabindex', '-1');
+  });
+  return clone;
+}
+
+// Where ghosts are switched on, pictured: the Ghost replies group copied out of
+// Board settings under a copy of that panel's title, in whatever state the
+// player has it. Built from the real markup, so it cannot drift from it. The ⋯
+// stands for the groups above it in the panel.
+function _tourGhostShot(){
+  const ctl = document.getElementById('ib-ghost');
+  const group = ctl && ctl.closest('.bs-group');
+  if(!group) return '';
+  const copy = group.cloneNode(true);
+  // The heading and the control only: the multiplayer note and the Maia
+  // download prompt are passing states, not part of where the control is.
+  Array.from(copy.childNodes).forEach(n => {
+    const keep = n.nodeType === 1 &&
+      (n.classList.contains('bs-head') || n.classList.contains('ghost-one'));
+    if(!keep) n.remove();
+  });
+  // A <select>'s current choice is a property, which cloning does not carry.
+  const real = document.getElementById('soloGhostDepth');
+  const sel = copy.querySelector('select');
+  if(real && sel){
+    Array.from(sel.options).forEach((o, i) => o.toggleAttribute('selected', i === real.selectedIndex));
+  }
+  _tourInert(copy);
+  const title = document.querySelector('#boardSettingsPanel .panel-title');
+  const wrap = document.createElement('div');
+  wrap.className = 'tour-replica tour-shot';
+  wrap.setAttribute('aria-hidden', 'true');
+  const card = document.createElement('div');
+  card.className = 'tour-shot-card';
+  const hd = document.createElement('div');
+  hd.className = 'tour-shot-hd';
+  hd.textContent = title ? title.textContent : '⚙ Board settings';
+  const gap = document.createElement('div');
+  gap.className = 'tour-shot-gap';
+  gap.textContent = '⋯';
+  card.append(hd, gap, copy);
+  wrap.appendChild(card);
+  return wrap.outerHTML;
 }
 
 // A non-interactive copy of the control this step is about, in whatever state
@@ -2384,15 +2538,7 @@ function _tourControlReplica(step){
   const _sel = _tourSel(step);
   const src = _sel ? document.querySelector(_sel) : null;
   if(!src) return '';
-  const clone = src.cloneNode(true);
-  // Ids would be duplicated into the document, and handlers would make a
-  // decorative copy clickable. Strip both.
-  clone.removeAttribute('id');
-  clone.removeAttribute('onclick');
-  clone.querySelectorAll('[id]').forEach(n => n.removeAttribute('id'));
-  clone.querySelectorAll('*').forEach(n => {
-    Array.from(n.attributes).forEach(a => { if(/^on/i.test(a.name)) n.removeAttribute(a.name); });
-  });
+  const clone = _tourInert(src.cloneNode(true));
   const wrap = document.createElement('div');
   wrap.className = 'tour-replica';
   wrap.setAttribute('aria-hidden', 'true');
@@ -2424,13 +2570,15 @@ function _renderTourStep(){
   if(_tourModeTimer){ clearInterval(_tourModeTimer); _tourModeTimer = null; }
   if(_tourShell === 'amateur'){
     if(step.explore !== true) _tourExploreStop();
-    if(step.indSection){
+    _tourGhostDemoStop();          // the explored move and its ghosts are one step's
+    if(step.indSection || step.ghostDemo){
       _tourEnsureDemo();
       if(step.explore) _tourExploreStart();
       else if(step.modes) _tourCycleModes(step.modes);
+      else if(step.ghostDemo){ _tourShowIndicator(null); _tourGhostDemoStart(); }
       else _tourShowIndicator(step.ind || null);
     } else if(_tourDidDemo){
-      _tourRestoreBoard();         // left the indicator section — restore the board
+      _tourRestoreBoard();         // left the demo steps — restore the board
     } else {
       _tourShowIndicator(null);    // earlier steps: keep the board free of overlays
     }
@@ -2438,23 +2586,13 @@ function _renderTourStep(){
   // Cloned after the indicator block above has lit the control, so the copy in
   // the panel is in the same state as the overlay now on the board.
   const boardFocus = _tourBoardFocus(step);
-  const _sel = _tourSel(step);
-  const el = boardFocus
-    ? document.getElementById('cv')
-    : (_sel ? document.querySelector(_sel) : null);
-  // On a phone the overlay controls are not in the page at all — they are in
-  // the board-vision panel, and the sidebar copies are display:none. A step
-  // pointing at one would ring a box with no layout, so open the panel and
-  // ring that instead.
-  if (!boardFocus && el && typeof visIsPhone === 'function' && visIsPhone() &&
-      el.closest && el.closest('#sidebar') && el.getBoundingClientRect().width === 0) {
-    if (typeof visPanelOpen === 'function') visPanelOpen();
-  }
+  const el = _tourTarget(step);
   let rect = null;
   if(el){ try{ el.scrollIntoView({block:'nearest'}); }catch(e){} rect = el.getBoundingClientRect(); }
   const _tp = document.getElementById('tourPanel');
   if(_tp){
     _tp.classList.toggle('tour-explore', !!step.explore);
+    _tp.classList.toggle('tour-wide', !!step.wide);
     if(!step.explore) _tp.style.maxHeight = '';   // inline cap is explore-only
   }
   if(rect && rect.width > 0){
@@ -2474,7 +2612,9 @@ function _renderTourStep(){
   const bEl = document.getElementById('tourBody');
   if(bEl){
     if(step.explore) _tourExploreSeedBody(step);
-    else bEl.innerHTML = (boardFocus ? _tourControlReplica(step) : '') + step.body;
+    else bEl.innerHTML = (boardFocus ? _tourControlReplica(step) : '') +
+      (step.ghostDemo ? _tourGhostShot() : '') + _tourBody(step) +
+      (step.demoNote && _tourGhosting ? '<p class="tour-demo-note">' + step.demoNote + '</p>' : '');
   }
   const pv = document.getElementById('tourPrev'); if(pv) pv.style.visibility = _tourIdx === 0 ? 'hidden' : 'visible';
   const nx = document.getElementById('tourNext'); if(nx) nx.textContent = (_tourIdx === _tourSteps.length - 1) ? 'Done ✓' : 'Next →';
@@ -4202,14 +4342,83 @@ function peekUp(){
 // The select does not hold the state — botTab and the builder's own #sfLevel
 // slider do. This reads them, so a bot made in the builder shows up here
 // correctly instead of the two disagreeing.
-const QUICK_SF_MIN = 1, QUICK_SF_MAX = 20, QUICK_SF_DEFAULT = 1;
+// ── The Stockfish level range ─────────────────────────────────────────────
+// The slider stops at 1 because everything below it was measured to be the same
+// bot: against a fixed reference, levels -3 through 2 all landed within noise of
+// each other, and level 1 scored WORSE than level -3. Skill Level simply has no
+// resolution down there, and depth is no better — Stockfish runs quiescence even
+// at 1 ply, so it never hands over material however far you turn it down.
+//
+// Weakening now happens in Flounder instead (see flounderChooseMove), which
+// samples how much a turn should cost rather than degrading the search.
+const SF_LEVEL_MIN = 1;
+const SF_LEVEL_MAX = 20;
 
-// Twenty entries made the picker a wall of near-identical numbers. The steps
-// that actually change how a game feels are the low ones, so 1-10 stay
-// individually pickable and 15/20 stand in for "strong" and "full strength".
-// Any other level (one built in the builder) still runs — quickBotSync just
-// shows it as Custom, since the select cannot express it.
-const QUICK_SF_LEVELS = [1,2,3,4,5,6,7,8,9,10,15,20];
+// ── The Flounder rating dial ───────────────────────────────────────
+// The engine tab no longer carries a Skill Level, because Skill Level was never
+// a rating: levels -3 through 2 all measured as the same bot. It carries an ELO
+// instead, and flounderChooseMove turns that into how much a turn should cost.
+//
+// The range is the MEASURED range and nothing more. Nine rungs were calibrated
+// by playing Flounder against Maia at the same rating and searching s for a 50%
+// score — 756 games, mean absolute error 39 Elo — spanning 732 to 2387, plus a
+// tenth rung at 600 measured afterwards (40 games, implied 626).
+//
+// 600 matters more than the other end: it is the whole promise of this engine,
+// a bot a beginner can beat with nothing to download. It was briefly withheld
+// from the dial out of caution, on the grounds that the lowest MEASURED rung
+// was 732 — but the ladder's own extrapolation to 600 turned out to be right
+// when checked, so the caution was costing the product its floor for nothing.
+const FLOUNDER_ELO_MIN     = 600;
+const FLOUNDER_ELO_MAX     = 2400;
+const FLOUNDER_ELO_STEP    = 25;
+const FLOUNDER_ELO_DEFAULT = 1200;
+
+// Every read of the rating dial goes through here. Same reason the old level
+// reader existed: parseInt('0') is 0, which is FALSY, so the `|| n` idiom
+// silently turned the weakest setting on a dial into a middling one.
+function flounderSliderElo(fallback){
+  const el = document.getElementById('flounderElo');
+  const v  = el ? parseInt(el.value, 10) : NaN;
+  if(!Number.isFinite(v)) return (fallback === undefined) ? FLOUNDER_ELO_DEFAULT : fallback;
+  return Math.max(FLOUNDER_ELO_MIN, Math.min(FLOUNDER_ELO_MAX, v));
+}
+
+// Configs saved before the dial existed carry a 1-20 Skill Level. The old map
+// was elo = 650 + (lvl-1)/19*1950; this is its inverse, clamped into the
+// measured range, so an old "Stockfish 20" opens as Flounder 2400.
+function flounderEloFromLegacyLevel(lvl){
+  const n = Number.isFinite(+lvl) ? +lvl : 8;
+  const elo = 650 + (Math.max(1, Math.min(20, n)) - 1) / 19 * 1950;
+  return Math.max(FLOUNDER_ELO_MIN,
+         Math.min(FLOUNDER_ELO_MAX, Math.round(elo / FLOUNDER_ELO_STEP) * FLOUNDER_ELO_STEP));
+}
+
+// LEGACY SHIM. Nothing in the bot move path should need a Stockfish skill level
+// any more — Flounder replaced every bot use of one. This survives for the few
+// plain-search fallbacks that still take a level argument, derived from the
+// rating dial so the two can never disagree. Delete it when they are gone.
+function sfSliderLevel(fallback){
+  const el = document.getElementById('flounderElo');
+  if(!el) return (fallback === undefined) ? 8 : fallback;
+  const elo = flounderSliderElo();
+  return Math.max(SF_LEVEL_MIN, Math.min(SF_LEVEL_MAX,
+    Math.round(1 + (elo - 650) * 19 / 1950)));
+}
+
+const QUICK_FLOUNDER_MIN = FLOUNDER_ELO_MIN, QUICK_FLOUNDER_MAX = FLOUNDER_ELO_MAX;
+
+// A first visit should start at the gentlest opponent, which is now the bottom
+// of the measured ladder rather than "level 1".
+const QUICK_FLOUNDER_DEFAULT = 600;
+
+// Coarser than the dial on purpose: a picker is for choosing an opponent, not
+// for tuning one. The same five steps as the Maia list below, so the two
+// engines read straight across the dropdown and neither offers a strength the
+// other does not: this block is on the training board, and someone who wants a
+// 2400 opponent is already in the builder. Any other rating (one set in the
+// builder) still runs — quickBotSync just shows it under the bot's name.
+const QUICK_FLOUNDER_ELOS = [600, 800, 1000, 1200, 1400];
 
 // Maia3 is one 44MB network that answers "what would a human of rating R play
 // here", so a rating is the whole choice — there is no separate strength dial
@@ -4242,17 +4451,17 @@ function quickBotFillLevels(){
   ['quickBotLevels','bmwBotLevels'].forEach(function(id){
     const g = document.getElementById(id);
     if(!g || g.children.length) return;
-    for(const i of QUICK_SF_LEVELS){
+    for(const r of QUICK_FLOUNDER_ELOS){
       const o = document.createElement('option');
-      o.value = String(i);
-      o.textContent = 'Stockfish ' + i;
+      o.value = String(r);
+      o.textContent = 'Flounder ' + r;
       g.appendChild(o);
     }
   });
 }
 
 // Maia's entry depends on whether the 44MB model is on this device, so unlike
-// the Stockfish list it is rebuilt on every sync rather than filled once. The
+// the Flounder list it is rebuilt on every sync rather than filled once. The
 // download states are options too: a dropdown that simply omits Maia until
 // some other screen has been visited never tells anyone Maia exists.
 function _quickBotFillMaia(){
@@ -4359,6 +4568,7 @@ function quickBotSync(){
   // are painted from the same config here — the panel can never announce an
   // opponent the block would then contradict.
   document.querySelectorAll('#quickBotSel, #bmwBotSel').forEach(_quickBotPaintSel);
+  _quickBotPaintPersona();
   if(typeof botColorPref === 'undefined') return;
   document.querySelectorAll('#quickBotColor, #bmwBotColor').forEach(function(c){
     if(c.value !== botColorPref) c.value = botColorPref;
@@ -4368,22 +4578,21 @@ function quickBotSync(){
 // Rest one opponent-select on whatever the bot config currently is.
 function _quickBotPaintSel(sel){
   if(!sel) return;
-  const lvlEl = document.getElementById('sfLevel');
-  const lvl = lvlEl ? (parseInt(lvlEl.value, 10) || QUICK_SF_DEFAULT) : QUICK_SF_DEFAULT;
+  const elo = flounderSliderElo(QUICK_FLOUNDER_DEFAULT);
   // A bot somebody actually NAMED is called that, whatever engine is under it.
-  // Only an unnamed plain-Stockfish bot rests on its level, which is the more
+  // Only an unnamed plain-Flounder bot rests on its rating, which is the more
   // useful label when there is no name to use. Without the name check, a shared
-  // bot called "Test Bot" running Stockfish 10 was announced as "Stockfish 10"
+  // bot called "Test Bot" running Flounder 1500 was announced as "Flounder 1500"
   // by the very control you press to play it, while the notice beside it and
   // the player box both said "Test Bot".
   const _nameEl = document.getElementById('botNameInput');
   const _named  = !!(_nameEl && _nameEl.value.trim());
-  const plainSf = !_named && (typeof botTab === 'undefined' || botTab === 'sf') &&
-                  QUICK_SF_LEVELS.includes(lvl);
+  const plainSf = !_named && (typeof botTab === 'undefined' || botTab === 'sf' || botTab === 'lcsf') &&
+                  QUICK_FLOUNDER_ELOS.includes(elo);
   // The same test one tab over. Gated on the model actually being here: with
-  // Maia absent the tab falls back to Stockfish, so resting the picker on
+  // Maia absent the tab falls back to Flounder, so resting the picker on
   // "Maia 1000" would name an opponent that is not the one playing.
-  const plainMaia = !_named && typeof botTab !== 'undefined' && botTab === 'maia3' &&
+  const plainMaia = !_named && typeof botTab !== 'undefined' && (botTab === 'maia3' || botTab === 'maia') &&
                     typeof maia3SelectedRating !== 'undefined' &&
                     QUICK_MAIA_RATINGS.includes(maia3SelectedRating) &&
                     typeof _maiaStatus !== 'undefined' && _maiaStatus === 'ready';
@@ -4391,7 +4600,7 @@ function _quickBotPaintSel(sel){
   if(plainSf || plainMaia){
     const old = sel.querySelector('option[value="'+CUR+'"]');
     if(old) old.remove();
-    sel.value = plainMaia ? ('maia:' + maia3SelectedRating) : String(lvl);
+    sel.value = plainMaia ? ('maia:' + maia3SelectedRating) : String(elo);
   } else {
     // A bot built in the panel has no level to sit on. Give it its own option
     // carrying its name — otherwise the select would rest on "Open
@@ -4410,34 +4619,75 @@ function _quickBotPaintSel(sel){
   }
 }
 
-// Everything a quick-start opponent is NOT.
+// The quick block is the builder's engine card and rating dial, on the board.
+// It changes WHICH engine plays and HOW STRONG — nothing else. A bot someone
+// spent time giving a personality keeps it when they turn the rating up here,
+// exactly as it would if they moved the dial in the builder; the readout under
+// the picker says so. (An earlier version reset the whole bot to a plain
+// engine on every pick, which made the most prominent control on the page a
+// personality eraser.)
 //
-// The builder writes to these same globals, so a bot made there leaves its
-// personality attractors, its bad-day flag and its time-pressure curves behind
-// on the config the quick block then labels "Stockfish 3" or "Maia 1000".
-// Those leftovers are not cosmetic: attractors reshape a Maia distribution
-// move by move, and a pressure curve floors Stockfish's effective level once a
-// clock is running — which this block can now start. Without clearing them the
-// picker would be naming one opponent while another played.
-//
-// Draw behaviour is set rather than cleared: a quick-start bot is the casual
-// opponent, so it takes a draw unless it is genuinely winning. 400cp is roughly
-// a clear piece up.
-function _quickBotPlainConfig(){
+// The one thing set here is draw behaviour on a first visit: a casual opponent
+// takes a draw unless it is genuinely winning (400cp is roughly a clear piece
+// up). Once a builder config has been applied, the builder's own draw settings
+// are the bot's and are left alone.
+function _quickBotFirstVisitDefaults(){
+  if(window._lastAppliedBotConfig) return;
   botAcceptDraws          = true;
   botDrawAcceptMargin     = 400;
   botDrawUseObjectiveEval = true;
-  window._bcpAttractorValues = {};
-  window._bcpPieceValues     = {};
-  botBadDayMode     = false;
-  botPressureCurveA = null;
-  botPressureCurveB = null;
-  botTimePressure   = 'steady';
-  // A level or rating chosen here replaces any custom name the builder was
-  // carrying, otherwise the block would announce "Panicky Hybrid Bot" and
-  // start SF 3.
+}
+
+// Does the current config carry a personality at all? Anything the attractor
+// machinery would act on: attractor or piece preferences, custom controls, the
+// bad-day or hustler modes. The CP budget alone is not one — with nothing to
+// spend it on it is inert.
+function _quickBotPersonaInfo(){
+  const av = window._bcpAttractorValues || {}, pv = window._bcpPieceValues || {};
+  const cc = Array.isArray(window._bcpCustomControls) ? window._bcpCustomControls : [];
+  const nz = o => Object.keys(o).some(k => +o[k]);
+  let badDay = false, hustler = false;
+  try{ badDay = !!botBadDayMode; }catch(e){}
+  hustler = !!window._bcpHustlerTempMode;
+  const has = nz(av) || nz(pv) || cc.length > 0 || badDay || hustler;
+  const budget = (window._bcpCpBudget != null) ? Math.max(0, +window._bcpCpBudget || 0) : 0;
   const nameEl = document.getElementById('botNameInput');
-  if(nameEl) nameEl.value = '';
+  const name = nameEl ? nameEl.value.trim() : '';
+  let book = false;
+  try{ book = !!botEngineBook; }catch(e){}
+  return { has: has, budget: has ? budget : 0, name: name, book: book };
+}
+
+// The readout under the opponent picker. Two jobs: tell someone who built a
+// bot that its personality is still riding along at the new rating, and tell
+// a first-time visitor that "0 cp" is a dial they have not touched yet.
+function _quickBotPaintPersona(){
+  const p = _quickBotPersonaInfo();
+  const text = p.has
+    ? (p.name ? p.name + ' · ' : 'Personality · ') + p.budget + ' cp budget' + (p.book ? ' · book' : '')
+    : 'No personality · 0 cp' + (p.book ? ' · book' : '') + ' — build one…';
+  document.querySelectorAll('#quickBotPersona, #bmwBotPersona').forEach(function(el){
+    el.textContent = text;
+    el.classList.toggle('has', p.has);
+    el.title = p.has
+      ? 'This bot keeps its personality at whatever rating you pick here. Click to open the Bot-Builder.'
+      : 'A plain engine at this rating. Click to give it a personality in the Bot-Builder.';
+  });
+}
+
+// Tell the builder what the quick block just chose. The builder is an iframe
+// with its own state; before this it opened on whatever it last showed (Maia
+// 1500 on a fresh visit) while the board was about to start Flounder 600 — two
+// controls naming two opponents. The iframe may not have finished loading when
+// the start-up pick runs, so the flag lets openBotModal repeat the push once.
+function _quickBotPushToPanel(engine, elo){
+  window._quickBotPanelPick = { engine: engine, elo: elo };
+  try{
+    const f = document.getElementById('botModalFrame');
+    if(f && f.contentWindow){
+      f.contentWindow.postMessage({ type: 'quickPick', engine: engine, elo: elo }, location.origin);
+    }
+  }catch(e){}
 }
 
 function quickBotPick(v){
@@ -4467,29 +4717,42 @@ function quickBotPick(v){
       if(typeof maiaDownloadModel === 'function') maiaDownloadModel();
       return;
     }
-    if(typeof botSetTab === 'function') botSetTab('maia3');
-    if(typeof maia3SetRating === 'function') maia3SetRating(parseInt(maiaPick[1], 10));
-    // Maia's own sampling, undistorted. The builder's slider is the same value,
-    // so it is moved too rather than left showing a temperature nothing uses.
-    botMaiaTempValue = QUICK_MAIA_TEMP;
-    const tEl  = document.getElementById('maia3Temp');
-    if(tEl) tEl.value = QUICK_MAIA_TEMP;
-    const tOut = document.getElementById('maia3TempVal');
-    if(tOut) tOut.textContent = QUICK_MAIA_TEMP.toFixed(1);
-    _quickBotPlainConfig();
+    const mr = parseInt(maiaPick[1], 10);
+    // With the builder's book in front, the same engine runs under the
+    // book-fronted tab; the book's own rating follows when it is pinned.
+    if(typeof botSetTab === 'function') botSetTab(botEngineBook ? 'maia' : 'maia3');
+    if(typeof maia3SetRating === 'function') maia3SetRating(mr);
+    _quickBotSyncBookRating(mr);
+    _quickBotFirstVisitDefaults();
+    _quickBotPushToPanel('maia3', mr);
     quickBotSync();
     return;
   }
-  const lvl = Math.max(QUICK_SF_MIN, Math.min(QUICK_SF_MAX, parseInt(v, 10) || QUICK_SF_DEFAULT));
-  if(typeof botSetTab === 'function') botSetTab('sf');
-  const lvlEl = document.getElementById('sfLevel');
-  if(lvlEl){
-    lvlEl.value = lvl;
-    const out = document.getElementById('sfLevelVal');
-    if(out) out.textContent = lvl;
+  const elo = Math.max(QUICK_FLOUNDER_MIN,
+              Math.min(QUICK_FLOUNDER_MAX, parseInt(v, 10) || QUICK_FLOUNDER_DEFAULT));
+  if(typeof botSetTab === 'function') botSetTab(botEngineBook ? 'lcsf' : 'sf');
+  const eloEl = document.getElementById('flounderElo');
+  if(eloEl){
+    eloEl.value = elo;
+    const out = document.getElementById('flounderEloVal');
+    if(out) out.textContent = elo;
   }
-  _quickBotPlainConfig();
+  _quickBotSyncBookRating(elo);
+  _quickBotFirstVisitDefaults();
+  _quickBotPushToPanel('stockfish', elo);
   quickBotSync();
+}
+
+// The builder's book rating is pinned to the engine's unless its config says
+// otherwise, so a rating picked here moves the book's band with it — the same
+// thing the pin does inside the builder.
+function _quickBotSyncBookRating(elo){
+  if(!botEngineBook) return;
+  const cfg = window._lastAppliedBotConfig;
+  if(cfg && cfg.lcMaiaEloLinked === false) return;
+  const band = (typeof _snapToLcBand === 'function') ? _snapToLcBand(elo) : String(elo);
+  if(typeof lcsfSetRating === 'function') lcsfSetRating(band);
+  if(typeof lcSetRating   === 'function') lcSetRating(band);
 }
 
 function quickBotStart(){

@@ -265,6 +265,42 @@ console.log('\nDESKTOP  1440×900  — density preserved on purpose');
   await ctx.close();
 }
 
+// High-vis is the default reading mode and Journal the default format, and
+// High-vis used to size labels and values with a flat 11px !important — so it
+// pulled DOWN the 12/14px phone sizes and Journal's 15/16.5px, and a first-time
+// phone user read "2s" for Move Timing's Duration at 11px. Its lift must only
+// ever raise text.
+console.log('\nHIGH-VIS never shrinks what the phone or Journal layers set');
+for (const [label, w, h, mobile] of [['phone', 390, 844, true], ['desktop', 1440, 900, false]]) {
+  const { ctx, page } = await openAll(w, h, mobile);
+  const sizes = await page.evaluate(() => {
+    const px = (sel) => parseFloat(getComputedStyle(document.querySelector(sel)).fontSize);
+    const out = {};
+    for (const fmt of ['carbon', 'journal']) {
+      setPanelFormat(fmt);
+      for (const rs of ['default', 'highvis']) {
+        setReadability(rs);
+        out[fmt + '/' + rs] = { val: px('#v-fixed'), lbl: px('.ctrl-lbl'), hint: px('.ctrl-hint') };
+      }
+    }
+    setReadability('highvis');
+    return out;
+  });
+  for (const fmt of ['carbon', 'journal']) {
+    const d = sizes[fmt + '/default'], v = sizes[fmt + '/highvis'];
+    ok(`${label} ${fmt}: High-vis value ≥ Stylized (${v.val} vs ${d.val}px)`, v.val >= d.val);
+    ok(`${label} ${fmt}: High-vis label ≥ Stylized (${v.lbl} vs ${d.lbl}px)`, v.lbl >= d.lbl);
+    ok(`${label} ${fmt}: High-vis hint ≥ Stylized (${v.hint} vs ${d.hint}px)`, v.hint >= d.hint);
+  }
+  if (mobile) {
+    ok('phone: the Duration readout is at least 14px in High-vis', sizes['carbon/highvis'].val >= 14,
+      'got ' + sizes['carbon/highvis'].val);
+    ok('phone: High-vis hints are at least 12px', sizes['carbon/highvis'].hint >= 12,
+      'got ' + sizes['carbon/highvis'].hint);
+  }
+  await ctx.close();
+}
+
 await browser.close();
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

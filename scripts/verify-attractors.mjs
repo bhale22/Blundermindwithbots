@@ -1,0 +1,371 @@
+// The personality controls, after the review.
+//
+// Each of these guards something that would fail silently. A control whose
+// before/after measurements disagree about what they are counting produces a
+// large, confident, wrong number; a control that takes budget without using it
+// weakens every other control with no visible cause; and a control with a
+// missing branch simply never fires, which looks exactly like a quiet setting.
+//
+// Run with the dev server up on :3100.
+import { chromium } from 'playwright';
+
+let pass = 0, fail = 0;
+const ok = (label, cond, detail) => {
+  if (cond) { pass++; console.log('  ok   ' + label); }
+  else { fail++; console.log('  FAIL ' + label + (detail ? '  -> ' + detail : '')); }
+};
+
+const FENS = [
+  'r1bq1rk1/pp2bppp/2n1pn2/2pp4/3P1B2/2PBPN2/PP1N1PPP/R2Q1RK1 w - - 0 9',
+  'r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R w KQkq - 4 5',
+  '2rq1rk1/pb1nbppp/1p2pn2/8/2BP4/2N1PN2/PP2QPPP/R1B2RK1 w - - 2 12',
+];
+
+const browser = await chromium.launch();
+const page = await (await browser.newContext()).newPage();
+const errs = [];
+page.on('pageerror', e => errs.push(e.message));
+page.on('dialog', d => d.accept());
+await page.goto('http://localhost:3100/', { waitUntil: 'domcontentloaded' });
+await page.waitForTimeout(1600);
+await page.evaluate(() => { try { bmWelcomeDismiss(); } catch (e) {} });
+
+// Max absolute log-boost each control puts on any move, across the positions.
+const strength = await page.evaluate(async ({ fens, attrs }) => {
+  if (!sfReady) await sfInit();
+  botMinProbPct = 0; botBadDayMode = false; botDayLower = 0; botDayUpper = 100;
+  window._bcpCustomControls = []; window._bcpPieceValues = {};
+  const out = {};
+  for (const attr of attrs) {
+    let best = 0;
+    for (const fen of fens) {
+      const bd = parseFen(fen);
+      const t = turn, ep = epSq, cst = castling;
+      botPlayerColor = (t === 'w') ? 'black' : 'white';
+      const moves = _fenLegalUcis(fen);
+      window._bcpCpBudget = 300;
+      window._bcpAttractorValues = { [attr]: 5 };
+      const uni = {}; moves.forEach(m => uni[m] = 1 / moves.length);
+      const shaped = _botWithPosition(bd, t, ep, cst,
+        () => applyMoveAttractors(uni, { rawWeights: true }));
+      const n = moves.length;
+      for (const m of moves) {
+        const lb = Math.abs(Math.log(Math.max(1e-12, shaped[m] || 0) * n));
+        if (lb > best) best = lb;
+      }
+    }
+    out[attr] = +best.toFixed(3);
+  }
+  return out;
+}, { fens: FENS, attrs: ['attacker','fortkx','trade','spacecadet','gambito','structure',
+                         'grabber','kingsafety','prophylaxis','tension'] });
+
+console.log('\n1   Every position control actually moves a move');
+{
+  // 2.00 is the nominal push for one maxed control at Budget 300. Anything
+  // under a tenth of that is a control that is on but not working — which is
+  // exactly what Structure looked like before its metric was fixed (0.006).
+  for (const [k, v] of Object.entries(strength)) {
+    ok(k.padEnd(12) + ' steers (' + v.toFixed(2) + ' of 2.00)', v > 0.2, String(v));
+  }
+}
+
+console.log('\n2   Panicky takes no share of the centipawn budget');
+{
+  const r = await page.evaluate(() => {
+    const fen = 'r1bq1rk1/pp2bppp/2n1pn2/2pp4/3P1B2/2PBPN2/PP1N1PPP/R2Q1RK1 w - - 0 9';
+    const bd = parseFen(fen);
+    const t = turn, ep = epSq, cst = castling;
+    botPlayerColor = 'black';
+    const moves = _fenLegalUcis(fen);
+    botMinProbPct = 0; botBadDayMode = false; botDayLower = 0; botDayUpper = 100;
+    window._bcpCustomControls = []; window._bcpPieceValues = {};
+    const probe = (vals) => {
+      window._bcpCpBudget = 300; window._bcpAttractorValues = vals;
+      const uni = {}; moves.forEach(m => uni[m] = 1 / moves.length);
+      const shaped = _botWithPosition(bd, t, ep, cst,
+        () => applyMoveAttractors(uni, { rawWeights: true }));
+      const n = moves.length;
+      return Math.max(...moves.map(m => Math.abs(Math.log(Math.max(1e-12, shaped[m] || 0) * n))));
+    };
+    return { alone: probe({ attacker: 5 }), withPressure: probe({ attacker: 5, pressure: 5 }) };
+  });
+  ok('adding a maxed Panicky does not weaken Attacker',
+    Math.abs(r.alone - r.withPressure) < 1e-6,
+    r.alone.toFixed(3) + ' vs ' + r.withPressure.toFixed(3));
+}
+
+console.log('\n3   Front-runner / Swindler acts in both directions');
+{
+  const r = await page.evaluate(() => {
+    window._bcpAttractorValues = { compwin: 5 };
+    sfCplxScore = 0.9;                       // a sharp position
+    const base = 1.0;
+    sfCplxEval = 200;  const winning = complexityAdjustedTemp(base);
+    sfCplxEval = -200; const losing  = complexityAdjustedTemp(base);
+    sfCplxEval = 0;    const level   = complexityAdjustedTemp(base);
+    sfCplxScore = null; sfCplxEval = null;
+    return { winning, losing, level };
+  });
+  ok('winning raises temperature for a front-runner', r.winning > 1.0, r.winning.toFixed(3));
+  ok('losing lowers it — the branch that never existed', r.losing < 1.0, r.losing.toFixed(3));
+  ok('and it is silent while the game is level', Math.abs(r.level - 1) < 1e-9, r.level.toFixed(3));
+}
+
+console.log('\n4   Space Cadet counts the same squares before and after');
+{
+  // The baseline loop and the per-candidate loop are separate pieces of code
+  // over the same square set. If they ever disagree the delta is nonsense and
+  // nothing else in the system would notice.
+  const r = await page.evaluate(() => {
+    const fen = 'r1bq1rk1/pp2bppp/2n1pn2/2pp4/3P1B2/2PBPN2/PP1N1PPP/R2Q1RK1 w - - 0 9';
+    const bd = parseFen(fen);
+    const t = turn, ep = epSq, cst = castling;
+    botPlayerColor = 'black';
+    const moves = _fenLegalUcis(fen);
+    botMinProbPct = 0; botBadDayMode = false; botDayLower = 0; botDayUpper = 100;
+    window._bcpCustomControls = []; window._bcpPieceValues = {};
+    window._bcpCpBudget = 300; window._bcpAttractorValues = { spacecadet: 5 };
+    const uni = {}; moves.forEach(m => uni[m] = 1 / moves.length);
+    const shaped = _botWithPosition(bd, t, ep, cst,
+      () => applyMoveAttractors(uni, { rawWeights: true }));
+    const n = moves.length;
+    const boosts = moves.map(m => Math.log(Math.max(1e-12, shaped[m] || 0) * n));
+    return { max: Math.max(...boosts), min: Math.min(...boosts) };
+  });
+  // A quiet move changes the weak-square count by one or two, not by thirty.
+  // A mismatched square set showed up as every move pinned at full deflection.
+  ok('no move is pinned at full deflection', r.max < 1.95, r.max.toFixed(3));
+  ok('and the spread is a real gradient, not all-or-nothing',
+    (r.max - r.min) > 0.05, (r.max - r.min).toFixed(3));
+}
+
+console.log('\n5   Responses scale with the material left on the board');
+{
+  const r = await page.evaluate(() => {
+    const probe = (fen) => {
+      const bd = parseFen(fen);
+      const t = turn, ep = epSq, cst = castling;
+      botPlayerColor = (t === 'w') ? 'black' : 'white';
+      const moves = _fenLegalUcis(fen);
+      botMinProbPct = 0; botBadDayMode = false; botDayLower = 0; botDayUpper = 100;
+      window._bcpCustomControls = []; window._bcpPieceValues = {};
+      window._bcpCpBudget = 300; window._bcpAttractorValues = { attacker: 5 };
+      const uni = {}; moves.forEach(m => uni[m] = 1 / moves.length);
+      const shaped = _botWithPosition(bd, t, ep, cst,
+        () => applyMoveAttractors(uni, { rawWeights: true }));
+      const n = moves.length;
+      return Math.max(...moves.map(m => Math.log(Math.max(1e-12, shaped[m] || 0) * n)));
+    };
+    // Same idea, two amounts of material: a full middlegame and a bare ending.
+    const full = probe('r1bq1rk1/pp2bppp/2n1pn2/2pp4/3P1B2/2PBPN2/PP1N1PPP/R2Q1RK1 w - - 0 9');
+    const thin = probe('8/5pk1/6p1/8/8/1R4P1/5PKP/8 w - - 0 40');
+    return { full, thin };
+  });
+  ok('a control still speaks in a thin endgame', r.thin > 0.2,
+    'full ' + r.full.toFixed(2) + ' / thin ' + r.thin.toFixed(2));
+}
+
+console.log('\n6   The two poles really are opposites');
+{
+  const r = await page.evaluate(() => {
+    const fen = 'r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R w KQkq - 4 5';
+    const bd = parseFen(fen);
+    const t = turn, ep = epSq, cst = castling;
+    botPlayerColor = 'black';
+    const moves = _fenLegalUcis(fen);
+    botMinProbPct = 0; botBadDayMode = false; botDayLower = 0; botDayUpper = 100;
+    window._bcpCustomControls = []; window._bcpPieceValues = {};
+    const boosts = (vals) => {
+      window._bcpCpBudget = 300; window._bcpAttractorValues = vals;
+      const uni = {}; moves.forEach(m => uni[m] = 1 / moves.length);
+      const shaped = _botWithPosition(bd, t, ep, cst,
+        () => applyMoveAttractors(uni, { rawWeights: true }));
+      const n = moves.length; const o = {};
+      moves.forEach(m => o[m] = Math.log(Math.max(1e-12, shaped[m] || 0) * n));
+      return o;
+    };
+    const E = new Set();
+    // Moves landing somewhere undefended AND unattacked. Fort Knox must dislike
+    // these: a square nobody is attacking yet is still one you can be driven
+    // off, and a version that only looked at already-attacked pieces was blind
+    // to exactly this move.
+    const undef = [];
+    for (const m of moves) {
+      const f = fileRankToSq(m.slice(0, 2)), to = fileRankToSq(m.slice(2, 4));
+      const nb = applyMove(f, to, bd, ep, 'Q');
+      const a = buildDirectAtk(nb, E, E, E, E);
+      const def = (a[to] && (a[to]['w'] || []).length) || 0;
+      const att = (a[to] && (a[to]['b'] || []).length) || 0;
+      if (def === 0 && att === 0) undef.push(m);
+    }
+    const fk = boosts({ fortkx: 5 }), gc = boosts({ fortkx: -5 });
+    // Pawn moves that make the formation worse. Rigid must dislike these.
+    const before = _pawnStructurePenalty(bd, 'w');
+    const worse = [];
+    for (const m of moves) {
+      const f = fileRankToSq(m.slice(0, 2)), to = fileRankToSq(m.slice(2, 4));
+      if (!bd[f] || bd[f].piece !== 'P') continue;
+      if (_pawnStructurePenalty(applyMove(f, to, bd, ep, 'Q'), 'w') > before) worse.push(m);
+    }
+    const st = boosts({ structure: 5 });
+    return {
+      nUndef: undef.length,
+      fkNeg: undef.every(m => fk[m] < 0),
+      gcPos: undef.every(m => gc[m] > 0),
+      nWorse: worse.length,
+      stNeg: worse.every(m => st[m] < 0),
+    };
+  });
+  ok('the position offers a move onto an undefended square', r.nUndef > 0, String(r.nUndef));
+  ok('Fort Knox dislikes stepping onto one', r.fkNeg);
+  ok('and Glass cannon actively likes it', r.gcPos);
+  ok('the position offers a structure-wrecking pawn move', r.nWorse > 0, String(r.nWorse));
+  ok('Rigid dislikes it, not merely fails to reward it', r.stNeg);
+}
+
+console.log('\n7   Metrics measure the thing they are named after');
+{
+  const r = await page.evaluate(() => {
+    const E = new Set();
+    const ctxFor = bd => ({ me:'w', opp:'b', atk: buildDirectAtk(bd, E, E, E, E) });
+    const outp = fen => _ccMetrics.outpost.fn(parseFen(fen), { me:'w', opp:'b' });
+    const fen = 'r1bq1rk1/pp2bppp/2n1pn2/2pp4/3P1B2/2PBPN2/PP1N1PPP/R2Q1RK1 w - - 0 9';
+    const bd = parseFen(fen), ep = epSq;
+    const moves = _fenLegalUcis(fen);
+    const delta = key => {
+      const b0 = _ccMetrics[key].fn(bd, ctxFor(bd));
+      return moves.map(m => {
+        const f = fileRankToSq(m.slice(0,2)), t = fileRankToSq(m.slice(2,4));
+        const nb = applyMove(f, t, bd, ep, 'Q');
+        return _ccMetrics[key].fn(nb, ctxFor(nb)) - b0;
+      });
+    };
+    const atk = delta('attackedPieces');
+    // rawAttacks over-counts pawns; the real move list is what mobility means.
+    let raw = 0;
+    for (let sq = 0; sq < 64; sq++) { const q = bd[sq];
+      if (q && q.color === 'b') raw += (rawAttacks(sq, bd) || []).length; }
+    return {
+      atkMax: Math.max(...atk),
+      mobLegal: _ccMetrics.mobility.fn(bd, ctxFor(bd)), mobRaw: raw,
+      opPawnProof: outp('r2q1rk1/pp4pp/2p1p3/3pNp2/8/2P1P3/PP3PPP/R1BQ1RK1 w - - 0 12'),
+      opEvictable: outp('r2q1rk1/pp3ppp/2p1p3/3pN3/8/2P1P3/PP3PPP/R1BQ1RK1 w - - 0 12'),
+      opOwnHalf:   outp('r2q1rk1/pp3ppp/2p1p3/3p4/8/2P1PN2/PP3PPP/R1BQ1RK1 w - - 0 12'),
+    };
+  });
+  // A second attacker on an already-attacked piece has to register, which is
+  // invisible if the metric counts PIECES rather than attacks.
+  ok('attacks on enemy pieces counts attacks, not pieces', r.atkMax >= 2, '+' + r.atkMax);
+  ok('mobility counts moves, not attacked squares', r.mobLegal < r.mobRaw,
+    r.mobLegal + ' legal vs ' + r.mobRaw + ' attacked');
+  ok('a pawn-proof square is an outpost even unsupported', r.opPawnProof === 1,
+    String(r.opPawnProof));
+  ok('a square a pawn can still be pushed at is not', r.opEvictable === 0,
+    String(r.opEvictable));
+  ok('and neither is one on your own half', r.opOwnHalf === 0, String(r.opOwnHalf));
+}
+
+console.log(String.fromCharCode(10) + '8   Tension scores the position the move leaves behind');
+{
+  const r = await page.evaluate(() => {
+    const E = new Set();
+    const fen = 'r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R w KQkq - 4 5';
+    const bd = parseFen(fen);
+    const t = turn, ep = epSq, cst = castling;
+    botPlayerColor = 'black';
+    botMinProbPct = 0; botBadDayMode = false; botDayLower = 0; botDayUpper = 100;
+    window._bcpCustomControls = []; window._bcpPieceValues = {};
+    const moves = _fenLegalUcis(fen);
+    const tension = b2 => {
+      const a = buildDirectAtk(b2, E, E, E, E);
+      let x = 0;
+      for (let s2 = 0; s2 < 64; s2++) {
+        const q = b2[s2];
+        if (!q || !a[s2]) continue;
+        x += (a[s2][q.color === 'w' ? 'b' : 'w'] || []).length;
+      }
+      return x;
+    };
+    const t0 = tension(bd);
+    const boosts = v => {
+      window._bcpCpBudget = 300; window._bcpAttractorValues = { tension: v };
+      const uni = {}; moves.forEach(m => uni[m] = 1 / moves.length);
+      const sh = _botWithPosition(bd, t, ep, cst,
+        () => applyMoveAttractors(uni, { rawWeights: true }));
+      const n = moves.length; const o = {};
+      moves.forEach(m => o[m] = Math.log(Math.max(1e-12, sh[m] || 0) * n));
+      return o;
+    };
+    const ch = boosts(5), si = boosts(-5);
+    const rows = moves.map(m => {
+      const f = fileRankToSq(m.slice(0,2)), to = fileRankToSq(m.slice(2,4));
+      return { dt: tension(applyMove(f, to, bd, ep, 'Q')) - t0, ch: ch[m], si: si[m] };
+    });
+    return {
+      spread: rows.some(x => x.dt > 0) && rows.some(x => x.dt < 0),
+      agree: rows.every(x => x.dt === 0 || (x.dt > 0 ? x.ch > 0 && x.si < 0
+                                                     : x.ch < 0 && x.si > 0)),
+    };
+  });
+  // Judging the position it is standing IN gives every candidate the same score,
+  // which is no preference at all. It has to judge what each move leaves behind.
+  ok('the position offers both sharpening and quieting moves', r.spread);
+  ok('Tension seeker wants the tangled board and Defuser the quiet one, every move',
+    r.agree);
+}
+
+console.log(String.fromCharCode(10) + '9   Complexity reads the depth data the probe already produced');
+{
+  const r = await page.evaluate(async () => {
+    if (!sfReady) await sfInit();
+    const fen = 'r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R w KQkq - 4 5';
+    const bd = parseFen(fen);
+    const t = turn, ep = epSq, cst = castling;
+    botPlayerColor = 'black';
+    botMinProbPct = 0; botBadDayMode = false; botDayLower = 0; botDayUpper = 100;
+    window._bcpCustomControls = []; window._bcpPieceValues = {};
+    const moves = _fenLegalUcis(fen);
+    sfMoveComplexity = null;
+    const t0 = performance.now();
+    await sfEvalMoves(fen, moves, REGAN_PROBE_DEPTH);
+    const probeMs = performance.now() - t0;
+    const cx = sfMoveComplexity;
+    if (!cx) return { populated: false };
+    const vals = Object.values(cx);
+    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const boosts = v => {
+      window._bcpCpBudget = 300; window._bcpAttractorValues = { complexity: v };
+      const uni = {}; moves.forEach(m => uni[m] = 1 / moves.length);
+      const sh = _botWithPosition(bd, t, ep, cst,
+        () => applyMoveAttractors(uni, { rawWeights: true }));
+      const n = moves.length; const o = {};
+      moves.forEach(m => o[m] = Math.log(Math.max(1e-12, sh[m] || 0) * n));
+      return o;
+    };
+    const ch = boosts(5), cl = boosts(-5), off = boosts(0);
+    const rows = moves.filter(m => cx[m] != null).map(m => ({ v: cx[m], ch: ch[m], cl: cl[m] }));
+    return {
+      populated: true, covered: rows.length, total: moves.length,
+      probeMs: Math.round(probeMs),
+      spread: Math.max(...vals) - Math.min(...vals),
+      agree: rows.every(x => Math.abs(x.v - mean) < 0.01 ||
+        (x.v > mean ? x.ch > 0 && x.cl < 0 : x.ch < 0 && x.cl > 0)),
+      silent: moves.every(m => Math.abs(off[m]) < 1e-9),
+    };
+  });
+  // The whole point is that this costs no extra engine time: the probe that
+  // Flounder already runs emits every candidate at every depth, and only the
+  // deepest line was ever being kept.
+  ok('the probe supplies a number for every candidate', r.populated &&
+    r.covered === r.total, r.covered + '/' + r.total);
+  ok('and the candidates genuinely differ in it', r.spread > 5, r.spread.toFixed(1));
+  ok('Chaos agent wants the murky move, Clarity the clear one', r.agree);
+  ok('and the control is silent at zero', r.silent);
+}
+
+ok('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
+
+await browser.close();
+console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
+process.exit(fail ? 1 : 0);
