@@ -2672,13 +2672,19 @@ async function botMakeMove() {
 
   try {
     // ── Phase 2: Opening book layer ───────────────────────────────────────
-    // Two independent fast-path flags — both reset each new game:
-    //   preferredOpeningActive  — ECO table lookup, no network, preferred mode only
-    //   lichessExplorerActive   — Lichess/Masters API, mainline + preferred fallback
-    // Each flag flips to false permanently the first time it can't find a move.
+    // Two stages, in this order, each switched per colour in the builder and
+    // reset each new game:
+    //   preferredOpeningActive — the Repertoire: ECO table lookup, no network
+    //   mainLineActive         — the Main Line: the explorer's most popular move
+    // Each flips to false for the rest of the game the first time it has no
+    // move, and the next stage plays instead — finally the engine below, which
+    // may have a Lichess book of its own (lichessExplorerActive).
+    //
+    // They used to be one-of-three per colour, so a bot could play the Italian
+    // or follow the Main Line, never the Italian and then the Main Line.
 
-    if (preferredOpeningActive && botOpeningMode === 'preferred') {
-      // ── Preferred mode: pure in-memory ECO table lookup ─────────────────
+    if (preferredOpeningActive) {
+      // ── Repertoire: pure in-memory ECO table lookup ─────────────────────
       const botCol = botPlayerColor === 'white' ? 'black' : 'white';
       const slots  = (botOpeningConfig[botCol] || []).filter(s => s.name);
       if (!slots.length) {
@@ -2696,8 +2702,15 @@ async function botMakeMove() {
         document.getElementById('botStatus').textContent = '';
         if (botActive && !gameOver) setTimeout(botMakeMove, 50);
         return;
-      } else if (botSanHistory.length >= (botOpeningConfig.maxBookDepth || 20) * 2) {
-        // Depth is in moves; botSanHistory holds plies (see botGetOpeningMove).
+      } else if (mainLineActive && obRepertoireReached(botSanHistory, slots)) {
+        // One of the repertoire's openings is on the board, and the Main Line
+        // is on to take it from here. Without this the repertoire carried on
+        // through every named sub-line of the same ECO code with equal odds —
+        // an Italian (C50) went 4.Bxf7+, the Jerome Gambit, one game in five —
+        // and the Main Line only began once those ran out.
+        //
+        // The book depth is the Main Line's ("until move N", in its own row)
+        // and does not cut the repertoire short.
         preferredOpeningActive = false;
       } else {
         const preferredUci = obPreferredNextMoves(
@@ -2782,10 +2795,15 @@ async function botMakeMove() {
         // No preferred continuation — deactivate for rest of this game
         preferredOpeningActive = false;
       }
-      // Preferred path ended (deactivated or no move) — fall through to engine
+      // Repertoire ended (deactivated or no move) — fall through to the Main
+      // Line if it is on, otherwise the engine.
+    }
 
-    } else if (botOpeningMode === 'mainline' && lichessExplorerActive) {
-      // ── Mainline mode: Lichess/Masters explorer ──────────────────────────
+    if (mainLineActive) {
+      // ── Main Line: Lichess/Masters explorer ──────────────────────────────
+      // Queried by the moves played, so it takes over from wherever the
+      // repertoire left the game — its own opening, or wherever the opponent
+      // steered out of it.
       const openingMove = await botGetOpeningMove(botMoveHistory);
       if (openingMove) {
         uciMove = openingMove;
@@ -2822,8 +2840,10 @@ async function botMakeMove() {
         }
         return;
       } else {
-        // Explorer returned nothing — off-book, don't call it again this game
-        lichessExplorerActive = false;
+        // Off book or past the depth — don't ask again this game. The engine's
+        // own book is a separate query (its rating band, not this one's) and
+        // finds out for itself.
+        mainLineActive = false;
         _explorerConfidence = 0;
       }
     }
@@ -3976,9 +3996,9 @@ function botPostMoveHook() {
       if (last !== humanUci) {
         // Explorer surprise detection: was this human move expected?
         // Cache key is botMoveHistory BEFORE the human's move is pushed — this is
-        // the exact position the bot last fetched from the explorer (mainline mode).
-        // Surprise fires only when the explorer is still active and cache has data.
-        if (lichessExplorerActive && botMoveHistory.length > 0) {
+        // the exact position the bot last fetched from the explorer (Main Line).
+        // Surprise fires only while the Main Line is still on and the cache has data.
+        if (mainLineActive && botMoveHistory.length > 0) {
           const _preKey = openingCacheKey(botMoveHistory);
           const _ed = _openingCache.get(_preKey);
           if (_ed && _ed.moves && _ed.moves.length) {

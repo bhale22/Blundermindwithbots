@@ -279,6 +279,28 @@ function obPreferredNextMoves(sanHistory, slots, boardState, turnColor, epSq, ca
   return preferredUci;
 }
 
+// Is one of the repertoire's openings on the board? True once the game's moves
+// begin with a slot's own line — the ECO entry the slot was picked as (same
+// code and name), or, when the name is not in the table, its code's shortest
+// line, which is the position the code names. Used when the Main Line follows
+// the repertoire: reaching the opening is where it hands over.
+function obRepertoireReached(sanHistory, slots) {
+  if (!_ecoData || !slots.length) return false;
+  const starts = line => line.length > 0 && line.length <= sanHistory.length &&
+                         line.every((m, i) => sanHistory[i] === m);
+  return slots.some(slot => {
+    const code = slot.exactEco || slot.eco;
+    if (!code) return false;
+    const ofCode = _ecoData.filter(e => e.eco === code && e.sanMoves.length);
+    let lines = ofCode.filter(e => e.name === slot.name);
+    if (!lines.length && ofCode.length) {
+      const shortest = Math.min(...ofCode.map(e => e.sanMoves.length));
+      lines = ofCode.filter(e => e.sanMoves.length === shortest);
+    }
+    return lines.some(e => starts(e.sanMoves));
+  });
+}
+
 // Kick off load immediately on script parse so it's ready by the time user opens panel
 obLoadEcoData();
 
@@ -948,16 +970,15 @@ async function botStart() {
   // Reset explorer-confidence state so familiarity and surprise start fresh.
   _explorerConfidence    = null;
   _explorerSurpriseBoost = 0;
-  // Activate preferred-opening fast path if mode is 'preferred' and slots exist.
-  // Bot color is opposite of human player color.
+  // Opening stages for the colour the bot plays this game (the human is pc).
+  // Repertoire and Main Line are separate switches, run in that order; see
+  // the flags in the app shell.
   const _resolvedBotCol = (pc === 'white' ? 'black' : 'white');
-  // Per-color opening mode (new panel): pick the mode for the color the bot plays
-  // this game. off→none, mainline→mainline, repertoire→preferred.
-  if (botOpeningConfig.modeWhite !== undefined || botOpeningConfig.modeBlack !== undefined) {
-    const _cm = botOpeningConfig[_resolvedBotCol === 'white' ? 'modeWhite' : 'modeBlack'] || 'off';
-    botOpeningMode = (_cm === 'mainline') ? 'mainline' : (_cm === 'repertoire') ? 'preferred' : 'none';
-  }
-  if (botOpeningMode === 'preferred') {
+  const _stageCol = _resolvedBotCol === 'white' ? 'White' : 'Black';
+  const _repOn = !!botOpeningConfig['rep' + _stageCol];
+  const _mlOn  = !!botOpeningConfig['mainLine' + _stageCol];
+  botOpeningMode = _repOn ? 'preferred' : _mlOn ? 'mainline' : 'none';
+  if (_repOn) {
     const _hasSlots = (botOpeningConfig[_resolvedBotCol] || [])
                         .filter(s => s.name).length > 0;
     // Frequency roll: if < 100%, sometimes skip openings for this game
@@ -967,10 +988,14 @@ async function botStart() {
     preferredOpeningActive = false;
   }
   // Custom-position start: repertoire lines assume the standard opening — skip
-  // them. The Lichess explorer stays on: it queries by FEN, so for classic
-  // positions it supplies genuine human move frequencies.
+  // them. The Main Line and the engine's book stay on: the explorer queries by
+  // FEN, so for classic positions it supplies genuine human move frequencies.
   if (_customStart) preferredOpeningActive = false;
-  lichessExplorerActive = (botOpeningMode !== 'none');
+  mainLineActive = _mlOn;
+  // The engine's book is part of the engine, not of Opening Behavior: the
+  // lcsf / maia tabs are "explorer, then engine" by definition, and a blend
+  // asks via botEngineBook.
+  lichessExplorerActive = !!botEngineBook || botTab === 'lcsf' || botTab === 'maia';
   // clockTimeW/B are set by clockInit — capture now as the baseline
   try {
     if (typeof clockTimeW !== 'undefined' && clockControl !== 'untimed') {
@@ -1051,6 +1076,7 @@ function botStop() {
   botUserMoveTimestamps = [];
   botUserTurnStartMs = null;
   preferredOpeningActive = false;
+  mainLineActive = false;
   lichessExplorerActive = false;
   sfCurrentSkillLevel = -1;
   // Reset player names
@@ -1248,7 +1274,18 @@ function botApplyConfig(cfg) {
         botPremoveBustDelayMs  = (cfg.premove.bustDelayMs != null) ? +cfg.premove.bustDelayMs : 2000;
       }
       if (cfg.opening) {
-        botOpeningConfig = Object.assign(botOpeningConfig, cfg.opening.config || {});
+        const _oc = cfg.opening.config || {};
+        botOpeningConfig = Object.assign(botOpeningConfig, _oc);
+        // A session saved before Repertoire and Main Line were separate stages
+        // carries one mode per colour instead.
+        ['White', 'Black'].forEach(function (C) {
+          if (_oc['rep' + C] === undefined && _oc['mainLine' + C] === undefined && _oc['mode' + C] !== undefined) {
+            const st = botOpeningStagesFromMode(_oc['mode' + C]);
+            botOpeningConfig['rep' + C] = st.rep;
+            botOpeningConfig['mainLine' + C] = st.mainLine;
+          }
+          delete botOpeningConfig['mode' + C];
+        });
         // Migrate old loyalty/repertoire modes to unified 'preferred'
         const mode = cfg.opening.mode === 'loyalty' || cfg.opening.mode === 'repertoire'
           ? 'preferred' : (cfg.opening.mode || 'none');
@@ -2193,14 +2230,20 @@ window.addEventListener('message', function(e) {
   botTimePressure = botTempPressureMult < 0.5 ? 'steady'
                   : botTempPressureMult < 1.75 ? 'normal' : 'panicky';
 
-  // Opening — per-color modes (As White / As Black): off | mainline | repertoire.
-  // The bot only plays one color per game, so the effective global botOpeningMode
-  // is resolved from the bot's color at game start (see botStartGameSetup).
-  // Back-compat: older configs sent a single global cfg.openingMode.
-  var _owMode = cfg.openingModeWhite, _obMode = cfg.openingModeBlack;
-  if (_owMode === undefined && _obMode === undefined && cfg.openingMode) {
-    _owMode = _obMode = cfg.openingMode;
-  }
+  // Opening — per-colour stages (As White / As Black): Repertoire, then Main
+  // Line, each on or off. The bot only plays one colour per game, so the stages
+  // that run are resolved from its colour at game start (botStart).
+  // Back-compat: configs saved before the stages were separate carry one mode
+  // per colour (openingModeWhite/Black), and older ones a single openingMode.
+  var _stagesFor = function(C) {
+    if (cfg['openingRep' + C] !== undefined || cfg['openingMainLine' + C] !== undefined) {
+      return { rep: !!cfg['openingRep' + C], mainLine: !!cfg['openingMainLine' + C] };
+    }
+    var m = cfg['openingMode' + C];
+    if (cfg.openingModeWhite === undefined && cfg.openingModeBlack === undefined) m = cfg.openingMode;
+    return botOpeningStagesFromMode(m || 'off');
+  };
+  var _stW = _stagesFor('White'), _stB = _stagesFor('Black');
   // `weight` and `exactEco` are the names the repertoire matcher reads
   // (obPreferredNextMoves). This used to pass only `pct` and `eco`, so every
   // builder slot scored zero: White's repertoire deactivated on move one and
@@ -2215,13 +2258,16 @@ window.addEventListener('message', function(e) {
   botOpeningConfig.maxBookDepth = cfg.openingDepth  || 20;
   botOpeningConfig.strictness   = 0.8;
   if (cfg.modernOnly) botOpeningConfig.since = '2020-01'; else delete botOpeningConfig.since;
-  botOpeningConfig.modeWhite    = _owMode || 'off';
-  botOpeningConfig.modeBlack    = _obMode || 'off';
-  // Provisional global mode for the legacy inline opening UI; per-color mode wins
-  // at game start. Map: off→none, mainline→mainline, repertoire→preferred.
-  var _provMode = (botOpeningConfig.modeWhite !== 'off') ? botOpeningConfig.modeWhite
-                : (botOpeningConfig.modeBlack !== 'off') ? botOpeningConfig.modeBlack : 'off';
-  botSetOpeningMode(_provMode === 'mainline' ? 'mainline' : _provMode === 'repertoire' ? 'preferred' : 'none');
+  botOpeningConfig.repWhite      = _stW.rep;
+  botOpeningConfig.repBlack      = _stB.rep;
+  botOpeningConfig.mainLineWhite = _stW.mainLine;
+  botOpeningConfig.mainLineBlack = _stB.mainLine;
+  delete botOpeningConfig.modeWhite;
+  delete botOpeningConfig.modeBlack;
+  // Provisional summary for the legacy inline opening UI; the per-colour stages
+  // decide at game start.
+  var _provSt = (_stW.rep || _stW.mainLine) ? _stW : _stB;
+  botSetOpeningMode(_provSt.rep ? 'preferred' : _provSt.mainLine ? 'mainline' : 'none');
 
   // Hybrid slots: panel sends type 'sf' (level 1–10 in s.level); the legacy
   // panel sent 'stockfish' (s.sfLevel). Accept both — checking only

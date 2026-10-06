@@ -782,9 +782,19 @@ canvas{display:block;background:transparent;}
 .attract-engine-jump:hover{background:var(--amber-glow-s);border-color:var(--amber);}
 .attract-engine-note.inactive .attract-engine-jump{align-self:flex-start;}
 
-/* Opening panel — per-colour columns; greyed when that colour isn't on Repertoire */
+/* Opening panel — per-colour columns. Each column is the order the bot works
+   in: 1 Repertoire, then 2 Main Line, then the engine. A stage that is off keeps
+   its settings on screen, greyed, so switching it on shows what it will do. */
 .op-col{min-width:0;}
 .op-body{min-height:34px;}
+.op-stage{border:0.5px solid var(--border);border-radius:3px;padding:0 10px 10px;background:var(--carbon-surface);transition:border-color 0.15s;}
+.op-stage.on{border-color:var(--border-amber);}
+.op-stage-head{border-bottom:none;gap:10px;}
+.op-stage-head .tog-lbl{display:flex;align-items:baseline;gap:6px;}
+.op-stage-num{color:var(--text-dim);}
+.op-stage.on .op-stage-head .tog-lbl{color:var(--amber-bright);}
+.op-then{text-align:center;padding:5px 0;margin-top:0;}
+.op-engine{border:0.5px dashed var(--border);border-radius:3px;padding:8px 10px;}
 .op-rep{transition:opacity 0.15s;}
 .op-rep-disabled{opacity:0.4;pointer-events:none;filter:grayscale(0.4);}
 /* Main Line bar — compact one-line pills (DB · modern · depth), shared state */
@@ -2516,6 +2526,11 @@ body.fj .picon{font-weight:500;}
   .eco-browse{min-height:44px;font-size:12px;}
   .eco-option{min-height:44px;font-size:12px;}
   .eco-code,.eco-count,.eco-group{font-size:11px;}
+  /* The Main Line bar used to be drawn only in Main Line mode, so it never got
+     a phone size. It is on screen in every state now (greyed when off). */
+  .ml-pill{min-height:44px;font-size:12px;}
+  .ml-depth-lbl{font-size:11px;}
+  .ml-depth input{min-height:44px;width:56px;font-size:12px;}
 
   /* Link LISTS read as rows of tappable items, so they get row height.
      Links inline INSIDE prose (the Regan credits, maiachess.com) deliberately
@@ -3468,7 +3483,7 @@ body.fj .picon{font-weight:500;}
     <div class="sec-icon"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
     <div class="sec-labels">
       <div class="sec-label">Opening Behavior</div>
-      <div class="sec-sub">Book source, depth, and repertoire preferences</div>
+      <div class="sec-sub">Repertoire, then main line, for each colour</div>
     </div>
     <div class="sec-status" id="st-opening">Off</div>
     <svg class="chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
@@ -3477,31 +3492,22 @@ body.fj .picon{font-weight:500;}
     <div class="panel">
 
       <div class="pr">
-        <!-- Two colours side by side; each column's body (Main Line bar OR
-             repertoire search+list) is rendered by renderOpColumn(). -->
+        <!-- Two colours side by side. Each column is the order the bot works in:
+             1 Repertoire, then 2 Main Line, then the engine. Either stage can be
+             on alone, both, or neither; renderOpColumn() draws the column. -->
         <div class="panel-2col" style="align-items:start;">
           <!-- AS WHITE -->
-          <div class="op-col">
+          <div class="op-col" id="op-col-white">
             <div class="dlbl"><span>As White</span></div>
-            <div class="seg-row" id="op-mode-white" style="margin-bottom:10px;">
-              <div class="seg-btn sel" data-v="off"        onclick="setOpColorMode('white','off')">Off</div>
-              <div class="seg-btn"     data-v="mainline"   onclick="setOpColorMode('white','mainline')">Main Line</div>
-              <div class="seg-btn"     data-v="repertoire" onclick="setOpColorMode('white','repertoire')">Repertoire</div>
-            </div>
             <div class="op-body" id="op-body-white"></div>
           </div>
           <!-- AS BLACK -->
-          <div class="op-col">
+          <div class="op-col" id="op-col-black">
             <div class="dlbl"><span>As Black</span></div>
-            <div class="seg-row" id="op-mode-black" style="margin-bottom:10px;">
-              <div class="seg-btn sel" data-v="off"        onclick="setOpColorMode('black','off')">Off</div>
-              <div class="seg-btn"     data-v="mainline"   onclick="setOpColorMode('black','mainline')">Main Line</div>
-              <div class="seg-btn"     data-v="repertoire" onclick="setOpColorMode('black','repertoire')">Repertoire</div>
-            </div>
             <div class="op-body" id="op-body-black"></div>
           </div>
         </div>
-        <div class="ctrl-hint" style="margin-top:10px;"><strong>Off</strong> = straight to engine · <strong>Main Line</strong> = popular book moves · <strong>Repertoire</strong> = your selected openings (sum to 100%). Adding an opening switches that colour into Repertoire automatically.</div>
+        <div class="ctrl-hint" style="margin-top:10px;">The bot works down each column: <strong>Repertoire</strong> steers into your openings (shares sum to 100%), <strong>Main Line</strong> then plays the database's most popular move from wherever the game stands, and the engine plays the rest. With both on, the repertoire hands over as soon as its opening is on the board.</div>
       </div>
 
     </div>
@@ -4334,8 +4340,11 @@ let customControls = [];        // [{ id, name, metric, phase, value(-5..5) }]
 let _ccSeq = 0;                 // monotonic id source for new custom controls
 let selectedPersonality = null;
 let _activeBotName      = null;  // name of the loaded/saved bot; clears on any manual edit
-// Per-colour opening mode: 'off' | 'mainline' | 'repertoire'
-const repMode = { white:'off', black:'off' };
+// Per-colour opening stages, run in this order: the Repertoire, then the Main
+// Line, then the engine. Separate switches — they used to be one-of-three per
+// colour, so the Italian could never lead into the Main Line.
+const repOn    = { white:false, black:false };
+const mainLine = { white:false, black:false };
 // Shared Main Line book settings (one set, mirrored in both colours' bars)
 let bookSource = 'masters'; // 'masters' | 'lichess'
 let bookModern = false;
@@ -8668,8 +8677,15 @@ function getBotConfig(){
     tcBonus:         tcBonus,
     tcBonusAtMove:   tcBonusAtMove,
     tcIncFromMove:   tcIncFromMove,
-    openingModeWhite: repMode.white,
-    openingModeBlack: repMode.black,
+    // The two opening stages per colour, run Repertoire first. The single
+    // openingMode{White,Black} they replace is still written, as the stage
+    // that plays first, for any reader that has not caught up.
+    openingRepWhite:      repOn.white,
+    openingRepBlack:      repOn.black,
+    openingMainLineWhite: mainLine.white,
+    openingMainLineBlack: mainLine.black,
+    openingModeWhite: repOn.white ? 'repertoire' : mainLine.white ? 'mainline' : 'off',
+    openingModeBlack: repOn.black ? 'repertoire' : mainLine.black ? 'mainline' : 'off',
     openingSource:   bookSource,
     openingDepth:    bookDepth,
     modernOnly:      bookModern,
@@ -9014,7 +9030,9 @@ function applyBotConfig(cfg){
     _setRange('r-stale-cp',          cfg.staleSeekCp);
   });
 
-  // Opening behaviour — per-colour modes (back-compat: old global openingMode)
+  // Opening behaviour — per-colour stages (back-compat: a bot saved before the
+  // stages were separate has one mode per colour, or one global openingMode,
+  // and each maps to exactly the stage it used to run)
   grp(() => {
     bookSource = cfg.openingSource || 'masters';
     bookDepth  = cfg.openingDepth || 20;
@@ -9023,10 +9041,20 @@ function applyBotConfig(cfg){
     repSlots.black.length = 0;
     ((cfg.repSlots && cfg.repSlots.white) || []).forEach(s => repSlots.white.push({...s}));
     ((cfg.repSlots && cfg.repSlots.black) || []).forEach(s => repSlots.black.push({...s}));
-    let wMode = cfg.openingModeWhite, bMode = cfg.openingModeBlack;
-    if(wMode === undefined && bMode === undefined && cfg.openingMode){ wMode = bMode = cfg.openingMode; }
-    setOpColorMode('white', wMode || 'off');
-    setOpColorMode('black', bMode || 'off');
+    ['white','black'].forEach(c => {
+      const C = c === 'white' ? 'White' : 'Black';
+      if(cfg['openingRep' + C] !== undefined || cfg['openingMainLine' + C] !== undefined){
+        repOn[c]    = !!cfg['openingRep' + C];
+        mainLine[c] = !!cfg['openingMainLine' + C];
+      } else {
+        let m = cfg['openingMode' + C];
+        if(cfg.openingModeWhite === undefined && cfg.openingModeBlack === undefined) m = cfg.openingMode;
+        repOn[c]    = m === 'repertoire';
+        mainLine[c] = m === 'mainline';
+      }
+      renderOpColumn(c);
+    });
+    updateOpStatus();
   });
 
   // Hybrid slots
@@ -9603,8 +9631,8 @@ const BOT_TOUR = [
   { stage:'Personality', open:'attract', tab:['attract','draws'], sel:'#itab-attract-draws', title:'Draws & desperation',
     body:'Make the endgame human too: the bot can <b>accept</b> and <b>offer draws</b> — judged at its <i>own</i> rating’s blurred eval, so a novice may misjudge a lost position as fine — and, when hopelessly behind, <b>hunt for stalemate swindles</b> by locking its pieces and dumping material. All clock-aware: it never agrees to a draw while you’re about to flag.' },
 
-  { stage:'Opening', open:'opening', sel:'#op-mode-white', title:'3 · Per-colour openings',
-    body:'Give White and Black <i>separate</i> opening behaviour: <b>Off</b>, <b>Main Line</b> (the most popular book moves), or a <b>Repertoire</b> of several openings you weight by percentage.' },
+  { stage:'Opening', open:'opening', sel:'#op-col-white', title:'3 · Per-colour openings',
+    body:'Give White and Black <i>separate</i> openings, played in order: a <b>Repertoire</b> of openings you weight by percentage, then the <b>Main Line</b> — the most popular database move — through a move you choose, then the engine. Use either stage, both, or neither: the Italian, then the main line to move 20.' },
 
   { stage:'Timing', open:'timing', sel:'#timing-mode-grid', title:'4 · Move timing',
     body:'How the bot spends its clock between moves — <b>instant</b>, a <b>fixed</b> pause, <b>scaled to position complexity</b>, or <b>mirroring your own pace</b>. Each mode\'s setting sits right under it, so you can see what every mode is tuned by before you pick one. The little things that make it feel human.' },
@@ -12616,9 +12644,8 @@ function _applyPersonality(id){
       { code:'C65', name:'Berlin Defence',  pct:30 },
       { code:'D10', name:'Slav Defence',    pct:30 },
     ];
-    setOpColorMode('white','repertoire');
-    setOpColorMode('black','repertoire');
-    renderRepSlots('white'); renderRepSlots('black');
+    ['white','black'].forEach(c => { repOn[c] = true; mainLine[c] = false; renderOpColumn(c); });
+    updateOpStatus();
     updateRepTotal('white'); updateRepTotal('black');
   }
   // Select card
@@ -12644,42 +12671,69 @@ function _applyPersonality(id){
 /* ══════════════════════════════════════════════════════════════
    OPENING ECO SEARCH
 ══════════════════════════════════════════════════════════════ */
-// Set the opening mode for one colour and re-render its column body.
-function setOpColorMode(color, mode){
-  repMode[color] = mode;
-  renderOpColumn(color);
+// Switch one opening stage of one colour on or off: 'rep' (Repertoire) or
+// 'ml' (Main Line). The column is not redrawn, so a half-typed search survives.
+function setOpStage(color, stage, on){
+  if(stage === 'rep') repOn[color] = !!on; else mainLine[color] = !!on;
+  _syncOpStages(color);
   updateOpStatus();
 }
 
-// Render a colour's column body: Main Line bar, or the add-opening search + slot
-// list (search always usable; slot list greyed in Off so the indicator is still
-// visible). Adding an opening auto-switches Off → Repertoire (see addRepFromSearch).
+// Draw a colour's column in the order the bot plays it: 1 Repertoire (the
+// add-opening search and the slots), then 2 Main Line (database, Modern, the
+// move it plays through), then the engine. A stage that is off stays on screen,
+// greyed but for its switch — and the search, since adding an opening switches
+// the Repertoire on (addRepFromSearch).
 function renderOpColumn(color){
-  const mode = repMode[color];
-  const seg = document.getElementById('op-mode-' + color);
-  if(seg) seg.querySelectorAll('.seg-btn').forEach(b => b.classList.toggle('sel', b.dataset.v === mode));
   const body = document.getElementById('op-body-' + color);
   if(!body) return;
-  if(mode === 'mainline'){
-    body.innerHTML = _mainLineBarHTML();
-    return;
-  }
-  // off | repertoire — search always active; slot list greyed when off
-  body.innerHTML =
-    '<div class="eco-search-wrap" id="rep-search-wrap-' + color + '">' +
-      '<div class="eco-search-row">' +
-        '<input class="eco-search" id="rep-search-input-' + color + '" type="text" placeholder="Add opening — name or ECO…" ' +
-          'oninput="onRepSearch(this.value,\'' + color + '\')" onfocus="onRepSearch(this.value,\'' + color + '\')" autocomplete="off">' +
-        '<button type="button" class="eco-browse" id="rep-browse-' + color + '" aria-expanded="false" ' +
-          'onclick="repBrowse(event,\'' + color + '\')" title="Browse every opening as a list">&#9776; List</button>' +
-      '</div>' +
-      '<div class="eco-dropdown" id="rep-dropdown-' + color + '"></div>' +
-    '</div>' +
-    '<div class="op-rep' + (mode==='off' ? ' op-rep-disabled' : '') + '" id="op-rep-' + color + '">' +
-      '<div id="rep-slots-list-' + color + '" style="margin-top:8px;"></div>' +
-      '<div class="rep-total ok" id="rep-total-' + color + '" style="display:none;"></div>' +
+  const head = (stage, num, name, desc) =>
+    '<div class="tog-row op-stage-head">' +
+      '<div><div class="tog-lbl"><span class="op-stage-num">' + num + '</span>' + name + '</div>' +
+      '<div class="tog-desc">' + desc + '</div></div>' +
+      '<label class="tog"><input type="checkbox" id="op-' + stage + '-cb-' + color + '" ' +
+        'aria-label="' + name + ' as ' + color + '" onchange="setOpStage(\'' + color + '\',\'' + stage + '\',this.checked)">' +
+        '<div class="tog-track"><div class="tog-thumb"></div></div></label>' +
     '</div>';
+  body.innerHTML =
+    '<div class="op-stage" id="op-stage-rep-' + color + '">' +
+      head('rep', '1', 'Repertoire', 'Steer into these openings') +
+      '<div class="eco-search-wrap" id="rep-search-wrap-' + color + '">' +
+        '<div class="eco-search-row">' +
+          '<input class="eco-search" id="rep-search-input-' + color + '" type="text" placeholder="Add opening — name or ECO…" ' +
+            'oninput="onRepSearch(this.value,\'' + color + '\')" onfocus="onRepSearch(this.value,\'' + color + '\')" autocomplete="off">' +
+          '<button type="button" class="eco-browse" id="rep-browse-' + color + '" aria-expanded="false" ' +
+            'onclick="repBrowse(event,\'' + color + '\')" title="Browse every opening as a list">&#9776; List</button>' +
+        '</div>' +
+        '<div class="eco-dropdown" id="rep-dropdown-' + color + '"></div>' +
+      '</div>' +
+      '<div class="op-rep" id="op-rep-' + color + '">' +
+        '<div id="rep-slots-list-' + color + '" style="margin-top:8px;"></div>' +
+        '<div class="rep-total ok" id="rep-total-' + color + '" style="display:none;"></div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="tog-desc op-then">then</div>' +
+    '<div class="op-stage" id="op-stage-ml-' + color + '">' +
+      head('ml', '2', 'Main Line', 'The most popular database move') +
+      '<div class="op-rep" id="op-ml-' + color + '">' + _mainLineBarHTML() + '</div>' +
+    '</div>' +
+    '<div class="tog-desc op-then">then</div>' +
+    '<div class="op-engine"><div class="tog-lbl">Engine</div>' +
+      '<div class="tog-desc">As set in the Engine section</div></div>';
   renderRepSlots(color);
+  _syncOpStages(color);
+}
+
+// Switches, outlines and greying follow the two flags.
+function _syncOpStages(color){
+  [['rep', repOn[color]], ['ml', mainLine[color]]].forEach(([stage, on]) => {
+    const cb = document.getElementById('op-' + stage + '-cb-' + color);
+    if(cb) cb.checked = on;
+    const box = document.getElementById('op-stage-' + stage + '-' + color);
+    if(box) box.classList.toggle('on', on);
+    const inner = document.getElementById('op-' + stage + '-' + color);
+    if(inner) inner.classList.toggle('op-rep-disabled', !on);
+  });
 }
 
 // Compact one-line Main Line controls (shared state, identical in both columns).
@@ -12692,16 +12746,19 @@ function _mainLineBarHTML(){
       (bookSource==='masters' ? 'Masters DB' : 'Lichess DB') + '</button>' +
     '<button type="button" class="ml-pill" onclick="toggleBookModern()" title="Modern theory only — restrict the book to games from 2020 to the present.">' +
       'Modern: ' + (bookModern ? '2020+' : 'Off') + '</button>' +
-    '<span class="ml-depth" title="Leave the book and play the engine after this many moves.">' +
-      '<span class="ml-depth-lbl">Depth</span>' +
-      '<input type="number" min="5" max="40" value="' + bookDepth + '" oninput="setBookDepth(this.value)">' +
-      '<span class="ml-depth-lbl">mv</span></span>' +
+    '<span class="ml-depth" title="The Main Line plays through this move, then the engine takes over.">' +
+      '<span class="ml-depth-lbl">Through move</span>' +
+      '<input type="number" min="5" max="40" value="' + bookDepth + '" oninput="setBookDepth(this.value)" aria-label="Main Line plays through move">' +
+    '</span>' +
     '</div>';
 }
 
-// Book settings are shared: re-render only the columns currently on Main Line.
+// Book settings are shared: redraw both bars, leaving the switches alone.
 function _refreshMainLineBars(){
-  ['white','black'].forEach(c => { if(repMode[c] === 'mainline') renderOpColumn(c); });
+  ['white','black'].forEach(c => {
+    const el = document.getElementById('op-ml-' + c);
+    if(el) el.innerHTML = _mainLineBarHTML();
+  });
 }
 function toggleBookSource(){ bookSource = bookSource==='masters' ? 'lichess' : 'masters'; _refreshMainLineBars(); }
 function toggleBookModern(){ bookModern = !bookModern; _refreshMainLineBars(); }
@@ -12714,11 +12771,10 @@ function setBookDepth(v){
 function updateOpStatus(){
   const st = document.getElementById('st-opening');
   if(!st) return;
-  const lbl = m => m==='mainline' ? 'Main Line' : m==='repertoire' ? 'Repertoire' : 'Off';
-  const w = repMode.white, b = repMode.black;
-  st.textContent = (w==='off' && b==='off') ? 'Off'
-    : (w===b) ? lbl(w)
-    : 'W: ' + lbl(w) + ' · B: ' + lbl(b);
+  const lbl = c => (repOn[c] && mainLine[c]) ? 'Repertoire → Main Line'
+                 : repOn[c] ? 'Repertoire' : mainLine[c] ? 'Main Line' : 'Off';
+  const w = lbl('white'), b = lbl('black');
+  st.textContent = (w===b) ? w : 'W: ' + w + ' · B: ' + b;
 }
 
 /* ── Opening Repertoire: ECO search + percentage slots ─────────────────────── */
@@ -12755,9 +12811,10 @@ function addRepFromSearch(code, name, color){
   // Allow multiple variants of the same ECO code (e.g. B20 Sicilian variations)
   repSlots[color].push({ code, name, pct:0 });
   autoDistributeRepPct(color);
-  // Adding an opening means the user wants a repertoire — activate it if needed.
-  if(repMode[color] !== 'repertoire') setOpColorMode(color, 'repertoire');
-  else renderRepSlots(color);
+  renderRepSlots(color);
+  // Adding an opening means the user wants a repertoire — switch it on if needed.
+  // The Main Line keeps whatever it was set to.
+  if(!repOn[color]) setOpStage(color, 'rep', true);
 }
 
 /* ── Repertoire: the openings as a list ──────────────────────────────────────
@@ -13955,7 +14012,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   renderAttractors();
   renderPieceAttractors();
   renderCustomControls();
-  setOpColorMode('white', repMode.white); setOpColorMode('black', repMode.black);
+  renderOpColumn('white'); renderOpColumn('black'); updateOpStatus();
   renderPersonalities();
   renderHybridSlots();
   initSpeedo();

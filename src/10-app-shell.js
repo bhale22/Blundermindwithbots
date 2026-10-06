@@ -60,15 +60,26 @@ let botMoveHistory = [];  // UCI move list, e.g. ["e2e4","c7c5",...]
 let botSanHistory  = [];  // SAN move list, e.g. ["e4","c5",...] — for ECO PGN matching
 
 // ── Phase 2: Opening book state ───────────────────────────────────────────────
-// 'none' | 'mainline' | 'loyalty' | 'repertoire'
+// A summary of this game's opening stages for the legacy slide-in panel and
+// the saved session: 'none' | 'mainline' | 'preferred' (repertoire first).
+// Play reads the three flags below, never this.
 let botOpeningMode = 'none';
-// preferredOpeningActive: true from game-start until the played moves no longer
-// match any preferred ECO line. Once false it stays false for that game —
-// the bot falls through to the normal engine path immediately with no network call.
+// The opening runs in stages, in this order, each switched per colour in the
+// builder: the Repertoire (ECO lines), then the Main Line (the explorer's most
+// popular move), then the engine — which may itself sit behind the Lichess
+// book. Each flag starts the game on or off and only ever turns off.
+//
+// preferredOpeningActive: the Repertoire. On until the played moves leave every
+// slot's ECO lines — or, with the Main Line on, until a slot's opening is on
+// the board, so the Main Line carries on from it (see botMakeMove).
 let preferredOpeningActive = false;
-// lichessExplorerActive: true from game-start until the Lichess/Masters explorer
-// returns empty moves (position is off-book). Once false for this game, we skip
-// all explorer network calls and go straight to the engine fallback.
+// mainLineActive: the Main Line. On until the explorer has no move here or the
+// book depth is reached.
+let mainLineActive = false;
+// lichessExplorerActive: the engine's own book ("Lichess Opening Book" in the
+// builder, the lcsf / maia tabs, a blend's book). On until the explorer returns
+// nothing for the position. It used to be switched on by the opening mode, so
+// that book did nothing at all unless Opening Behavior was also on.
 let lichessExplorerActive = false;
 let botOpeningConfig = {
   source: 'masters',       // 'masters' | 'lichess'
@@ -81,11 +92,21 @@ let botOpeningConfig = {
   // repertoire-specific (arrays per color)
   white: [],
   black: [],
-  // per-color opening mode (new panel): 'off' | 'mainline' | 'repertoire'
-  modeWhite: 'off',
-  modeBlack: 'off',
+  // per-colour opening stages (builder): Repertoire, then Main Line. Either,
+  // both or neither. These replace a one-of-three mode per colour
+  // (modeWhite/modeBlack), so the Italian could never lead into the Main Line.
+  repWhite: false,
+  repBlack: false,
+  mainLineWhite: false,
+  mainLineBlack: false,
   strictness: 0.8,
 };
+// Configs and sessions saved before the stages were separate carry one mode per
+// colour — 'off' | 'mainline' | 'repertoire'. Each maps to exactly the stage it
+// used to run, so an old bot plays as it did.
+function botOpeningStagesFromMode(m) {
+  return { rep: m === 'repertoire', mainLine: m === 'mainline' };
+}
 // 0–100: percentage of games where the bot follows its preferred opening.
 // Roll happens in botStart; if skipped, preferredOpeningActive stays false.
 let botOpeningFrequencyPct = 100;

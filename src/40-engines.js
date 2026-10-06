@@ -1634,137 +1634,22 @@ async function openingExplorerFetch(moveHistory) {
   }
 }
 
-// Main opening book entry point — called at the top of botMakeMove().
-// Returns a UCI string if the book has a move, or null to fall through to engine.
+// The Main Line's move — called from botMakeMove() while mainLineActive.
+// Returns the most-played move here as UCI, or null past the depth or off book.
+//
+// This used to branch on botOpeningMode, with a second, explorer-scored way to
+// play a repertoire. botMakeMove only ever called it in Main Line mode, so that
+// branch never ran; the repertoire is the ECO-table stage in botMakeMove.
 async function botGetOpeningMove(moveHistory) {
-  // The depth is in MOVES, as the builder labels it ("Depth 20 mv") and as a
+  // The depth is in MOVES, as the builder labels it ("Until move 20") and as a
   // player means it; moveHistory counts plies, both sides. This used to compare
   // the two directly, so a book set to 20 moves left after 10.
   const maxDepth = (botOpeningConfig.maxBookDepth || 20) * 2;
-  if (botOpeningMode === 'none') return null;
   if (moveHistory.length >= maxDepth) return null;
 
   const data = await openingExplorerFetch(moveHistory);
   if (!data || !data.moves || !data.moves.length) return null;
-
-  // ── Mainline: always play moves[0] (highest game count) ──────────────
-  if (botOpeningMode === 'mainline') {
-    return data.moves[0].uci;
-  }
-
-  // ── Preferred: unified loyalty + repertoire mode ──────────────────────────
-  // botPlayerColor is the HUMAN's color, so the bot's color is the opposite.
-  // ECO matching: we check EACH candidate move's resulting ECO (via its UCI
-  // prefix) against the slot prefixes — not the current position ECO — because
-  // the opening name only appears in the resulting position after the move.
-  // This is what allows Black to correctly steer toward the Sicilian on move 1:
-  // e4 is the current position (B00), but the move c7c5 produces a B2x ECO.
-  if (botOpeningMode === 'preferred') {
-    // Bot is the opposite color from the human player
-    const botColor = botPlayerColor === 'white' ? 'black' : 'white';
-    const slots = (botOpeningConfig[botColor] || []).filter(s => s.familyPrefix || s.eco);
-
-    // No slots configured — fall through (engine will play)
-    if (!slots.length) return null;
-
-    // currentEco = the opening name of the CURRENT position (before bot's move)
-    const currentEco = (data.opening && data.opening.eco) || '';
-
-    // Helper: best match tier for a given ECO string against our slot list
-    // Returns: 2 = exact match, 1 = family match, 0 = no match
-    function matchTier(ecoStr) {
-      let best = 0;
-      for (const slot of slots) {
-        const exact  = slot.exactEco     || null;
-        const family = slot.familyPrefix || (slot.eco ? slot.eco.slice(0,2) : null);
-        if (exact  && ecoStr.startsWith(exact))  { best = Math.max(best, 2); }
-        if (family && ecoStr.startsWith(family)) { best = Math.max(best, 1); }
-      }
-      return best;
-    }
-
-    // Score a candidate move. We use the CURRENT position ECO because we don't
-    // know the resulting ECO per-move from the explorer API. However: in early
-    // moves (depth < 3) the position ECO may not yet reflect the opening, so we
-    // also give credit to moves that match our preferred family by their UCI move
-    // string heuristic (e.g. c7c5 is always the Sicilian regardless of ECO label).
-    const EARLY_MOVE_DEPTH = maxDepth; // always use ECO-line scanning (position-ECO prefix only covers B20-B29 for Sicilian, missing B30-B99)
-    const isEarly = moveHistory.length < EARLY_MOVE_DEPTH;
-    const currentTier = matchTier(currentEco);
-
-    // Preferred family prefixes for early-move heuristic
-    const prefFamilies = slots.map(s => s.familyPrefix || (s.eco ? s.eco.slice(0,2) : '')).filter(Boolean);
-
-    // ── Early moves: use ECO PGN sequences to find preferred next moves ─────
-    // botSanHistory tracks SAN moves played so far this game.
-    // We scan _ecoData for lines matching the moves played so far AND a preferred
-    // slot ECO, then extract what move comes next in those lines.
-    if (isEarly && _ecoData) {
-      const preferredUci = obPreferredNextMoves(
-        botSanHistory, slots, board, turn, epSq, castling
-      );
-
-      if (preferredUci.size) {
-        // Score candidates: preferred moves get a strong bonus, others get frequency only
-        const total = data.moves.reduce((s, m) => s + m.white + m.draws + m.black, 0) || 1;
-        let bestMove = null, bestScore = -1;
-        for (const m of data.moves) {
-          const freq = (m.white + m.draws + m.black) / total;
-          const prefScore = preferredUci.has(m.uci)
-            ? (preferredUci[m.uci] || 1.0)  // slot-weighted score piggy-backed on Set
-            : 0;
-          // Strong preference signal: preferred moves score 10× their frequency bonus
-          const score = prefScore > 0 ? freq * (1 + prefScore * 10) : freq * 0.1;
-          if (score > bestScore) { bestScore = score; bestMove = m.uci; }
-        }
-        if (bestMove) return bestMove;
-      }
-      // No preferred move found in ECO lines — fall through to frequency
-      return data.moves[0].uci;
-    }
-
-    // ── Established position: score by slot match against current ECO ─────────
-    function positionSlotScore() {
-      if (currentTier === 0) return 0.05;
-      const totalPct = slots.reduce((s2, sl) => s2 + (sl.weight || 0), 0) || 1;
-      const EXACT_BONUS = 3.0;
-      let best = 0.05;
-      for (const slot of slots) {
-        const exact  = slot.exactEco     || null;
-        const family = slot.familyPrefix || (slot.eco ? slot.eco.slice(0,2) : null);
-        let tier = 0;
-        if (exact  && currentEco.startsWith(exact))  tier = 2;
-        else if (family && currentEco.startsWith(family)) tier = 1;
-        if (tier > 0) {
-          const normW = (slot.weight || 0) / totalPct;
-          const sc = (tier === 2 ? EXACT_BONUS : 1.0) * normW;
-          if (sc > best) best = sc;
-        }
-      }
-      return best;
-    }
-
-    const pw = positionSlotScore();
-    const total = data.moves.reduce((s, m) => s + m.white + m.draws + m.black, 0) || 1;
-    const strictness = botOpeningConfig.strictness !== undefined
-                       ? botOpeningConfig.strictness : 0.8;
-
-    // Single slot — loyalty: if established and off-book, apply deviation response
-    if (slots.length === 1 && currentTier === 0) {
-      return botOpeningConfig.deviationResponse === 'mainline'
-        ? data.moves[0].uci : null;
-    }
-
-    let bestMove = null, bestScore = -1;
-    for (const m of data.moves) {
-      const freq  = (m.white + m.draws + m.black) / total;
-      const score = (1 - strictness) * freq + strictness * pw * freq;
-      if (score > bestScore) { bestScore = score; bestMove = m.uci; }
-    }
-    return bestMove;
-  }
-
-  return null;
+  return data.moves[0].uci;   // highest game count (openingExplorerFetch sorts)
 }
 
 // Update botStatus while in opening
