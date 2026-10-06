@@ -28,6 +28,20 @@ function playMoveSound(isCapture){
 function saveSoundPref(){const el=document.getElementById('cbSound');if(el)localStorage.setItem('bm_sound',el.checked?'1':'0');}
 function loadSoundPref(){const v=localStorage.getItem('bm_sound');const el=document.getElementById('cbSound');if(el&&v!==null)el.checked=(v==='1');}
 
+// Influence is the one exploration overlay that is a Board-settings checkbox
+// rather than a button, so the IND defaults never reached it: it drew for
+// everyone, every visit, and turning it off did not survive a reload. A first
+// visit now starts with it off, like every overlay but the three IND starts
+// on. Someone who has been here before (bm_ind exists) and never touched it
+// keeps the "on" they have always had.
+function saveInfluencePref(){const el=document.getElementById('cbInfluenceToggle');if(el)try{localStorage.setItem('bm_influence',el.checked?'1':'0');}catch(e){}}
+function loadInfluencePref(){
+  const el=document.getElementById('cbInfluenceToggle');if(!el)return;
+  let v=null,returning=false;
+  try{v=localStorage.getItem('bm_influence');returning=localStorage.getItem('bm_ind')!==null;}catch(e){}
+  el.checked=(v!==null)?(v==='1'):returning;
+}
+
 // ── Board-vision settings drawer (phones only) ──────────────────────────────
 // These controls sit between the board and the game buttons. At desktop widths
 // that's a sidebar; stacked on a phone it's ~450px of configuration pushing the
@@ -1529,8 +1543,11 @@ function render(){
   };
   for(let i=0;i<8;i++){
     if(_boardFlipped){
-      // files sit on display row 7; flipped, file (7-i) is at display col (7-i)
-      _coord(String.fromCharCode(97+7-i),(480-((i+1)*SQ))+4,7*SQ+SQ-4, 7, 7-i);
+      // files sit on display row 7; flipped, file i is at display col (7-i)
+      // (sqCanvas mirrors c → 7-c), so h reads at the left and a at the right.
+      // This drew letter (7-i) there, which labelled the flipped board a..h
+      // left to right — every game played as Black had its files backwards.
+      _coord(String.fromCharCode(97+i),(480-((i+1)*SQ))+4,7*SQ+SQ-4, 7, 7-i);
       // ranks sit on display col 7 when flipped
       _coord(String(i+1),480-SQ+4,i*SQ+14, i, 7);
     } else {
@@ -2877,11 +2894,12 @@ resizeBoard();
 const ALL_SETS = ['staunton','rhosgfx_solid','rhosgfx_outline','rhosgfx_wood','rhosgfx_flat'];
 ALL_SETS.forEach(s => preloadPieceImages(s));
 // Apply defaults BEFORE loadPrefs so saved prefs override them
-if (!localStorage.getItem('bm_boardTheme')) applyBoardTheme('blue');
+if (!localStorage.getItem('bm_boardTheme')) applyBoardTheme('slate'); // Slate squares are the first-run board
 if (!localStorage.getItem('bm_bgTheme')) applyBgTheme('lightblue'); // Cool blue is the first-run look
 if (!localStorage.getItem('bm_pieceSet')) { currentPieceSet = 'staunton'; }
 loadPrefs();
 loadSoundPref();
+loadInfluencePref();
 loadBoardSettingsPref();
 // The phone furniture. All three no-op above the breakpoint: the tray is a
 // plain sidebar there, and the strip and the bar are display:none.

@@ -603,6 +603,20 @@ input[type=range]::-webkit-slider-thumb:active{cursor:grabbing;}
   vertical-align:middle;}
 .mcard.sel .mname{color:var(--text-primary);}
 .mdesc{font-family:var(--font-m);font-size:8.5px;color:var(--text-secondary);margin-top:3px;line-height:1.5;}
+/* Which engine is running has to read at a glance, in either format and on
+   any theme. The old cue, an amber hairline over a faint tint, was weaker than
+   the difference between the theme's own surfaces: on the light themes the
+   dormant Hybrid card had darker text than the selected one, so it read as the
+   live choice, worst of all in Journal's italic serif. The selected card is
+   now a solid fill, the Start button's accent. --amber-bright is the dark shade
+   on light themes and the bright one on dark, so --carbon text on it measures
+   5.35:1 on Clay, 6.9:1 or more on the other light themes and 8.3:1 or more on
+   the dark ones. Dormant cards are unchanged. */
+#sec-engine #engine-mode-grid .mcard.sel{background:var(--amber-bright);border-color:var(--amber-bright);}
+#sec-engine #engine-mode-grid .mcard.sel .mname,
+#sec-engine #engine-mode-grid .mcard.sel .mdesc{color:var(--carbon);}
+#sec-engine #engine-mode-grid .mcard.sel .mdot{background:var(--carbon);border-color:var(--carbon);box-shadow:none;}
+#sec-engine #engine-mode-grid .mcard.sel .mrec{background:transparent;border-color:var(--carbon);color:var(--carbon);}
 
 /* Toggles */
 .tog-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid var(--border);}
@@ -1224,14 +1238,39 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 }
 .eco-search:focus{border-color:var(--border-amber);}
 .eco-search::placeholder{color:var(--text-dim);}
+.eco-search-row{display:flex;gap:6px;align-items:stretch;}
+.eco-search-row .eco-search{flex:1;min-width:0;}
+/* Opens the openings as a list (repBrowse) — for when there is no name to type. */
+.eco-browse{
+  flex:0 0 auto;padding:0 12px;
+  font-family:var(--font-m);font-size:10px;letter-spacing:0.04em;white-space:nowrap;
+  color:var(--amber-bright);background:var(--carbon-surface);
+  border:0.5px solid var(--border-amber);border-radius:var(--r);cursor:pointer;
+  transition:background 0.15s,border-color 0.15s;
+}
+.eco-browse:hover,.eco-browse.open{background:var(--amber-glow);border-color:var(--amber);}
+/* In the flow, not floated over the section. The section's .panel-shell is
+   overflow:hidden (its open/close animation needs it), so an absolutely
+   placed dropdown was cut off at the section's bottom edge: with no openings
+   added yet, only the first rows of a search showed. In the flow, the section
+   grows to hold it instead. */
 .eco-dropdown{
-  position:absolute;left:0;right:0;top:calc(100% + 4px);
+  position:relative;margin-top:4px;
   background:var(--carbon-raise);
   border:0.5px solid var(--border-amber);
   border-radius:var(--r);
-  max-height:180px;overflow-y:auto;
+  /* Tall enough to browse in: the list view holds every opening family. */
+  max-height:min(320px, 55vh);overflow-y:auto;
   z-index:50;display:none;
 }
+.eco-group{
+  padding:8px 12px 4px;font-family:var(--font-m);font-size:8px;letter-spacing:0.12em;
+  text-transform:uppercase;color:var(--text-dim);
+  border-bottom:0.5px solid var(--border);
+}
+.eco-count{margin-left:auto;font-size:8px;color:var(--text-dim);white-space:nowrap;}
+.eco-chev{color:var(--amber);flex:0 0 auto;}
+.eco-back{color:var(--amber-bright);}
 .eco-dropdown.visible{display:block;}
 .eco-option{
   padding:7px 12px;
@@ -1438,6 +1477,57 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 .ctrl.inert .ctrl-lbl, .attr-group.inert .attr-head{opacity:0.55;}
 .cpg-cell.inert{opacity:0.45;}
 @media (max-width:760px){ .inert-why{font-size:11px;} }
+
+/* ── Time pressure: off because Move Timing sets the pace ─────────────────
+   The reason lives in another section, so the one-line .inert-why was not
+   enough: it read as a footnote and the curves below looked merely broken.
+   A banner with a heading and a real button instead, at the top of the
+   section, so why it is off and how to turn it on are the first things seen. */
+.tp-gate{
+  display:none;margin:0 0 14px;padding:12px 14px;
+  border:1px solid var(--border-amber);border-left:3px solid var(--amber);
+  border-radius:var(--r);background:var(--amber-glow);
+}
+.tp-gate-t{font-family:var(--font-u);font-size:12px;font-weight:600;color:var(--amber-bright);margin-bottom:4px;}
+.tp-gate-b{font-family:var(--font-m);font-size:10px;line-height:1.6;color:var(--text-secondary);}
+.tp-gate-b strong{color:var(--text-primary);}
+.tp-gate-go{
+  margin-top:10px;padding:7px 14px;border-radius:var(--r);cursor:pointer;
+  border:1px solid var(--amber);background:var(--amber);color:var(--carbon);
+  font-family:var(--font-u);font-size:11px;font-weight:600;letter-spacing:0.04em;
+  transition:filter 0.15s;
+}
+.tp-gate-go:hover{filter:brightness(1.1);}
+.tp-gate-go:focus-visible{outline:2px solid var(--amber-bright);outline-offset:2px;}
+body.fj .tp-gate-t{font-size:16.5px;}
+body.fj .tp-gate-b{font-size:14px;font-style:normal;}
+body.fj .tp-gate-go{font-size:14px;letter-spacing:0;}
+@media (max-width:760px){
+  .tp-gate-t{font-size:14px;}
+  .tp-gate-b{font-size:12px;}
+  .tp-gate-go{min-height:44px;width:100%;font-size:13px;}
+}
+/* Where the banner's button lands: the two timing modes that budget from a
+   clock, lit for a few seconds so the choice is obvious on arrival. */
+.mode-block.gate-hint .mcard{animation:gateHint 0.9s ease-in-out 3;box-shadow:0 0 0 2px var(--amber);}
+@keyframes gateHint{50%{box-shadow:0 0 0 4px var(--amber-glow-s);}}
+@media (prefers-reduced-motion:reduce){ .mode-block.gate-hint .mcard{animation:none;} }
+
+/* "Match Regan model": one press puts Curve A back on the dashed line. */
+.regan-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;margin-top:10px;}
+.regan-row[hidden]{display:none;}
+.regan-btn{
+  padding:5px 12px;border-radius:var(--r);cursor:pointer;
+  border:1px solid var(--amber);background:var(--amber-glow);color:var(--amber-bright);
+  font-family:var(--font-u);font-size:10px;font-weight:600;letter-spacing:0.05em;
+  transition:background 0.15s;
+}
+.regan-btn:hover{background:var(--amber-glow-s);}
+.regan-btn:focus-visible{outline:2px solid var(--amber-bright);outline-offset:2px;}
+.regan-btn.on{border-color:var(--border-amber);background:transparent;color:var(--text-dim);cursor:default;}
+.regan-row .ctrl-hint{flex:1;min-width:180px;margin:0;}
+body.fj .regan-btn{font-size:14px;letter-spacing:0;}
+@media (max-width:760px){ .regan-btn{min-height:44px;width:100%;font-size:13px;} }
 .mode-compact .mdesc{font-size:7.5px;line-height:1.35;color:var(--text-secondary);margin-top:2px;}
 .mode-compact .mname{font-size:8px;}
 .mode-compact .mcard{padding:8px 8px;}
@@ -2422,6 +2512,10 @@ body.fj .picon{font-weight:500;}
   /* Repertoire search is the only free-text entry in the panel and was the
      one input still under target at 34px. */
   .eco-search{min-height:44px;font-size:12px;}
+  /* The list is tapped through, so its rows are targets too. */
+  .eco-browse{min-height:44px;font-size:12px;}
+  .eco-option{min-height:44px;font-size:12px;}
+  .eco-code,.eco-count,.eco-group{font-size:11px;}
 
   /* Link LISTS read as rows of tappable items, so they get row height.
      Links inline INSIDE prose (the Regan credits, maiachess.com) deliberately
@@ -2526,7 +2620,12 @@ body.fj .picon{font-weight:500;}
   }
   /* A tab is named by being lit, not by a bullet beside it. */
   #sec-engine .mcard .mdot{display:none;}
-  #sec-engine .mcard .mname{font-size:11.5px;letter-spacing:0.03em;line-height:1.2;}
+  /* The engine is the first decision in the builder, and at 11.5px its name
+     was smaller than the readouts under it. 15px is what the names already are
+     on desktop (#engine-mode-grid.mode-compact .mname) and in Journal; the
+     longest, "Flounder" in Carbon capitals, still clears a third of a 320px
+     screen. */
+  #sec-engine .mcard .mname{font-size:15px;letter-spacing:0.02em;line-height:1.2;}
   /* The pill does not fit inside a third of a phone next to the name, and it
      is a footnote to it — so it drops to its own line as plain text. It stays
      at the 11px phone type floor (see verify-typefloor): shrinking a footnote
@@ -2540,11 +2639,8 @@ body.fj .picon{font-weight:500;}
      selected one is restated below the controls instead — #engine-desc-tail,
      via updateEngineDescTail. */
   #sec-engine .mcard .mdesc{display:none;}
-  #sec-engine .mcard.sel{
-    border-color:var(--amber);background:var(--amber-glow);
-    color:var(--amber-bright);
-  }
-  #sec-engine .mcard.sel .mname{color:var(--amber-bright);}
+  /* Selected = solid fill at every width; see the #engine-mode-grid rules
+     beside .mrec. */
 
   /* Scoped through #sec-engine (2,0,0) on purpose. The base rule that hides
      this on desktop is `.temp-head,#engine-desc-tail{display:none}` — same
@@ -2913,8 +3009,8 @@ body.fj .picon{font-weight:500;}
                master-level opening on a club-level middlegame, or the reverse. -->
           <div class="ob-elo" id="book-elo-wrap">
             <span class="ob-elo-lbl">Lichess ELO</span>
-            <input type="number" min="600" max="2600" step="25" value="1500" id="book-elo"
-                   oninput="onBookEloInput()" aria-label="Lichess explorer rating">
+            <input type="number" inputmode="numeric" min="600" max="2600" step="25" value="1500" id="book-elo"
+                   oninput="onBookEloInput()" onchange="onBookEloCommit()" aria-label="Lichess explorer rating">
             <button type="button" id="book-elo-pin" class="ob-pin linked" onclick="toggleBookEloPin()"
                     aria-pressed="true" title="Pinned to the engine's ELO. Click to set the book's rating separately.">
               <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -3010,7 +3106,8 @@ body.fj .picon{font-weight:500;}
             <!-- ELO input column — sits to the right of the Elometer -->
             <div class="elo-col">
               <span style="font-family:var(--font-m);font-size:8px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-dim);">ELO</span>
-              <input class="elo-input" id="elo-input" type="number" min="600" max="2600" step="25" value="1500" oninput="onEloInputChange(this.value)">
+              <input class="elo-input" id="elo-input" type="number" inputmode="numeric" min="600" max="2600" step="25" value="1500"
+                     oninput="onEloInputChange(this.value)" onchange="onEloInputCommit(this)" aria-label="Engine ELO">
             </div>
             </div><!-- /speedo flex row -->
             <div style="text-align:center;margin-top:4px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);">Click arc · drag needle · or type ELO · snaps to ±25</div>
@@ -3670,6 +3767,14 @@ body.fj .picon{font-weight:500;}
               <span class="ctrl-val" id="v-drop">300 ELO</span>
             </div>
             <div class="ctrl-hint" id="drop-hint"></div>
+            <!-- A button, not a mode: it opens Max ELO drop to the model's full
+                 drop for this rating and time control and puts every point on
+                 the dashed line. Drag one afterwards and it is your curve again,
+                 and the button says so. Hidden while neither curve can run. -->
+            <div class="regan-row" id="regan-row">
+              <button type="button" class="regan-btn" id="btn-regan-a" onclick="matchReganA()">Match Regan model</button>
+              <span class="ctrl-hint" id="regan-note"></span>
+            </div>
           </div>
           <!-- RIGHT: Temperature curve -->
           <div id="tp-col-b">
@@ -3749,7 +3854,7 @@ body.fj .picon{font-weight:500;}
           <div class="formula-body" style="text-align:left;line-height:1.75;">
             The bot simulates a rated player under time pressure using two complementary mechanisms:<br>
             <span style="color:var(--amber);">▸ ELO reduction</span> — Full credit to Professor Regan for his work, full blame to me for extrapolating his data-based findings based on full games under different time controls to this unsubstantiated estimation of ELO drop for individual moves under different time constraints.  
-            Maia is called at a lower ELO as think time shrinks under time pressure: full ELO at the time control’s nominal pace (base/60 + increment seconds per move), degrading below it following the curve shown above —every point is draggable if you want a shape different from the formula<br>
+            Maia is called at a lower ELO as think time shrinks under time pressure: full ELO at the time control’s nominal pace (base/60 + increment seconds per move), degrading below it following the curve shown above. Every point is draggable if you want a shape different from the formula, and <strong>Match Regan model</strong> puts them all back on it — the Max ELO drop slider caps how deep the curve goes, so at its default the curve stops short of the model in faster time controls<br>
             <span style="color:#5dade2;">▸ Temperature escalation</span> — ELO stays fixed but sampling temperature rises as think time shrinks, flattening Maia's move probabilities toward uniform without ever reordering them: a near-forced move stays the near-certain pick, while a genuine toss-up becomes far less predictable (instinctive, less creative play — typical of a strong player with no time to calculate). A quick engine check ensures a degraded pick never improves on Maia's top choice. How far up the curve the bot actually goes is set by <strong>Calm ↔ Panicky</strong> in Personality: at 0 it follows the curve as drawn (mild by default — Max temp 2), toward Calm it rises less, fully Calm leaves the temperature untouched, and fully Panicky rises 2.5× as fast.<br>
             <span style="color:var(--amber);">▸ Only when time is really short</span> — both curves describe a bot being forced to move faster than it would like. With <strong>Fixed interval</strong> or <strong>Instantaneous</strong> timing the pace is a number you set, not something the clock forced, so neither curve runs. <strong>Complexity scaled</strong> (From the clock) budgets from the clock and uses them; so does <strong>Mirror user</strong>, which plays at your pace — when you speed up under time pressure it speeds up with you, and degrades the way you do. Premoves are one-second decisions, and play at the rating and temperature these curves give for 1 s.<br>
             Each curve has its own <strong>ON/OFF</strong> toggle next to its title, so you can run either mechanism alone, both together, or switch both off for constant strength regardless of clock.
@@ -8927,7 +9032,15 @@ function applyBotConfig(cfg){
   // Hybrid slots
   grp(() => {
     if(cfg.hybridSlots && cfg.hybridSlots.length){
-      hybridSlots = cfg.hybridSlots.map(s => ({...s}));
+      // Clamped as the slot boxes now clamp (hybridSlotNum): bots saved
+      // before they did can carry a rating no engine is set over.
+      const _cl = (v, lo, hi) => Number.isFinite(+v) ? Math.max(lo, Math.min(hi, +v)) : v;
+      hybridSlots = cfg.hybridSlots.map(s => {
+        const o = {...s};
+        if(o.elo != null)         o.elo = _cl(o.elo, 600, 2600);
+        if(o.flounderElo != null) o.flounderElo = _cl(o.flounderElo, 600, 2400);
+        return o;
+      });
       renderHybridSlots();
     }
   });
@@ -10343,23 +10456,50 @@ function renderHybridSlots(){
       </div>
       <div class="hybrid-slot-param">
         ${s.type==='maia'
-          ? `<input type="number" min="600" max="2600" step="25" value="${s.elo}"
+          ? `<input type="number" inputmode="numeric" min="600" max="2600" step="25" value="${s.elo}"
                style="width:64px;padding:3px 5px;font-family:var(--font-m);font-size:10px;color:var(--amber-bright);background:var(--carbon-raise);border:0.5px solid var(--border-amber);border-radius:2px;text-align:center;outline:none;"
-               title="Maia ELO" oninput="hybridSlots[${i}].elo=+this.value">`
-          : `<input type="number" min="600" max="2400" step="25" value="${s.flounderElo || 1200}"
+               title="Maia ELO (600–2600)" aria-label="Maia ELO"
+               oninput="hybridSlotNum(${i},'elo',this,false)" onchange="hybridSlotNum(${i},'elo',this,true)">`
+          : `<input type="number" inputmode="numeric" min="600" max="2400" step="25" value="${s.flounderElo || 1200}"
                style="width:64px;padding:3px 5px;font-family:var(--font-m);font-size:10px;color:var(--amber-bright);background:var(--carbon-raise);border:0.5px solid var(--border-amber);border-radius:2px;text-align:center;outline:none;"
-               title="Flounder rating (600–2400, the measured range)"
-               oninput="hybridSlots[${i}].flounderElo=+this.value">`
+               title="Flounder rating (600–2400, the measured range)" aria-label="Flounder rating"
+               oninput="hybridSlotNum(${i},'flounderElo',this,false)" onchange="hybridSlotNum(${i},'flounderElo',this,true)">`
         }
       </div>
       <div class="hybrid-slot-pct">
-        <input type="number" class="pct-input" min="0" max="100" step="5" value="${s.pct}"
-          oninput="hybridSlots[${i}].pct=+this.value;updateHybridTotal()"> %
+        <input type="number" inputmode="numeric" class="pct-input" min="0" max="100" step="5" value="${s.pct}" aria-label="Share of moves"
+          oninput="hybridSlotNum(${i},'pct',this,false)" onchange="hybridSlotNum(${i},'pct',this,true)"> %
       </div>
       <span class="hybrid-remove" onclick="removeHybridSlot(${i})" title="Remove">✕</span>
     </div>
   `).join('');
   updateHybridTotal();
+}
+
+// A slot's rating or share, typed. Same two-step rule as the Elometer box
+// (onEloInputChange): a keystroke counts only once the box holds a value in
+// its range, and Enter / leaving the box clamps whatever is left. Before this
+// a slot took any number at all, so "20" went into the blend as a 20-rated
+// Maia, which is a rating its network was never conditioned on.
+function hybridSlotNum(i, key, inp, commit){
+  const slot = hybridSlots[i];
+  if(!slot) return;
+  const lo = +inp.min, hi = +inp.max;
+  const raw = parseInt(inp.value, 10);
+  if(!commit){
+    if(Number.isFinite(raw) && raw >= lo && raw <= hi){
+      slot[key] = raw;
+      if(key === 'pct') updateHybridTotal();
+    }
+    return;
+  }
+  const keep = Number.isFinite(slot[key]) ? slot[key] : lo;
+  let v = Number.isFinite(raw) ? raw : keep;
+  if(key !== 'pct') v = snapElo(v);
+  v = Math.max(lo, Math.min(hi, v));
+  slot[key] = v;
+  inp.value = v;
+  if(key === 'pct') updateHybridTotal();
 }
 
 function setHybridType(i, type){
@@ -10551,9 +10691,15 @@ function bookElo(){
   const el = document.getElementById('book-elo');
   return clampBookElo(el ? parseInt(el.value, 10) : currentElo);
 }
+// True only while a keystroke in the book box is being applied, so the update
+// it causes does not write a snapped value back under the cursor. Any other
+// change (the needle, a preset, the pin) is newer than the typing and does
+// write: a flag that lasted until the box lost focus would let a needle drag,
+// which never takes focus, leave the box showing a stale number.
+let _bookEloTyping = false;
 function setBookElo(v){
   const el = document.getElementById('book-elo');
-  if(el) el.value = clampBookElo(v);
+  if(el && !_bookEloTyping) el.value = clampBookElo(v);
 }
 
 // The Elometer moved; a pinned book moves with it.
@@ -10561,13 +10707,38 @@ function syncBookEloFromElometer(elo){
   if(bookEloLinked) setBookElo(elo);
 }
 
+function _bookEloPinned(){
+  return bookEloLinked && !(typeof baseEngine !== 'undefined' && baseEngine === 'hybrid');
+}
+
+// Typed ratings, same two-step rule as the Elometer box (onEloInputChange).
+// This used to clamp on every keystroke, so the "1" of "1800" became 600 at
+// once and no rating could be typed — and while pinned the box was disabled
+// outright. Pinned now means what a pin says: the two numbers are one, so
+// typing here moves the Elometer too.
 function onBookEloInput(){
-  if(bookEloLinked) return;        // the box is read-only while pinned
   const el = document.getElementById('book-elo');
   if(!el) return;
   const raw = parseInt(el.value, 10);
-  if(!Number.isFinite(raw)) return; // mid-edit; leave it until it is a number
-  if(raw < BOOK_ELO_MIN || raw > BOOK_ELO_MAX) el.value = clampBookElo(raw);
+  // Mid-edit ("1" on the way to "1800"): leave it until it is a rating.
+  if(!Number.isFinite(raw) || raw < BOOK_ELO_MIN || raw > BOOK_ELO_MAX) return;
+  if(!_bookEloPinned()) return;
+  _bookEloTyping = true;
+  try { setElo(clampElo(raw)); } finally { _bookEloTyping = false; }
+}
+
+function onBookEloCommit(){
+  const el = document.getElementById('book-elo');
+  if(!el) return;
+  const raw = parseInt(el.value, 10);
+  let v = clampBookElo(Number.isFinite(raw) ? raw : currentElo);
+  if(_bookEloPinned()){
+    // The engine may not reach every book rating (Flounder stops at 2400), and
+    // a pinned pair cannot disagree, so the book takes what the engine took.
+    setElo(clampElo(v));
+    v = currentElo;
+  }
+  el.value = v;
 }
 
 function toggleBookEloPin(){
@@ -10593,8 +10764,8 @@ function _syncBookEloPinUi(){
   btn.title = linked
     ? "Pinned to the engine's ELO. Click to set the book's rating separately."
     : "Unpinned — the book has its own rating. Click to pin it to the engine's ELO.";
-  inp.disabled = linked;
-  inp.title = linked ? "Same as the engine's ELO (pinned)" : 'Lichess explorer rating band';
+  inp.disabled = false;
+  inp.title = linked ? "Same as the engine's ELO (pinned) — typing here moves both" : 'Lichess explorer rating band';
 }
 
 function _initBookEloPin(){
@@ -10609,7 +10780,7 @@ function setElo(elo){
   currentElo = elo;
   updateSpeedo(elo);
   syncBookEloFromElometer(elo);
-  document.getElementById('elo-input').value = elo;
+  if(!_eloTyping) document.getElementById('elo-input').value = elo;   // see onEloInputChange
   const _nm = (typeof engineStatusName === 'function') ? engineStatusName() : `Maia 3 · ${elo}`;
   document.getElementById('st-engine').textContent = _nm;
   document.getElementById('qs-engine-pill').textContent = _nm;
@@ -10630,9 +10801,26 @@ function setElo(elo){
   }
 }
 
+// Typing a rating takes two events. `input` fires on every keystroke, and this
+// used to clamp each one: the "1" of "1800" became 600 and was written back
+// under the cursor, so no rating could be typed at all. Now a keystroke moves
+// the dial only once the box holds a rating the engine can reach, and the
+// update it causes does not rewrite the box (_eloTyping); `change` (Enter, or
+// leaving the box) clamps whatever is left and writes it back. The guard lasts
+// only for that one update: anything else that moves the dial, such as a
+// needle drag, which never takes focus from the box, still shows in it.
+let _eloTyping = false;
 function onEloInputChange(val){
-  const elo = clampElo(+val);
-  setElo(elo);
+  const v = parseInt(val, 10);
+  const r = engineEloRange();
+  if(!Number.isFinite(v) || v < r.lo || v > r.hi) return;   // mid-edit
+  _eloTyping = true;
+  try { setElo(clampElo(v)); } finally { _eloTyping = false; }
+}
+function onEloInputCommit(inp){
+  const v = parseInt(inp.value, 10);
+  setElo(clampElo(Number.isFinite(v) ? v : currentElo));
+  inp.value = currentElo;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -12479,8 +12667,12 @@ function renderOpColumn(color){
   // off | repertoire — search always active; slot list greyed when off
   body.innerHTML =
     '<div class="eco-search-wrap" id="rep-search-wrap-' + color + '">' +
-      '<input class="eco-search" id="rep-search-input-' + color + '" type="text" placeholder="Add opening — name or ECO…" ' +
-        'oninput="onRepSearch(this.value,\'' + color + '\')" onfocus="onRepSearch(this.value,\'' + color + '\')" autocomplete="off">' +
+      '<div class="eco-search-row">' +
+        '<input class="eco-search" id="rep-search-input-' + color + '" type="text" placeholder="Add opening — name or ECO…" ' +
+          'oninput="onRepSearch(this.value,\'' + color + '\')" onfocus="onRepSearch(this.value,\'' + color + '\')" autocomplete="off">' +
+        '<button type="button" class="eco-browse" id="rep-browse-' + color + '" aria-expanded="false" ' +
+          'onclick="repBrowse(event,\'' + color + '\')" title="Browse every opening as a list">&#9776; List</button>' +
+      '</div>' +
       '<div class="eco-dropdown" id="rep-dropdown-' + color + '"></div>' +
     '</div>' +
     '<div class="op-rep' + (mode==='off' ? ' op-rep-disabled' : '') + '" id="op-rep-' + color + '">' +
@@ -12537,7 +12729,11 @@ function onRepSearch(query, color){
   const dd = document.getElementById('rep-dropdown-' + color);
   if(!dd) return;
   const q = query.trim().toLowerCase();
-  if(!q){ dd.classList.remove('visible'); return; }
+  // An empty box is someone who has not got a name in mind yet: give them the
+  // list rather than nothing (repBrowse).
+  if(!q){ _repRenderFamilies(color); return; }
+  dd.dataset.view = 'search';
+  _repSyncBrowseBtn(color);
   const results = ECO_DATA.filter(e =>
     e.n.toLowerCase().includes(q) || e.e.toLowerCase().startsWith(q)
   ).slice(0, 30);
@@ -12562,6 +12758,112 @@ function addRepFromSearch(code, name, color){
   // Adding an opening means the user wants a repertoire — activate it if needed.
   if(repMode[color] !== 'repertoire') setOpColorMode(color, 'repertoire');
   else renderRepSlots(color);
+}
+
+/* ── Repertoire: the openings as a list ──────────────────────────────────────
+   The search only answers a name you already know. An empty box showed nothing,
+   so anyone without "Najdorf" or "B90" in mind had no way in. "List" (and
+   focusing the empty box) opens the openings as a list: the popular ones for
+   this colour first, then every family A–Z. A family opens to its lines, and
+   each line is added exactly as a search result is (addRepFromSearch).
+   Rows pass numeric indices, never names: names carry apostrophes
+   ("King's Gambit") that would break an inline handler's string. */
+const REP_POPULAR = {
+  white: ['Ruy Lopez', 'Italian Game', 'Scotch Game', 'Vienna Game', "King's Gambit",
+          "Queen's Gambit", 'London System', 'Catalan Opening', 'English Opening',
+          'Réti Opening', "King's Indian Attack", 'Trompowsky Attack', 'Bird Opening'],
+  black: ['Sicilian Defense', 'French Defense', 'Caro-Kann Defense', 'Scandinavian Defense',
+          'Pirc Defense', 'Modern Defense', 'Alekhine Defense', "Petrov's Defense", 'Philidor Defense',
+          "Queen's Gambit Declined", "Queen's Gambit Accepted", 'Slav Defense', 'Semi-Slav Defense',
+          "King's Indian Defense", 'Nimzo-Indian Defense', "Queen's Indian Defense",
+          'Grünfeld Defense', 'Dutch Defense', 'Benoni Defense'],
+};
+let _ecoFam = null;   // { names: [A–Z family names], lines: Map(name -> [{e,n,i}]) }
+function _ecoFamilies(){
+  if(_ecoFam) return _ecoFam;
+  const lines = new Map();
+  ECO_DATA.forEach((e, i) => {
+    const f = e.n.split(':')[0].trim();
+    if(!lines.has(f)) lines.set(f, []);
+    lines.get(f).push({ e:e.e, n:e.n, i });
+  });
+  const names = [...lines.keys()].sort((a, b) => a.localeCompare(b));
+  _ecoFam = { names, lines };
+  return _ecoFam;
+}
+function _repEsc(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function _repSyncBrowseBtn(color){
+  const dd = document.getElementById('rep-dropdown-' + color);
+  const btn = document.getElementById('rep-browse-' + color);
+  if(!btn) return;
+  const open = !!dd && dd.classList.contains('visible') && dd.dataset.view !== 'search';
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  btn.classList.toggle('open', open);
+}
+function _repRenderFamilies(color){
+  const dd = document.getElementById('rep-dropdown-' + color);
+  if(!dd) return;
+  const fam = _ecoFamilies();
+  const row = name => {
+    const ls = fam.lines.get(name);
+    const codes = ls.map(x => x.e).sort();
+    const range = codes[0] === codes[codes.length - 1] ? codes[0] : codes[0] + '–' + codes[codes.length - 1];
+    return '<div class="eco-option eco-fam" onclick="repBrowseFamily(event,\'' + color + '\',' + fam.names.indexOf(name) + ')">' +
+      '<span class="eco-code">' + range + '</span>' +
+      '<span class="eco-name">' + _repEsc(name) + '</span>' +
+      '<span class="eco-count">' + (ls.length > 1 ? ls.length + ' lines' : '') + '</span>' +
+      '<span class="eco-chev" aria-hidden="true">›</span></div>';
+  };
+  dd.innerHTML =
+    '<div class="eco-group">Popular as ' + (color === 'white' ? 'White' : 'Black') + '</div>' +
+    REP_POPULAR[color].filter(n => fam.lines.has(n)).map(row).join('') +
+    '<div class="eco-group">All openings A–Z</div>' +
+    fam.names.map(row).join('');
+  dd.dataset.view = 'list';
+  dd.classList.add('visible');
+  dd.scrollTop = 0;
+  _repSyncBrowseBtn(color);
+}
+// The List button toggles; "‹ All openings" (open=true) always goes back.
+function repBrowse(ev, color, open){
+  if(ev) ev.stopPropagation();
+  const dd = document.getElementById('rep-dropdown-' + color);
+  if(!dd) return;
+  if(!open && dd.classList.contains('visible') && dd.dataset.view !== 'search'){
+    dd.classList.remove('visible');
+    _repSyncBrowseBtn(color);
+    return;
+  }
+  _repRenderFamilies(color);
+}
+function repBrowseFamily(ev, color, idx){
+  // Stopped because this replaces the row that was clicked: by the time the
+  // click reached the document it would come from a detached node, and the
+  // outside-click closer below would read that as a click outside.
+  if(ev) ev.stopPropagation();
+  const dd = document.getElementById('rep-dropdown-' + color);
+  const fam = _ecoFamilies();
+  const name = fam.names[idx];
+  if(!dd || name === undefined) return;
+  dd.innerHTML =
+    '<div class="eco-option eco-back" onclick="repBrowse(event,\'' + color + '\',true)">‹ All openings</div>' +
+    '<div class="eco-group">' + _repEsc(name) + '</div>' +
+    // The opening itself first, then its lines in ECO order. By code alone the
+    // plain "King's Indian Defense" (E61) sat below its own E60 variations.
+    [...fam.lines.get(name)].sort((a, b) => (b.n === name) - (a.n === name)).map(x =>
+      '<div class="eco-option" onclick="repAddEco(event,\'' + color + '\',' + x.i + ')">' +
+        '<span class="eco-code">' + x.e + '</span>' +
+        '<span class="eco-name">' + _repEsc(x.n) + '</span></div>').join('');
+  dd.dataset.view = 'family';
+  dd.scrollTop = 0;
+}
+function repAddEco(ev, color, i){
+  if(ev) ev.stopPropagation();
+  const e = ECO_DATA[i];
+  if(e) addRepFromSearch(e.e, e.n, color);
+  _repSyncBrowseBtn(color);
 }
 
 function autoDistributeRepPct(color){
@@ -12589,7 +12891,7 @@ function renderRepSlots(color){
           </div>
           <span class="hybrid-remove" onclick="removeRepSlot(${i},'${color}')" title="Remove">✕</span>
         </div>`).join('')
-    : '<div style="font-family:var(--font-m);font-size:9px;color:var(--text-dim);padding:6px 0;">Search and add openings above.</div>';
+    : '<div style="font-family:var(--font-m);font-size:9px;color:var(--text-dim);padding:6px 0;">Search above, or open the List, to add openings.</div>';
   if(totalEl) totalEl.style.display = slots.length ? 'block' : 'none';
   updateRepTotal(color);
 }
@@ -12609,8 +12911,11 @@ function removeRepSlot(i,color){
 
 // Close rep dropdowns on outside click (one per colour column)
 document.addEventListener('click', e=>{
-  if(!e.target.closest('#rep-search-wrap-white')) document.getElementById('rep-dropdown-white')?.classList.remove('visible');
-  if(!e.target.closest('#rep-search-wrap-black')) document.getElementById('rep-dropdown-black')?.classList.remove('visible');
+  ['white','black'].forEach(c => {
+    if(e.target.closest('#rep-search-wrap-' + c)) return;
+    document.getElementById('rep-dropdown-' + c)?.classList.remove('visible');
+    _repSyncBrowseBtn(c);
+  });
 });
 
 /* ── Good Day / Bad Day dual-range slider ──────────────────────────────────── */
@@ -13282,6 +13587,7 @@ function drawA(){
   const yMin = Math.max(600, Math.min(currentElo, 2600) - gv('r-drop')) - 60;
   drawCurve('cvA', ctrlA, reganEloA, yMin, currentElo + 50,
     v=>v, '#c8922a', 'rgba(200,146,42,0.08)', 'tipA', scaleA);
+  _syncReganBtn();
 }
 // One curve, two readings. The control points stay in T — that is the number
 // timePressureTempByThink consumes, on every engine — but T is not what
@@ -13340,25 +13646,31 @@ function _syncPressureOffUi(fromGating){
       if(el.classList.contains('ctrl')) el.inert = paced && !(s.off || s.idle);
     });
   });
-  // One sentence at the top of the section for a set pace, where the reason
-  // is somewhere else entirely (Move Timing).
+  // A banner at the top of the section for a set pace, because the reason is
+  // somewhere else entirely (Move Timing) — and a button that goes there.
   const secPanel = document.querySelector('#sec-pressure .pr');
   if(secPanel){
     let note = document.getElementById('tp-paced-note');
     if(!note){
       note = document.createElement('div');
       note.id = 'tp-paced-note';
-      note.className = 'inert-why';
+      note.className = 'tp-gate';
+      note.setAttribute('role', 'note');
       secPanel.insertBefore(note, secPanel.children[1] || null);
     }
     const m = _getTimingMode();
     note.style.display = paced ? 'block' : '';
     note.innerHTML = paced
-      ? 'Off — <strong>' + (_PACE_NAME[m] || 'This timing mode') + '</strong> sets the bot’s pace, so it is never short of time and neither curve is consulted (premoves play at its own rating too). ' +
-        'Choose <strong>Complexity scaled</strong> in Move Timing to have it budget from the clock, or <strong>Mirror user</strong> to have it play — and crack — at your pace. ' +
-        '<span class="hint-link" onclick="openThinkTimeSection()">Go to Move Timing ▸</span>'
+      ? '<div class="tp-gate-t">Time pressure is off for this bot</div>' +
+        '<div class="tp-gate-b"><strong>' + (_PACE_NAME[m] || 'This timing mode') + '</strong> in Move Timing sets the bot’s pace, so it is never short of time, and neither curve below is used (premoves play at its own rating too). ' +
+        'To turn time pressure on, choose <strong>Complexity scaled</strong> to have it budget from the clock, or <strong>Mirror user</strong> to have it play — and crack — at your pace.</div>' +
+        '<button type="button" class="tp-gate-go" onclick="jumpToTimingForPressure()">Change Move Timing ▸</button>'
       : '';
   }
+  // Match Regan model: only where Curve A can run at all.
+  const rr = document.getElementById('regan-row');
+  if(rr) rr.hidden = !!(untimed || paced);
+  _syncReganBtn();
   // While curve B is idle its switch cannot change anything either.
   const bTog = document.getElementById('pressure-off-b');
   const bTogLbl = bTog ? bTog.closest('label.tog') : null;
@@ -13408,6 +13720,69 @@ function jumpToAttractor(key){
   const idx = RADAR_AXES.findIndex(a => a.key === key);
   // After the section's 0.45 s open animation, or the row lands under the header.
   if(idx >= 0) setTimeout(() => _radarNavigate(idx), 480);
+}
+
+// The time-pressure banner's button: open Move Timing and light the two modes
+// that budget from a clock, so the choice is obvious on arrival.
+function jumpToTimingForPressure(){
+  openThinkTimeSection();
+  const blocks = ['tb-complexity', 'tb-mirror']
+    .map(id => document.getElementById(id)).filter(Boolean);
+  // After the section's 0.45 s open animation, or the scroll lands short.
+  setTimeout(() => {
+    document.getElementById('timing-mode-grid')
+      ?.scrollIntoView({ behavior:'smooth', block:'center' });
+    blocks.forEach(b => b.classList.add('gate-hint'));
+    setTimeout(() => blocks.forEach(b => b.classList.remove('gate-hint')), 2800);
+  }, 480);
+}
+
+// ── Match Regan model ─────────────────────────────────────────────────────────
+// The model's full ELO drop by think time t for the current rating and time
+// control. reganEloA() reads flat while Curve A is switched off, so this is
+// computed from the model directly.
+function _reganDropAt(t){
+  const anchor = reganAnchorSec();
+  if(anchor <= 0) return 0;
+  const e0  = Math.max(600, Math.min(currentElo, 2600));
+  const raw = currentElo + reganD(t) - reganD(anchor);
+  return Math.max(0, Math.round(e0 - Math.max(600, Math.min(e0, raw))));
+}
+// Put Curve A on the model: Max ELO drop set to the model's own drop by 1 s
+// (rounded DOWN to the slider's step, so the curve never goes deeper than the
+// model), and the eight points re-seeded onto the dashed line. Switches the
+// curve on if it was off — that is what pressing it asks for.
+function matchReganA(){
+  if(_curvesInertKind()) return;
+  if(pressureOffA) _setPressureOffA(false);
+  const inp = document.getElementById('r-drop');
+  if(!inp) return;
+  const step = +inp.step || 25;
+  inp.value = String(Math.min(+inp.max, Math.floor(_reganDropAt(X_MIN) / step) * step));
+  sv(inp, 'v-drop', v => v + ' ELO');
+  syncDropHint(); initPtsA(); drawA();
+}
+// Within one slider step of the model at every point counts as on it — that
+// is as close as Max ELO drop can put it.
+function _curveAOnRegan(){
+  if(pressureOffA || !ctrlA || !ctrlA.length) return false;
+  const tol = +(document.getElementById('r-drop')?.step) || 25;
+  return ctrlA.every(p => Math.abs(p.y - reganEloA(p.x)) <= tol);
+}
+function _syncReganBtn(){
+  const btn = document.getElementById('btn-regan-a');
+  if(!btn) return;
+  const on = _curveAOnRegan();
+  btn.classList.toggle('on', on);
+  btn.disabled = on;
+  btn.textContent = on ? '✓ On the Regan model' : 'Match Regan model';
+  const note = document.getElementById('regan-note');
+  if(!note) return;
+  const drop = _reganDropAt(X_MIN);
+  note.textContent = on
+    ? 'Every point is on the dashed line: down ' + drop + ' ELO by 1 s a move at this rating and time control. Drag any point to make the curve your own.'
+    : 'The dashed line is the model: down ' + drop + ' ELO by 1 s a move at this rating and time control. '
+      + (pressureOffA ? 'This switches the curve on, sets' : 'This sets') + ' Max ELO drop to match and puts every point on it.';
 }
 
 // Answer a drag on a curve that cannot do anything. Reuses the ⓘ popup the rest

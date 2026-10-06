@@ -143,6 +143,37 @@ await page.evaluate((c) => applyBotConfig(c), cfg);
 const rt = await page.evaluate((i) => ctrlA[i].y, dragged.idx);
 ok(rt === yAfter, 'round-trip restores the dragged curve');
 
+// Match Regan model: a button, not a mode. At the default 300 cap the curve
+// stops short of the model in faster time controls; one press opens Max ELO
+// drop to the model's own drop and puts every knot back on it.
+console.log('match regan:');
+await page.evaluate(() => { selectTC(5, 0); document.querySelector('#tb-complexity .mcard').click(); });
+await page.waitForTimeout(200);
+const mr0 = await page.evaluate(() => ({
+  hidden: document.getElementById('regan-row').hidden,
+  txt: document.getElementById('btn-regan-a').textContent,
+}));
+ok(!mr0.hidden, 'button shown with Complexity scaled timing');
+ok(mr0.txt === 'Match Regan model', `curve is NOT on the model at 5+0 after a drag/the 300 cap (${mr0.txt})`);
+await page.evaluate(() => matchReganA());
+const mr1 = await page.evaluate(() => ({
+  txt: document.getElementById('btn-regan-a').textContent,
+  drop: +document.getElementById('r-drop').value,
+  dev: Math.max(...ctrlA.map(p => Math.abs(p.y - reganEloA(p.x)))),
+  model: _reganDropAt(1),
+}));
+ok(mr1.dev <= 25, `every knot within one slider step of the model (max ${mr1.dev})`);
+ok(mr1.drop <= mr1.model && mr1.model - mr1.drop < 25, `Max ELO drop set to the model's drop, rounded down (${mr1.drop} for ${mr1.model})`);
+ok(mr1.txt === '✓ On the Regan model', 'and the button says so');
+await page.evaluate(() => { ctrlA[3].y -= 100; drawA(); });
+ok(await page.evaluate(() => document.getElementById('btn-regan-a').textContent) === 'Match Regan model',
+  'moving a knot off the model hands the button back');
+await page.evaluate(() => document.querySelector('#tb-fixed .mcard').click());
+ok(await page.evaluate(() => document.getElementById('regan-row').hidden &&
+     getComputedStyle(document.getElementById('tp-paced-note')).display === 'block' &&
+     !!document.querySelector('#tp-paced-note .tp-gate-go')),
+  'Fixed interval: button hidden, banner with a Move Timing button shown');
+
 // ── Main app engine wiring (spline authoritative) ────────────────────────────
 console.log('app:');
 await page.goto(BASE + '/', { waitUntil: 'networkidle' });

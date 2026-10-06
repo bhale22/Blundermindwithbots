@@ -322,8 +322,8 @@ console.log('\n8    First visit');
   }));
   ok('a first visit starts with the "start with these" four',
     JSON.stringify(g.pinned) === '["threats","counts","unprotected","pins"]', JSON.stringify(g.pinned));
-  ok('set to draw while exploring, not always on',
-    g.states.every(s => s === 2), JSON.stringify(g.states));
+  ok('three set to draw while exploring, Pins beside the board but off',
+    JSON.stringify(g.states) === '[2,2,2,1]', JSON.stringify(g.states));
   ok('so a first board is not covered in thirteen layers',
     g.drawingAtRest.length === 0, g.drawingAtRest.join(','));
   ok('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
@@ -877,8 +877,8 @@ for (const [w, h] of [[1440, 900], [1366, 600]]) {
       keyHold: cs('.key-hold').display,
       pinned: pinnedInds.length,
       // The IND defaults still apply on desktop: pinLoad() must not have
-      // switched twelve overlays off behind the sidebar's back.
-      exploring: Object.keys(IND).filter(k => IND[k].pre).length,
+      // switched the three first-visit overlays off behind the sidebar's back.
+      exploring: Object.keys(IND).filter(k => document.getElementById('ib-' + k) && IND[k].pre).sort().join(','),
       hScroll: document.documentElement.scrollWidth > innerWidth + 1,
     };
   });
@@ -889,7 +889,7 @@ for (const [w, h] of [[1440, 900], [1366, 600]]) {
   ok(w + ': the phone furniture stays hidden', d.strip === 'none' && d.bar === 'none');
   ok(w + ': hold-to-peek is still promised', d.keyHold !== 'none', d.keyHold);
   ok(w + ': pinning does not reach desktop', d.pinned === 0, String(d.pinned));
-  ok(w + ': the IND defaults are untouched', d.exploring >= 10, String(d.exploring));
+  ok(w + ': the IND defaults are untouched', d.exploring === 'counts,threats,unprotected', d.exploring);
   ok(w + ': no horizontal scroll', !d.hScroll);
   ok(w + ': no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
   await ctx.close();

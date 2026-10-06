@@ -894,18 +894,16 @@ canvas{
 .landing-expert .landing-card.green-card:hover,
 .landing-expert .landing-card.gold-card:hover { border-color:#c8922a;box-shadow:0 0 0 2px rgba(200,146,42,0.18); }
 .landing-expert .landing-card-title { color:#e8e6e0; }
-.lg-bab{ display:none; }
-.landing-expert .lg-bm{ display:none; }
-.landing-expert .lg-bab{ display:inline; }
 .landing-expert .landing-footer { color:#717a8a; }
-/* Three equal columns on one shared measure. This was a centred flex row of
-   fixed-width cards, so the block came out 617px wide while the rows beneath it
-   ran to 760px — every row below the actions overhung them, and the rule above
-   the board-style block stuck out past the cards it belonged under. Driving all
-   three off --landing-measure keeps them locked together whatever the card
+/* The bot builder across the top, Explore and 2-Player as a pair beneath it,
+   all on one shared measure. This was a centred flex row of fixed-width cards,
+   so the block came out 617px wide while the rows beneath it ran to 760px —
+   every row below the actions overhung them, and the rule above the
+   board-style block stuck out past the cards it belonged under. Driving the
+   grid off --landing-measure keeps them locked together whatever the card
    width does later. */
 .landing-cards {
-  display:grid;grid-template-columns:repeat(3,1fr);gap:16px;
+  display:grid;grid-template-columns:repeat(2,1fr);gap:16px;
   width:100%;max-width:var(--landing-measure);margin-bottom:30px;
   /* Equal height so the three CTAs sit on one line. The old split Load card
      made stretching look wrong; now that Load has moved to its own row, the
@@ -936,6 +934,18 @@ canvas{
 }
 .landing-card-icon { font-size:42px;line-height:1; }
 .landing-card-icon.small { font-size:24px; }
+/* The lead card spans the row and lies on its side — icon, name, action — so
+   it is visibly first without being three times the height of the others. */
+@media (min-width:761px){
+  .landing-card.lc-primary {
+    grid-column:1 / -1;flex-direction:row;justify-content:flex-start;
+    text-align:left;gap:20px;padding:20px 24px;
+  }
+  .landing-card.lc-primary .landing-card-title { flex:1;font-size:18px; }
+  .landing-card.lc-primary .landing-card-go { margin:0;width:auto;padding:9px 22px;font-size:12px; }
+}
+.landing-card.lc-primary { border-color:var(--accent); }
+.landing-expert .landing-card.lc-primary { border-color:#c8922a; }
 .landing-card-title {
   font-size:14px;font-weight:700;color:var(--text-primary);
   line-height:1.3;transition:color 0.25s ease;
@@ -959,9 +969,9 @@ canvas{
   transition:all 0.12s;
 }
 .landing-upload-btn:hover { border-color:var(--accent);color:var(--accent); }
-/* ── Guided tour: entry line + which-one picker ──────────────────────────
+/* ── Overview entry line (.landing-overview-btn, further down) ────────────
    Dashed and quiet on purpose. The cards above are what people came to
-   click; this is the way back for someone who wants orientation first. */
+   click; this is the way in for someone who wants orientation first. */
 /* Cross-link back to the web versions. Shown only when running as an
    installed app (see bmIsAppContext) — on the websites themselves the copy
    would be circular, since that IS the browser-based version. */
@@ -989,7 +999,7 @@ canvas{
 .landing-expert .web-note .wn-name { color:#c8922a; }
 .landing-expert .web-note .wn-desc { color:#717a8a; }
 
-.landing-tour-btn {
+.landing-overview-btn {
   display:flex;align-items:center;gap:10px;
   padding:0 18px;min-height:44px;margin-bottom:14px;
   background:transparent;border:1px dashed var(--border);border-radius:9px;
@@ -997,44 +1007,16 @@ canvas{
   cursor:pointer;-webkit-tap-highlight-color:transparent;
   transition:border-color 0.18s,color 0.18s;
 }
-.landing-tour-btn:hover,.landing-tour-btn:focus-visible {
+.landing-overview-btn:hover,.landing-overview-btn:focus-visible {
   border-color:var(--accent);color:var(--text-primary);outline:none;
 }
-.landing-tour-btn .ltb-icon { font-size:15px;line-height:1; }
-.landing-tour-btn .ltb-chev { opacity:0.6; }
-.landing-expert .landing-tour-btn:hover,
-.landing-expert .landing-tour-btn:focus-visible { border-color:#c8922a; }
-
-.landing-tour-pick {
-  display:flex;flex-direction:column;align-items:center;gap:10px;
-  width:100%;max-width:460px;margin-bottom:16px;
-  padding:16px;background:var(--bg-panel);
-  border:1px solid var(--border);border-radius:10px;
-}
-.landing-tour-pick[hidden] { display:none; }
-.ltp-head {
-  font-size:13px;font-weight:600;color:var(--text-primary);letter-spacing:0.01em;
-}
-.ltp-opts { display:flex;gap:10px;width:100%; }
-.ltp-opt {
-  flex:1;display:flex;flex-direction:column;gap:4px;align-items:flex-start;
-  text-align:left;padding:12px 14px;min-height:44px;
-  background:var(--bg-panel2);border:1px solid var(--border);border-radius:8px;
-  font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;
-  transition:border-color 0.15s,transform 0.12s;
-}
-.ltp-opt:hover,.ltp-opt:focus-visible {
-  border-color:var(--accent);transform:translateY(-1px);outline:none;
-}
-.landing-expert .ltp-opt:hover,
-.landing-expert .ltp-opt:focus-visible { border-color:#c8922a; }
-.ltp-name { font-size:13px;font-weight:600;color:var(--text-primary);line-height:1.25; }
-.ltp-desc { font-size:11px;color:var(--text-dim);line-height:1.4; }
-.ltp-cancel {
-  background:none;border:0;color:var(--text-dim);font-family:inherit;
-  font-size:12px;cursor:pointer;padding:6px 10px;min-height:32px;
-}
-.ltp-cancel:hover,.ltp-cancel:focus-visible { color:var(--text-primary);outline:none; }
+.landing-overview-btn .ltb-icon { font-size:15px;line-height:1; }
+.landing-overview-btn .ltb-text { color:var(--text-primary); }
+.landing-overview-btn .ltb-sub { font-weight:400;font-size:11.5px; }
+.landing-overview-btn .ltb-chev { opacity:0.6; }
+.landing-expert .landing-overview-btn .ltb-text { color:#e8e6e0; }
+.landing-expert .landing-overview-btn:hover,
+.landing-expert .landing-overview-btn:focus-visible { border-color:#c8922a; }
 
 .landing-footer {
   font-size:10px;color:var(--text-dim);text-align:center;
@@ -1092,14 +1074,12 @@ canvas{
   .landing-expert .landing-card-go{ background:transparent;color:#c8922a; }
   .landing-shell-row{ gap:8px; }
   .landing-shell-btn .ls-desc{ display:none; }   /* name + dot carry it on a phone */
-  /* Tour entry matches the shared column measure; the two options stack so
-     each keeps a full-width 44px target. */
-  .landing-tour-btn{ width:100%;max-width:420px;font-size:14px; }
-  .landing-tour-pick{ max-width:420px; }
-  .ltp-opts{ flex-direction:column; }
-  .ltp-name{ font-size:14px; }
-  .ltp-desc{ font-size:12px; }
-  .ltp-cancel{ font-size:13px;min-height:44px; }
+  /* Overview entry matches the shared column measure. The sub-line wraps
+     under the name rather than squeezing it. */
+  .landing-overview-btn{ width:100%;max-width:420px;font-size:14px;flex-wrap:wrap;
+    padding:9px 16px;row-gap:2px;text-align:left; }
+  .landing-overview-btn .ltb-sub{ order:3;flex-basis:100%;padding-left:25px;font-size:12px; }
+  .landing-overview-btn .ltb-chev{ margin-left:auto; }
   .landing-shell-btn,.landing-card{ width:100%; }
 
   /* Board pickers: keep the brand + name on their own lines, tighten the blurb */
@@ -1454,19 +1434,35 @@ canvas{
   margin:3px 0 15px;letter-spacing:0.02em;
 }
 
-/* The primary action is the only filled, full-width control in the panel. */
-.bmw-play{
-  display:block;width:100%;padding:11px 14px 9px;
+/* The primary action is the only filled control in the panel: the Overview,
+   in Blundermind blue (white on it is 5.2:1 at the light end of the fill). */
+.bmw-ov{
+  display:block;width:100%;padding:13px 14px 11px;
   border:0;border-radius:9px;cursor:pointer;font-family:inherit;
-  background:linear-gradient(180deg,#2f9d5b,#22a85a);
-  color:#fff;box-shadow:0 3px 14px -4px rgba(34,168,90,0.75);
+  background:linear-gradient(180deg,#2a72a6,#24669a);
+  color:#fff;box-shadow:0 3px 14px -4px rgba(36,102,154,0.75);
   transition:filter 0.14s,transform 0.1s,box-shadow 0.14s;
 }
-.bmw-play:hover{filter:brightness(1.08);box-shadow:0 5px 18px -4px rgba(34,168,90,0.85);}
+.bmw-ov:hover{filter:brightness(1.08);box-shadow:0 5px 18px -4px rgba(36,102,154,0.85);}
+.bmw-ov:active{transform:translateY(1px);}
+.bmw-ov:focus-visible{outline:2px solid var(--text-primary);outline-offset:2px;}
+.bmw-ov-t{display:block;font-size:17px;font-weight:700;letter-spacing:0.01em;}
+.bmw-ov-s{display:block;font-size:11px;opacity:0.9;margin-top:2px;}
+
+/* Play a game: the first of the ways straight in, outlined so it never
+   competes with the Overview above it. Theme text on the panel ground, with
+   the green kept to the border, so it reads on light and dark themes alike. */
+.bmw-play{
+  display:block;width:100%;padding:9px 14px 8px;
+  border:1.5px solid #22a85a;border-radius:9px;cursor:pointer;font-family:inherit;
+  background:var(--bg-panel2);color:var(--text-primary);
+  transition:background 0.14s,border-color 0.14s,transform 0.1s;
+}
+.bmw-play:hover{background:var(--bg-panel);border-color:#2fc06c;}
 .bmw-play:active{transform:translateY(1px);}
-.bmw-play:focus-visible{outline:2px solid #fff;outline-offset:2px;}
-.bmw-play-t{display:block;font-size:16px;font-weight:700;letter-spacing:0.01em;}
-.bmw-play-s{display:block;font-size:10.5px;opacity:0.85;margin-top:1px;}
+.bmw-play:focus-visible{outline:2px solid #22a85a;outline-offset:2px;}
+.bmw-play-t{display:block;font-size:14.5px;font-weight:700;letter-spacing:0.01em;}
+.bmw-play-s{display:block;font-size:10.5px;color:var(--text-dim);margin-top:1px;}
 
 /* Mirrors of the sidebar's quick-start selects — the machinery the green
    button runs on, shown rather than hidden behind it. */
@@ -1500,7 +1496,7 @@ canvas{
 }
 .bmw-or span{position:relative;background:var(--bg-panel);padding:0 10px;}
 
-.bmw-grid{display:flex;flex-direction:column;gap:7px;}
+.bmw-grid{display:flex;flex-direction:column;gap:7px;margin-top:12px;}
 .bmw-opt{
   display:grid;grid-template-columns:26px 1fr;grid-template-areas:"i t" "i d";
   gap:0 10px;align-items:center;text-align:left;
@@ -1510,6 +1506,7 @@ canvas{
 }
 .bmw-opt:hover{border-color:var(--accent);background:var(--bg-panel);transform:translateX(2px);}
 .bmw-opt:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.bmw-opt-lead{border-color:var(--accent);}
 .bmw-i{grid-area:i;font-size:19px;line-height:1;text-align:center;}
 .bmw-t{grid-area:t;font-size:12.5px;font-weight:700;color:var(--text-primary);}
 .bmw-d{grid-area:d;font-size:10px;color:var(--text-dim);line-height:1.35;margin-top:1px;}
@@ -1546,17 +1543,117 @@ canvas{
   #bmWelcome{padding:12px 15px 10px;max-height:96vh;}
   .bmw-title{font-size:18px;}
   .bmw-tag{font-size:11px;margin:1px 0 9px;}
-  .bmw-play{padding:8px 12px;}
-  .bmw-play-t{font-size:14px;}
+  .bmw-ov{padding:9px 12px;}
+  .bmw-ov-t{font-size:15px;}
+  .bmw-ov-s{display:none;}
+  .bmw-play{padding:7px 12px;}
+  .bmw-play-t{font-size:13.5px;}
   .bmw-play-s{display:none;}
   .bmw-quick{margin-top:6px;}
   .bmw-or{margin:9px 0 7px;}
-  .bmw-grid{gap:5px;}
+  .bmw-grid{gap:5px;margin-top:8px;}
   .bmw-opt{padding:7px 10px;grid-template-areas:"i t";align-items:center;}
   .bmw-d{display:none;}
   .bmw-more{margin-top:9px;padding-top:8px;}
   .bmw-foot{margin-top:7px;}
 }
+
+/* ── Overview (both front doors) ───────────────────────────────────────────
+   A page over the door it was opened from: above the landing (5000) and the
+   welcome (5001), below the bot modal (6000) that its Bot Builder tour opens.
+   Two columns, one per board, each in that board's own accent — Blundermind
+   blue, Build-A-Bot amber — so the split the page explains is the split you
+   see. Theme colours by default; the carbon palette when it opens over the
+   Expert landing (.bmo-expert), so it does not flash a light card over it. */
+#bmOverview{
+  position:fixed;inset:0;z-index:5600;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  background:rgba(8,14,22,0.72);
+  display:flex;align-items:flex-start;justify-content:center;
+  padding:max(24px,4vh) 16px 24px;
+  animation:bmwFade 0.25s ease both;
+  /* Fills carry white text (5.2:1 and 5.4:1). Accent TEXT needs its own
+     shade per ground: dark on the light themes, bright on dark ones. */
+  --bmo-bm:#2a72a6;--bmo-bab:#8f6216;
+  --bmo-bm-t:#1f5a85;--bmo-bab-t:#6a4a10;
+}
+#bmOverview.bmo-dark,#bmOverview.bmo-expert{--bmo-bm-t:#6ab4e8;--bmo-bab-t:#e0a640;}
+#bmOverview[hidden]{display:none;}
+.bmo-card{
+  position:relative;width:100%;max-width:880px;margin:auto 0;
+  background:var(--bg-panel);color:var(--text-primary);
+  border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 18px 60px -12px rgba(5,15,25,0.65);
+  padding:22px 26px 18px;
+}
+.bmo-x{
+  position:absolute;top:10px;right:12px;width:32px;height:32px;line-height:1;
+  border:0;background:transparent;color:var(--text-dim);font-size:17px;
+  cursor:pointer;border-radius:6px;
+}
+.bmo-x:hover{color:var(--text-primary);background:var(--bg-panel2);}
+.bmo-title{font-size:26px;font-weight:700;letter-spacing:-0.02em;line-height:1.1;}
+.bmo-lede{margin:6px 0 18px;font-size:13.5px;color:var(--text-secondary);line-height:1.5;}
+.bmo-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.bmo-col{
+  display:flex;flex-direction:column;
+  padding:16px 18px;border-radius:10px;background:var(--bg-panel2);
+  border:1px solid var(--border);border-top:3px solid var(--bmo-c);
+}
+.bmo-bm {--bmo-c:var(--bmo-bm); --bmo-ct:var(--bmo-bm-t);}
+.bmo-bab{--bmo-c:var(--bmo-bab);--bmo-ct:var(--bmo-bab-t);}
+.bmo-brand{font-size:19px;font-weight:700;letter-spacing:-0.01em;}
+.bmo-acc{color:var(--bmo-ct);}
+.bmo-kind{
+  font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;
+  color:var(--bmo-ct);margin:2px 0 8px;
+}
+.bmo-col p{margin:0 0 9px;font-size:13px;line-height:1.55;color:var(--text-secondary);}
+.bmo-col p b{color:var(--text-primary);}
+/* Actions sit at the foot of each column, so the two Go buttons line up
+   however long either description runs. */
+.bmo-acts{margin-top:auto;padding-top:6px;display:flex;flex-direction:column;gap:8px;}
+.bmo-go{
+  display:block;width:100%;padding:10px 14px 9px;border:0;border-radius:9px;
+  background:var(--bmo-c);color:#fff;cursor:pointer;font-family:inherit;text-align:left;
+  transition:filter 0.14s,transform 0.1s;
+}
+.bmo-go:hover{filter:brightness(1.1);}
+.bmo-go:active{transform:translateY(1px);}
+.bmo-go:focus-visible{outline:2px solid var(--text-primary);outline-offset:2px;}
+.bmo-go-t{display:block;font-size:15px;font-weight:700;}
+.bmo-go-s{display:block;font-size:11.5px;opacity:0.92;margin-top:1px;line-height:1.35;}
+.bmo-tour{
+  width:100%;min-height:44px;padding:8px 12px;border-radius:9px;
+  border:1px solid var(--bmo-c);background:transparent;color:var(--text-primary);
+  font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;text-align:left;
+  transition:background 0.14s;
+}
+.bmo-tour:hover{background:var(--bg-panel);}
+.bmo-tour:focus-visible{outline:2px solid var(--bmo-c);outline-offset:2px;}
+.bmo-back{
+  display:block;margin:14px auto 0;padding:8px 16px;min-height:40px;border:0;
+  background:transparent;color:var(--text-dim);font-family:inherit;font-size:12.5px;
+  cursor:pointer;border-radius:6px;
+}
+.bmo-back:hover{color:var(--text-primary);}
+#bmOverview.bmo-expert .bmo-card{background:#16191e;border-color:rgba(255,255,255,0.10);color:#e8e6e0;}
+#bmOverview.bmo-expert .bmo-col{background:#1d2127;border-color:rgba(255,255,255,0.08);border-top-color:var(--bmo-c);}
+#bmOverview.bmo-expert .bmo-lede,
+#bmOverview.bmo-expert .bmo-col p{color:#a8b0bd;}
+#bmOverview.bmo-expert .bmo-col p b,
+#bmOverview.bmo-expert .bmo-tour{color:#e8e6e0;}
+#bmOverview.bmo-expert .bmo-x,
+#bmOverview.bmo-expert .bmo-back{color:#8a93a3;}
+#bmOverview.bmo-expert .bmo-tour:hover{background:#22262d;}
+@media (max-width:760px){
+  #bmOverview{padding:10px 10px 16px;}
+  .bmo-card{padding:18px 15px 12px;border-radius:10px;}
+  .bmo-title{font-size:22px;}
+  .bmo-lede{font-size:13px;margin-bottom:14px;}
+  .bmo-cols{grid-template-columns:1fr;gap:12px;}
+  .bmo-col{padding:14px 14px;}
+}
+@media (prefers-reduced-motion:reduce){ #bmOverview{animation:none;} }
 
 #board-canvas-wrap { position:relative;display:inline-block;flex-shrink:0; }
 
@@ -2894,7 +2991,14 @@ body.pro-mode #proSide{
 }
 .pro-meta{ flex:1;min-width:0; }
 .pro-name{ font-family:var(--pfu);font-size:12px;font-weight:500;color:var(--pt1);height:15px; }
-.pro-rating{ font-family:var(--pfm);font-size:9px;color:var(--ptd);margin-top:1px;height:12px; }
+/* The rating rides on the name's line, not a line of its own. Under the name
+   it made the bot's row 11px taller than yours as soon as the material lines
+   appeared, so the pair stopped matching and the board moved mid-game. On the
+   line, a long name gives way first (it shrinks to an ellipsis) and the
+   rating keeps its few characters, up to most of the line. */
+.pro-nameline{ display:flex;align-items:baseline;gap:7px;min-width:0; }
+.pro-nameline .pro-name{ flex:0 1 auto;min-width:0; }
+.pro-rating{ font-family:var(--pfm);font-size:11px;color:var(--ptd);flex:0 0 auto;max-width:60%; }
 .pro-clock{
   font-family:var(--pfm);font-size:19px;font-weight:500;letter-spacing:0.04em;
   color:var(--pt2);padding:3px 12px;border-radius:4px;background:var(--pc);
@@ -3104,21 +3208,21 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
          the moment the board style changed — the Solo blurb promised hover
          overlays that Expert deliberately does not draw. -->
 
+    <!-- Bot builder. First, and the full width of the row: building a bot is
+         what this site has that others do not, so it leads, above exploring
+         and 2-player. One label on both boards — the card names building, so
+         "Play a bot" under it would contradict its own title. -->
+    <div class="landing-card green-card lc-primary" onclick="landingChoose('bot')">
+      <div class="landing-card-icon">🤖</div>
+      <div class="landing-card-title">Build a Customized Bot</div>
+      <div class="landing-card-go">Create custom bot</div>
+    </div>
+
     <!-- Solo / Explore -->
     <div class="landing-card" onclick="landingChoose('solo')">
       <div class="landing-card-icon">🔍</div>
       <div class="landing-card-title">Solo Play &amp; Explore</div>
       <div class="landing-card-go">Start exploring</div>
-    </div>
-
-    <!-- vs Bot -->
-    <div class="landing-card green-card" onclick="landingChoose('bot')">
-      <div class="landing-card-icon">🤖</div>
-      <div class="landing-card-title">Bot Builder</div>
-      <!-- Build-a-Bot arrives here to BUILD, not to pick a stock opponent, so
-           the card names that. Same dual-label pattern as the wordmark. -->
-      <div class="landing-card-go"><span class="lg-bm">Play a bot</span><span
-           class="lg-bab">Create custom bot</span></div>
     </div>
 
     <!-- 2 Player. Kept as .landing-card with the mp onclick: the local-server
@@ -3165,11 +3269,16 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     </div>
   </div>
 
-  <!-- One compact line rather than a fifth card: the tour is a helper, not a
-       destination, and the cards above are what people came to click. -->
-  <button type="button" class="landing-tour-btn" onclick="landingTourPick(true)">
-    <span class="ltb-icon">🧭</span>
-    <span class="ltb-text">Take a guided tour</span>
+  <!-- One compact line rather than another card: orientation is a helper, not
+       a destination, and the cards above are what people came to click. It
+       opens the Overview (#bmOverview), which describes both boards and holds
+       the way into each and a tour of each. It used to start a tour directly,
+       but a tour explains one board's buttons, and a first-time visitor does
+       not yet know which board they came for. -->
+  <button type="button" class="landing-overview-btn" onclick="bmOverviewOpen()">
+    <span class="ltb-icon">📖</span>
+    <span class="ltb-text">Overview &middot; Getting Started</span>
+    <span class="ltb-sub">What each board is for, and a tour of each</span>
     <span class="ltb-chev">→</span>
   </button>
 
@@ -3191,23 +3300,6 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     </div>
   </div>
 
-  <!-- Which tour. Hidden until asked for; the two halves are the two things
-       this site actually is, so the choice is the product's own split. -->
-  <div class="landing-tour-pick" id="landingTourPick" hidden>
-    <div class="ltp-head">Which one first?</div>
-    <div class="ltp-opts">
-      <button type="button" class="ltp-opt" onclick="landingStartTour('board')">
-        <span class="ltp-name">🎓 Visualization board</span>
-        <span class="ltp-desc">What every overlay on the board means.</span>
-      </button>
-      <button type="button" class="ltp-opt" onclick="landingStartTour('bot')">
-        <span class="ltp-name">🤖 Bot-building tools</span>
-        <span class="ltp-desc">How to shape an opponent's personality.</span>
-      </button>
-    </div>
-    <button type="button" class="ltp-cancel" onclick="landingTourPick(false)">Not now</button>
-  </div>
-
   <div class="landing-footer">
     No account · No tracking · <em>Open source</em>
   </div>
@@ -3223,9 +3315,9 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
      it. buildabotchess.com keeps the landing — see the resolver below for why.
 
      On the "too visually confusing" worry: the board at rest is already calm.
-     Every overlay in IND initialises {on:false, pre:true}, i.e. it draws only
-     while a move is being explored, so an untouched board is a plain starting
-     position and nothing else. What actually crowds a first screenshot is the
+     No overlay in IND starts always-on, and only three start "while
+     exploring", so an untouched board is a plain starting position and
+     nothing else. What actually crowds a first screenshot is the
      SIDEBAR — a wall of fourteen overlay toggles. Hence the veil: it dims the
      chrome while #board-canvas-wrap is lifted above it, so the visitor sees a
      clean board and one panel. Nothing is simplified away; it is just quiet
@@ -3238,9 +3330,20 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
   <div class="bmw-title" id="bmwTitle">&#9823; Blunder<span class="bmw-accent">mind</span></div>
   <div class="bmw-tag">Stop getting blundermined.</div>
 
-  <!-- PRIMARY. Starts whatever opponent the sidebar's quick-start block is
-       already holding — Flounder 600 on a first visit — with no builder in the
-       way. The two selects are that block's own selects, mirrored by
+  <!-- PRIMARY. The Overview (#bmOverview) opens over this panel and ✕ comes
+       back to it. A first-time visitor does not yet know the site is two
+       boards and a bot builder, so the page that says so, with a tour of
+       each, is the lead, and the only filled control here. -->
+  <button type="button" class="bmw-ov" onclick="bmOverviewOpen()">
+    <span class="bmw-ov-t">&#128214; Overview &middot; Getting Started</span>
+    <span class="bmw-ov-s">What each board is for, and a tour of each</span>
+  </button>
+
+  <div class="bmw-or"><span>or jump straight in</span></div>
+
+  <!-- Starts whatever opponent the sidebar's quick-start block is already
+       holding — Flounder 600 on a first visit — with no builder in the way.
+       The two selects are that block's own selects, mirrored by
        quickBotSync(): change one and the other moves. The panel therefore
        never starts a game the sidebar cannot account for afterwards. -->
   <button type="button" class="bmw-play" onclick="bmWelcomeChoose('play')">
@@ -3266,9 +3369,14 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
             aria-label="Choose the time control"></select>
   </div>
 
-  <div class="bmw-or"><span>or</span></div>
-
+  <!-- Building a bot leads, above exploring and 2-player — the same order as
+       the landing's cards. -->
   <div class="bmw-grid">
+    <button type="button" class="bmw-opt bmw-opt-lead" onclick="bmWelcomeChoose('bot')">
+      <span class="bmw-i">&#129302;</span>
+      <span class="bmw-t">Build a customized bot</span>
+      <span class="bmw-d">Shape an opponent's personality, then play it</span>
+    </button>
     <button type="button" class="bmw-opt" onclick="bmWelcomeChoose('solo')">
       <span class="bmw-i">&#128269;</span>
       <span class="bmw-t">Explore the board</span>
@@ -3280,15 +3388,9 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <span class="bmw-t">Play a friend</span>
       <span class="bmw-d">Share a link — &ldquo;hang-free&rdquo; 2-player</span>
     </button>
-    <button type="button" class="bmw-opt" onclick="bmWelcomeChoose('bot')">
-      <span class="bmw-i">&#129302;</span>
-      <span class="bmw-t">Build a bot</span>
-      <span class="bmw-d">Shape an opponent's personality, then play it</span>
-    </button>
   </div>
 
   <div class="bmw-more">
-    <button type="button" class="bmw-link" onclick="bmWelcomeChoose('tour')">&#129517; Take a tour</button>
     <button type="button" class="bmw-link" onclick="bmWelcomeChoose('pgn')">&#128193; Load a game</button>
     <button type="button" class="bmw-link"
             onclick="document.getElementById('bmwBotCfgInput').click()">&#9881;&#65039; Load a bot</button>
@@ -3297,6 +3399,70 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
   </div>
 
   <div class="bmw-foot">No account &middot; No tracking &middot; <em>Open source</em></div>
+</div>
+
+<!-- ── Overview ────────────────────────────────────────────────────────────────
+     The orientation entry on both front doors (the landing and the welcome
+     above), in place of starting a tour. A tour explains one board's controls;
+     someone who has just arrived first needs to know what the two halves of the
+     site are and which one they came for. So this is one page describing both,
+     with the way into each and the tour of each. It opens over whichever door
+     it came from, and ✕ / Back / Esc return to that door. Behaviour lives in
+     bmOverviewOpen / bmOverviewGo (60-bot-ui.js). -->
+<div id="bmOverview" hidden role="dialog" aria-modal="true" aria-labelledby="bmoTitle"
+     onclick="if(event.target===this)bmOverviewClose()">
+  <div class="bmo-card">
+    <button type="button" class="bmo-x" onclick="bmOverviewClose()" aria-label="Close the overview">&#10005;</button>
+    <div class="bmo-title" id="bmoTitle">Welcome to Blundermind!</div>
+    <p class="bmo-lede">One site, two boards. They share the same bots, and you can switch between them at any time.</p>
+
+    <div class="bmo-cols">
+      <section class="bmo-col bmo-bm" aria-labelledby="bmoBm">
+        <div class="bmo-brand" id="bmoBm">&#9823; Blunder<span class="bmo-acc">mind</span></div>
+        <div class="bmo-kind">Visualization training</div>
+        <p>A board that draws what a stronger player sees. Thirteen overlays, among
+          them threats, pins, forks, unprotected pieces and weak squares, light up
+          while you explore a move, so you can check what you pictured against
+          what is really on the board.</p>
+        <p>Ghost moves can show the likeliest replies before you commit, and Maia
+          move odds show afterwards how human players weighed the move just played.
+          Play a bot, play a friend online, or just explore.</p>
+        <div class="bmo-acts">
+          <button type="button" class="bmo-go" onclick="bmOverviewGo('blundermind')">
+            <span class="bmo-go-t">Go to Blundermind</span>
+            <span class="bmo-go-s">for visualization training</span>
+          </button>
+          <button type="button" class="bmo-tour" onclick="bmOverviewGo('tour-board')">&#127891; Start tour of Blundermind visualizations</button>
+        </div>
+      </section>
+
+      <section class="bmo-col bmo-bab" aria-labelledby="bmoBab">
+        <div class="bmo-brand" id="bmoBab">&#9822; Build-A-Bot <span class="bmo-acc">Chess</span></div>
+        <div class="bmo-kind">Customized bots</div>
+        <p>Build an opponent instead of picking one. Start with the engine:
+          <b>Maia&nbsp;3</b>, a neural net trained on human games that goes wrong
+          the way people do; <b>Flounder</b>, built on Stockfish and set with a
+          rating dial; or a <b>Hybrid</b> that mixes engines and ratings move by move.</p>
+        <p>Then shape it: a personality that pulls toward the moves it likes within
+          a centipawn budget, an opening repertoire, how long it thinks, and how it
+          cracks under time pressure. Name it, save it, share it, and play it on
+          the pro board, a clean tournament view with no visualization aids.</p>
+        <!-- No way onto the bare pro board from here: on its own it is a plain
+             board that explains nothing. Someone after Build-A-Bot goes
+             straight into the builder (which runs its own tour the first time
+             it opens), or takes the tour of the pro board. -->
+        <div class="bmo-acts">
+          <button type="button" class="bmo-go" onclick="bmOverviewGo('builder')">
+            <span class="bmo-go-t">Go to the Bot Builder</span>
+            <span class="bmo-go-s">build an opponent, then play it on the pro board</span>
+          </button>
+          <button type="button" class="bmo-tour" onclick="bmOverviewGo('tour-pro')">&#127891; Start tour of the pro board</button>
+        </div>
+      </section>
+    </div>
+
+    <button type="button" class="bmo-back" onclick="bmOverviewClose()">&larr; Back</button>
+  </div>
 </div>
 <!-- Open the landing in the style of the visitor's last-chosen board (no flash).
      FIRST VISIT ONLY, the default comes from the domain they arrived on:
@@ -3863,8 +4029,10 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div class="pro-player" id="proPlayerTop">
       <div class="pro-avatar" id="proAvatarTop">♚</div>
       <div class="pro-meta">
-        <div class="pro-name" id="proNameTop">Black</div>
-        <div class="pro-rating" id="proRatingTop"></div>
+        <div class="pro-nameline">
+          <div class="pro-name" id="proNameTop">Black</div>
+          <div class="pro-rating" id="proRatingTop"></div>
+        </div>
         <div class="pro-mat" id="proMatTop"></div>
       </div>
       <div class="pro-clock" id="proClockTop">—</div>
@@ -3889,8 +4057,10 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div class="pro-player active" id="proPlayerBottom">
       <div class="pro-avatar" id="proAvatarBottom">♔</div>
       <div class="pro-meta">
-        <div class="pro-name" id="proNameBottom">White</div>
-        <div class="pro-rating" id="proRatingBottom"></div>
+        <div class="pro-nameline">
+          <div class="pro-name" id="proNameBottom">White</div>
+          <div class="pro-rating" id="proRatingBottom"></div>
+        </div>
         <div class="pro-mat" id="proMatBottom"></div>
       </div>
       <div class="pro-clock" id="proClockBottom">—</div>
@@ -4856,7 +5026,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="s-row bs-vision">
         <span class="s-lbl">Show influence while exploring:</span>
         <span class="s-spacer"></span>
-        <label><input type="checkbox" id="cbInfluenceToggle" checked onchange="render()"> On</label>
+        <label><input type="checkbox" id="cbInfluenceToggle" onchange="saveInfluencePref();render()"> On</label>
       </div>
       <!-- These two used to sit under a "What counts as a threat" heading. They
            are two more board rules among the three above them, and the heading

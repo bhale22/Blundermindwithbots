@@ -135,10 +135,30 @@ describe('landing page layout', { concurrency: 1 }, () => {
     assert.strictEqual(descs, 0, 'the per-card descriptions should be gone');
     const titles = await page.evaluate(() =>
       Array.from(document.querySelectorAll('.landing-card-title')).map((t) => t.textContent.trim()));
-    assert.ok(titles.includes('Bot Builder'),
-      'the bot card should be "Bot Builder" — the action underneath already says "Play a bot"; got '
-        + JSON.stringify(titles));
+    assert.ok(titles.includes('Build a Customized Bot'),
+      'the bot card should be "Build a Customized Bot"; got ' + JSON.stringify(titles));
     await ctx.close();
+  });
+
+  // Building a bot leads: first in the markup, and above Explore and 2-Player
+  // on screen at both widths (full-width row on desktop, first row on a phone).
+  test('the bot builder card sits above Explore and 2-Player', async () => {
+    for (const opts of [{ viewport: { width: 1366, height: 768 } }, { phone: true }]) {
+      const { ctx, page } = await open(opts);
+      const cards = await page.evaluate(() =>
+        Array.from(document.querySelectorAll('.landing-cards .landing-card')).map((c) => ({
+          title: c.querySelector('.landing-card-title').textContent.trim(),
+          bottom: Math.round(c.getBoundingClientRect().bottom),
+          top: Math.round(c.getBoundingClientRect().top),
+        })));
+      const label = opts.phone ? 'phone' : 'desktop';
+      assert.strictEqual(cards[0].title, 'Build a Customized Bot', label + ': bot card should be first');
+      for (const c of cards.slice(1)) {
+        assert.ok(cards[0].bottom <= c.top,
+          label + ': "' + c.title + '" should sit below the bot card');
+      }
+      await ctx.close();
+    }
   });
 
   // The action cards were a centred flex row of fixed-width cards (617px) while
