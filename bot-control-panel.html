@@ -9548,6 +9548,17 @@ window.addEventListener('message', function(e){
   // opening the builder never names a different opponent from the one the
   // Start button beside it is about to play. Nothing else moves: the book,
   // the personality and the clock habits are the builder's and stay put.
+  // The board restored the last bot played in this browser (bmLastBotRestore).
+  // Show that bot here, through the same apply path a saved bot takes, so the
+  // builder opens on the opponent Start is about to play.
+  if(e.data && e.data.type === 'loadConfig' && e.data.config){
+    try{
+      applyBotConfig(e.data.config);
+      updateQsPersonality();
+      updateQsCpBudget();
+      updateQsThinkTime();
+    }catch(err){ console.warn('loadConfig:', err); }
+  }
   if(e.data && e.data.type === 'quickPick'){
     const eng = (e.data.engine === 'maia3') ? 'maia3' : 'stockfish';
     const card = document.querySelector('#engine-mode-grid .mcard[data-engine="' + eng + '"]');

@@ -264,7 +264,9 @@ describe('board tour on a phone', { concurrency: 1 }, () => {
         return {
           exploring: premoveFrom === 6 * 8 + 7 && premoveTo === 5 * 8 + 7 &&
                      !!(h3 && h3.color === 'w' && h3.piece === 'P'),
-          control: !!(shot && shot.querySelector('.ghost-one select')),
+          // Desktop pictures the sidebar control; a phone, the board-vision
+          // panel's ghost row — each where that layout keeps it.
+          control: !!(shot && shot.querySelector('.ghost-one select, .vis-ghost select')),
           ids: shot ? shot.querySelectorAll('[id]').length : -1,
           handlers: shot ? Array.from(shot.querySelectorAll('*')).filter((n) =>
             Array.from(n.attributes).some((a) => /^on/i.test(a.name))).length : -1,
@@ -285,8 +287,10 @@ describe('board tour on a phone', { concurrency: 1 }, () => {
         real.value = '8';
         ghostSyncUI();
         _renderTourStep();
-        const copy = document.querySelector('#tourBody .tour-shot .ghost-one');
-        const r = { on: copy.classList.contains('on'), choice: copy.querySelector('select').value };
+        const copy = document.querySelector('#tourBody .tour-shot .ghost-one, #tourBody .tour-shot .vis-ghost');
+        const on = copy.classList.contains('ghost-one') ? copy.classList.contains('on')
+                                                        : copy.querySelector('.vis-row').classList.contains('exp');
+        const r = { on, choice: copy.querySelector('select').value };
         real.value = '0';
         ghostSyncUI();
         return r;

@@ -904,6 +904,9 @@ async function botStart() {
     }
   }
 
+  // This is the bot that was played, whatever happens to the game.
+  bmLastBotSave();
+
   botActive = false;
   botThinking = false;
   _botGameGen++;   // invalidate any in-flight botMakeMove from the previous game
@@ -1752,6 +1755,47 @@ function _distMoverLabel() {
 function distUpdateVisibility() {
   const panel = document.getElementById('distPanel');
   if (panel) panel.style.display = _distApplicable() ? 'flex' : 'none';
+  distPlace();
+}
+
+// Where the panel sits. Under the board is right for live play, and wrong for
+// a desktop review: the board is sized to fill the window's height, so
+// anything under it starts below the fold — and in review the odds are the
+// thing being read, a step at a time. So a desktop review lifts the panel to
+// the top of the side column, and everything else puts it back at #distHome.
+// Phones keep it under the board, where the column already is the page.
+function distPlace() {
+  const panel = document.getElementById('distPanel');
+  const home  = document.getElementById('distHome');
+  const side  = document.getElementById('sidebar');
+  if (!panel || !home || !side) return;
+  const wide = !window.matchMedia('(max-width:760px)').matches;
+  const want = wide && typeof inReplay !== 'undefined' && inReplay && _distApplicable();
+  if (want && panel.parentNode !== side) {
+    side.insertBefore(panel, side.firstChild);
+    panel.classList.add('dist-side');
+  } else if (!want && panel.parentNode === side) {
+    home.parentNode.insertBefore(panel, home);
+    panel.classList.remove('dist-side');
+  }
+  document.body.classList.toggle('dist-review-side', want);
+}
+window.addEventListener('resize', distPlace);
+
+// Starting a review opens the panel, because the odds are most of what a
+// review is for, and a collapsed header reading "MAIA MOVE ODDS ▼" was easy
+// to scroll straight past. If it was closed before, it closes again when the
+// review ends, so the next game looks the way the player left it.
+let _distAutoOpened = false;
+function distOpenForReview() {
+  if (!_distApplicable()) return;
+  distPlace();
+  if (!_distExpanded) { distToggle(); _distAutoOpened = true; }
+}
+function distEndReview() {
+  if (_distAutoOpened && _distExpanded) distToggle();
+  _distAutoOpened = false;
+  distPlace();
 }
 
 // Snapshot the position BEFORE a move is applied (called from executeMove pre-mutation).
@@ -1960,6 +2004,13 @@ function openBotModal() {
           ready: _maiaReady, progress: _maiaProgress || 0
         }, location.origin);
         frame.contentWindow.postMessage({ type: 'botTourAuto' }, location.origin);
+        // A restored last bot (_panelPushConfig): same once-only repeat, and
+        // before the quick pick, which is applied on top of it.
+        if (window._panelPendingConfig) {
+          const pc = window._panelPendingConfig;
+          window._panelPendingConfig = null;
+          frame.contentWindow.postMessage({ type: 'loadConfig', config: pc }, location.origin);
+        }
         // A quick-block pick made before the iframe was ready: repeat it once,
         // then forget it, so an edit made in here is not overwritten the next
         // time the panel opens.
@@ -2028,9 +2079,18 @@ window.addEventListener('message', function(e) {
     return;
   }
   if (e.data.type !== 'botConfig') return;
-  const cfg = e.data;
+  botApplyPanelConfig(e.data, !!e.data._applyOnly);
+});
+
+// Apply a config in the builder's format — from the builder's Start, a shared
+// link, or the last bot played (bmLastBotRestore). `applyOnly` sets the bot up
+// without starting a game.
+function botApplyPanelConfig(cfg, applyOnly) {
   // Keep the applied config so the pro board's "Save bot" can export it later
   window._lastAppliedBotConfig = cfg;
+  // The builder's config names its own engine and rating, so any quick-block
+  // pick made before it is spent (see bmLastBotSave).
+  window._quickBotLastPick = null;
 
   // Carry the bot's name across, the way the file-load path already does in
   // botApplyConfig. Without this the two apply paths disagreed: a bot opened
@@ -2318,9 +2378,98 @@ window.addEventListener('message', function(e) {
   // visitor has not asked to play yet, and on a first visit this was starting a
   // game silently behind the welcome panel. The flag is set on the synthetic
   // message botCheckShareUrl posts, never on a config that gets saved.
-  if (!e.data._applyOnly) botStart();
-});
+  if (!applyOnly) botStart();
+}
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// THE LAST BOT PLAYED
+// ═══════════════════════════════════════════════════════════════════════════
+// Every visit used to open against Flounder 600, whoever you had been playing:
+// the start-up block applies that quick pick unconditionally, and nothing else
+// was remembered. Now the opponent of the last game started in this browser
+// comes back — the builder's whole config if one was applied (personality,
+// book, timing: everything the builder sent), then any quick-block pick made
+// on top of it, then the colour and the clock that game used.
+//
+// Saved when a game STARTS, not when it ends: a resigned or abandoned game
+// still played that bot. A live game interrupted by a reload is a different
+// thing and has its own snapshot (bm_liveGame), restored after this.
+const BM_LASTBOT_KEY = 'bm_lastBot';
+
+function bmLastBotSave() {
+  try {
+    let cfg = window._lastAppliedBotConfig || null;
+    if (cfg) { cfg = Object.assign({}, cfg); delete cfg._applyOnly; }
+    const tc = TIME_CONTROLS[botSelectedTC];
+    const clock = (botSelectedTC !== 'untimed' && tc && tc.time > 0) ? Object.assign({}, tc) : null;
+    localStorage.setItem(BM_LASTBOT_KEY, JSON.stringify({
+      v: 1,
+      ts: Date.now(),
+      cfg: cfg,
+      pick: window._quickBotLastPick || null,
+      color: botColorPref,
+      clock: clock
+    }));
+  } catch (e) {
+    console.warn('bmLastBotSave failed — next visit will not remember this bot:', e);
+  }
+}
+
+function bmLastBotRestore() {
+  let rec = null;
+  try { rec = JSON.parse(localStorage.getItem(BM_LASTBOT_KEY) || 'null'); } catch (e) { rec = null; }
+  if (!rec || rec.v !== 1) return false;
+  try {
+    if (rec.cfg && rec.cfg.type === 'botConfig') {
+      botApplyPanelConfig(Object.assign({}, rec.cfg), true);
+      _panelPushConfig(rec.cfg);
+      // The start-up pick queued "Flounder 600" for the builder's first
+      // opening; it would overwrite the bot just restored there.
+      window._quickBotPanelPick = null;
+    }
+    if (rec.pick && typeof quickBotPick === 'function') quickBotPick(String(rec.pick), true);
+    if (rec.color) botSetPlayerColor(rec.color);
+    if (rec.clock && rec.clock.time > 0) {
+      botSetBaseMin(Math.round(rec.clock.time / 60));
+      botSetIncSec(rec.clock.inc || 0);
+      // After the two setters, which rebuild the entry without the builder's
+      // bonus-time fields.
+      TIME_CONTROLS.custom = Object.assign({}, rec.clock);
+      botSelectedTC = 'custom';
+    } else {
+      botSetBaseMin(0);
+      botSetIncSec(0);
+    }
+    if (typeof quickBotSync === 'function') quickBotSync();
+    return true;
+  } catch (e) {
+    console.warn('bmLastBotRestore failed:', e);
+    return false;
+  }
+}
+document.addEventListener('DOMContentLoaded', bmLastBotRestore);
+
+// Show the builder the same bot, so opening it never names a different
+// opponent from the one Start is about to play. Its iframe loads alongside the
+// page and may not be listening yet: the push waits for its load if need be,
+// and openBotModal repeats it once on the first opening.
+function _panelPushConfig(cfg) {
+  window._panelPendingConfig = cfg;
+  const f = document.getElementById('botModalFrame');
+  if (!f) return;
+  const send = function () {
+    try { f.contentWindow.postMessage({ type: 'loadConfig', config: cfg }, location.origin); } catch (e) {}
+  };
+  // readyState alone is not enough: before the real document arrives the
+  // frame holds an about:blank that is already "complete".
+  let ready = false;
+  try {
+    ready = f.contentDocument.readyState === 'complete' &&
+            typeof f.contentWindow.applyBotConfig === 'function';
+  } catch (e) {}
+  if (ready) send(); else f.addEventListener('load', send, { once: true });
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SESSION PERSISTENCE — surviving a backgrounded phone
