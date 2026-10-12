@@ -215,7 +215,8 @@ await page.evaluate(k => { IND[k].on = false; IND[k].pre = true; ibUpdateUI(k); 
 console.log('\n9    Grouping');
 const grouping = await page.evaluate(([core, extra]) => {
   const grids = [...document.querySelectorAll('.ind-grid')];
-  const heads = [...document.querySelectorAll('.bv-head')].map(e => e.textContent.trim());
+  // The two overlay groups' headings; ghost replies' own heading is not one.
+  const heads = [...document.querySelectorAll('.bv-head:not(.ghost-head)')].map(e => e.textContent.trim());
   const inGrid = (g, k) => g.contains(document.getElementById('ib-' + k));
   return {
     heads,
@@ -229,13 +230,12 @@ const grouping = await page.evaluate(([core, extra]) => {
       !document.querySelector('.ind-grid').contains(document.getElementById('ib-ghost')),
     // The state key replaces the word chip that used to name each state.
     keyChips: [...document.querySelectorAll('.ind-key-row span')].map(e => e.textContent.trim()),
-    // Settings sits BETWEEN the two groups, not above them.
-    settingsBetween: (() => {
+    // Settings comes AFTER both groups: between them it split one family of
+    // overlays into two blocks that looked like they did different things.
+    settingsAfter: (() => {
       const bs = document.getElementById('bs-open');
       if (!bs || grids.length < 2) return false;
-      const y = bs.getBoundingClientRect().top;
-      return y > grids[0].getBoundingClientRect().top &&
-             y < grids[1].getBoundingClientRect().top;
+      return bs.getBoundingClientRect().top > grids[1].getBoundingClientRect().bottom;
     })(),
     settingsCaption: (document.querySelector('#bs-open .bs-t2') || {}).textContent || '',
     settingsInPanel: ['cbSound', 'cbLegalToggle', 'cbInfluenceToggle', 'cbBattery', 'cbQPins']
@@ -254,7 +254,7 @@ ok('ghost keeps its depth selector', grouping.ghostSel);
 ok('ghost sits outside the overlay grid', grouping.ghostOutsideGrid);
 ok('the state key names all three states', grouping.keyChips.length === 3,
    grouping.keyChips.join(' / '));
-ok('board settings sits between the two groups', grouping.settingsBetween);
+ok('board settings comes after both groups', grouping.settingsAfter);
 ok('the settings button says what is inside', /[Ss]ound/.test(grouping.settingsCaption),
    grouping.settingsCaption);
 ok('all five settings stayed in the panel', grouping.settingsInPanel);
@@ -303,14 +303,14 @@ ok('weakw is "mine" and weakb is "theirs"',
 ok('nothing clips out of any button', pairs.maxClip === 0, 'worst ' + pairs.maxClip + 'px');
 
 console.log('\n9b   Ghost button and selector are one value');
-// Ghost replies moved out of the overlay grid and into Board settings: it is
-// not a board-vision overlay, it is an engine asking what it would play next.
-// The control has to be on screen to be clicked, so open the panel first.
-await page.evaluate(() => openPanel('boardSettingsPanel'));
-await page.waitForTimeout(350);
-ok('the ghost control lives in Board settings now',
-   await page.evaluate(() => !!document.querySelector('#boardSettingsPanel #soloGhostDepth') &&
-                             !document.querySelector('#sidebar #soloGhostDepth')));
+// Ghost replies are not a board-vision overlay — an engine asking what it
+// would play next — so they sit under the overlay grid, not in it. They spent
+// a while inside Board settings and were close to undiscoverable there; they
+// are on screen in the sidebar now, no panel to open.
+ok('the ghost control is in the sidebar, not Board settings',
+   await page.evaluate(() => !document.querySelector('#boardSettingsPanel #soloGhostDepth') &&
+                             !!document.querySelector('#sidebar #soloGhostDepth') &&
+                             !!document.getElementById('ib-ghost').offsetParent));
 const gs = async () => page.evaluate(() => ({
   sel: document.getElementById('soloGhostDepth').value,
   on: document.getElementById('ib-ghost').classList.contains('on'),

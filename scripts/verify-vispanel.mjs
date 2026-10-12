@@ -96,8 +96,11 @@ console.log('\n2    Four states, and "on" always has a chip');
   await page.evaluate(() => visPanelOpen());
   await page.waitForTimeout(300);
 
-  const rows = await page.evaluate(() => document.querySelectorAll('#visList .vis-row').length);
+  // Thirteen overlay rows, then ghost replies in a row of its own (#vis-ghost).
+  const rows = await page.evaluate(() => document.querySelectorAll('#visList > .vis-row').length);
   ok('one row per overlay', rows === 13, String(rows));
+  ok('and a row for ghost replies after them',
+    await page.evaluate(() => !!document.querySelector('#visList > #vis-ghost:last-child .vis-row')));
 
   const cyc = await page.evaluate(() => {
     // Start from unselected whatever the defaults did.
@@ -428,14 +431,16 @@ console.log('\n11   Board settings');
       board: document.getElementById('bsBoardVal').textContent,
       piece: document.getElementById('bsPieceVal').textContent,
       theme: document.getElementById('bsThemeVal').textContent,
-      ghostHere: !!document.querySelector('#boardSettingsPanel #soloGhostDepth'),
-      ghostGone: !document.querySelector('#sidebar #soloGhostDepth'),
+      ghostInPanel: !!document.querySelector('#boardSettingsPanel #soloGhostDepth'),
+      ghostInSidebar: !!document.querySelector('#sidebar #soloGhostDepth'),
     };
   });
   ok('"What counts as a threat" is gone', !g.heads.includes('What counts as a threat'), g.heads.join(' | '));
-  ok('Appearance, Board and Ghost replies are the three groups',
-    JSON.stringify(g.heads) === '["Appearance","Board","Ghost replies"]', JSON.stringify(g.heads));
-  ok('ghost replies moved into the panel', g.ghostHere && g.ghostGone);
+  // Ghost replies came back out to the sidebar (and the phone's board-vision
+  // panel): inside here they were close to undiscoverable.
+  ok('Appearance and Board are the two groups',
+    JSON.stringify(g.heads) === '["Appearance","Board"]', JSON.stringify(g.heads));
+  ok('ghost replies are not in this panel any more', !g.ghostInPanel && g.ghostInSidebar);
   ok('it leaves the left quarter of the screen free', g.left >= g.vw * 0.22,
     g.left + ' of ' + g.vw);
   ok('and the upper third', g.top >= g.vh * 0.30, g.top + ' of ' + g.vh);
@@ -581,7 +586,8 @@ for (const [w, h, label] of [[412, 915, 'phone'], [1440, 900, 'desktop']]) {
     checks: [...document.querySelectorAll('#boardSettingsPanel .s-row')]
       .filter(r => getComputedStyle(r).display !== 'none')
       .map(r => r.querySelector('.s-lbl').textContent.trim().replace(/\?$/, '')),
-    ghost: getComputedStyle(document.querySelector('#boardSettingsPanel .bs-group.bs-vision')).display,
+    ghost: document.querySelector('#boardSettingsPanel #soloGhostDepth') ? 'in panel'
+         : (document.getElementById('ib-ghost').offsetParent ? 'on screen' : 'none'),
     board: document.getElementById('bsBoardVal').textContent,
   }));
   ok(label + ': sound and legal moves are reachable at last',

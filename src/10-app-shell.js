@@ -60,15 +60,26 @@ let botMoveHistory = [];  // UCI move list, e.g. ["e2e4","c7c5",...]
 let botSanHistory  = [];  // SAN move list, e.g. ["e4","c5",...] — for ECO PGN matching
 
 // ── Phase 2: Opening book state ───────────────────────────────────────────────
-// 'none' | 'mainline' | 'loyalty' | 'repertoire'
+// A summary of this game's opening stages for the legacy slide-in panel and
+// the saved session: 'none' | 'mainline' | 'preferred' (repertoire first).
+// Play reads the three flags below, never this.
 let botOpeningMode = 'none';
-// preferredOpeningActive: true from game-start until the played moves no longer
-// match any preferred ECO line. Once false it stays false for that game —
-// the bot falls through to the normal engine path immediately with no network call.
+// The opening runs in stages, in this order, each switched per colour in the
+// builder: the Repertoire (ECO lines), then the Main Line (the explorer's most
+// popular move), then the engine — which may itself sit behind the Lichess
+// book. Each flag starts the game on or off and only ever turns off.
+//
+// preferredOpeningActive: the Repertoire. On until the played moves leave every
+// slot's ECO lines — or, with the Main Line on, until a slot's opening is on
+// the board, so the Main Line carries on from it (see botMakeMove).
 let preferredOpeningActive = false;
-// lichessExplorerActive: true from game-start until the Lichess/Masters explorer
-// returns empty moves (position is off-book). Once false for this game, we skip
-// all explorer network calls and go straight to the engine fallback.
+// mainLineActive: the Main Line. On until the explorer has no move here or the
+// book depth is reached.
+let mainLineActive = false;
+// lichessExplorerActive: the engine's own book ("Lichess Opening Book" in the
+// builder, the lcsf / maia tabs, a blend's book). On until the explorer returns
+// nothing for the position. It used to be switched on by the opening mode, so
+// that book did nothing at all unless Opening Behavior was also on.
 let lichessExplorerActive = false;
 let botOpeningConfig = {
   source: 'masters',       // 'masters' | 'lichess'
@@ -81,11 +92,21 @@ let botOpeningConfig = {
   // repertoire-specific (arrays per color)
   white: [],
   black: [],
-  // per-color opening mode (new panel): 'off' | 'mainline' | 'repertoire'
-  modeWhite: 'off',
-  modeBlack: 'off',
+  // per-colour opening stages (builder): Repertoire, then Main Line. Either,
+  // both or neither. These replace a one-of-three mode per colour
+  // (modeWhite/modeBlack), so the Italian could never lead into the Main Line.
+  repWhite: false,
+  repBlack: false,
+  mainLineWhite: false,
+  mainLineBlack: false,
   strictness: 0.8,
 };
+// Configs and sessions saved before the stages were separate carry one mode per
+// colour — 'off' | 'mainline' | 'repertoire'. Each maps to exactly the stage it
+// used to run, so an old bot plays as it did.
+function botOpeningStagesFromMode(m) {
+  return { rep: m === 'repertoire', mainLine: m === 'mainline' };
+}
 // 0–100: percentage of games where the bot follows its preferred opening.
 // Roll happens in botStart; if skipped, preferredOpeningActive stays false.
 let botOpeningFrequencyPct = 100;
@@ -275,9 +296,18 @@ function resizeBoard() {
       if (el && el.offsetParent !== null) phoneChrome += el.offsetHeight + 8;
     });
   }
+  // A review adds the replay controls to the column, between the board and
+  // the lower clock. Unreserved, they pushed that clock below the fold for the
+  // whole of every review. (Not on the Expert board, which has its own column
+  // and no board-column clocks to protect.)
+  let replayH = 0;
+  const rcEl = document.getElementById('replayControls');
+  if (rcEl && rcEl.offsetParent !== null && !(typeof proMode !== 'undefined' && proMode) && !(stacked && shortVp)) {
+    replayH = rcEl.offsetHeight + 8;
+  }
   const maxFromHeight = stacked
-    ? window.innerHeight - topH - playerH - 8 - phoneChrome
-    : window.innerHeight - topH - playerH - footerH - 12;
+    ? window.innerHeight - topH - playerH - 8 - phoneChrome - replayH
+    : window.innerHeight - topH - playerH - footerH - 12 - replayH;
   const boardPx = Math.max(280, Math.min(maxFromWidth, maxFromHeight, 900));
   const bpx = boardPx + 'px';
   const cv = document.getElementById('cv');
@@ -1125,7 +1155,20 @@ let pinnedInds = [];               // keys, in the order they were added
 // the same as its button in the desktop sidebar.
 const PIN_FIRST_RUN = [['threats',2],['counts',2],['unprotected',2],['pins',1]];
 
+// Ghost replies ride in the same panel and strip as the overlays, with one
+// state fewer: they only ever draw while you explore a move, so there is no
+// "always on". Not in pinnedInds, which everything else here treats as IND
+// keys — a flag of its own, and the on/off is the ghost selector's value.
+let ghostPinned = false;
+
 function visState(key){
+  if(key === 'ghost'){
+    // Running means beside the board, however it was switched on — the
+    // invariant holds by definition rather than by every path remembering it.
+    const on = typeof ghostIsOn === 'function' && ghostIsOn();
+    if(on) return 2;
+    return ghostPinned ? 1 : 0;
+  }
   const ind = IND[key];
   if(!ind || pinnedInds.indexOf(key) < 0) return 0;
   if(ind.on)  return 3;
@@ -1144,11 +1187,13 @@ function pinLabel(key, full){
 function pinSave(){
   const out = {};
   pinnedInds.forEach(function(k){ out[k] = visState(k); });
+  if(ghostPinned) out.ghost = visState('ghost');
   try{ localStorage.setItem(PIN_STORE, JSON.stringify(out)); }catch(e){}
 }
 
 function pinLoad(){
   pinnedInds = [];
+  ghostPinned = false;
   // Desktop keeps the sidebar column, where pinning does not exist and the IND
   // defaults are what a first visit is supposed to see. Only the phone layout
   // takes its state from here.
@@ -1171,13 +1216,21 @@ function pinLoad(){
   }
   entries.forEach(function(pair){
     const k = pair[0], st = pair[1] | 0;
+    if(k === 'ghost'){ ghostPinned = st >= 1; return; }
     if(!IND[k] || !document.getElementById('ib-' + k)) return;   // gone in a later build
     if(st <= 0) return;
     pinnedInds.push(k);
     IND[k].on  = (st === 3);
     IND[k].pre = (st >= 2);
   });
+  // Whether ghosts run is the selector's saved value (ghostLoadPref), not this
+  // store — but anything drawing on the board has a chip beside it.
+  if(typeof ghostIsOn === 'function' && ghostIsOn()) ghostPinned = true;
 }
+
+// Chips beside the board, overlays and ghost together.
+function ghostChipShown(){ return visState('ghost') > 0; }
+function pinCount(){ return pinnedInds.length + (ghostChipShown() ? 1 : 0); }
 
 // ── The chips beside the board ────────────────────────────────────────────
 function pinRender(){
@@ -1205,6 +1258,23 @@ function pinRender(){
     box.appendChild(b);
     ibUpdateUI(k);
   });
+  // The ghost chip: a tap switches ghosts on and off. No hold — there is no
+  // standing drawing to peek behind.
+  if(ghostChipShown()){
+    const g = document.createElement('button');
+    g.type = 'button';
+    g.id = 'pin-ghost';
+    g.className = 'pin-chip';
+    g.textContent = '👻 Ghosts';
+    g.title = 'Ghost replies — tap to switch on or off';
+    g.addEventListener('click', function(){
+      if(ibExplain){ openHelp('ghostresponses'); return; }
+      ghostPinned = true;   // a chip switched off stays beside the board
+      ghostToggle();
+    });
+    box.appendChild(g);
+    visPaintGhost();
+  }
   // Two rows once there are enough chips to fill them; one while there are
   // not, because a half-empty second row is just a taller oval. Four is the
   // threshold because that is two per row — the first count at which a second
@@ -1213,7 +1283,7 @@ function pinRender(){
   // The column count is what makes the grid fill across-then-down rather than
   // down-then-across: ceil(n/2) columns over two rows puts chips 1..k on the
   // top row and the rest underneath, in the order they were pinned.
-  const n = pinnedInds.length;
+  const n = pinCount();
   const twoRow = n >= 4;
   box.style.gridTemplateColumns = twoRow
     ? 'repeat(' + Math.ceil(n / 2) + ', max-content)'
@@ -1224,9 +1294,9 @@ function pinRender(){
     box.classList.toggle('fits', box.scrollWidth <= box.clientWidth + 1);
   });
   const hint = document.getElementById('pinHint');
-  if(hint) hint.hidden = pinnedInds.length > 0;
+  if(hint) hint.hidden = n > 0;
   const lbl = document.querySelector('.pin-lbl');
-  if(lbl) lbl.hidden = pinnedInds.length === 0;
+  if(lbl) lbl.hidden = n === 0;
 }
 
 // ── The panel ─────────────────────────────────────────────────────────────
@@ -1264,7 +1334,113 @@ function visRender(){
     list.appendChild(row);
     visPaintRow(k);
   });
+  list.appendChild(visGhostRow(false));
+  visPaintGhost();
 }
+
+const VIS_GHOST_WORDS = ['', 'beside board', 'exploring'];
+
+// The ghost row: the same row as an overlay's, with the engine-and-depth
+// picker beside it — the choice that, on desktop, sits in the sidebar select.
+// `picture` builds an inert copy for the tour card: no ids, no handlers.
+function visGhostRow(picture){
+  const wrap = document.createElement('div');
+  wrap.className = 'vis-ghost';
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'vis-row';
+  const tick = document.createElement('span');
+  tick.className = 'vis-tick';
+  tick.textContent = '✓';
+  tick.setAttribute('aria-hidden', 'true');
+  const txt = document.createElement('span');
+  txt.className = 'vis-txt';
+  const nm = document.createElement('span');
+  nm.className = 'vis-nm';
+  nm.textContent = '👻 Ghost replies';
+  const st = document.createElement('span');
+  st.className = 'vis-st';
+  txt.appendChild(nm); txt.appendChild(st);
+  row.appendChild(tick); row.appendChild(txt);
+  // Depths only: on and off is the row's own job.
+  const sel = document.createElement('select');
+  sel.className = 'vis-ghost-sel';
+  sel.setAttribute('aria-label', 'Ghost reply engine and depth');
+  const real = document.getElementById('soloGhostDepth');
+  if(real){
+    Array.from(real.options).forEach(function(o){
+      if(o.value === '0') return;
+      const c = document.createElement('option');
+      c.value = o.value; c.textContent = o.textContent;
+      sel.appendChild(c);
+    });
+  }
+  wrap.appendChild(row); wrap.appendChild(sel);
+  if(picture){
+    _visPaintGhostInto(wrap);
+    return wrap;
+  }
+  wrap.id = 'vis-ghost';
+  row.addEventListener('click', visGhostCycle);
+  sel.addEventListener('change', function(){ ghostPickDepth(sel.value); });
+  return wrap;
+}
+
+function _visPaintGhostInto(wrap){
+  const st = visState('ghost');
+  const row = wrap.querySelector('.vis-row');
+  const sel = wrap.querySelector('select');
+  if(row){
+    row.classList.remove('sel','exp','on');
+    if(st >= 1) row.classList.add('sel');
+    if(st === 2) row.classList.add('exp');
+    const w = row.querySelector('.vis-st');
+    // Maia ghosts without the model fall back to Flounder; say so here, where
+    // the choice was made, since the desktop warning box is not on a phone.
+    const noMaia = st === 2 && typeof ghostMode === 'function' && ghostMode() === 'maia' &&
+                   !(typeof _maiaReady !== 'undefined' && _maiaReady);
+    // The desktop's 2-player note is in the sidebar, which a phone hides.
+    const mpLive = st === 2 && typeof ghostEnabled === 'function' && !ghostEnabled();
+    if(w) w.textContent = mpLive ? 'paused in 2-player games'
+                        : noMaia ? 'exploring · Maia not downloaded' : VIS_GHOST_WORDS[st];
+    row.setAttribute('aria-label', 'Ghost replies — ' + (VIS_GHOST_WORDS[st] || 'off'));
+    row.setAttribute('aria-pressed', st >= 1 ? 'true' : 'false');
+  }
+  if(sel){
+    const real = document.getElementById('soloGhostDepth');
+    const v = (real && real.value !== '0') ? real.value : _ghostLastDepth;
+    sel.value = v;
+    // The attribute as well as the property: the tour card is built from
+    // outerHTML, which carries only attributes.
+    Array.from(sel.options).forEach(function(o){ o.toggleAttribute('selected', o.value === v); });
+  }
+}
+
+function visPaintGhost(){
+  const wrap = document.getElementById('vis-ghost');
+  if(wrap) _visPaintGhostInto(wrap);
+  const chip = document.getElementById('pin-ghost');
+  if(chip){
+    chip.classList.remove('on','pre','pressing');
+    if(visState('ghost') === 2) chip.classList.add('pre');
+    chip.setAttribute('aria-label', 'Ghost replies — ' + (visState('ghost') === 2 ? 'on' : 'off'));
+  }
+}
+
+// off → beside board → exploring → off, like an overlay row minus "always on".
+function visGhostCycle(){
+  if(ibExplain){ openHelp('ghostresponses'); return; }
+  const had = pinCount();
+  const next = (visState('ghost') + 1) % 3;
+  ghostPinned = next >= 1;
+  const on = next === 2;
+  if(on !== ghostIsOn()) ghostToggle();   // saves, repaints, and pins
+  pinSave();
+  pinRender();
+  visPaintGhost();
+  if((had === 0) !== (pinCount() === 0) && typeof resizeBoard === 'function') resizeBoard();
+}
+
 
 // Painted from IND by ibUpdateUI, alongside the sidebar button and the chip —
 // one pass, so the three views of a value cannot disagree.
@@ -1286,7 +1462,7 @@ function visPaintRow(key){
 function visCycle(key){
   const ind = IND[key]; if(!ind) return;
   if(ibExplain){ openHelp(key); return; }   // stays armed; see ibExplainToggle
-  const had = pinnedInds.length;
+  const had = pinCount();
   const next = (visState(key) + 1) % 4;
   const i = pinnedInds.indexOf(key);
   if(next === 0){
@@ -1303,7 +1479,7 @@ function visCycle(key){
   indApply();
   // The strip appears with its first chip and goes with its last, and the
   // board is sized around it — but only then, not on every tap.
-  if((had === 0) !== (pinnedInds.length === 0) && typeof resizeBoard === 'function') resizeBoard();
+  if((had === 0) !== (pinCount() === 0) && typeof resizeBoard === 'function') resizeBoard();
 }
 
 // Both footer buttons used to be hold-to-peek utilities in the sidebar. Held
@@ -1312,6 +1488,10 @@ function visCycle(key){
 function visClearAll(){
   pinnedInds.slice().forEach(function(k){ IND[k].on = false; IND[k].pre = false; });
   pinnedInds = [];
+  // Everything off the board means the ghosts too. (Show all leaves them be:
+  // it is "every overlay", and ghosts are an engine's guess, not an overlay.)
+  ghostPinned = false;
+  if(ghostIsOn()) ghostToggle();
   pinSave(); pinRender(); visRender();
   if(typeof ibRefreshAll === 'function') ibRefreshAll();
   indApply();
@@ -1545,6 +1725,14 @@ function syncPhoneBar(){
   const vs = inGame && !isSolo;
   show('pbResign', vs);
   show('pbDraw',   vs);
+  // The moment a game ends, the slot Resign and Draw held carries Rematch and
+  // Review — the sidebar row's end-of-game pair (syncActionRow). That row is
+  // hidden on a phone, and until this bar carried them a finished game on a
+  // phone could not be reviewed at all.
+  const over = typeof gameOver !== 'undefined' && gameOver;
+  show('pbRematch', over);
+  show('pbReview',  over && typeof gameMovesAlgebraic !== 'undefined' &&
+                    gameMovesAlgebraic.length > 0 && !inReplay);
   // Chat follows the chat box itself rather than re-deriving "is this a
   // 2-player game" a fourth time.
   const cb = document.getElementById('chatBox');
@@ -1721,6 +1909,21 @@ function setShell(mode){
   // let the bot panel's Appearance popover know.
   document.querySelectorAll('[data-shell-btn]').forEach(b =>
     b.classList.toggle('active', b.dataset.shellBtn === (proMode ? 'pro' : 'amateur')));
+  // The header switch paints its lit half from body.pro-mode; this is the
+  // same fact for a screen reader.
+  const st = document.getElementById('shellToggle');
+  if(st) st.setAttribute('aria-pressed', proMode ? 'true' : 'false');
+  // A review carried across from the Expert board: the odds panel was off
+  // there, so it holds no position yet. Rebuilding the current step hands it
+  // one without moving the review.
+  if(!proMode && typeof inReplay !== 'undefined' && inReplay &&
+     typeof rebuildToReplayIdx === 'function'){
+    rebuildToReplayIdx(replayIdx);
+    if(typeof distOpenForReview === 'function') distOpenForReview();
+  }
+  // The board reserves room for what its column carries, and the two shells
+  // carry different things (a review's controls, for one).
+  if(typeof resizeBoard === 'function') resizeBoard();
   if (typeof _syncPanelTheme === 'function' && typeof BG_THEMES !== 'undefined') {
     _syncPanelTheme(BG_THEMES[currentBgTheme] || BG_THEMES.navy);
   }
@@ -1744,6 +1947,11 @@ function proApplyBoardClean(){
     boardTheme: (typeof currentBoardTheme !== 'undefined') ? currentBoardTheme : null,
     legal: document.getElementById('cbLegalToggle') ? document.getElementById('cbLegalToggle').checked : null,
     ghost: document.getElementById('soloGhostDepth') ? document.getElementById('soloGhostDepth').value : null,
+    // The overlay choices too. clearAllSelections below used to be a one-way
+    // trip: a visit to the Expert board came back to a Visualization board
+    // with every overlay off — and with the board switch in the header now,
+    // that round trip is one click each way.
+    ind: (typeof IND !== 'undefined') ? _indSnapshot() : null,
   };
   if(typeof applyBoardTheme === 'function') applyBoardTheme('slate');
   const lg = document.getElementById('cbLegalToggle'); if(lg) lg.checked = false;
@@ -1758,6 +1966,13 @@ function proRestoreBoard(){
   const lg = document.getElementById('cbLegalToggle'); if(lg && _proSaved.legal != null){ lg.checked = _proSaved.legal; }
   const gh = document.getElementById('soloGhostDepth');
   if(gh && _proSaved.ghost != null){ gh.value = _proSaved.ghost; if(typeof ghostModeChanged === 'function') ghostModeChanged(); }
+  if(_proSaved.ind){
+    Object.keys(_proSaved.ind).forEach(k => {
+      if(IND[k]){ IND[k].on = _proSaved.ind[k].on; IND[k].pre = _proSaved.ind[k].pre; }
+    });
+    if(typeof ibRefreshAll === 'function') ibRefreshAll();
+  }
+  if(typeof ghostSyncUI === 'function') ghostSyncUI();
   _proSaved = null;
   if(typeof indApply === 'function') indApply();   // recompute the amateur indicators
 }
@@ -1949,18 +2164,37 @@ function proSync(){
   // Review is available whenever there are moves and no live game (finished
   // games, but also explore mode after the fact)
   const reviewBtn = document.getElementById('proReviewBtn');
-  if(reviewBtn) reviewBtn.style.display =
-    (!liveGame && !inReplay && typeof gameMovesAlgebraic !== 'undefined' &&
-     gameMovesAlgebraic.length > 0) ? '' : 'none';
+  const canReview = !liveGame && typeof gameMovesAlgebraic !== 'undefined' &&
+                    gameMovesAlgebraic.length > 0;
+  if(reviewBtn) reviewBtn.style.display = (canReview && !inReplay) ? '' : 'none';
+  // Offered during an Expert-board review too: that is when someone finds
+  // they want the odds.
+  const reviewVisBtn = document.getElementById('proReviewVisBtn');
+  if(reviewVisBtn) reviewVisBtn.style.display = canReview ? '' : 'none';
   const saveBotBtn = document.getElementById('proSaveBotBtn');
   if(saveBotBtn) saveBotBtn.style.display = window._lastAppliedBotConfig ? '' : 'none';
 }
 
-// Rematch from the pro idle row — same dispatch as the amateur action button.
-function proRematch(){
+// Rematch from the pro idle row and the phone bar — same dispatch as the
+// amateur action button.
+function gameRematch(){
   if (typeof mpRoomId !== 'undefined' && mpRoomId) mpOfferRematch();
   else if (typeof botActive !== 'undefined' && botActive) botStart();
   else resetGame();
+}
+function proRematch(){ gameRematch(); }
+
+// Review an Expert-board game on the Visualization board: the overlays show
+// what was on the board at each step, and Maia's odds — off on the Expert
+// board by design — say how likely each move was. The bot context is read
+// inside startReplayOfCurrentGame, before the review tears it down, so the
+// odds are read at the opponent's own rating.
+function reviewOnVisualizationBoard(){
+  if(typeof _isLiveGame === 'function' && _isLiveGame()) return;
+  if(typeof setShell === 'function') setShell('amateur');
+  if(typeof bsSyncAppearance === 'function') bsSyncAppearance();
+  if(!inReplay) startReplayOfCurrentGame();
+  if(typeof distOpenForReview === 'function') distOpenForReview();
 }
 
 // Download the last bot config that was actually started, as a shareable file
@@ -2082,13 +2316,13 @@ const TOURS = {
     { sel:'.ind-grid', title:'Try them yourself', indSection:true, explore:true,
       body:'Thirteen overlays — and the fast way to learn them is to press one. <b>Any button in the highlighted panel</b> switches fully on, the board shows what it draws, and its explanation appears here. Go in any order, try as many as you like, then press Next when you have had enough.',
       bodyPhone:'Thirteen overlays — and the fast way to learn them is to press one. <b>Tap any chip above</b> and it switches fully on, the board shows what it draws, and its explanation appears here. Go in any order, try as many as you like, then press Next when you have had enough.' },
-    // The one ghost control is in Board settings, a panel the tour keeps
-    // closed, and ghosts are off until it is used — so this step brings both
-    // halves to the user: a copy of that control in the card, and real ghosts
+    // Ghosts are off until they are switched on, so this step brings both
+    // halves to the user: a picture of the control (the sidebar's on desktop,
+    // the board-vision panel's row on a phone) in the card, and real ghosts
     // drawn on the demo position (see _tourGhostDemoStart).
     { sel:'#cv', title:'Ghost moves', ghostDemo:true, wide:true,
-      body:'Pick up a piece and hover it over a square: after a moment, the bot’s likeliest replies appear as faint “ghost” pieces — outlined blue for its first choice, purple for its second. Ghosts start switched off: turn them on in <b>⚙ Board settings</b>, pictured above, where you also pick the engine.',
-      bodyPhone:'Drag a piece onto a square and hold it there: after a moment, the bot’s likeliest replies appear as faint “ghost” pieces — outlined blue for its first choice, purple for its second. With <b>👆 Tap to confirm</b> on, once they are up you can let go and they stay. Ghosts start switched off: turn them on in <b>⚙ Board settings</b>, pictured above, where you also pick the engine.',
+      body:'Pick up a piece and hover it over a square: after a moment, the bot’s likeliest replies appear as faint “ghost” pieces — outlined blue for its first choice, purple for its second. Ghosts start switched off: turn them on with <b>👻 Ghost replies</b> under the overlay buttons, pictured above, where you also pick the engine.',
+      bodyPhone:'Drag a piece onto a square and hold it there: after a moment, the bot’s likeliest replies appear as faint “ghost” pieces — outlined blue for its first choice, purple for its second. With <b>👆 Tap to confirm</b> on, once they are up you can let go and they stay. Ghosts start switched off: turn them on in the <b>Board vision</b> panel (the <b>+</b> beside the board), pictured above, where you also pick the engine. Switched on, they get a chip beside the board like the overlays.',
       // Only when the demo is on the board; during a game there is none.
       demoNote:'On the board, White is weighing <b>h3</b>, and the ghosts say the bishop takes on f3 or drops back to e6.' },
     { sel:'#distPanel', title:'Maia move odds',
@@ -2515,30 +2749,30 @@ function _tourInert(clone){
   return clone;
 }
 
-// Where ghosts are switched on, pictured: the Ghost replies group copied out of
-// Board settings under a copy of that panel's title, in whatever state the
-// player has it. Built from the real markup, so it cannot drift from it. The ⋯
-// stands for the groups above it in the panel.
+// Where ghosts are switched on, pictured, in whatever state the player has
+// them. Desktop: the sidebar control under its heading, copied from the real
+// markup so it cannot drift. Phone: the board-vision panel's ghost row, built
+// by the same function that builds the real one. The ⋯ stands for what sits
+// above it.
 function _tourGhostShot(){
-  const ctl = document.getElementById('ib-ghost');
-  const group = ctl && ctl.closest('.bs-group');
-  if(!group) return '';
-  const copy = group.cloneNode(true);
-  // The heading and the control only: the multiplayer note and the Maia
-  // download prompt are passing states, not part of where the control is.
-  Array.from(copy.childNodes).forEach(n => {
-    const keep = n.nodeType === 1 &&
-      (n.classList.contains('bs-head') || n.classList.contains('ghost-one'));
-    if(!keep) n.remove();
-  });
-  // A <select>'s current choice is a property, which cloning does not carry.
-  const real = document.getElementById('soloGhostDepth');
-  const sel = copy.querySelector('select');
-  if(real && sel){
-    Array.from(sel.options).forEach((o, i) => o.toggleAttribute('selected', i === real.selectedIndex));
+  let copy, head;
+  if(typeof visIsPhone === 'function' && visIsPhone()){
+    copy = visGhostRow(true);
+    const t = document.getElementById('visTitle');
+    head = (t ? t.textContent : 'Board vision') + '  ·  the + beside the board';
+  } else {
+    const ctl = document.getElementById('ib-ghost');
+    if(!ctl) return '';
+    copy = ctl.cloneNode(true);
+    // A <select>'s current choice is a property, which cloning does not carry.
+    const real = document.getElementById('soloGhostDepth');
+    const sel = copy.querySelector('select');
+    if(real && sel){
+      Array.from(sel.options).forEach((o, i) => o.toggleAttribute('selected', i === real.selectedIndex));
+    }
+    head = 'Under the overlay buttons';
   }
   _tourInert(copy);
-  const title = document.querySelector('#boardSettingsPanel .panel-title');
   const wrap = document.createElement('div');
   wrap.className = 'tour-replica tour-shot';
   wrap.setAttribute('aria-hidden', 'true');
@@ -2546,7 +2780,7 @@ function _tourGhostShot(){
   card.className = 'tour-shot-card';
   const hd = document.createElement('div');
   hd.className = 'tour-shot-hd';
-  hd.textContent = title ? title.textContent : '⚙ Board settings';
+  hd.textContent = head;
   const gap = document.createElement('div');
   gap.className = 'tour-shot-gap';
   gap.textContent = '⋯';
@@ -4714,7 +4948,12 @@ function _quickBotPushToPanel(engine, elo){
   }catch(e){}
 }
 
-function quickBotPick(v){
+// `fromSave`: re-applying the last bot played (bmLastBotRestore), at a moment
+// when the Maia worker has not reported yet — so "not ready" means "not known
+// yet", and the guard below would turn a returning Maia player's opponent
+// into a download prompt. botStart's engine check still warns if the model
+// really is gone.
+function quickBotPick(v, fromSave){
   // Re-selecting the bot already loaded is a no-op, not a reason to rebuild it.
   if(v === '__current'){ quickBotSync(); return; }
   // Already downloading: the option is a progress readout, not a choice.
@@ -4736,12 +4975,13 @@ function quickBotPick(v){
     // The list is only built when the model is ready, but a stale select — one
     // painted before a cache eviction — must not quietly start Stockfish under
     // a Maia label.
-    if(typeof _maiaStatus === 'undefined' || _maiaStatus !== 'ready'){
+    if(!fromSave && (typeof _maiaStatus === 'undefined' || _maiaStatus !== 'ready')){
       quickBotSync();
       if(typeof maiaDownloadModel === 'function') maiaDownloadModel();
       return;
     }
     const mr = parseInt(maiaPick[1], 10);
+    window._quickBotLastPick = 'maia:' + mr;
     // With the builder's book in front, the same engine runs under the
     // book-fronted tab; the book's own rating follows when it is pinned.
     if(typeof botSetTab === 'function') botSetTab(botEngineBook ? 'maia' : 'maia3');
@@ -4754,6 +4994,7 @@ function quickBotPick(v){
   }
   const elo = Math.max(QUICK_FLOUNDER_MIN,
               Math.min(QUICK_FLOUNDER_MAX, parseInt(v, 10) || QUICK_FLOUNDER_DEFAULT));
+  window._quickBotLastPick = String(elo);
   if(typeof botSetTab === 'function') botSetTab(botEngineBook ? 'lcsf' : 'sf');
   const eloEl = document.getElementById('flounderElo');
   if(eloEl){
@@ -4807,6 +5048,25 @@ function ghostSyncUI(){
   sel.disabled = !on;
   const btn = el && el.querySelector('.ib-main');
   if(btn) btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  // The phone's views of the same value: the panel row and the chip.
+  if(typeof visPaintGhost === 'function') visPaintGhost();
+}
+
+// Everything a user-made change to ghosts needs, in one place: repaint every
+// view of it, remember it, tell the engine, and — on a phone — make sure
+// anything drawing has its chip beside the board.
+function _ghostAfterChange(){
+  const sel = document.getElementById('soloGhostDepth');
+  if(sel && sel.value !== '0') _ghostLastDepth = sel.value;
+  if(ghostIsOn() && !ghostPinned && typeof visIsPhone === 'function' && visIsPhone()){
+    ghostPinned = true;
+    if(typeof pinRender === 'function') pinRender();
+    if(typeof resizeBoard === 'function') resizeBoard();
+  }
+  ghostSyncUI();
+  ghostSavePref();
+  if(typeof pinSave === 'function' && typeof visIsPhone === 'function' && visIsPhone()) pinSave();
+  if(typeof ghostModeChanged === 'function') ghostModeChanged();
 }
 
 function ghostToggle(){
@@ -4818,8 +5078,42 @@ function ghostToggle(){
   } else {
     sel.value = (_ghostLastDepth === '0') ? '8' : _ghostLastDepth;
   }
-  ghostSyncUI();
-  if(typeof ghostModeChanged === 'function') ghostModeChanged();
+  _ghostAfterChange();
+}
+
+// The sidebar select (desktop), which carries "Off" as one of its choices.
+function ghostDepthChanged(){ _ghostAfterChange(); }
+
+// The phone panel's picker, which carries depths only: while ghosts are off it
+// chooses the depth they will come back on at, rather than switching them on.
+function ghostPickDepth(v){
+  const sel = document.getElementById('soloGhostDepth');
+  if(!sel || !v || v === '0') return;
+  _ghostLastDepth = v;
+  if(sel.value !== '0') sel.value = v;
+  _ghostAfterChange();
+}
+
+// Remembered across visits, like the overlays. Written only from the user's
+// own changes — never from the Expert board's clean slate or the tour's demo,
+// which set the selector for a while and put it back.
+function ghostSavePref(){
+  const sel = document.getElementById('soloGhostDepth');
+  if(!sel) return;
+  try{
+    localStorage.setItem('bm_ghost', sel.value);
+    localStorage.setItem('bm_ghostLast', _ghostLastDepth);
+  }catch(e){}
+}
+
+function ghostLoadPref(){
+  const sel = document.getElementById('soloGhostDepth');
+  if(!sel) return;
+  let v = null, last = null;
+  try{ v = localStorage.getItem('bm_ghost'); last = localStorage.getItem('bm_ghostLast'); }catch(e){}
+  const valid = function(x){ return x != null && Array.from(sel.options).some(function(o){ return o.value === x; }); };
+  if(valid(last) && last !== '0') _ghostLastDepth = last;
+  if(valid(v)) sel.value = v;
 }
 
 // ── Show All button — hold to see board with every indicator active ──────────
@@ -5168,6 +5462,8 @@ function parsePgnAndStartReplay(pgnText){
   if(rc) rc.style.display='block';
   // Position-only PGNs open at the position itself; games open at move 0
   rebuildToReplayIdx(tokens.length?0:0);
+  if(typeof distOpenForReview==='function') distOpenForReview();
+  if(typeof resizeBoard==='function') resizeBoard();
   updatePlayerBoxes();
 }
 function replayStep(delta){
@@ -5230,6 +5526,8 @@ function updateReplayInfo(){
 function exitReplay(){
   inReplay=false;replayMoves=[];replayIdx=0;replayBaseFen=null;
   document.getElementById('replayControls').style.display='none';
+  if(typeof distEndReview==='function') distEndReview();
+  if(typeof resizeBoard==='function') resizeBoard();
   resetGame();
 }
 
@@ -5238,6 +5536,8 @@ function _exitReplayKeepBoard(){
   inReplay=false;replayMoves=[];replayIdx=0;replayBaseFen=null;
   const rc=document.getElementById('replayControls');
   if(rc) rc.style.display='none';
+  if(typeof distEndReview==='function') distEndReview();
+  if(typeof resizeBoard==='function') resizeBoard();
 }
 
 // ── Live-game abandonment guard ──────────────────────────────────────────────
@@ -5324,7 +5624,11 @@ function startReplayOfCurrentGame(){
   const rc=document.getElementById('replayControls');
   if(rc) rc.style.display='block';
   rebuildToReplayIdx(moves.length);
+  if(typeof distOpenForReview==='function') distOpenForReview();
+  if(typeof resizeBoard==='function') resizeBoard();   // room for the replay controls
   updatePlayerBoxes();
+  // The end-of-game buttons (Review among them) give way to the review.
+  if(typeof updateActionBtn==='function') updateActionBtn();
 }
 
 // ── Apply a custom starting position to the live game ────────────────────────
@@ -5474,11 +5778,17 @@ function updateCastlingRights(from,to){
 }
 
 // ── Persistence ───────────────────────────────────────────────────────
+function _indSnapshot(){
+  const st={};Object.keys(IND).forEach(k=>{st[k]={on:IND[k].on,pre:IND[k].pre};});
+  return st;
+}
 function savePrefs(){
   localStorage.setItem('bm_boardTheme',currentBoardTheme);
   localStorage.setItem('bm_bgTheme',currentBgTheme);
   localStorage.setItem('bm_pieceSet',currentPieceSet);
-  const st={};Object.keys(IND).forEach(k=>{st[k]={on:IND[k].on,pre:IND[k].pre};});
+  // On the Expert board the live overlays are its cleared slate; the
+  // Visualization board's own choices are the ones parked in _proSaved.
+  const st=(typeof proMode!=='undefined'&&proMode&&_proSaved&&_proSaved.ind)?_proSaved.ind:_indSnapshot();
   localStorage.setItem('bm_ind',JSON.stringify(st));
 }
 function loadPrefs(){

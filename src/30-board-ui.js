@@ -2904,7 +2904,9 @@ loadBoardSettingsPref();
 // The phone furniture. All three no-op above the breakpoint: the tray is a
 // plain sidebar there, and the strip and the bar are display:none.
 // pinLoad() reads the saved overlay states, so it has to run before the first
-// indApply() paints anything.
+// indApply() paints anything. Ghosts are restored first: pinLoad gives a
+// running ghost its chip.
+ghostLoadPref();
 pinLoad();
 pinRender();
 visBindPanel();
@@ -2912,8 +2914,16 @@ syncPhoneBar();
 ibBindHold();
 bsSyncAppearance();
 if(typeof ghostSyncUI === "function") ghostSyncUI();
-// Stockfish 1 is where a first visit should start: the quick block applies it
-// rather than inheriting the builder's own default of 8.
+// A remembered Maia choice needs its worker started, as picking it would.
+// Deferred: ghostModeChanged reaches into 40-engines' state, whose lets are
+// still in their temporal dead zone while this part's start-up runs.
+setTimeout(function(){
+  try{ if(ghostIsOn()) ghostModeChanged(); }catch(e){ console.warn('ghost restore', e); }
+}, 0);
+// Flounder 600 is where a first visit should start: the quick block applies it
+// rather than inheriting the builder's own default. A returning visitor gets
+// the last bot they played instead, on DOMContentLoaded (bmLastBotRestore) —
+// not here, because that path reaches into later parts' lets.
 if(typeof quickBotPick === "function") quickBotPick(String(QUICK_FLOUNDER_DEFAULT));
 loadPos(0);
 resizeBoard();

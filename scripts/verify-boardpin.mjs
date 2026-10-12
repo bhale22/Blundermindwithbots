@@ -74,7 +74,8 @@ console.log('\n1    Every overlay is reachable, and the board is one flick away'
 
   const reach = await page.evaluate(() => {
     const card = document.getElementById('visCard').getBoundingClientRect();
-    const rows = [...document.querySelectorAll('#visList .vis-row')];
+    // The overlays, plus ghost replies' row at the end.
+    const rows = [...document.querySelectorAll('#visList > .vis-row, #vis-ghost .vis-row')];
     const unreachable = [];
     rows.forEach(el => {
       el.scrollIntoView({ block: 'center' });
@@ -84,7 +85,7 @@ console.log('\n1    Every overlay is reachable, and the board is one flick away'
     });
     return { count: rows.length, unreachable };
   });
-  ok('all thirteen overlays are in the panel', reach.count === 13, String(reach.count));
+  ok('all thirteen overlays and ghost replies are in the panel', reach.count === 14, String(reach.count));
   ok('every one is scrollable into view at 44px+', reach.unreachable.length === 0,
      reach.unreachable.join(', '));
 
