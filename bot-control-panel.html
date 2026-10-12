@@ -3446,10 +3446,13 @@ body.fj .picon{font-weight:500;}
           <div class="dlbl"><span>Draws &amp; desperation</span></div>
           <div class="tog-row">
             <div><div class="tog-lbl">Accepts draw offers</div><div class="tog-desc">Accepts your ½ offer unless it thinks it's clearly ahead — judged at its own rating</div></div>
-            <label class="tog"><input type="checkbox" id="cb-draw-accept" onchange="showDrawAccept(this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label>
+            <label class="tog"><input type="checkbox" id="cb-draw-accept" checked onchange="showDrawAccept(this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label>
           </div>
-          <div id="draw-accept-sub" style="display:none;">
-            <div class="ctrl"><span class="ctrl-lbl">Accept margin</span><input type="range" id="r-draw-margin" min="0" max="300" step="10" value="50" oninput="sv(this,'v-draw-margin',v=>v+' cp')"><span class="ctrl-val" id="v-draw-margin">50 cp</span></div>
+          <!-- On by default at 200 cp: a bot takes a draw unless it is more than
+               two pawns' worth ahead. Off, it declined every offer, and off was
+               where every bot started. -->
+          <div id="draw-accept-sub">
+            <div class="ctrl"><span class="ctrl-lbl">Accept margin</span><input type="range" id="r-draw-margin" min="0" max="300" step="10" value="200" oninput="sv(this,'v-draw-margin',v=>v+' cp')"><span class="ctrl-val" id="v-draw-margin">200 cp</span></div>
             <div class="ctrl-hint">Accepts when its <em>perceived</em> advantage is at most this many centipawns. Perception = engine eval blurred to the bot's rating — a 700 misjudges by ±200 cp, a 2400 barely at all. Clock-aware: never accepts while you're about to flag (it's playing for the win on time), and gets far more agreeable when it's the one about to flag. Declines are wordless, like a human's.</div>
           </div>
           <div class="tog-row">
@@ -8747,7 +8750,10 @@ function getBotConfig(){
     })(),
     weaponizerMinSec:    Math.max(0, Math.min(5, parseFloat(document.getElementById('n-wmin')?.value) || 0)),
     acceptDraws:         document.getElementById('cb-draw-accept')?.checked || false,
-    drawAcceptMarginCp:  parseInt(document.getElementById('r-draw-margin')?.value || '50'),
+    drawAcceptMarginCp:  parseInt(document.getElementById('r-draw-margin')?.value || '200'),
+    // Marks a config written with draws on at 200 cp as the default, so a
+    // reader can tell an old untouched "off, 50 cp" from a chosen one.
+    drawDefaults:        2,
     offerDraws:          document.getElementById('cb-draw-offer')?.checked  || false,
     offerDrawThreshCp:   parseInt(document.getElementById('r-draw-offer-thresh')?.value || '50'),
     offerDrawFromMove:   parseInt(document.getElementById('r-draw-offer-move')?.value   || '20'),
@@ -9020,10 +9026,14 @@ function applyBotConfig(cfg){
 
   // Draw behaviour + desperation
   grp(() => {
-    _setTog('cb-draw-accept', cfg.acceptDraws, showDrawAccept);
+    // An old config still on the old untouched default (off, 50 cp) takes the
+    // new one — the app reads it the same way (botApplyPanelConfig).
+    const _oldDrawDefault = !(cfg.drawDefaults >= 2) && !cfg.acceptDraws &&
+                            (cfg.drawAcceptMarginCp == null || +cfg.drawAcceptMarginCp === 50);
+    _setTog('cb-draw-accept', _oldDrawDefault ? true : (cfg.acceptDraws !== undefined ? cfg.acceptDraws : true), showDrawAccept);
     _setTog('cb-draw-offer',  cfg.offerDraws,  showDrawOffer);
     _setTog('cb-stale-seek',  cfg.staleSeek,   showStaleSeek);
-    _setRange('r-draw-margin',       cfg.drawAcceptMarginCp);
+    _setRange('r-draw-margin',       _oldDrawDefault ? 200 : cfg.drawAcceptMarginCp);
     _setRange('r-draw-offer-thresh', cfg.offerDrawThreshCp);
     _setRange('r-draw-offer-move',   cfg.offerDrawFromMove);
     _setRange('r-stale-move',        cfg.staleSeekFromMove);
@@ -12473,7 +12483,7 @@ const PERS_CONFIRMS = {
   drawmeister: { title:'½ The Drawmeister', items:[
     'Drawish attractors: simplify, trade down, fortress up',
     'Offers draws in level positions (from move 20, within ±50 cp)',
-    'Accepts your draw offers unless clearly ahead (50 cp margin)',
+    'Accepts your draw offers unless well ahead (300 cp margin — every bot accepts within 200)',
     'Opening repertoire → solid lines (London, Exchange Slav, Four Knights; Petroff, Berlin, Slav)',
   ]},
 };
@@ -12642,7 +12652,9 @@ function _applyPersonality(id){
   if(id === 'drawmeister'){
     _setTog('cb-draw-accept', true, showDrawAccept);
     _setTog('cb-draw-offer',  true, showDrawOffer);
-    _setRange('r-draw-margin', 50);
+    // The draw specialist takes one from further ahead than an ordinary bot
+    // (200 cp) — at its old 50 it was the least agreeable bot of all.
+    _setRange('r-draw-margin', 300);
     _setRange('r-draw-offer-thresh', 50);
     _setRange('r-draw-offer-move', 20);
     repSlots.white = [

@@ -2673,6 +2673,7 @@ body.pro-mode .bs-vision{ display:none !important; }
 #board-col > #board-canvas-wrap{ order: 3; }
 #board-col > #boardInputRow    { order: 4; }
 #board-col > #replayControls   { order: 5; }
+#board-col > #proPostGame      { order: 6; }   /* Expert board only; after the replay controls */
 #board-col > #playerBoxW       { order: 6; }
 #board-col > #pinStrip         { order: 7; }
 #board-col > #phoneBar         { order: 8; }
@@ -3152,6 +3153,15 @@ body.pro-mode #proSide{
 .pro-actions.pro-idle{ flex-wrap:wrap; }
 .pro-actions.pro-idle .pro-abtn{ flex:1 1 45%; }
 .pro-actions.pro-idle .pro-abtn.pro-wide{ flex:1 1 100%; }
+/* The end-of-game row under the board (#proPostGame): the board's width, one
+   row while it fits, the long label taking the most room. */
+body:not(.pro-mode) #proPostGame{ display:none !important; }
+body.pro-mode #proPostGame{
+  gap:7px;flex-wrap:wrap;align-items:stretch;
+  width:var(--board-size);max-width:100%;box-sizing:border-box;margin-top:8px;
+}
+#proPostGame .pro-abtn{ flex:1 1 auto; }
+#proPostGame .pro-abtn.pro-wide{ flex:1.6 1 auto; }
 .pro-abtn.accent{ color:var(--pa);border-color:var(--pbd-a); }
 .pro-abtn.accent:hover{ color:var(--pa-bright,#e8aa40); }
 #proResultBar{
@@ -3240,8 +3250,12 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
      the opponent's clock. It belongs directly under your own clock. */
   body.pro-mode #proChipMount      { order:4; }
   body.pro-mode #replayControls    { order:5; }
-  body.pro-mode #proNotationCard   { order:6; }
-  body.pro-mode #proResultBar      { order:7; }
+  /* The result and what to do about it sit with the board, before the move
+     list: the result shares 5 with the replay controls, which are never up
+     at the same time. */
+  body.pro-mode #proResultBar      { order:5; }
+  body.pro-mode #proPostGame       { order:6; }
+  body.pro-mode #proNotationCard   { order:7; }
   body.pro-mode #proIdleActions    { order:8; }
   body.pro-mode #proSide > .pro-actions:not(.pro-idle){ order:9; }
   body.pro-mode #proChatMount      { order:11; }
@@ -3752,6 +3766,19 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <button class="commit-chip" id="commitModeChip" onclick="toggleCommitMode()">✋ Release to move</button>
     </div>
 
+    <!-- Expert board, once a game is over: what to do with the game just
+         played, under the board it was played on. These three used to head
+         the side column's idle grid, which then ran three rows deep past the
+         player's clock. proSync shows the row whenever one of them applies;
+         the Visualization board never shows it (it has its own end-of-game
+         row in the sidebar and on the phone bar). -->
+    <div id="proPostGame" style="display:none;">
+      <div class="pro-abtn accent" id="proRematchBtn" onclick="proRematch()" style="display:none;">↺ Rematch</div>
+      <div class="pro-abtn" id="proReviewBtn" onclick="startReplayOfCurrentGame()" style="display:none;" title="Step through the finished game — and restart play from any position">⏪ Review game</div>
+      <div class="pro-abtn pro-wide" id="proReviewVisBtn" onclick="reviewOnVisualizationBoard()" style="display:none;"
+           title="Step through this game on the Visualization board: the overlays at every move, and Maia’s odds for each move played">📊 Review with overlays &amp; Maia odds</div>
+    </div>
+
     <!-- PGN Replay controls (shown during replay) -->
     <div id="replayControls">
       <div class="replay-row">
@@ -4256,11 +4283,6 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 
     <!-- Idle actions — shown when no game is live (start things, save/load) -->
     <div class="pro-actions pro-idle" id="proIdleActions" style="display:none;">
-      <div class="pro-abtn accent" id="proRematchBtn" onclick="proRematch()" style="display:none;">↺ Rematch</div>
-      <div class="pro-abtn" id="proReviewBtn" onclick="startReplayOfCurrentGame()" style="display:none;" title="Step through the finished game — and restart play from any position">⏪ Review game</div>
-      <!-- Full width, so the pairs below keep their rows. -->
-      <div class="pro-abtn pro-wide" id="proReviewVisBtn" onclick="reviewOnVisualizationBoard()" style="display:none;"
-           title="Step through this game on the Visualization board: the overlays at every move, and Maia’s odds for each move played">📊 Review with overlays &amp; Maia odds</div>
       <div class="pro-abtn" onclick="openBotModal()">🤖 Play / Build Bot</div>
       <div class="pro-abtn" onclick="openPanel('mpPanel')">⚔ 2-Player</div>
       <div class="pro-abtn" onclick="savePgnAs()">💾 Save game</div>

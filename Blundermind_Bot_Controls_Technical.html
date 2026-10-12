@@ -619,7 +619,7 @@ perceived = trueAdv + gauss() × sigma + 0.25 × sigma</div>
   <table>
     <thead><tr><th>Behaviour</th><th>Control</th><th>Rule</th></tr></thead>
     <tbody>
-      <tr><td>Accepts draw offers</td><td>toggle + accept-margin (0–300 cp)</td><td>On your ½ offer the bot accepts iff its perceived advantage ≤ margin. Declines are wordless (a human just plays on — no eval is announced), and a bot that knows it is worse may still decline, hoping for a blunder.</td></tr>
+      <tr><td>Accepts draw offers</td><td>toggle + accept-margin (0–300 cp); on at 200 cp by default</td><td>On your ½ offer the bot accepts iff its perceived advantage ≤ margin — by default, unless it is more than 200 cp ahead. Declines are wordless (a human just plays on — no eval is announced), and a bot that knows it is worse may still decline, hoping for a blunder.</td></tr>
       <tr><td>Offers draws</td><td>toggle + level-band (±cp) + from-move</td><td>After its move, in a position that feels level (|perceived| ≤ band) and past the move threshold, it occasionally offers — never twice within 12 plies.</td></tr>
     </tbody>
   </table>
