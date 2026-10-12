@@ -165,8 +165,11 @@ let botWeaponizerEnabled = false; // weaponizer: fast play when opponent is low 
 let botWeaponizerTriggerMs = 15000; // activate once the opponent's clock is at or below this (ms)
 let botWeaponizerMinMs   = 0;     // floor (ms) on weaponizer move time; 0 = instant, as if pre-moved
 // ── Draw behaviour ───────────────────────────────────────────────────────────
-let botAcceptDraws      = false;  // bot accepts draw offers when not clearly ahead
-let botDrawAcceptMargin = 50;     // accept if bot's advantage ≤ this many cp (engine eval)
+// Bots take a draw unless they are more than 200 cp ahead — Ben, Oct 2026: a
+// bot that refuses a draw in a level position reads as broken, not stubborn.
+// (Builder default and quick start agree; see DRAW_ACCEPT_DEFAULT_CP.)
+let botAcceptDraws      = true;   // bot accepts draw offers when not clearly ahead
+let botDrawAcceptMargin = 200;    // accept if bot's advantage ≤ this many cp (engine eval)
 // Which eval the accept decision reads. A built bot judges the position at its
 // OWN strength (botPerceivedAdvantageCp), noise and all — that is the point of
 // a personality, and at 600 ELO the noise is ~700cp, so the answer is close to
@@ -2171,6 +2174,10 @@ function proSync(){
   // they want the odds.
   const reviewVisBtn = document.getElementById('proReviewVisBtn');
   if(reviewVisBtn) reviewVisBtn.style.display = canReview ? '' : 'none';
+  // Their row under the board is up whenever any of the three is.
+  const postRow = document.getElementById('proPostGame');
+  if(postRow) postRow.style.display =
+    [rematchBtn, reviewBtn, reviewVisBtn].some(b => b && b.style.display !== 'none') ? 'flex' : 'none';
   const saveBotBtn = document.getElementById('proSaveBotBtn');
   if(saveBotBtn) saveBotBtn.style.display = window._lastAppliedBotConfig ? '' : 'none';
 }
@@ -4885,14 +4892,16 @@ function _quickBotPaintSel(sel){
 // engine on every pick, which made the most prominent control on the page a
 // personality eraser.)
 //
-// The one thing set here is draw behaviour on a first visit: a casual opponent
-// takes a draw unless it is genuinely winning (400cp is roughly a clear piece
-// up). Once a builder config has been applied, the builder's own draw settings
-// are the bot's and are left alone.
+// The one thing set here is draw behaviour on a first visit: the opponent takes
+// a draw unless it is more than 200cp ahead (the default every bot now has),
+// judged on the true eval rather than a rating-blurred one. Once a builder
+// config has been applied, the builder's own draw settings are the bot's and
+// are left alone.
+const DRAW_ACCEPT_DEFAULT_CP = 200;
 function _quickBotFirstVisitDefaults(){
   if(window._lastAppliedBotConfig) return;
   botAcceptDraws          = true;
-  botDrawAcceptMargin     = 400;
+  botDrawAcceptMargin     = DRAW_ACCEPT_DEFAULT_CP;
   botDrawUseObjectiveEval = true;
 }
 
@@ -5219,18 +5228,33 @@ function resign() {
   if (mpRoomId || (typeof botActive !== 'undefined' && botActive)) showResignConfirm();
 }
 
+// Every draw button (sidebar, phone bar, Expert board) asks first, the way
+// Resign does: a bot that likes the offer ends the game on the spot.
 function offerDraw() {
+  if (typeof gameOver !== 'undefined' && gameOver) return;
+  const vsBot = typeof botActive !== 'undefined' && botActive;
+  const vsMp  = mpRoomId && mpWs && mpWs.readyState === WebSocket.OPEN;
+  if (!vsBot && !vsMp) return;
+  showDrawConfirm();
+}
+
+// The offer itself, once confirmed.
+function _offerDrawNow() {
+  if (typeof gameOver !== 'undefined' && gameOver) return;
   // Vs a bot: the bot decides based on its draw-behaviour settings
-  if (typeof botActive !== 'undefined' && botActive && !gameOver) {
+  if (typeof botActive !== 'undefined' && botActive) {
     if (typeof botConsiderDrawOffer === 'function') botConsiderDrawOffer();
     return;
   }
   if (!mpRoomId || !mpWs || mpWs.readyState !== WebSocket.OPEN) return;
   mpWs.send(JSON.stringify({ type: 'draw_offer' }));
   mpShowStatus('Draw offered — waiting for response…');
-  // Disable the button for 10 s to prevent spamming
-  const btn = document.querySelector('#gameActions .draw-btn');
-  if (btn) { btn.disabled = true; setTimeout(() => { if (btn) btn.disabled = false; }, 10000); }
+  // Disable every draw button for 10 s to prevent spamming — the phone bar's
+  // and the Expert board's as well as the sidebar's.
+  const btns = [document.querySelector('#gameActions .draw-btn'),
+                document.getElementById('pbDraw'), document.getElementById('proDrawBtn')];
+  btns.forEach(b => { if (b) { b.disabled = true; b.classList.add('disabled'); } });
+  setTimeout(() => btns.forEach(b => { if (b) { b.disabled = false; b.classList.remove('disabled'); } }), 10000);
 }
 
 function mpAcceptDraw() {

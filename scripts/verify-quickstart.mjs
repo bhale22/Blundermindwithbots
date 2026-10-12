@@ -249,7 +249,7 @@ console.log('\n8   Flounder picks still work, and keep what was built');
   ok('the picker rests on it', got.sel === '1400', got.sel);
   ok('an unnamed bot still keeps its personality', got.attrs === 1, String(got.attrs));
   ok('and its pressure curve', got.curveA !== null);
-  ok('casual draw behaviour is kept', got.draws[0] === true && got.draws[1] === 400,
+  ok('casual draw behaviour is kept', got.draws[0] === true && got.draws[1] === 200,   // every bot: accept unless >200 cp ahead
     JSON.stringify(got.draws));
   ok('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
   await ctx.close();

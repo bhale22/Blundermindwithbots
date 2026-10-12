@@ -2233,8 +2233,19 @@ function botApplyPanelConfig(cfg, applyOnly) {
   botBadDayMode     = !!cfg.badDayMode;
 
   // Draw behaviour + stalemate seeking (desperation)
-  botAcceptDraws      = !!cfg.acceptDraws;
-  botDrawAcceptMargin = (cfg.drawAcceptMarginCp != null) ? +cfg.drawAcceptMarginCp : 50;
+  // Draws: accept unless more than 200 cp ahead, by default. A config from
+  // before that default (no drawDefaults marker) that still carries the OLD
+  // untouched default — off, at 50 cp — is read as the default it was, and
+  // gets the new one; anything else in an old config was chosen, and stands.
+  // The builder does the same mapping when it loads one, so its toggle shows
+  // what will run.
+  {
+    const oldDefault = !(cfg.drawDefaults >= 2) && !cfg.acceptDraws &&
+                       (cfg.drawAcceptMarginCp == null || +cfg.drawAcceptMarginCp === 50);
+    botAcceptDraws      = oldDefault ? true : (cfg.acceptDraws !== undefined ? !!cfg.acceptDraws : true);
+    botDrawAcceptMargin = oldDefault ? DRAW_ACCEPT_DEFAULT_CP
+                        : (cfg.drawAcceptMarginCp != null ? +cfg.drawAcceptMarginCp : DRAW_ACCEPT_DEFAULT_CP);
+  }
   // A bot built in the panel judges draws at its own strength unless it says
   // otherwise, so loading one clears the quick-start override.
   botDrawUseObjectiveEval = !!cfg.drawUseObjectiveEval;

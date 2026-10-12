@@ -13,6 +13,11 @@
 //   5  a finished game can be reviewed on a phone (it could not be at all)
 //   6  a desktop review opens Maia's odds where they can be read
 //   7  an Expert-board game can be reviewed on the Visualization board
+//   8  the Expert board's end-of-game buttons sit under the board, and the
+//      side column no longer runs long after a game
+//   9  bots take a draw unless more than 200 cp ahead — by default, from the
+//      builder, and for configs saved under the old default
+//  10  offering a draw asks first, from every draw button
 //
 // Sections 5-7 play a real game against Flounder 600 (one human move, then
 // resign), so they need Stockfish, which loads from the CDN.
@@ -440,6 +445,210 @@ console.log('\n7    An Expert-board game, reviewed on the Visualization board');
   ok('and the odds have the position to read', f.snap && f.expanded && f.parent === 'sidebar', JSON.stringify(f));
   ok('no page errors', errors.length === 0, errors.join('; '));
   await c2.close();
+}
+
+console.log('\n8    Expert board: the end-of-game buttons sit under the board');
+for (const [w, h] of [[1440, 900], [1366, 657]]) {
+  const { ctx, page, errors } = await open({ width: w, height: h, shell: 'pro' });
+  const before = await page.evaluate(() => Math.round(document.getElementById('proSide').scrollHeight));
+  await finishGame(page);
+  const r = await page.evaluate(() => {
+    const row = document.getElementById('proPostGame');
+    const board = document.getElementById('board-canvas-wrap').getBoundingClientRect();
+    const rr = row.getBoundingClientRect();
+    const ids = ['proRematchBtn', 'proReviewBtn', 'proReviewVisBtn'];
+    const side = document.getElementById('proSide');
+    const lastSide = [...side.children].filter(c => c.offsetParent).pop().getBoundingClientRect();
+    const tops = ids.map(id => Math.round(document.getElementById(id).getBoundingClientRect().top));
+    return {
+      shown: getComputedStyle(row).display !== 'none',
+      under: rr.top >= board.bottom - 1 && Math.abs(rr.left - board.left) < 3,
+      width: Math.round(rr.width), boardW: Math.round(board.width),
+      inRow: ids.every(id => row.contains(document.getElementById(id)) && !!document.getElementById(id).offsetParent),
+      oneRow: Math.max(...tops) - Math.min(...tops) < 3,
+      notInSide: ids.every(id => !side.contains(document.getElementById(id))),
+      sideBottom: Math.round(lastSide.bottom), boardBottom: Math.round(board.bottom),
+      sideH: Math.round(side.scrollHeight),
+      over: document.documentElement.scrollHeight - innerHeight,
+    };
+  });
+  ok(w + 'x' + h + ': a row of end-of-game buttons appears after the game', r.shown);
+  ok(w + 'x' + h + ': directly under the board, its width', r.under && Math.abs(r.width - r.boardW) <= 2, JSON.stringify(r));
+  ok(w + 'x' + h + ': Rematch, Review game and Review with overlays are in it', r.inRow);
+  ok(w + 'x' + h + ': on one row', r.oneRow);
+  ok(w + 'x' + h + ': and no longer in the side column', r.notInSide);
+  ok(w + 'x' + h + ': the side column grows by no more than the result line after a game', r.sideH - before <= 60,
+     before + ' → ' + r.sideH);
+  // On a short screen the column is taller than the board before any game;
+  // what matters there is that the game's end does not add to it.
+  if (h >= 900) ok(w + 'x' + h + ': and ends level with the board or above', r.sideBottom <= r.boardBottom + 2,
+     r.sideBottom + ' vs board ' + r.boardBottom);
+  ok(w + 'x' + h + ': the page does not scroll', r.over <= 0, 'over by ' + r.over);
+  ok('no page errors', errors.length === 0, errors.join('; '));
+  // In an Expert-board review the row keeps only what still applies.
+  await page.evaluate(() => startReplayOfCurrentGame());
+  await page.waitForTimeout(200);
+  const rv = await page.evaluate(() => ({
+    row: getComputedStyle(document.getElementById('proPostGame')).display !== 'none',
+    vis: !!document.getElementById('proReviewVisBtn').offsetParent,
+    review: !!document.getElementById('proReviewBtn').offsetParent,
+    rematch: !!document.getElementById('proRematchBtn').offsetParent,
+    over: document.documentElement.scrollHeight - innerHeight,
+  }));
+  ok(w + 'x' + h + ': reviewing on the Expert board, the row offers only the overlay review',
+     rv.row && rv.vis && !rv.review && !rv.rematch, JSON.stringify(rv));
+  ok(w + 'x' + h + ': with the replay controls up, still no scroll', rv.over <= 0, 'over by ' + rv.over);
+  await ctx.close();
+}
+{
+  // The Visualization board never shows it.
+  const { ctx, page } = await open();
+  await finishGame(page);
+  ok('the Visualization board does not show the Expert row',
+     await page.evaluate(() => getComputedStyle(document.getElementById('proPostGame')).display === 'none'));
+  await ctx.close();
+  // Phone, Expert board: result and buttons right under your clock.
+  const { ctx: c2, page: p2 } = await open({ width: 412, height: 915, phone: true, shell: 'pro' });
+  await finishGame(p2);
+  const ph = await p2.evaluate(() => {
+    const y = id => document.getElementById(id).getBoundingClientRect().top;
+    return { clock: y('proPlayerBottom'), result: y('proResultBar'), row: y('proPostGame'), notes: y('proNotationCard'),
+             over: document.documentElement.scrollWidth - innerWidth };
+  });
+  ok('phone, Expert board: your clock, the result, then the buttons, then the move list',
+     ph.clock < ph.result && ph.result < ph.row && ph.row < ph.notes, JSON.stringify(ph));
+  ok('phone, Expert board: no sideways scroll', ph.over <= 0, String(ph.over));
+  await c2.close();
+}
+
+console.log('\n9    Bots take a draw unless more than 200 cp ahead');
+{
+  const { ctx, page, errors } = await open();
+  const d = await page.evaluate(async () => {
+    const f = document.getElementById('botModalFrame');
+    for (let i = 0; i < 40 && typeof f.contentWindow.getBotConfig !== 'function'; i++) await new Promise(r => setTimeout(r, 100));
+    const w = f.contentWindow;
+    const cfg = w.getBotConfig();
+    const out = { start: [botAcceptDraws, botDrawAcceptMargin],
+                  builder: [cfg.acceptDraws, cfg.drawAcceptMarginCp, cfg.drawDefaults] };
+    // An old config on the old untouched default: off, 50 cp, no marker.
+    const old = Object.assign({}, cfg, { acceptDraws: false, drawAcceptMarginCp: 50 });
+    delete old.drawDefaults;
+    botApplyPanelConfig(old, true);
+    out.oldDefault = [botAcceptDraws, botDrawAcceptMargin];
+    w.applyBotConfig(old);
+    out.oldInBuilder = [w.document.getElementById('cb-draw-accept').checked, +w.document.getElementById('r-draw-margin').value];
+    // An old config that chose its margin keeps it.
+    const chosen = Object.assign({}, old, { acceptDraws: true, drawAcceptMarginCp: 120 });
+    botApplyPanelConfig(chosen, true);
+    out.oldChosen = [botAcceptDraws, botDrawAcceptMargin];
+    // A new config that switched accepting off keeps it off.
+    botApplyPanelConfig(Object.assign({}, cfg, { acceptDraws: false, drawAcceptMarginCp: 200, drawDefaults: 2 }), true);
+    out.newOff = botAcceptDraws;
+    // The Drawmeister takes one from further ahead than anyone.
+    w._applyPersonality('drawmeister');
+    out.drawmeister = +w.document.getElementById('r-draw-margin').value;
+    return out;
+  });
+  ok('a fresh page: bots accept draws, up to 200 cp ahead', d.start[0] === true && d.start[1] === 200, JSON.stringify(d.start));
+  ok('the builder starts the same way, and marks it', d.builder[0] === true && d.builder[1] === 200 && d.builder[2] === 2,
+     JSON.stringify(d.builder));
+  ok('an old bot on the old default (off, 50 cp) gets the new one', d.oldDefault[0] === true && d.oldDefault[1] === 200,
+     JSON.stringify(d.oldDefault));
+  ok('and the builder shows it that way', d.oldInBuilder[0] === true && d.oldInBuilder[1] === 200, JSON.stringify(d.oldInBuilder));
+  ok('an old bot whose margin was chosen keeps it', d.oldChosen[0] === true && d.oldChosen[1] === 120, JSON.stringify(d.oldChosen));
+  ok('a new bot set to refuse draws still refuses', d.newOff === false);
+  ok('the Drawmeister accepts from up to 300 cp ahead', d.drawmeister === 300, String(d.drawmeister));
+
+  // The decision itself, either side of the line, on the bot's perceived eval.
+  const decide = async (adv) => {
+    await page.evaluate((adv) => {
+      const c = document.getElementById('botModalFrame').contentWindow.getBotConfig();
+      botApplyPanelConfig(Object.assign(c, { acceptDraws: true, drawAcceptMarginCp: 200, drawDefaults: 2, tcTime: 0 }), true);
+      botStart();
+      window.botPerceivedAdvantageCp = async () => adv;
+      window.botEvalAdvantageCp = async () => adv;
+    }, adv);
+    await page.waitForTimeout(300);
+    await page.evaluate(() => botConsiderDrawOffer());
+    await page.waitForFunction(() => !_botDrawConsidering, null, { timeout: 10000 });
+    return page.evaluate(() => ({ over: gameOver, msg: gameOverMsg }));
+  };
+  const at150 = await decide(150);
+  ok('150 cp ahead: the bot takes the draw', at150.over && /draw|½/i.test(at150.msg), JSON.stringify(at150));
+  const at250 = await decide(250);
+  ok('250 cp ahead: it plays on', !at250.over, JSON.stringify(at250));
+  const atMinus = await decide(-300);
+  ok('behind: it takes the draw', atMinus.over, JSON.stringify(atMinus));
+  ok('no page errors', errors.length === 0, errors.join('; '));
+  await ctx.close();
+}
+
+console.log('\n10   Offering a draw asks first');
+for (const where of ['desktop', 'phone', 'expert']) {
+  const opts = where === 'phone' ? { width: 412, height: 915, phone: true }
+             : where === 'expert' ? { shell: 'pro' } : {};
+  const { ctx, page, errors } = await open(opts);
+  await page.evaluate(() => {
+    quickBotPick('600'); botSetPlayerColor('white'); botStart();
+    // Count offers that actually reach the bot, rather than letting it decide.
+    window.__offers = 0;
+    window.botConsiderDrawOffer = async () => { window.__offers++; };
+  });
+  await page.waitForTimeout(400);
+  const sel = where === 'phone' ? '#pbDraw' : where === 'expert' ? '#proDrawBtn' : '#gameActions .draw-btn';
+  await page.click(sel);
+  await page.waitForTimeout(150);
+  const asked = await page.evaluate(() => {
+    const o = document.getElementById('drawOverlay');
+    const b = document.getElementById('board-canvas-wrap').getBoundingClientRect();
+    const r = o ? o.getBoundingClientRect() : null;
+    return { shown: !!o && getComputedStyle(o).display !== 'none', offers: window.__offers,
+             overBoard: !!r && Math.abs(r.width - b.width) < 3 && Math.abs(r.top - b.top) < 3,
+             text: o ? o.textContent : '' };
+  });
+  ok(where + ': the draw button asks before offering', asked.shown && asked.offers === 0, JSON.stringify(asked));
+  ok(where + ': over the board, like Resign', asked.overBoard);
+  ok(where + ': and says what it will do', /Offer a draw\?/.test(asked.text) && /Cancel/.test(asked.text), asked.text);
+  await page.click('#drawOverlay button:last-child');   // Cancel
+  await page.waitForTimeout(150);
+  const cancelled = await page.evaluate(() => ({ gone: getComputedStyle(document.getElementById('drawOverlay')).display === 'none',
+                                                 offers: window.__offers, live: !gameOver }));
+  ok(where + ': Cancel closes it and offers nothing', cancelled.gone && cancelled.offers === 0 && cancelled.live, JSON.stringify(cancelled));
+  await page.click(sel);
+  await page.waitForTimeout(150);
+  await page.click('#drawOverlay button:first-child');  // Yes
+  await page.waitForTimeout(150);
+  const sent = await page.evaluate(() => ({ gone: getComputedStyle(document.getElementById('drawOverlay')).display === 'none',
+                                            offers: window.__offers }));
+  ok(where + ': Yes makes the offer, once', sent.gone && sent.offers === 1, JSON.stringify(sent));
+  // A game that ends while the question is up takes the question with it.
+  await page.click(sel);
+  await page.waitForTimeout(150);
+  await page.evaluate(() => { gameOver = true; gameOverMsg = 'test'; updatePlayerBoxes(); showRematchBtn(true); });
+  await page.waitForTimeout(150);
+  ok(where + ': the question goes when the game ends under it',
+     await page.evaluate(() => getComputedStyle(document.getElementById('drawOverlay')).display === 'none'));
+  ok(where + ': no page errors', errors.length === 0, errors.join('; '));
+  await ctx.close();
+}
+{
+  // Resign kept its confirm through the shared overlay, and the two never stack.
+  const { ctx, page } = await open();
+  await page.evaluate(() => { quickBotPick('600'); botSetPlayerColor('white'); botStart(); });
+  await page.waitForTimeout(400);
+  const r = await page.evaluate(() => {
+    offerDraw();
+    resign();
+    const vis = id => { const e = document.getElementById(id); return !!e && getComputedStyle(e).display !== 'none'; };
+    const out = { draw: vis('drawOverlay'), resign: vis('resignOverlay'), live: !gameOver };
+    document.querySelector('#resignOverlay button:first-child').click();
+    out.resigned = gameOver && /resigned/.test(gameOverMsg);
+    return out;
+  });
+  ok('Resign still asks first, and replaces an open draw question', !r.draw && r.resign && r.live, JSON.stringify(r));
+  ok('and Yes still resigns', r.resigned);
+  await ctx.close();
 }
 
 await browser.close();
