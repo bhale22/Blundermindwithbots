@@ -5228,18 +5228,33 @@ function resign() {
   if (mpRoomId || (typeof botActive !== 'undefined' && botActive)) showResignConfirm();
 }
 
+// Every draw button (sidebar, phone bar, Expert board) asks first, the way
+// Resign does: a bot that likes the offer ends the game on the spot.
 function offerDraw() {
+  if (typeof gameOver !== 'undefined' && gameOver) return;
+  const vsBot = typeof botActive !== 'undefined' && botActive;
+  const vsMp  = mpRoomId && mpWs && mpWs.readyState === WebSocket.OPEN;
+  if (!vsBot && !vsMp) return;
+  showDrawConfirm();
+}
+
+// The offer itself, once confirmed.
+function _offerDrawNow() {
+  if (typeof gameOver !== 'undefined' && gameOver) return;
   // Vs a bot: the bot decides based on its draw-behaviour settings
-  if (typeof botActive !== 'undefined' && botActive && !gameOver) {
+  if (typeof botActive !== 'undefined' && botActive) {
     if (typeof botConsiderDrawOffer === 'function') botConsiderDrawOffer();
     return;
   }
   if (!mpRoomId || !mpWs || mpWs.readyState !== WebSocket.OPEN) return;
   mpWs.send(JSON.stringify({ type: 'draw_offer' }));
   mpShowStatus('Draw offered — waiting for response…');
-  // Disable the button for 10 s to prevent spamming
-  const btn = document.querySelector('#gameActions .draw-btn');
-  if (btn) { btn.disabled = true; setTimeout(() => { if (btn) btn.disabled = false; }, 10000); }
+  // Disable every draw button for 10 s to prevent spamming — the phone bar's
+  // and the Expert board's as well as the sidebar's.
+  const btns = [document.querySelector('#gameActions .draw-btn'),
+                document.getElementById('pbDraw'), document.getElementById('proDrawBtn')];
+  btns.forEach(b => { if (b) { b.disabled = true; b.classList.add('disabled'); } });
+  setTimeout(() => btns.forEach(b => { if (b) { b.disabled = false; b.classList.remove('disabled'); } }), 10000);
 }
 
 function mpAcceptDraw() {

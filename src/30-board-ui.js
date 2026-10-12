@@ -1724,21 +1724,43 @@ function resignOrReset(){
   if(gameOver){ resetGame(); return; }
   showResignConfirm();
 }
-function showResignConfirm(){
-  let o=document.getElementById('resignOverlay');
+// One confirm, drawn over the board, for the two buttons that end — or offer
+// to end — a game. Both sit beside the controls a player reaches for mid-game,
+// and a stray tap on either used to act at once; a draw offer that a bot
+// accepts ends the game there and then. Built once per id and reused.
+function _showBoardConfirm(id, question, yesLabel, yesBg, onYes, onNo){
+  // One question at a time: two stacked overlays would each hide the other.
+  ['resignOverlay','drawOverlay'].forEach(function(x){
+    if(x !== id){ const e = document.getElementById(x); if(e) e.style.display = 'none'; }
+  });
+  let o=document.getElementById(id);
   if(!o){
     o=document.createElement('div');
-    o.id='resignOverlay';
+    o.id=id;
     o.style.cssText='position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.72);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;border-radius:4px;z-index:50;';
-    o.innerHTML='<div style="color:#f0ede8;font-size:13px;font-weight:600;">Resign this game?</div>'
+    o.innerHTML='<div style="color:#f0ede8;font-size:13px;font-weight:600;">'+question+'</div>'
       +'<div style="display:flex;gap:10px;">'
-      +'<button onclick="confirmResign()" style="padding:6px 18px;background:#c03030;border:none;border-radius:5px;color:#fff;font-size:11px;cursor:pointer;font-weight:600;">Yes, resign</button>'
-      +'<button onclick="cancelResign()" style="padding:6px 18px;background:rgba(255,255,255,0.12);border:0.5px solid rgba(255,255,255,0.3);border-radius:5px;color:#f0ede8;font-size:11px;cursor:pointer;">Cancel</button>'
+      +'<button onclick="'+onYes+'" style="padding:6px 18px;background:'+yesBg+';border:none;border-radius:5px;color:#fff;font-size:11px;cursor:pointer;font-weight:600;">'+yesLabel+'</button>'
+      +'<button onclick="'+onNo+'" style="padding:6px 18px;background:rgba(255,255,255,0.12);border:0.5px solid rgba(255,255,255,0.3);border-radius:5px;color:#f0ede8;font-size:11px;cursor:pointer;">Cancel</button>'
       +'</div>';
     const cv=document.getElementById('cv');
     if(cv&&cv.parentElement){cv.parentElement.style.position='relative';cv.parentElement.appendChild(o);}
   }
   o.style.display='flex';
+}
+function showResignConfirm(){
+  _showBoardConfirm('resignOverlay', 'Resign this game?', 'Yes, resign', '#c03030', 'confirmResign()', 'cancelResign()');
+}
+function showDrawConfirm(){
+  _showBoardConfirm('drawOverlay', 'Offer a draw?', 'Yes, offer a draw', '#2f6f9c', 'confirmDrawOffer()', 'cancelDrawOffer()');
+}
+function cancelDrawOffer(){
+  const o=document.getElementById('drawOverlay');
+  if(o) o.style.display='none';
+}
+function confirmDrawOffer(){
+  cancelDrawOffer();
+  if(typeof _offerDrawNow==='function') _offerDrawNow();
 }
 function cancelResign(){
   const o=document.getElementById('resignOverlay');
@@ -1847,6 +1869,10 @@ function syncActionRow() {
 
   const show = (el, on) => { if (el) el.style.display = on ? '' : 'none'; };
 
+  // A game that ends while a confirm is up (a flag, a mate, the opponent
+  // resigning) leaves nothing for it to ask about.
+  if (gameOver) { cancelResign(); cancelDrawOffer(); }
+
   if (gameOver) {
     show(drawBtn, false); show(resBtn, false);
     btn.textContent = '\u21ba Rematch?';
@@ -1944,7 +1970,7 @@ function resetGame(){
   // of the new game to overwrite it would let a reload before that move
   // restore the game the user just abandoned.
   if(typeof bmSessionClear==='function') bmSessionClear();
-  cancelResign();showRematchBtn(false);clockStop();clockInit(clockControl);
+  cancelResign();cancelDrawOffer();showRematchBtn(false);clockStop();clockInit(clockControl);
   lastMoveFrom=-1;lastMoveTo=-1;_gameStartFen=null;_gameStartSans=[];
   // Every game start funnels through here: kill any lingering replay/review
   // state so the old game's move selector can't hijack the new game's board.

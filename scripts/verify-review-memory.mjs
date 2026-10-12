@@ -17,6 +17,7 @@
 //      side column no longer runs long after a game
 //   9  bots take a draw unless more than 200 cp ahead — by default, from the
 //      builder, and for configs saved under the old default
+//  10  offering a draw asks first, from every draw button
 //
 // Sections 5-7 play a real game against Flounder 600 (one human move, then
 // resign), so they need Stockfish, which loads from the CDN.
@@ -580,6 +581,73 @@ console.log('\n9    Bots take a draw unless more than 200 cp ahead');
   const atMinus = await decide(-300);
   ok('behind: it takes the draw', atMinus.over, JSON.stringify(atMinus));
   ok('no page errors', errors.length === 0, errors.join('; '));
+  await ctx.close();
+}
+
+console.log('\n10   Offering a draw asks first');
+for (const where of ['desktop', 'phone', 'expert']) {
+  const opts = where === 'phone' ? { width: 412, height: 915, phone: true }
+             : where === 'expert' ? { shell: 'pro' } : {};
+  const { ctx, page, errors } = await open(opts);
+  await page.evaluate(() => {
+    quickBotPick('600'); botSetPlayerColor('white'); botStart();
+    // Count offers that actually reach the bot, rather than letting it decide.
+    window.__offers = 0;
+    window.botConsiderDrawOffer = async () => { window.__offers++; };
+  });
+  await page.waitForTimeout(400);
+  const sel = where === 'phone' ? '#pbDraw' : where === 'expert' ? '#proDrawBtn' : '#gameActions .draw-btn';
+  await page.click(sel);
+  await page.waitForTimeout(150);
+  const asked = await page.evaluate(() => {
+    const o = document.getElementById('drawOverlay');
+    const b = document.getElementById('board-canvas-wrap').getBoundingClientRect();
+    const r = o ? o.getBoundingClientRect() : null;
+    return { shown: !!o && getComputedStyle(o).display !== 'none', offers: window.__offers,
+             overBoard: !!r && Math.abs(r.width - b.width) < 3 && Math.abs(r.top - b.top) < 3,
+             text: o ? o.textContent : '' };
+  });
+  ok(where + ': the draw button asks before offering', asked.shown && asked.offers === 0, JSON.stringify(asked));
+  ok(where + ': over the board, like Resign', asked.overBoard);
+  ok(where + ': and says what it will do', /Offer a draw\?/.test(asked.text) && /Cancel/.test(asked.text), asked.text);
+  await page.click('#drawOverlay button:last-child');   // Cancel
+  await page.waitForTimeout(150);
+  const cancelled = await page.evaluate(() => ({ gone: getComputedStyle(document.getElementById('drawOverlay')).display === 'none',
+                                                 offers: window.__offers, live: !gameOver }));
+  ok(where + ': Cancel closes it and offers nothing', cancelled.gone && cancelled.offers === 0 && cancelled.live, JSON.stringify(cancelled));
+  await page.click(sel);
+  await page.waitForTimeout(150);
+  await page.click('#drawOverlay button:first-child');  // Yes
+  await page.waitForTimeout(150);
+  const sent = await page.evaluate(() => ({ gone: getComputedStyle(document.getElementById('drawOverlay')).display === 'none',
+                                            offers: window.__offers }));
+  ok(where + ': Yes makes the offer, once', sent.gone && sent.offers === 1, JSON.stringify(sent));
+  // A game that ends while the question is up takes the question with it.
+  await page.click(sel);
+  await page.waitForTimeout(150);
+  await page.evaluate(() => { gameOver = true; gameOverMsg = 'test'; updatePlayerBoxes(); showRematchBtn(true); });
+  await page.waitForTimeout(150);
+  ok(where + ': the question goes when the game ends under it',
+     await page.evaluate(() => getComputedStyle(document.getElementById('drawOverlay')).display === 'none'));
+  ok(where + ': no page errors', errors.length === 0, errors.join('; '));
+  await ctx.close();
+}
+{
+  // Resign kept its confirm through the shared overlay, and the two never stack.
+  const { ctx, page } = await open();
+  await page.evaluate(() => { quickBotPick('600'); botSetPlayerColor('white'); botStart(); });
+  await page.waitForTimeout(400);
+  const r = await page.evaluate(() => {
+    offerDraw();
+    resign();
+    const vis = id => { const e = document.getElementById(id); return !!e && getComputedStyle(e).display !== 'none'; };
+    const out = { draw: vis('drawOverlay'), resign: vis('resignOverlay'), live: !gameOver };
+    document.querySelector('#resignOverlay button:first-child').click();
+    out.resigned = gameOver && /resigned/.test(gameOverMsg);
+    return out;
+  });
+  ok('Resign still asks first, and replaces an open draw question', !r.draw && r.resign && r.live, JSON.stringify(r));
+  ok('and Yes still resigns', r.resigned);
   await ctx.close();
 }
 
