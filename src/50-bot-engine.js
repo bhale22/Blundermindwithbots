@@ -217,6 +217,8 @@ function _botDrawToast(html, buttons) {
 }
 
 function _botAgreeDraw() {
+  // On Lichess the bot's yes goes to the server, which ends the game.
+  if (typeof lichessGameLive === 'function' && lichessGameLive()) { lichessSendDraw(true); return; }
   gameOver = true;
   gameOverMsg = 'Draw by agreement ½-½';
   if (typeof clockStop === 'function') clockStop();
@@ -263,8 +265,10 @@ const _BOT_DECLINE_LINES = [
 let _botDrawConsidering = false;
 async function botConsiderDrawOffer() {
   if (_botDrawConsidering || gameOver || !botActive) return;
-  const decline = () => _botDrawToast(
-    _BOT_DECLINE_LINES[Math.floor(Math.random() * _BOT_DECLINE_LINES.length)]);
+  const decline = () => {
+    if (typeof lichessGameLive === 'function' && lichessGameLive()) lichessSendDraw(false);
+    _botDrawToast(_BOT_DECLINE_LINES[Math.floor(Math.random() * _BOT_DECLINE_LINES.length)]);
+  };
   if (!botAcceptDraws) { decline(); return; }
   // Opponent is about to flag: instant decline, no thought required — the
   // bot is playing for the win on time.
@@ -309,6 +313,12 @@ async function botMaybeOfferDraw() {
   const band = botOfferDrawThresh + (_botDesperateForDraw() ? 150 : 0);
   if (Math.abs(adv) > band) return;
   _botLastDrawOfferPly = ply;
+  // On Lichess the offer goes to the opponent there; the board only reports it.
+  if (typeof lichessGameLive === 'function' && lichessGameLive()) {
+    lichessSendDraw(true);
+    _botDrawToast('🤖 The bot offers a draw on Lichess.');
+    return;
+  }
   _botDrawToast('🤖 The bot offers a draw.', [
     { label: 'Accept ½-½', fn: _botAgreeDraw },
     { label: 'Decline', fn: () => {} },
