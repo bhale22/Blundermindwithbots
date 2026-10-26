@@ -1501,13 +1501,13 @@ function applyMoveAttractors(moveProbs, opts) {
   // than better, because saturating a number every move shares removes what
   // little separation there was. Every other attractor scores a DELTA. This one
   // does now too.
-  let currentOppThreats = 0;
+  let currentOppThreats = 0, curAtkThreats = null;
   if (hasAttacker) {
-    const curAtk = buildDirectAtk(board, _EMPTY, _EMPTY, _EMPTY, _EMPTY);
+    curAtkThreats = buildDirectAtk(board, _EMPTY, _EMPTY, _EMPTY, _EMPTY);
     for (let sq = 0; sq < 64; sq++) {
       const p = board[sq];
-      if (p && p.color === oppColorStr && curAtk[sq]) {
-        currentOppThreats += (curAtk[sq][botColorStr] || []).length;
+      if (p && p.color === oppColorStr && curAtkThreats[sq]) {
+        currentOppThreats += (curAtkThreats[sq][botColorStr] || []).length;
       }
     }
   }
@@ -1633,10 +1633,14 @@ function applyMoveAttractors(moveProbs, opts) {
       if (isCapture) {
         logBoost += tradeVal * scale * Math.tanh(tradeCtx);
       } else {
-        // Non-capture: score by how many opponent pieces the piece now threatens
+        // Non-capture: score by how many opponent pieces the piece now threatens.
+        // Capped at what a capture scores — offering a trade is never worth more
+        // to a trade seeker than making one. Uncapped, two threats in a
+        // middlegame (one in an endgame, where kf shrinks) outscored a capture.
         const newThreats = getSimToAtk()
           .filter(sq => { const p = getSimBd()[sq]; return p && p.color === oppColorStr; }).length;
-        if (newThreats > 0) logBoost += tradeVal * scale * Math.tanh(tradeCtx * newThreats / kf(2));
+        if (newThreats > 0) logBoost += tradeVal * scale *
+          Math.min(Math.tanh(tradeCtx * newThreats / kf(2)), Math.tanh(tradeCtx));
       }
     }
 
@@ -1687,14 +1691,26 @@ function applyMoveAttractors(moveProbs, opts) {
       }
     }
 
-    // ── Attacker / Peacemaker: threats this move CREATES ────────────────────────
-    // Sums bot-piece attack counts on every opponent piece on the sim board and
-    // subtracts the same count before the move, so the score is what this move
-    // adds rather than what the position already had.
+    // ── Attacker / Peacemaker: captures first, then threats this move CREATES ──
+    // Two tiers. A capture scores 0.5..1.0 and a quiet move −0.5..+0.5, so for
+    // this attractor every capture outranks every quiet move, and among quiet
+    // moves the one that adds the most attacks on enemy pieces wins.
+    //
+    // Scored as a plain attack-count delta, a capture came out at zero or below:
+    // taking a piece deletes every attack the bot had on it. Measured on the
+    // Attacky preset, a free rook ranked 8th of 28 candidates and a free endgame
+    // pawn 7th of 16 — behind moves that merely attacked the same pawn. So a
+    // capture does not lose the attacks on the piece it took (they were cashed
+    // in, not given up); what it keeps or adds from its landing square only
+    // orders captures among themselves.
+    //
+    // Peacemaker is the exact mirror: it avoids captures most of all, then
+    // moves that add attacks. Presets that want calm AND exchanges (Norm,
+    // Hoarder, Drawmeister) use Tension → Defuser instead.
     // buildDirectAtk is called lazily — only when this attractor is active.
     if (hasAttacker) {
       const simBd_ = getSimBd();
-      const simAtk = buildDirectAtk(simBd_, _EMPTY, _EMPTY, _EMPTY, _EMPTY);
+      const simAtk = getSimAtkCC();
       let totalOppThreats = 0;
       for (let sq = 0; sq < 64; sq++) {
         const p = simBd_[sq];
@@ -1702,8 +1718,16 @@ function applyMoveAttractors(moveProbs, opts) {
           totalOppThreats += (simAtk[sq][botColorStr] || []).length;
         }
       }
-      logBoost += attackerVal * scale *
-        Math.tanh((totalOppThreats - currentOppThreats) / kf(2));
+      const taken   = board[mv.to];
+      const isCapt  = taken ? taken.color === oppColorStr
+                            : (pieceLetter === 'p' && uciMove[0] !== uciMove[2]); // en passant
+      // En passant leaves the taken pawn on the sim board, so nothing to add back.
+      const cashed  = (taken && taken.color === oppColorStr && curAtkThreats[mv.to])
+        ? (curAtkThreats[mv.to][botColorStr] || []).length : 0;
+      const delta   = totalOppThreats - (currentOppThreats - cashed);
+      const tier    = isCapt ? 0.75 + 0.25 * Math.tanh(delta / kf(2))
+                             : 0.5 * Math.tanh(delta / kf(2));
+      logBoost += attackerVal * scale * tier;
     }
 
     // ── Structure: pawn-structure penalty delta (own pawn moves only) ────────

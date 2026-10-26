@@ -249,12 +249,12 @@ argmax (Top move): always picks the single highest-probability move (determinist
       <tr><td>Space Cadet</td><td>Space Waster</td><td>Space Cadet</td><td>Counts weak squares (empty, unattacked) in own camp before/after each candidate using full attack maps. Positive = reduce weak squares; negative = cede space.</td></tr>
       <tr><td>Fort Knox</td><td>Glass Cannon</td><td>Fort Knox</td><td>Sums total defender count across all own pieces. Positive = maximise defensive support; negative = expose pieces aggressively.</td></tr>
       <tr><td>Gambito</td><td>Gambit Shy</td><td>Gambito</td><td>Opening phase only (first 20 moves). Boosts ECO-matched gambit lines; falls back to pawn-sacrifice detection (pawn moving to an opponent-attacked, undefended square).</td></tr>
-      <tr><td>Trade Seeker</td><td>Trade Avoider</td><td>Trade Seeker</td><td>Reweights by capture and threat value. Positive = boost captures and new threats; negative = avoid exchanges.</td></tr>
+      <tr><td>Trade Seeker</td><td>Trade Avoider</td><td>Trade Seeker</td><td>Reweights by capture and threat value. Positive = boost captures and new threats (a threat never scores above a capture); negative = avoid exchanges.</td></tr>
       <tr><td>Structure</td><td>Loose structure</td><td>Rigid structure</td><td>Pawn-structure penalty counted before and after the move (pawn islands, doubled and isolated pawns); only the bot's own pawn moves can change it. Positive = consolidate; negative = open, mobile structure.</td></tr>
       <tr><td>Hustle</td><td>Overthinker</td><td>Coffeehouse Hustler</td><td>Scales think-time allocation: t = base × (1 − v × 0.15). Also feeds directly into the degradation curve input — a hustler at +5 thinks ~0.3 s and sees steep ELO drops.</td></tr>
       <tr><td>Luck</td><td>Good day</td><td>Bad day</td><td>Shifts the sampling window within Maia's ranked list. Positive = sample from the tail (off-form, lower-probability moves); negative = sample from the top of the distribution.</td></tr>
       <tr><td>Panicky</td><td>Calm under pressure</td><td>Panicky</td><td>Scales the steepness of the time-pressure ELO degradation curve. Positive = sharper ELO drop in the final seconds; negative = flat curve regardless of clock.</td></tr>
-      <tr><td>Attacker</td><td>Peacemaker</td><td>Attacker</td><td>Scores by total opponent pieces under attack after the move: score += w × tanh(Σ_threats / 6). Positive = maximise threat coverage; negative = prefer quiet positions.</td></tr>
+      <tr><td>Attacker</td><td>Peacemaker</td><td>Attacker</td><td>Two tiers: captures first, then attacks. Every capture outranks every quiet move; among quiet moves, the one that adds the most attacks on enemy pieces wins. Capture: 0.75 + 0.25 × tanh(Δattacks / 2); quiet: 0.5 × tanh(Δattacks / 2). A capture keeps credit for the attacks on the piece it took. Negative (Peacemaker) avoids captures most, then new threats — for calm that still trades, use Tension → Defuser.</td></tr>
     </tbody>
   </table>
   </div>
@@ -279,12 +279,12 @@ argmax (Top move): always picks the single highest-probability move (determinist
     <thead><tr><th>Name</th><th>Tag</th><th>Character</th></tr></thead>
     <tbody>
       <tr><td>Captain Entropy</td><td>Chaos</td><td>Maximises complexity; keeps complications alive; attacks aggressively. Chaos +4, Gambit +3, Attacker +2.</td></tr>
-      <tr><td>Norm</td><td>Order</td><td>Prefers closed, simplified positions. Chaos −4, Complicate −4, Structure +4.</td></tr>
-      <tr><td>Attacky McTackerson</td><td>Captures</td><td>Favours captures and threats within the cp ceiling. Trade +4, Attacker +3.</td></tr>
+      <tr><td>Norm</td><td>Order</td><td>Prefers closed, simplified positions. Chaos −4, Complicate −4, Structure +4, Defuser −2.</td></tr>
+      <tr><td>Attacky McTackerson</td><td>Captures</td><td>Takes whatever it can within the cp ceiling; with nothing to take, piles attacks onto your pieces. Attacker +5, Trade +3 — nothing else shares its budget.</td></tr>
       <tr><td>Overthinker</td><td>Methodical</td><td>Deliberate; long think times; likely gets into time trouble. Hustle −4, Panicky −3, Structure +3.</td></tr>
       <tr><td>Coffeehouse Hustler</td><td>Fast</td><td>Fast imprecise early play, tightens in the endgame. Hustle +5, Luck +2, Gambit +2.</td></tr>
       <tr><td>The Blunderer</td><td>Human</td><td>Plays well then cracks unexpectedly under pressure. Luck +3, Panicky +5.</td></tr>
-      <tr><td>The Hoarder</td><td>Material</td><td>Never sacrifices material voluntarily. Trade −3, Gambit −3, Luck −2.</td></tr>
+      <tr><td>The Hoarder</td><td>Material</td><td>Never sacrifices material voluntarily. Trade −3, Gambit −3, Luck −2, Defuser −2.</td></tr>
       <tr><td>Pawn Chain Gang</td><td>Pawns</td><td>Maximises connected pawns and pawn structure. Structure +5.</td></tr>
       <tr><td>Spite Check</td><td>Checks</td><td>Always checks if a check exists. Chaos +3, Attacker +3, Trade +2.</td></tr>
       <tr><td>Clock Watcher</td><td>Clock</td><td>Conservative when ahead on time; reckless when behind. Panicky −3, Complicate −2.</td></tr>

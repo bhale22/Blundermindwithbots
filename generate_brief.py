@@ -653,8 +653,9 @@ attr_rows = [
      'Structural fallback if ECO data not yet loaded.'],
     ['Trade Seeker\n/ Trade Avoider',
      '− Trade Avoider → no captures\n+ Trade Seeker → captures',
-     'Capture: logBoost += v × scale\nThreat: logBoost += v × scale\n  × tanh(newThreats / 2)',
-     'Non-captures scored by number of new opponent-piece threats created from destination square.'],
+     'Capture: logBoost += v × scale × tanh(ctx)\nThreat: logBoost += v × scale\n  × min(tanh(ctx × newThreats / 2), tanh(ctx))',
+     'Non-captures scored by number of new opponent-piece threats created from destination square, '
+     'capped at the capture score — offering a trade never outscores making one.'],
     ['Rigid / Loose\nPawn Structure',
      '− Loose → open mobile structure\n+ Rigid → tighter structure',
      'Own pawn moves only.\ndelta = currentPenalty − simPenalty\nlogBoost += v × scale × tanh(delta)',
@@ -674,10 +675,10 @@ attr_rows = [
      'Modifies timePressure boost mode.\n(steady / normal / panicky)',
      'See §4 Pressure Temperature Boost.'],
     ['Attacker\n/ Peacemaker',
-     '− Peacemaker → quiet positions\n+ Attacker → maximize threats',
-     'totalThreats = Σ attacks on each opp. piece\nlogBoost += v × scale × tanh(threats/6)',
-     'Full board attack map on simulated position. '
-     'Counts attack coverage across all opponent pieces.'],
+     '− Peacemaker → avoids captures, then threats\n+ Attacker → captures first, then threats',
+     'Δ = attacks on opp. pieces after − before\n  (+ attacks on the captured piece)\ncapture: 0.75 + 0.25 × tanh(Δ / 2)\nquiet: 0.5 × tanh(Δ / 2)\nlogBoost += v × scale × tier',
+     'Every capture outranks every quiet move; a capture keeps credit for the attacks it cashed in. '
+     'Presets wanting calm that still trades use Tension → Defuser.'],
 ]
 story.append(attractor_table(attr_rows,
     col_widths=[1.1*inch, 1.5*inch, 1.9*inch, 2.8*inch]))
@@ -919,11 +920,12 @@ pers_rows = [
      'chaos:+4, compwin:+4, gambito:+3\ntrade:+2, spacecadet:+2\nhustle:−3, structure:−3',
      'Seeks complications, gambit lines, and tactical chaos. Thinks longer per move (hustle −3).'],
     ['Norm ◼', 'Order',
-     'structure:+4, fortkx:+3, spacecadet:0\nchaos:−4, compwin:−4\ngambito:−2, hustle:+2',
+     'structure:+4, fortkx:+3, spacecadet:0\nchaos:−4, compwin:−4\ngambito:−2, hustle:+2, tension:−2',
      'Closes positions, defends solidly. Simplifies when winning. Slightly faster pace.'],
     ['Attacky McTackerson ⚔', 'Captures',
-     'trade:+4, attacker:+3, chaos:+2\nhustle:−2, structure:−1',
-     'Favours captures and threats. Slightly deliberate (hustle −2).'],
+     'attacker:+5, trade:+3, hustle:−2\n(nothing else shares the budget)',
+     'Takes whatever it can within the cp ceiling; with nothing to take, piles attacks onto '
+     'your pieces. Slightly deliberate (hustle −2).'],
     ['Overthinker ◈', 'Methodical',
      'structure:+3, spacecadet:+3, fortkx:+2\nhustle:−4, pressure:−3\nchaos:−3, compwin:−2',
      'Maximises board control and structure. Thinks long on every move (hustle −4). '
@@ -936,7 +938,7 @@ pers_rows = [
      'luck:+3, pressure:+5',
      'Plays normally but cracks unpredictably under pressure. Luck shifts toward lower-ranked moves.'],
     ['The Hoarder ◉', 'Material',
-     'gambito:−3, trade:−3, fortkx:+2\nchaos:−2, hustle:+2, luck:−2',
+     'gambito:−3, trade:−3, fortkx:+2\nchaos:−2, hustle:+2, luck:−2\ntension:−2',
      'Never sacrifices material. Avoids trades and gambits. Slight faster pace.'],
     ['Pawn Chain Gang ♟', 'Pawns',
      'structure:+5, fortkx:+1, hustle:+1\nchaos:−1, compwin:−2, gambito:−1',
@@ -956,7 +958,7 @@ pers_rows = [
      'Each move rolls one of two Maia strengths — brilliant one move, blundering the next. '
      'Plain hybrid config, so the two slots are freely re-tunable.'],
     ['The Drawmeister ½', 'Human',
-     'trade:+4, fortkx:+3, structure:+2\nchaos:−4, gambito:−3, attacker:−3\n(accepts + offers draws)',
+     'trade:+4, fortkx:+3, structure:+2\nchaos:−4, gambito:−3, tension:−3\n(accepts + offers draws)',
      'Plays for the half point: simplifies, fortresses up, offers/accepts draws (§10), and '
      'installs solid drawish repertoires for both colours (London / Exchange Slav / Four '
      'Knights; Petroff / Berlin / Slav).'],

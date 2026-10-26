@@ -4199,12 +4199,12 @@ const ATTRACTOR_DESCS = {
   spacecadet: `A weak square is an empty square the bot attacks zero times; the centre and the squares in front of a castled king count 1.5×. <code>tanh((weak(before) − weak(after)) / 4)</code>. Space cadet takes squares over; Space waster cedes them for other priorities.`,
   fortkx:     `How many times the bot's pieces defend each other, before and after the move — every piece, attacked or not. <code>tanh((defence(after) − defence(before)) / 3)</code>. Fort Knox won't step onto an undefended square; Glass cannon is glad to.`,
   gambito:    `Opening only (first 20 plies). Boosts the next move of a known gambit line (an ECO name containing “gambit”); without the ECO data, a pawn pushed to a square the opponent attacks and the bot does not defend. Gambit shy suppresses the same moves.`,
-  trade:      `Captures, and moves that attack enemy pieces — leaning harder into exchanges when ahead on material and warier when behind: <code>context = 1 + 0.6 × tanh(material balance / 4)</code>. Trade seeker exchanges; Trade avoider keeps the pieces on.`,
+  trade:      `Captures, and moves that attack enemy pieces — never more for a threat than for a capture — leaning harder into exchanges when ahead on material and warier when behind: <code>context = 1 + 0.6 × tanh(material balance / 4)</code>. Trade seeker exchanges; Trade avoider keeps the pieces on.`,
   structure:  `The bot's pawn formation as a penalty count — islands + doubled + isolated + unconnected pawns — scored on its own pawn moves. <code>tanh(penalty(before) − penalty(after))</code>. Rigid keeps the pawns holding hands; Loose breaks formation.`,
   hustle:     `Pure tempo: how long the bot sits before moving, <code>think × (1 − v × 0.15)</code>. Only Complexity-scaled timing reads it — Fixed, Mirror and Instantaneous set the pace themselves. Takes no share of the CP Budget.`,
   luck:       `Slides the Move Distribution Range band by <code>v × 4</code> percentage points. Bad day (positive) works from further down the popularity list; Good day (negative) stays near the top. Popularity distributions only — Maia and the opening book. Takes no share of the CP Budget.`,
   pressure:   `How far the temperature curve in Time Pressure climbs as think time runs out. Fully Calm leaves temperature untouched by time pressure, 0 follows the curve as drawn, fully Panicky climbs 2.5× as fast. Only when time can really run short — Complexity-scaled or Mirror user timing, not a Fixed or Instantaneous pace. Takes no share of the CP Budget.`,
-  attacker:   `How many times the bot's pieces attack enemy pieces, before and after the move. <code>tanh((threats(after) − threats(before)) / 2)</code>. Attacker creates threats; Peacemaker avoids them.`,
+  attacker:   `Captures first, then attacks. Every capture outranks every quiet move; among quiet moves, the one that adds the most attacks on enemy pieces wins. Capture: <code>0.75 + 0.25 × tanh(Δattacks / 2)</code>; quiet move: <code>0.5 × tanh(Δattacks / 2)</code> — a capture keeps credit for the attacks on the piece it took. Attacker takes and threatens; Peacemaker avoids both (for calm that still trades, use Tension → Defuser).`,
   grabber:    `Materialism weighted by what is won, and drawn to the capture it probably shouldn't make — landing on a square the opponent still attacks. <code>tanh((captured value + 2 × poisoned) / 3)</code>. Still capped by the CP Budget.`,
   kingsafety: `Enemy attacks on the nine squares around the bot's own king, before and after the move. <code>tanh(danger(before) − danger(after))</code>. King safety keeps the king tucked up; Bravado leaves it airy.`,
   prophylaxis:`How much room the move takes away from the opponent — their legal moves, before and after. <code>tanh((theirMoves(before) − theirMoves(after)) / 3)</code>. Prophylaxis plays against your plans; Own plans gets on with its own.`,
@@ -4308,9 +4308,9 @@ const PERSONALITIES = [
   { id:'entropy',    name:'Captain Entropy',   icon:'⚡', tag:'Chaos',      desc:'Maximises position complexity and open lines.',
     attractors:{complexity:4,compwin:4,spacecadet:2,fortkx:-1,gambito:3,trade:2,structure:-3,hustle:-3,luck:1,pressure:0,attacker:2} },
   { id:'norm',       name:'Norm',              icon:'◼', tag:'Order',      desc:'Prefers closed, simplified positions.',
-    attractors:{complexity:-4,compwin:-4,spacecadet:0,fortkx:3,gambito:-2,trade:-1,structure:4,hustle:2,luck:-1,pressure:-1,attacker:-2} },
-  { id:'attacky',    name:'Attacky McTackerson',icon:'⚔', tag:'Captures',  desc:'Favours captures within centipawn ceiling.',
-    attractors:{complexity:2,compwin:1,spacecadet:1,fortkx:-2,gambito:1,trade:4,structure:-1,hustle:-2,luck:0,pressure:1,attacker:3} },
+    attractors:{complexity:-4,compwin:-4,spacecadet:0,fortkx:3,gambito:-2,trade:-1,structure:4,hustle:2,luck:-1,pressure:-1,attacker:0,tension:-2} },
+  { id:'attacky',    name:'Attacky McTackerson',icon:'⚔', tag:'Captures',  desc:'Takes whatever it can within the centipawn ceiling; with nothing to take, piles attacks onto your pieces.',
+    attractors:{complexity:0,compwin:1,spacecadet:0,fortkx:0,gambito:0,trade:3,structure:0,hustle:-2,luck:0,pressure:1,attacker:5} },
   { id:'grinder',    name:'Overthinker',         icon:'◈', tag:'Methodical', desc:'Deliberate. Thinks long — likely gets into time trouble.',
     attractors:{complexity:-3,compwin:-2,spacecadet:3,fortkx:2,gambito:-1,trade:0,structure:3,hustle:-4,luck:-1,pressure:-3,attacker:0} },
   { id:'hustler',    name:'Coffeehouse Hustler',icon:'☕', tag:'Fast',       desc:'Fast imprecise early play, tightens in endgame.',
@@ -4318,7 +4318,7 @@ const PERSONALITIES = [
   { id:'blunderer',  name:'The Blunderer',      icon:'∿', tag:'Human',      desc:'Plays well then cracks unexpectedly under pressure.',
     attractors:{complexity:0,compwin:0,spacecadet:0,fortkx:0,gambito:0,trade:0,structure:0,hustle:0,luck:3,pressure:5,attacker:0} },
   { id:'hoarder',    name:'The Hoarder',        icon:'◉', tag:'Material',   desc:'Never sacrifices material voluntarily.',
-    attractors:{complexity:-2,compwin:-1,spacecadet:0,fortkx:2,gambito:-3,trade:-3,structure:1,hustle:2,luck:-2,pressure:-1,attacker:-2} },
+    attractors:{complexity:-2,compwin:-1,spacecadet:0,fortkx:2,gambito:-3,trade:-3,structure:1,hustle:2,luck:-2,pressure:-1,attacker:0,tension:-2} },
   { id:'pawnchain',  name:'Pawn Chain Gang',    icon:'♟', tag:'Pawns',      desc:'Maximises connected pawns and pawn structure.',
     attractors:{complexity:-1,compwin:-2,spacecadet:0,fortkx:1,gambito:-1,trade:0,structure:5,hustle:1,luck:0,pressure:0,attacker:0} },
   { id:'spitecheck', name:'Spite Check',        icon:'†', tag:'Checks',     desc:'Always checks if a legal check exists.',
@@ -4330,7 +4330,7 @@ const PERSONALITIES = [
   { id:'drunken',    name:'Drunken Master',      icon:'🍺', tag:'Human',      desc:'Was that a brilliant tactical move — or was it thinking about kittens? Each move: 50% Maia 2400, 50% Maia 1000.',
     attractors:{complexity:3,compwin:2,spacecadet:1,fortkx:-3,gambito:3,trade:1,structure:-2,hustle:2,luck:2,pressure:1,attacker:4} },
   { id:'drawmeister',name:'The Drawmeister',     icon:'½', tag:'Human',      desc:'Plays for the draw: solid drawish openings, simplifies everything, and offers a draw whenever things look level.',
-    attractors:{complexity:-4,compwin:-3,spacecadet:0,fortkx:3,gambito:-3,trade:4,structure:2,hustle:0,luck:-1,pressure:-2,attacker:-3} },
+    attractors:{complexity:-4,compwin:-3,spacecadet:0,fortkx:3,gambito:-3,trade:4,structure:2,hustle:0,luck:-1,pressure:-2,attacker:0,tension:-3} },
 ];
 
 /* ══════════════════════════════════════════════════════════════
@@ -10951,7 +10951,7 @@ const FLOUNDER_CHART_MOVES = [
 // prints exactly this number. A maxed attractor's nominal push is
 // exp(budget/150) on its favourite move; averaged over Attacker, Fort Knox,
 // Trade, Space Cadet and Gambito on real middlegame positions, what it actually
-// delivers is 0.813 of that, averaged over all nine position controls. So the illustrated personality is as strong as a
+// delivers is 0.814 of that, averaged over all ten position controls. So the illustrated personality is as strong as a
 // real one at full tilt, and no stronger.
 //
 // It read 0.29 before, which was wrong twice over: measured on Attacker alone —
@@ -10965,7 +10965,7 @@ const FLOUNDER_CHART_PREF = [0, -1, 1, 0, 0];
 // The Maia chart had the identical overstatement and nobody had noticed,
 // because there was nothing to compare it against until Flounder grew a chart
 // of its own that had to agree with it.
-const CHART_PREF_GAIN = 0.825;
+const CHART_PREF_GAIN = 0.814;
 const FLOUNDER_CHART_PREF_GAIN = CHART_PREF_GAIN;
 
 // The shipped ladder, copied from src/40-engines.js. The panel is a separate
