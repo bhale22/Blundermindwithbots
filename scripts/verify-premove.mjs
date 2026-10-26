@@ -73,11 +73,10 @@ await page.evaluate(() => {
 });
 await page.waitForTimeout(150);
 
-// Move Timing two-column layout: modes stacked as one-line rows. Fixed's and
-// Mirror's control rails are rendered at ALL times (dimmed + disabled when the
-// mode isn't selected) so selecting a mode never reflows the stack;
-// Instantaneous has no settings and owns no rail; Complexity is the only real
-// drawer, since three sliders can't sit in a static row.
+// Move Timing two-column layout: modes stacked as one-line rows. Every mode
+// with settings owns a drawer that is open only while that mode is selected
+// (Fixed's and Mirror's used to stay on screen, dimmed, which users found
+// cluttered); Instantaneous has no settings and owns no drawer.
 const layout = await page.evaluate(() => {
   const stack = document.querySelector('#timing-mode-grid');
   const blocks = [...document.querySelectorAll('.mode-block')];
@@ -96,13 +95,13 @@ const layout = await page.evaluate(() => {
 ok(layout.isStack, 'timing modes are stacked vertically');
 ok(layout.blocks === 4, 'four mode blocks (' + layout.blocks + ')');
 ok(layout.rails === 3, 'three modes own a control rail; Instantaneous has none (' + layout.rails + ')');
-ok(layout.drawers === 1, 'only Complexity uses an opening drawer (' + layout.drawers + ')');
+ok(layout.drawers === 3, 'all three rails are opening drawers (' + layout.drawers + ')');
 ok(layout.oneLine, 'each mode card is a single line (dot · name · description)');
 ok(layout.order.join('|') === 'Instantaneous|Fixed interval|Mirror user|Complexity-scaled',
    'order is Instantaneous → Fixed → Mirror → Complexity: ' + layout.order.join(' → '));
 
-// Selecting a mode attaches exactly one rail, and the Fixed/Mirror rails stay
-// on screen throughout — inert, not hidden.
+// Selecting a mode attaches exactly one rail and shows only that rail; the
+// hidden ones are disabled too, so none can be tabbed into.
 for (const [v, id] of [['Complexity-scaled','tb-complexity'], ['Instantaneous','tb-instant'],
                        ['Mirror user','tb-mirror'], ['Fixed interval','tb-fixed']]) {
   await page.evaluate((val) => {
@@ -111,14 +110,15 @@ for (const [v, id] of [['Complexity-scaled','tb-complexity'], ['Instantaneous','
   await page.waitForTimeout(120);
   const st = await page.evaluate(() => ({
     attached: [...document.querySelectorAll('.mode-block.attached')].map(b => b.id),
-    fixedVisible:  document.getElementById('timing-fixed-ctrl').offsetParent !== null,
-    mirrorVisible: document.getElementById('timing-mirror-ctrl').offsetParent !== null,
+    shown: ['fixed','mirror','complexity']
+      .filter(m => document.getElementById('timing-' + m + '-ctrl').offsetParent !== null),
     inertDisabled: [...document.querySelectorAll('.mode-ctrl.inert input')].every(i => i.disabled),
   }));
   ok(st.attached.length === 1 && st.attached[0] === id,
      v + ' attaches only its own rail (' + st.attached.join(',') + ')');
-  ok(st.fixedVisible && st.mirrorVisible,
-     v + ': Duration and Speed offset both stay visible');
+  const own = { 'Fixed interval':'fixed', 'Mirror user':'mirror', 'Complexity-scaled':'complexity' }[v];
+  ok(st.shown.join(',') === (own || ''),
+     v + ': only its own drawer is open (' + (st.shown.join(',') || 'none') + ')');
   ok(st.inertDisabled, v + ': unselected rails are disabled, not just dimmed');
 }
 

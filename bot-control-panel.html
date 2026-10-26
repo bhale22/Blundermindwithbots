@@ -83,6 +83,12 @@ body::before{content:'';position:fixed;inset:0;background-image:repeating-linear
   display:flex;align-items:stretch;
   /* height expands naturally when color picker opens */
 }
+/* A section scrolled into view (the Engine pill, an "Open … panel" button)
+   stops just under the sticky bar rather than behind it, so Start and the
+   section's first row are on screen together: Engine → Flounder → Start with
+   no scrolling. Phones are excluded: there the bar scrolls away and Start is
+   a fixed bottom button. */
+@media (min-width:761px){ .section{scroll-margin-top:62px;} }
 .qs-label{
   font-family:var(--font-m);font-size:8px;letter-spacing:0.14em;
   text-transform:uppercase;color:var(--text-dim);
@@ -378,6 +384,65 @@ table.tg td.tg-inc-lbl{
 .pa-btn:hover{background:var(--carbon-raise);color:var(--text-secondary);}
 .pa-btn.sel{color:var(--amber);background:var(--amber-glow);}
 .pa-piece{font-size:14px;flex-shrink:0;}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   QUICK PICKERS — Think Time, Personality, CP Budget
+   ────────────────────────────────────────────
+   These three pills used to jump straight into their full section, which
+   dropped a newcomer into every control at once. Each now opens a small
+   picker with the few choices most people want, plus one button into the
+   full section. Every choice here drives the same control the section shows
+   (the timing mode cards, the preset cards, the Budget slider), so the two
+   can never disagree.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.qs-sub-drop{min-width:270px;padding:4px 0 10px;}
+#qs-drop-pers{min-width:310px;}
+.qsd-opt{
+  width:100%;padding:8px 14px;
+  display:flex;align-items:center;gap:10px;
+  background:transparent;border:none;cursor:pointer;text-align:left;
+  transition:background 0.12s;
+}
+.qsd-opt:hover{background:var(--carbon-surface);}
+.qsd-opt.sel{background:var(--amber-glow);}
+.qsd-dot{
+  width:9px;height:9px;border-radius:50%;flex-shrink:0;
+  border:1px solid var(--text-dim);
+}
+.qsd-opt.sel .qsd-dot{background:var(--amber);border-color:var(--amber);}
+.qsd-icon{width:18px;flex-shrink:0;text-align:center;font-size:14px;line-height:1;color:var(--text-primary);}
+.qsd-text{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;}
+.qsd-name{font-family:var(--font-m);font-size:11px;color:var(--text-primary);letter-spacing:0.03em;}
+.qsd-opt.sel .qsd-name{color:var(--amber-bright);}
+.qsd-desc{
+  font-family:var(--font-m);font-size:9px;line-height:1.45;color:var(--text-dim);
+  white-space:normal;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.qsd-val{
+  margin-left:auto;flex-shrink:0;
+  font-family:var(--font-m);font-size:11px;color:var(--amber-bright);
+}
+/* The Fixed interval slider hangs under its own row, indented to the name. */
+.qsd-slider{padding:0 14px 8px 33px;}
+.qsd-slider input[type=range]{width:100%;}
+.qsd-slider .slider-scale{font-size:8px;}
+.qsd-budget{padding:10px 14px 4px;}
+.qsd-budget-head{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;}
+.qsd-budget-head .qsd-name{flex:1;}
+.qsd-budget input[type=range]{width:100%;}
+.qsd-budget .slider-scale{font-size:8px;}
+.qsd-note{
+  padding:8px 14px 0;
+  font-family:var(--font-m);font-size:9px;line-height:1.5;color:var(--text-dim);
+}
+.qsd-more{
+  display:block;width:calc(100% - 24px);margin:10px 12px 0;padding:8px 10px;
+  background:transparent;border:0.5px solid var(--border-amber);border-radius:var(--r);
+  font-family:var(--font-m);font-size:10px;letter-spacing:0.05em;color:var(--amber);
+  cursor:pointer;text-align:center;transition:background 0.12s;
+}
+.qsd-more:hover{background:var(--amber-glow);}
 
 /* ══════════════════════════════════════════════
    ACCORDION SECTIONS
@@ -897,6 +962,8 @@ body.rs-highvis .attr-left,
 body.rs-highvis .attr-right,
 body.rs-highvis .day-vals,
 body.rs-highvis .dual-range-labels,
+body.rs-highvis .qsd-desc,
+body.rs-highvis .qsd-note,
 body.rs-highvis:not(.fj) .formula-body,
 body.rs-highvis:not(.fj) .sec-sub,
 body.rs-highvis:not(.fj) .dlbl{font-size:11px !important;}
@@ -914,6 +981,8 @@ body.rs-highvis:not(.fj) .dlbl{font-size:11px !important;}
   body.rs-highvis .dual-range-labels,
   body.rs-highvis .tog-note,
   body.rs-highvis .inert-why,
+  body.rs-highvis .qsd-desc,
+  body.rs-highvis .qsd-note,
   body.rs-highvis:not(.fj) .formula-body,
   body.rs-highvis:not(.fj) .sec-sub,
   body.rs-highvis:not(.fj) .dlbl{font-size:12px !important;}
@@ -1369,12 +1438,11 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
    four modes is one vertical read instead of twelve stacked lines. Ordered
    Instantaneous → Fixed → Mirror → Complexity.
 
-   Fixed's Duration and Mirror's Speed offset are ALWAYS rendered, dimmed and
-   disabled until their mode is selected. Selecting a mode then costs no
-   reflow — nothing below shifts — and the user can see what each mode is
-   parameterised by without clicking through all four. Complexity keeps a
-   real drawer: three sliders can't live in a static row, and it sits last so
-   opening it pushes nothing down. */
+   Only the selected mode's settings are shown, in a drawer under its card.
+   Fixed's Duration and Mirror's Speed offset used to stay on screen, dimmed,
+   whatever was selected, so nothing reflowed on a change of mode — but three
+   boxes and sub-boxes at once read as clutter, and an inert slider looked
+   like one that should work. */
 .mode-stack{display:flex;flex-direction:column;gap:6px;}
 .mode-block{display:flex;flex-direction:column;}
 .mode-block .mcard{border-radius:var(--r);}
@@ -1394,8 +1462,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 }
 .mode-stack .mcard.sel .mdesc{color:var(--text-secondary);}
 
-/* Persistent control rail under Fixed / Mirror. Present at all times; the
-   amber border and full-strength text only arrive with selection. */
+/* Control rail under a mode card, shown only while that mode is selected. */
 .mode-ctrl{
   padding:7px 11px 8px;
   background:var(--carbon-surface);
@@ -1414,10 +1481,10 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 .mode-ctrl .ctrl-lbl{min-width:74px;}
 .mode-ctrl .ctrl-hint{margin-top:4px;}
 .mode-ctrl .ctrl-hint:last-child{margin-bottom:0;}
-/* Complexity's drawer is the one that still opens and closes. */
 .mode-ctrl.drawer{display:none;padding:10px 12px 11px;}
 .mode-block.attached .mode-ctrl.drawer{display:block;}
 .mode-ctrl.drawer .ctrl{margin-bottom:10px;}
+.mode-ctrl.drawer .ctrl:last-child{margin-bottom:0;}
 .mode-ctrl.drawer .ctrl-lbl{min-width:88px;}
 /* Collapsed-header badge turns amber while premoving is on — the setting
    changes play enough that it should read as a live state, not a footnote. */
@@ -2002,6 +2069,19 @@ body.fj .picon{font-weight:500;}
   /* Desktop offsets would push these dropdowns off a phone screen */
   .qs-float-drop{left:0 !important;right:auto;max-width:calc(100vw - 20px);overflow-x:auto;}
   .qs-inplace-drop{min-width:0 !important;}
+  /* The quick pickers hold sliders and two-line rows, too much for half a
+     screen. Their pill wraps stand down as containing blocks, so each picker
+     spans the bar (left/right against .quickstart) while top:auto keeps it
+     directly under the pill that opened it. */
+  #qs-ttime-wrap,#qs-pers-wrap,#qs-cpb-wrap{position:static;}
+  .qs-sub-drop{top:auto;left:8px;right:8px;}
+  .qsd-opt{min-height:48px;}
+  .qsd-name{font-size:13px;}
+  .qsd-desc{font-size:11px;}
+  .qsd-val{font-size:13px;}
+  .qsd-note{font-size:11px;}
+  .qsd-more{min-height:44px;font-size:12px;}
+  .qsd-slider .slider-scale,.qsd-budget .slider-scale{font-size:11px;}
   .tg-cell{width:auto;min-width:40px;height:38px;}
   table.tg th.tg-head{width:auto;font-size:9px;}
 
@@ -2901,23 +2981,67 @@ body.fj .picon{font-weight:500;}
       </div>
     </div>
 
-    <!-- 5. THINK TIME — click opens timing section -->
-    <button class="qs-pill-btn" id="qs-ttime-btn" onclick="openThinkTimeSection()" aria-label="Think time">
-      <span class="qs-label">Think Time</span>
-      <span class="qs-pill-value" id="qs-ttime-value">2 sec</span>
-    </button>
+    <!-- 5. THINK TIME — quick picker over the Move Timing mode cards -->
+    <div class="qs-pill-wrap" id="qs-ttime-wrap">
+      <button class="qs-pill-btn" id="qs-ttime-btn" onclick="toggleQsDropdown('ttime')" aria-label="Think time" aria-haspopup="true" aria-expanded="false">
+        <span class="qs-label">Think Time</span>
+        <span class="qs-pill-value" id="qs-ttime-value">2 sec</span>
+      </button>
+      <div class="qs-inplace-drop qs-sub-drop" id="qs-drop-ttime">
+        <!-- Fixed covers Instantaneous too: the slider's 0 IS that mode. -->
+        <button type="button" class="qsd-opt" data-tm="fixed" onclick="qsTimingPick('fixed')">
+          <span class="qsd-dot"></span>
+          <span class="qsd-text"><span class="qsd-name">Fixed interval</span><span class="qsd-desc">The same pause before every move</span></span>
+          <span class="qsd-val" id="qsd-fixed-val">2 sec</span>
+        </button>
+        <div class="qsd-slider">
+          <input type="range" id="qsd-fixed" min="0" max="60" step="1" value="2" aria-label="Fixed interval, seconds" oninput="qsFixedInput(+this.value)">
+          <span class="slider-scale"><span>0 · instant</span><span>1 min</span></span>
+        </div>
+        <button type="button" class="qsd-opt" data-tm="mirror" onclick="qsTimingPick('mirror')">
+          <span class="qsd-dot"></span>
+          <span class="qsd-text"><span class="qsd-name">Mirror user</span><span class="qsd-desc">Moves at the pace you do</span></span>
+        </button>
+        <button type="button" class="qsd-opt" data-tm="complexity" onclick="qsTimingPick('complexity')">
+          <span class="qsd-dot"></span>
+          <span class="qsd-text"><span class="qsd-name">Complexity scaled</span><span class="qsd-desc">Quick on easy moves, longer on hard ones</span></span>
+        </button>
+        <button type="button" class="qsd-more" onclick="qsOpenSection('timing')">Open time control &amp; premove panel ▸</button>
+      </div>
+    </div>
 
-    <!-- 6. PERSONALITY — active preset name, bot name, Custom, or None -->
-    <button class="qs-pill-btn" id="qs-pers-btn" onclick="openAttrSection()" aria-label="Bot personality">
-      <span class="qs-label">Personality</span>
-      <span class="qs-pill-value" id="qs-pers-value">None</span>
-    </button>
+    <!-- 6. PERSONALITY — active preset name, bot name, Custom, or None.
+         Quick picker of a few presets; rows are built by renderQsPersonas() -->
+    <div class="qs-pill-wrap" id="qs-pers-wrap">
+      <button class="qs-pill-btn" id="qs-pers-btn" onclick="toggleQsDropdown('pers')" aria-label="Bot personality" aria-haspopup="true" aria-expanded="false">
+        <span class="qs-label">Personality</span>
+        <span class="qs-pill-value" id="qs-pers-value">None</span>
+      </button>
+      <div class="qs-inplace-drop qs-sub-drop" id="qs-drop-pers">
+        <div id="qsd-pers-list"></div>
+        <button type="button" class="qsd-more" onclick="qsOpenSection('attract','pieces')">Open personality customization panel ▸</button>
+      </div>
+    </div>
 
-    <!-- 7. CP BUDGET — current centipawn budget; — when nothing set -->
-    <button class="qs-pill-btn" id="qs-cpb-btn" onclick="openAttrSection()" aria-label="Centipawn budget">
-      <span class="qs-label">CP Budget</span>
-      <span class="qs-pill-value" id="qs-cpb-value">—</span>
-    </button>
+    <!-- 7. CP BUDGET — current centipawn budget; quick slider over r-style -->
+    <div class="qs-pill-wrap" id="qs-cpb-wrap">
+      <button class="qs-pill-btn" id="qs-cpb-btn" onclick="toggleQsDropdown('cpb')" aria-label="Centipawn budget" aria-haspopup="true" aria-expanded="false">
+        <span class="qs-label">CP Budget</span>
+        <span class="qs-pill-value" id="qs-cpb-value">—</span>
+      </button>
+      <div class="qs-inplace-drop qs-sub-drop" id="qs-drop-cpb">
+        <div class="qsd-budget">
+          <div class="qsd-budget-head">
+            <span class="qsd-name">Centipawn budget</span>
+            <span class="qsd-val" id="qsd-cpb-val">100 cp</span>
+          </div>
+          <input type="range" id="qsd-cpb" min="0" max="300" step="10" value="100" aria-label="Centipawn budget" oninput="onGaugeSliderInput(+this.value)">
+          <span class="slider-scale"><span>0 · pure engine</span><span>300 · reckless</span></span>
+        </div>
+        <div class="qsd-note">How many centipawns the personality may give up on a move to play in its style. At 0 the style sliders do nothing.</div>
+        <button type="button" class="qsd-more" onclick="qsOpenSection('attract','quality')">Open personality panel ▸</button>
+      </div>
+    </div>
 
     <!-- 8. MY BOTS — named configurations saved in localStorage -->
     <div class="qs-pill-wrap" id="qs-bots-wrap">
@@ -3543,18 +3667,18 @@ body.fj .picon{font-weight:500;}
               <div class="mcard" data-g="timing" data-v="Instantaneous" onclick="selMode(this,'st-timing');showTimingCtrl('instant')"><div class="mdot"></div><div class="mname">Instantaneous</div><div class="mdesc">Engine speed, no delay</div></div>
             </div>
 
-            <!-- Fixed interval — Duration rail is always rendered -->
+            <!-- Fixed interval — Duration drawer, open only while selected -->
             <div class="mode-block attached" id="tb-fixed">
               <div class="mcard sel" data-g="timing" data-v="Fixed interval" onclick="selMode(this,'st-timing');showTimingCtrl('fixed')"><div class="mdot"></div><div class="mname">Fixed interval</div><div class="mdesc">Constant pause between moves</div></div>
-              <div class="mode-ctrl" id="timing-fixed-ctrl">
+              <div class="mode-ctrl drawer" id="timing-fixed-ctrl">
                 <div class="ctrl"><span class="ctrl-lbl">Duration</span><input type="range" id="r-fixed" min="1" max="60" value="2" oninput="sv(this,'v-fixed',v=>v+'s'); updateQsThinkTime()"><span class="ctrl-val" id="v-fixed">2s</span></div>
               </div>
             </div>
 
-            <!-- Mirror user — Speed offset rail is always rendered -->
+            <!-- Mirror user — Speed offset drawer, open only while selected -->
             <div class="mode-block" id="tb-mirror">
               <div class="mcard" data-g="timing" data-v="Mirror user" onclick="selMode(this,'st-timing');showTimingCtrl('mirror')"><div class="mdot"></div><div class="mname">Mirror user</div><div class="mdesc">Matches your rhythm ± offset</div></div>
-              <div class="mode-ctrl" id="timing-mirror-ctrl">
+              <div class="mode-ctrl drawer" id="timing-mirror-ctrl">
                 <div class="ctrl has-info">
                   <span class="ctrl-lbl">Speed offset</span>
                   <input type="range" id="r-mirror" min="-100" max="100" value="0" oninput="sv(this,'v-mirror',v=>v>0?'+'+v+'%':v+'%')">
@@ -3565,8 +3689,8 @@ body.fj .picon{font-weight:500;}
               </div>
             </div>
 
-            <!-- Complexity scaled — three sliders, so this one keeps a real
-                 drawer; last in the stack so opening it pushes nothing down -->
+            <!-- Complexity scaled — the biggest drawer, last in the stack so
+                 opening it pushes nothing down -->
             <div class="mode-block" id="tb-complexity">
               <div class="mcard" data-g="timing" data-v="Complexity-scaled" onclick="selMode(this,'st-timing');showTimingCtrl('complexity')"><div class="mdot"></div><div class="mname">Complexity scaled</div><div class="mdesc">Scales with position complexity</div></div>
               <div class="mode-ctrl drawer" id="timing-complexity-ctrl">
@@ -8360,13 +8484,30 @@ document.addEventListener('click', function(e){
   toggleHdrTools(false);
 });
 
+const QS_DROPS = ['time','color','ttime','pers','cpb','bots'];
+
 function toggleQsDropdown(which){
   const alreadyOpen = _openDrop === which;
   closeAllQsDropdowns();
   if(alreadyOpen) return;
   _openDrop = which;
-  document.getElementById('qs-drop-' + which)?.classList.add('open');
-  document.getElementById('qs-' + which + '-btn')?.classList.add('active');
+  // Pickers read the live controls each time they open, so whatever changed
+  // them since (a loaded bot, a preset, the full section) is what they show.
+  if(which === 'ttime') qsSyncTtime();
+  if(which === 'pers')  qsSyncPersonas();
+  if(which === 'cpb')   updateQsCpBudget();
+  const drop = document.getElementById('qs-drop-' + which);
+  const btn  = document.getElementById('qs-' + which + '-btn');
+  drop?.classList.add('open');
+  btn?.classList.add('active');
+  btn?.setAttribute('aria-expanded', 'true');
+  // Pills near the right end of the bar would hang their picker off the edge
+  // of the window — slide it left just far enough. Desktop only: the phone
+  // pickers are pinned to both sides of the bar in CSS.
+  if(drop && drop.classList.contains('qs-inplace-drop') && innerWidth > 760){
+    const over = drop.getBoundingClientRect().right - (document.documentElement.clientWidth - 8);
+    if(over > 0) drop.style.left = (-over) + 'px';
+  }
   // The phone clock sheet is position:fixed over the whole viewport — freeze
   // the page under it so a swipe scrolls the sheet, not the panel behind.
   if(which === 'time') document.body.classList.add('tc-sheet-open');
@@ -8374,15 +8515,31 @@ function toggleQsDropdown(which){
 
 function closeAllQsDropdowns(){
   _openDrop = null;
-  ['time','color','bots'].forEach(which => {
-    document.getElementById('qs-drop-' + which)?.classList.remove('open');
-    document.getElementById('qs-' + which + '-btn')?.classList.remove('active');
+  QS_DROPS.forEach(which => {
+    const drop = document.getElementById('qs-drop-' + which);
+    if(drop){
+      drop.classList.remove('open');
+      if(drop.classList.contains('qs-inplace-drop')) drop.style.left = '';
+    }
+    const btn = document.getElementById('qs-' + which + '-btn');
+    btn?.classList.remove('active');
+    if(btn?.hasAttribute('aria-expanded')) btn.setAttribute('aria-expanded', 'false');
   });
   document.body.classList.remove('tc-sheet-open');
 }
 
+// Any click outside the open picker closes it — including a click on another
+// pill in the bar. This used to test for the whole bar instead, so Play as or
+// My Bots stayed open until their own pill was clicked again.
+// The path is taken at dispatch, so a click on something its own handler has
+// just re-rendered (a time-grid cell) still counts as inside.
 document.addEventListener('click', e => {
-  if(!e.target.closest('.quickstart')) closeAllQsDropdowns();
+  if(!_openDrop) return;
+  const wrap = document.getElementById('qs-' + _openDrop + '-wrap');
+  if(!wrap || !e.composedPath().includes(wrap)) closeAllQsDropdowns();
+});
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape' && _openDrop) closeAllQsDropdowns();
 });
 
 // `sourceId` is whichever checkbox fired the change (Move Timing's or the
@@ -9601,7 +9758,7 @@ const BOT_TOUR = [
   // Overview first: every section closed, no spotlight/backdrop, panel tucked
   // into the corner — the user sees the whole page while reading the map.
   { stage:'Overview', closeAll:true, corner:true, sel:null, title:'Welcome to the Bot Builder',
-    body:'Build an opponent that feels <i>human</i> — with a style, moods, and bad days, not just a level. The <b>quick-start bar</b> at the top has everything needed to just play: engine, time, color, <b>Start</b>. The sections below go deeper: <b>Engine</b> (the brain and its strength), <b>Personality</b> (style attractors, custom rules, a centipawn budget), <b>Opening Behavior</b>, <b>Move Timing</b>, and <b>Time-Pressure Degradation</b>. Step through with Next — or click anywhere else to close this and explore on your own.' },
+    body:'Build an opponent that feels <i>human</i> — with a style, moods, and bad days, not just a level. The <b>quick-start bar</b> at the top has everything needed to just play: engine, time, color, think time, a personality, <b>Start</b>. The sections below go deeper: <b>Engine</b> (the brain and its strength), <b>Personality</b> (style attractors, custom rules, a centipawn budget), <b>Opening Behavior</b>, <b>Move Timing</b>, and <b>Time-Pressure Degradation</b>. Step through with Next — or click anywhere else to close this and explore on your own.' },
 
   // Step 2, before anything else is explained: almost every dial past the
   // Engine section reshapes MOVE PROBABILITIES, and only Maia produces those.
@@ -9656,7 +9813,7 @@ const BOT_TOUR = [
     body:'Give White and Black <i>separate</i> openings, played in order: a <b>Repertoire</b> of openings you weight by percentage, then the <b>Main Line</b> — the most popular database move — through a move you choose, then the engine. Use either stage, both, or neither: the Italian, then the main line to move 20.' },
 
   { stage:'Timing', open:'timing', sel:'#timing-mode-grid', title:'4 · Move timing',
-    body:'How the bot spends its clock between moves — <b>instant</b>, a <b>fixed</b> pause, <b>scaled to position complexity</b>, or <b>mirroring your own pace</b>. Each mode\'s setting sits right under it, so you can see what every mode is tuned by before you pick one. The little things that make it feel human.' },
+    body:'How the bot spends its clock between moves — <b>instant</b>, a <b>fixed</b> pause, <b>scaled to position complexity</b>, or <b>mirroring your own pace</b>. The mode you pick opens its own settings right under it. The little things that make it feel human.' },
 
   { stage:'Timing', open:'timing', sel:'#row-blink', title:'Human timing habits',
     body:'Layered on top of the mode: <b>reconsideration pauses</b>, <b>move blink</b> on forced replies, and <b>speeding up when your clock runs low</b>. Note that blink fires <i>before</i> the timing mode is consulted, so choosing <b>Fixed interval</b> switches it off and tells you why — otherwise a "22-second" bot would still snap out obvious recaptures instantly.' },
@@ -12397,6 +12554,7 @@ function updateQsPersonality(){
       || customControls.some(c => (c.value??0) !== 0);
     pill.textContent = isCustom ? 'Custom' : 'None';
   }
+  qsSyncPersonas();
   // Runs after every change of preset — including the deselect that moving a
   // slider causes — so the Hustler's hold on the temperature lifts with it.
   syncControlGating();
@@ -12420,9 +12578,16 @@ function updateQsCpBudget(){
   // states both facts without the two readouts contradicting each other.
   const budget = +(document.getElementById('r-style')?.value ?? 100);
   pill.textContent = budget + ' cp';
+  // The quick picker's slider is a third view of r-style, like the Engine
+  // panel's mirror. Left alone while it is the one being dragged.
+  const q = document.getElementById('qsd-cpb');
+  if(q && document.activeElement !== q) q.value = budget;
+  const qv = document.getElementById('qsd-cpb-val');
+  if(qv) qv.textContent = budget + ' cp';
 }
 
 function updateQsThinkTime(){
+  qsSyncTtime();
   const pill = document.getElementById('qs-ttime-value');
   if(!pill) return;
   const sel  = document.querySelector('#timing-mode-grid .mcard.sel');
@@ -12449,6 +12614,95 @@ function openThinkTimeSection(){
   const sec = document.getElementById('sec-timing');
   if(sec && !sec.classList.contains('open')) toggleSec('timing');
   sec?.scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+
+/* ── Quick pickers: Think Time, Personality, CP Budget ───────────────────────
+   Each choice goes through the same function the full section's own control
+   calls, so the section, the pill and the saved config all follow from it. */
+
+// The section's mode cards, by the quick picker's names. Instantaneous has no
+// row of its own: it is the Fixed interval slider at 0.
+const QS_TIMING_CARD = {
+  instant: 'Instantaneous', fixed: 'Fixed interval',
+  mirror: 'Mirror user', complexity: 'Complexity-scaled',
+};
+function _qsSetTimingMode(mode){
+  const card = document.querySelector('#timing-mode-grid .mcard[data-v="' + QS_TIMING_CARD[mode] + '"]');
+  if(!card) return;
+  // What the card's own onclick runs. Not card.click(): that click would
+  // bubble to the document and close the picker it came from.
+  selMode(card, 'st-timing');
+  showTimingCtrl(mode);
+}
+function qsTimingPick(mode){
+  if(mode === 'fixed'){
+    const v = +(document.getElementById('qsd-fixed')?.value || 0);
+    if(v > 0) _setRange('r-fixed', v);
+    _qsSetTimingMode(v > 0 ? 'fixed' : 'instant');
+  } else {
+    _qsSetTimingMode(mode);
+  }
+}
+// 0 = Instantaneous; 1–60 = Fixed interval at that many seconds (r-fixed's
+// own range, so the section's Duration slider shows the same number).
+function qsFixedInput(v){
+  if(v > 0) _setRange('r-fixed', v);
+  const want = v > 0 ? 'fixed' : 'instant';
+  if(_getTimingMode() !== want) _qsSetTimingMode(want);
+  else qsSyncTtime();
+}
+function qsSyncTtime(){
+  const drop = document.getElementById('qs-drop-ttime');
+  if(!drop) return;
+  const mode = _getTimingMode();
+  const instant = mode === 'instant';
+  drop.querySelectorAll('.qsd-opt').forEach(o => {
+    const on = o.dataset.tm === 'fixed' ? (mode === 'fixed' || instant) : o.dataset.tm === mode;
+    o.classList.toggle('sel', on);
+  });
+  const secs = instant ? 0 : +(document.getElementById('r-fixed')?.value || 2);
+  const sl = document.getElementById('qsd-fixed');
+  if(sl && document.activeElement !== sl) sl.value = secs;
+  const val = document.getElementById('qsd-fixed-val');
+  if(val) val.textContent = secs === 0 ? 'Instant' : secs + ' sec';
+}
+
+// The handful of presets the quick picker offers — the full set is one click
+// further, in Personality → Preset Personalities.
+const QS_PERSONAS = ['attacky', 'drunken', 'badday', 'pawnchain', 'drawmeister'];
+function renderQsPersonas(){
+  const list = document.getElementById('qsd-pers-list');
+  if(!list) return;
+  list.innerHTML = QS_PERSONAS.map(id => {
+    const p = PERSONALITIES.find(x => x.id === id);
+    if(!p) return '';
+    return '<button type="button" class="qsd-opt" data-pid="' + p.id + '" title="' + _ccEsc(p.desc) + '"'
+      + ' onclick="qsPersonaPick(\'' + p.id + '\')">'
+      + '<span class="qsd-icon">' + p.icon + '</span>'
+      + '<span class="qsd-text"><span class="qsd-name">' + _ccEsc(p.name) + '</span>'
+      + '<span class="qsd-desc">' + _ccEsc(p.desc) + '</span></span></button>';
+  }).join('');
+  qsSyncPersonas();
+}
+function qsSyncPersonas(){
+  document.querySelectorAll('#qsd-pers-list .qsd-opt').forEach(o =>
+    o.classList.toggle('sel', !_activeBotName && o.dataset.pid === selectedPersonality));
+}
+function qsPersonaPick(id){
+  // Close first: three of these presets ask before reconfiguring the engine,
+  // and their confirm should not open under a picker.
+  closeAllQsDropdowns();
+  selPersonality(id);
+}
+
+// "Open … panel" buttons: the full section, on the tab the picker stands in for.
+function qsOpenSection(id, tab){
+  closeAllQsDropdowns();
+  const sec = document.getElementById('sec-' + id);
+  if(!sec) return;
+  if(!sec.classList.contains('open')) toggleSec(id);
+  if(tab) switchItab(id, tab);
+  sec.scrollIntoView({ behavior:'smooth', block:'start' });
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -13024,12 +13278,9 @@ function onDaySlider(){
 
 /* ── Timing mode control visibility ──────────────────────────────────────── */
 // Modes are stacked vertically, each owning a control drawer beneath its card.
-// 'instant' is included because it now has a drawer too (one stating it has no
-// settings), so selecting any mode always produces a visible response.
-// Fixed's Duration and Mirror's Speed offset stay on screen whatever mode is
-// selected — only their live/inert state changes, so choosing a mode never
-// reflows the stack. Complexity's rail is a real drawer (`.drawer`) and is the
-// only one that appears and disappears.
+// Only the selected mode's drawer is open (`.drawer` under `.attached`);
+// Instantaneous has no settings and so no drawer. The unselected drawers are
+// hidden AND disabled, so a hidden slider can never be tabbed into.
 function showTimingCtrl(mode){
   ['complexity','fixed','mirror','instant'].forEach(m=>{
     const sel = m === mode;
@@ -14037,6 +14288,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   renderCustomControls();
   renderOpColumn('white'); renderOpColumn('black'); updateOpStatus();
   renderPersonalities();
+  renderQsPersonas();
   renderHybridSlots();
   initSpeedo();
   speedoSyncRange();
