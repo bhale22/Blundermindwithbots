@@ -386,17 +386,26 @@ table.tg td.tg-inc-lbl{
 .pa-piece{font-size:14px;flex-shrink:0;}
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   QUICK PICKERS — Think Time, Personality, CP Budget
+   QUICK PICKERS — Engine, Think Time, Personality, CP Budget
    ────────────────────────────────────────────
-   These three pills used to jump straight into their full section, which
+   These four pills used to jump straight into their full section, which
    dropped a newcomer into every control at once. Each now opens a small
    picker with the few choices most people want, plus one button into the
    full section. Every choice here drives the same control the section shows
-   (the timing mode cards, the preset cards, the Budget slider), so the two
-   can never disagree.
+   (the engine cards and Elometer, the timing mode cards, the preset cards,
+   the Budget slider), so the two can never disagree.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .qs-sub-drop{min-width:270px;padding:4px 0 10px;}
-#qs-drop-pers{min-width:310px;}
+#qs-drop-pers,#qs-drop-engine{min-width:310px;}
+/* The Engine pill keeps its fixed-width zone (see .qs-engine-zone); inside a
+   wrap, the wrap draws the divider. */
+#qs-engine-wrap .qs-engine-zone{border-right:none;}
+/* Small-caps group label inside a picker, in the bar's own label style. */
+.qsd-head{
+  padding:10px 14px 2px;
+  font-family:var(--font-m);font-size:8px;letter-spacing:0.14em;
+  text-transform:uppercase;color:var(--text-dim);
+}
 .qsd-opt{
   width:100%;padding:8px 14px;
   display:flex;align-items:center;gap:10px;
@@ -410,6 +419,18 @@ table.tg td.tg-inc-lbl{
   border:1px solid var(--text-dim);
 }
 .qsd-opt.sel .qsd-dot{background:var(--amber);border-color:var(--amber);}
+/* On/off rows (the two opening books can both be on) get a box, not a dot. */
+.qsd-check{
+  width:11px;height:11px;border-radius:2px;flex-shrink:0;
+  border:1px solid var(--text-dim);
+  display:flex;align-items:center;justify-content:center;
+  font-size:9px;line-height:1;color:var(--carbon);
+}
+.qsd-opt.sel .qsd-check{background:var(--amber);border-color:var(--amber);}
+.qsd-opt.sel .qsd-check::after{content:'✓';}
+/* Maia's one-time download, offered right where Maia is picked. */
+.qsd-dl{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:0 14px 8px 33px;}
+.qsd-dl .bcp-maia-status-txt{font-family:var(--font-m);font-size:9px;}
 .qsd-icon{width:18px;flex-shrink:0;text-align:center;font-size:14px;line-height:1;color:var(--text-primary);}
 .qsd-text{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;}
 .qsd-name{font-family:var(--font-m);font-size:11px;color:var(--text-primary);letter-spacing:0.03em;}
@@ -427,11 +448,11 @@ table.tg td.tg-inc-lbl{
 .qsd-slider{padding:0 14px 8px 33px;}
 .qsd-slider input[type=range]{width:100%;}
 .qsd-slider .slider-scale{font-size:8px;}
-.qsd-budget{padding:10px 14px 4px;}
-.qsd-budget-head{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;}
-.qsd-budget-head .qsd-name{flex:1;}
-.qsd-budget input[type=range]{width:100%;}
-.qsd-budget .slider-scale{font-size:8px;}
+.qsd-range{padding:10px 14px 4px;}
+.qsd-range-head{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;}
+.qsd-range-head .qsd-name{flex:1;}
+.qsd-range input[type=range]{width:100%;}
+.qsd-range .slider-scale{font-size:8px;}
 .qsd-note{
   padding:8px 14px 0;
   font-family:var(--font-m);font-size:9px;line-height:1.5;color:var(--text-dim);
@@ -2073,7 +2094,7 @@ body.fj .picon{font-weight:500;}
      screen. Their pill wraps stand down as containing blocks, so each picker
      spans the bar (left/right against .quickstart) while top:auto keeps it
      directly under the pill that opened it. */
-  #qs-ttime-wrap,#qs-pers-wrap,#qs-cpb-wrap{position:static;}
+  #qs-engine-wrap,#qs-ttime-wrap,#qs-pers-wrap,#qs-cpb-wrap{position:static;}
   .qs-sub-drop{top:auto;left:8px;right:8px;}
   .qsd-opt{min-height:48px;}
   .qsd-name{font-size:13px;}
@@ -2081,7 +2102,9 @@ body.fj .picon{font-weight:500;}
   .qsd-val{font-size:13px;}
   .qsd-note{font-size:11px;}
   .qsd-more{min-height:44px;font-size:12px;}
-  .qsd-slider .slider-scale,.qsd-budget .slider-scale{font-size:11px;}
+  .qsd-slider .slider-scale,.qsd-range .slider-scale{font-size:11px;}
+  .qsd-head{font-size:11px;}
+  .qsd-dl .bcp-maia-status-txt{font-size:11px;}
   .tg-cell{width:auto;min-width:40px;height:38px;}
   table.tg th.tg-head{width:auto;font-size:9px;}
 
@@ -2946,11 +2969,55 @@ body.fj .picon{font-weight:500;}
     <!-- 1. START — a fixed bottom bar on phones, see the phone quick-start rules -->
     <button class="start-btn" onclick="startGame()">&#9654; Start</button>
 
-    <!-- 2. ENGINE — indicator + button to open Engine accordion -->
-    <button class="qs-pill-btn qs-engine-zone" onclick="openEngineSection()" aria-label="Open engine settings">
-      <span class="qs-label">Engine</span>
-      <span class="qs-pill-value" id="qs-engine-pill">Maia 3 · 1500</span>
-    </button>
+    <!-- 2. ENGINE — quick picker over the Engine section's cards, Elometer and
+         opening books; hybrids are built in the section itself -->
+    <div class="qs-pill-wrap" id="qs-engine-wrap">
+      <button class="qs-pill-btn qs-engine-zone" id="qs-engine-btn" onclick="toggleQsDropdown('engine')" aria-label="Engine" aria-haspopup="true" aria-expanded="false">
+        <span class="qs-label">Engine</span>
+        <span class="qs-pill-value" id="qs-engine-pill">Maia 3 · 1500</span>
+      </button>
+      <div class="qs-inplace-drop qs-sub-drop" id="qs-drop-engine">
+        <div class="qsd-head">Engine</div>
+        <button type="button" class="qsd-opt" data-eng="maia3" onclick="qsEnginePick('maia3')">
+          <span class="qsd-dot"></span>
+          <span class="qsd-text"><span class="qsd-name">Maia 3</span><span class="qsd-desc">Plays the moves real people at its rating play. 600–2600.</span></span>
+        </button>
+        <!-- Shown only while the model is missing. The button and status line
+             carry the classes bcpMaiaSetStatus() updates, so they track the
+             download exactly like the Engine section's own. -->
+        <div class="qsd-dl" id="qsd-maia-dl" style="display:none;">
+          <button class="bcp-maia-dl-btn" onclick="bcpMaiaDownload()" disabled
+            style="padding:6px 12px;font-family:var(--font-m);font-size:9px;letter-spacing:0.1em;
+            text-transform:uppercase;background:var(--dl-green-bg,rgba(90,212,144,0.12));
+            border:0.5px solid var(--dl-green-bd,rgba(90,212,144,0.4));border-radius:3px;
+            color:var(--dl-green,#5ad490);cursor:default;transition:opacity 0.15s;opacity:0.5;">Checking…</button>
+          <span class="bcp-maia-status-txt">Checking storage…</span>
+        </div>
+        <button type="button" class="qsd-opt" data-eng="stockfish" onclick="qsEnginePick('stockfish')">
+          <span class="qsd-dot"></span>
+          <span class="qsd-text"><span class="qsd-name">Flounder</span><span class="qsd-desc">Stockfish, tuned to play at its rating. 600–2400, nothing to download.</span></span>
+        </button>
+        <!-- One rating for whichever of the two is picked: it IS the Elometer. -->
+        <div class="qsd-range" id="qsd-elo-wrap">
+          <div class="qsd-range-head">
+            <span class="qsd-name">Rating</span>
+            <span class="qsd-val" id="qsd-elo-val">1500</span>
+          </div>
+          <input type="range" id="qsd-elo" min="600" max="2600" step="25" value="1500" aria-label="Engine rating" oninput="qsEloInput(+this.value)">
+          <span class="slider-scale"><span id="qsd-elo-lo">600</span><span id="qsd-elo-hi">2600</span></span>
+        </div>
+        <div class="qsd-head">Openings</div>
+        <button type="button" class="qsd-opt" data-book="lichess" onclick="qsBookToggle()">
+          <span class="qsd-check"></span>
+          <span class="qsd-text"><span class="qsd-name">Lichess openings</span><span class="qsd-desc">While the game is in book, plays what Lichess players at its rating chose</span></span>
+        </button>
+        <button type="button" class="qsd-opt" data-book="masters" onclick="qsMastersToggle()">
+          <span class="qsd-check"></span>
+          <span class="qsd-text"><span class="qsd-name">Masters openings</span><span class="qsd-desc" id="qsd-masters-desc">Follows the masters’ main line through move 20, then the engine takes over</span></span>
+        </button>
+        <button type="button" class="qsd-more" id="qsd-hybrid-btn" onclick="qsHybridOpen()">Create a hybrid bot ▸</button>
+      </div>
+    </div>
 
     <!-- 3. TIME — floating grid overlay anchored here -->
     <div class="qs-pill-wrap" id="qs-time-wrap">
@@ -3030,8 +3097,8 @@ body.fj .picon{font-weight:500;}
         <span class="qs-pill-value" id="qs-cpb-value">—</span>
       </button>
       <div class="qs-inplace-drop qs-sub-drop" id="qs-drop-cpb">
-        <div class="qsd-budget">
-          <div class="qsd-budget-head">
+        <div class="qsd-range">
+          <div class="qsd-range-head">
             <span class="qsd-name">Centipawn budget</span>
             <span class="qsd-val" id="qsd-cpb-val">100 cp</span>
           </div>
@@ -8484,7 +8551,7 @@ document.addEventListener('click', function(e){
   toggleHdrTools(false);
 });
 
-const QS_DROPS = ['time','color','ttime','pers','cpb','bots'];
+const QS_DROPS = ['engine','time','color','ttime','pers','cpb','bots'];
 
 function toggleQsDropdown(which){
   const alreadyOpen = _openDrop === which;
@@ -8493,6 +8560,7 @@ function toggleQsDropdown(which){
   _openDrop = which;
   // Pickers read the live controls each time they open, so whatever changed
   // them since (a loaded bot, a preset, the full section) is what they show.
+  if(which === 'engine') qsSyncEngine();
   if(which === 'ttime') qsSyncTtime();
   if(which === 'pers')  qsSyncPersonas();
   if(which === 'cpb')   updateQsCpBudget();
@@ -9476,6 +9544,8 @@ function bcpMaiaSetStatus(status, ready, progress){
   _bcpMaiaStatus = status || 'idle';
   _bcpMaiaReady  = !!ready;
   bcpMaiaSyncOverlay();
+  // try, not typeof: this can arrive before the engine state's `let`s exist.
+  try { qsSyncEngine(); } catch(e){}
   syncControlGating();   // premove waits on the model
   const labels = {
     idle:        'Checking storage…',
@@ -12616,9 +12686,78 @@ function openThinkTimeSection(){
   sec?.scrollIntoView({ behavior:'smooth', block:'nearest' });
 }
 
-/* ── Quick pickers: Think Time, Personality, CP Budget ───────────────────────
+/* ── Quick pickers: Engine, Think Time, Personality, CP Budget ───────────────
    Each choice goes through the same function the full section's own control
    calls, so the section, the pill and the saved config all follow from it. */
+
+// Engine: the two single engines, their shared rating, and the two opening
+// books. A hybrid is built slot by slot in the Engine section, so the picker
+// only offers the way in.
+function qsEnginePick(eng){
+  const card = document.querySelector('#engine-mode-grid .mcard[data-engine="' + eng + '"]');
+  if(!card) return;
+  selEngineMode(card);   // what the card's own onclick runs (selEngineCard)
+  qsSyncEngine();
+}
+// The Elometer's own path: snapped to its 25s and held to the engine's range.
+function qsEloInput(v){
+  setElo(clampElo(v));
+  const val = document.getElementById('qsd-elo-val');
+  if(val) val.textContent = currentElo;
+}
+function qsBookToggle(){
+  setEngineBook(engineBook === 'on' ? 'off' : 'on');
+  qsSyncEngine();
+}
+// Masters openings = the Opening Behavior section's Main Line, for both
+// colours, from the Masters database. Off switches the Main Line off for both;
+// the Repertoire stage is a separate choice and is left alone.
+function _qsMastersOn(){
+  return bookSource === 'masters' && (mainLine.white || mainLine.black);
+}
+function qsMastersToggle(){
+  const on = !_qsMastersOn();
+  if(on && bookSource !== 'masters'){ bookSource = 'masters'; _refreshMainLineBars(); }
+  ['white','black'].forEach(c => setOpStage(c, 'ml', on));
+  qsSyncEngine();
+}
+function qsHybridOpen(){
+  if(baseEngine !== 'hybrid') qsEnginePick('hybrid');
+  qsOpenSection('engine');
+}
+function qsSyncEngine(){
+  const drop = document.getElementById('qs-drop-engine');
+  if(!drop) return;
+  drop.querySelectorAll('.qsd-opt[data-eng]').forEach(o =>
+    o.classList.toggle('sel', o.dataset.eng === baseEngine));
+  // The download row only while the model is missing — once it is in this
+  // browser there is nothing to ask for.
+  const dl = document.getElementById('qsd-maia-dl');
+  if(dl) dl.style.display = _bcpMaiaReady ? 'none' : '';
+  // A hybrid's ratings live in its slots, so there is no one rating to show.
+  const eloWrap = document.getElementById('qsd-elo-wrap');
+  if(eloWrap) eloWrap.style.display = (baseEngine === 'hybrid') ? 'none' : '';
+  const r = engineEloRange();
+  const sl = document.getElementById('qsd-elo');
+  if(sl){
+    sl.min = r.lo; sl.max = r.hi;
+    if(document.activeElement !== sl) sl.value = currentElo;
+  }
+  const set = (id, t) => { const e = document.getElementById(id); if(e) e.textContent = t; };
+  set('qsd-elo-val', currentElo);
+  set('qsd-elo-lo', r.lo);
+  set('qsd-elo-hi', r.hi);
+  drop.querySelector('.qsd-opt[data-book="lichess"]')?.classList.toggle('sel', engineBook === 'on');
+  const ml = _qsMastersOn();
+  drop.querySelector('.qsd-opt[data-book="masters"]')?.classList.toggle('sel', ml);
+  // Said plainly when the Main Line is on for only one colour, which only the
+  // Opening section can set up.
+  const one = ml && !(mainLine.white && mainLine.black)
+    ? ' (as ' + (mainLine.white ? 'White' : 'Black') + ' only)' : '';
+  set('qsd-masters-desc', 'Follows the masters’ main line through move ' + bookDepth +
+    ', then the engine takes over' + one);
+  set('qsd-hybrid-btn', baseEngine === 'hybrid' ? 'Customize this hybrid bot ▸' : 'Create a hybrid bot ▸');
+}
 
 // The section's mode cards, by the quick picker's names. Instantaneous has no
 // row of its own: it is the Fixed interval slider at 0.
