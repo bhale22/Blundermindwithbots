@@ -27,6 +27,7 @@ const SRC_PARTS = [
   '40-engines.js',    // Stockfish workers, Maia3, Lichess explorer, ECO, opening book
   '50-bot-engine.js', // pressure curves, attractors, think time, botMakeMove, ghost
   '60-bot-ui.js',     // bot panel UI, opening prefs, save/load, config bridge
+  '65-lichess-bridge.js', // ?lichess: this tab plays on Lichess as a BOT account
   '90-tail.html',     // closing </script>, bot modal markup, </body></html>
 ];
 

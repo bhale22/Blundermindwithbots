@@ -139,6 +139,9 @@ function executeMove(from,to,promo){
       'Stalemate — Draw! ½-½';
     // Show rematch button
     showRematchBtn(true);
+  } else if(typeof lichessGameLive==='function'&&lichessGameLive()){
+    // A Lichess game ends when the server says so: the bridge claims
+    // repetition and fifty moves, and Lichess rules on material itself.
   } else if(positionCounts[_pk]>=3){
     gameOver=true;gameOverMsg='Draw by threefold repetition ½-½';showRematchBtn(true);
   } else if(halfmoveClock>=100){
@@ -146,6 +149,8 @@ function executeMove(from,to,promo){
   } else if(isInsufficientMaterial(board)){
     gameOver=true;gameOverMsg='Draw — insufficient material ½-½';showRematchBtn(true);
   }
+  // On Lichess, the bot's move goes to the server from here (65-lichess-bridge)
+  if(typeof lichessOnLocalMove==='function') lichessOnLocalMove(from,to,promo,p);
   updatePlayerBoxes();
   if(typeof clockAfterMove==='function') clockAfterMove();
   if(typeof IND!=='undefined'&&typeof indApply==='function')indApply();
@@ -450,6 +455,8 @@ function botOnMove(){
 
 cv.addEventListener('mousedown',e=>{
   e.preventDefault();
+  // Hosting a Lichess bot: both sides' moves come from elsewhere
+  if(typeof lichessBoardLocked==='function'&&lichessBoardLocked())return;
   if(promotionPending){const ch=getPromoChoice(getEvtPos(e));if(ch){executeMove(promotionPending.from,promotionPending.to,ch);promotionPending=null;}return;}
   if(gameOver)return;
   const pos=getEvtPos(e);const sq=getSq(pos);if(sq<0)return;

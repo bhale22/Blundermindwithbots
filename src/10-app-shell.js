@@ -3092,7 +3092,12 @@ function _clockStep() {
   const remaining  = Math.max(0, _clockAnchorSec - elapsed);
   if(turn === 'w') clockTimeW = remaining;
   else             clockTimeB = remaining;
-  if(remaining === 0) { clockStop(); clockTimeout(turn); return; }
+  if(remaining === 0) {
+    clockStop();
+    // Lichess flags the game, not the page: wait for the server's result
+    if(typeof lichessGameLive==='function' && lichessGameLive()) { clockUpdateDisplay(); return; }
+    clockTimeout(turn); return;
+  }
   clockUpdateDisplay();
 }
 
@@ -5222,6 +5227,7 @@ function clearAllSelections(){
 
 // ── Multiplayer actions ────────────────────────────────────────────────
 function resign() {
+  if (typeof lichessHosting === 'function' && lichessHosting()) { lichessExplainLock(); return; }
   if (typeof gameOver !== 'undefined' && gameOver) return;
   // Works vs a bot as well as online — confirmResign() only notifies the server
   // when actually in a room, so this is safe for solo bot games too.
@@ -5231,6 +5237,7 @@ function resign() {
 // Every draw button (sidebar, phone bar, Expert board) asks first, the way
 // Resign does: a bot that likes the offer ends the game on the spot.
 function offerDraw() {
+  if (typeof lichessHosting === 'function' && lichessHosting()) { lichessExplainLock(); return; }
   if (typeof gameOver !== 'undefined' && gameOver) return;
   const vsBot = typeof botActive !== 'undefined' && botActive;
   const vsMp  = mpRoomId && mpWs && mpWs.readyState === WebSocket.OPEN;

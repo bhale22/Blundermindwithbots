@@ -830,7 +830,7 @@ function botEngineTag() {
 
 function botUpdatePlayerNames(humanColor) {
   var botName   = botGenerateName() + botEngineTag();
-  var humanName = 'You';
+  var humanName = (typeof lichessOpponentName === 'function' && lichessOpponentName()) || 'You';
   var nameW = document.querySelector('#playerBoxW .player-name');
   var nameB = document.querySelector('#playerBoxB .player-name');
   if (humanColor === 'white') {
@@ -883,6 +883,12 @@ function _checkEngineReady(tab) {
 }
 
 async function botStart() {
+  // A tab hosting the Lichess bot starts games only for Lichess.
+  if (typeof lichessHosting === 'function' && lichessHosting() &&
+      !(typeof lichessStartingGame === 'function' && lichessStartingGame())) {
+    lichessExplainLock();
+    return;
+  }
   // Guard: starting (or restarting) a game while one is in progress forfeits
   // it — online game OR an active bot game with moves already played.
   //
@@ -2409,6 +2415,8 @@ function botApplyPanelConfig(cfg, applyOnly) {
 const BM_LASTBOT_KEY = 'bm_lastBot';
 
 function bmLastBotSave() {
+  // A Lichess game borrows the colour and clock; the user's last bot stands.
+  if (typeof lichessStartingGame === 'function' && lichessStartingGame()) return;
   try {
     let cfg = window._lastAppliedBotConfig || null;
     if (cfg) { cfg = Object.assign({}, cfg); delete cfg._applyOnly; }
