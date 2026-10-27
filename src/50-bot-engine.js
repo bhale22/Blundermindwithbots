@@ -488,9 +488,18 @@ async function applyCpBudgetAcceptance(fen, chosenUci, rawProbs, shapedProbs, st
 // (_attrReweightApplied) the pick may therefore beat the popular move by up to
 // the CP Budget — the same allowance applyCpBudgetAcceptance already grants on
 // the downside. Every other mechanism still gets zero upside.
+//
+// It is a switch now — the builder's "Never play better than the most popular
+// move", OFF by default. Always on, it also clamped plain sampling: a Maia bot
+// at T 1.0 could never play the strong-but-rare move Maia itself sometimes
+// plays, so it was not sampling Maia at all. The Grandmaster Bad Day preset
+// switches it on, since picking the rarest move is where the leak lives.
+// Bots saved before the switch existed load with it on, as they played.
+var botNoUpgradeGuard = false;
 async function applyDegradationEvalGuard(fen, chosenUci, rawProbs, strict) {
   const failed = () => (strict ? null : chosenUci);
   try {
+    if (!botNoUpgradeGuard) return chosenUci;
     if (!chosenUci || !rawProbs) return chosenUci;
     let topMove = null, topP = -1;
     for (const m in rawProbs) { if (rawProbs[m] > topP) { topP = rawProbs[m]; topMove = m; } }
@@ -1934,17 +1943,24 @@ function botMaiaBaseTemp() {
   return parseFloat((el && el.value) || '1.0') || 1.0;
 }
 
-// ── Conviction pick: 30% argmax / 70% temperature sample ─────────────────────
+// ── Conviction pick: argmax on a share of moves, temperature sample otherwise ─
 // A bot with strong opinions shouldn't be a pure dice-roll, but pure argmax
-// is exploitably deterministic. Middle ground: 30% of moves it simply plays
-// the move its personality ranked highest (argmax over the reweighted
-// distribution); the other 70% it temperature-samples for human variety.
+// is exploitably deterministic. Middle ground: on botConvictionPct of its moves
+// it simply plays the move its personality ranked highest (argmax over the
+// reweighted distribution); the rest it temperature-samples for human variety.
 // Whichever pick emerges, the Budget acceptance then verifies its real price.
-const ARGMAX_PICK_RATE = 0.30;
+//
+// This was a fixed 30% with no control, so a bot set to sample Maia at T 1.0
+// played its top move noticeably more often than Maia does. It is the builder's
+// Conviction slider now (under the Engine section's distribution chart, which
+// draws the mix): 0% = every move sampled, 100% = always the top move. It
+// defaults to 0 — a hidden share of argmax picks is not what anyone expects a
+// distribution to do. Bots saved before the slider load at the old 30%.
+var botConvictionPct = 0;
 function pickFromProbs(moveProbs, temperature) {
   const entries = Object.entries(moveProbs);
   if (!entries.length) return null;
-  if (Math.random() < ARGMAX_PICK_RATE) {
+  if (Math.random() * 100 < botConvictionPct) {
     let best = entries[0][0], bp = -Infinity;
     for (const [m, p] of entries) { if (p > bp) { bp = p; best = m; } }
     return best;

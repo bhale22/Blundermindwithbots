@@ -1179,6 +1179,8 @@ function botCollectConfig(configName, botNameVal) {
       dayLower:        (typeof botDayLower   !== 'undefined') ? botDayLower   : null,
       dayUpper:        (typeof botDayUpper   !== 'undefined') ? botDayUpper   : null,
       badDayMode:      (typeof botBadDayMode !== 'undefined') ? !!botBadDayMode : false,
+      convictionPct:   (typeof botConvictionPct  !== 'undefined') ? botConvictionPct  : null,
+      noUpgradeGuard:  (typeof botNoUpgradeGuard !== 'undefined') ? !!botNoUpgradeGuard : null,
       maiaTempValue:   (typeof botMaiaTempValue !== 'undefined') ? botMaiaTempValue : null,
       sfTempLevel:     (typeof botSfTempLevel   !== 'undefined') ? botSfTempLevel   : null,
       pressureDepth:   (typeof botPressureDepth !== 'undefined') ? botPressureDepth : null,
@@ -1259,6 +1261,8 @@ function botApplyConfig(cfg) {
         if (_pz.dayLower   != null) botDayLower   = _pz.dayLower;
         if (_pz.dayUpper   != null) botDayUpper   = _pz.dayUpper;
         botBadDayMode = !!_pz.badDayMode;
+        if (_pz.convictionPct  != null) botConvictionPct  = _pz.convictionPct;
+        if (_pz.noUpgradeGuard != null) botNoUpgradeGuard = !!_pz.noUpgradeGuard;
         if (_pz.maiaTempValue != null && typeof botMaiaTempValue !== 'undefined') botMaiaTempValue = _pz.maiaTempValue;
         if (_pz.sfTempLevel   != null && typeof botSfTempLevel   !== 'undefined') botSfTempLevel   = _pz.sfTempLevel;
         if (_pz.pressureDepth != null) botPressureDepth = _pz.pressureDepth;
@@ -2237,6 +2241,14 @@ function botApplyPanelConfig(cfg, applyOnly) {
   // ignored — the CP budget is now engine-verified per pick instead)
   botMinProbPct     = (cfg.minProbPct     != null) ? cfg.minProbPct     : 5;
   botBadDayMode     = !!cfg.badDayMode;
+
+  // How each move is picked from the shaped distribution: Conviction (share of
+  // moves that play its top outright) and the no-upgrade check. A config from
+  // before either was a control ran them fixed — 30%, check always on — so
+  // that is what an absent field means; the builder loads it the same way.
+  botConvictionPct  = (cfg.convictionPct != null)
+    ? Math.max(0, Math.min(100, +cfg.convictionPct || 0)) : 30;
+  botNoUpgradeGuard = (cfg.noUpgradeGuard != null) ? !!cfg.noUpgradeGuard : true;
 
   // Draw behaviour + stalemate seeking (desperation)
   // Draws: accept unless more than 200 cp ahead, by default. A config from

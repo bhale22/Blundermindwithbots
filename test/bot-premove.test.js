@@ -587,6 +587,10 @@ test('a premove pick the engine cannot check is not armed at all', async () => {
     ctx.botPremoveEnabled = true;
     ctx.botPremoveRatePct = 100;
     ctx.botMaiaTempValue = 1.0;
+    // A check has to be required for its failure to matter: the no-upgrade
+    // check probes every off-top pick. (It is off by default — see the test
+    // below for what an unchecked bot does.)
+    ctx.botNoUpgradeGuard = true;
     stubMaia(ctx, { e2e4: 0.9 }, { e7e5: 0.344, c7c5: 0.324 });
     stubEngine(ctx, null);   // every probe fails
     await ctx.botPremoveArm();
@@ -594,6 +598,28 @@ test('a premove pick the engine cannot check is not armed at all', async () => {
   }
   assert.equal(armedOffTop, 0,
     'an unverified pick must fall back to thinking normally, never be committed');
+});
+
+test('with no check switched on, a premove samples Maia without asking the engine', async () => {
+  let armedOffTop = 0, probes = 0;
+  for (let i = 0; i < 40; i++) {
+    const ctx = makeCtx();
+    setPos(ctx, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+    ctx.botPlayerColor = 'white';
+    ctx.botPremoveEnabled = true;
+    ctx.botPremoveRatePct = 100;
+    ctx.botMaiaTempValue = 1.0;
+    ctx.botConvictionPct = 0;   // every pick a sample
+    stubMaia(ctx, { e2e4: 0.9 }, { e7e5: 0.344, c7c5: 0.324 });
+    stubEngine(ctx, null);
+    const probe = ctx.sfEvalMoves;
+    ctx.sfEvalMoves = async (...a) => { probes++; return probe(...a); };
+    await ctx.botPremoveArm();
+    if (ctx.botActivePremove && ctx.botActivePremove.uci !== 'e7e5') armedOffTop++;
+  }
+  assert.equal(probes, 0, 'no guard, no Hard Floor, no personality: nothing to check');
+  assert.ok(armedOffTop > 5,
+    'the second-choice reply is armed in proportion to Maia (' + armedOffTop + '/40)');
 });
 
 test('a premove is played at the rating and temperature for a one-second think', async () => {

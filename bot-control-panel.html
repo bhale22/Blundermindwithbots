@@ -3459,6 +3459,16 @@ body.fj .picon{font-weight:500;}
           <!-- Live distribution chart — Maia reference → temperature → personality -->
           <canvas id="temp-dist-chart"></canvas>
 
+          <!-- Conviction — share of moves that play the top of the shaped
+               distribution outright instead of sampling it (pickFromProbs).
+               The chart's last bar draws the mix. -->
+          <div class="ctrl" id="conviction-row" style="margin-top:6px;">
+            <span class="ctrl-lbl" style="min-width:80px;">Conviction</span>
+            <input type="range" id="r-conviction" min="0" max="100" step="5" value="0"
+              oninput="onConvictionSlider(+this.value)">
+            <span class="ctrl-val" id="v-conviction">0%</span>
+          </div>
+
           <!-- CP Budget — the same dial as the Personality section's Centipawmeter,
                mirrored here so its effect on the distribution is visible live -->
           <div class="ctrl" style="margin-top:6px;">
@@ -3467,7 +3477,7 @@ body.fj .picon{font-weight:500;}
               oninput="onGaugeSliderInput(+this.value)">
             <span class="ctrl-val" id="v-style-mirror">100 cp</span>
           </div>
-          <div class="ctrl-hint" id="temp-chart-hint">Same dial as the Personality section's Centipawmeter — move either one. The third (blue) bar shows an <em>illustrative</em> personality (loves c4, dislikes d4) pushing the temperature-shaped distribution: the push grows with Budget, and in play a Stockfish check caps the real cost of any personality pick at the Budget.</div>
+          <div class="ctrl-hint" id="temp-chart-hint">Same dial as the Personality section's Centipawmeter — move either one. The middle (blue) bar shows an <em>illustrative</em> personality (loves c4, dislikes d4) reshaping Maia's odds; the last bar is what the bot plays: Conviction's share on the top move, the rest temperature samples.</div>
 
         </div><!-- /right col -->
 
@@ -3548,6 +3558,13 @@ body.fj .picon{font-weight:500;}
                   <span class="ctrl-val" id="v-hardfloor">100 cp</span>
                 </div>
                 <div class="ctrl-hint"><strong>Budget</strong> = the personality's style allowance, engine-calculated. <strong>Hard Floor</strong> = the cap on everything else (top = Off). Click <span class="hint-link" onclick="openInfoPop('cpbudget')">ⓘ how they work together</span>.</div>
+                <div class="tog-row" style="margin-top:8px;">
+                  <div>
+                    <div class="tog-lbl">Never play better than the most popular move</div>
+                    <div class="tog-desc">When a sampled move evaluates better than Maia’s top choice, play the top choice instead (Stockfish check). Off = the bot can find the rare strong move Maia sometimes plays. Personality picks may still beat it by up to the Budget.</div>
+                  </div>
+                  <label class="tog"><input type="checkbox" id="cb-no-upgrade"><div class="tog-track"><div class="tog-thumb"></div></div></label>
+                </div>
 
                 <!-- Move Distribution Range — only shown for Maia/LC+Maia/Hybrid.
                      Lives inside the gauge box so it can't get lost below the fold -->
@@ -8899,6 +8916,11 @@ function getBotConfig(){
     maia3Temp:       maia3Temp,
     cpBudget:        cpBudget,
     hardFloorCp:     parseInt(document.getElementById('r-hardfloor')?.value || String(cpBudget)),
+    // How each move is picked: Conviction's share plays the top of the shaped
+    // distribution, the rest are temperature samples; and whether a sampled
+    // move that evaluates better than the most popular one is swapped back.
+    convictionPct:   _convictionPct(),
+    noUpgradeGuard:  document.getElementById('cb-no-upgrade')?.checked === true,
     color:           color,
     tcTime:          tcTime,
     tcInc:           tcInc,
@@ -9113,6 +9135,14 @@ function applyBotConfig(cfg){
   // Hard Floor: saved value, else legacy fallback to the budget (equal = the
   // old single-dial behaviour). _setHardFloorValue clamps ≥ budget itself.
   grp(() => _setHardFloorValue(cfg.hardFloorCp != null ? cfg.hardFloorCp : (cfg.cpBudget != null ? cfg.cpBudget : 100), false));
+  // Conviction and the no-upgrade check were fixed (30%, always on) before they
+  // were controls, so a bot saved then opens showing exactly that — the app
+  // reads an absent field the same way (botApplyPanelConfig).
+  grp(() => onConvictionSlider(cfg.convictionPct != null ? cfg.convictionPct : 30));
+  grp(() => {
+    const cb = document.getElementById('cb-no-upgrade');
+    if(cb) cb.checked = (cfg.noUpgradeGuard != null) ? !!cfg.noUpgradeGuard : true;
+  });
   grp(() => {
     const lo = document.getElementById('day-lower'), hi = document.getElementById('day-upper');
     if(lo && cfg.dayLower != null) lo.value = cfg.dayLower;
@@ -10556,6 +10586,14 @@ function syncControlGating(){
     : '';
   _setWhy(document.getElementById('hard-floor-row'), floorWhy,
           { target: document.getElementById('r-hardfloor'), after: true });
+  // Conviction and the no-upgrade check act on picks from a distribution
+  // (pickFromProbs, applyDegradationEvalGuard) — Maia and the opening book.
+  const pickWhy = g.flounderOnly
+    ? 'Flounder picks each move by its evaluation, not from a distribution, so this has nothing to act on. It applies to Maia and opening-book moves.'
+    : '';
+  _setWhy(document.getElementById('conviction-row'), pickWhy,
+          { target: document.getElementById('r-conviction'), after: true });
+  _setTogWhy('cb-no-upgrade', pickWhy);
   const floorTile = document.getElementById('ind-cp-floor');
   const floorCell = floorTile ? floorTile.closest('.cpg-cell') : null;
   if(floorCell){
@@ -11436,7 +11474,10 @@ function _syncTempScaleLabels(){
       + '<b>Pers.</b> adds an illustrative personality (likes d4, dislikes Bb5) choosing within ± the CP Budget of the cost the rating asked for.'
     : 'The pipeline in the order the bot runs it: <b>Maia</b>\'s raw odds, then an '
       + '<em>illustrative</em> personality (loves c4, dislikes d4) reweighting them by the '
-      + '<b>CP Budget</b>, then <b>temperature</b> sampling what is left. Personality comes '
+      + '<b>CP Budget</b>, then the pick: <b>Played</b> is the real chance of each move — '
+      + '<b>Conviction</b>\'s share of moves play the top of the reshaped distribution outright, '
+      + 'the rest are <b>temperature</b> samples. Conviction 0% and Temperature 1.0 with no '
+      + 'personality is Maia\'s own distribution, unaltered. Personality comes '
       + 'first because that is where the personality is applied. Turning temperature down '
       + 'does not switch personality off — it makes it DECISIVE: the bot plays the top of '
       + 'the distribution personality just reshaped, every time. Raise the <b>Budget</b> past '
@@ -11548,10 +11589,15 @@ function drawTempChart(T){
     adj  = _flounderSelProbs(d, prm.s, cEff,  0, null);
     pers = _flounderSelProbs(d, prm.s, cEff,  band, prefs);
   } else {
+    // Shaped over all five moves even when a phone shows three, so the
+    // personality and temperature normalise over the same set the engine sees.
     moves = _ph ? TEMP_CHART_MOVES.slice(0, 3) : TEMP_CHART_MOVES;
-    base  = moves.map(m => m.p);
-    adj   = _persAdjusted(base, budgetNow);   // personality first
-    pers  = _tempAdjustedP(adj, T);           // then temperature samples it
+    const all = TEMP_CHART_MOVES.map(m => m.p);
+    const adjAll = _persAdjusted(all, budgetNow);                   // personality first
+    const played = _convictionMix(adjAll, T, _convictionPct());     // then the pick
+    base  = all.slice(0, moves.length);
+    adj   = adjAll.slice(0, moves.length);
+    pers  = played.slice(0, moves.length);
   }
   const nM    = moves.length;
   const colW  = chartW / nM;
@@ -11633,10 +11679,11 @@ function drawTempChart(T){
     ctx.font = _chartFont(6.5);
     ctx.fillText(_fl ? 'R' : 'M', mX + barW/2, H - padB + rowMTP);
     ctx.fillText(_fl ? 'T' : 'P', aX + barW/2, H - padB + rowMTP);
-    ctx.fillText(_fl ? 'P' : 'T', pX + barW/2, H - padB + rowMTP);
+    ctx.fillText(_fl ? 'P' : '▶', pX + barW/2, H - padB + rowMTP);
   });
 
-  // Legend: Maia → Temperature → Personality, as a strip along the top.
+  // Legend, as a strip along the top. On Maia the last bar is what the bot
+  // plays: Conviction's share on the top move plus the temperature sample.
   ctx.font = _chartFont(7);
   const swatch = _ph ? 9 : 7;
   const legTop = _ph ? 6 : 4;
@@ -11648,7 +11695,7 @@ function drawTempChart(T){
   // between two charts sitting one click apart.
   [['rgba(235,140,0,0.3)', _fl ? 'At rating' : 'Maia'],
    [_fl ? C_ADJ : C_PERS, _fl ? 'Temp' : 'Pers.'],
-   [_fl ? C_PERS : C_ADJ, _fl ? 'Pers.' : 'Temp']]
+   [_fl ? C_PERS : C_ADJ, _fl ? 'Pers.' : 'Played']]
     .forEach(([col,label]) => {
       ctx.fillStyle = col;
       ctx.fillRect(lx, legTop, swatch, swatch);
@@ -11687,6 +11734,34 @@ function onTempSlider(T){
   // were left stale by a temperature change until now.
   syncMaxTempMark();
   if(typeof drawB === 'function') drawB();
+}
+
+// Conviction: the share of moves that play the top of the shaped distribution
+// outright (pickFromProbs); the rest are temperature samples. The chart's
+// final bar is drawn as that mix, so it reads as the real chance of each move.
+function _convictionPct(){
+  const v = +(document.getElementById('r-conviction')?.value);
+  return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 0;
+}
+function onConvictionSlider(v){
+  v = Math.max(0, Math.min(100, Math.round(+v || 0)));
+  const sl = document.getElementById('r-conviction');
+  if(sl && +sl.value !== v) sl.value = v;
+  const out = document.getElementById('v-conviction');
+  if(out) out.textContent = v + '%';
+  if(typeof _currentTempValue !== 'undefined'){
+    try{ drawTempChart(_currentTempValue); }catch(e){}
+  }
+}
+// What the bot plays from a shaped distribution: conviction × its top move
+// (the first highest entry, as pickFromProbs takes it) + the rest × the
+// temperature sample.
+function _convictionMix(shaped, T, pct){
+  const c = Math.max(0, Math.min(1, pct / 100));
+  const sampled = _tempAdjustedP(shaped, T);
+  let top = 0;
+  shaped.forEach((p, i) => { if(p > shaped[top]) top = i; });
+  return sampled.map((p, i) => (1 - c) * p + (i === top ? c : 0));
 }
 
 function renderTempGrid(){
@@ -12954,10 +13029,17 @@ const INFO_POPS = {
       '300&nbsp;cp, the bot may accept up to 320. The bot is “human-typical plus ' +
       'style”, not “engine plus style”.</p>' +
       '<p>How each move is chosen: Maia proposes the move distribution for the bot’s ' +
-      'rating; the personality reweights it; then 70% of the time a move is sampled ' +
-      'with Temperature, and 30% of the time the bot plays its top-ranked choice ' +
-      'outright. Only picks moved by the personality answer to the Budget — ' +
-      'everything else answers to the Hard Floor.</p>' +
+      'rating; the personality reweights it; then on the <b>Conviction</b> share of moves ' +
+      '(Engine section, under the distribution chart — 0% by default) the bot plays its ' +
+      'top-ranked choice outright, and the rest are sampled with Temperature. Only picks ' +
+      'moved by the personality answer to the Budget — everything else answers to the ' +
+      'Hard Floor.</p>' +
+      '<p><b>Never play better than the most popular move</b> (off by default) is the ' +
+      'other direction: when a sampled move evaluates <em>better</em> than Maia’s top ' +
+      'choice, Stockfish catches it and the top choice is played. Leave it off and the bot ' +
+      'can find the rare strong move Maia itself sometimes plays. Grandmaster Bad Day ' +
+      'switches it on. Personality picks may beat the popular move by up to the Budget ' +
+      'either way.</p>' +
       '<p><b>Hard Floor</b> (always ≥ Budget) is the absolute backstop on everything ' +
       'else — Temperature, Luck, Bad Day, time-pressure — bounding how bad any ' +
       'played move can be versus the popular move. Picks already within the Budget skip ' +
@@ -13027,6 +13109,10 @@ function _applyPersonality(id){
     if(lo) lo.value = 4;    // minProbPct=4: keep only moves with individual prob ≥ 4%
     if(hi) hi.value = 100;  // dayUpper=100: engine then selects the lowest-probability acceptable move
     onDaySlider();
+    // The rarest move is often a strong one few players see; the confirm
+    // promises it is eval-checked, so the check comes on with the preset.
+    const nu = document.getElementById('cb-no-upgrade');
+    if(nu) nu.checked = true;
   }
   // Drunken Master: a Hybrid bot with two Maia slots — 50% at 2400, 50% at
   // 1000 (each move picks one slot). Plain hybrid config, so the user can
