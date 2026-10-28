@@ -505,6 +505,7 @@ test('the reply is temperature-sampled, not always the top move', async () => {
     ctx.botPremoveEnabled = true;
     ctx.botPremoveRatePct = 100;
     ctx.botMaiaTempValue = 1.0;
+    ctx.botConvictionPct = 0;   // every pick a sample
     stubMaia(ctx, { e2e4: 0.9 }, { e7e5: 0.344, c7c5: 0.324 });
     stubEngine(ctx);   // both replies equal: the checks pass either one
     await ctx.botPremoveArm();
@@ -545,6 +546,7 @@ test('personality attractors reweight the premoved reply', async () => {
     ctx.botPremoveEnabled = true;
     ctx.botPremoveRatePct = 100;
     ctx.botMaiaTempValue = 1.0;
+    ctx.botConvictionPct = 0;   // sampled, so the lifted share shows
     ctx.window._bcpPieceValues = { knight: 5 };   // strongly favour knight moves
     stubMaia(ctx, { e2e4: 0.9 }, { e7e5: 0.7, g8f6: 0.3 });
     stubEngine(ctx);   // the knight move costs nothing, so the Budget allows it
@@ -587,10 +589,12 @@ test('a premove pick the engine cannot check is not armed at all', async () => {
     ctx.botPremoveEnabled = true;
     ctx.botPremoveRatePct = 100;
     ctx.botMaiaTempValue = 1.0;
-    // A check has to be required for its failure to matter: the no-upgrade
-    // check probes every off-top pick. (It is off by default — see the test
-    // below for what an unchecked bot does.)
-    ctx.botNoUpgradeGuard = true;
+    // A check has to be required for its failure to matter: under time
+    // pressure (curve B raising T at a premove's 1 s) the degradation check
+    // probes every off-top pick. (Without it — see the test below — nothing
+    // is checked.)
+    ctx.botTimePressure = 'normal';
+    ctx.botPressureCurveB = [{ x: 1, y: 3.0 }, { x: 30, y: 1.0 }, { x: 200, y: 1.0 }];
     stubMaia(ctx, { e2e4: 0.9 }, { e7e5: 0.344, c7c5: 0.324 });
     stubEngine(ctx, null);   // every probe fails
     await ctx.botPremoveArm();
@@ -600,7 +604,7 @@ test('a premove pick the engine cannot check is not armed at all', async () => {
     'an unverified pick must fall back to thinking normally, never be committed');
 });
 
-test('with no check switched on, a premove samples Maia without asking the engine', async () => {
+test('with no Bad Day or time pressure, a premove samples Maia without asking the engine', async () => {
   let armedOffTop = 0, probes = 0;
   for (let i = 0; i < 40; i++) {
     const ctx = makeCtx();

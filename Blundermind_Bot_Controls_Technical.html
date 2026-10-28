@@ -135,9 +135,9 @@
       <tr><td>4</td><td>Distribution Filter</td><td>An absolute min-probability floor removes near-zero candidates. Curve B (if the distribution toggle is on) narrows the upper percentile; the Luck attractor shifts the window (§8).</td></tr>
       <tr><td>5</td><td>Attractor Reweighting</td><td>Each candidate move's probability is multiplied by exp(logBoost), where logBoost is the sum of all active strategic attractor signals. Sets an "applied" flag read by Stage 8.</td></tr>
       <tr><td>6</td><td>Desperation (opt.)</td><td>If "seek stalemate when losing" is armed and the engine eval confirms a lost position, candidate weights are re-shaped toward low-own-mobility and material-dumping moves (§10).</td></tr>
-      <tr><td>7</td><td>Conviction Pick</td><td>The Conviction share of moves (default 0%): the top-ranked move of the reweighted distribution is played outright (argmax). The rest: final temperature applied (base T × phase/pressure modifiers) and one move is sampled.</td></tr>
+      <tr><td>7</td><td>Conviction Pick</td><td>The Conviction share of moves (0% with no personality; choosing a personality sets 100%): the top-ranked move of the reweighted distribution is played outright (argmax). The rest: final temperature applied (base T × phase/pressure modifiers) and one move is sampled.</td></tr>
       <tr><td>8</td><td>CP-Budget Acceptance</td><td>Maia personality bots only: if the pick differs from Maia's most-popular move, a shallow Stockfish probe checks that the pick loses ≤ CP Budget vs. the popular move; otherwise it walks down the preference order, up to 15 candidates deep (§9).</td></tr>
-      <tr><td>9</td><td>Degradation Guard</td><td>Switch, off by default (on for Bad Day): a sampled pick that evaluates better than Maia's top move is swapped back — popularity is not quality (§9).</td></tr>
+      <tr><td>9</td><td>Degradation Guard</td><td>Under Bad Day or time pressure only: a pick that evaluates better than Maia's top move is swapped back — degrading never turns up a brilliancy (§9).</td></tr>
       <tr><td>10</td><td>Hard Floor Backstop</td><td>Any final pick that differs from the most-popular move — whatever produced it — is capped at the Hard Floor (≥ Budget): if it loses more than Floor cp, the popular move is played instead. Skipped when the Floor is Off (§9c).</td></tr>
     </tbody>
   </table>
@@ -398,7 +398,7 @@ effectiveTemp = baseTemp + fraction × boost</div>
   <!-- 5 -->
   <h2 id="temperature">5 · Temperature &amp; Move Sampling</h2>
   <p>After attractor reweighting, the <strong>conviction pick</strong> decides how the move is chosen: on the
-  <strong>Conviction</strong> share of moves (a slider under the Engine section's distribution chart, 0–100%, default 0%)
+  <strong>Conviction</strong> share of moves (one value with two linked sliders — under the Centipawmeter's Budget and under the Engine section's distribution chart — 0–100%; 0% with no personality, set to 100% when a personality is chosen)
   the bot plays the top-ranked move of the reweighted distribution outright (argmax — its personality's honest first
   choice); the rest are sampled using temperature-scaled probabilities. Raising it makes a personality more assertive;
   100% makes it perfectly predictable. Conviction 0% with Temperature 1.0 and no personality samples Maia's distribution
@@ -580,18 +580,19 @@ for m in [pick, ...favourites]:
   budget must not veto them.</p>
 
   <h3>9b · Degradation Guard</h3>
-  <p>The builder switch <strong>Never play better than the most popular move</strong> (Personality → CP Budget, off by
-  default). When on, a sampled pick that evaluates better than Maia's top move is swapped back to the top move, so
-  probability-steered picks (temperature, Bad Day) can never out-perform the mainstream move. Personality picks may
-  still beat it by up to the CP Budget. When off, the bot can play the strong-but-rare move Maia itself sometimes
-  plays. Bots saved before the switch existed load with it on, as they played.</p>
-  <div class="code">if switch off or pick == topMove → keep
+  <p>Runs only under the two features whose job is to make the bot play worse: <strong>Grandmaster Bad Day</strong>, and
+  <strong>time pressure</strong> when curve B is raising this move's temperature above the base (premoves are judged at
+  their 1-second think time). There, a pick that evaluates better than Maia's top move is swapped back to the top move,
+  so degradation never turns up a brilliancy. Personality picks may still beat it by up to the CP Budget. Ordinary
+  sampling at the bot's own temperature is not checked: Maia sometimes plays a strong rare move, and so does the bot.
+  There is no switch; a <code>noUpgradeGuard</code> field in an older saved bot is ignored.</p>
+  <div class="code">if not (Bad Day or time pressure raising T by &gt; 0.05) or pick == topMove → keep
 evals = Stockfish probe over [pick, topMove]
 allowance = Budget if the personality reshaped this move, else 0
 if eval(pick) − eval(topMove) &gt; allowance → play topMove</div>
-  <p class="note">Grandmaster Bad Day picks the lowest-probability move above its configured floor, and its preset turns
-  this switch on: if that move happens to be strong (a shot few players see), the guard swaps it back to the
-  mainstream move — the bot is never accidentally brilliant.</p>
+  <p class="note">Grandmaster Bad Day picks the lowest-probability move above its configured floor: if that move happens to
+  be strong (a shot few players see), the guard swaps it back to the mainstream move — the bot is never accidentally
+  brilliant.</p>
 
   <h3>9c · Hard Floor Backstop</h3>
   <p>The last stage in the pick flow. Whatever produced the final pick — temperature sampling, the Luck shift, Bad Day,
@@ -669,7 +670,7 @@ weight ×= exp( mobilityBoost + desperadoBoost )</div>
       <tr><td>Pawn Chain Gang</td><td>Pawns</td><td>structure +5, fortkx +1, hustle +1, chaos −1, compwin −2, gambito −1</td><td>Maximises pawn structure. Slightly faster pace.</td></tr>
       <tr><td>Spite Check</td><td>Checks</td><td>chaos +3, compwin +2, attacker +3, trade +2, hustle −2</td><td>Always prefers checking moves. Builds up attacks. Slower, deliberate pace (hustle −2).</td></tr>
       <tr><td>Clock Watcher</td><td>Clock</td><td>compwin −2, trade −1, pressure −3</td><td>Conservative when ahead on time, reckless when behind. Calm under pressure (pressure −3).</td></tr>
-      <tr><td>Grandmaster Bad Day</td><td>Human</td><td>luck +5, pressure +2 (Maia @ 2400, picks lowest-prob move above 4%)</td><td>A strong player having an off day. The preset switches on the §9 degradation guard, which prevents it from ever accidentally choosing a strong move — never brilliant by mistake.</td></tr>
+      <tr><td>Grandmaster Bad Day</td><td>Human</td><td>luck +5, pressure +2 (Maia @ 2400, picks lowest-prob move above 4%)</td><td>A strong player having an off day. The §9 degradation guard runs on every Bad Day pick, which prevents it from ever accidentally choosing a strong move — never brilliant by mistake.</td></tr>
       <tr><td>Drunken Master</td><td>Human</td><td>attacker +4, chaos +3, gambito +3 (Hybrid: 50% Maia 2400 + 50% Maia 1000 per move)</td><td>Each move rolls one of two Maia strengths — brilliant one move, blundering the next. A plain hybrid config, so the two slots are freely re-tunable.</td></tr>
       <tr><td>The Drawmeister</td><td>Human</td><td>trade +4, fortkx +3, structure +2, chaos −4, gambito −3, tension −3 (accepts + offers draws)</td><td>Plays for the half point: simplifies, fortresses up, offers/accepts draws (§10), and installs solid drawish repertoires for both colours (London / Exchange Slav / Four Knights; Petroff / Berlin / Slav).</td></tr>
     </tbody>

@@ -1,8 +1,9 @@
 // Tests for how a move is picked from the shaped distribution in
-// src/50-bot-engine.js: the Conviction share (pickFromProbs) and the
-// "never play better than the most popular move" switch
-// (applyDegradationEvalGuard). Both used to be fixed — 30% argmax, check always
-// on — so a Maia bot at T 1.0 could not sample Maia's distribution as it is.
+// src/50-bot-engine.js: the Conviction share (pickFromProbs) and the check that
+// degradation never plays better than the most popular move
+// (applyDegradationEvalGuard). Both used to be fixed — 30% argmax, check on
+// every pick — so a Maia bot at T 1.0 could not sample Maia's distribution as
+// it is. The check now runs under Bad Day and time pressure only.
 //
 // Same vm approach as bot-premove.test.js: the chess core and the bot engine in
 // one shared scope, with only the engine probe stubbed.
@@ -78,7 +79,8 @@ test('Conviction c plays the top move c + (1 - c) x its probability of the time'
   assert.ok(Math.abs(s.d2d4 - 0.7 * 0.35) < TOL, 'second ' + s.d2d4.toFixed(3));
 });
 
-// ── Never play better than the most popular move ─────────────────────────────
+// ── Degradation never plays better than the most popular move ────────────────
+// The check belongs to Bad Day and time pressure; ordinary sampling is Maia's.
 
 function stubProbe(ctx, evals) {
   ctx.sfReady = true;
@@ -89,30 +91,68 @@ function stubProbe(ctx, evals) {
   };
 }
 
-test('the no-upgrade check is off by default', () => {
-  assert.equal(makeCtx().botNoUpgradeGuard, false);
+// Curve B: T 1.0 at a relaxed 30 s, T 3.0 at one second; "normal" follows it.
+function underTimePressure(ctx) {
+  ctx.botTimePressure = 'normal';
+  ctx.botPressureCurveB = [{ x: 1, y: 3.0 }, { x: 30, y: 1.0 }, { x: 200, y: 1.0 }];
+}
+
+test('there is no switch any more', () => {
+  assert.equal(typeof makeCtx().botNoUpgradeGuard, 'undefined');
 });
 
-test('switched off, a sampled move that beats the popular one is played, unprobed', async () => {
+test('ordinary sampling: a move that beats the popular one is played, unprobed', async () => {
   const ctx = makeCtx();
   stubProbe(ctx, { e2e4: 0, c2c4: 150 });
-  const pick = await ctx.applyDegradationEvalGuard('fen', 'c2c4', PROBS);
+  const pick = await ctx.applyDegradationEvalGuard('fen', 'c2c4', PROBS, false, 2);
   assert.equal(pick, 'c2c4');
   assert.equal(ctx.probes, 0, 'nothing to check, so no engine time');
 });
 
-test('switched on, a sampled move that beats the popular one is swapped back', async () => {
+test('Bad Day: a move that beats the popular one is swapped back', async () => {
   const ctx = makeCtx();
-  ctx.botNoUpgradeGuard = true;
+  ctx.botBadDayMode = true;
   stubProbe(ctx, { e2e4: 0, c2c4: 150 });
-  const pick = await ctx.applyDegradationEvalGuard('fen', 'c2c4', PROBS);
-  assert.equal(pick, 'e2e4');
+  assert.equal(await ctx.applyDegradationEvalGuard('fen', 'c2c4', PROBS), 'e2e4');
 });
 
-test('switched on, a sampled move no better than the popular one stands', async () => {
+test('Bad Day: a move no better than the popular one stands', async () => {
   const ctx = makeCtx();
-  ctx.botNoUpgradeGuard = true;
+  ctx.botBadDayMode = true;
   stubProbe(ctx, { e2e4: 0, c2c4: -40 });
-  const pick = await ctx.applyDegradationEvalGuard('fen', 'c2c4', PROBS);
-  assert.equal(pick, 'c2c4');
+  assert.equal(await ctx.applyDegradationEvalGuard('fen', 'c2c4', PROBS), 'c2c4');
+});
+
+test('time pressure raising the temperature: a better move is swapped back', async () => {
+  const ctx = makeCtx();
+  underTimePressure(ctx);
+  stubProbe(ctx, { e2e4: 0, c2c4: 150 });
+  assert.ok(ctx.timePressureTempByThink(1.0, 2) > 1.05, 'the curve raises T at 2 s');
+  assert.equal(await ctx.applyDegradationEvalGuard('fen', 'c2c4', PROBS, false, 2), 'e2e4');
+});
+
+test('time pressure on, but a relaxed think: no check', async () => {
+  const ctx = makeCtx();
+  underTimePressure(ctx);
+  stubProbe(ctx, { e2e4: 0, c2c4: 150 });
+  assert.equal(await ctx.applyDegradationEvalGuard('fen', 'c2c4', PROBS, false, 60), 'c2c4');
+  assert.equal(ctx.probes, 0);
+});
+
+test('time pressure set to Calm (no escalation): no check', async () => {
+  const ctx = makeCtx();
+  underTimePressure(ctx);
+  ctx.botTimePressure = 'steady';
+  stubProbe(ctx, { e2e4: 0, c2c4: 150 });
+  assert.equal(await ctx.applyDegradationEvalGuard('fen', 'c2c4', PROBS, false, 2), 'c2c4');
+  assert.equal(ctx.probes, 0);
+});
+
+test('with no think time given, the move\'s own is used (none between moves: no check)', async () => {
+  const ctx = makeCtx();
+  underTimePressure(ctx);
+  stubProbe(ctx, { e2e4: 0, c2c4: 150 });
+  // _botMoveThinkSec is null outside a move; a premove passes its own 1 s.
+  assert.equal(await ctx.applyDegradationEvalGuard('fen', 'c2c4', PROBS), 'c2c4');
+  assert.equal(await ctx.applyDegradationEvalGuard('fen', 'c2c4', PROBS, true, 1), 'e2e4');
 });

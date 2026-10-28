@@ -570,6 +570,9 @@ console.log('\n9    Bots take a draw unless more than 200 cp ahead');
       window.botEvalAdvantageCp = async () => adv;
     }, adv);
     await page.waitForTimeout(300);
+    // A bot mid-move defers the offer (retries in 1.5 s), so offer once it has
+    // moved — otherwise the result is read before the decision is made.
+    await page.waitForFunction(() => !botThinking, null, { timeout: 15000 });
     await page.evaluate(() => botConsiderDrawOffer());
     await page.waitForFunction(() => !_botDrawConsidering, null, { timeout: 10000 });
     return page.evaluate(() => ({ over: gameOver, msg: gameOverMsg }));
