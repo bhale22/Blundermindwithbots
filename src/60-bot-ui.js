@@ -830,7 +830,7 @@ function botEngineTag() {
 
 function botUpdatePlayerNames(humanColor) {
   var botName   = botGenerateName() + botEngineTag();
-  var humanName = 'You';
+  var humanName = (typeof lichessOpponentName === 'function' && lichessOpponentName()) || 'You';
   var nameW = document.querySelector('#playerBoxW .player-name');
   var nameB = document.querySelector('#playerBoxB .player-name');
   if (humanColor === 'white') {
@@ -883,6 +883,12 @@ function _checkEngineReady(tab) {
 }
 
 async function botStart() {
+  // A tab hosting the Lichess bot starts games only for Lichess.
+  if (typeof lichessHosting === 'function' && lichessHosting() &&
+      !(typeof lichessStartingGame === 'function' && lichessStartingGame())) {
+    lichessExplainLock();
+    return;
+  }
   // Guard: starting (or restarting) a game while one is in progress forfeits
   // it — online game OR an active bot game with moves already played.
   //
@@ -1173,6 +1179,7 @@ function botCollectConfig(configName, botNameVal) {
       dayLower:        (typeof botDayLower   !== 'undefined') ? botDayLower   : null,
       dayUpper:        (typeof botDayUpper   !== 'undefined') ? botDayUpper   : null,
       badDayMode:      (typeof botBadDayMode !== 'undefined') ? !!botBadDayMode : false,
+      convictionPct:   (typeof botConvictionPct  !== 'undefined') ? botConvictionPct  : null,
       maiaTempValue:   (typeof botMaiaTempValue !== 'undefined') ? botMaiaTempValue : null,
       sfTempLevel:     (typeof botSfTempLevel   !== 'undefined') ? botSfTempLevel   : null,
       pressureDepth:   (typeof botPressureDepth !== 'undefined') ? botPressureDepth : null,
@@ -1253,6 +1260,7 @@ function botApplyConfig(cfg) {
         if (_pz.dayLower   != null) botDayLower   = _pz.dayLower;
         if (_pz.dayUpper   != null) botDayUpper   = _pz.dayUpper;
         botBadDayMode = !!_pz.badDayMode;
+        if (_pz.convictionPct  != null) botConvictionPct  = _pz.convictionPct;
         if (_pz.maiaTempValue != null && typeof botMaiaTempValue !== 'undefined') botMaiaTempValue = _pz.maiaTempValue;
         if (_pz.sfTempLevel   != null && typeof botSfTempLevel   !== 'undefined') botSfTempLevel   = _pz.sfTempLevel;
         if (_pz.pressureDepth != null) botPressureDepth = _pz.pressureDepth;
@@ -2232,6 +2240,14 @@ function botApplyPanelConfig(cfg, applyOnly) {
   botMinProbPct     = (cfg.minProbPct     != null) ? cfg.minProbPct     : 5;
   botBadDayMode     = !!cfg.badDayMode;
 
+  // Conviction: the share of moves that play the top of the shaped
+  // distribution outright. A config from before it was a control ran a fixed
+  // 30%, so that is what an absent field means; the builder loads it the same
+  // way. (A saved noUpgradeGuard is ignored — that check now belongs to Bad Day
+  // and time pressure; see applyDegradationEvalGuard.)
+  botConvictionPct  = (cfg.convictionPct != null)
+    ? Math.max(0, Math.min(100, +cfg.convictionPct || 0)) : 30;
+
   // Draw behaviour + stalemate seeking (desperation)
   // Draws: accept unless more than 200 cp ahead, by default. A config from
   // before that default (no drawDefaults marker) that still carries the OLD
@@ -2409,6 +2425,8 @@ function botApplyPanelConfig(cfg, applyOnly) {
 const BM_LASTBOT_KEY = 'bm_lastBot';
 
 function bmLastBotSave() {
+  // A Lichess game borrows the colour and clock; the user's last bot stands.
+  if (typeof lichessStartingGame === 'function' && lichessStartingGame()) return;
   try {
     let cfg = window._lastAppliedBotConfig || null;
     if (cfg) { cfg = Object.assign({}, cfg); delete cfg._applyOnly; }

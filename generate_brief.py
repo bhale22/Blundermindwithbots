@@ -266,17 +266,18 @@ pipeline = [
     ['6', 'Desperation (opt.)', 'If "seek stalemate when losing" is armed and the engine eval '
                                 'confirms a lost position, candidate weights are re-shaped '
                                 'toward low-own-mobility and material-dumping moves (§10).'],
-    ['7', 'Conviction Pick', '30% of moves: the top-ranked move of the reweighted distribution '
-                             'is played outright (argmax). The other 70%: final temperature '
-                             'applied (base T × phase/pressure modifiers) and one move is '
-                             'sampled (§5).'],
+    ['7', 'Conviction Pick', 'The Conviction share of moves (0% with no personality; choosing '
+                             'a personality sets 100%): the top-ranked move '
+                             'of the reweighted distribution is played outright (argmax). The '
+                             'rest: final temperature applied (base T × phase/pressure '
+                             'modifiers) and one move is sampled (§5).'],
     ['8', 'CP-Budget Acceptance', 'Personality bots only: if the pick differs from '
                                    'Maia\'s most-popular move, a shallow Stockfish probe checks '
                                    'that the pick loses ≤ CP budget vs the popular move; '
                                    'otherwise it walks down the preference order (§9a).'],
-    ['9', 'Degradation Guard', 'Bad-Day / distribution-restricted picks are re-checked so a '
-                                'degraded choice can never out-perform Maia\'s top move — '
-                                'popularity is not quality (§9b).'],
+    ['9', 'Degradation Guard', 'Under Bad Day or time pressure only: a pick that evaluates '
+                                'better than Maia\'s top move is swapped back — degrading never '
+                                'turns up a brilliancy (§9b).'],
     ['10', 'Hard Floor Backstop', 'Whatever mechanism produced the final pick, it may not lose '
                                   'more than the Hard Floor vs the popular move (unless the '
                                   'Floor is Off). Budget-cleared picks skip the check (§9c).'],
@@ -296,8 +297,9 @@ story += [
          'as how <i>good</i> it is — at low ratings the two can even anticorrelate. Therefore '
          'the CP budget and all quality guarantees are enforced with actual Stockfish '
          'evaluations at Stages 8–10, never by treating a probability ratio as a centipawn '
-         'value. Stages 8–9 run only for personality bots; the Hard Floor backstop covers '
-         'every bot. All are fail-open (any probe timeout leaves the pick untouched).'),
+         'value. Stage 8 runs only for personality bots and Stage 9 only under Bad Day or time '
+         'pressure; the Hard Floor backstop covers every bot. All are fail-open (any probe '
+         'timeout leaves the pick untouched).'),
 ]
 story.append(PageBreak())
 
@@ -522,12 +524,17 @@ story.append(PageBreak())
 story += section('5. Temperature & Move Sampling')
 story += [
     body('After attractor reweighting, the <b>conviction pick</b> decides how the move is '
-         'chosen: 30% of the time the bot plays the top-ranked move of the reweighted '
-         'distribution outright (argmax — its personality\'s honest first choice); the other '
-         '70% of the time one move is sampled using temperature-scaled probabilities. '
-         'Temperature T controls how peaked or flat the distribution is before sampling.'),
+         'chosen: on the <b>Conviction</b> share of moves (one value with two linked sliders, '
+         'under the Centipawmeter\'s Budget and under the Engine section\'s distribution chart; '
+         '0–100%; 0% with no personality, set to 100% when a personality '
+         'is chosen) the bot plays the top-ranked move of the '
+         'reweighted distribution outright (argmax — its personality\'s honest first choice); '
+         'the rest are sampled using temperature-scaled probabilities. Temperature T controls '
+         'how peaked or flat the distribution is before sampling. Conviction 0% with T = 1.0 '
+         'and no personality samples Maia\'s distribution unaltered. Bots saved before the '
+         'slider existed load at 30%, the fixed share they were built with.'),
     code('pickFromProbs(moveProbs, T):\n'
-         '  if rand() < 0.30 → return argmax of reweighted distribution\n'
+         '  if rand() < conviction → return argmax of reweighted distribution\n'
          '  else sampleFromProbs(moveProbs, T):\n'
          '    scaled[m] = prob[m] ^ (1/T)\n'
          '    total = Σ scaled[m]\n'
@@ -771,8 +778,9 @@ story += section('9. CP-Budget Acceptance, Degradation Guard & Hard Floor (Engin
 story += [
     body('Maia probability is popularity, not quality. Three post-sampling stages use a '
          'shallow Stockfish probe to hold the played move to a real centipawn standard. '
-         'The first two run only for personality bots (they need the Stage-5 reweighting '
-         'flag); the Hard Floor backstop (§9c) covers picks from <i>any</i> mechanism. All '
+         'The CP-Budget check runs only for personality bots (it needs the Stage-5 reweighting '
+         'flag); the Degradation Guard only under Bad Day or time pressure (§9b); the Hard '
+         'Floor backstop (§9c) covers picks from <i>any</i> mechanism. All '
          'run only when the pick differs from Maia\'s most-popular move, and all are '
          'fail-open — any probe failure or timeout leaves the pick unchanged. The probe '
          'reuses the MultiPV complexity machinery with a searchmoves restriction (depth ~10; '
@@ -801,19 +809,22 @@ story += [
 
 story += subsection('9b. Degradation Guard — applyDegradationEvalGuard()')
 story += [
-    body('Guarantees that a deliberately degraded choice never accidentally out-performs '
-         'Maia\'s top move. It is active when Grandmaster Bad Day is on, or when the '
-         'time-pressure distribution restriction (curve B) is actively narrowing the window. '
-         'The chosen move and the most-popular move are evaluated, and whichever scores '
-         '<i>worse</i> is played.'),
-    code('active if botBadDayMode OR curve-B is narrowing now\n'
-         'if pick == topMove → keep\n'
+    body('Runs only under the two features whose job is to make the bot play worse: '
+         '<b>Grandmaster Bad Day</b>, and <b>time pressure</b> when curve B is raising this '
+         'move\'s temperature above the base (premoves are judged at their 1-second think '
+         'time). There, a pick that evaluates better than Maia\'s top move is swapped back to '
+         'the top move, so degradation never turns up a brilliancy. Personality picks may still '
+         'beat it by up to the CP Budget. Ordinary sampling at the bot\'s own temperature is not '
+         'checked: Maia sometimes plays a strong rare move, and so does the bot. There is no '
+         'switch; a noUpgradeGuard field in an older saved bot is ignored.'),
+    code('if not (Bad Day or time pressure raising T by > 0.05) or pick == topMove → keep\n'
          'evals = SF probe over [pick, topMove]\n'
-         'play the move with the LOWER eval'),
-    note('Consequence: Grandmaster Bad Day picks the lowest-probability move above the '
-         'min-probability slider\'s floor (the preset sets 4%), but if that move happens to be '
-         'strong (a shot few players see), the guard swaps it back to the mainstream move — '
-         'the bot is never accidentally brilliant.'),
+         'allowance = Budget if the personality reshaped this move, else 0\n'
+         'if eval(pick) − eval(topMove) > allowance → play topMove'),
+    note('Grandmaster Bad Day picks the lowest-probability move above the min-probability '
+         'slider\'s floor (the preset sets 4%): if that move happens to be strong (a shot few '
+         'players see), the guard swaps it back to the mainstream move — the bot is never '
+         'accidentally brilliant.'),
 ]
 
 story += subsection('9c. Hard Floor Backstop — applyHardFloorBackstop()')
@@ -951,8 +962,9 @@ pers_rows = [
      'Conservative when ahead on time, reckless when behind. Calm under pressure (pressure −3).'],
     ['Grandmaster Bad Day 👑', 'Human',
      'luck:+5, pressure:+2\n(Maia 3 @ 2400, picks lowest\nprob move above 4%)',
-     'Strong player having an off day. The §9 degradation guard prevents it from ever '
-     'accidentally choosing a strong move — never brilliant by mistake.'],
+     'Strong player having an off day. The §9 degradation guard runs on every Bad Day pick, '
+     'which prevents it from ever accidentally choosing a strong move — never brilliant by '
+     'mistake.'],
     ['Drunken Master 🍺', 'Human',
      'attacker:+4, chaos:+3, gambito:+3\n(Hybrid: 50% Maia 2400 +\n50% Maia 1000 per move)',
      'Each move rolls one of two Maia strengths — brilliant one move, blundering the next. '

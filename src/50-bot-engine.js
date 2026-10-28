@@ -154,6 +154,15 @@ function timePressureTempByThink(baseTemp, thinkSec) {
   return Math.min(ceiling, baseTemp + fraction * boostMult * (ceiling - baseTemp));
 }
 
+// Is time pressure raising the temperature for a move thought about for
+// thinkSec? (The degradation guard's test.) A small tolerance, so a curve that
+// is all but flat at this think time doesn't buy an engine probe every move.
+function _timePressureRaisingTemp(thinkSec) {
+  if (thinkSec === null || thinkSec === undefined) return false;
+  const base = botMaiaBaseTemp();
+  return timePressureTempByThink(base, thinkSec) > base + 0.05;
+}
+
 // ── Draw behaviour ────────────────────────────────────────────────────────────
 // Current position's engine eval from the BOT's perspective (cp), or null.
 // One shallow probe via the complexity machinery (cached per FEN).
@@ -217,6 +226,8 @@ function _botDrawToast(html, buttons) {
 }
 
 function _botAgreeDraw() {
+  // On Lichess the bot's yes goes to the server, which ends the game.
+  if (typeof lichessGameLive === 'function' && lichessGameLive()) { lichessSendDraw(true); return; }
   gameOver = true;
   gameOverMsg = 'Draw by agreement ½-½';
   if (typeof clockStop === 'function') clockStop();
@@ -263,8 +274,10 @@ const _BOT_DECLINE_LINES = [
 let _botDrawConsidering = false;
 async function botConsiderDrawOffer() {
   if (_botDrawConsidering || gameOver || !botActive) return;
-  const decline = () => _botDrawToast(
-    _BOT_DECLINE_LINES[Math.floor(Math.random() * _BOT_DECLINE_LINES.length)]);
+  const decline = () => {
+    if (typeof lichessGameLive === 'function' && lichessGameLive()) lichessSendDraw(false);
+    _botDrawToast(_BOT_DECLINE_LINES[Math.floor(Math.random() * _BOT_DECLINE_LINES.length)]);
+  };
   if (!botAcceptDraws) { decline(); return; }
   // Opponent is about to flag: instant decline, no thought required — the
   // bot is playing for the win on time.
@@ -309,6 +322,12 @@ async function botMaybeOfferDraw() {
   const band = botOfferDrawThresh + (_botDesperateForDraw() ? 150 : 0);
   if (Math.abs(adv) > band) return;
   _botLastDrawOfferPly = ply;
+  // On Lichess the offer goes to the opponent there; the board only reports it.
+  if (typeof lichessGameLive === 'function' && lichessGameLive()) {
+    lichessSendDraw(true);
+    _botDrawToast('🤖 The bot offers a draw on Lichess.');
+    return;
+  }
   _botDrawToast('🤖 The bot offers a draw.', [
     { label: 'Accept ½-½', fn: _botAgreeDraw },
     { label: 'Decline', fn: () => {} },
@@ -463,11 +482,17 @@ async function applyCpBudgetAcceptance(fen, chosenUci, rawProbs, shapedProbs, st
 }
 
 // ── Degradation eval guard ────────────────────────────────────────────────────
-// Bad Day and temperature-based sampling steer the bot's pick by PROBABILITY,
-// which is popularity at the rating, not quality — so the steered pick is
-// occasionally an objectively strong move few players see. Degradation must
-// never upgrade play: when one of those mechanisms lands on a move that
+// The two mechanisms whose job is to make the bot play WORSE — Grandmaster Bad
+// Day (the rarest acceptable move) and time pressure (curve B raising the
+// temperature as think time runs short) — steer the pick by PROBABILITY, which
+// is popularity at the rating, not quality. So the steered pick is occasionally
+// an objectively strong move few players see. Degradation must never upgrade
+// play: when one of them is acting on this move and lands on a move that
 // evaluates BETTER than the most-popular one, this swaps it back.
+//
+// Nothing else is checked. Plain sampling at the user's own temperature is
+// Maia's distribution, rare strong moves included — clamping it would mean the
+// bot was not sampling Maia at all.
 //
 // PERSONALITY IS THE EXCEPTION, and it is deliberate. A real trait deviates in
 // both directions — a 1200 obsessed with pawn structure plays below 1200 on
@@ -478,10 +503,22 @@ async function applyCpBudgetAcceptance(fen, chosenUci, rawProbs, shapedProbs, st
 // (_attrReweightApplied) the pick may therefore beat the popular move by up to
 // the CP Budget — the same allowance applyCpBudgetAcceptance already grants on
 // the downside. Every other mechanism still gets zero upside.
-async function applyDegradationEvalGuard(fen, chosenUci, rawProbs, strict) {
+//
+// (For a while this was a builder switch, "Never play better than the most
+// popular move", and before that it ran on every pick. A switch nobody could
+// read the consequences of was the wrong home for it; it belongs to the two
+// features above, whose own descriptions say so. Saved bots' noUpgradeGuard
+// field is ignored.)
+//
+// thinkSec: the think time this move's temperature was read at — the move's
+// own (_botMoveThinkSec) unless the caller says otherwise (a premove).
+async function applyDegradationEvalGuard(fen, chosenUci, rawProbs, strict, thinkSec) {
   const failed = () => (strict ? null : chosenUci);
   try {
     if (!chosenUci || !rawProbs) return chosenUci;
+    const t = thinkSec !== undefined ? thinkSec : _botMoveThinkSec;
+    const badDay = typeof botBadDayMode !== 'undefined' && botBadDayMode;   // app-shell global
+    if (!badDay && !_timePressureRaisingTemp(t)) return chosenUci;
     let topMove = null, topP = -1;
     for (const m in rawProbs) { if (rawProbs[m] > topP) { topP = rawProbs[m]; topMove = m; } }
     if (!topMove || topMove === chosenUci) return chosenUci;
@@ -1924,17 +1961,27 @@ function botMaiaBaseTemp() {
   return parseFloat((el && el.value) || '1.0') || 1.0;
 }
 
-// ── Conviction pick: 30% argmax / 70% temperature sample ─────────────────────
+// ── Conviction pick: argmax on a share of moves, temperature sample otherwise ─
 // A bot with strong opinions shouldn't be a pure dice-roll, but pure argmax
-// is exploitably deterministic. Middle ground: 30% of moves it simply plays
-// the move its personality ranked highest (argmax over the reweighted
-// distribution); the other 70% it temperature-samples for human variety.
+// is exploitably deterministic. Middle ground: on botConvictionPct of its moves
+// it simply plays the move its personality ranked highest (argmax over the
+// reweighted distribution); the rest it temperature-samples for human variety.
 // Whichever pick emerges, the Budget acceptance then verifies its real price.
-const ARGMAX_PICK_RATE = 0.30;
+//
+// This was a fixed 30% with no control, so a bot set to sample Maia at T 1.0
+// played its top move noticeably more often than Maia does. It is the builder's
+// Conviction slider now (under the Engine section's distribution chart, which
+// draws the mix): 0% = every move sampled, 100% = always the top move. It
+// defaults to 0, so a bot with no personality samples Maia's distribution as
+// it is. Choosing a personality in the builder takes it to 100 — the
+// personality's first choice every move, which is where it reads as itself
+// (the pawn pusher pushes, the attacker attacks). Bots saved before the
+// slider load at the old 30%.
+var botConvictionPct = 0;
 function pickFromProbs(moveProbs, temperature) {
   const entries = Object.entries(moveProbs);
   if (!entries.length) return null;
-  if (Math.random() < ARGMAX_PICK_RATE) {
+  if (Math.random() * 100 < botConvictionPct) {
     let best = entries[0][0], bp = -Infinity;
     for (const [m, p] of entries) { if (p > bp) { bp = p; best = m; } }
     return best;
@@ -3793,14 +3840,15 @@ async function _botPremoveArmRun(pmRating) {
     if (!replyUci) return;
 
     // Held to the same limits as a move the bot thinks about: the CP Budget on
-    // a personality pick, no upgrade past the popular move for anything else,
+    // a personality pick, no upgrade past the popular move under Bad Day or
+    // time pressure (judged at the premove's own think time, as pmTemp was),
     // and the Hard Floor on everything. Strict: a check that cannot complete
     // (engine busy) means no premove this turn, never an unchecked one. Each
     // guard is a no-op when the pick is the popular move itself, so the common
     // case costs no engine time at all.
     replyUci = await applyCpBudgetAcceptance(hypFen, replyUci, replyProbs, shapedReply, true);
     if (!replyUci || myGen !== _botPremoveGen || myGameGen !== _botGameGen) return;
-    replyUci = await applyDegradationEvalGuard(hypFen, replyUci, replyProbs, true);
+    replyUci = await applyDegradationEvalGuard(hypFen, replyUci, replyProbs, true, PREMOVE_THINK_SEC);
     if (!replyUci || myGen !== _botPremoveGen || myGameGen !== _botGameGen) return;
     replyUci = await applyHardFloorBackstop(hypFen, replyUci, replyProbs, true);
     if (!replyUci || myGen !== _botPremoveGen || myGameGen !== _botGameGen) return;
