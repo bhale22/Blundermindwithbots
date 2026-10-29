@@ -10425,9 +10425,10 @@ function _lbcSummary(){
 // permission the bot needs (bot:play — playing, and reading and answering
 // challenges), and the upgrade happens in this popup once the token is in.
 const LBC_TOKEN_URL = 'https://lichess.org/account/oauth/token/create?scopes[]=bot:play&description=Blundermind+bot';
-function _lbcGuide(open){
+// Folded until asked for, whether or not a token is saved.
+function _lbcGuide(){
   const a = (href, text) => '<a href="' + href.replace(/&/g, '&amp;') + '" target="_blank" rel="noopener">' + text + ' ↗</a>';
-  return '<details class="lbc-guide"' + (open ? ' open' : '') + '>' +
+  return '<details class="lbc-guide">' +
     '<summary>New to this? Make a Lichess bot account in 6 steps</summary>' +
     '<ol class="lbc-steps">' +
     '<li><b>Get an email address for the bot.</b> Lichess allows one account per email address, and it counts ' +
@@ -10441,18 +10442,18 @@ function _lbcGuide(open){
       'the top right, not yours, then ' + a(LBC_TOKEN_URL, 'make a token') + '. The bot permission is already ticked: ' +
       'scroll down, press <b>Create</b>, and copy the token (it starts with lip_). Lichess shows it only once. Keep it ' +
       'private — anyone who has it can play as your bot.</li>' +
-    '<li><b>Paste the token below and press Connect.</b> The new account isn’t a bot account yet, so this popup offers to ' +
-      'upgrade it: one click, and permanent.</li>' +
+    '<li><b>Upgrade to a bot account: paste the token below and press Connect.</b> The new account isn’t a bot account ' +
+      'yet, so this popup offers to upgrade it: one click, and permanent.' +
+      '<details class="lbc-guide lbc-sub"><summary>Rather upgrade the account yourself?</summary>' +
+      '<div class="lbc-note" style="margin-top:4px;">Put your token in place of YOUR_TOKEN and run one of these. ' +
+        'Lichess answers {"ok":true}. Then paste the token below and press Connect.</div>' +
+      '<div class="lbc-note"><b>Windows</b> — open PowerShell (Start menu, type PowerShell):</div>' +
+      '<pre class="lbc-cmd">Invoke-RestMethod -Method Post -Uri https://lichess.org/api/bot/account/upgrade -Headers @{Authorization="Bearer YOUR_TOKEN"}</pre>' +
+      '<div class="lbc-note"><b>Mac or Linux</b> — open Terminal:</div>' +
+      '<pre class="lbc-cmd">curl -d \'\' https://lichess.org/api/bot/account/upgrade -H "Authorization: Bearer YOUR_TOKEN"</pre>' +
+      '</details></li>' +
     '<li><b>Play your bot.</b> Sign back in to your own Lichess account, find your bot’s profile, and press Challenge.</li>' +
     '</ol>' +
-    '<details class="lbc-guide lbc-sub"><summary>Rather upgrade the account yourself?</summary>' +
-    '<div class="lbc-note" style="margin-top:4px;">Step 5 can be done by hand instead. Put your token in place of ' +
-      'YOUR_TOKEN and run one of these. Lichess answers {"ok":true}.</div>' +
-    '<div class="lbc-note"><b>Windows</b> — open PowerShell (Start menu, type PowerShell):</div>' +
-    '<pre class="lbc-cmd">Invoke-RestMethod -Method Post -Uri https://lichess.org/api/bot/account/upgrade -Headers @{Authorization="Bearer YOUR_TOKEN"}</pre>' +
-    '<div class="lbc-note"><b>Mac or Linux</b> — open Terminal:</div>' +
-    '<pre class="lbc-cmd">curl -d \'\' https://lichess.org/api/bot/account/upgrade -H "Authorization: Bearer YOUR_TOKEN"</pre>' +
-    '</details>' +
     '</details>';
 }
 
@@ -10518,14 +10519,14 @@ function _lbcRender(){
     ? '<div class="lbc-note" style="margin-top:0;">A token for the bot account is saved in this browser. ' +
       '<button type="button" class="lbc-link" onclick="_lbcNewToken=true;_lbcRender();">Use a different token</button></div>'
     : '<input type="password" id="lbc-token" autocomplete="off" spellcheck="false" placeholder="Paste the bot account’s token (lip_…)">' +
-      '<div class="lbc-note">No token yet? Steps 1–4 below get you one — the ' +
+      '<div class="lbc-note">No token yet? Open “New to this?” below — steps 1–4 get you one, and the ' +
       '<a href="' + LBC_TOKEN_URL.replace(/&/g, '&amp;') + '" target="_blank" rel="noopener">make a token ↗</a> ' +
       'link ticks the bot permission for you.</div>';
   body.innerHTML =
     '<p>This tab will play on Lichess as your bot account, with the bot set up in this builder.</p>' +
     '<div class="lbc-h">The bot</div><dl class="lbc-sum">' + _lbcSummary() + '</dl>' +
     '<div class="lbc-note">Each game’s time control and colours come from the challenge.</div>' +
-    '<div class="lbc-h">Lichess bot account</div>' + tokenHtml + _lbcGuide(!saved) +
+    '<div class="lbc-h">Lichess bot account</div>' + tokenHtml + _lbcGuide() +
     '<div class="lbc-h">Accept challenges</div>' +
     '<div class="lbc-checks">' + cb('lbc-casual', 'Casual', set.casual) + cb('lbc-rated', 'Rated', set.rated) +
       cb('lbc-bots', 'From other bots', set.bots) + '</div>' +

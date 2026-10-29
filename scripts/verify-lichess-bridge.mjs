@@ -373,10 +373,20 @@ const boardFrame = async () => {
 };
 await page.click('#lbConnect');
 let bf = await boardFrame();
-const fromBoard = await bf.evaluate(() => ({ guide: !!document.querySelector('.lbc-guide[open]'),
-  steps: document.querySelectorAll('.lbc-steps > li').length, token: !!document.getElementById('lbc-token'),
-  link: document.querySelector('.lbc-steps a[href*="oauth/token/create"]')?.getAttribute('href') || '' }));
-check(fromBoard.token && fromBoard.guide && fromBoard.steps === 6, 'the board\'s Connect opens the same popup, with the 6-step guide open', fromBoard);
+const fromBoard = await bf.evaluate(() => {
+  const guide = document.querySelector('#lbc-body > .lbc-guide');
+  const folded = !!guide && !guide.open;
+  guide.querySelector('summary').click();   // opens only when asked
+  const step5 = document.querySelectorAll('.lbc-steps > li')[4];
+  return { folded, opened: guide.open,
+    steps: document.querySelectorAll('.lbc-steps > li').length, token: !!document.getElementById('lbc-token'),
+    step5: step5?.querySelector(':scope > b')?.textContent || '', diy: !!step5?.querySelector(':scope > details.lbc-sub'),
+    link: document.querySelector('.lbc-steps a[href*="oauth/token/create"]')?.getAttribute('href') || '' };
+});
+check(fromBoard.token && fromBoard.steps === 6, 'the board\'s Connect opens the same popup, with the 6-step guide', fromBoard);
+check(fromBoard.folded && fromBoard.opened, 'the guide starts folded and opens when pressed', fromBoard);
+check(/^Upgrade to a bot account: paste the token below and press Connect/.test(fromBoard.step5) && fromBoard.diy,
+  'step 5 is the upgrade, with the do-it-yourself commands inside it', fromBoard.step5);
 check(/scopes\[\]=bot:play/.test(fromBoard.link), 'the token link pre-ticks bot:play', fromBoard.link);
 await bf.evaluate(() => [...document.querySelectorAll('#lbc-btns button')].find(b => /Cancel/.test(b.textContent)).click());
 await page.waitForTimeout(300);
