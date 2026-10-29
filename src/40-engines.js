@@ -227,6 +227,10 @@ function sfGetComplexity(fen) {
     }
     // Cannot run while a move request is in flight — skip and return null
     if (sfPendingResolve) { resolve(null); return; }
+    // Nor over another probe. Taking it over used to orphan that probe's
+    // promise (its timeout no longer matched, so it never resolved) and parse
+    // this result in the other probe's mode, which came back empty.
+    if (sfCplxActive) { resolve(null); return; }
     sfCplxActive   = true;
     sfCplxPending  = resolve;
     sfCplxInfoLines = [];

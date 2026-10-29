@@ -2012,6 +2012,8 @@ function openBotModal() {
           ready: _maiaReady, progress: _maiaProgress || 0
         }, location.origin);
         frame.contentWindow.postMessage({ type: 'botTourAuto' }, location.origin);
+        // Whether this tab hosts a Lichess bot (its Start becomes an update).
+        if (typeof _lbPushState === 'function') _lbPushState();
         // A restored last bot (_panelPushConfig): same once-only repeat, and
         // before the quick pick, which is applied on top of it.
         if (window._panelPendingConfig) {
@@ -2087,13 +2089,17 @@ window.addEventListener('message', function(e) {
     return;
   }
   if (e.data.type !== 'botConfig') return;
+  // A tab hosting the Lichess bot: the builder's bot is for the next game,
+  // never this one (lichessUpdateBot).
+  if (typeof lichessHosting === 'function' && lichessHosting()) { lichessUpdateBot(e.data); return; }
   botApplyPanelConfig(e.data, !!e.data._applyOnly);
 });
 
 // Apply a config in the builder's format — from the builder's Start, a shared
 // link, or the last bot played (bmLastBotRestore). `applyOnly` sets the bot up
-// without starting a game.
-function botApplyPanelConfig(cfg, applyOnly) {
+// without starting a game; `opts.keepModal` leaves the builder open (a Lichess
+// game starting under it).
+function botApplyPanelConfig(cfg, applyOnly, opts) {
   // Keep the applied config so the pro board's "Save bot" can export it later
   window._lastAppliedBotConfig = cfg;
   // The builder's config names its own engine and rating, so any quick-block
@@ -2399,7 +2405,7 @@ function botApplyPanelConfig(cfg, applyOnly) {
   window._bcpCustomControls   = Array.isArray(cfg.customControls) ? cfg.customControls : [];
   window._bcpHustlerTempMode  = (cfg.personalityId === 'hustler');
 
-  closeBotModal();
+  if (!(opts && opts.keepModal)) closeBotModal();
   // The panel's START button means "apply AND play", which is why this has
   // always ended by starting a game. A shared link only means "apply": the
   // visitor has not asked to play yet, and on a first visit this was starting a
@@ -2424,11 +2430,13 @@ function botApplyPanelConfig(cfg, applyOnly) {
 // thing and has its own snapshot (bm_liveGame), restored after this.
 const BM_LASTBOT_KEY = 'bm_lastBot';
 
-function bmLastBotSave() {
+// cfgOverride: a builder config to remember instead of the applied one (a
+// Lichess host's update, waiting for its next game).
+function bmLastBotSave(cfgOverride) {
   // A Lichess game borrows the colour and clock; the user's last bot stands.
   if (typeof lichessStartingGame === 'function' && lichessStartingGame()) return;
   try {
-    let cfg = window._lastAppliedBotConfig || null;
+    let cfg = cfgOverride || window._lastAppliedBotConfig || null;
     if (cfg) { cfg = Object.assign({}, cfg); delete cfg._applyOnly; }
     const tc = TIME_CONTROLS[botSelectedTC];
     const clock = (botSelectedTC !== 'untimed' && tc && tc.time > 0) ? Object.assign({}, tc) : null;

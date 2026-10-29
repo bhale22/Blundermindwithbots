@@ -203,7 +203,21 @@ function opponentTurn(g) {
       const p = g.bd[mv.from];
       const promo = p.piece === 'P' && (mv.to < 8 || mv.to >= 56) ? 'q' : '';
       play(g, nameOf(mv.from) + nameOf(mv.to) + promo);
+      // An offer that travels with the move: the same gameState carries both.
+      if (o.drawWithMoveAtPly != null && ply === o.drawWithMoveAtPly) {
+        if (oc === 'w') g.wdraw = true; else g.bdraw = true;
+        g.offered = true;
+      }
       broadcast(g);
+      // An offer made just after moving, while the bot is thinking.
+      if (o.drawMidThinkAtPly != null && ply === o.drawMidThinkAtPly) {
+        await sleep(o.midThinkDelayMs || 400);
+        if (g.status === 'started' && g.turn === botLetter(g)) {
+          if (oc === 'w') g.wdraw = true; else g.bdraw = true;
+          g.offered = true;
+          broadcast(g);
+        }
+      }
     } finally {
       g.oppBusy = false;
     }
@@ -214,15 +228,31 @@ function readBody(req) {
   return new Promise(r => { let b = ''; req.on('data', d => b += d); req.on('end', () => r(b)); });
 }
 
+// Three accounts for the Bot Builder's connect flow (section 8): the bot
+// account; a fresh one, never played, that can be upgraded (it IS the bot
+// account once it has been, so its games play as BOT); and one that has
+// played games, which Lichess refuses to upgrade.
+const FRESH = 'lip_fresh', PLAYED = 'lip_played';
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') { cors(res, 204); res.end(); return; }
-  if (req.headers.authorization !== 'Bearer ' + TOKEN) { json(res, 401, { error: 'No such token' }); return; }
+  const tok = (req.headers.authorization || '').replace(/^Bearer /, '');
+  if (![TOKEN, FRESH, PLAYED].includes(tok)) { json(res, 401, { error: 'No such token' }); return; }
   const u = new URL(req.url, 'http://x');
   const p = u.pathname;
   let m;
   if (req.method === 'POST') M.posts.push(p + u.search);
 
-  if (req.method === 'GET' && p === '/api/account') { json(res, 200, { id: BOT.id, username: BOT.name, title: 'BOT' }); return; }
+  if (req.method === 'GET' && p === '/api/account') {
+    if (tok === PLAYED) { json(res, 200, { id: 'playedhuman', username: 'PlayedHuman', count: { all: 12 } }); return; }
+    if (tok === FRESH && !M.freshUpgraded) { json(res, 200, { id: BOT.id, username: BOT.name, count: { all: 0 } }); return; }
+    json(res, 200, { id: BOT.id, username: BOT.name, title: 'BOT', count: { all: 0 } });
+    return;
+  }
+  if (req.method === 'POST' && p === '/api/bot/account/upgrade') {
+    if (tok === FRESH && !M.freshUpgraded) { M.freshUpgraded = true; json(res, 200, { ok: true }); return; }
+    json(res, 400, { error: tok === PLAYED ? 'This account has played games' : 'Already a bot account' });
+    return;
+  }
 
   if (req.method === 'GET' && p === '/api/stream/event') {
     cors(res, 200, 'application/x-ndjson');
@@ -274,6 +304,8 @@ const server = http.createServer(async (req, res) => {
     if ((m = act.match(/^move\/(\w+)$/))) {
       const uci = m[1];
       g.botPosts.push(uci);
+      // On Lichess this move would decline a standing offer from the opponent.
+      if (g.botWhite ? g.bdraw : g.wdraw) g.movedOverOffer = (g.movedOverOffer || 0) + 1;
       if (g.status !== 'started' || g.turn !== botLetter(g)) { g.refused.push(uci); json(res, 400, { error: 'Not your turn, or game already over' }); return; }
       if (g.opts.rejectAtPly != null && g.moves.length >= g.opts.rejectAtPly && !g.rejected) {
         g.rejected = true; g.refused.push(uci);
@@ -450,6 +482,32 @@ await sleep(800);
 check(await pageBoard() === placement(g4.bd), 'board matches the server after the reload');
 check(g4.refused.length === 0, 'no move refused after the reload', g4.refused);
 
+console.log('\n6b. Draw offers the bot must answer before it moves');
+// The bot is told it is lost, so yes is always the right answer. What is
+// checked is WHEN it answers: before its own move goes out, because on Lichess
+// that move would decline the offer unread.
+await page.evaluate(() => { window._keepAdv = botPerceivedAdvantageCp; window.botPerceivedAdvantageCp = async () => -900; });
+const c5 = newChallenge({ color: 'white', opts: { drawWithMoveAtPly: 4 } });
+await until(() => M.challenges[c5].gameId, 5000);
+const g5 = M.games[M.challenges[c5].gameId];
+await until(() => g5.status !== 'started', 90000, 'game 5 to finish');
+await sleep(600);
+check(g5.offered && g5.status === 'draw' && g5.draws.includes('yes'),
+  'an offer that comes with the opponent\'s move: the lost bot takes it', { status: g5.status, draws: g5.draws, offered: !!g5.offered });
+check(!g5.movedOverOffer, 'its move never went out over the offer', g5.movedOverOffer);
+
+// Slow the bot down so the offer lands while it is thinking.
+await page.evaluate(() => { botTimeBehavior = 'fixed'; botFixedDelayMs = 2500; });
+const c6 = newChallenge({ color: 'white', opts: { drawMidThinkAtPly: 4, midThinkDelayMs: 600 } });
+await until(() => M.challenges[c6].gameId, 5000);
+const g6 = M.games[M.challenges[c6].gameId];
+await until(() => g6.status !== 'started', 90000, 'game 6 to finish');
+await sleep(600);
+check(g6.offered && g6.status === 'draw' && g6.draws.includes('yes'),
+  'an offer made while the bot is thinking: answered before its move', { status: g6.status, draws: g6.draws, offered: !!g6.offered });
+check(!g6.movedOverOffer, 'no move went out over that offer either', g6.movedOverOffer);
+await page.evaluate(() => { window.botPerceivedAdvantageCp = window._keepAdv; quickBotPick('1200'); });
+
 console.log('\n7. Leaving no trace');
 check(await page.evaluate(() => localStorage.getItem('bm_lastBot')) === lastBotBefore, 'the user\'s remembered bot is untouched');
 check(M.posts.filter(p => p.includes('/move/')).every(p => /\/move\/[a-h][1-8][a-h][1-8][qrbn]?$/.test(p)), 'every move post is plain UCI');
@@ -460,6 +518,109 @@ await page.click('#lbForget');
 check(await page.isVisible('#lbToken') && !(await page.evaluate(() => localStorage.getItem('bm_lichessBot') || '')).includes(TOKEN),
   'forget token clears it from storage and brings the field back');
 check(pageErrors.length === 0, 'no page errors', pageErrors.slice(0, 5));
+
+// ── 8. Connecting from the Bot Builder ──────────────────────────────────────
+// A fresh browser (no token, no bot) on an ordinary page: the builder's
+// Lichess pill opens the popup, which checks the token, upgrades a fresh
+// account, hands the bot over, and lands on the board, connected.
+console.log('\n8. Connecting from the Bot Builder');
+const ctx2 = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+await ctx2.addInitScript(() => {
+  try { localStorage.setItem('bm_welcomed', '1'); localStorage.setItem('bm_landingSeen', '1'); localStorage.setItem('bm_bottour', '1'); } catch (e) {}
+});
+const p2 = await ctx2.newPage();
+const errs2 = [];
+p2.on('pageerror', e => errs2.push(e.message));
+p2.on('dialog', d => d.accept());
+await p2.goto(APP + '?lichessApi=http://localhost:' + MOCK_PORT, { waitUntil: 'domcontentloaded' });
+await p2.waitForFunction(() => typeof openBotModal === 'function' && typeof lichessBuilderState === 'function');
+await p2.waitForTimeout(800);
+check(!(await p2.evaluate(() => document.getElementById('lbPanel'))), 'an ordinary page has no Lichess panel and does not connect');
+await p2.evaluate(() => openBotModal());
+const fr = await (await p2.waitForSelector('#botModalFrame')).contentFrame();
+await fr.waitForFunction(() => typeof lbcOpen === 'function' && typeof getBotConfig === 'function');
+await fr.waitForTimeout(400);
+// A fast Flounder bot, so no model download is needed.
+await fr.evaluate(() => { selEngineMode(document.querySelector('#engine-mode-grid .mcard[data-engine="stockfish"]')); setElo(1200); });
+const pill = await fr.evaluate(() => ({ shown: getComputedStyle(document.getElementById('qs-lichess-wrap')).display !== 'none',
+  text: document.getElementById('qs-lichess-value').textContent, start: document.querySelector('.start-btn').textContent }));
+check(pill.shown && /Play as a bot/.test(pill.text) && /Start/.test(pill.start), 'the builder shows a Lichess pill; Start is Start', pill);
+await fr.click('#qs-lichess-btn');
+const pop = await fr.evaluate(() => ({ open: document.getElementById('lbc-overlay').classList.contains('show'),
+  sum: document.querySelector('.lbc-sum')?.textContent || '', token: !!document.getElementById('lbc-token'),
+  casual: document.getElementById('lbc-casual')?.checked, rated: document.getElementById('lbc-rated')?.checked }));
+check(pop.open && /Flounder/.test(pop.sum) && /Conviction/.test(pop.sum) && /Draws/.test(pop.sum), 'the popup summarises the bot', pop.sum.slice(0, 120));
+check(pop.token && pop.casual === true && pop.rated === false, 'it asks for a token; casual on, rated off by default', pop);
+
+await fr.fill('#lbc-token', 'lip_wrong');
+await fr.click('#lbc-connect-btn');
+await until(() => fr.evaluate(() => /rejected/.test(document.getElementById('lbc-status').textContent)), 5000);
+check(await fr.evaluate(() => /rejected/.test(document.getElementById('lbc-status').textContent)), 'a bad token is reported in the popup');
+
+await fr.fill('#lbc-token', PLAYED);
+await fr.click('#lbc-connect-btn');
+await until(() => fr.evaluate(() => /played 12 games/.test(document.getElementById('lbc-body').textContent)), 5000);
+check(await fr.evaluate(() => /played 12 games/.test(document.getElementById('lbc-body').textContent) && !document.getElementById('lbc-upgrade-btn')),
+  'an account that has played games: told why it cannot be upgraded, no upgrade button');
+await fr.evaluate(() => document.querySelector('#lbc-btns button').click());   // Back
+
+await fr.fill('#lbc-token', FRESH);
+await fr.click('#lbc-connect-btn');
+await until(() => fr.evaluate(() => !!document.getElementById('lbc-upgrade-btn')), 5000);
+const up = await fr.evaluate(() => ({ disabled: document.getElementById('lbc-upgrade-btn').disabled,
+  text: document.getElementById('lbc-body').textContent }));
+check(up.disabled && /permanent/.test(up.text) && /never played/.test(up.text), 'a fresh account: the upgrade is explained and needs a tick first', up.text.slice(0, 80));
+check(!M.freshUpgraded, 'nothing is upgraded before the tick and the click');
+await fr.check('#lbc-understand');
+await fr.click('#lbc-upgrade-btn');
+await until(() => p2.evaluate(() => lbState === 'waiting'), 10000, 'connected from the builder');
+const after = await p2.evaluate(() => ({ state: lbState, modal: document.getElementById('botModal').style.display,
+  url: location.search, panel: !!document.getElementById('lbPanel'), applied: window._lastAppliedBotConfig && window._lastAppliedBotConfig.elo,
+  saved: (JSON.parse(localStorage.getItem('bm_lastBot') || 'null') || {}).cfg?.elo }));
+check(M.freshUpgraded, 'the account was upgraded');
+check(after.state === 'waiting' && after.modal === 'none' && after.panel, 'connected, the builder closed, the board and its Lichess panel showing', after);
+check(/(^|[?&])lichess(&|$)/.test(after.url), 'the address marks the tab as the host (a reload reconnects it)', after.url);
+check(after.applied === 1200 && after.saved === 1200, 'the builder\'s bot is the page\'s bot, and remembered', after);
+
+// Back in the builder: it knows, and Start now updates the Lichess bot.
+await p2.evaluate(() => openBotModal());
+await fr.waitForTimeout(500);
+const conn = await fr.evaluate(() => ({ text: document.getElementById('qs-lichess-value').textContent,
+  start: document.querySelector('.start-btn').textContent }));
+check(/@BMTestBot/.test(conn.text) && /Update Lichess bot/.test(conn.start), 'the builder shows the connection; Start reads Update Lichess bot', conn);
+
+// An update mid-game plays from the next game.
+const c8 = newChallenge({ color: 'white', opts: { resignAtPly: 10 } });
+await until(() => M.challenges[c8].gameId, 5000);
+const g8 = M.games[M.challenges[c8].gameId];
+await until(() => g8.moves.length >= 2, 30000, 'game under way');
+await fr.evaluate(() => { setElo(1500); startGame(); });
+await p2.waitForTimeout(400);
+const mid = await p2.evaluate(() => ({ next: lichessBuilderState().nextPending, applied: window._lastAppliedBotConfig.elo,
+  plays: document.getElementById('lbBot').textContent, modal: document.getElementById('botModal').style.display }));
+check(mid.next && mid.applied === 1200 && /next game/.test(mid.plays) && mid.modal === 'none',
+  'an update during a game waits for the next one (the board says so)', mid);
+await until(() => g8.status !== 'started', 90000, 'game 8 to finish');
+const c9 = newChallenge({ color: 'black', opts: { resignAtPly: 4 } });
+await until(() => M.challenges[c9].gameId, 5000);
+await until(() => p2.evaluate(() => window._lastAppliedBotConfig.elo === 1500), 10000);
+check(await p2.evaluate(() => window._lastAppliedBotConfig.elo === 1500 && !lichessBuilderState().nextPending),
+  'the next game plays with the update');
+await until(() => M.games[M.challenges[c9].gameId].status !== 'started', 90000, 'game 9 to finish');
+
+// Disconnect from the builder's popup.
+await p2.evaluate(() => openBotModal());
+await fr.waitForTimeout(400);
+await fr.click('#qs-lichess-btn');
+check(await fr.evaluate(() => /connected/i.test(document.getElementById('lbc-title').textContent)), 'connected, the pill opens a status popup');
+await fr.evaluate(() => [...document.querySelectorAll('#lbc-btns button')].find(b => /Disconnect/.test(b.textContent)).click());
+await until(() => p2.evaluate(() => lbState === 'off'), 5000);
+const off = await p2.evaluate(() => ({ state: lbState, url: location.search }));
+await fr.waitForTimeout(300);
+const offB = await fr.evaluate(() => ({ text: document.getElementById('qs-lichess-value').textContent, start: document.querySelector('.start-btn').textContent }));
+check(off.state === 'off' && !/(^|[?&])lichess(&|$)/.test(off.url), 'disconnected; the address no longer marks a host', off);
+check(/Play as a bot/.test(offB.text) && /Start/.test(offB.start) && !/Update/.test(offB.start), 'the builder is back to Start', offB);
+check(errs2.length === 0, 'no page errors (builder flow)', errs2.slice(0, 5));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 await browser.close();

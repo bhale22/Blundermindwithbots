@@ -168,6 +168,11 @@ function _timePressureRaisingTemp(thinkSec) {
 // One shallow probe via the complexity machinery (cached per FEN).
 async function botEvalAdvantageCp() {
   if (!sfReady) { try { await sfInit(); } catch (e) { return null; } }
+  // Stockfish runs one search at a time, and the bot's own checks (premove
+  // arming, the CP Budget, the Hard Floor, a Flounder move) may hold it. A
+  // probe that cannot start comes back empty, which a draw offer reads as a
+  // no — so wait for the engine to be free first (a few seconds at most).
+  for (let i = 0; i < 60 && _sfBusy(); i++) await new Promise(r => setTimeout(r, 100));
   const fullmove = Math.floor(gameMovesAlgebraic.length / 2) + 1;
   const fen = boardToFen(board, turn, castling, epSq, halfmoveClock, fullmove);
   const res = await sfGetComplexity(fen);
@@ -176,6 +181,10 @@ async function botEvalAdvantageCp() {
   // human doesn't (botPlayerColor is the HUMAN's color)
   const botColor = (botPlayerColor === 'white') ? 'b' : 'w';
   return turn === botColor ? res.eval : -res.eval;
+}
+function _sfBusy() {
+  return (typeof sfCplxActive !== 'undefined' && !!sfCplxActive) ||
+         (typeof sfPendingResolve !== 'undefined' && !!sfPendingResolve);
 }
 
 // ── ELO-scaled position judgment ─────────────────────────────────────────────
@@ -274,34 +283,60 @@ const _BOT_DECLINE_LINES = [
 let _botDrawConsidering = false;
 async function botConsiderDrawOffer() {
   if (_botDrawConsidering || gameOver || !botActive) return;
+  // A no that needs no thought (see _botDecideDraw) is given at once.
+  const quickNo = !botAcceptDraws || _botExpectsToFlagOpponent();
+  // On Lichess the bot's move would decline the offer unread, so on its own
+  // turn the answer is given just before that move goes out
+  // (_botAnswerDrawFirst) — after its thinking, whose engine checks would
+  // otherwise compete with this one for Stockfish.
+  const botsTurn = turn === (botPlayerColor === 'white' ? 'b' : 'w');
+  if (!quickNo && (botThinking || botsTurn) &&
+      typeof lichessGameLive === 'function' && lichessGameLive()) return;
+  // Mid-think: try again once the bot's move (and its probes) are done
+  if (botThinking && !quickNo) { setTimeout(botConsiderDrawOffer, 1500); return; }
+  await _botDecideDraw();
+}
+
+// The decision. Resolves true when the bot took the draw.
+async function _botDecideDraw() {
   const decline = () => {
     if (typeof lichessGameLive === 'function' && lichessGameLive()) lichessSendDraw(false);
     _botDrawToast(_BOT_DECLINE_LINES[Math.floor(Math.random() * _BOT_DECLINE_LINES.length)]);
+    return false;
   };
-  if (!botAcceptDraws) { decline(); return; }
+  if (!botAcceptDraws) return decline();
   // Opponent is about to flag: instant decline, no thought required — the
   // bot is playing for the win on time.
-  if (_botExpectsToFlagOpponent()) { decline(); return; }
-  // Mid-think: try again once the bot's move (and its probes) are done
-  if (botThinking) { setTimeout(botConsiderDrawOffer, 1500); return; }
+  if (_botExpectsToFlagOpponent()) return decline();
   _botDrawConsidering = true;
   try {
     _botDrawToast('🤖 The bot is considering your draw offer…');
     const adv = botDrawUseObjectiveEval
       ? await botEvalAdvantageCp()      // objective: Skill 20, depth 12
       : await botPerceivedAdvantageCp(); // strength-scaled, with noise
-    if (gameOver || !botActive) return;
+    if (gameOver || !botActive) return false;
     // About to flag itself → takes the half point from far better positions
     const margin = botDrawAcceptMargin + (_botDesperateForDraw() ? 200 : 0);
     if (adv !== null && adv <= margin) {
       _botDrawToast('🤖 Draw accepted. ½-½');
       _botAgreeDraw();
-    } else {
-      decline();
+      return true;
     }
+    return decline();
   } finally {
     _botDrawConsidering = false;
   }
+}
+
+// On Lichess a move declines the opponent's standing draw offer. So before
+// the bot's move goes out, an offer still waiting gets its answer — weighed
+// now, or the one already being weighed. True means the bot took the draw:
+// the server ends the game, and the move is not played.
+async function _botAnswerDrawFirst() {
+  if (typeof lichessDrawAwaitingAnswer !== 'function') return false;
+  for (let i = 0; i < 100 && _botDrawConsidering; i++) await new Promise(r => setTimeout(r, 100));
+  if (lichessDrawAwaitingAnswer()) return await _botDecideDraw();
+  return typeof lichessDrawAccepted === 'function' && lichessDrawAccepted();
 }
 
 // After its move, a draw-offering bot checks whether the position FEELS level
@@ -2837,6 +2872,9 @@ async function botMakeMove() {
             const bookDelay = Math.max(0, botBookMoveDelayMs(clockMs) - (Date.now() - _botMoveStartMs));
             await new Promise(r => setTimeout(r, bookDelay));
             if (_myGen !== _botGameGen) return; // game restarted mid-think — discard
+            const _tookDraw = await _botAnswerDrawFirst();
+            if (_myGen !== _botGameGen) return;
+            if (_tookDraw) { botThinking = false; document.getElementById('botStatus').textContent = ''; return; }
             botThinking = false;
             document.getElementById('botStatus').textContent = '';
             if (uciMove && botActive) {
@@ -2886,6 +2924,9 @@ async function botMakeMove() {
         const bookDelay = Math.max(0, botBookMoveDelayMs(clockMs) - (Date.now() - _botMoveStartMs));
         await new Promise(r => setTimeout(r, bookDelay));
         if (_myGen !== _botGameGen) return; // game restarted mid-think — discard
+        const _tookDraw = await _botAnswerDrawFirst();
+        if (_myGen !== _botGameGen) return;
+        if (_tookDraw) { botThinking = false; document.getElementById('botStatus').textContent = ''; return; }
         botThinking = false;
         document.getElementById('botStatus').textContent = '';
         if (uciMove && botActive) {
@@ -3252,9 +3293,13 @@ async function botMakeMove() {
   // Stale check AFTER every engine await: a restart bumped the generation, so
   // this reply belongs to a dead game — leave the new game's state alone.
   if (_myGen !== _botGameGen) return;
+  // A Lichess draw offer is answered before the move that would decline it.
+  const _tookDraw = await _botAnswerDrawFirst();
+  if (_myGen !== _botGameGen) return;
 
   botThinking = false;
   document.getElementById('botStatus').textContent = '';
+  if (_tookDraw) return;
 
   if (uciMove && botActive) {
     const mv = uciToSq(uciMove);
@@ -3957,6 +4002,15 @@ function botPremoveTryFire() {
   if (!botActive || gameOver) { botPremoveUpdateBadge(); return false; }
   var botColor = botPlayerColor === 'white' ? 'b' : 'w';
   if (turn !== botColor) { botPremoveUpdateBadge(); return false; }
+
+  // A Lichess draw offer came with the human's move: the premove would decline
+  // it unread. Set the premove aside — no busted tax, the human did not beat
+  // it — and let the normal turn answer the offer, then move.
+  if (typeof lichessDrawAwaitingAnswer === 'function' && lichessDrawAwaitingAnswer()) {
+    botPremoveStats.armed--;
+    botPremoveUpdateBadge();
+    return false;
+  }
 
   // The trap check: is the committed move still legal after what the human
   // actually played? If not, the premove is busted and the bot must think.
