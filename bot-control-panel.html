@@ -1324,6 +1324,46 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
   #conv-toast .bdmsg{font-size:12px;}
 }
 
+/* ── Play on Lichess popup — same chrome as the confirm modal ── */
+#lbc-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:9000;
+  display:none;align-items:center;justify-content:center;
+}
+#lbc-overlay.show{ display:flex; }
+#lbc-box{
+  background:var(--carbon-mid,#14161a);border:1px solid var(--border-amber);border-radius:4px;
+  padding:20px 22px;max-width:440px;width:92%;max-height:86vh;overflow-y:auto;
+  box-shadow:0 8px 32px rgba(0,0,0,0.6);
+}
+.lbc-h{font-family:var(--font-u);font-size:9px;font-weight:600;letter-spacing:0.12em;
+  text-transform:uppercase;color:var(--text-dim);margin:14px 0 6px;}
+.lbc-sum{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:0;
+  font-family:var(--font-m);font-size:10px;line-height:1.5;}
+.lbc-sum dt{color:var(--text-dim);}
+.lbc-sum dd{margin:0;color:var(--text-primary);}
+.lbc-checks{display:flex;flex-wrap:wrap;gap:6px 14px;margin-bottom:6px;
+  font-family:var(--font-m);font-size:10px;color:var(--text-primary);}
+.lbc-checks label{display:inline-flex;align-items:center;gap:4px;cursor:pointer;}
+.lbc-checks input{accent-color:var(--amber);cursor:pointer;}
+#lbc-token{width:100%;box-sizing:border-box;padding:6px 8px;font-family:var(--font-m);font-size:11px;
+  color:var(--text-primary);background:var(--carbon-surface);border:0.5px solid var(--border);
+  border-radius:2px;outline:none;}
+.lbc-note{font-family:var(--font-m);font-size:9.5px;line-height:1.55;color:var(--text-dim);margin-top:5px;}
+.lbc-note a,.lbc-link{color:var(--amber);}
+.lbc-link{background:none;border:none;padding:0;font:inherit;text-decoration:underline;cursor:pointer;}
+.lbc-warn{border-left:2px solid #e05a4a;padding:7px 10px;background:rgba(224,90,74,0.08);margin-top:10px;}
+#lbc-status{font-family:var(--font-m);font-size:10px;line-height:1.5;min-height:15px;margin-top:12px;
+  color:var(--text-secondary);}
+#lbc-status.err{color:#e05a4a;}
+#lbc-box .bdbtns{margin-top:12px;flex-wrap:wrap;}
+@media (max-width:760px){
+  .lbc-h{font-size:11px;}
+  .lbc-sum,.lbc-checks,#lbc-status{font-size:12px;}
+  .lbc-note{font-size:11px;}
+  #lbc-token{font-size:14px;}
+  .lbc-checks label{min-height:32px;}
+}
+
 /* ── Info popups (ⓘ buttons) — same chrome as the confirm modal ── */
 #infopop-overlay{
   position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:9000;
@@ -2095,8 +2135,10 @@ body.fj .picon{font-weight:500;}
   .qs-engine-zone{width:auto;}
   .qs-bar > .qs-pill-btn,.qs-bar > .qs-pill-wrap{display:flex;border-top:0.5px solid var(--border);}
   .qs-bar > .qs-pill-btn,.qs-bar > .qs-pill-wrap > .qs-pill-btn{min-height:56px;height:auto;padding:0 14px;}
-  /* Odd pill count — let the last one span rather than sit as a half orphan. */
-  .qs-bar > *:last-child{grid-column:1 / -1;}
+  /* Odd pill count — let the last one span rather than sit as a half orphan.
+     The fixed Start button is a child but no grid cell, so an odd number of
+     pills means the last child sits at an even position. */
+  .qs-bar > *:last-child:nth-child(even){grid-column:1 / -1;}
   .qs-label{display:block;font-size:8.5px;margin-bottom:3px;}
   .qs-pill-value{font-size:12px;white-space:normal;}
   .qs-engine-zone{min-width:0;}
@@ -3178,6 +3220,15 @@ body.fj .picon{font-weight:500;}
       </div>
     </div>
 
+    <!-- 9. LICHESS — this bot as a Lichess BOT account, hosted by this tab.
+         Opens the Play on Lichess popup (lbcOpen); hidden when the builder is
+         opened on its own, outside Blundermind. -->
+    <div class="qs-pill-wrap" id="qs-lichess-wrap">
+      <button class="qs-pill-btn" id="qs-lichess-btn" onclick="lbcOpen()" aria-label="Play on Lichess" aria-haspopup="dialog">
+        <span class="qs-label">Lichess</span>
+        <span class="qs-pill-value" id="qs-lichess-value">Play as a bot</span>
+      </button>
+    </div>
 
   </div><!-- /qs-bar -->
 
@@ -9836,6 +9887,10 @@ window.addEventListener('message', function(e){
   if(e.data && e.data.type === 'setFormat'){
     setPanelFormat(e.data.format, true); // true = came from parent, don't echo
   }
+  // Whether this tab hosts a Lichess bot — the Lichess pill and Start follow it
+  if(e.data && e.data.type === 'lichessState'){
+    lbcRefresh(e.data);
+  }
   // The board's quick-start block picked an engine at a rating. Show it here
   // through the same controls a hand would use — the card and the dial — so
   // opening the builder never names a different opponent from the one the
@@ -10234,6 +10289,250 @@ function startGame(){
     alert('Config ready — open via Blundermind to start a game.\n\nEngine: ' + config.engine + '  ELO: ' + config.elo + '\nTime: ' + timeStr + '  Color: ' + config.color);
   }
 }
+
+/* ══════════════════════════════════════════════════════════════
+   PLAY ON LICHESS — the bot built here, as a Lichess BOT account
+   The Blundermind page holding this builder does the Lichess side
+   (src/65-lichess-bridge.js). Same origin, so its functions are called
+   directly; it pushes its state here ('lichessState') when that changes.
+   Connected, Start becomes "Update Lichess bot": the page routes the
+   config to lichessUpdateBot, and it plays from the next game.
+══════════════════════════════════════════════════════════════ */
+let _lbcState = null;           // the page's lichessBuilderState()
+let _lbcView = '';              // connect | upgrade | connected
+let _lbcNewToken = false;       // "use a different token" was pressed
+let _lbcBusy = false;           // a check or upgrade is in flight
+let _lbcPendingUpgrade = null;  // { token, username, games, settings }
+
+function _lbcHost(){
+  try{
+    const p = window.parent;
+    return (p && p !== window && typeof p.lichessBuilderState === 'function') ? p : null;
+  }catch(e){ return null; }
+}
+
+function lbcRefresh(st){
+  const host = _lbcHost();
+  if(st) _lbcState = st;
+  else if(host){ try{ _lbcState = host.lichessBuilderState(); }catch(e){} }
+  const wrap = document.getElementById('qs-lichess-wrap');
+  if(wrap) wrap.style.display = host ? '' : 'none';
+  const s = _lbcState;
+  const on = !!(s && s.connected);
+  const val = document.getElementById('qs-lichess-value');
+  if(val){
+    val.textContent = !on ? 'Play as a bot'
+      : s.state === 'error' ? 'Error — open'
+      : s.state === 'connecting' ? 'Connecting…'
+      : '@' + (s.account || 'bot') + (s.playing ? ' · playing' : ' · waiting');
+  }
+  const start = document.querySelector('.start-btn');
+  if(start) start.innerHTML = on ? '&#8635; Update Lichess bot' : '&#9654; Start';
+  // An open popup follows the connection, but never wipes a form being filled.
+  const open = document.getElementById('lbc-overlay')?.classList.contains('show');
+  if(open && !_lbcBusy && (_lbcView === 'connected' || on)) _lbcRender();
+}
+
+function lbcOpen(){
+  if(typeof closeAllQsDropdowns === 'function') closeAllQsDropdowns();
+  if(!_lbcHost()) return;
+  lbcRefresh();
+  _lbcNewToken = false;
+  _lbcPendingUpgrade = null;
+  _lbcStatus('');
+  _lbcRender();
+  document.getElementById('lbc-overlay').classList.add('show');
+}
+function lbcClose(){
+  if(_lbcBusy) return;
+  document.getElementById('lbc-overlay')?.classList.remove('show');
+  _lbcPendingUpgrade = null;
+}
+function _lbcStatus(text, err){
+  const el = document.getElementById('lbc-status');
+  if(!el) return;
+  el.textContent = text || '';
+  el.classList.toggle('err', !!err);
+}
+function _lbcButtons(list){
+  const b = document.getElementById('lbc-btns');
+  b.innerHTML = '';
+  list.forEach(([label, fn, primary, id, disabled]) => {
+    const el = document.createElement('button');
+    el.className = 'preset-btn' + (primary ? ' primary' : '');
+    el.textContent = label;
+    if(id) el.id = id;
+    if(disabled) el.disabled = true;
+    el.onclick = fn;
+    b.appendChild(el);
+  });
+}
+
+// The settings that decide how it plays, as the builder's own pills word them.
+function _lbcSummary(){
+  const c = getBotConfig();
+  const txt = id => (document.getElementById(id)?.textContent || '').trim();
+  const rows = [
+    ['Engine', txt('qs-engine-pill')],
+    ['Personality', txt('qs-pers-value') + ' · Conviction ' + _convictionPct() + '%'],
+    ['Think time', txt('qs-ttime-value')],
+    ['Premoves', c.premoveEnabled
+      ? 'on · rate ' + c.premoveRatePct + '% · min confidence ' + c.premoveMinPct + '%' : 'off'],
+    ['Draws', (c.acceptDraws ? 'accepts unless more than ' + c.drawAcceptMarginCp + ' cp ahead' : 'never accepts')
+      + (c.offerDraws ? ' · offers draws' : '')],
+    ['Hard Floor', c.hardFloorCp >= 1000 ? 'off' : c.hardFloorCp + ' cp'],
+  ];
+  return rows.map(([k, v]) => '<dt>' + _ccEsc(k) + '</dt><dd>' + _ccEsc(v) + '</dd>').join('');
+}
+
+function _lbcRender(){
+  const s = _lbcState || {};
+  const title = document.getElementById('lbc-title'), body = document.getElementById('lbc-body');
+  const host = _lbcHost();
+
+  if(s.connected){
+    _lbcView = 'connected';
+    title.textContent = 'Lichess bot connected';
+    const who = '<b>@' + _ccEsc(s.account || 'your bot') + '</b>';
+    const doing = s.state === 'connecting' ? 'connecting to Lichess'
+      : s.state === 'error' ? 'stopped by an error: ' + _ccEsc(s.note || '')
+      : s.playing ? 'playing ' + _ccEsc(s.opponent || 'a game') : 'waiting for challenges';
+    body.innerHTML =
+      '<p>This tab plays on Lichess as ' + who + ' — ' + doing + '.</p>' +
+      '<p>To change the bot, set it up here and press <b>Update Lichess bot</b> (the Start button). ' +
+      'It plays from the next game; a game in progress finishes with the bot it started with.</p>' +
+      (s.nextPending ? '<p class="lbc-note">An update is waiting for the next game.</p>' : '');
+    _lbcButtons([
+      ['Disconnect', () => { try{ host.lichessDisconnect(); }catch(e){} lbcRefresh(); }],
+      ['Go to the board', () => { lbcClose(); try{ host.closeBotModal(); }catch(e){} }, true],
+    ]);
+    return;
+  }
+
+  if(_lbcPendingUpgrade){
+    _lbcView = 'upgrade';
+    const u = _lbcPendingUpgrade, who = '<b>@' + _ccEsc(u.username) + '</b>';
+    title.textContent = 'Make @' + u.username + ' a bot account?';
+    if(u.games){
+      body.innerHTML =
+        '<p>' + who + ' is not a bot account, and it has played ' + u.games + ' game' + (u.games === 1 ? '' : 's') +
+        ', so Lichess won’t upgrade it — only an account that has never played a game can become a bot.</p>' +
+        '<p>Make a new Lichess account for the bot, play no games on it, and create a token for that account.</p>';
+      _lbcButtons([['Back', () => { _lbcPendingUpgrade = null; _lbcStatus(''); _lbcRender(); }, true]]);
+      return;
+    }
+    body.innerHTML =
+      '<p>' + who + ' is not a bot account yet. Lichess can upgrade it here, but the change is <b>permanent</b>:</p>' +
+      '<ul><li>the account will only ever play as a bot, never as a person</li>' +
+      '<li>it can’t be turned back into a normal account</li>' +
+      '<li>Lichess allows it only for an account that has never played a game</li></ul>' +
+      '<div class="lbc-checks"><label><input type="checkbox" id="lbc-understand" ' +
+      'onchange="document.getElementById(\'lbc-upgrade-btn\').disabled=!this.checked"> ' +
+      'I understand — make ' + who + ' a bot account for good</label></div>';
+    _lbcButtons([
+      ['Back', () => { _lbcPendingUpgrade = null; _lbcStatus(''); _lbcRender(); }],
+      ['Upgrade and connect', lbcUpgrade, true, 'lbc-upgrade-btn', true],
+    ]);
+    return;
+  }
+
+  _lbcView = 'connect';
+  title.textContent = 'Play on Lichess';
+  const set = s.settings || { casual: true, rated: false, bots: false, speeds: { blitz: true, rapid: true, classical: true } };
+  const cb = (id, label, on) => '<label><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '>' + label + '</label>';
+  const tokenHtml = (s.tokenSaved && !_lbcNewToken)
+    ? '<div class="lbc-note" style="margin-top:0;">A token for the bot account is saved in this browser. ' +
+      '<button type="button" class="lbc-link" onclick="_lbcNewToken=true;_lbcRender();">Use a different token</button></div>'
+    : '<input type="password" id="lbc-token" autocomplete="off" spellcheck="false" placeholder="Bot account token (lip_…)">' +
+      '<div class="lbc-note">Make one while signed in to Lichess as the bot account: ' +
+      '<a href="https://lichess.org/account/oauth/token/create?scopes[]=bot:play&amp;description=Blundermind%20bot" ' +
+      'target="_blank" rel="noopener">create a token ↗</a> — that link ticks the bot permission for you. ' +
+      'A new account that has never played can be made a bot account in the next step.</div>';
+  body.innerHTML =
+    '<p>This tab will play on Lichess as your bot account, with the bot set up in this builder.</p>' +
+    '<div class="lbc-h">The bot</div><dl class="lbc-sum">' + _lbcSummary() + '</dl>' +
+    '<div class="lbc-note">Each game’s time control and colours come from the challenge.</div>' +
+    '<div class="lbc-h">Lichess account</div>' + tokenHtml +
+    '<div class="lbc-h">Accept challenges</div>' +
+    '<div class="lbc-checks">' + cb('lbc-casual', 'Casual', set.casual) + cb('lbc-rated', 'Rated', set.rated) +
+      cb('lbc-bots', 'From other bots', set.bots) + '</div>' +
+    '<div class="lbc-checks">' + ['bullet', 'blitz', 'rapid', 'classical'].map(k =>
+      cb('lbc-' + k, k[0].toUpperCase() + k.slice(1), set.speeds && set.speeds[k])).join('') + '</div>' +
+    (s.localGame ? '<div class="lbc-warn">The game on the board now will end.</div>' : '') +
+    '<div class="lbc-note">Keep this tab open and visible while the bot plays — a hidden or minimized tab is ' +
+    'slowed down and can lose on time. Local games are off while it’s connected; its Lichess games ' +
+    'play out on the board.</div>';
+  _lbcButtons([['Cancel', lbcClose], ['Connect to Lichess', lbcConnect, true, 'lbc-connect-btn']]);
+}
+
+function _lbcReadSettings(){
+  const on = id => !!document.getElementById(id)?.checked;
+  return {
+    casual: on('lbc-casual'), rated: on('lbc-rated'), bots: on('lbc-bots'),
+    speeds: { bullet: on('lbc-bullet'), blitz: on('lbc-blitz'), rapid: on('lbc-rapid'), classical: on('lbc-classical') },
+  };
+}
+
+async function lbcConnect(){
+  const host = _lbcHost();
+  if(!host || _lbcBusy) return;
+  if((currentEngine === 'maia3' || currentEngine === 'lcmaia') && !_bcpMaiaReady){
+    _lbcStatus('This bot plays with Maia — download the Maia model first (Engine section), then connect.', true);
+    return;
+  }
+  const inp = document.getElementById('lbc-token');
+  const typed = inp ? inp.value.trim() : '';
+  if(inp && !typed){ _lbcStatus('Paste the bot account’s token first.', true); inp.focus(); return; }
+  const settings = _lbcReadSettings();
+  if(!(settings.casual || settings.rated) || !Object.values(settings.speeds).some(Boolean)){
+    _lbcStatus('Tick at least one kind of game and one speed — otherwise every challenge is declined.', true);
+    return;
+  }
+  _lbcBusy = true;
+  _lbcStatus('Checking the account on Lichess…');
+  let r;
+  try{ r = await host.lichessCheckToken(typed || null); }catch(e){ r = { ok: false, reason: 'unreachable' }; }
+  _lbcBusy = false;
+  if(!r.ok){
+    _lbcStatus(r.reason === 'badToken' ? 'Lichess rejected this token. Make a new one while signed in as the bot account.'
+      : r.reason === 'unreachable' ? 'Could not reach Lichess. Check the connection and try again.'
+      : r.reason === 'empty' ? 'Paste the bot account’s token first.'
+      : 'Lichess answered ' + (r.status || '?') + ' — try again shortly.', true);
+    if(r.reason === 'badToken' || r.reason === 'empty'){ _lbcNewToken = true; _lbcRender(); }
+    return;
+  }
+  if(!r.bot){
+    _lbcPendingUpgrade = { token: typed || null, username: r.username, games: r.games, settings };
+    _lbcStatus('');
+    _lbcRender();
+    return;
+  }
+  _lbcFinish(typed || null, settings);
+}
+
+async function lbcUpgrade(){
+  const host = _lbcHost(), u = _lbcPendingUpgrade;
+  if(!host || !u || _lbcBusy || !document.getElementById('lbc-understand')?.checked) return;
+  _lbcBusy = true;
+  _lbcStatus('Upgrading @' + u.username + ' to a bot account…');
+  let r;
+  try{ r = await host.lichessUpgradeAccount(u.token); }catch(e){ r = { ok: false, error: 'Could not reach Lichess.' }; }
+  _lbcBusy = false;
+  if(!r.ok){ _lbcStatus('Lichess did not upgrade the account: ' + r.error, true); return; }
+  _lbcFinish(u.token, u.settings);
+}
+
+// Hand the bot, the token and the rules to the page, which connects and shows
+// the board.
+function _lbcFinish(token, settings){
+  const host = _lbcHost();
+  if(!host) return;
+  document.getElementById('lbc-overlay').classList.remove('show');
+  _lbcPendingUpgrade = null;
+  host.lichessConnectFromBuilder({ token: token, settings: settings, config: getBotConfig() });
+  lbcRefresh();
+}
+document.addEventListener('DOMContentLoaded', () => lbcRefresh());
 
 /* ══════════════════════════════════════════════════════════════
    SPEEDOMETER
@@ -13120,7 +13419,7 @@ function closeInfoPop(){
   document.getElementById('infopop-overlay').classList.remove('show');
 }
 document.addEventListener('keydown', function(e){
-  if(e.key === 'Escape') closeInfoPop();
+  if(e.key === 'Escape'){ closeInfoPop(); lbcClose(); }
 });
 
 function selPersonality(id){
@@ -14675,6 +14974,17 @@ document.addEventListener('DOMContentLoaded', ()=>{
   <div class="bdbtns">
     <button class="preset-btn" onclick="convToastAdjust()">Adjust</button>
     <button class="preset-btn primary" onclick="hideConvToast()">OK</button>
+  </div>
+</div>
+
+<!-- Play on Lichess: the bot built here, hosted by this tab (lbcOpen) -->
+<div id="lbc-overlay" role="dialog" aria-modal="true" aria-labelledby="lbc-title"
+     onclick="if(event.target===this)lbcClose()">
+  <div id="lbc-box">
+    <div class="bdtitle" id="lbc-title">Play on Lichess</div>
+    <div class="bdmsg" id="lbc-body" style="margin-bottom:0;"></div>
+    <div id="lbc-status" role="status" aria-live="polite"></div>
+    <div class="bdbtns" id="lbc-btns"></div>
   </div>
 </div>
 

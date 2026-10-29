@@ -100,7 +100,27 @@ function lichessSendDraw(yes) {
   const g = lbGame;
   if (!g || g.ended) return;
   lbLog(!yes ? 'The bot declines the draw' : g.oppDrawOpen ? 'The bot accepts the draw' : 'The bot offers a draw');
+  if (g.oppDrawOpen) { g.drawAnswered = true; g.drawAccepted = !!yes; }
   _lbPost('/api/bot/game/' + g.id + '/draw/' + (yes ? 'yes' : 'no'));
+}
+// The opponent's offer is standing and the bot has not answered it. Its move
+// would decline it unread, so the engine answers first (_botAnswerDrawFirst)
+// and a premove stands aside (botPremoveTryFire).
+function lichessDrawAwaitingAnswer() {
+  const g = lbGame;
+  return !!(g && g.boardReady && !g.ended && g.oppDrawOpen && !g.drawAnswered);
+}
+// The bot said yes and the server has yet to end the game: no move now.
+function lichessDrawAccepted() {
+  const g = lbGame;
+  return !!(g && !g.ended && g.drawAccepted);
+}
+// Read from each gameState BEFORE the opponent's move goes onto the board:
+// that move can fire the bot's premove or start it thinking.
+function _lbNoteDrawOffer(g, st) {
+  const open = !!(g.colorLetter === 'w' ? st.bdraw : st.wdraw);
+  if (open && !g.oppDrawOpen) { g.drawAnswered = false; g.drawAccepted = false; }   // a new offer
+  g.oppDrawOpen = open;
 }
 
 // ── Settings and log ────────────────────────────────────────────────────────
@@ -219,14 +239,16 @@ async function _lbStream(path, signal, onMsg, watchdogMs) {
 }
 
 // ── Connecting ──────────────────────────────────────────────────────────────
-async function lichessConnect() {
+// opts.confirmed: the builder's popup already said a game in progress ends.
+async function lichessConnect(opts) {
   if (lbWantConnected) return;
   const inp = document.getElementById('lbToken');
   const tok = ((inp && inp.value) || lbSettings.token || '').trim();
   if (!tok) { _lbSetState('error', 'Paste the bot account\'s token first.'); return; }
   // Connecting hands the board to Lichess, so a game in progress here ends.
   if (typeof _isLiveGame === 'function' && _isLiveGame()) {
-    if (typeof confirmAbandonLiveGame === 'function' && !confirmAbandonLiveGame('Connect as a Lichess bot')) return;
+    if (!(opts && opts.confirmed) &&
+        typeof confirmAbandonLiveGame === 'function' && !confirmAbandonLiveGame('Connect as a Lichess bot')) return;
     gameOver = true;
   }
   lbSettings.token = tok;
@@ -266,6 +288,10 @@ function lichessDisconnect() {
     lbGame = null;
   }
   lbAccepting = null;
+  // An update waiting for the next game is the page's bot now.
+  if (lbNextConfig) { botApplyPanelConfig(lbNextConfig, true, { keepModal: true }); lbNextConfig = null; }
+  // A reload no longer reconnects this tab.
+  _lbMarkHostTab(false);
   lbLog('Disconnected');
   _lbSetState('off');
 }
@@ -392,6 +418,14 @@ function _lbOnGameStart(g) {
     return;
   }
   lbAccepting = null;
+  // A bot updated from the builder during the last game plays from this one.
+  if (lbNextConfig) {
+    const c = lbNextConfig;
+    lbNextConfig = null;
+    botApplyPanelConfig(c, true, { keepModal: true });
+    _lbWarmEngines();
+    lbLog('Playing with the updated bot');
+  }
   lbGame = _lbNewGame(id);
   _lbSetState('playing');
   lbLog('Game started: ' + _lbApiBase() + '/' + id);
@@ -408,6 +442,7 @@ function _lbNewGame(id) {
     abort: null,        // aborts the game stream (a resync reopens it)
     drawPly: -1, takebackPly: -1, claimPly: -1,
     oppDrawOpen: false, // the opponent's draw offer is standing
+    drawAnswered: false, drawAccepted: false,   // the bot's answer to it
     goneTimer: null,
   };
 }
@@ -530,6 +565,7 @@ function _lbReplay(g, moves) {
 
 function _lbOnGameState(g, st) {
   if (!g.boardReady) return;
+  _lbNoteDrawOffer(g, st);
   const moves = _lbMoves(st), local = g.local;
   // The server may trail the board by the bot's move in flight, never lead
   // it by more than the opponent's one reply, and must agree on the rest.
@@ -560,12 +596,20 @@ function _lbAfterState(g, st) {
   if (lbGame !== g || g.ended) return;
   _lbSyncClock(st);
   const ply = _lbMoves(st).length;
-  const oppDraw = g.colorLetter === 'w' ? st.bdraw : st.wdraw;
-  g.oppDrawOpen = !!oppDraw;
-  if (oppDraw && g.drawPly !== ply && !gameOver && typeof botConsiderDrawOffer === 'function') {
+  const wasAccepted = g.drawAccepted;
+  _lbNoteDrawOffer(g, st);
+  if (g.oppDrawOpen && g.drawPly !== ply && !gameOver && typeof botConsiderDrawOffer === 'function') {
     g.drawPly = ply;
     lbLog(_lbWho(g.opponent) + ' offers a draw');
-    botConsiderDrawOffer();   // answers through lichessSendDraw
+    // Answers through lichessSendDraw — now if the bot is free, else just
+    // before its move goes out.
+    if (!g.drawAnswered) botConsiderDrawOffer();
+  }
+  // The bot took a draw that the server then did not end the game on (the
+  // offer was withdrawn first): it held its move for nothing, so it moves now.
+  if (wasAccepted && !g.oppDrawOpen && (!st.status || st.status === 'started')) {
+    g.drawAccepted = false;
+    if (turn === g.colorLetter && !botThinking && !gameOver) setTimeout(botMakeMove, 100);
   }
   const oppTakeback = g.colorLetter === 'w' ? st.btakeback : st.wtakeback;
   if (oppTakeback && g.takebackPly !== ply) {
@@ -787,6 +831,7 @@ function _lbRulesText() {
 }
 
 function lbRender() {
+  _lbPushState();
   const p = document.getElementById('lbPanel');
   if (!p || !lbSettings) return;
   const $ = id => document.getElementById(id);
@@ -817,7 +862,8 @@ function lbRender() {
   } else {
     gr.style.display = 'none';
   }
-  $('lbBot').textContent = (typeof botGenerateName === 'function') ? botGenerateName() : 'this page\'s bot';
+  $('lbBot').textContent = ((typeof botGenerateName === 'function') ? botGenerateName() : 'this page\'s bot') +
+    (lbNextConfig ? ' — your update plays from the next game' : '');
   $('lbRules').textContent = _lbRulesText();
   // Disconnected, the settings are what there is to do; connected, they fold.
   p.classList.toggle('lb-edit', !on || p.dataset.edit === '1');
@@ -858,6 +904,123 @@ function lichessAbortGame() {
   if (!g || g.ended) return;
   lbLog('Asking Lichess to abort (only possible before both sides have moved)');
   _lbPost('/api/bot/game/' + g.id + '/abort').then(r => { if (!r.ok) lbLog('Abort refused: ' + _lbErr(r)); });
+}
+
+// ── The Bot Builder's side ──────────────────────────────────────────────────
+// The builder (bot-control-panel.html, a same-origin iframe) is where a bot is
+// set up, so it is also where a tab becomes that bot's Lichess host: its popup
+// checks the token here — and can upgrade a fresh account to a bot account —
+// then hands over the bot, the token and the accept rules in one step. While
+// the tab hosts, the builder's Start becomes "Update Lichess bot", and the bot
+// it sends plays from the NEXT game: a game in progress finishes with the bot
+// it started with.
+let lbNextConfig = null;      // the builder's update, waiting for the next game
+
+function lichessBuilderState() {
+  const s = lbSettings || _lbLoadSettings();
+  const g = lbGame && lbGame.boardReady && !lbGame.ended ? lbGame : null;
+  return {
+    connected: lbWantConnected, state: lbState, note: lbStateNote,
+    account: lbAccount ? lbAccount.username : null,
+    tokenSaved: !!s.token,
+    playing: !!g, opponent: g && g.opponent ? _lbWho(g.opponent) : null,
+    nextPending: !!lbNextConfig,
+    localGame: !lbWantConnected && typeof _isLiveGame === 'function' && _isLiveGame(),
+    settings: { casual: !!s.casual, rated: !!s.rated, bots: !!s.bots, speeds: Object.assign({}, s.speeds) },
+  };
+}
+// Tell an open builder, so its Lichess pill and Start button say what is true.
+function _lbPushState() {
+  try {
+    const f = document.getElementById('botModalFrame');
+    if (f && f.contentWindow) {
+      f.contentWindow.postMessage(Object.assign({ type: 'lichessState' }, lichessBuilderState()), location.origin);
+    }
+  } catch (e) {}
+}
+
+// Whose token this is, and whether that account is a bot already or could
+// become one — Lichess only upgrades an account that has never played.
+// No token given: the one saved in this browser.
+async function lichessCheckToken(tok) {
+  tok = String(tok || (lbSettings && lbSettings.token) || '').trim();
+  if (!tok) return { ok: false, reason: 'empty' };
+  let r;
+  try { r = await fetch(_lbApiBase() + '/api/account', { headers: { Authorization: 'Bearer ' + tok } }); }
+  catch (e) { return { ok: false, reason: 'unreachable' }; }
+  if (r.status === 401) return { ok: false, reason: 'badToken' };
+  let a = null;
+  try { a = await r.json(); } catch (e) {}
+  if (!r.ok || !a || !a.id) return { ok: false, reason: 'http', status: r.status };
+  const games = a.count && typeof a.count.all === 'number' ? a.count.all : null;
+  return { ok: true, username: a.username || a.id, bot: a.title === 'BOT', games };
+}
+
+// Permanent, and Lichess's own rules apply (no games played). The builder
+// asks twice before calling this.
+async function lichessUpgradeAccount(tok) {
+  tok = String(tok || (lbSettings && lbSettings.token) || '').trim();
+  let r;
+  try {
+    r = await fetch(_lbApiBase() + '/api/bot/account/upgrade', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + tok },
+    });
+  } catch (e) { return { ok: false, error: 'Could not reach Lichess.' }; }
+  let d = null;
+  try { d = await r.json(); } catch (e) {}
+  return r.ok ? { ok: true } : { ok: false, error: (d && d.error) || ('Lichess answered ' + r.status) };
+}
+
+// The builder's Connect: this bot, this token, these rules — then the board.
+function lichessConnectFromBuilder(o) {
+  o = o || {};
+  if (!lbSettings) lbSettings = _lbLoadSettings();
+  const st = o.settings || {};
+  ['casual', 'rated', 'bots'].forEach(k => { if (k in st) lbSettings[k] = !!st[k]; });
+  if (st.speeds) Object.keys(lbSettings.speeds).forEach(k => { if (k in st.speeds) lbSettings.speeds[k] = !!st.speeds[k]; });
+  if (o.token) lbSettings.token = String(o.token).trim();
+  _lbSaveSettings();
+  // The bot the tab hosts, applied and remembered as the page's bot — what
+  // Start does, without starting a local game. (Closes the builder.)
+  if (o.config) {
+    lbNextConfig = null;
+    botApplyPanelConfig(Object.assign({}, o.config), true);
+    if (typeof bmLastBotSave === 'function') bmLastBotSave();
+  }
+  _lbMarkHostTab(true);
+  lichessOpenPanel();
+  if (typeof closeBotModal === 'function') closeBotModal();
+  lichessConnect({ confirmed: true });
+}
+
+// The builder's "Update Lichess bot" (and its Start, while the tab hosts).
+function lichessUpdateBot(cfg) {
+  const c = Object.assign({}, cfg);
+  delete c._applyOnly;
+  // Remembered at once, so a reload hosts the updated bot.
+  if (typeof bmLastBotSave === 'function') bmLastBotSave(c);
+  if (lichessGameLive()) {
+    lbNextConfig = c;
+    if (typeof closeBotModal === 'function') closeBotModal();
+    lbLog('Bot updated — it plays from the next game');
+  } else {
+    lbNextConfig = null;
+    botApplyPanelConfig(c, true);   // closes the builder
+    _lbWarmEngines();
+    lbLog('Bot updated');
+  }
+}
+
+// The address says what the tab is: a reload of a host tab reconnects it
+// (start-up, below), and no other Blundermind tab ever does.
+function _lbMarkHostTab(on) {
+  try {
+    const u = new URL(location.href);
+    if (on === u.searchParams.has('lichess')) return;
+    if (on) u.searchParams.set('lichess', ''); else u.searchParams.delete('lichess');
+    const q = u.search.replace(/([?&])lichess=(?=&|$)/, '$1lichess');
+    history.replaceState(history.state, '', u.pathname + q + u.hash);
+  } catch (e) {}
 }
 
 // ── Start-up ────────────────────────────────────────────────────────────────
