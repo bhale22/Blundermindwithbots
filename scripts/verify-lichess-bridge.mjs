@@ -358,22 +358,43 @@ await page.waitForFunction(() => typeof quickBotPick === 'function' && document.
 await page.waitForTimeout(1200);
 // A fast, Stockfish-only bot keeps the run short.
 await page.evaluate(() => { quickBotPick('1200'); });
-const lastBotBefore = await page.evaluate(() => localStorage.getItem('bm_lastBot'));
+let lastBotBefore = null;   // read once connected: connecting saves the bot it hosts
 
 const pageBoard = () => page.evaluate(() => { let s = ''; for (let i = 0; i < 64; i++) s += board[i] ? board[i].color + board[i].piece : '..'; return s; });
 const lbState = () => page.evaluate(() => lbState);
 
 console.log('\n1. Connecting');
 check(await page.evaluate(() => !!document.getElementById('lbPanel')), 'panel shows on a ?lichess page');
-await page.fill('#lbToken', 'lip_wrong');
+// The panel's Connect opens the builder's Play on Lichess popup over the board.
+const boardFrame = async () => {
+  const f = await (await page.waitForSelector('#botModalFrame')).contentFrame();
+  await f.waitForFunction(() => document.getElementById('lbc-overlay')?.classList.contains('show'), null, { timeout: 10000 });
+  return f;
+};
 await page.click('#lbConnect');
-await until(async () => (await lbState()) === 'error', 5000);
-check((await page.textContent('#lbStatus')).includes('rejected'), 'a bad token is reported', await page.textContent('#lbStatus'));
-check(await page.isVisible('#lbToken'), 'a rejected token is dropped and the field comes back');
-await page.fill('#lbToken', TOKEN);
+let bf = await boardFrame();
+const fromBoard = await bf.evaluate(() => ({ guide: !!document.querySelector('.lbc-guide[open]'),
+  steps: document.querySelectorAll('.lbc-steps > li').length, token: !!document.getElementById('lbc-token'),
+  link: document.querySelector('.lbc-steps a[href*="oauth/token/create"]')?.getAttribute('href') || '' }));
+check(fromBoard.token && fromBoard.guide && fromBoard.steps === 6, 'the board\'s Connect opens the same popup, with the 6-step guide open', fromBoard);
+check(/scopes\[\]=bot:play/.test(fromBoard.link), 'the token link pre-ticks bot:play', fromBoard.link);
+await bf.evaluate(() => [...document.querySelectorAll('#lbc-btns button')].find(b => /Cancel/.test(b.textContent)).click());
+await page.waitForTimeout(300);
+check(await page.evaluate(() => document.getElementById('botModal').style.display === 'none'), 'Cancel goes straight back to the board');
 await page.click('#lbConnect');
+bf = await boardFrame();
+await bf.fill('#lbc-token', 'lip_wrong');
+await bf.click('#lbc-connect-btn');
+await until(() => bf.evaluate(() => /rejected/.test(document.getElementById('lbc-status').textContent)), 5000);
+check(await bf.evaluate(() => /rejected/.test(document.getElementById('lbc-status').textContent)), 'a bad token is reported in the popup');
+await bf.fill('#lbc-token', TOKEN);
+await bf.click('#lbc-connect-btn');
 await until(async () => (await lbState()) === 'waiting' && M.eventStreams.size === 1, 10000, 'waiting');
 check(await lbState() === 'waiting', 'connected and waiting');
+check(await page.evaluate(() => document.getElementById('botModal').style.display === 'none'), 'and back on the board');
+// The quick pick the run uses — a fast Stockfish-only bot.
+await page.evaluate(() => { quickBotPick('1200'); });
+lastBotBefore = await page.evaluate(() => localStorage.getItem('bm_lastBot'));
 check((await page.textContent('#lbAcct')).includes('@BMTestBot'), 'shows the bot account', await page.textContent('#lbAcct'));
 check(!(await page.evaluate(() => localStorage.getItem('bm_lichessBot') || '')).includes('lip_wrong'), 'the rejected token is not kept');
 await until(() => page.evaluate(() => sfReady), 30000, 'Stockfish');
@@ -511,12 +532,16 @@ await page.evaluate(() => { window.botPerceivedAdvantageCp = window._keepAdv; qu
 console.log('\n7. Leaving no trace');
 check(await page.evaluate(() => localStorage.getItem('bm_lastBot')) === lastBotBefore, 'the user\'s remembered bot is untouched');
 check(M.posts.filter(p => p.includes('/move/')).every(p => /\/move\/[a-h][1-8][a-h][1-8][qrbn]?$/.test(p)), 'every move post is plain UCI');
+// This bot does not offer draws: any yes it sent was an answer to an open offer.
+check(Object.values(M.games).every(g => !g.drawOffersByBot), 'the bot never offered a draw of its own',
+  Object.values(M.games).map(g => g.drawOffersByBot || 0));
 await page.click('#lbDisconnect');
 await until(() => M.eventStreams.size === 0, 5000);
 check(M.eventStreams.size === 0 && await lbState() === 'off', 'disconnect closes the event stream');
 await page.click('#lbForget');
-check(await page.isVisible('#lbToken') && !(await page.evaluate(() => localStorage.getItem('bm_lichessBot') || '')).includes(TOKEN),
-  'forget token clears it from storage and brings the field back');
+check(!(await page.evaluate(() => localStorage.getItem('bm_lichessBot') || '')).includes(TOKEN) &&
+  (await page.textContent('#lbAcct')) === '' && await page.isVisible('#lbConnect'),
+  'forget token clears it from storage; Connect… is offered again');
 check(pageErrors.length === 0, 'no page errors', pageErrors.slice(0, 5));
 
 // ── 8. Connecting from the Bot Builder ──────────────────────────────────────
@@ -551,6 +576,30 @@ const pop = await fr.evaluate(() => ({ open: document.getElementById('lbc-overla
   casual: document.getElementById('lbc-casual')?.checked, rated: document.getElementById('lbc-rated')?.checked }));
 check(pop.open && /Flounder/.test(pop.sum) && /Conviction/.test(pop.sum) && /Draws/.test(pop.sum), 'the popup summarises the bot', pop.sum.slice(0, 120));
 check(pop.token && pop.casual === true && pop.rated === false, 'it asks for a token; casual on, rated off by default', pop);
+// The summary: CP Budget, not Hard Floor; and under clock-driven timing,
+// whether the time-pressure curves are on.
+const tpRows = await fr.evaluate(() => {
+  const sum = () => document.querySelector('.lbc-sum').textContent;
+  const reopen = () => { lbcClose(); lbcOpen(); };
+  const out = { fixed: sum() };
+  document.querySelector('#timing-mode-grid .mcard[data-v="Complexity-scaled"]').click();
+  reopen(); out.both = sum();
+  const a = document.getElementById('pressure-off-a'), b = document.getElementById('pressure-off-b');
+  a.checked = false; a.onchange && a.onchange();
+  reopen(); out.bOnly = sum();
+  b.checked = false; b.onchange && b.onchange();
+  reopen(); out.none = sum();
+  a.checked = true; a.onchange && a.onchange();
+  b.checked = true; b.onchange && b.onchange();
+  document.querySelector('#timing-mode-grid .mcard[data-v="Fixed interval"]').click();
+  reopen();
+  return out;
+});
+check(/CP Budget/.test(tpRows.fixed) && !/Hard Floor/.test(tpRows.fixed) && !/Time pressure/.test(tpRows.fixed),
+  'the summary shows CP Budget (no Hard Floor), and no time-pressure line on a fixed pace', tpRows.fixed.slice(0, 160));
+check(/Time pressure\s*on.*rating drops, choices widen/.test(tpRows.both) && /Time pressure\s*on.*\(choices widen\)/.test(tpRows.bOnly)
+  && /Time pressure\s*off/.test(tpRows.none), 'complexity timing: the time-pressure line says on (and which) or off',
+  { both: tpRows.both.slice(-120), bOnly: tpRows.bOnly.slice(-120), none: tpRows.none.slice(-120) });
 
 await fr.fill('#lbc-token', 'lip_wrong');
 await fr.click('#lbc-connect-btn');

@@ -1356,12 +1356,24 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
   color:var(--text-secondary);}
 #lbc-status.err{color:#e05a4a;}
 #lbc-box .bdbtns{margin-top:12px;flex-wrap:wrap;}
+.lbc-guide{margin-top:10px;font-family:var(--font-m);font-size:10px;line-height:1.55;color:var(--text-primary);}
+.lbc-guide > summary{cursor:pointer;color:var(--amber);font-weight:600;padding:3px 0;}
+.lbc-sub{margin-top:8px;}
+.lbc-sub > summary{font-weight:400;}
+.lbc-steps{margin:6px 0 0;padding-left:18px;}
+.lbc-steps li{margin-bottom:7px;}
+.lbc-steps a{color:var(--amber);white-space:nowrap;}
+.lbc-cmd{margin:4px 0 8px;padding:6px 8px;background:var(--carbon-surface);border:0.5px solid var(--border);
+  border-radius:2px;font-family:'Courier New',monospace;font-size:10px;line-height:1.4;
+  white-space:pre-wrap;word-break:break-all;color:var(--text-primary);user-select:all;}
 @media (max-width:760px){
   .lbc-h{font-size:11px;}
   .lbc-sum,.lbc-checks,#lbc-status{font-size:12px;}
   .lbc-note{font-size:11px;}
   #lbc-token{font-size:14px;}
   .lbc-checks label{min-height:32px;}
+  .lbc-guide,.lbc-cmd{font-size:12px;}
+  .lbc-guide > summary{padding:8px 0;}
 }
 
 /* ── Info popups (ⓘ buttons) — same chrome as the confirm modal ── */
@@ -9868,7 +9880,9 @@ window.addEventListener('message', function(e){
     // tour is already running, so an explicit botTourForce isn't restarted by
     // the auto message openBotModal() sends alongside it.
     let seen = null; try { seen = localStorage.getItem('bm_bottour'); } catch(err){}
-    if(!seen && !_btOn) setTimeout(function(){ if(!_btOn) startTour(); }, 350);
+    // Not over the Play on Lichess popup, when the board opened the builder for it.
+    const lbcUp = () => !!document.getElementById('lbc-overlay')?.classList.contains('show');
+    if(!seen && !_btOn) setTimeout(function(){ if(!_btOn && !lbcUp()) startTour(); }, 350);
   }
   if(e.data && e.data.type === 'botTourForce'){
     // Asked for by name — from the landing picker, or from the end of the board
@@ -9905,6 +9919,7 @@ window.addEventListener('message', function(e){
       updateQsPersonality();
       updateQsCpBudget();
       updateQsThinkTime();
+      _lbcRefreshSummary();
     }catch(err){ console.warn('loadConfig:', err); }
   }
   if(e.data && e.data.type === 'quickPick'){
@@ -9914,6 +9929,7 @@ window.addEventListener('message', function(e){
       if(card) selEngineMode(card);
       const elo = parseInt(e.data.elo, 10);
       if(Number.isFinite(elo)) setElo(clampElo(elo));
+      _lbcRefreshSummary();
     }catch(err){ console.warn('quickPick:', err); }
   }
 });
@@ -10333,9 +10349,13 @@ function lbcRefresh(st){
   if(open && !_lbcBusy && (_lbcView === 'connected' || on)) _lbcRender();
 }
 
-function lbcOpen(){
+// opts.fromBoard: opened by the board's Lichess panel (lichessOpenSetup), which
+// opened this builder only to show the popup — closing it goes back there.
+let _lbcFromBoard = false;
+function lbcOpen(opts){
   if(typeof closeAllQsDropdowns === 'function') closeAllQsDropdowns();
   if(!_lbcHost()) return;
+  _lbcFromBoard = !!(opts && opts.fromBoard);
   lbcRefresh();
   _lbcNewToken = false;
   _lbcPendingUpgrade = null;
@@ -10344,9 +10364,14 @@ function lbcOpen(){
   document.getElementById('lbc-overlay').classList.add('show');
 }
 function lbcClose(){
-  if(_lbcBusy) return;
-  document.getElementById('lbc-overlay')?.classList.remove('show');
+  const ov = document.getElementById('lbc-overlay');
+  if(_lbcBusy || !ov || !ov.classList.contains('show')) return;
+  ov.classList.remove('show');
   _lbcPendingUpgrade = null;
+  if(_lbcFromBoard){
+    _lbcFromBoard = false;
+    try{ _lbcHost()?.closeBotModal(); }catch(e){}
+  }
 }
 function _lbcStatus(text, err){
   const el = document.getElementById('lbc-status');
@@ -10375,14 +10400,60 @@ function _lbcSummary(){
   const rows = [
     ['Engine', txt('qs-engine-pill')],
     ['Personality', txt('qs-pers-value') + ' · Conviction ' + _convictionPct() + '%'],
+    ['CP Budget', txt('qs-cpb-value')],
     ['Think time', txt('qs-ttime-value')],
+  ];
+  // Clock-driven timing is where the time-pressure curves run (Fixed and
+  // Instant set the pace outright, so they never do) — say whether they will.
+  if(c.timingMode === 'complexity' || c.timingMode === 'mirror'){
+    const parts = [!c.pressureOffA && 'rating drops', !c.pressureOffB && 'choices widen'].filter(Boolean);
+    rows.push(['Time pressure', parts.length
+      ? 'on — plays worse the less time it has to think (' + parts.join(', ') + ')'
+      : 'off — same strength however fast it moves']);
+  }
+  rows.push(
     ['Premoves', c.premoveEnabled
       ? 'on · rate ' + c.premoveRatePct + '% · min confidence ' + c.premoveMinPct + '%' : 'off'],
     ['Draws', (c.acceptDraws ? 'accepts unless more than ' + c.drawAcceptMarginCp + ' cp ahead' : 'never accepts')
-      + (c.offerDraws ? ' · offers draws' : '')],
-    ['Hard Floor', c.hardFloorCp >= 1000 ? 'off' : c.hardFloorCp + ' cp'],
-  ];
+      + (c.offerDraws ? ' · offers draws' : '')]
+  );
   return rows.map(([k, v]) => '<dt>' + _ccEsc(k) + '</dt><dd>' + _ccEsc(v) + '</dd>').join('');
+}
+
+// Bot account steps, for someone who has never done anything like it. Every
+// step that happens on Lichess has its link; the token link ticks the one
+// permission the bot needs (bot:play — playing, and reading and answering
+// challenges), and the upgrade happens in this popup once the token is in.
+const LBC_TOKEN_URL = 'https://lichess.org/account/oauth/token/create?scopes[]=bot:play&description=Blundermind+bot';
+function _lbcGuide(open){
+  const a = (href, text) => '<a href="' + href.replace(/&/g, '&amp;') + '" target="_blank" rel="noopener">' + text + ' ↗</a>';
+  return '<details class="lbc-guide"' + (open ? ' open' : '') + '>' +
+    '<summary>New to this? Make a Lichess bot account in 6 steps</summary>' +
+    '<ol class="lbc-steps">' +
+    '<li><b>Get an email address for the bot.</b> Lichess allows one account per email address, and it counts ' +
+      'you+bot@gmail.com as the same address as you@gmail.com — so use a different one. A new free Gmail or Outlook address is fine.</li>' +
+    '<li><b>Make a new Lichess account, named after your bot.</b> If you’re signed in to Lichess as yourself, sign ' +
+      'out first (click your name at the top right, then Sign out). Then ' + a('https://lichess.org/signup', 'sign up') +
+      ' with the bot’s email. <b>Don’t play any games on it</b> — Lichess only makes bots of accounts that have never played.</li>' +
+    '<li><b>Confirm the email.</b> Lichess sends a message to the bot’s address. Open it and click the confirm button. ' +
+      'If it hasn’t arrived after a few minutes, look in the spam folder.</li>' +
+    '<li><b>Make a token</b> — the key that lets this page play as your bot. Check that Lichess shows the bot’s name at ' +
+      'the top right, not yours, then ' + a(LBC_TOKEN_URL, 'make a token') + '. The bot permission is already ticked: ' +
+      'scroll down, press <b>Create</b>, and copy the token (it starts with lip_). Lichess shows it only once. Keep it ' +
+      'private — anyone who has it can play as your bot.</li>' +
+    '<li><b>Paste the token below and press Connect.</b> The new account isn’t a bot account yet, so this popup offers to ' +
+      'upgrade it: one click, and permanent.</li>' +
+    '<li><b>Play your bot.</b> Sign back in to your own Lichess account, find your bot’s profile, and press Challenge.</li>' +
+    '</ol>' +
+    '<details class="lbc-guide lbc-sub"><summary>Rather upgrade the account yourself?</summary>' +
+    '<div class="lbc-note" style="margin-top:4px;">Step 5 can be done by hand instead. Put your token in place of ' +
+      'YOUR_TOKEN and run one of these. Lichess answers {"ok":true}.</div>' +
+    '<div class="lbc-note"><b>Windows</b> — open PowerShell (Start menu, type PowerShell):</div>' +
+    '<pre class="lbc-cmd">Invoke-RestMethod -Method Post -Uri https://lichess.org/api/bot/account/upgrade -Headers @{Authorization="Bearer YOUR_TOKEN"}</pre>' +
+    '<div class="lbc-note"><b>Mac or Linux</b> — open Terminal:</div>' +
+    '<pre class="lbc-cmd">curl -d \'\' https://lichess.org/api/bot/account/upgrade -H "Authorization: Bearer YOUR_TOKEN"</pre>' +
+    '</details>' +
+    '</details>';
 }
 
 function _lbcRender(){
@@ -10404,7 +10475,7 @@ function _lbcRender(){
       (s.nextPending ? '<p class="lbc-note">An update is waiting for the next game.</p>' : '');
     _lbcButtons([
       ['Disconnect', () => { try{ host.lichessDisconnect(); }catch(e){} lbcRefresh(); }],
-      ['Go to the board', () => { lbcClose(); try{ host.closeBotModal(); }catch(e){} }, true],
+      ['Go to the board', () => { _lbcFromBoard = true; lbcClose(); }, true],
     ]);
     return;
   }
@@ -10422,7 +10493,9 @@ function _lbcRender(){
       return;
     }
     body.innerHTML =
-      '<p>' + who + ' is not a bot account yet. Lichess can upgrade it here, but the change is <b>permanent</b>:</p>' +
+      '<div class="lbc-warn" style="margin-top:0;">Check that ' + who + ' is the account you made for the bot — ' +
+      'not your own. If it’s yours, go Back: the token was made while you were signed in as yourself.</div>' +
+      '<p style="margin-top:10px;">' + who + ' is not a bot account yet. Lichess can upgrade it here, but the change is <b>permanent</b>:</p>' +
       '<ul><li>the account will only ever play as a bot, never as a person</li>' +
       '<li>it can’t be turned back into a normal account</li>' +
       '<li>Lichess allows it only for an account that has never played a game</li></ul>' +
@@ -10440,19 +10513,19 @@ function _lbcRender(){
   title.textContent = 'Play on Lichess';
   const set = s.settings || { casual: true, rated: false, bots: false, speeds: { blitz: true, rapid: true, classical: true } };
   const cb = (id, label, on) => '<label><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '>' + label + '</label>';
-  const tokenHtml = (s.tokenSaved && !_lbcNewToken)
+  const saved = s.tokenSaved && !_lbcNewToken;
+  const tokenHtml = saved
     ? '<div class="lbc-note" style="margin-top:0;">A token for the bot account is saved in this browser. ' +
       '<button type="button" class="lbc-link" onclick="_lbcNewToken=true;_lbcRender();">Use a different token</button></div>'
-    : '<input type="password" id="lbc-token" autocomplete="off" spellcheck="false" placeholder="Bot account token (lip_…)">' +
-      '<div class="lbc-note">Make one while signed in to Lichess as the bot account: ' +
-      '<a href="https://lichess.org/account/oauth/token/create?scopes[]=bot:play&amp;description=Blundermind%20bot" ' +
-      'target="_blank" rel="noopener">create a token ↗</a> — that link ticks the bot permission for you. ' +
-      'A new account that has never played can be made a bot account in the next step.</div>';
+    : '<input type="password" id="lbc-token" autocomplete="off" spellcheck="false" placeholder="Paste the bot account’s token (lip_…)">' +
+      '<div class="lbc-note">No token yet? Steps 1–4 below get you one — the ' +
+      '<a href="' + LBC_TOKEN_URL.replace(/&/g, '&amp;') + '" target="_blank" rel="noopener">make a token ↗</a> ' +
+      'link ticks the bot permission for you.</div>';
   body.innerHTML =
     '<p>This tab will play on Lichess as your bot account, with the bot set up in this builder.</p>' +
     '<div class="lbc-h">The bot</div><dl class="lbc-sum">' + _lbcSummary() + '</dl>' +
     '<div class="lbc-note">Each game’s time control and colours come from the challenge.</div>' +
-    '<div class="lbc-h">Lichess account</div>' + tokenHtml +
+    '<div class="lbc-h">Lichess bot account</div>' + tokenHtml + _lbcGuide(!saved) +
     '<div class="lbc-h">Accept challenges</div>' +
     '<div class="lbc-checks">' + cb('lbc-casual', 'Casual', set.casual) + cb('lbc-rated', 'Rated', set.rated) +
       cb('lbc-bots', 'From other bots', set.bots) + '</div>' +
@@ -10463,6 +10536,14 @@ function _lbcRender(){
     'slowed down and can lose on time. Local games are off while it’s connected; its Lichess games ' +
     'play out on the board.</div>';
   _lbcButtons([['Cancel', lbcClose], ['Connect to Lichess', lbcConnect, true, 'lbc-connect-btn']]);
+}
+
+// The bot can change under an open popup — the board sends its current bot
+// when it opens the builder — so the summary is redrawn alone, never the
+// form around it (a token being typed stays).
+function _lbcRefreshSummary(){
+  const dl = document.querySelector('#lbc-overlay.show .lbc-sum');
+  if(dl) dl.innerHTML = _lbcSummary();
 }
 
 function _lbcReadSettings(){
@@ -10529,6 +10610,7 @@ function _lbcFinish(token, settings){
   if(!host) return;
   document.getElementById('lbc-overlay').classList.remove('show');
   _lbcPendingUpgrade = null;
+  _lbcFromBoard = false;
   host.lichessConnectFromBuilder({ token: token, settings: settings, config: getBotConfig() });
   lbcRefresh();
 }

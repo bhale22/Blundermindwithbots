@@ -94,14 +94,32 @@ function lichessOnLocalMove(from, to, promo, piece) {
   _lbCheckClaims(g);
 }
 
-// The bot's answer to a draw offer, or its own offer. On Lichess the server
-// ends the game; the board waits for it.
-function lichessSendDraw(yes) {
+// The bot's answer to the opponent's standing draw offer, with the reason for
+// the log (the host's log — the opponent on Lichess never sees it). An answer
+// reached after the offer has gone is dropped: a yes posted then is an OFFER of
+// the bot's own, the opposite of what it decided. Returns whether it was sent.
+// On a yes the server ends the game; the board waits for it.
+function lichessAnswerDraw(yes, why) {
+  const g = lbGame;
+  if (!g || g.ended) return false;
+  if (!g.oppDrawOpen) {
+    lbLog('The draw offer was gone before the bot answered' + (why ? ' (it would have ' + (yes ? 'accepted' : 'declined') + ': ' + why + ')' : ''));
+    return false;
+  }
+  g.drawAnswered = true;
+  g.drawAccepted = !!yes;
+  lbLog((yes ? 'The bot accepts the draw' : 'The bot declines the draw') + (why ? ': ' + why : ''));
+  _lbPost('/api/bot/game/' + g.id + '/draw/' + (yes ? 'yes' : 'no')).then(r => {
+    if (!r.ok && lbGame === g && !g.ended) lbLog('Lichess refused the bot\'s draw answer: ' + _lbErr(r));
+  });
+  return true;
+}
+// The bot's own offer (botMaybeOfferDraw).
+function lichessOfferDraw() {
   const g = lbGame;
   if (!g || g.ended) return;
-  lbLog(!yes ? 'The bot declines the draw' : g.oppDrawOpen ? 'The bot accepts the draw' : 'The bot offers a draw');
-  if (g.oppDrawOpen) { g.drawAnswered = true; g.drawAccepted = !!yes; }
-  _lbPost('/api/bot/game/' + g.id + '/draw/' + (yes ? 'yes' : 'no'));
+  lbLog('The bot offers a draw');
+  _lbPost('/api/bot/game/' + g.id + '/draw/yes');
 }
 // The opponent's offer is standing and the bot has not answered it. Its move
 // would decline it unread, so the engine answers first (_botAnswerDrawFirst)
@@ -601,7 +619,7 @@ function _lbAfterState(g, st) {
   if (g.oppDrawOpen && g.drawPly !== ply && !gameOver && typeof botConsiderDrawOffer === 'function') {
     g.drawPly = ply;
     lbLog(_lbWho(g.opponent) + ' offers a draw');
-    // Answers through lichessSendDraw — now if the bot is free, else just
+    // Answers through lichessAnswerDraw — now if the bot is free, else just
     // before its move goes out.
     if (!g.drawAnswered) botConsiderDrawOffer();
   }
@@ -804,12 +822,9 @@ function _lbBuildPanel() {
       <label><input type="checkbox" id="lbSp-classical" onchange="lichessSetSpeed('classical',this.checked)">Classical</label></div>
     <div class="lb-row"><label><input type="checkbox" id="lbAuto" onchange="lichessSetOpt('auto',this.checked)">Reconnect when this page opens</label></div>
   </div>
-  <div class="lb-row" id="lbTokenRow">
-    <input type="password" id="lbToken" autocomplete="off" spellcheck="false" placeholder="Bot account token (lip_…)">
-  </div>
   <div class="lb-log" id="lbLog"></div>
   <div class="lb-row">
-    <button class="lb-go" id="lbConnect" onclick="lichessConnect()">Connect</button>
+    <button class="lb-go" id="lbConnect" onclick="lichessOpenSetup()">Connect…</button>
     <button class="lb-stop" id="lbDisconnect" onclick="lichessDisconnect()" style="display:none">Disconnect</button>
     <span id="lbGameBtns" style="display:none">
       <button onclick="lichessResignGame()">Resign</button>
@@ -865,16 +880,14 @@ function lbRender() {
   $('lbBot').textContent = ((typeof botGenerateName === 'function') ? botGenerateName() : 'this page\'s bot') +
     (lbNextConfig ? ' — your update plays from the next game' : '');
   $('lbRules').textContent = _lbRulesText();
-  // Disconnected, the settings are what there is to do; connected, they fold.
-  p.classList.toggle('lb-edit', !on || p.dataset.edit === '1');
-  $('lbEditBtn').style.display = on ? '' : 'none';
+  // The accept rules fold behind "edit" — connecting sets them in the popup.
+  p.classList.toggle('lb-edit', p.dataset.edit === '1');
   $('lbEditBtn').textContent = p.dataset.edit === '1' ? 'done' : 'edit';
   $('lbCasual').checked = !!lbSettings.casual;
   $('lbRated').checked = !!lbSettings.rated;
   $('lbBots').checked = !!lbSettings.bots;
   $('lbAuto').checked = !!lbSettings.auto;
   ['bullet', 'blitz', 'rapid', 'classical'].forEach(k => { $('lbSp-' + k).checked = !!lbSettings.speeds[k]; });
-  $('lbTokenRow').style.display = (!on && !lbSettings.token) ? '' : 'none';
   $('lbConnect').style.display = on ? 'none' : '';
   $('lbDisconnect').style.display = on ? '' : 'none';
   $('lbForget').style.display = (!on && lbSettings.token) ? '' : 'none';
@@ -969,6 +982,26 @@ async function lichessUpgradeAccount(tok) {
   let d = null;
   try { d = await r.json(); } catch (e) {}
   return r.ok ? { ok: true } : { ok: false, error: (d && d.error) || ('Lichess answered ' + r.status) };
+}
+
+// The board panel's Connect opens the same popup the builder's Lichess pill
+// does — one place that shows the bot, the account steps and the rules. The
+// builder opens only to hold it; Cancel there comes straight back here.
+function lichessOpenSetup() {
+  if (typeof openBotModal !== 'function') return;
+  openBotModal();
+  const f = document.getElementById('botModalFrame');
+  let tries = 0;
+  const go = () => {
+    try {
+      if (f && f.contentWindow && typeof f.contentWindow.lbcOpen === 'function') {
+        f.contentWindow.lbcOpen({ fromBoard: true });
+        return;
+      }
+    } catch (e) {}
+    if (++tries < 40) setTimeout(go, 150);
+  };
+  go();
 }
 
 // The builder's Connect: this bot, this token, these rules — then the board.
