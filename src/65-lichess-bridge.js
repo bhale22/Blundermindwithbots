@@ -22,8 +22,11 @@
 // honoured on a localhost page and nowhere else, so no link can ever point a
 // stored token at another host.
 //
-// Only a page opened with ?lichess shows the panel or connects, so an ordinary
-// Blundermind tab never turns into a bot host by itself.
+// A bot is connected from the Bot Builder. The board's panel shows only while
+// this tab hosts one — connecting, connected, or stopped by an error — so a
+// player who never uses Lichess never sees it. Only a page opened with
+// ?lichess reconnects by itself, so an ordinary Blundermind tab never turns
+// into a bot host.
 
 const LB_KEY = 'bm_lichessBot';
 const LB_DEFAULTS = {
@@ -759,7 +762,11 @@ function _lbChallengeTc(c) {
 // Shows what runs: which account, which bot (the one this page is set to),
 // what it accepts, the game on the board, and what has happened. It sits over
 // the sidebar's game buttons, which are locked while the tab hosts anyway,
-// and starts folded on a phone so the board stays in view.
+// and starts folded on a phone so the board stays in view. It is there only
+// while the tab hosts a bot (_lbPanelShown); connecting starts in the builder.
+function _lbPanelShown() {
+  return lbWantConnected || lichessGameLive() || lbState === 'connecting' || lbState === 'error';
+}
 function _lbBuildPanel() {
   if (document.getElementById('lbPanel')) return;
   const css = document.createElement('style');
@@ -825,6 +832,7 @@ function _lbBuildPanel() {
   <div class="lb-log" id="lbLog"></div>
   <div class="lb-row">
     <button class="lb-go" id="lbConnect" onclick="lichessOpenSetup()">Connect…</button>
+    <button id="lbClose" onclick="lichessClosePanel()">Close</button>
     <button class="lb-stop" id="lbDisconnect" onclick="lichessDisconnect()" style="display:none">Disconnect</button>
     <span id="lbGameBtns" style="display:none">
       <button onclick="lichessResignGame()">Resign</button>
@@ -849,6 +857,7 @@ function lbRender() {
   _lbPushState();
   const p = document.getElementById('lbPanel');
   if (!p || !lbSettings) return;
+  p.style.display = _lbPanelShown() ? '' : 'none';
   const $ = id => document.getElementById(id);
   const on = lbWantConnected;
   const g = lbGame && lbGame.boardReady ? lbGame : null;
@@ -888,7 +897,10 @@ function lbRender() {
   $('lbBots').checked = !!lbSettings.bots;
   $('lbAuto').checked = !!lbSettings.auto;
   ['bullet', 'blitz', 'rapid', 'classical'].forEach(k => { $('lbSp-' + k).checked = !!lbSettings.speeds[k]; });
+  // Not connected, the panel is only up to show why connecting failed: try
+  // again (the builder's popup) or close it.
   $('lbConnect').style.display = on ? 'none' : '';
+  $('lbClose').style.display = on ? 'none' : '';
   $('lbDisconnect').style.display = on ? '' : 'none';
   $('lbForget').style.display = (!on && lbSettings.token) ? '' : 'none';
   $('lbGameBtns').style.display = g && !g.ended ? '' : 'none';
@@ -901,6 +913,12 @@ function lichessSetSpeed(key, val) { lbSettings.speeds[key] = !!val; _lbSaveSett
 function lichessToggleMin() {
   const p = document.getElementById('lbPanel');
   if (p) { p.classList.toggle('lb-min'); lbRender(); }
+}
+// A failed connect, put away: the tab is an ordinary one again.
+function lichessClosePanel() {
+  if (lbWantConnected) return;
+  _lbMarkHostTab(false);
+  _lbSetState('off');
 }
 function lichessToggleEdit() {
   const p = document.getElementById('lbPanel');
@@ -1065,7 +1083,10 @@ function lichessOpenPanel() {
 document.addEventListener('DOMContentLoaded', () => {
   lbSettings = _lbLoadSettings();
   if (!new URLSearchParams(location.search).has('lichess')) return;
-  lichessOpenPanel();
   // A host that reloads (or a headless one starting up) picks up where it was.
-  if (lbSettings.auto && lbSettings.token) setTimeout(lichessConnect, 1500);
+  // With nothing to reconnect with, the tab is an ordinary one.
+  if (!(lbSettings.auto && lbSettings.token)) { _lbMarkHostTab(false); return; }
+  lichessOpenPanel();
+  _lbSetState('connecting');
+  setTimeout(lichessConnect, 1500);
 });

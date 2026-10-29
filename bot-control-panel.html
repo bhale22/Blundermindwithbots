@@ -108,6 +108,20 @@ body::before{content:'';position:fixed;inset:0;background-image:repeating-linear
 .start-btn:hover{background:var(--amber-bright);}
 .start-btn:active{transform:scale(0.98);}
 
+/* Start, and directly under it the green Play on Lichess pill (inside
+   Blundermind only). The pair keeps the bar's 52px: when the pill shows,
+   Start gives it the bottom of the column. */
+.qs-start-col{display:flex;flex-direction:column;flex-shrink:0;border-right:1px solid var(--amber-dim);}
+.qs-start-col .start-btn{flex:1 1 auto;height:auto;min-height:0;border-right:none;justify-content:center;}
+.qs-lichess-pill{
+  flex-shrink:0;margin:4px 8px 5px;padding:2px 12px;
+  font-family:var(--font-u);font-size:10px;font-weight:600;letter-spacing:0.04em;line-height:1.4;
+  color:#fff;background:#2fa35a;border:none;border-radius:999px;cursor:pointer;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background 0.15s;
+}
+.qs-lichess-pill:hover{background:#38b866;}
+.qs-lichess-pill[hidden]{display:none;}
+
 /* Pill button wrapper — contains both trigger and its dropdown */
 .qs-pill-wrap{
   position:relative;
@@ -2148,7 +2162,7 @@ body.fj .picon{font-weight:500;}
   .qs-bar > .qs-pill-btn,.qs-bar > .qs-pill-wrap{display:flex;border-top:0.5px solid var(--border);}
   .qs-bar > .qs-pill-btn,.qs-bar > .qs-pill-wrap > .qs-pill-btn{min-height:56px;height:auto;padding:0 14px;}
   /* Odd pill count — let the last one span rather than sit as a half orphan.
-     The fixed Start button is a child but no grid cell, so an odd number of
+     The fixed Start column is a child but no grid cell, so an odd number of
      pills means the last child sits at an even position. */
   .qs-bar > *:last-child:nth-child(even){grid-column:1 / -1;}
   .qs-label{display:block;font-size:8.5px;margin-bottom:3px;}
@@ -2156,15 +2170,18 @@ body.fj .picon{font-weight:500;}
   .qs-engine-zone{min-width:0;}
   .qs-pill-wrap{border-right:none;}
 
-  .start-btn{
+  .qs-start-col{
     position:fixed;left:0;right:0;bottom:0;z-index:400;
-    height:auto;min-height:56px;justify-content:center;
-    padding:0 14px calc(env(safe-area-inset-bottom,0px));
-    font-size:12px;border-right:none;
+    border-right:none;background:var(--carbon-light);
+    padding-bottom:env(safe-area-inset-bottom,0px);
     box-shadow:0 -6px 20px rgba(0,0,0,0.35);
   }
-  /* Clearance so the bar never covers the last section's controls. */
+  .qs-start-col .start-btn{flex:none;min-height:56px;padding:0 14px;font-size:12px;}
+  .qs-lichess-pill{min-height:36px;margin:7px 14px 8px;font-size:13px;}
+  /* Clearance so the bar never covers the last section's controls — more
+     when the Lichess pill sits under Start. */
   .page{padding-bottom:96px;}
+  body:has(.qs-lichess-pill:not([hidden])) .page{padding-bottom:148px;}
   /* Desktop offsets would push these dropdowns off a phone screen */
   .qs-float-drop{left:0 !important;right:auto;max-width:calc(100vw - 20px);overflow-x:auto;}
   .qs-inplace-drop{min-width:0 !important;}
@@ -3044,8 +3061,17 @@ body.fj .picon{font-weight:500;}
 
   <div class="qs-bar">
 
-    <!-- 1. START — a fixed bottom bar on phones, see the phone quick-start rules -->
-    <button class="start-btn" onclick="startGame()">&#9654; Start</button>
+    <!-- 1. START — and directly under it, the green Play on Lichess pill: this
+         bot as a Lichess BOT account, hosted by this tab. The pill opens the
+         Play on Lichess popup (lbcOpen); it is hidden when the builder is
+         opened on its own, outside Blundermind. The pair is a fixed bottom bar
+         on phones, see the phone quick-start rules. -->
+    <div class="qs-start-col">
+      <button class="start-btn" onclick="startGame()">&#9654; Start</button>
+      <button class="qs-lichess-pill" id="qs-lichess-btn" onclick="lbcOpen()" aria-label="Play on Lichess" aria-haspopup="dialog">
+        <span id="qs-lichess-value">Play on Lichess</span>
+      </button>
+    </div>
 
     <!-- 2. ENGINE — quick picker over the Engine section's cards, Elometer and
          opening books; hybrids are built in the section itself -->
@@ -3230,16 +3256,6 @@ body.fj .picon{font-weight:500;}
           </div>
         </div>
       </div>
-    </div>
-
-    <!-- 9. LICHESS — this bot as a Lichess BOT account, hosted by this tab.
-         Opens the Play on Lichess popup (lbcOpen); hidden when the builder is
-         opened on its own, outside Blundermind. -->
-    <div class="qs-pill-wrap" id="qs-lichess-wrap">
-      <button class="qs-pill-btn" id="qs-lichess-btn" onclick="lbcOpen()" aria-label="Play on Lichess" aria-haspopup="dialog">
-        <span class="qs-label">Lichess</span>
-        <span class="qs-pill-value" id="qs-lichess-value">Play as a bot</span>
-      </button>
     </div>
 
   </div><!-- /qs-bar -->
@@ -10331,17 +10347,19 @@ function lbcRefresh(st){
   const host = _lbcHost();
   if(st) _lbcState = st;
   else if(host){ try{ _lbcState = host.lichessBuilderState(); }catch(e){} }
-  const wrap = document.getElementById('qs-lichess-wrap');
-  if(wrap) wrap.style.display = host ? '' : 'none';
+  const pill = document.getElementById('qs-lichess-btn');
+  if(pill) pill.hidden = !host;
   const s = _lbcState;
   const on = !!(s && s.connected);
   const val = document.getElementById('qs-lichess-value');
   if(val){
-    val.textContent = !on ? 'Play as a bot'
-      : s.state === 'error' ? 'Error — open'
+    val.textContent = !on ? 'Play on Lichess'
+      : s.state === 'error' ? 'Lichess error — open'
       : s.state === 'connecting' ? 'Connecting…'
       : '@' + (s.account || 'bot') + (s.playing ? ' · playing' : ' · waiting');
   }
+  if(pill) pill.title = on ? 'Your Lichess bot — open for its status, or to disconnect'
+    : 'Play on Lichess as a bot account, with the bot set up here';
   const start = document.querySelector('.start-btn');
   if(start) start.innerHTML = on ? '&#8635; Update Lichess bot' : '&#9654; Start';
   // An open popup follows the connection, but never wipes a form being filled.
@@ -10517,7 +10535,8 @@ function _lbcRender(){
   const saved = s.tokenSaved && !_lbcNewToken;
   const tokenHtml = saved
     ? '<div class="lbc-note" style="margin-top:0;">A token for the bot account is saved in this browser. ' +
-      '<button type="button" class="lbc-link" onclick="_lbcNewToken=true;_lbcRender();">Use a different token</button></div>'
+      '<button type="button" class="lbc-link" onclick="_lbcNewToken=true;_lbcRender();">Use a different token</button> · ' +
+      '<button type="button" class="lbc-link" onclick="lbcForgetToken()">Forget it</button></div>'
     : '<input type="password" id="lbc-token" autocomplete="off" spellcheck="false" placeholder="Paste the bot account’s token (lip_…)">' +
       '<div class="lbc-note">No token yet? Open “New to this?” below — steps 1–4 get you one, and the ' +
       '<a href="' + LBC_TOKEN_URL.replace(/&/g, '&amp;') + '" target="_blank" rel="noopener">make a token ↗</a> ' +
@@ -10545,6 +10564,15 @@ function _lbcRender(){
 function _lbcRefreshSummary(){
   const dl = document.querySelector('#lbc-overlay.show .lbc-sum');
   if(dl) dl.innerHTML = _lbcSummary();
+}
+
+// Takes the saved token out of this browser. It lives here because the
+// board's Lichess panel only shows while a bot is connected.
+function lbcForgetToken(){
+  try{ _lbcHost()?.lichessForgetToken(); }catch(e){}
+  _lbcNewToken = false;
+  lbcRefresh();
+  _lbcRender();
 }
 
 function _lbcReadSettings(){
