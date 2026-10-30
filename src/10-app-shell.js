@@ -2292,16 +2292,16 @@ window.addEventListener('load', () => {
 // ══════════════════════════════════════════════════════════════════════════
 const TOURS = {
   amateur: [
-    { sel:'#bottom-controls', title:'Start playing',
+    { sel:'#startArea', title:'Start playing',
       body:'Play a bot, challenge a friend online, or just explore. You can click any button here right now — or keep touring.' },
     { sel:'#commitModeChip', title:'How your moves get played',
       body:'This chip sits with your clock and switches how a move is committed. <b>✋ Release to move</b> plays the move the moment you let go. <b>👆 Tap to confirm</b> instead <i>parks</i> the piece on the square with every overlay live, so you can take your finger off the board, read what the move actually does, and only then tap again to play it — or tap a different square to change your mind. On a phone your finger covers the very squares you moved there to read, so this is the difference between seeing the answer and guessing. Tap the chip to switch, even mid-game.' },
     { sel:'#quickBot', title:'Start a game',
-      body:'The fastest way in. The row underneath sets the two things that matter: which opponent — 600 is the gentlest, 1400 the strongest offered here; the builder goes on up to 2400 — and which colour you play. Picking here changes only the engine and its rating: a bot you built keeps its personality, and the line under the picker shows it. <b>Play as Random</b> re-rolls every game. Pick <b>Open Bot-Builder…</b> from the same list to build your own instead.' },
+      body:'The fastest way in. The row underneath sets the two things that matter: which opponent — 600 is the gentlest, 1400 the strongest offered here; the builder goes on up to 2400 — and which colour you play. Picking here changes only the engine and its rating: a bot you built keeps its personality. <b>Play as Random</b> re-rolls every game. Pick <b>Open Bot-Builder…</b> from the same list to build your own instead.' },
+    { sel:'#botSidebarBtn', title:'Custom Bot Builder',
+      body:'Build an opponent rather than pick one. Choose the engine — including <b>Maia-3</b>, which is trained on human games and blunders like a person instead of like a weakened engine — then set a rating, an opening repertoire, and how it behaves under time pressure. Give it a personality and a name, and you get opponents like <i>Attacky McTackerson</i>. Whatever you build becomes the bot the Start button plays.' },
     { sel:'#mpSidebarBtn', title:'Play a friend',
       body:'Two people, one board, over the internet. <b>Inviting a friend with a private link is the recommended way</b> — you know who you are playing. You can post an open challenge instead if you would rather take on a stranger. Either way it runs on the honour system: there is <b>no cheat detection</b>, and once a move is committed there are <b>no take-backs</b>.' },
-    { sel:'#botSidebarBtn', title:'Bot Builder',
-      body:'Build an opponent rather than pick one. Choose the engine — including <b>Maia-3</b>, which is trained on human games and blunders like a person instead of like a weakened engine — then set a rating, an opening repertoire, and how it behaves under time pressure. Give it a personality and a name, and you get opponents like <i>Attacky McTackerson</i>. Whatever you build becomes the bot the Start button plays.' },
     // On a phone the overlay grid is not on the page: it lives in the
     // board-vision panel, and what the page shows instead is the pinned strip
     // under the board. selPhone points these steps at the strip and its chips,

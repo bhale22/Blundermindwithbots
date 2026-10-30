@@ -1715,10 +1715,13 @@ canvas{
   width:100%;flex-shrink:0;
   border:1.5px solid var(--st-go-bd,#4aab74);border-radius:6px;overflow:hidden;
   background:var(--st-go-bg,rgba(90,212,144,0.16));
-  /* Separates the launch block from the visualization controls under it —
-     they are different kinds of thing and were reading as one stack. */
-  margin-bottom:11px;
 }
+/* The quick start with the other two starters under it, full width and
+   stacked: Custom Bot Builder, then 2-Player. The margin separates the area
+   from the visualization controls under it — they are different kinds of
+   thing and were reading as one stack. */
+.start-area{display:flex;flex-direction:column;gap:4px;flex-shrink:0;margin-bottom:11px;}
+.start-area .play-btn{width:100%;text-align:center;}
 .qb-go{
   width:100%;display:flex;align-items:center;justify-content:center;
   padding:9px 8px;border:0;background:transparent;color:var(--st-go-fg,#1d6b41);
@@ -1735,19 +1738,6 @@ canvas{
   font-family:inherit;font-size:11px;font-weight:600;padding:4px 3px;cursor:pointer;
 }
 .qb-row .qb-sel + .qb-sel{border-left:1px solid rgba(74,171,116,0.55);}
-/* The personality readout. A button because it opens the builder, styled as
-   a caption because it is one. "has" lights it: a bot with a personality
-   reads as a thing someone made; 0 cp reads as a dial not yet touched. */
-.qb-persona{
-  display:block;width:100%;border:0;border-top:1px solid rgba(74,171,116,0.35);
-  background:transparent;color:var(--st-go-fg,#1d6b41);opacity:.72;
-  font-family:inherit;font-size:9.5px;font-weight:600;letter-spacing:0.02em;
-  padding:3px 6px;text-align:left;cursor:pointer;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-}
-.qb-persona.has{opacity:1;}
-.qb-persona:hover{background:var(--st-go-hv,rgba(90,212,144,0.22));}
-.qb-persona:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
 .qb-sel:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
 
 /* ── Indicator state key ────────────────────────────────────────────────────
@@ -2226,8 +2216,6 @@ body.pro-mode .bs-vision{ display:none !important; }
   height:1px;background:var(--border);flex-shrink:0;
   margin:clamp(6px,1.5vh,12px) 0 clamp(5px,1.3vh,11px);
 }
-.play-row{display:flex;gap:3px;flex-shrink:0;align-items:stretch;}
-.play-row .ctrl-btn{flex:1;text-align:center;}
 .play-btn{
   font-size:12px;font-weight:700;line-height:1.2;padding:0 4px;
   height:var(--play-h);min-height:0;
@@ -2241,14 +2229,6 @@ body.pro-mode .bs-vision{ display:none !important; }
    vanished on hover instead of strengthening. */
 .play-btn.mp:hover{background:var(--st-mp-hv,rgba(74,159,212,0.24));
   border-color:var(--st-mp-bd,#3f8cc0);}
-/* The dynamic action slot shares the primary row but only deserves primary
-   weight when it IS the primary action. Idle it says "Training Tips", which
-   must not shout over the two game starters; updateActionBtn() swaps it to
-   .reset-btn for Resign, and by then the starters are hidden anyway. */
-.play-row #resignBtn,.play-row #exploreBtn,.play-row #reviewBtn{
-  font-size:10.5px;font-weight:600;padding:0 3px;height:var(--play-h);min-height:0;
-}
-.play-row #resignBtn.reset-btn{font-size:12px;font-weight:700;}
 .secondary-row{display:flex;gap:3px;margin-top:3px;flex-shrink:0;}
 .secondary-row .ctrl-btn{
   flex:1;text-align:center;font-size:10px;font-weight:600;padding:0 2px;
@@ -2298,6 +2278,10 @@ body.pro-mode .bs-vision{ display:none !important; }
      side by side, did not fit — a half-width row cannot hold a name and a
      depth picker. */
   .ind-key-t{display:none;}
+  /* The starters stacked under the quick start give back what their second
+     row costs, so the column is no taller than with them side by side. */
+  .start-area{gap:2px;margin-bottom:8px;}
+  .start-area .play-btn{height:calc(var(--play-h) - 4px);}
   /* Board settings collapses to one line, keeping every word. */
   #bs-open{min-height:0;height:var(--play-h);padding:4px 9px;margin:2px 0;}
   #bs-open .bs-txt{flex-direction:row;align-items:baseline;gap:6px;overflow:hidden;}
@@ -2319,7 +2303,7 @@ body.pro-mode .bs-vision{ display:none !important; }
    self-describing once you have read them once. */
 @media (max-height:640px){
   #sidebar{--ib-h:25px;--util-h:24px;--play-h:27px;--sec-h:23px;}
-  .quick-bot{margin-bottom:7px;}
+  .start-area{margin-bottom:7px;}
   .quick-bot .qb-go{padding:5px 8px;}
   .quick-bot .qb-t1{font-size:13px;}
   .qb-row .qb-sel{font-size:10px;padding:3px 3px;}
@@ -2454,7 +2438,7 @@ body.pro-mode .bs-vision{ display:none !important; }
   .ctrl-btn,.gbtn{min-height:42px;font-size:12px;}
   .ctrl-row{gap:6px;}
   #bs-open{min-height:48px;}
-  .ind-utils .ctrl-btn,.play-row .ctrl-btn,.secondary-row .ctrl-btn{min-height:42px;}
+  .ind-utils .ctrl-btn,.start-area .ctrl-btn,.secondary-row .ctrl-btn{min-height:42px;}
   .ghost-row .ib-main{min-height:42px;}
 
   /* -- Overlays as chips, two up --------------------------------------------
@@ -3962,11 +3946,15 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
          Three states, previously conveyed by background hue and nothing else.
          The chips are the button styles themselves, so the key cannot drift
          out of date without someone noticing it looks wrong. -->
+    <!-- Start area: the quick start, then the two other ways to play under
+         it — build your own opponent, or play a person. updateGameStartBtns()
+         takes the whole area down while a game is live. -->
+    <div class="start-area" id="startArea">
     <!-- Quick start. Names the bot it will start, and changes it without
          opening anything; Custom hands off to the builder. -->
     <div class="quick-bot" id="quickBot">
       <button type="button" class="qb-go" id="quickStartBtn" onclick="quickBotStart()">
-        <span class="qb-t1">▶ Start Game vs Bot</span>
+        <span class="qb-t1">▶ Quick Start Game vs Bot</span>
       </button>
       <!-- Opponent gets the full width: its longest entries are names
            ("Open Bot-Builder", "Maia 1200 - human-like"), and a name that
@@ -3980,11 +3968,6 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
           <option value="builder">Open Bot-Builder…</option>
         </select>
       </div>
-      <!-- What rides along with the pick: the personality (or the absence of
-           one), its CP budget, and the book. The picker above sets only the
-           engine and rating, and this is the line that says so. -->
-      <button type="button" class="qb-persona" id="quickBotPersona"
-              onclick="if(typeof openBotModal==='function')openBotModal()"></button>
       <div class="qb-row">
         <select class="qb-sel" id="quickBotColor" onchange="botSetPlayerColor(this.value)"
                 aria-label="Choose which colour you play">
@@ -3996,6 +3979,9 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
                 aria-label="Choose the time control"></select>
       </div>
     </div>
+    <button class="ctrl-btn play-btn" onclick="openBotModal()" id="botSidebarBtn">🤖 Custom Bot Builder</button>
+    <button class="ctrl-btn play-btn mp" id="mpSidebarBtn" onclick="openPanel('mpPanel')">⚔ 2-Player</button>
+    </div><!-- end start-area -->
 
     <!-- ── Core four ────────────────────────────────────────────────────────
          The overlays that answer "can this be taken" — the reason someone
@@ -4208,17 +4194,10 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
 
     <!-- Chat is in the board area inline for multiplayer -->
     <!-- ── Floor ────────────────────────────────────────────────────────────
-         Starting a game was one of six identical buttons. The two starters now
-         own a primary row; Theme/Load/Save drop to a quiet secondary one. The
-         dynamic action slot (Training Tips -> Resign -> Rematch) shares the
-         primary row, and updateGameStartBtns() hides the starters mid-game, so
-         the slot is what stays loud exactly when it is the thing to do. -->
+         Tips/Load/Save, quiet. The two game starters that used to own a
+         primary row here sit under the quick start now (#startArea). -->
     <div id="bottom-controls">
       <div class="floor-sep"></div>
-      <div class="play-row">
-        <button class="ctrl-btn play-btn" onclick="openBotModal()" id="botSidebarBtn">🤖 Bot Builder</button>
-        <button class="ctrl-btn play-btn mp" id="mpSidebarBtn" onclick="openPanel('mpPanel')">⚔ 2-Player</button>
-      </div>
       <div class="secondary-row">
         <button class="ctrl-btn util-btn" id="btnTips" onclick="openHelp('howto')">🎯 Training Tips</button>
         <button class="ctrl-btn util-btn" id="btnLoadPgn" onclick="document.getElementById('pgnFileInput').click()">▶ Load</button>

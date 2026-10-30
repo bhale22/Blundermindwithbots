@@ -108,19 +108,28 @@ body::before{content:'';position:fixed;inset:0;background-image:repeating-linear
 .start-btn:hover{background:var(--amber-bright);}
 .start-btn:active{transform:scale(0.98);}
 
-/* Start, and directly under it the green Play on Lichess pill (inside
-   Blundermind only). The pair keeps the bar's 52px: when the pill shows,
-   Start gives it the bottom of the column. */
-.qs-start-col{display:flex;flex-direction:column;flex-shrink:0;border-right:1px solid var(--amber-dim);}
-.qs-start-col .start-btn{flex:1 1 auto;height:auto;min-height:0;border-right:none;justify-content:center;}
+/* The green Lichess pill (inside Blundermind only), on its own row between the
+   quick-start bar and the first section, lined up with the sections' edge. */
+.qs-lichess-row{padding:12px 24px 0;}
+.qs-lichess-row[hidden]{display:none;}
 .qs-lichess-pill{
-  flex-shrink:0;margin:4px 8px 5px;padding:2px 12px;
+  max-width:100%;padding:2px 12px;
   font-family:var(--font-u);font-size:10px;font-weight:600;letter-spacing:0.04em;line-height:1.4;
   color:#fff;background:#2fa35a;border:none;border-radius:999px;cursor:pointer;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background 0.15s;
 }
 .qs-lichess-pill:hover{background:#38b866;}
-.qs-lichess-pill[hidden]{display:none;}
+
+/* Desktop: the bar is as wide as the sections under it (their 24px inset),
+   and its pills share that width, so it has no empty end. Engine keeps its
+   fixed zone (see .qs-engine-zone) and Start its own width; the other pills
+   split what is left equally, widening only for a value that needs more. */
+@media (min-width:761px){
+  .quickstart{margin:0 24px;}
+  .qs-bar > .qs-pill-wrap{flex:1 1 0;}
+  .qs-bar > #qs-engine-wrap{flex:0 0 auto;}
+  .qs-bar > .qs-pill-wrap:last-child{border-right:none;}
+}
 
 /* Pill button wrapper — contains both trigger and its dropdown */
 .qs-pill-wrap{
@@ -909,6 +918,8 @@ canvas{display:block;background:transparent;}
 .ml-depth input{width:40px;background:var(--carbon-mid);border:0.5px solid var(--border);color:var(--text-secondary);font-family:var(--font-m);font-size:9px;padding:4px 5px;border-radius:2px;outline:none;text-align:center;}
 .ml-depth input:focus{border-color:var(--amber);}
 .ml-depth-lbl{font-size:7.5px;text-transform:uppercase;letter-spacing:0.08em;}
+.ml-src{margin-bottom:8px;}
+.ml-src .ml-depth-lbl{font-family:var(--font-m);color:var(--text-dim);margin-bottom:4px;}
 
 /* ── Bot-controls guided tour (spotlight; click-through) ──────────────────── */
 #botTourOverlay{position:fixed;inset:0;z-index:9000;pointer-events:none;}
@@ -2162,7 +2173,7 @@ body.fj .picon{font-weight:500;}
   .qs-bar > .qs-pill-btn,.qs-bar > .qs-pill-wrap{display:flex;border-top:0.5px solid var(--border);}
   .qs-bar > .qs-pill-btn,.qs-bar > .qs-pill-wrap > .qs-pill-btn{min-height:56px;height:auto;padding:0 14px;}
   /* Odd pill count — let the last one span rather than sit as a half orphan.
-     The fixed Start column is a child but no grid cell, so an odd number of
+     The fixed Start button is a child but no grid cell, so an odd number of
      pills means the last child sits at an even position. */
   .qs-bar > *:last-child:nth-child(even){grid-column:1 / -1;}
   .qs-label{display:block;font-size:8.5px;margin-bottom:3px;}
@@ -2170,18 +2181,18 @@ body.fj .picon{font-weight:500;}
   .qs-engine-zone{min-width:0;}
   .qs-pill-wrap{border-right:none;}
 
-  .qs-start-col{
+  .start-btn{
     position:fixed;left:0;right:0;bottom:0;z-index:400;
-    border-right:none;background:var(--carbon-light);
-    padding-bottom:env(safe-area-inset-bottom,0px);
+    height:auto;min-height:56px;justify-content:center;
+    padding:0 14px calc(env(safe-area-inset-bottom,0px));
+    font-size:12px;border-right:none;
     box-shadow:0 -6px 20px rgba(0,0,0,0.35);
   }
-  .qs-start-col .start-btn{flex:none;min-height:56px;padding:0 14px;font-size:12px;}
-  .qs-lichess-pill{min-height:36px;margin:7px 14px 8px;font-size:13px;}
-  /* Clearance so the bar never covers the last section's controls — more
-     when the Lichess pill sits under Start. */
+  /* Clearance so the bar never covers the last section's controls. */
   .page{padding-bottom:96px;}
-  body:has(.qs-lichess-pill:not([hidden])) .page{padding-bottom:148px;}
+  /* The Lichess pill spans the column, at a thumb's height. */
+  .qs-lichess-row{padding:10px 10px 0;}
+  .qs-lichess-pill{display:block;width:100%;min-height:36px;font-size:13px;}
   /* Desktop offsets would push these dropdowns off a phone screen */
   .qs-float-drop{left:0 !important;right:auto;max-width:calc(100vw - 20px);overflow-x:auto;}
   .qs-inplace-drop{min-width:0 !important;}
@@ -3061,17 +3072,8 @@ body.fj .picon{font-weight:500;}
 
   <div class="qs-bar">
 
-    <!-- 1. START — and directly under it, the green Play on Lichess pill: this
-         bot as a Lichess BOT account, hosted by this tab. The pill opens the
-         Play on Lichess popup (lbcOpen); it is hidden when the builder is
-         opened on its own, outside Blundermind. The pair is a fixed bottom bar
-         on phones, see the phone quick-start rules. -->
-    <div class="qs-start-col">
-      <button class="start-btn" onclick="startGame()">&#9654; Start</button>
-      <button class="qs-lichess-pill" id="qs-lichess-btn" onclick="lbcOpen()" aria-label="Play on Lichess" aria-haspopup="dialog">
-        <span id="qs-lichess-value">Play on Lichess</span>
-      </button>
-    </div>
+    <!-- 1. START — a fixed bottom bar on phones, see the phone quick-start rules -->
+    <button class="start-btn" onclick="startGame()">&#9654; Start</button>
 
     <!-- 2. ENGINE — quick picker over the Engine section's cards, Elometer and
          opening books; hybrids are built in the section itself -->
@@ -3261,6 +3263,16 @@ body.fj .picon{font-weight:500;}
   </div><!-- /qs-bar -->
 
 </div><!-- /quickstart -->
+
+<!-- The green Lichess pill, between the quick-start bar and the sections:
+     this bot as a Lichess BOT account, hosted by this tab. It opens the Play on
+     Lichess popup (lbcOpen); the row is hidden when the builder is opened on
+     its own, outside Blundermind. -->
+<div class="qs-lichess-row" id="qs-lichess-row">
+  <button class="qs-lichess-pill" id="qs-lichess-btn" onclick="lbcOpen()" aria-haspopup="dialog">
+    <span id="qs-lichess-value">Set up bot to play on Lichess</span>
+  </button>
+</div>
 
 
 <!-- ══════════════════════════════════════════
@@ -3804,7 +3816,7 @@ body.fj .picon{font-weight:500;}
     <div class="sec-icon"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
     <div class="sec-labels">
       <div class="sec-label">Opening Behavior</div>
-      <div class="sec-sub">Repertoire, then main line, for each colour</div>
+      <div class="sec-sub">Set an opening repertoire and/or follow the main line while in book</div>
     </div>
     <div class="sec-status" id="st-opening">Off</div>
     <svg class="chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
@@ -3828,7 +3840,7 @@ body.fj .picon{font-weight:500;}
             <div class="op-body" id="op-body-black"></div>
           </div>
         </div>
-        <div class="ctrl-hint" style="margin-top:10px;">The bot works down each column: <strong>Repertoire</strong> steers into your openings (shares sum to 100%), <strong>Main Line</strong> then plays the database's most popular move from wherever the game stands, and the engine plays the rest. With both on, the repertoire hands over as soon as its opening is on the board.</div>
+        <div class="ctrl-hint" style="margin-top:10px;">The bot works down each column, with either step on or both: the <strong>opening repertoire</strong> steers into your openings (shares sum to 100%), the <strong>main line</strong> plays the database's most popular move from wherever the game stands, and the engine plays the rest. With both on, the repertoire hands over to the main line as soon as its opening is on the board.</div>
       </div>
 
     </div>
@@ -10347,13 +10359,14 @@ function lbcRefresh(st){
   const host = _lbcHost();
   if(st) _lbcState = st;
   else if(host){ try{ _lbcState = host.lichessBuilderState(); }catch(e){} }
+  const row = document.getElementById('qs-lichess-row');
+  if(row) row.hidden = !host;
   const pill = document.getElementById('qs-lichess-btn');
-  if(pill) pill.hidden = !host;
   const s = _lbcState;
   const on = !!(s && s.connected);
   const val = document.getElementById('qs-lichess-value');
   if(val){
-    val.textContent = !on ? 'Play on Lichess'
+    val.textContent = !on ? 'Set up bot to play on Lichess'
       : s.state === 'error' ? 'Lichess error — open'
       : s.state === 'connecting' ? 'Connecting…'
       : '@' + (s.account || 'bot') + (s.playing ? ' · playing' : ' · waiting');
@@ -13693,7 +13706,7 @@ function renderOpColumn(color){
     '</div>';
   body.innerHTML =
     '<div class="op-stage" id="op-stage-rep-' + color + '">' +
-      head('rep', '1', 'Repertoire', 'Steer into these openings') +
+      head('rep', '1.', 'Opening repertoire', 'Steer into these openings') +
       '<div class="eco-search-wrap" id="rep-search-wrap-' + color + '">' +
         '<div class="eco-search-row">' +
           '<input class="eco-search" id="rep-search-input-' + color + '" type="text" placeholder="Add opening — name or ECO…" ' +
@@ -13708,9 +13721,9 @@ function renderOpColumn(color){
         '<div class="rep-total ok" id="rep-total-' + color + '" style="display:none;"></div>' +
       '</div>' +
     '</div>' +
-    '<div class="tog-desc op-then">then</div>' +
+    '<div class="tog-desc op-then">then/or</div>' +
     '<div class="op-stage" id="op-stage-ml-' + color + '">' +
-      head('ml', '2', 'Main Line', 'The most popular database move') +
+      head('ml', '2.', 'Play main line from Lichess database', 'The most popular database move') +
       '<div class="op-rep" id="op-ml-' + color + '">' + _mainLineBarHTML() + '</div>' +
     '</div>' +
     '<div class="tog-desc op-then">then</div>' +
@@ -13732,14 +13745,20 @@ function _syncOpStages(color){
   });
 }
 
-// Compact one-line Main Line controls (shared state, identical in both columns).
+// Main Line controls (shared state, identical in both columns). Which database
+// is a two-way switch that shows both choices — a single pill naming the
+// current one did not read as something you could change.
 function _mainLineBarHTML(){
-  const dbTitle = bookSource==='masters'
-    ? 'Masters DB — Lichess Masters database (master-level, titled-player games). Click to switch to the Lichess DB.'
-    : 'Lichess DB — Lichess online games at the rating level in use. Click to switch to the Masters DB.';
-  return '<div class="ml-bar">' +
-    '<button type="button" class="ml-pill" onclick="toggleBookSource()" title="' + dbTitle + '">' +
-      (bookSource==='masters' ? 'Masters DB' : 'Lichess DB') + '</button>' +
+  const src = (v, label, title) =>
+    '<button type="button" class="seg-btn' + (bookSource === v ? ' sel' : '') + '" role="radio" ' +
+      'aria-checked="' + (bookSource === v) + '" onclick="setBookSource(\'' + v + '\')" title="' + title + '">' + label + '</button>';
+  return '<div class="ml-src">' +
+    '<div class="ml-depth-lbl">Database</div>' +
+    '<div class="seg-row" role="radiogroup" aria-label="Main line database">' +
+      src('masters', 'Masters DB', 'Lichess Masters database — master-level, titled-player games') +
+      src('lichess', 'Lichess DB at engine strength', 'Lichess online games at the rating the engine plays at') +
+    '</div></div>' +
+    '<div class="ml-bar">' +
     '<button type="button" class="ml-pill" onclick="toggleBookModern()" title="Modern theory only — restrict the book to games from 2020 to the present.">' +
       'Modern: ' + (bookModern ? '2020+' : 'Off') + '</button>' +
     '<span class="ml-depth" title="The Main Line plays through this move, then the engine takes over.">' +
@@ -13756,7 +13775,11 @@ function _refreshMainLineBars(){
     if(el) el.innerHTML = _mainLineBarHTML();
   });
 }
-function toggleBookSource(){ bookSource = bookSource==='masters' ? 'lichess' : 'masters'; _refreshMainLineBars(); }
+function setBookSource(v){
+  bookSource = v === 'lichess' ? 'lichess' : 'masters';
+  _refreshMainLineBars();
+  if(typeof qsSyncEngine === 'function') qsSyncEngine();   // the quick pill's Masters switch
+}
 function toggleBookModern(){ bookModern = !bookModern; _refreshMainLineBars(); }
 function setBookDepth(v){
   bookDepth = Math.max(5, Math.min(40, parseInt(v) || 20));

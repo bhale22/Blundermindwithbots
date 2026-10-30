@@ -368,25 +368,33 @@ const panelShown = p => p.evaluate(() => { const el = document.getElementById('l
 // No saved token: nothing to reconnect, so no panel and no host mark.
 check(!(await panelShown(page)), 'no token saved: a ?lichess page shows no Lichess panel');
 check(await page.evaluate(() => !/(^|[?&])lichess(&|$)/.test(location.search)), 'and the address stops marking a host');
-// Connecting starts in the Bot Builder: its green pill, under Start.
+// Connecting starts in the Bot Builder: its green pill, between the
+// quick-start bar and the first section.
 const openPopup = async () => {
   await page.evaluate(() => openBotModal());
   const f = await (await page.waitForSelector('#botModalFrame')).contentFrame();
-  await f.waitForFunction(() => typeof lbcOpen === 'function' && !document.getElementById('qs-lichess-btn').hidden, null, { timeout: 10000 });
+  await f.waitForFunction(() => typeof lbcOpen === 'function' && !document.getElementById('qs-lichess-row').hidden, null, { timeout: 10000 });
   await f.waitForTimeout(300);
+  const at = await f.evaluate(() => {
+    const r = s => document.querySelector(s).getBoundingClientRect();
+    const bar = r('.quickstart'), eng = r('#sec-engine'), el = document.getElementById('qs-lichess-btn'), p = el.getBoundingClientRect();
+    const cells = [...document.querySelectorAll('.qs-bar > *')], last = cells[cells.length - 1].getBoundingClientRect();
+    return { between: p.top >= bar.bottom && p.bottom <= eng.top, lined: Math.abs(p.left - eng.left) <= 1,
+      barW: Math.round(bar.width), engW: Math.round(eng.width), barL: Math.round(bar.left), engL: Math.round(eng.left),
+      lastId: cells[cells.length - 1].id, lastEnd: Math.round(bar.right - last.right),
+      startH: Math.round(r('.start-btn').height), colour: getComputedStyle(el).backgroundColor, text: el.textContent.trim() };
+  });
   await f.click('#qs-lichess-btn');
   await f.waitForFunction(() => document.getElementById('lbc-overlay')?.classList.contains('show'), null, { timeout: 10000 });
+  f.at = at;
   return f;
 };
 let bf = await openPopup();
-const pillAt = await bf.evaluate(() => {
-  const s = document.querySelector('.start-btn').getBoundingClientRect();
-  const el = document.getElementById('qs-lichess-btn'), p = el.getBoundingClientRect();
-  return { gap: Math.round(p.top - s.bottom), inside: p.left >= s.left - 1 && p.right <= s.right + 1,
-    colour: getComputedStyle(el).backgroundColor, text: el.textContent.trim() };
-});
-check(pillAt.gap >= 0 && pillAt.gap < 12 && pillAt.inside && pillAt.colour === 'rgb(47, 163, 90)' && pillAt.text === 'Play on Lichess',
-  'the builder\'s green Play on Lichess pill sits directly under Start', pillAt);
+const pillAt = bf.at;
+check(pillAt.between && pillAt.lined && pillAt.colour === 'rgb(47, 163, 90)' && pillAt.text === 'Set up bot to play on Lichess',
+  'the builder\'s green Lichess pill sits between the quick-start bar and the Engine section', pillAt);
+check(pillAt.barW === pillAt.engW && pillAt.barL === pillAt.engL && pillAt.lastId === 'qs-bots-wrap' && Math.abs(pillAt.lastEnd) <= 1 &&
+  pillAt.startH === 52, 'the quick-start bar is as wide as the sections, ends on My Bots, Start full height', pillAt);
 const fromBoard = await bf.evaluate(() => {
   const guide = document.querySelector('#lbc-body > .lbc-guide');
   const folded = !!guide && !guide.open;
@@ -603,9 +611,9 @@ await fr.waitForFunction(() => typeof lbcOpen === 'function' && typeof getBotCon
 await fr.waitForTimeout(400);
 // A fast Flounder bot, so no model download is needed.
 await fr.evaluate(() => { selEngineMode(document.querySelector('#engine-mode-grid .mcard[data-engine="stockfish"]')); setElo(1200); });
-const pill = await fr.evaluate(() => ({ shown: getComputedStyle(document.getElementById('qs-lichess-btn')).display !== 'none',
+const pill = await fr.evaluate(() => ({ shown: document.getElementById('qs-lichess-btn').offsetParent !== null,
   text: document.getElementById('qs-lichess-value').textContent, start: document.querySelector('.start-btn').textContent }));
-check(pill.shown && /Play on Lichess/.test(pill.text) && /Start/.test(pill.start), 'the builder shows a Lichess pill; Start is Start', pill);
+check(pill.shown && /Set up bot to play on Lichess/.test(pill.text) && /Start/.test(pill.start), 'the builder shows a Lichess pill; Start is Start', pill);
 await fr.click('#qs-lichess-btn');
 const pop = await fr.evaluate(() => ({ open: document.getElementById('lbc-overlay').classList.contains('show'),
   sum: document.querySelector('.lbc-sum')?.textContent || '', token: !!document.getElementById('lbc-token'),
@@ -705,7 +713,7 @@ await fr.waitForTimeout(300);
 const offB = await fr.evaluate(() => ({ text: document.getElementById('qs-lichess-value').textContent, start: document.querySelector('.start-btn').textContent }));
 check(off.state === 'off' && !/(^|[?&])lichess(&|$)/.test(off.url) && !(await panelShown(p2)),
   'disconnected; the address no longer marks a host, and the board\'s panel is gone', off);
-check(/Play on Lichess/.test(offB.text) && /Start/.test(offB.start) && !/Update/.test(offB.start), 'the builder is back to Start', offB);
+check(/Set up bot to play on Lichess/.test(offB.text) && /Start/.test(offB.start) && !/Update/.test(offB.start), 'the builder is back to Start', offB);
 check(errs2.length === 0, 'no page errors (builder flow)', errs2.slice(0, 5));
 
 // ── 9. A host tab that can't reconnect ──────────────────────────────────────

@@ -1849,6 +1849,9 @@ function updateGameStartBtns() {
   // rest of them, and comes back the moment the game ends.
   const qb = document.getElementById('quickBot');
   if (qb) qb.style.display = live ? 'none' : '';
+  // The area they sit in, so its spacing goes with them.
+  const sa = document.getElementById('startArea');
+  if (sa) sa.style.display = live ? 'none' : '';
 }
 
 // One row, five buttons. While a game is live it carries Offer draw and

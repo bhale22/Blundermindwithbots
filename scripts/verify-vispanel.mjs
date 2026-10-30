@@ -79,7 +79,7 @@ console.log('\n1    The panel is the control surface');
   });
   ok('all panel globals defined', g.fns.length === 0, g.fns.join(','));
   ok('the sidebar keeps only start-a-game and the floor',
-    JSON.stringify(g.sidebarShown) === '["quickBot","bottom-controls"]', JSON.stringify(g.sidebarShown));
+    JSON.stringify(g.sidebarShown) === '["startArea","bottom-controls"]', JSON.stringify(g.sidebarShown));
   ok('the overlay grid is not loose in the page', g.grid === 'none', g.grid);
   ok('nor its key, nor the old disclosure', g.key === 'none' && g.toggle === 'none');
   ok('the pinned strip is on screen', g.strip === 'flex', g.strip);
