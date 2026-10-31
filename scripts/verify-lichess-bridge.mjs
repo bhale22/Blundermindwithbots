@@ -436,6 +436,17 @@ check(!(await page.evaluate(() => localStorage.getItem('bm_lichessBot') || '')).
 await until(() => page.evaluate(() => sfReady), 30000, 'Stockfish');
 
 console.log('\n2. Declining what the filters exclude');
+// Casual-only is not a setting: one saved before it (rated on, casual off)
+// is dropped on load, and a rated challenge is declined whatever is set.
+const oldSet = await page.evaluate(() => {
+  const raw = localStorage.getItem('bm_lichessBot');
+  localStorage.setItem('bm_lichessBot', JSON.stringify(Object.assign(JSON.parse(raw), { rated: true, casual: false })));
+  const s = _lbLoadSettings();
+  localStorage.setItem('bm_lichessBot', raw);
+  lbSettings.rated = true;
+  return { rated: 'rated' in s, casual: 'casual' in s };
+});
+check(!oldSet.rated && !oldSet.casual, 'an old saved rated/casual setting is dropped on load', oldSet);
 const cases = [
   [{ variant: 'chess960' }, 'variant'],
   [{ variant: 'fromPosition' }, 'standard'],
@@ -617,9 +628,10 @@ check(pill.shown && /Set up bot to play on Lichess/.test(pill.text) && /Start/.t
 await fr.click('#qs-lichess-btn');
 const pop = await fr.evaluate(() => ({ open: document.getElementById('lbc-overlay').classList.contains('show'),
   sum: document.querySelector('.lbc-sum')?.textContent || '', token: !!document.getElementById('lbc-token'),
-  casual: document.getElementById('lbc-casual')?.checked, rated: document.getElementById('lbc-rated')?.checked }));
+  ratedBox: !!document.getElementById('lbc-rated') || !!document.getElementById('lbc-casual'),
+  casualNote: /Casual games only/.test(document.getElementById('lbc-overlay').textContent) }));
 check(pop.open && /Flounder/.test(pop.sum) && /Conviction/.test(pop.sum) && /Draws/.test(pop.sum), 'the popup summarises the bot', pop.sum.slice(0, 120));
-check(pop.token && pop.casual === true && pop.rated === false, 'it asks for a token; casual on, rated off by default', pop);
+check(pop.token && !pop.ratedBox && pop.casualNote, 'it asks for a token; casual only, with no rated option', pop);
 // The summary: CP Budget, not Hard Floor; and under clock-driven timing,
 // whether the time-pressure curves are on.
 const tpRows = await fr.evaluate(() => {

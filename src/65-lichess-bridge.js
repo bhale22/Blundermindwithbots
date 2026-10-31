@@ -17,6 +17,10 @@
 // One game at a time: the page has one board. Challenges that arrive while a
 // game is on are declined with "later".
 //
+// Casual games only, and not a setting. A bot's strength can be changed
+// between games, so a rated bot could be raised to 2600 at full strength,
+// then dialled down and farmed by its owner for rating.
+//
 // The token belongs to the bot account. It lives in this browser's
 // localStorage and is sent to lichess.org only — a stand-in test server is
 // honoured on a localhost page and nowhere else, so no link can ever point a
@@ -30,15 +34,14 @@
 
 const LB_KEY = 'bm_lichessBot';
 const LB_DEFAULTS = {
-  token: '', auto: true,
-  casual: true, rated: false, bots: false,
+  token: '', auto: true, bots: false,
   speeds: { bullet: false, blitz: true, rapid: true, classical: true },
 };
 // Lichess's own order, fastest first — a refusal says which way a speed missed.
 const LB_SPEED_ORDER = ['ultraBullet', 'bullet', 'blitz', 'rapid', 'classical', 'correspondence'];
 const LB_REASON_TEXT = {
   later: 'busy — one game at a time', tooFast: 'too fast', tooSlow: 'too slow',
-  timeControl: 'needs a clock', rated: 'only playing rated', casual: 'only playing casual',
+  timeControl: 'needs a clock', casual: 'casual games only',
   standard: 'standard start position only', variant: 'standard chess only',
   noBot: 'not playing bots', generic: 'declined',
 };
@@ -150,6 +153,8 @@ function _lbLoadSettings() {
   try { s = JSON.parse(localStorage.getItem(LB_KEY) || 'null'); } catch (e) { s = null; }
   s = Object.assign({}, LB_DEFAULTS, s || {});
   s.speeds = Object.assign({}, LB_DEFAULTS.speeds, (s && s.speeds) || {});
+  // Saved before casual-only: dropped so they are not saved back.
+  delete s.casual; delete s.rated;
   return s;
 }
 function _lbSaveSettings() {
@@ -399,8 +404,7 @@ function _lbDeclineReason(c) {
     if (!ok.length) return 'timeControl';
     return i < Math.min(...ok) ? 'tooFast' : i > Math.max(...ok) ? 'tooSlow' : 'timeControl';
   }
-  if (c.rated && !s.rated) return 'casual';
-  if (!c.rated && !s.casual) return 'rated';
+  if (c.rated) return 'casual';
   if (c.challenger && c.challenger.title === 'BOT' && !s.bots) return 'noBot';
   return null;
 }
@@ -819,8 +823,6 @@ function _lbBuildPanel() {
     <button class="lb-link" id="lbEditBtn" onclick="lichessToggleEdit()">edit</button></div>
   <div class="lb-set">
     <div class="lb-row">
-      <label><input type="checkbox" id="lbCasual" onchange="lichessSetOpt('casual',this.checked)">Casual</label>
-      <label><input type="checkbox" id="lbRated" onchange="lichessSetOpt('rated',this.checked)">Rated</label>
       <label><input type="checkbox" id="lbBots" onchange="lichessSetOpt('bots',this.checked)">Bots</label></div>
     <div class="lb-row">
       <label><input type="checkbox" id="lbSp-bullet" onchange="lichessSetSpeed('bullet',this.checked)">Bullet</label>
@@ -847,10 +849,9 @@ function _lbBuildPanel() {
 // The accept rules in one line, as the challenger would meet them.
 function _lbRulesText() {
   const s = lbSettings;
-  const kinds = [s.casual && 'casual', s.rated && 'rated'].filter(Boolean);
   const speeds = ['bullet', 'blitz', 'rapid', 'classical'].filter(k => s.speeds[k]);
-  if (!kinds.length || !speeds.length) return 'nothing — every challenge is declined';
-  return kinds.join(' + ') + ' · ' + speeds.join(', ') + (s.bots ? ' · bots too' : ' · no bots');
+  if (!speeds.length) return 'nothing — every challenge is declined';
+  return 'casual only · ' + speeds.join(', ') + (s.bots ? ' · bots too' : ' · no bots');
 }
 
 function lbRender() {
@@ -892,8 +893,6 @@ function lbRender() {
   // The accept rules fold behind "edit" — connecting sets them in the popup.
   p.classList.toggle('lb-edit', p.dataset.edit === '1');
   $('lbEditBtn').textContent = p.dataset.edit === '1' ? 'done' : 'edit';
-  $('lbCasual').checked = !!lbSettings.casual;
-  $('lbRated').checked = !!lbSettings.rated;
   $('lbBots').checked = !!lbSettings.bots;
   $('lbAuto').checked = !!lbSettings.auto;
   ['bullet', 'blitz', 'rapid', 'classical'].forEach(k => { $('lbSp-' + k).checked = !!lbSettings.speeds[k]; });
@@ -957,7 +956,7 @@ function lichessBuilderState() {
     playing: !!g, opponent: g && g.opponent ? _lbWho(g.opponent) : null,
     nextPending: !!lbNextConfig,
     localGame: !lbWantConnected && typeof _isLiveGame === 'function' && _isLiveGame(),
-    settings: { casual: !!s.casual, rated: !!s.rated, bots: !!s.bots, speeds: Object.assign({}, s.speeds) },
+    settings: { bots: !!s.bots, speeds: Object.assign({}, s.speeds) },
   };
 }
 // Tell an open builder, so its Lichess pill and Start button say what is true.
@@ -1027,7 +1026,7 @@ function lichessConnectFromBuilder(o) {
   o = o || {};
   if (!lbSettings) lbSettings = _lbLoadSettings();
   const st = o.settings || {};
-  ['casual', 'rated', 'bots'].forEach(k => { if (k in st) lbSettings[k] = !!st[k]; });
+  if ('bots' in st) lbSettings.bots = !!st.bots;
   if (st.speeds) Object.keys(lbSettings.speeds).forEach(k => { if (k in st.speeds) lbSettings.speeds[k] = !!st.speeds[k]; });
   if (o.token) lbSettings.token = String(o.token).trim();
   _lbSaveSettings();

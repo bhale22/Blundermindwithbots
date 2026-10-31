@@ -10543,7 +10543,7 @@ function _lbcRender(){
 
   _lbcView = 'connect';
   title.textContent = 'Play on Lichess';
-  const set = s.settings || { casual: true, rated: false, bots: false, speeds: { blitz: true, rapid: true, classical: true } };
+  const set = s.settings || { bots: false, speeds: { blitz: true, rapid: true, classical: true } };
   const cb = (id, label, on) => '<label><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '>' + label + '</label>';
   const saved = s.tokenSaved && !_lbcNewToken;
   const tokenHtml = saved
@@ -10560,8 +10560,9 @@ function _lbcRender(){
     '<div class="lbc-note">Each game’s time control and colours come from the challenge.</div>' +
     '<div class="lbc-h">Lichess bot account</div>' + tokenHtml + _lbcGuide() +
     '<div class="lbc-h">Accept challenges</div>' +
-    '<div class="lbc-checks">' + cb('lbc-casual', 'Casual', set.casual) + cb('lbc-rated', 'Rated', set.rated) +
-      cb('lbc-bots', 'From other bots', set.bots) + '</div>' +
+    '<div class="lbc-note" style="margin-top:0;">Casual games only — rated challenges are declined. ' +
+      'A bot’s strength can change between games, so a rated one could be raised high and then farmed for rating.</div>' +
+    '<div class="lbc-checks">' + cb('lbc-bots', 'From other bots', set.bots) + '</div>' +
     '<div class="lbc-checks">' + ['bullet', 'blitz', 'rapid', 'classical'].map(k =>
       cb('lbc-' + k, k[0].toUpperCase() + k.slice(1), set.speeds && set.speeds[k])).join('') + '</div>' +
     (s.localGame ? '<div class="lbc-warn">The game on the board now will end.</div>' : '') +
@@ -10591,7 +10592,7 @@ function lbcForgetToken(){
 function _lbcReadSettings(){
   const on = id => !!document.getElementById(id)?.checked;
   return {
-    casual: on('lbc-casual'), rated: on('lbc-rated'), bots: on('lbc-bots'),
+    bots: on('lbc-bots'),
     speeds: { bullet: on('lbc-bullet'), blitz: on('lbc-blitz'), rapid: on('lbc-rapid'), classical: on('lbc-classical') },
   };
 }
@@ -10607,8 +10608,8 @@ async function lbcConnect(){
   const typed = inp ? inp.value.trim() : '';
   if(inp && !typed){ _lbcStatus('Paste the bot account’s token first.', true); inp.focus(); return; }
   const settings = _lbcReadSettings();
-  if(!(settings.casual || settings.rated) || !Object.values(settings.speeds).some(Boolean)){
-    _lbcStatus('Tick at least one kind of game and one speed — otherwise every challenge is declined.', true);
+  if(!Object.values(settings.speeds).some(Boolean)){
+    _lbcStatus('Tick at least one speed — otherwise every challenge is declined.', true);
     return;
   }
   _lbcBusy = true;
