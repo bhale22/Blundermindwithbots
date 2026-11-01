@@ -17,25 +17,31 @@
 // One game at a time: the page has one board. Challenges that arrive while a
 // game is on are declined with "later".
 //
+// Casual games only, and not a setting. A bot's strength can be changed
+// between games, so a rated bot could be raised to 2600 at full strength,
+// then dialled down and farmed by its owner for rating.
+//
 // The token belongs to the bot account. It lives in this browser's
 // localStorage and is sent to lichess.org only — a stand-in test server is
 // honoured on a localhost page and nowhere else, so no link can ever point a
 // stored token at another host.
 //
-// Only a page opened with ?lichess shows the panel or connects, so an ordinary
-// Blundermind tab never turns into a bot host by itself.
+// A bot is connected from the Bot Builder. The board's panel shows only while
+// this tab hosts one — connecting, connected, or stopped by an error — so a
+// player who never uses Lichess never sees it. Only a page opened with
+// ?lichess reconnects by itself, so an ordinary Blundermind tab never turns
+// into a bot host.
 
 const LB_KEY = 'bm_lichessBot';
 const LB_DEFAULTS = {
-  token: '', auto: true,
-  casual: true, rated: false, bots: false,
+  token: '', auto: true, bots: false,
   speeds: { bullet: false, blitz: true, rapid: true, classical: true },
 };
 // Lichess's own order, fastest first — a refusal says which way a speed missed.
 const LB_SPEED_ORDER = ['ultraBullet', 'bullet', 'blitz', 'rapid', 'classical', 'correspondence'];
 const LB_REASON_TEXT = {
   later: 'busy — one game at a time', tooFast: 'too fast', tooSlow: 'too slow',
-  timeControl: 'needs a clock', rated: 'only playing rated', casual: 'only playing casual',
+  timeControl: 'needs a clock', casual: 'casual games only',
   standard: 'standard start position only', variant: 'standard chess only',
   noBot: 'not playing bots', generic: 'declined',
 };
@@ -94,14 +100,32 @@ function lichessOnLocalMove(from, to, promo, piece) {
   _lbCheckClaims(g);
 }
 
-// The bot's answer to a draw offer, or its own offer. On Lichess the server
-// ends the game; the board waits for it.
-function lichessSendDraw(yes) {
+// The bot's answer to the opponent's standing draw offer, with the reason for
+// the log (the host's log — the opponent on Lichess never sees it). An answer
+// reached after the offer has gone is dropped: a yes posted then is an OFFER of
+// the bot's own, the opposite of what it decided. Returns whether it was sent.
+// On a yes the server ends the game; the board waits for it.
+function lichessAnswerDraw(yes, why) {
+  const g = lbGame;
+  if (!g || g.ended) return false;
+  if (!g.oppDrawOpen) {
+    lbLog('The draw offer was gone before the bot answered' + (why ? ' (it would have ' + (yes ? 'accepted' : 'declined') + ': ' + why + ')' : ''));
+    return false;
+  }
+  g.drawAnswered = true;
+  g.drawAccepted = !!yes;
+  lbLog((yes ? 'The bot accepts the draw' : 'The bot declines the draw') + (why ? ': ' + why : ''));
+  _lbPost('/api/bot/game/' + g.id + '/draw/' + (yes ? 'yes' : 'no')).then(r => {
+    if (!r.ok && lbGame === g && !g.ended) lbLog('Lichess refused the bot\'s draw answer: ' + _lbErr(r));
+  });
+  return true;
+}
+// The bot's own offer (botMaybeOfferDraw).
+function lichessOfferDraw() {
   const g = lbGame;
   if (!g || g.ended) return;
-  lbLog(!yes ? 'The bot declines the draw' : g.oppDrawOpen ? 'The bot accepts the draw' : 'The bot offers a draw');
-  if (g.oppDrawOpen) { g.drawAnswered = true; g.drawAccepted = !!yes; }
-  _lbPost('/api/bot/game/' + g.id + '/draw/' + (yes ? 'yes' : 'no'));
+  lbLog('The bot offers a draw');
+  _lbPost('/api/bot/game/' + g.id + '/draw/yes');
 }
 // The opponent's offer is standing and the bot has not answered it. Its move
 // would decline it unread, so the engine answers first (_botAnswerDrawFirst)
@@ -129,6 +153,8 @@ function _lbLoadSettings() {
   try { s = JSON.parse(localStorage.getItem(LB_KEY) || 'null'); } catch (e) { s = null; }
   s = Object.assign({}, LB_DEFAULTS, s || {});
   s.speeds = Object.assign({}, LB_DEFAULTS.speeds, (s && s.speeds) || {});
+  // Saved before casual-only: dropped so they are not saved back.
+  delete s.casual; delete s.rated;
   return s;
 }
 function _lbSaveSettings() {
@@ -378,8 +404,7 @@ function _lbDeclineReason(c) {
     if (!ok.length) return 'timeControl';
     return i < Math.min(...ok) ? 'tooFast' : i > Math.max(...ok) ? 'tooSlow' : 'timeControl';
   }
-  if (c.rated && !s.rated) return 'casual';
-  if (!c.rated && !s.casual) return 'rated';
+  if (c.rated) return 'casual';
   if (c.challenger && c.challenger.title === 'BOT' && !s.bots) return 'noBot';
   return null;
 }
@@ -601,7 +626,7 @@ function _lbAfterState(g, st) {
   if (g.oppDrawOpen && g.drawPly !== ply && !gameOver && typeof botConsiderDrawOffer === 'function') {
     g.drawPly = ply;
     lbLog(_lbWho(g.opponent) + ' offers a draw');
-    // Answers through lichessSendDraw — now if the bot is free, else just
+    // Answers through lichessAnswerDraw — now if the bot is free, else just
     // before its move goes out.
     if (!g.drawAnswered) botConsiderDrawOffer();
   }
@@ -741,7 +766,11 @@ function _lbChallengeTc(c) {
 // Shows what runs: which account, which bot (the one this page is set to),
 // what it accepts, the game on the board, and what has happened. It sits over
 // the sidebar's game buttons, which are locked while the tab hosts anyway,
-// and starts folded on a phone so the board stays in view.
+// and starts folded on a phone so the board stays in view. It is there only
+// while the tab hosts a bot (_lbPanelShown); connecting starts in the builder.
+function _lbPanelShown() {
+  return lbWantConnected || lichessGameLive() || lbState === 'connecting' || lbState === 'error';
+}
 function _lbBuildPanel() {
   if (document.getElementById('lbPanel')) return;
   const css = document.createElement('style');
@@ -794,8 +823,6 @@ function _lbBuildPanel() {
     <button class="lb-link" id="lbEditBtn" onclick="lichessToggleEdit()">edit</button></div>
   <div class="lb-set">
     <div class="lb-row">
-      <label><input type="checkbox" id="lbCasual" onchange="lichessSetOpt('casual',this.checked)">Casual</label>
-      <label><input type="checkbox" id="lbRated" onchange="lichessSetOpt('rated',this.checked)">Rated</label>
       <label><input type="checkbox" id="lbBots" onchange="lichessSetOpt('bots',this.checked)">Bots</label></div>
     <div class="lb-row">
       <label><input type="checkbox" id="lbSp-bullet" onchange="lichessSetSpeed('bullet',this.checked)">Bullet</label>
@@ -804,12 +831,10 @@ function _lbBuildPanel() {
       <label><input type="checkbox" id="lbSp-classical" onchange="lichessSetSpeed('classical',this.checked)">Classical</label></div>
     <div class="lb-row"><label><input type="checkbox" id="lbAuto" onchange="lichessSetOpt('auto',this.checked)">Reconnect when this page opens</label></div>
   </div>
-  <div class="lb-row" id="lbTokenRow">
-    <input type="password" id="lbToken" autocomplete="off" spellcheck="false" placeholder="Bot account token (lip_…)">
-  </div>
   <div class="lb-log" id="lbLog"></div>
   <div class="lb-row">
-    <button class="lb-go" id="lbConnect" onclick="lichessConnect()">Connect</button>
+    <button class="lb-go" id="lbConnect" onclick="lichessOpenSetup()">Connect…</button>
+    <button id="lbClose" onclick="lichessClosePanel()">Close</button>
     <button class="lb-stop" id="lbDisconnect" onclick="lichessDisconnect()" style="display:none">Disconnect</button>
     <span id="lbGameBtns" style="display:none">
       <button onclick="lichessResignGame()">Resign</button>
@@ -824,16 +849,16 @@ function _lbBuildPanel() {
 // The accept rules in one line, as the challenger would meet them.
 function _lbRulesText() {
   const s = lbSettings;
-  const kinds = [s.casual && 'casual', s.rated && 'rated'].filter(Boolean);
   const speeds = ['bullet', 'blitz', 'rapid', 'classical'].filter(k => s.speeds[k]);
-  if (!kinds.length || !speeds.length) return 'nothing — every challenge is declined';
-  return kinds.join(' + ') + ' · ' + speeds.join(', ') + (s.bots ? ' · bots too' : ' · no bots');
+  if (!speeds.length) return 'nothing — every challenge is declined';
+  return 'casual only · ' + speeds.join(', ') + (s.bots ? ' · bots too' : ' · no bots');
 }
 
 function lbRender() {
   _lbPushState();
   const p = document.getElementById('lbPanel');
   if (!p || !lbSettings) return;
+  p.style.display = _lbPanelShown() ? '' : 'none';
   const $ = id => document.getElementById(id);
   const on = lbWantConnected;
   const g = lbGame && lbGame.boardReady ? lbGame : null;
@@ -865,17 +890,16 @@ function lbRender() {
   $('lbBot').textContent = ((typeof botGenerateName === 'function') ? botGenerateName() : 'this page\'s bot') +
     (lbNextConfig ? ' — your update plays from the next game' : '');
   $('lbRules').textContent = _lbRulesText();
-  // Disconnected, the settings are what there is to do; connected, they fold.
-  p.classList.toggle('lb-edit', !on || p.dataset.edit === '1');
-  $('lbEditBtn').style.display = on ? '' : 'none';
+  // The accept rules fold behind "edit" — connecting sets them in the popup.
+  p.classList.toggle('lb-edit', p.dataset.edit === '1');
   $('lbEditBtn').textContent = p.dataset.edit === '1' ? 'done' : 'edit';
-  $('lbCasual').checked = !!lbSettings.casual;
-  $('lbRated').checked = !!lbSettings.rated;
   $('lbBots').checked = !!lbSettings.bots;
   $('lbAuto').checked = !!lbSettings.auto;
   ['bullet', 'blitz', 'rapid', 'classical'].forEach(k => { $('lbSp-' + k).checked = !!lbSettings.speeds[k]; });
-  $('lbTokenRow').style.display = (!on && !lbSettings.token) ? '' : 'none';
+  // Not connected, the panel is only up to show why connecting failed: try
+  // again (the builder's popup) or close it.
   $('lbConnect').style.display = on ? 'none' : '';
+  $('lbClose').style.display = on ? 'none' : '';
   $('lbDisconnect').style.display = on ? '' : 'none';
   $('lbForget').style.display = (!on && lbSettings.token) ? '' : 'none';
   $('lbGameBtns').style.display = g && !g.ended ? '' : 'none';
@@ -888,6 +912,12 @@ function lichessSetSpeed(key, val) { lbSettings.speeds[key] = !!val; _lbSaveSett
 function lichessToggleMin() {
   const p = document.getElementById('lbPanel');
   if (p) { p.classList.toggle('lb-min'); lbRender(); }
+}
+// A failed connect, put away: the tab is an ordinary one again.
+function lichessClosePanel() {
+  if (lbWantConnected) return;
+  _lbMarkHostTab(false);
+  _lbSetState('off');
 }
 function lichessToggleEdit() {
   const p = document.getElementById('lbPanel');
@@ -926,7 +956,7 @@ function lichessBuilderState() {
     playing: !!g, opponent: g && g.opponent ? _lbWho(g.opponent) : null,
     nextPending: !!lbNextConfig,
     localGame: !lbWantConnected && typeof _isLiveGame === 'function' && _isLiveGame(),
-    settings: { casual: !!s.casual, rated: !!s.rated, bots: !!s.bots, speeds: Object.assign({}, s.speeds) },
+    settings: { bots: !!s.bots, speeds: Object.assign({}, s.speeds) },
   };
 }
 // Tell an open builder, so its Lichess pill and Start button say what is true.
@@ -971,12 +1001,32 @@ async function lichessUpgradeAccount(tok) {
   return r.ok ? { ok: true } : { ok: false, error: (d && d.error) || ('Lichess answered ' + r.status) };
 }
 
+// The board panel's Connect opens the same popup the builder's Lichess pill
+// does — one place that shows the bot, the account steps and the rules. The
+// builder opens only to hold it; Cancel there comes straight back here.
+function lichessOpenSetup() {
+  if (typeof openBotModal !== 'function') return;
+  openBotModal();
+  const f = document.getElementById('botModalFrame');
+  let tries = 0;
+  const go = () => {
+    try {
+      if (f && f.contentWindow && typeof f.contentWindow.lbcOpen === 'function') {
+        f.contentWindow.lbcOpen({ fromBoard: true });
+        return;
+      }
+    } catch (e) {}
+    if (++tries < 40) setTimeout(go, 150);
+  };
+  go();
+}
+
 // The builder's Connect: this bot, this token, these rules — then the board.
 function lichessConnectFromBuilder(o) {
   o = o || {};
   if (!lbSettings) lbSettings = _lbLoadSettings();
   const st = o.settings || {};
-  ['casual', 'rated', 'bots'].forEach(k => { if (k in st) lbSettings[k] = !!st[k]; });
+  if ('bots' in st) lbSettings.bots = !!st.bots;
   if (st.speeds) Object.keys(lbSettings.speeds).forEach(k => { if (k in st.speeds) lbSettings.speeds[k] = !!st.speeds[k]; });
   if (o.token) lbSettings.token = String(o.token).trim();
   _lbSaveSettings();
@@ -1032,7 +1082,10 @@ function lichessOpenPanel() {
 document.addEventListener('DOMContentLoaded', () => {
   lbSettings = _lbLoadSettings();
   if (!new URLSearchParams(location.search).has('lichess')) return;
-  lichessOpenPanel();
   // A host that reloads (or a headless one starting up) picks up where it was.
-  if (lbSettings.auto && lbSettings.token) setTimeout(lichessConnect, 1500);
+  // With nothing to reconnect with, the tab is an ordinary one.
+  if (!(lbSettings.auto && lbSettings.token)) { _lbMarkHostTab(false); return; }
+  lichessOpenPanel();
+  _lbSetState('connecting');
+  setTimeout(lichessConnect, 1500);
 });

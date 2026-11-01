@@ -346,7 +346,7 @@ await new Promise(r => server.listen(MOCK_PORT, r));
 const browser = await chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
 await ctx.addInitScript(() => {
-  try { localStorage.setItem('bm_welcomed', '1'); localStorage.setItem('bm_landingSeen', '1'); } catch (e) {}
+  try { localStorage.setItem('bm_welcomed', '1'); localStorage.setItem('bm_landingSeen', '1'); localStorage.setItem('bm_bottour', '1'); } catch (e) {}
 });
 const page = await ctx.newPage();
 const pageErrors = [];
@@ -354,31 +354,99 @@ page.on('pageerror', e => pageErrors.push(e.message));
 page.on('dialog', d => d.accept());
 const URL_ = APP + '?lichess&lichessApi=http://localhost:' + MOCK_PORT;
 await page.goto(URL_, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => typeof quickBotPick === 'function' && document.getElementById('lbPanel'));
+await page.waitForFunction(() => typeof quickBotPick === 'function' && typeof lichessBuilderState === 'function');
 await page.waitForTimeout(1200);
 // A fast, Stockfish-only bot keeps the run short.
 await page.evaluate(() => { quickBotPick('1200'); });
-const lastBotBefore = await page.evaluate(() => localStorage.getItem('bm_lastBot'));
+let lastBotBefore = null;   // read once connected: connecting saves the bot it hosts
 
 const pageBoard = () => page.evaluate(() => { let s = ''; for (let i = 0; i < 64; i++) s += board[i] ? board[i].color + board[i].piece : '..'; return s; });
 const lbState = () => page.evaluate(() => lbState);
 
 console.log('\n1. Connecting');
-check(await page.evaluate(() => !!document.getElementById('lbPanel')), 'panel shows on a ?lichess page');
-await page.fill('#lbToken', 'lip_wrong');
-await page.click('#lbConnect');
-await until(async () => (await lbState()) === 'error', 5000);
-check((await page.textContent('#lbStatus')).includes('rejected'), 'a bad token is reported', await page.textContent('#lbStatus'));
-check(await page.isVisible('#lbToken'), 'a rejected token is dropped and the field comes back');
-await page.fill('#lbToken', TOKEN);
-await page.click('#lbConnect');
+const panelShown = p => p.evaluate(() => { const el = document.getElementById('lbPanel'); return !!el && el.style.display !== 'none'; });
+// No saved token: nothing to reconnect, so no panel and no host mark.
+check(!(await panelShown(page)), 'no token saved: a ?lichess page shows no Lichess panel');
+check(await page.evaluate(() => !/(^|[?&])lichess(&|$)/.test(location.search)), 'and the address stops marking a host');
+// Connecting starts in the Bot Builder: its green pill, between the
+// quick-start bar and the first section.
+const openPopup = async () => {
+  await page.evaluate(() => openBotModal());
+  const f = await (await page.waitForSelector('#botModalFrame')).contentFrame();
+  await f.waitForFunction(() => typeof lbcOpen === 'function' && !document.getElementById('qs-lichess-row').hidden, null, { timeout: 10000 });
+  await f.waitForTimeout(300);
+  const at = await f.evaluate(() => {
+    const r = s => document.querySelector(s).getBoundingClientRect();
+    const bar = r('.quickstart'), eng = r('#sec-engine'), el = document.getElementById('qs-lichess-btn'), p = el.getBoundingClientRect();
+    const cells = [...document.querySelectorAll('.qs-bar > *')], last = cells[cells.length - 1].getBoundingClientRect();
+    return { between: p.top >= bar.bottom && p.bottom <= eng.top, lined: Math.abs(p.left - eng.left) <= 1,
+      barW: Math.round(bar.width), engW: Math.round(eng.width), barL: Math.round(bar.left), engL: Math.round(eng.left),
+      lastId: cells[cells.length - 1].id, lastEnd: Math.round(bar.right - last.right),
+      startH: Math.round(r('.start-btn').height), colour: getComputedStyle(el).backgroundColor, text: el.textContent.trim() };
+  });
+  await f.click('#qs-lichess-btn');
+  await f.waitForFunction(() => document.getElementById('lbc-overlay')?.classList.contains('show'), null, { timeout: 10000 });
+  f.at = at;
+  return f;
+};
+let bf = await openPopup();
+const pillAt = bf.at;
+check(pillAt.between && pillAt.lined && pillAt.colour === 'rgb(47, 163, 90)' && pillAt.text === 'Set up bot to play on Lichess',
+  'the builder\'s green Lichess pill sits between the quick-start bar and the Engine section', pillAt);
+check(pillAt.barW === pillAt.engW && pillAt.barL === pillAt.engL && pillAt.lastId === 'qs-bots-wrap' && Math.abs(pillAt.lastEnd) <= 1 &&
+  pillAt.startH === 52, 'the quick-start bar is as wide as the sections, ends on My Bots, Start full height', pillAt);
+const fromBoard = await bf.evaluate(() => {
+  const guide = document.querySelector('#lbc-body > .lbc-guide');
+  const folded = !!guide && !guide.open;
+  guide.querySelector('summary').click();   // opens only when asked
+  const step5 = document.querySelectorAll('.lbc-steps > li')[4];
+  return { folded, opened: guide.open,
+    steps: document.querySelectorAll('.lbc-steps > li').length, token: !!document.getElementById('lbc-token'),
+    step5: step5?.querySelector(':scope > b')?.textContent || '', diy: !!step5?.querySelector(':scope > details.lbc-sub'),
+    link: document.querySelector('.lbc-steps a[href*="oauth/token/create"]')?.getAttribute('href') || '' };
+});
+check(fromBoard.token && fromBoard.steps === 6, 'it opens the Play on Lichess popup, with the 6-step guide', fromBoard);
+check(fromBoard.folded && fromBoard.opened, 'the guide starts folded and opens when pressed', fromBoard);
+check(/^Upgrade to a bot account: paste the token below and press Connect/.test(fromBoard.step5) && fromBoard.diy,
+  'step 5 is the upgrade, with the do-it-yourself commands inside it', fromBoard.step5);
+check(/scopes\[\]=bot:play/.test(fromBoard.link), 'the token link pre-ticks bot:play', fromBoard.link);
+await bf.evaluate(() => [...document.querySelectorAll('#lbc-btns button')].find(b => /Cancel/.test(b.textContent)).click());
+await page.waitForTimeout(300);
+check(await bf.evaluate(() => !document.getElementById('lbc-overlay').classList.contains('show')) &&
+  await page.evaluate(() => document.getElementById('botModal').style.display !== 'none') && !(await panelShown(page)),
+  'Cancel closes the popup and leaves the builder open — still no panel on the board');
+await page.evaluate(() => closeBotModal());
+bf = await openPopup();
+await bf.fill('#lbc-token', 'lip_wrong');
+await bf.click('#lbc-connect-btn');
+await until(() => bf.evaluate(() => /rejected/.test(document.getElementById('lbc-status').textContent)), 5000);
+check(await bf.evaluate(() => /rejected/.test(document.getElementById('lbc-status').textContent)) && !(await panelShown(page)),
+  'a bad token is reported in the popup (not the board)');
+await bf.fill('#lbc-token', TOKEN);
+await bf.click('#lbc-connect-btn');
 await until(async () => (await lbState()) === 'waiting' && M.eventStreams.size === 1, 10000, 'waiting');
 check(await lbState() === 'waiting', 'connected and waiting');
+check(await page.evaluate(() => document.getElementById('botModal').style.display === 'none') && await panelShown(page),
+  'and back on the board, its Lichess panel showing');
+// The quick pick the run uses — a fast Stockfish-only bot.
+await page.evaluate(() => { quickBotPick('1200'); });
+lastBotBefore = await page.evaluate(() => localStorage.getItem('bm_lastBot'));
 check((await page.textContent('#lbAcct')).includes('@BMTestBot'), 'shows the bot account', await page.textContent('#lbAcct'));
 check(!(await page.evaluate(() => localStorage.getItem('bm_lichessBot') || '')).includes('lip_wrong'), 'the rejected token is not kept');
 await until(() => page.evaluate(() => sfReady), 30000, 'Stockfish');
 
 console.log('\n2. Declining what the filters exclude');
+// Casual-only is not a setting: one saved before it (rated on, casual off)
+// is dropped on load, and a rated challenge is declined whatever is set.
+const oldSet = await page.evaluate(() => {
+  const raw = localStorage.getItem('bm_lichessBot');
+  localStorage.setItem('bm_lichessBot', JSON.stringify(Object.assign(JSON.parse(raw), { rated: true, casual: false })));
+  const s = _lbLoadSettings();
+  localStorage.setItem('bm_lichessBot', raw);
+  lbSettings.rated = true;
+  return { rated: 'rated' in s, casual: 'casual' in s };
+});
+check(!oldSet.rated && !oldSet.casual, 'an old saved rated/casual setting is dropped on load', oldSet);
 const cases = [
   [{ variant: 'chess960' }, 'variant'],
   [{ variant: 'fromPosition' }, 'standard'],
@@ -473,6 +541,7 @@ await until(() => g4.moves.length >= 6, 90000, 'six plies');
 const pliesAtReload = g4.moves.length;
 await page.reload({ waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => typeof quickBotPick === 'function');
+check(await page.evaluate(() => lbState === 'connecting') && await panelShown(page), 'the reloaded host shows its panel at once, reconnecting');
 await page.waitForTimeout(800);
 await page.evaluate(() => { quickBotPick('1200'); });
 await until(() => g4.moves.length >= pliesAtReload + 4 || g4.status !== 'started', 90000, 'play after reload');
@@ -511,12 +580,23 @@ await page.evaluate(() => { window.botPerceivedAdvantageCp = window._keepAdv; qu
 console.log('\n7. Leaving no trace');
 check(await page.evaluate(() => localStorage.getItem('bm_lastBot')) === lastBotBefore, 'the user\'s remembered bot is untouched');
 check(M.posts.filter(p => p.includes('/move/')).every(p => /\/move\/[a-h][1-8][a-h][1-8][qrbn]?$/.test(p)), 'every move post is plain UCI');
+// This bot does not offer draws: any yes it sent was an answer to an open offer.
+check(Object.values(M.games).every(g => !g.drawOffersByBot), 'the bot never offered a draw of its own',
+  Object.values(M.games).map(g => g.drawOffersByBot || 0));
 await page.click('#lbDisconnect');
 await until(() => M.eventStreams.size === 0, 5000);
 check(M.eventStreams.size === 0 && await lbState() === 'off', 'disconnect closes the event stream');
-await page.click('#lbForget');
-check(await page.isVisible('#lbToken') && !(await page.evaluate(() => localStorage.getItem('bm_lichessBot') || '')).includes(TOKEN),
-  'forget token clears it from storage and brings the field back');
+check(!(await panelShown(page)), 'and the board\'s Lichess panel goes away');
+// The token is forgotten in the builder's popup now.
+bf = await openPopup();
+const forgot = await bf.evaluate(() => {
+  [...document.querySelectorAll('#lbc-body .lbc-link')].find(b => /Forget/.test(b.textContent)).click();
+  return !!document.getElementById('lbc-token');
+});
+check(!(await page.evaluate(() => localStorage.getItem('bm_lichessBot') || '')).includes(TOKEN) && forgot,
+  'the popup\'s Forget it clears the token from storage and asks for one again');
+await bf.evaluate(() => lbcClose());
+await page.evaluate(() => closeBotModal());
 check(pageErrors.length === 0, 'no page errors', pageErrors.slice(0, 5));
 
 // ── 8. Connecting from the Bot Builder ──────────────────────────────────────
@@ -542,15 +622,40 @@ await fr.waitForFunction(() => typeof lbcOpen === 'function' && typeof getBotCon
 await fr.waitForTimeout(400);
 // A fast Flounder bot, so no model download is needed.
 await fr.evaluate(() => { selEngineMode(document.querySelector('#engine-mode-grid .mcard[data-engine="stockfish"]')); setElo(1200); });
-const pill = await fr.evaluate(() => ({ shown: getComputedStyle(document.getElementById('qs-lichess-wrap')).display !== 'none',
+const pill = await fr.evaluate(() => ({ shown: document.getElementById('qs-lichess-btn').offsetParent !== null,
   text: document.getElementById('qs-lichess-value').textContent, start: document.querySelector('.start-btn').textContent }));
-check(pill.shown && /Play as a bot/.test(pill.text) && /Start/.test(pill.start), 'the builder shows a Lichess pill; Start is Start', pill);
+check(pill.shown && /Set up bot to play on Lichess/.test(pill.text) && /Start/.test(pill.start), 'the builder shows a Lichess pill; Start is Start', pill);
 await fr.click('#qs-lichess-btn');
 const pop = await fr.evaluate(() => ({ open: document.getElementById('lbc-overlay').classList.contains('show'),
   sum: document.querySelector('.lbc-sum')?.textContent || '', token: !!document.getElementById('lbc-token'),
-  casual: document.getElementById('lbc-casual')?.checked, rated: document.getElementById('lbc-rated')?.checked }));
+  ratedBox: !!document.getElementById('lbc-rated') || !!document.getElementById('lbc-casual'),
+  casualNote: /Casual games only/.test(document.getElementById('lbc-overlay').textContent) }));
 check(pop.open && /Flounder/.test(pop.sum) && /Conviction/.test(pop.sum) && /Draws/.test(pop.sum), 'the popup summarises the bot', pop.sum.slice(0, 120));
-check(pop.token && pop.casual === true && pop.rated === false, 'it asks for a token; casual on, rated off by default', pop);
+check(pop.token && !pop.ratedBox && pop.casualNote, 'it asks for a token; casual only, with no rated option', pop);
+// The summary: CP Budget, not Hard Floor; and under clock-driven timing,
+// whether the time-pressure curves are on.
+const tpRows = await fr.evaluate(() => {
+  const sum = () => document.querySelector('.lbc-sum').textContent;
+  const reopen = () => { lbcClose(); lbcOpen(); };
+  const out = { fixed: sum() };
+  document.querySelector('#timing-mode-grid .mcard[data-v="Complexity-scaled"]').click();
+  reopen(); out.both = sum();
+  const a = document.getElementById('pressure-off-a'), b = document.getElementById('pressure-off-b');
+  a.checked = false; a.onchange && a.onchange();
+  reopen(); out.bOnly = sum();
+  b.checked = false; b.onchange && b.onchange();
+  reopen(); out.none = sum();
+  a.checked = true; a.onchange && a.onchange();
+  b.checked = true; b.onchange && b.onchange();
+  document.querySelector('#timing-mode-grid .mcard[data-v="Fixed interval"]').click();
+  reopen();
+  return out;
+});
+check(/CP Budget/.test(tpRows.fixed) && !/Hard Floor/.test(tpRows.fixed) && !/Time pressure/.test(tpRows.fixed),
+  'the summary shows CP Budget (no Hard Floor), and no time-pressure line on a fixed pace', tpRows.fixed.slice(0, 160));
+check(/Time pressure\s*on.*rating drops, choices widen/.test(tpRows.both) && /Time pressure\s*on.*\(choices widen\)/.test(tpRows.bOnly)
+  && /Time pressure\s*off/.test(tpRows.none), 'complexity timing: the time-pressure line says on (and which) or off',
+  { both: tpRows.both.slice(-120), bOnly: tpRows.bOnly.slice(-120), none: tpRows.none.slice(-120) });
 
 await fr.fill('#lbc-token', 'lip_wrong');
 await fr.click('#lbc-connect-btn');
@@ -575,7 +680,7 @@ await fr.check('#lbc-understand');
 await fr.click('#lbc-upgrade-btn');
 await until(() => p2.evaluate(() => lbState === 'waiting'), 10000, 'connected from the builder');
 const after = await p2.evaluate(() => ({ state: lbState, modal: document.getElementById('botModal').style.display,
-  url: location.search, panel: !!document.getElementById('lbPanel'), applied: window._lastAppliedBotConfig && window._lastAppliedBotConfig.elo,
+  url: location.search, panel: !!document.getElementById('lbPanel') && document.getElementById('lbPanel').style.display !== 'none', applied: window._lastAppliedBotConfig && window._lastAppliedBotConfig.elo,
   saved: (JSON.parse(localStorage.getItem('bm_lastBot') || 'null') || {}).cfg?.elo }));
 check(M.freshUpgraded, 'the account was upgraded');
 check(after.state === 'waiting' && after.modal === 'none' && after.panel, 'connected, the builder closed, the board and its Lichess panel showing', after);
@@ -618,9 +723,39 @@ await until(() => p2.evaluate(() => lbState === 'off'), 5000);
 const off = await p2.evaluate(() => ({ state: lbState, url: location.search }));
 await fr.waitForTimeout(300);
 const offB = await fr.evaluate(() => ({ text: document.getElementById('qs-lichess-value').textContent, start: document.querySelector('.start-btn').textContent }));
-check(off.state === 'off' && !/(^|[?&])lichess(&|$)/.test(off.url), 'disconnected; the address no longer marks a host', off);
-check(/Play as a bot/.test(offB.text) && /Start/.test(offB.start) && !/Update/.test(offB.start), 'the builder is back to Start', offB);
+check(off.state === 'off' && !/(^|[?&])lichess(&|$)/.test(off.url) && !(await panelShown(p2)),
+  'disconnected; the address no longer marks a host, and the board\'s panel is gone', off);
+check(/Set up bot to play on Lichess/.test(offB.text) && /Start/.test(offB.start) && !/Update/.test(offB.start), 'the builder is back to Start', offB);
 check(errs2.length === 0, 'no page errors (builder flow)', errs2.slice(0, 5));
+
+// ── 9. A host tab that can't reconnect ──────────────────────────────────────
+// The panel shows why, offers Connect… (the builder's popup) and Close, and
+// Close leaves an ordinary tab.
+console.log('\n9. A host tab that cannot reconnect');
+const ctx3 = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+await ctx3.addInitScript(() => {
+  try {
+    localStorage.setItem('bm_welcomed', '1'); localStorage.setItem('bm_landingSeen', '1'); localStorage.setItem('bm_bottour', '1');
+    if (!sessionStorage.getItem('seeded')) {
+      localStorage.setItem('bm_lichessBot', JSON.stringify({ token: 'lip_revoked', auto: true }));
+      sessionStorage.setItem('seeded', '1');
+    }
+  } catch (e) {}
+});
+const p3 = await ctx3.newPage();
+const errs3 = [];
+p3.on('pageerror', e => errs3.push(e.message));
+await p3.goto(URL_, { waitUntil: 'domcontentloaded' });
+await until(() => p3.evaluate(() => lbState === 'error'), 10000, 'the refused reconnect');
+const failed = await p3.evaluate(() => ({ shown: document.getElementById('lbPanel').style.display !== 'none',
+  status: document.getElementById('lbStatus').textContent,
+  connect: document.getElementById('lbConnect').style.display !== 'none', close: document.getElementById('lbClose').style.display !== 'none' }));
+check(failed.shown && /rejected/.test(failed.status) && failed.connect && failed.close,
+  'the panel says why, with Connect… and Close', failed);
+await p3.click('#lbClose');
+check(!(await panelShown(p3)) && await p3.evaluate(() => !/(^|[?&])lichess(&|$)/.test(location.search)),
+  'Close puts it away, and the tab is an ordinary one');
+check(errs3.length === 0, 'no page errors (failed reconnect)', errs3.slice(0, 5));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 await browser.close();

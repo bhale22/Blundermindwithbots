@@ -345,7 +345,8 @@ ok(legacyApp.conv === 30 && legacyApp.nu === 'undefined', 'app reads an old conf
 console.log('lichess page:');
 await page.goto(BASE + '/?lichess', { waitUntil: 'networkidle' });
 await page.waitForTimeout(800);
-ok(await page.evaluate(() => !!document.getElementById('lbPanel')), '?lichess shows the bridge panel');
+ok(await page.evaluate(() => typeof lichessBuilderState === 'function' && !document.getElementById('lbPanel') &&
+  !/(^|[?&])lichess(&|$)/.test(location.search)), '?lichess with no saved token: no bridge panel, and no host mark');
 
 const real = errors.filter(e => !/Failed to load resource|ERR_|net::/.test(e));
 ok(real.length === 0, 'no page errors' + (real.length ? ': ' + real.slice(0, 3).join(' | ') : ''));

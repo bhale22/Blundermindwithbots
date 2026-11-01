@@ -234,13 +234,21 @@ function _botDrawToast(html, buttons) {
   return d;
 }
 
-function _botAgreeDraw() {
-  // On Lichess the bot's yes goes to the server, which ends the game.
-  if (typeof lichessGameLive === 'function' && lichessGameLive()) { lichessSendDraw(true); return; }
+// Returns whether the draw was agreed. On Lichess the bot's yes goes to the
+// server, which ends the game — unless the offer has already gone, when
+// nothing is sent (a yes then would be an offer of the bot's own).
+function _botAgreeDraw(why) {
+  if (typeof lichessGameLive === 'function' && lichessGameLive()) return lichessAnswerDraw(true, why);
   gameOver = true;
   gameOverMsg = 'Draw by agreement ½-½';
   if (typeof clockStop === 'function') clockStop();
   updatePlayerBoxes(); render(); showRematchBtn(true);
+  return true;
+}
+// The bot's reading of a position, worded for the host's Lichess log.
+function _botDrawSeesText(adv) {
+  return Math.abs(adv) < 15 ? 'it sees the game as level'
+    : 'it sees itself ' + Math.abs(Math.round(adv)) + ' cp ' + (adv > 0 ? 'ahead' : 'behind');
 }
 
 // ── Clock context for draw decisions ─────────────────────────────────────────
@@ -297,17 +305,22 @@ async function botConsiderDrawOffer() {
   await _botDecideDraw();
 }
 
-// The decision. Resolves true when the bot took the draw.
-async function _botDecideDraw() {
-  const decline = () => {
-    if (typeof lichessGameLive === 'function' && lichessGameLive()) lichessSendDraw(false);
+// The decision. Resolves true when the bot took the draw. `atMove`: called
+// just before the bot's own move (_botAnswerDrawFirst) — the last chance to
+// answer on Lichess, so no more looking again.
+let _botDrawReadRetries = 0;
+async function _botDecideDraw(atMove) {
+  const onLichess = typeof lichessGameLive === 'function' && lichessGameLive();
+  const decline = (why) => {
+    _botDrawReadRetries = 0;
+    if (onLichess) lichessAnswerDraw(false, why);
     _botDrawToast(_BOT_DECLINE_LINES[Math.floor(Math.random() * _BOT_DECLINE_LINES.length)]);
     return false;
   };
-  if (!botAcceptDraws) return decline();
+  if (!botAcceptDraws) return decline('this bot never accepts draws (Personality → Draws & desperation)');
   // Opponent is about to flag: instant decline, no thought required — the
   // bot is playing for the win on time.
-  if (_botExpectsToFlagOpponent()) return decline();
+  if (_botExpectsToFlagOpponent()) return decline('it expects to win on time');
   _botDrawConsidering = true;
   try {
     _botDrawToast('🤖 The bot is considering your draw offer…');
@@ -315,14 +328,29 @@ async function _botDecideDraw() {
       ? await botEvalAdvantageCp()      // objective: Skill 20, depth 12
       : await botPerceivedAdvantageCp(); // strength-scaled, with noise
     if (gameOver || !botActive) return false;
+    if (adv === null) {
+      // No reading of the position — Stockfish busy or failed. That is no
+      // reason to say no. On Lichess, look again shortly; the answer is due
+      // before the bot's own move at the latest.
+      if (onLichess && !atMove && _botDrawReadRetries < 3) {
+        _botDrawReadRetries++;
+        if (typeof lbLog === 'function') lbLog('The bot could not read the position yet — it will look again');
+        setTimeout(() => {
+          if (typeof lichessDrawAwaitingAnswer === 'function' && lichessDrawAwaitingAnswer()) botConsiderDrawOffer();
+        }, 1500);
+        return false;
+      }
+      return decline('it could not read the position (the engine did not answer)');
+    }
     // About to flag itself → takes the half point from far better positions
     const margin = botDrawAcceptMargin + (_botDesperateForDraw() ? 200 : 0);
-    if (adv !== null && adv <= margin) {
+    if (adv <= margin) {
+      _botDrawReadRetries = 0;
+      if (!_botAgreeDraw(_botDrawSeesText(adv) + ' (it takes a draw unless more than ' + margin + ' cp ahead)')) return false;
       _botDrawToast('🤖 Draw accepted. ½-½');
-      _botAgreeDraw();
       return true;
     }
-    return decline();
+    return decline(_botDrawSeesText(adv) + ' — more than the ' + margin + ' cp it allows');
   } finally {
     _botDrawConsidering = false;
   }
@@ -335,7 +363,7 @@ async function _botDecideDraw() {
 async function _botAnswerDrawFirst() {
   if (typeof lichessDrawAwaitingAnswer !== 'function') return false;
   for (let i = 0; i < 100 && _botDrawConsidering; i++) await new Promise(r => setTimeout(r, 100));
-  if (lichessDrawAwaitingAnswer()) return await _botDecideDraw();
+  if (lichessDrawAwaitingAnswer()) return await _botDecideDraw(true);
   return typeof lichessDrawAccepted === 'function' && lichessDrawAccepted();
 }
 
@@ -359,7 +387,7 @@ async function botMaybeOfferDraw() {
   _botLastDrawOfferPly = ply;
   // On Lichess the offer goes to the opponent there; the board only reports it.
   if (typeof lichessGameLive === 'function' && lichessGameLive()) {
-    lichessSendDraw(true);
+    lichessOfferDraw();
     _botDrawToast('🤖 The bot offers a draw on Lichess.');
     return;
   }

@@ -48,11 +48,18 @@ function makeCtx(o) {
   // How the bot sees the position (cp, its own side), and how often it looked.
   ctx.looks = 0;
   ctx.botPerceivedAdvantageCp = async () => { ctx.looks++; return o.adv != null ? o.adv : 0; };
-  // The bridge, as a Lichess game in progress with an offer standing.
+  // The bridge, as a Lichess game in progress with an offer standing. Like the
+  // real lichessAnswerDraw, an answer is only sent while the offer is open.
   ctx.sent = [];
+  ctx.why = [];
   ctx.pending = o.pending !== undefined ? o.pending : true;
   ctx.lichessGameLive = () => true;
-  ctx.lichessSendDraw = (yes) => { ctx.sent.push(yes); if (ctx.pending) ctx.pending = false; };
+  ctx.lichessAnswerDraw = (yes, why) => {
+    if (!ctx.pending) return false;
+    ctx.sent.push(yes); ctx.why.push(why); ctx.pending = false;
+    return true;
+  };
+  ctx.lichessOfferDraw = () => { ctx.sent.push('offer'); };
   ctx.lichessDrawAwaitingAnswer = () => ctx.pending;
   ctx.lichessDrawAccepted = () => false;
   ctx.executed = [];
@@ -74,6 +81,42 @@ test('a bot that is better declines first, then moves', async () => {
   const ctx = makeCtx({ adv: 600 });
   assert.equal(await ctx._botAnswerDrawFirst(), false, 'the move goes ahead');
   assert.deepEqual(ctx.sent, [false]);
+});
+
+test('the host\'s log says why', async () => {
+  const yes = makeCtx({ adv: -900 });
+  await yes._botAnswerDrawFirst();
+  assert.match(yes.why[0], /900 cp behind/);
+  const no = makeCtx({ adv: 600 });
+  await no._botAnswerDrawFirst();
+  assert.match(no.why[0], /600 cp ahead.*200/);
+  const off = makeCtx({ adv: -900 });
+  off.botAcceptDraws = false;
+  await off._botAnswerDrawFirst();
+  assert.match(off.why[0], /never accepts draws/);
+});
+
+test('an answer reached after the offer has gone is not sent — a yes then would be an offer', async () => {
+  const ctx = makeCtx();
+  // The offer lapses while the bot is weighing it.
+  ctx.botPerceivedAdvantageCp = async () => { ctx.pending = false; return -900; };
+  await ctx.botConsiderDrawOffer();
+  assert.deepEqual(ctx.sent, [], 'nothing posted, and certainly no offer');
+});
+
+test('no reading of the position: on Lichess it looks again instead of declining', async () => {
+  const ctx = makeCtx();
+  ctx.botPerceivedAdvantageCp = async () => null;
+  const timers = [];
+  ctx.setTimeout = (fn) => { timers.push(fn); };
+  await ctx.botConsiderDrawOffer();
+  assert.deepEqual(ctx.sent, [], 'not declined');
+  assert.equal(timers.length, 1, 'a second look is scheduled');
+  // At the bot's own move there is no more time: then it declines.
+  ctx.setTimeout = (fn) => fn();
+  assert.equal(await ctx._botAnswerDrawFirst(), false);
+  assert.deepEqual(ctx.sent, [false]);
+  assert.match(ctx.why[0], /could not read the position/);
 });
 
 test('nothing waiting: no look at the position, no answer', async () => {

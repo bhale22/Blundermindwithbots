@@ -174,8 +174,9 @@ console.log('\n6   Picking a Maia rating configures Maia, at temperature 1');
       badDay: botBadDayMode,
       curveA: botPressureCurveA, curveB: botPressureCurveB,
       name: document.getElementById('botNameInput').value,
-      persona: document.getElementById('quickBotPersona').textContent.trim(),
-      personaLit: document.getElementById('quickBotPersona').classList.contains('has'),
+      // The sidebar dropped its readout line; the welcome card keeps one.
+      persona: document.getElementById('bmwBotPersona').textContent.trim(),
+      personaLit: document.getElementById('bmwBotPersona').classList.contains('has'),
     };
   });
   ok('the Maia3 engine is selected', got.tab === 'maia3', got.tab);
@@ -194,7 +195,7 @@ console.log('\n6   Picking a Maia rating configures Maia, at temperature 1');
   ok('and so do the time-pressure curves',
     got.curveA !== null && got.curveB !== null, JSON.stringify([got.curveA, got.curveB]));
   ok('the bot keeps its name', got.name === 'Captain Entropy', got.name);
-  // Surviving silently would be its own trap: the readout under the picker is
+  // Surviving silently would be its own trap: the welcome card's readout is
   // what tells you the personality is still riding along at the new rating.
   ok('and the readout says so, by name', /Captain Entropy/.test(got.persona), got.persona);
   ok('...and is lit as carrying one', got.personaLit === true);
