@@ -3341,6 +3341,7 @@ body.fj .picon{font-weight:500;}
             </button>
           </div>
           <div class="tog-desc">While the game is still in book, play what real players of this rating actually chose</div>
+          <div class="tog-desc">A personality still applies here: it chooses among the most popular moves at this rating (up to 15)</div>
         </div>
       </div>
 
@@ -10561,7 +10562,7 @@ function _lbcRender(){
     '<div class="lbc-h">Lichess bot account</div>' + tokenHtml + _lbcGuide() +
     '<div class="lbc-h">Accept challenges</div>' +
     '<div class="lbc-note" style="margin-top:0;">Casual games only — rated challenges are declined. ' +
-      'A bot’s strength can change between games, so a rated one could be raised high and then farmed for rating.</div>' +
+      'A bot’s strength can be adjusted from game to game, so it has no rating of its own.</div>' +
     '<div class="lbc-checks">' + cb('lbc-bots', 'From other bots', set.bots) + '</div>' +
     '<div class="lbc-checks">' + ['bullet', 'blitz', 'rapid', 'classical'].map(k =>
       cb('lbc-' + k, k[0].toUpperCase() + k.slice(1), set.speeds && set.speeds[k])).join('') + '</div>' +
@@ -13766,7 +13767,10 @@ function _mainLineBarHTML(){
       '<span class="ml-depth-lbl">Through move</span>' +
       '<input type="number" min="5" max="40" value="' + bookDepth + '" oninput="setBookDepth(this.value)" aria-label="Main Line plays through move">' +
     '</span>' +
-    '</div>';
+    '</div>' +
+    // Inside the bar's HTML, so a redraw of the bar keeps it.
+    '<div class="tog-desc" style="margin-top:6px;">Plays the single most popular move every time, so a personality ' +
+      'has no say until the Main Line ends.</div>';
 }
 
 // Book settings are shared: redraw both bars, leaving the switches alone.
