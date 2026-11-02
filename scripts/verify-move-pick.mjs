@@ -267,6 +267,14 @@ const blind = await page.evaluate(() => {
   const out = { off: getBotConfig().blindConviction === false && !_blindConviction() };
   setBlindConviction(true);
   out.cfg = getBotConfig().blindConviction === true;
+  // Its mirror by the Engine chart is the same switch, either way round.
+  const main = document.getElementById('cb-blind-conviction');
+  const mirror = document.getElementById('cb-blind-conviction-mirror');
+  out.mirror = { followsOn: mirror.checked && !!mirror.closest('#engine-temp-col') };
+  mirror.click();
+  out.mirror.offFromMirror = !main.checked && getBotConfig().blindConviction === false;
+  mirror.click();
+  out.mirror.onFromMirror = main.checked && getBotConfig().blindConviction === true;
   out.conv = document.getElementById('conviction-row').classList.contains('inert')
           && document.getElementById('conviction-row-mirror').classList.contains('inert')
           && document.getElementById('r-conviction').inert && document.getElementById('r-conviction-mirror').inert;
@@ -296,6 +304,8 @@ const blind = await page.evaluate(() => {
 });
 ok(blind.off, 'off by default, and in the config');
 ok(blind.cfg, 'switched on, the config carries it');
+ok(blind.mirror.followsOn, 'its twin by the Engine chart follows it');
+ok(blind.mirror.offFromMirror && blind.mirror.onFromMirror, 'the twin switches it off and on again');
 ok(blind.conv && blind.convWhy, 'on: both Conviction sliders greyed, with the reason');
 ok(blind.noToast, 'on: choosing a personality shows no "Conviction set to 100%" note');
 ok(blind.temp, 'on: the temperature greyed, with the reason');

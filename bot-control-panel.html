@@ -3596,6 +3596,12 @@ body.fj .picon{font-weight:500;}
               oninput="onGaugeSliderInput(+this.value)">
             <span class="ctrl-val" id="v-style-mirror">100 cp</span>
           </div>
+          <!-- Blind Conviction — the Personality section's switch, mirrored
+               here so the chart's Played bar can be watched as it flips -->
+          <div class="tog-row" id="blind-conviction-row-mirror">
+            <div><div class="tog-lbl">Blind conviction</div><div class="tog-desc">The personality alone picks: its favorite within the Budget. Same switch as in Personality.</div></div>
+            <label class="tog"><input type="checkbox" id="cb-blind-conviction-mirror" onchange="setBlindConviction(this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label>
+          </div>
           <div class="ctrl-hint" id="temp-chart-hint">Same dial as the Personality section's Centipawmeter — move either one. The middle (blue) bar shows an <em>illustrative</em> personality (loves g4, likes c4, dislikes d4) reshaping Maia's odds; the last bar is what the bot plays: Conviction's share on the top move, the rest temperature samples — or, with Blind conviction on, the one move it chooses.</div>
 
         </div><!-- /right col -->
@@ -12296,8 +12302,12 @@ function _blindConviction(){
   return !!document.getElementById('cb-blind-conviction')?.checked;
 }
 function setBlindConviction(on){
-  const cb = document.getElementById('cb-blind-conviction');
-  if(cb) cb.checked = !!on;
+  // One value, two switches: the Personality section's and its mirror by the
+  // Engine chart.
+  ['', '-mirror'].forEach(s => {
+    const cb = document.getElementById('cb-blind-conviction' + s);
+    if(cb) cb.checked = !!on;
+  });
   syncControlGating();
   // The chart's Played bar becomes the one move Blind Conviction chooses.
   try{ drawTempChart(_currentTempValue); }catch(e){}
