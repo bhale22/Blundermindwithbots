@@ -5,9 +5,12 @@
 // builder showed. This only keeps the pages alive: it starts them, watches
 // them, and reloads or restarts one that stops.
 //
-//   node bot-runner/runner.mjs                host every bot in bot-runner/bots/
+//   node bot-runner/runner.mjs                host every bot in bot-runner/bots/,
+//                                             and every BM_BOT_<NAME> variable
 //   node bot-runner/runner.mjs setup <name>   open a window to set a bot up and
 //                                             connect it; saves bots/<name>.json
+//   node bot-runner/runner.mjs env <name>     that file as a BM_BOT_<NAME>
+//                                             variable, for Railway
 //
 // A bot file holds the bot account's token. bots/ and profiles/ are
 // git-ignored, and must stay so: the repo is public.
@@ -19,6 +22,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { chromium } from 'playwright';
 
@@ -84,23 +88,50 @@ function probe() {
 // { account, bot, saved, site, lichess: { token, bots, speeds }, lastBot }
 // lastBot is the page's own record of the bot it plays (bm_lastBot), copied
 // whole, so it restores the way a reload of a desktop host tab does.
+//
+// A host with no disk to put files on (Railway) takes the same file as a
+// variable, BM_BOT_<NAME>. Its value is the file in base64, so no variable
+// editor trips over the quotes in it; plain JSON is taken too.
+const ENV_RE = /^BM_BOT_([A-Za-z0-9_]{1,40})$/;
+function envName(name) { return 'BM_BOT_' + name.toUpperCase().replace(/-/g, '_'); }
+function envValue(d) { return Buffer.from(JSON.stringify(d)).toString('base64'); }
+
+function checkBot(name, d) {
+  if (!d.lichess || !d.lichess.token) throw new Error('no token in it');
+  if (!d.lastBot || !d.lastBot.cfg) throw new Error('no bot config in it');
+  if (d.site && d.site !== SITE) log(name, 'Set up on ' + d.site + ', hosted from ' + SITE);
+  return Object.assign({ name }, d);
+}
+
 function readBots() {
-  if (!fs.existsSync(BOTS_DIR)) return [];
-  const out = [];
-  for (const f of fs.readdirSync(BOTS_DIR).filter(f => f.endsWith('.json')).sort()) {
-    const name = f.slice(0, -5);
-    try {
-      if (!NAME_RE.test(name)) throw new Error('file names are letters, digits, - and _ only');
-      const d = JSON.parse(fs.readFileSync(path.join(BOTS_DIR, f), 'utf8'));
-      if (!d.lichess || !d.lichess.token) throw new Error('no token in it');
-      if (!d.lastBot || !d.lastBot.cfg) throw new Error('no bot config in it');
-      if (d.site && d.site !== SITE) log(name, 'Set up on ' + d.site + ', hosted from ' + SITE);
-      out.push(Object.assign({ name }, d));
-    } catch (e) {
-      log(null, 'Skipping bots/' + f + ': ' + e.message);
+  const found = new Map();
+  if (fs.existsSync(BOTS_DIR)) {
+    for (const f of fs.readdirSync(BOTS_DIR).filter(f => f.endsWith('.json')).sort()) {
+      const name = f.slice(0, -5);
+      try {
+        if (!NAME_RE.test(name)) throw new Error('file names are letters, digits, - and _ only');
+        found.set(name, checkBot(name, JSON.parse(fs.readFileSync(path.join(BOTS_DIR, f), 'utf8'))));
+      } catch (e) {
+        log(null, 'Skipping bots/' + f + ': ' + e.message);
+      }
     }
   }
-  return out;
+  for (const k of Object.keys(process.env).sort()) {
+    const m = ENV_RE.exec(k);
+    if (!m) continue;
+    const name = m[1].toLowerCase();
+    try {
+      const v = process.env[k].trim();
+      let d;
+      try { d = JSON.parse(v.startsWith('{') ? v : Buffer.from(v, 'base64').toString('utf8')); }
+      catch (e) { throw new Error('not a bot file (make one with: node bot-runner/runner.mjs env <name>)'); }
+      if (found.has(name)) log(name, k + ' replaces bots/' + name + '.json');
+      found.set(name, checkBot(name, d));
+    } catch (e) {
+      log(null, 'Skipping ' + k + ': ' + e.message);
+    }
+  }
+  return [...found.values()];
 }
 
 function hostItems(bot) {
@@ -238,7 +269,8 @@ class Host {
 async function host() {
   const bots = readBots();
   if (!bots.length) {
-    log(null, 'No bots to host: put a bot file in ' + BOTS_DIR + ' (made with: node bot-runner/runner.mjs setup <name>)');
+    log(null, 'No bots to host: put a bot file in ' + BOTS_DIR + ' or a BM_BOT_<NAME> variable in the environment'
+      + ' (made with: node bot-runner/runner.mjs setup <name>, then env <name>)');
     return 1;
   }
   log(null, 'Hosting ' + bots.map(b => b.name + (b.account ? ' (@' + b.account + ')' : '')).join(', ') + ' from ' + SITE);
@@ -342,15 +374,42 @@ async function setup(name) {
   try { await ctx.close(); } catch (e) {}
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
   if (!savedKey) log(name, 'Nothing saved: the bot never connected.');
+  else log(name, 'To host it on Railway: node bot-runner/runner.mjs env ' + name);
   return savedKey ? 0 : 1;
 }
 
-export { Host, readBots, setup };
+// ── A bot file as a variable ────────────────────────────────────────────────
+// Copied to the clipboard rather than shown, since it holds the token.
+function env(name) {
+  const file = path.join(BOTS_DIR, (name || '') + '.json');
+  if (!name || !NAME_RE.test(name) || !fs.existsSync(file)) {
+    console.log('Usage: node bot-runner/runner.mjs env <name>   (a bot saved by: setup <name>)');
+    return 1;
+  }
+  let d;
+  try { d = JSON.parse(fs.readFileSync(file, 'utf8')); checkBot(name, d); }
+  catch (e) { console.log('bots/' + name + '.json: ' + e.message); return 1; }
+  const value = envValue(d);
+  const clip = process.platform === 'win32' ? 'clip' : process.platform === 'darwin' ? 'pbcopy' : null;
+  const copied = !!clip && spawnSync(clip, { input: value }).status === 0;
+  console.log([
+    '',
+    'For Railway: the bot service → Variables → New Variable',
+    '  Name:   ' + envName(name),
+    '  Value:  ' + (copied ? 'on the clipboard — paste it (' + value.length + ' characters)' : value),
+    'It holds @' + d.account + '\'s token. Once it is added, seal it (the variable\'s ⋮ menu → Seal).',
+    '',
+  ].join('\n'));
+  return 0;
+}
+
+export { Host, readBots, setup, envName, envValue };
 
 // Run as a program; imported (scripts/verify-bot-runner.mjs), it only exports.
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [cmd, arg] = process.argv.slice(2);
   if (cmd === 'setup') process.exit(await setup(arg));
+  else if (cmd === 'env') process.exit(env(arg));
   else if (!cmd) process.exit(await host());
-  else { console.log('Usage: node bot-runner/runner.mjs [setup <name>]'); process.exit(1); }
+  else { console.log('Usage: node bot-runner/runner.mjs [setup <name> | env <name>]'); process.exit(1); }
 }
