@@ -43,6 +43,11 @@ android/.gradle/
 *.idsig
 output-metadata.json
 
+# ── Lichess bot runner — NEVER commit ───────────────────────────────────────
+# A bot file holds its Lichess account's token; a profile is a browser's data.
+bot-runner/bots/
+bot-runner/profiles/
+
 # ── Personal scratch folder ────────────────────────────────────────────────
 # Lives on the Desktop. A copy landed here once and was committed by accident,
 # publishing 60-odd private files plus an API token. It never belongs in git.

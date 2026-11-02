@@ -2533,6 +2533,11 @@ function bmSessionEligible() {
   if (typeof replayActive !== 'undefined' && replayActive) return false;
   if (typeof gameOver === 'undefined' || gameOver) return false;
   if (typeof gameMovesAlgebraic === 'undefined' || !gameMovesAlgebraic.length) return false;
+  // Lichess holds this game. Asked last: start-up (loadPos → updatePlayerBoxes)
+  // gets here before the bridge's state further down the page exists, and
+  // touching it then throws — but with no moves played, the line above has
+  // already returned.
+  if (typeof lichessHostTab === 'function' && lichessHostTab()) return false;
   return true;
 }
 
@@ -2600,6 +2605,8 @@ function bmSessionRead() {
 }
 
 function bmSessionRestore() {
+  // A snapshot written before host tabs stopped writing one.
+  if (typeof lichessHostTab === 'function' && lichessHostTab()) { bmSessionClear(); return false; }
   const snap = bmSessionRead();
   if (!snap) return false;
   try {
