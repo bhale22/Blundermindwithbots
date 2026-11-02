@@ -54,7 +54,7 @@ chromium.launchPersistentContext = async (dir, o) => {
   if (o && o.headless === false) { setupCtx = ctx; setupDir = dir; }
   return ctx;
 };
-const { Host, readBots, setup } = await import('../bot-runner/runner.mjs');
+const { Host, readBots, setup, envName, envValue } = await import('../bot-runner/runner.mjs');
 
 // ── Chess rules for the stand-in: the app's own core, run in a vm ──────────
 const core = { document: { getElementById: () => null }, indActive: () => false, console };
@@ -251,6 +251,26 @@ try {
   check(setupDir && !fs.existsSync(setupDir), 'and its throwaway browser profile is deleted');
   await until(() => M.eventStreams.size === 0, 5000);
   check(M.eventStreams.size === 0, 'the closed window is no longer connected');
+
+  // ── 1b. As a variable ─────────────────────────────────────────────────────
+  // How Railway hands the runner a bot: the same file, in BM_BOT_<NAME>.
+  console.log('\n1b. The bot file as a variable');
+  const v = envValue(saved);
+  check(envName('pre-move90') === 'BM_BOT_PRE_MOVE90' && /^[A-Za-z0-9+/=]+$/.test(v),
+    'env makes BM_BOT_<NAME> with a base64 value, nothing in it to quote', envName('pre-move90'));
+  process.env.BM_BOT_FROMENV = v;
+  process.env.BM_BOT_RAWJSON = JSON.stringify(saved);
+  process.env.BM_BOT_BROKEN = 'not a bot';
+  process.env.BM_BOT_TESTBOT = envValue(Object.assign({}, saved, { bot: 'from the variable' }));
+  const fromEnv = readBots();
+  const byName = Object.fromEntries(fromEnv.map(b => [b.name, b]));
+  check(byName.fromenv && byName.fromenv.lichess.token === TOKEN && JSON.stringify(byName.fromenv.lastBot) === JSON.stringify(saved.lastBot),
+    'the runner reads it back whole, named after the variable', Object.keys(byName));
+  check(byName.rawjson && byName.rawjson.lichess.token === TOKEN, 'and takes plain JSON too');
+  check(!byName.broken && logged.some(l => /Skipping BM_BOT_BROKEN: not a bot file/.test(l)), 'and skips one that is not a bot, saying so');
+  check(fromEnv.length === 3 && byName.testbot.bot === 'from the variable' && logged.some(l => /\[testbot\] BM_BOT_TESTBOT replaces bots\/testbot\.json/.test(l)),
+    'a variable stands in for a file of the same name', fromEnv.map(b => b.name));
+  for (const k of ['BM_BOT_FROMENV', 'BM_BOT_RAWJSON', 'BM_BOT_BROKEN', 'BM_BOT_TESTBOT']) delete process.env[k];
 
   // ── 2. Hosting ────────────────────────────────────────────────────────────
   console.log('\n2. Hosting it');
