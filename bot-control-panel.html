@@ -3596,7 +3596,7 @@ body.fj .picon{font-weight:500;}
               oninput="onGaugeSliderInput(+this.value)">
             <span class="ctrl-val" id="v-style-mirror">100 cp</span>
           </div>
-          <div class="ctrl-hint" id="temp-chart-hint">Same dial as the Personality section's Centipawmeter — move either one. The middle (blue) bar shows an <em>illustrative</em> personality (loves c4, dislikes d4) reshaping Maia's odds; the last bar is what the bot plays: Conviction's share on the top move, the rest temperature samples.</div>
+          <div class="ctrl-hint" id="temp-chart-hint">Same dial as the Personality section's Centipawmeter — move either one. The middle (blue) bar shows an <em>illustrative</em> personality (loves g4, likes c4, dislikes d4) reshaping Maia's odds; the last bar is what the bot plays: Conviction's share on the top move, the rest temperature samples — or, with Blind conviction on, the one move it chooses.</div>
 
         </div><!-- /right col -->
 
@@ -3677,6 +3677,13 @@ body.fj .picon{font-weight:500;}
                     <span class="slider-scale ends"><span>Chooses among Maia distribution based on personality</span><span>Always chooses favorite move</span></span>
                   </span>
                   <span class="ctrl-val" id="v-conviction-mirror">0%</span>
+                </div>
+                <!-- Blind Conviction — the personality alone picks the move,
+                     among those the Move Distribution Range lets through and
+                     within the Budget (blindConvictionPick) -->
+                <div class="tog-row" id="blind-conviction-row">
+                  <div><div class="tog-lbl">Blind conviction</div><div class="tog-desc">Ignores how popular each move is and always plays the personality's favorite within the Budget. Popularity only breaks ties and sets the Move Distribution Range's floor below. Predictable, and no longer plays like a person.</div></div>
+                  <label class="tog"><input type="checkbox" id="cb-blind-conviction" onchange="setBlindConviction(this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label>
                 </div>
                 <div class="ctrl" id="hard-floor-row" style="margin-top:8px;">
                   <span class="ctrl-lbl" id="hard-floor-lbl" style="min-width:80px;">Hard Floor</span>
@@ -9042,6 +9049,7 @@ function getBotConfig(){
     // How each move is picked: Conviction's share plays the top of the shaped
     // distribution, the rest are temperature samples.
     convictionPct:   _convictionPct(),
+    blindConviction: _blindConviction(),
     color:           color,
     tcTime:          tcTime,
     tcInc:           tcInc,
@@ -9261,6 +9269,7 @@ function applyBotConfig(cfg){
   // (botApplyPanelConfig). A saved noUpgradeGuard is ignored: that check now
   // belongs to Bad Day and time pressure.
   grp(() => onConvictionSlider(cfg.convictionPct != null ? cfg.convictionPct : 30));
+  grp(() => setBlindConviction(!!cfg.blindConviction));
   grp(() => {
     const lo = document.getElementById('day-lower'), hi = document.getElementById('day-upper');
     if(lo && cfg.dayLower != null) lo.value = cfg.dayLower;
@@ -10431,7 +10440,8 @@ function _lbcSummary(){
   const txt = id => (document.getElementById(id)?.textContent || '').trim();
   const rows = [
     ['Engine', txt('qs-engine-pill')],
-    ['Personality', txt('qs-pers-value') + ' · Conviction ' + _convictionPct() + '%'],
+    ['Personality', txt('qs-pers-value') + ' · ' +
+      (_blindConviction() ? 'Blind conviction' : 'Conviction ' + _convictionPct() + '%')],
     ['CP Budget', txt('qs-cpb-value')],
     ['Think time', txt('qs-ttime-value')],
   ];
@@ -10950,6 +10960,7 @@ function _gatingState(){
     // does not read time pressure at all (_timePressureApplies).
     paced: _curvesInertKind() === 'timing',
     hustler: selectedPersonality === 'hustler',
+    blind: _blindConviction(),
   };
 }
 
@@ -11038,8 +11049,10 @@ function syncControlGating(){
   _setWhy(document.getElementById('hard-floor-row'), floorWhy,
           { target: document.getElementById('r-hardfloor'), after: true });
   // Conviction acts on picks from a distribution (pickFromProbs) — Maia and
-  // the opening book.
-  const pickWhy = g.flounderOnly
+  // the opening book — and not at all under Blind Conviction.
+  const pickWhy = g.blind
+    ? 'Blind conviction is on: every move is the personality\'s favorite within the Budget, so there is no share to set.'
+    : g.flounderOnly
     ? 'Flounder picks each move by its evaluation, not from a distribution, so this has nothing to act on. It applies to Maia and opening-book moves.'
     : '';
   _setWhy(document.getElementById('conviction-row'), pickWhy,
@@ -11058,12 +11071,15 @@ function syncControlGating(){
   // rather than dimmed, as before, so the column keeps its size. It used to be
   // hidden for Flounder + book too, while still filtering every book move.
   const mqr = document.getElementById('move-quality-range');
-  if(mqr) mqr.style.visibility = g.flounderOnly ? 'hidden' : '';
+  // Blind Conviction filters Flounder's own selection distribution with it too.
+  if(mqr) mqr.style.visibility = (g.flounderOnly && !g.blind) ? 'hidden' : '';
 
   // Temperature — Coffeehouse Hustler replaces it with a schedule by game phase
   // (hustlerPhaseTemp, which botMaiaBaseTemp reads first on every engine).
   const tz = document.querySelector('#engine-temp-col .temp-slider-zone');
-  _setWhy(tz, g.hustler
+  _setWhy(tz, g.blind
+      ? 'Blind conviction is on: each move is chosen by the personality, not sampled, so temperature has nothing to act on.'
+      : g.hustler
       ? 'Coffeehouse Hustler sets the temperature itself, by game phase: 5.0 in the opening, easing to 0.6 by the endgame. Move any personality slider, or pick another preset, to set it here.'
       : '', { target: document.getElementById('temp-t-slider'), after: true });
 
@@ -11816,16 +11832,28 @@ function _chartFlounderElo(){
 // crowd hands temperature a different move to sharpen onto.
 //
 // With these numbers and the illustrative trait below, c4 passes e4 at around
-// CP Budget 145. Below that the top move holds and personality only shades the
+// CP Budget 195. Below that the top move holds and personality only shades the
 // odds; above it the bot has changed its mind about what the best move is. Drag
 // the Budget slider and the crossover happens on screen.
+//
+// g4 is the other half of the story: the move the personality loves most, and
+// one player in 250 plays. A multiplier on 0.4% stays near 0.4%, so Conviction
+// never reaches it at any Budget; Blind Conviction plays it as soon as the
+// Budget covers what it costs and the Range's floor lets it in.
+//
+// `cp` is each move's illustrative cost against the best, which only Blind
+// Conviction's Budget check reads (_chartBlindPlayed).
 const TEMP_CHART_MOVES = [
-  { label:'e4', p:0.42 },
-  { label:'d4', p:0.30 },
-  { label:'c4', p:0.18 },
-  { label:'e3', p:0.07 },
-  { label:'h3', p:0.03 },
+  { label:'e4', p:0.42,  cp:0 },
+  { label:'d4', p:0.30,  cp:5 },
+  { label:'c4', p:0.18,  cp:10 },
+  { label:'e3', p:0.07,  cp:25 },
+  { label:'h3', p:0.026, cp:45 },
+  { label:'g4', p:0.004, cp:90 },
 ];
+// Phones have room for three columns: the top move, the one a personality can
+// lift past it, and the rare favourite only Blind Conviction plays.
+const TEMP_CHART_PHONE = [0, 2, 5];
 
 let _currentTempValue = 1.0; // float T, 0.1–4.0
 
@@ -11925,7 +11953,7 @@ function _syncTempScaleLabels(){
       + '<b>Temp</b> is where the slider has moved it — that <em>changes real strength</em>, unlike the Budget; '
       + '<b>Pers.</b> adds an illustrative personality (likes d4, dislikes Bb5) choosing within ± the CP Budget of the cost the rating asked for.'
     : 'The pipeline in the order the bot runs it: <b>Maia</b>\'s raw odds, then an '
-      + '<em>illustrative</em> personality (loves c4, dislikes d4) reweighting them by the '
+      + '<em>illustrative</em> personality (loves g4, likes c4, dislikes d4) reweighting them by the '
       + '<b>CP Budget</b>, then the pick: <b>Played</b> is the real chance of each move — '
       + '<b>Conviction</b>\'s share of moves play the top of the reshaped distribution outright, '
       + 'the rest are <b>temperature</b> samples. Conviction 0% and Temperature 1.0 with no '
@@ -11933,7 +11961,11 @@ function _syncTempScaleLabels(){
       + 'first because that is where the personality is applied. Turning temperature down '
       + 'does not switch personality off — it makes it DECISIVE: the bot plays the top of '
       + 'the distribution personality just reshaped, every time. Raise the <b>Budget</b> past '
-      + 'about 145 here and c4 overtakes e4; from then on a cold bot plays c4 and means it. '
+      + 'about 195 here and c4 overtakes e4; from then on a cold bot plays c4 and means it. '
+      + '<b>g4</b> is the personality\'s real favourite, but only 0.4% of players choose it: '
+      + 'the personality barely lifts it and Conviction never plays it. <b>Blind conviction</b> '
+      + 'does — Played becomes the one move it chooses: its favourite within the Budget (g4 '
+      + 'costs about 90 cp here) among the moves the Move Distribution Range lets in. '
       + 'The Budget dial here is the same one as the '
       + 'Personality section\'s Centipawmeter; move either.';
 }
@@ -11952,10 +11984,61 @@ function _tempAdjustedP(probs, T){
 }
 function _tempAdjusted(moves, T){ return _tempAdjustedP(moves.map(m=>m.p), T); }
 
-// Illustrative personality signal per chart move (e4, d4, c4, e3, h3):
-// this demo personality loves c4, likes e3, dislikes d4. In play the real
-// signals come from the board; here they just make the mechanism visible.
-const PERS_CHART_PREF = [0, -0.6, 1.0, 0.4, 0];
+// Illustrative personality signal per chart move (e4, d4, c4, e3, h3, g4):
+// this demo personality loves g4, likes c4 and e3, dislikes d4. In play the
+// real signals come from the board; here they just make the mechanism visible.
+const PERS_CHART_PREF = [0, -0.6, 0.8, 0.4, 0, 1.0];
+
+// The Move Distribution Range over the chart's moves, as the engine applies it
+// (_minProbFloor, then _distributionBand, rarest first): each move's
+// probability, or 0 if the Range takes it out. The demo personality has no
+// luck trait, so the window is the sliders' own.
+function _chartInRange(probs){
+  // Read off the sliders: the dayLower/dayUpper lets are declared further down,
+  // and the chart can draw before the script reaches them.
+  const dl = +(document.getElementById('day-lower')?.value || 0);
+  const du = +(document.getElementById('day-upper')?.value || 100);
+  let kept = probs.map(p => p >= dl / 100 ? p : 0);
+  if(!kept.some(p => p > 0)){
+    const top = probs.indexOf(Math.max(...probs));
+    kept = probs.map((p, i) => i === top ? p : 0);
+  }
+  const lo = Math.max(0, Math.min(95, dl));
+  const hi = Math.max(lo + 5, Math.min(100, du));
+  if(lo > 0 || hi < 100){
+    const total = kept.reduce((a, b) => a + b, 0);
+    const order = kept.map((p, i) => i).filter(i => kept[i] > 0).sort((a, b) => kept[a] - kept[b]);
+    const band = kept.map(() => 0);
+    let cum = 0;
+    order.forEach(i => {
+      const end = cum + kept[i];
+      if(cum < hi / 100 * total && end > lo / 100 * total) band[i] = kept[i];
+      cum = end;
+    });
+    if(band.some(p => p > 0)) kept = band;
+  }
+  const s = kept.reduce((a, b) => a + b, 0) || 1;
+  return kept.map(p => p / s);
+}
+
+// Blind Conviction's pick over the chart's moves (blindConvictionPick): the
+// personality's favourite among the moves in range, ties to the more popular,
+// that costs no more than the Budget against Maia's most popular move. One
+// move, every time — so the Played bar is 100% on it.
+function _chartBlindPlayed(all, inRange, budgetCp){
+  const top = all.indexOf(Math.max(...all));
+  const order = inRange.map((p, i) => i).filter(i => inRange[i] > 0)
+    .sort((a, b) => ((PERS_CHART_PREF[b] || 0) - (PERS_CHART_PREF[a] || 0)) || (all[b] - all[a]));
+  const cost = i => TEMP_CHART_MOVES[i].cp - TEMP_CHART_MOVES[top].cp;
+  const pick = order.find(i => cost(i) <= budgetCp);
+  return all.map((p, i) => i === (pick != null ? pick : top) ? 1 : 0);
+}
+
+// A share as the chart's labels print it: whole percents, one decimal under
+// 1% (the rare move's 0.4% is the point of its column), ~0 below that.
+function _chartPct(p){
+  return p >= 0.0095 ? Math.round(p * 100) + '%' : p >= 0.0005 ? (p * 100).toFixed(1) + '%' : '~0';
+}
 
 // Apply the personality reweighting on top of the temperature-adjusted
 // distribution, scaled by the CP Budget exactly like the engine does:
@@ -12041,15 +12124,19 @@ function drawTempChart(T){
     adj  = _flounderSelProbs(d, prm.s, cEff,  0, null);
     pers = _flounderSelProbs(d, prm.s, cEff,  band, prefs);
   } else {
-    // Shaped over all five moves even when a phone shows three, so the
+    // Shaped over all six moves even when a phone shows three, so the
     // personality and temperature normalise over the same set the engine sees.
-    moves = _ph ? TEMP_CHART_MOVES.slice(0, 3) : TEMP_CHART_MOVES;
+    const show = _ph ? TEMP_CHART_PHONE : TEMP_CHART_MOVES.map((m, i) => i);
+    moves = show.map(i => TEMP_CHART_MOVES[i]);
     const all = TEMP_CHART_MOVES.map(m => m.p);
-    const adjAll = _persAdjusted(all, budgetNow);                   // personality first
-    const played = _convictionMix(adjAll, T, _convictionPct());     // then the pick
-    base  = all.slice(0, moves.length);
-    adj   = adjAll.slice(0, moves.length);
-    pers  = played.slice(0, moves.length);
+    const inRange = _chartInRange(all);                             // the Range's candidates
+    const adjAll = _persAdjusted(inRange, budgetNow);               // personality first
+    const played = _blindConviction()                               // then the pick
+      ? _chartBlindPlayed(all, inRange, budgetNow)
+      : _convictionMix(adjAll, T, _convictionPct());
+    base  = show.map(i => all[i]);
+    adj   = show.map(i => adjAll[i]);
+    pers  = show.map(i => played[i]);
   }
   const nM    = moves.length;
   const colW  = chartW / nM;
@@ -12109,22 +12196,29 @@ function drawTempChart(T){
     ctx.textAlign = 'center';
     ctx.fillText(mv.label, cx, H - padB + rowMove);
 
-    // Row 2: Maia % (left column, dim)
+    // Row 2: Maia % (left column, dim). The Maia chart prints shares under 1%
+    // to a decimal (_chartPct) — its rare column is the point of having it. A
+    // phone's 11px type leaves no room for "0.4%0.7%100%", so it drops the 0.
+    const pct = _fl ? (p => p < 0.005 ? '~0' : Math.round(p*100)+'%')
+              : _ph ? (p => _chartPct(p).replace(/^0\./, '.')) : _chartPct;
     ctx.fillStyle = 'rgba(235,140,0,0.60)';
     ctx.font = _chartFont(7);
-    ctx.fillText(Math.round(maiaP*100)+'%', mX + barW/2, H - padB + rowPct);
+    ctx.fillText(_fl ? Math.round(maiaP*100)+'%' : pct(maiaP), mX + barW/2, H - padB + rowPct);
 
-    // Row 2: middle-stage % (middle column)
-    const adjPct = Math.round(adjP*100);
-    const adjColor = adjP > maiaP + 0.005 ? 'rgba(74,185,124,0.9)'
-                   : adjP < maiaP - 0.005 ? 'rgba(235,160,0,0.88)'
+    // Row 2: middle-stage % (middle column). Green for a gain, amber for a
+    // loss; on Maia relative to the share, so the rare move's 0.4% → 0.7%
+    // shows as the gain it is.
+    const up   = _fl ? maiaP + 0.005 : maiaP * 1.05 + 1e-4;
+    const down = _fl ? maiaP - 0.005 : maiaP * 0.95 - 1e-4;
+    const adjColor = adjP > up ? 'rgba(74,185,124,0.9)'
+                   : adjP < down ? 'rgba(235,160,0,0.88)'
                    : 'rgba(235,140,0,0.60)';
     ctx.fillStyle = adjColor;
-    ctx.fillText(adjP < 0.005 ? '~0' : adjPct+'%', aX + barW/2, H - padB + rowPct);
+    ctx.fillText(pct(adjP), aX + barW/2, H - padB + rowPct);
 
     // Row 2: final-stage % (right column)
     ctx.fillStyle = _fl ? C_PERS : C_ADJ;
-    ctx.fillText(perP < 0.005 ? '~0' : Math.round(perP*100)+'%', pX + barW/2, H - padB + rowPct);
+    ctx.fillText(pct(perP), pX + barW/2, H - padB + rowPct);
 
     // Row 3: column labels (M / T / P)
     ctx.fillStyle = _tDim;
@@ -12194,6 +12288,19 @@ function onTempSlider(T){
 function _convictionPct(){
   const v = +(document.getElementById('r-conviction')?.value);
   return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 0;
+}
+// Blind Conviction (blindConvictionPick): the personality alone picks the
+// move, so Conviction's share and the temperature have nothing to act on —
+// syncControlGating greys them and says why.
+function _blindConviction(){
+  return !!document.getElementById('cb-blind-conviction')?.checked;
+}
+function setBlindConviction(on){
+  const cb = document.getElementById('cb-blind-conviction');
+  if(cb) cb.checked = !!on;
+  syncControlGating();
+  // The chart's Played bar becomes the one move Blind Conviction chooses.
+  try{ drawTempChart(_currentTempValue); }catch(e){}
 }
 function onConvictionSlider(v){
   v = Math.max(0, Math.min(100, Math.round(+v || 0)));
@@ -13419,7 +13526,7 @@ function _showBadDayConfirm(id){
     // Applying it will also take Conviction to 100% (_applyPersonality), so
     // the list says so — this modal stands in for the Conviction note.
     const items = c.items.slice();
-    if(_convictionPct() < 100) items.push('Conviction → 100%: always chooses its favorite move');
+    if(_convictionPct() < 100 && !_blindConviction()) items.push('Conviction → 100%: always chooses its favorite move');
     document.getElementById('bdconfirm-title').textContent = c.title;
     document.getElementById('bdconfirm-list').innerHTML =
       items.map(t => '<li>' + t + '</li>').join('');
@@ -13608,7 +13715,8 @@ function _applyPersonality(id, confirmed){
   if(!p) return;
   if(_convictionPct() < 100){
     onConvictionSlider(100);
-    if(!confirmed) showConvToast();
+    // Under Blind Conviction the slider is greyed and says why; no note.
+    if(!confirmed && !_blindConviction()) showConvToast();
   }
   // Bad Day: configure engine, ELO, and quality threshold
   if(id === 'badday'){
@@ -14021,6 +14129,8 @@ function onDaySlider(){
     fill.style.left  = dayLower + '%';
     fill.style.right = (100 - dayUpper) + '%';
   }
+  // The Engine chart filters its moves by the Range too (_chartInRange).
+  try{ drawTempChart(_currentTempValue); }catch(e){}
 }
 
 /* ── Timing mode control visibility ──────────────────────────────────────── */

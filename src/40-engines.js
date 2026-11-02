@@ -571,8 +571,9 @@ function _fenLegalUcis(fen) {
 // faithful but means the same s produces a different agent in every position.
 // Measured, that version's ratings were worth ~120 real Elo per 400 labelled.
 //
-// Returns { uci, cp, tau, dist } or null so the caller can fall back to a plain
-// search. `dist` is flounderSelectionProbs keyed by move.
+// Returns { uci, cp, tau, dist, evals } or null so the caller can fall back to a
+// plain search. `dist` is flounderSelectionProbs keyed by move; `evals` is the
+// probe's score for every legal move.
 //
 // `opts.staleSeek` lets stalemate-seeking take over when it is active. Only the
 // bot's own turn passes it: the desperation scoring reads the LIVE board, so
@@ -627,7 +628,7 @@ async function flounderChooseMove(fen, elo, depth, effTemp, opts) {
       const shaped = _maybeStaleSeek(dist);
       const pickUci = sampleFromProbs(shaped, 1);
       const ki = scored.indexOf(pickUci);
-      if (ki >= 0) return { uci: scored[ki], cp: best - evals[scored[ki]], tau, dist };
+      if (ki >= 0) return { uci: scored[ki], cp: best - evals[scored[ki]], tau, dist, evals };
     }
 
     // PERSONALITY. The rating has now decided how much this turn throws away;
@@ -639,7 +640,7 @@ async function flounderChooseMove(fen, elo, depth, effTemp, opts) {
         flounderTargetMean(s, cEff));
       if (Number.isInteger(alt) && alt >= 0 && alt < scored.length) k = alt;
     }
-    return { uci: scored[k], cp: best - evals[scored[k]], tau, dist };
+    return { uci: scored[k], cp: best - evals[scored[k]], tau, dist, evals };
   } catch (e) {
     return null;
   }

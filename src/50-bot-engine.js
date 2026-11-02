@@ -1308,6 +1308,49 @@ function flounderApplyPersonality(moves, d, tau, k0, margin, kernel) {
   }
 }
 
+// ── The Move Distribution Range ──────────────────────────────────────────────
+// Its two handles, as the builder draws them: a track from the rare end (0) to
+// the mainstream end (100). Shared by applyMoveAttractors and Blind Conviction.
+//
+// The lower handle's absolute popularity floor — an honest distribution
+// control. The old relative "blunder limit" cutoff (e^(−cp/100) of the top
+// move) pretended probability ratios were centipawns; real centipawn
+// enforcement happens post-pick in applyCpBudgetAcceptance (Stockfish-verified).
+function _minProbFloor(moveProbs) {
+  if (!(botMinProbPct > 0)) return moveProbs;
+  const entries  = Object.entries(moveProbs).sort((a, b) => b[1] - a[1]);
+  const absFloor = botMinProbPct / 100;
+  const passed   = entries.filter(([, p]) => p >= absFloor);
+  return Object.fromEntries(passed.length ? passed : (entries.length ? [entries[0]] : []));
+}
+
+// The band between the handles, in cumulative probability laid out RAREST
+// FIRST, so 0 is the rare end as on the builder's track. A move stays if any of
+// its share lies inside. This used to lay the moves out most-popular first, so
+// lowering "Exclude moves above" cut the rare tail instead of the mainstream.
+// The luck trait shifts the window: Good day toward the mainstream, Bad day
+// toward the rare end. Time pressure does not narrow it — it acts on
+// temperature instead (timePressureTempByThink), which is margin-aware and
+// doesn't destabilize near-forced top moves the way a percentile cutoff does.
+function _distributionBand(moveProbs, luckVal) {
+  const lo = Math.max(0, Math.min(95, botDayLower + luckVal * 4));
+  const hi = Math.max(lo + 5, Math.min(100, botDayUpper + luckVal * 4));
+  if (!(lo > 0 || hi < 100)) return moveProbs;
+  const sorted = Object.entries(moveProbs).sort((a, b) => a[1] - b[1]);
+  const total  = sorted.reduce((s, [, p]) => s + p, 0);
+  if (!(total > 0)) return moveProbs;
+  const band = { lo: (lo / 100) * total, hi: (hi / 100) * total };
+  let cum = 0;
+  const kept = {};
+  for (const [m, p] of sorted) {
+    const end = cum + p;
+    // A zero-share move has no width; it is inside when the band starts at 0.
+    if (cum < band.hi && (end > band.lo || band.lo === 0)) kept[m] = p;
+    cum = end;
+  }
+  return Object.keys(kept).length ? kept : moveProbs;
+}
+
 // opts.rawWeights — the caller is not handing us a popularity distribution.
 // Flounder passes a uniform weight over a band of candidate moves and wants
 // back nothing but the attractor scoring, so the three stages that read a
@@ -1376,17 +1419,7 @@ function applyMoveAttractors(moveProbs, opts) {
   const hasKingSafe  = kingSafetyVal !== 0;
   const hasProphylax = prophylaxVal  !== 0;
 
-  // ── Min-probability filter (Maia3 / LC modes) ─────────────────────────────
-  // Absolute popularity floor — an honest distribution control. The old
-  // relative "blunder limit" cutoff (e^(−cp/100) of the top move) pretended
-  // probability ratios were centipawns; real centipawn enforcement now
-  // happens post-pick in applyCpBudgetAcceptance (Stockfish-verified).
-  if (!rawWeights && botMinProbPct > 0) {
-    const entries  = Object.entries(moveProbs).sort((a, b) => b[1] - a[1]);
-    const absFloor = botMinProbPct / 100;
-    const passed   = entries.filter(([, p]) => p >= absFloor);
-    moveProbs = Object.fromEntries(passed.length ? passed : (entries.length ? [entries[0]] : []));
-  }
+  if (!rawWeights) moveProbs = _minProbFloor(moveProbs);
 
   // ── CP budget → per-unit scale ────────────────────────────────────────────
   // The budget is re-divided among whatever is actually exerting an opinion this
@@ -1419,28 +1452,7 @@ function applyMoveAttractors(moveProbs, opts) {
     ? cpBudget / (totalAbs * CP_PER_LOG_UNIT)
     : 0;
 
-  // ── Quality range + luck shift ────────────────────────────────────────────
-  // Static band set by the personality's own Day Lower/Upper sliders — time
-  // pressure no longer narrows this window; it acts on temperature instead
-  // (see timePressureTempByThink), which is margin-aware and doesn't destabilize
-  // near-forced top moves the way a rank/percentile cutoff does.
-  let lo = Math.max(0, Math.min(95, botDayLower - luckVal * 4));
-  let hi = Math.max(lo + 5, Math.min(100, botDayUpper - luckVal * 4));
-  let filtered = moveProbs;
-  if (!rawWeights && (lo > 0 || hi < 100)) {
-    const sorted = Object.entries(moveProbs).sort((a, b) => b[1] - a[1]);
-    const total  = sorted.reduce((s, [, p]) => s + p, 0);
-    if (total > 0) {
-      const band = { lo: (lo / 100) * total, hi: (hi / 100) * total };
-      let cum = 0, band_probs = {};
-      for (const [m, p] of sorted) {
-        const end = cum + p;
-        if (end > band.lo && cum < band.hi) band_probs[m] = p;
-        cum = end;
-      }
-      if (Object.keys(band_probs).length) filtered = band_probs;
-    }
-  }
+  let filtered = rawWeights ? moveProbs : _distributionBand(moveProbs, luckVal);
 
   // ── Bad Day mode: pick lowest-probability plausible move ─────────────────
   // Grandmaster Bad Day: sort by probability ascending, return the first move
@@ -2052,6 +2064,89 @@ function pickFromProbs(moveProbs, temperature) {
   return sampleFromProbs(moveProbs, temperature);
 }
 
+// ── Blind Conviction ─────────────────────────────────────────────────────────
+// Conviction plays the top of popularity × personality, so a personality can
+// only overturn a popularity gap of e^(2 × Budget / 150) — about 55× at the
+// Budget's 300 cp maximum — and a rare move it loves stays out of reach. Blind
+// Conviction takes popularity out of the choice: every move the Move
+// Distribution Range lets through starts level, the personality ranks them,
+// and the bot plays its favourite among those within the CP Budget of the most
+// popular move. Popularity keeps two jobs: the Range's floor (a move no player
+// at this rating would make is not a candidate) and ties (where the
+// personality has no opinion the more popular move goes first, so the bot
+// plays like a person until its style has something to say). A move better
+// than the popular one is always within budget — chosen by a simple formula,
+// it is coincidence, not brilliance. The Budget is purely the centipawn limit
+// here: an argmax does not move when the personality's scale does.
+var botBlindConviction = false;
+
+// The personality's order of preference over the candidates. Synchronous: it
+// scores moves against the live board globals, which a premove points at its
+// hypothetical position (_botWithPosition) for the length of the call.
+function blindConvictionOrder(rawProbs) {
+  const luckVal = (window._bcpAttractorValues || {}).luck || 0;
+  const cands = Object.keys(_distributionBand(_minProbFloor(rawProbs), luckVal));
+  if (!cands.length) return [];
+  const flat = {};
+  for (const m of cands) flat[m] = 1 / cands.length;
+  const w = applyMoveAttractors(flat, { rawWeights: true });
+  return cands.sort((a, b) => ((w[b] || 0) - (w[a] || 0)) || ((rawProbs[b] || 0) - (rawProbs[a] || 0)));
+}
+
+// The pick: the first move in that order within the Budget of the most popular
+// move. One probe scores every candidate, so the favourite within budget is
+// found even when the personality's top choices are all unsound, as a crude
+// heuristic's often are. `evals` skips the probe when the caller has already
+// scored the moves (Flounder's probe covers every legal one). `strict`, as on
+// the other guards: a premove that cannot be checked is not played. A move the
+// bot must play falls back to the popular move, never to an unchecked favourite.
+async function blindConvictionPick(fen, rawProbs, order, strict, evals) {
+  _cpBudgetVerifiedThisMove = false;
+  let top = null, topP = -1;
+  for (const m in rawProbs) { if (rawProbs[m] > topP) { topP = rawProbs[m]; top = m; } }
+  if (!order || !order.length) return top;
+  // Stalemate-seeking throws material on purpose, as under ordinary Conviction.
+  if (order[0] === top || _staleSeekThisMove) return order[0];
+  const failed = () => (strict ? null : top);
+  try {
+    const budget = window._bcpCpBudget != null ? Math.max(0, +window._bcpCpBudget || 0) : 100;
+    if (!evals || evals[top] == null) {
+      if (!sfReady) { try { await sfInit(); } catch (e) { return failed(); } }
+      evals = await sfEvalMoves(fen, [top, ...order.filter(m => m !== top)], 10);
+    }
+    if (!evals || evals[top] == null) return failed();
+    _lastEvalProbe = { fen: fen, evals: evals };
+    for (const m of order) {
+      if (evals[m] == null || evals[top] - evals[m] > budget) continue;
+      if (m !== order[0]) {
+        console.log('[Blind] favourite', order[0], 'is over the', budget,
+          'cp budget vs most-popular', top, '— playing', m);
+      }
+      _cpBudgetVerifiedThisMove = true;
+      return m;
+    }
+    return top;
+  } catch (e) {
+    return failed();
+  }
+}
+
+function blindConvictionMove(fen, rawProbs, strict, evals) {
+  return blindConvictionPick(fen, rawProbs, blindConvictionOrder(rawProbs), strict, evals);
+}
+
+// The pick from one move's distribution, and the guards that hold it — the
+// same on every Maia and opening-book path. Blind Conviction is its own guard:
+// its pick is checked against the Budget, and may beat the popular move.
+async function botPickFromProbs(fen, rawProbs, temperature) {
+  if (botBlindConviction) return blindConvictionMove(fen, rawProbs);
+  const shaped = applyMoveAttractors(rawProbs);
+  let uci = pickFromProbs(shaped, temperature);
+  uci = await applyCpBudgetAcceptance(fen, uci, rawProbs, shaped);
+  uci = await applyDegradationEvalGuard(fen, uci, rawProbs);
+  return applyHardFloorBackstop(fen, uci, rawProbs);
+}
+
 // ── Position entropy (complexity) ────────────────────────────────────────────
 function positionEntropy(moveProbs) {
   let e = 0;
@@ -2253,6 +2348,14 @@ async function botFlounderTurn(fen, clockMs, startMs, baseElo) {
   let uci, delay;
   if (pick && pick.uci) {
     uci = pick.uci;
+    // Blind Conviction: Flounder's own selection distribution stands in for
+    // Maia's (its most likely move is the best one), and its probe has already
+    // scored every legal move, so the Budget check costs nothing more.
+    if (botBlindConviction && pick.evals) {
+      const probs = {};
+      for (const m in pick.evals) probs[m] = (pick.dist && pick.dist[m]) || 0;
+      uci = (await blindConvictionMove(fen, probs, false, pick.evals)) || uci;
+    }
     lastBotMoveSource = 'Flounder';
     // The CP-budget, degradation and hard-floor guards are deliberately NOT
     // applied. All three exist because Maia's probabilities are popularity
@@ -3047,11 +3150,7 @@ async function botMakeMove() {
         _botMoveThinkSec = preciseThinkSecM3; // actual think drives curve B
         const adjTemp = complexityAdjustedTemp(m3EffTemp);
         await _ensureMoveComplexity(fen, m3Probs);
-        const m3Shaped = applyMoveAttractors(m3Probs);
-        uciMove = pickFromProbs(m3Shaped, adjTemp);
-        uciMove = await applyCpBudgetAcceptance(fen, uciMove, m3Probs, m3Shaped);
-        uciMove = await applyDegradationEvalGuard(fen, uciMove, m3Probs);
-        uciMove = await applyHardFloorBackstop(fen, uciMove, m3Probs);
+        uciMove = await botPickFromProbs(fen, m3Probs, adjTemp);
         _botMoveThinkSec = null;
         console.log('[Maia3 FULL] chose:', uciMove, '| temp:', adjTemp.toFixed(2), '(base:', m3EffTemp.toFixed(2), ')| inf:', inferenceMs, 'ms | extra wait:', delay, 'ms');
       } else {
@@ -3117,11 +3216,7 @@ async function botMakeMove() {
         _botMoveClockMs = clockMs;
         _botMoveThinkSec = preciseThinkSec;
         await _ensureMoveComplexity(fen, probs);
-        const maiaShaped = applyMoveAttractors(probs);
-        uciMove = pickFromProbs(maiaShaped, complexityAdjustedTemp(effectiveTemp));
-        uciMove = await applyCpBudgetAcceptance(fen, uciMove, probs, maiaShaped);
-        uciMove = await applyDegradationEvalGuard(fen, uciMove, probs);
-        uciMove = await applyHardFloorBackstop(fen, uciMove, probs);
+        uciMove = await botPickFromProbs(fen, probs, complexityAdjustedTemp(effectiveTemp));
         _botMoveThinkSec = null;
       } else {
         // Off book with no Maia model to hand over to: Flounder at the rating
@@ -3178,13 +3273,9 @@ async function botMakeMove() {
         _botMoveClockMs = clockMs;
         _botMoveThinkSec = preciseThinkSecLcsf;
         await _ensureMoveComplexity(fen, lcsfProbs);
-        const lcsfShaped = applyMoveAttractors(lcsfProbs);
         // complexityAdjustedTemp was missing here alone, so Front-runner /
         // Swindler did nothing while a Flounder + book bot was still in book.
-        uciMove = pickFromProbs(lcsfShaped, complexityAdjustedTemp(lcsfEffTemp));
-        uciMove = await applyCpBudgetAcceptance(fen, uciMove, lcsfProbs, lcsfShaped);
-        uciMove = await applyDegradationEvalGuard(fen, uciMove, lcsfProbs);
-        uciMove = await applyHardFloorBackstop(fen, uciMove, lcsfProbs);
+        uciMove = await botPickFromProbs(fen, lcsfProbs, complexityAdjustedTemp(lcsfEffTemp));
         _botMoveThinkSec = null;
       } else {
         // Off book: exactly the Flounder engine's own move — same dial, same
@@ -3226,11 +3317,7 @@ async function botMakeMove() {
           _botMoveClockMs  = clockMs;
           _botMoveThinkSec = preciseThinkSecBk;
           await _ensureMoveComplexity(fen, bookProbs);
-          const bkShaped = applyMoveAttractors(bookProbs);
-          uciMove = pickFromProbs(bkShaped, bkTemp);
-          uciMove = await applyCpBudgetAcceptance(fen, uciMove, bookProbs, bkShaped);
-          uciMove = await applyDegradationEvalGuard(fen, uciMove, bookProbs);
-          uciMove = await applyHardFloorBackstop(fen, uciMove, bookProbs);
+          uciMove = await botPickFromProbs(fen, bookProbs, bkTemp);
           _botMoveThinkSec = null;
         } else {
           lichessExplorerActive = false;   // off book — do not ask again this game
@@ -3288,11 +3375,7 @@ async function botMakeMove() {
             _botMoveClockMs = clockMs;
             _botMoveThinkSec = preciseThinkSecHyb;
             await _ensureMoveComplexity(fen, probs);
-            const hybShaped = applyMoveAttractors(probs);
-            uciMove = pickFromProbs(hybShaped, effectiveTemp);
-            uciMove = await applyCpBudgetAcceptance(fen, uciMove, probs, hybShaped);
-            uciMove = await applyDegradationEvalGuard(fen, uciMove, probs);
-            uciMove = await applyHardFloorBackstop(fen, uciMove, probs);
+            uciMove = await botPickFromProbs(fen, probs, effectiveTemp);
             _botMoveThinkSec = null;
           } else {
             // Maia3 not downloaded or failed — Flounder at the slot's own ELO,
@@ -3905,8 +3988,11 @@ async function _botPremoveArmRun(pmRating) {
     // the duration of the call — otherwise every candidate is scored against a
     // board where its piece isn't on the from-square. Swap, shape, restore.
     var pmTemp = timePressureTempByThink(botMaiaBaseTemp(), PREMOVE_THINK_SEC);
-    var shapedReply = null;
+    var shapedReply = null, blindOrder = null;
     var replyUci = _botWithPosition(hypBoard, hypTurn, hypEp, hypCastle, function() {
+      // Blind Conviction ranks here, where the attractors can see the
+      // position; its Budget check runs below, with the other guards'.
+      if (botBlindConviction) { blindOrder = blindConvictionOrder(replyProbs); return blindOrder[0]; }
       shapedReply = applyMoveAttractors(replyProbs);
       return pickFromProbs(shapedReply, pmTemp);
     });
@@ -3919,12 +4005,17 @@ async function _botPremoveArmRun(pmRating) {
     // (engine busy) means no premove this turn, never an unchecked one. Each
     // guard is a no-op when the pick is the popular move itself, so the common
     // case costs no engine time at all.
-    replyUci = await applyCpBudgetAcceptance(hypFen, replyUci, replyProbs, shapedReply, true);
-    if (!replyUci || myGen !== _botPremoveGen || myGameGen !== _botGameGen) return;
-    replyUci = await applyDegradationEvalGuard(hypFen, replyUci, replyProbs, true, PREMOVE_THINK_SEC);
-    if (!replyUci || myGen !== _botPremoveGen || myGameGen !== _botGameGen) return;
-    replyUci = await applyHardFloorBackstop(hypFen, replyUci, replyProbs, true);
-    if (!replyUci || myGen !== _botPremoveGen || myGameGen !== _botGameGen) return;
+    if (blindOrder) {
+      replyUci = await blindConvictionPick(hypFen, replyProbs, blindOrder, true);
+      if (!replyUci || myGen !== _botPremoveGen || myGameGen !== _botGameGen) return;
+    } else {
+      replyUci = await applyCpBudgetAcceptance(hypFen, replyUci, replyProbs, shapedReply, true);
+      if (!replyUci || myGen !== _botPremoveGen || myGameGen !== _botGameGen) return;
+      replyUci = await applyDegradationEvalGuard(hypFen, replyUci, replyProbs, true, PREMOVE_THINK_SEC);
+      if (!replyUci || myGen !== _botPremoveGen || myGameGen !== _botGameGen) return;
+      replyUci = await applyHardFloorBackstop(hypFen, replyUci, replyProbs, true);
+      if (!replyUci || myGen !== _botPremoveGen || myGameGen !== _botGameGen) return;
+    }
 
     var rm = uciToSq(replyUci);
     if (!rm || rm.from == null || rm.to == null) return;

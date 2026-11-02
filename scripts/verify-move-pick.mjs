@@ -99,6 +99,40 @@ const redraw = await page.evaluate(() => {
   catch (e) { return e.message; }
 });
 ok(redraw === true, 'moving the slider redraws the chart without error');
+
+// The rare favourite: g4, loved by the demo personality, 0.4% of players.
+// Conviction lifts it a little and never plays it; Blind Conviction plays it
+// once the Budget covers its cost and the Range lets it in.
+const rare = await page.evaluate(() => {
+  const all = TEMP_CHART_MOVES.map(m => m.p);
+  const G4 = TEMP_CHART_MOVES.findIndex(m => m.label === 'g4');
+  const lo = document.getElementById('day-lower');
+  const conv = (budget) => _convictionMix(_persAdjusted(_chartInRange(all), budget), 1.0, 100);
+  const blindAt = (budget) => _chartBlindPlayed(all, _chartInRange(all), budget).indexOf(1);
+  const out = {
+    sum: all.reduce((a, b) => a + b, 0),
+    m: all[G4], p300: _persAdjusted(_chartInRange(all), 300)[G4],
+    conv300: conv(300)[G4],
+    convTop190: conv(190).indexOf(1), convTop200: conv(200).indexOf(1),
+    blind100: blindAt(100), blind50: blindAt(50), blind0: blindAt(0), G4,
+    label: _chartPct(all[G4]),
+  };
+  lo.value = 1; onDaySlider();
+  out.floor1 = blindAt(100);
+  lo.value = 0; onDaySlider();
+  try { setBlindConviction(true); setBlindConviction(false); out.redraw = true; } catch (e) { out.redraw = e.message; }
+  return out;
+});
+ok(near(rare.sum, 1), 'the chart\'s Maia odds still sum to 100%');
+ok(rare.p300 > rare.m && rare.p300 < 0.02, 'g4: the personality lifts it only a little, even at Budget 300 (' +
+   (rare.m * 100).toFixed(1) + '% → ' + (rare.p300 * 100).toFixed(1) + '%)');
+ok(rare.conv300 === 0, 'g4: Conviction 100% never plays it');
+ok(rare.convTop190 === 0 && rare.convTop200 === 2, 'Conviction 100%: c4 overtakes e4 between Budget 190 and 200');
+ok(rare.blind100 === rare.G4, 'Blind conviction plays g4 at Budget 100 (it costs 90)');
+ok(rare.blind50 === 2 && rare.blind0 === 0, 'Blind under g4\'s cost plays c4 (Budget 50); at Budget 0, e4');
+ok(rare.floor1 === 2, 'Blind with "Exclude lowest" at 1%: g4 is out, c4 is played');
+ok(rare.label === '0.4%', 'the rare share prints as 0.4%, not 0%');
+ok(rare.redraw === true, 'switching Blind conviction redraws the chart without error');
 const label = await page.evaluate(() => { onConvictionSlider(45); return document.getElementById('v-conviction').textContent; });
 ok(label === '45%', 'the readout follows the slider (' + label + ')');
 
@@ -225,6 +259,50 @@ ok(gate.fl.conv && gate.fl.convInput, 'Flounder-only: both Conviction sliders gr
 ok(!gate.book, 'Flounder + book: live (they act on book moves)');
 ok(!gate.ma, 'Maia 3: live');
 
+// ── Blind Conviction ────────────────────────────────────────────────────────
+console.log('blind conviction:');
+const blind = await page.evaluate(() => {
+  const pick = (e) => selEngineMode(document.querySelector('#engine-mode-grid .mcard[data-engine="' + e + '"]'));
+  const why = (id) => (document.getElementById(id).nextElementSibling?.textContent || '');
+  const out = { off: getBotConfig().blindConviction === false && !_blindConviction() };
+  setBlindConviction(true);
+  out.cfg = getBotConfig().blindConviction === true;
+  out.conv = document.getElementById('conviction-row').classList.contains('inert')
+          && document.getElementById('conviction-row-mirror').classList.contains('inert')
+          && document.getElementById('r-conviction').inert && document.getElementById('r-conviction-mirror').inert;
+  out.convWhy = /Blind conviction is on/.test(why('conviction-row-mirror'));
+  onConvictionSlider(0); hideConvToast(); selPersonality('attacky');
+  out.noToast = !document.getElementById('conv-toast').classList.contains('show');
+  const tz = document.querySelector('#engine-temp-col .temp-slider-zone');
+  out.temp = tz.classList.contains('inert') && document.getElementById('temp-t-slider').inert &&
+             /Blind conviction is on/.test(why('engine-temp-col') + tz.nextElementSibling?.textContent);
+  // Flounder-only: the Range filters Flounder's own distribution, so it shows.
+  setEngineBook('off');
+  pick('stockfish');
+  syncControlGating();
+  out.rangeFl = document.getElementById('move-quality-range').style.visibility !== 'hidden';
+  pick('maia3');
+  // Saved and loaded with the bot.
+  const saved = getBotConfig();
+  setBlindConviction(false);
+  applyBotConfig(saved);
+  out.loaded = _blindConviction() === true;
+  const legacy = Object.assign({}, saved); delete legacy.blindConviction;
+  applyBotConfig(legacy);
+  out.legacyOff = _blindConviction() === false;
+  out.live = !document.getElementById('conviction-row').classList.contains('inert') &&
+             !document.querySelector('#engine-temp-col .temp-slider-zone').classList.contains('inert');
+  return out;
+});
+ok(blind.off, 'off by default, and in the config');
+ok(blind.cfg, 'switched on, the config carries it');
+ok(blind.conv && blind.convWhy, 'on: both Conviction sliders greyed, with the reason');
+ok(blind.noToast, 'on: choosing a personality shows no "Conviction set to 100%" note');
+ok(blind.temp, 'on: the temperature greyed, with the reason');
+ok(blind.rangeFl, 'on, Flounder-only: the Move Distribution Range shows');
+ok(blind.loaded, 'saved and loaded with the bot');
+ok(blind.legacyOff && blind.live, 'a bot saved before it loads with it off, and the controls live again');
+
 // ── Mirror user with both time-pressure curves off ───────────────────────────
 console.log('mirror, curves off:');
 const mir = await page.evaluate(() => {
@@ -340,6 +418,52 @@ const legacyApp = await page.evaluate(async () => {
   return { conv: botConvictionPct, nu: typeof botNoUpgradeGuard };
 });
 ok(legacyApp.conv === 30 && legacyApp.nu === 'undefined', 'app reads an old config as it played (30%) and ignores its switch');
+ok(await page.evaluate(() => botBlindConviction === false), 'app: an old config plays without Blind Conviction');
+
+// A real game with Blind Conviction on: a Flounder Attacker (no model download),
+// started from the builder's own Start, answering three moves.
+await page.evaluate(() => openBotModal());
+const frame2 = await (await page.waitForSelector('#botModalFrame')).contentFrame();
+await frame2.waitForFunction(() => typeof setBlindConviction === 'function' && typeof startGame === 'function');
+await frame2.waitForTimeout(300);
+await frame2.evaluate(() => {
+  setEngineBook('off');
+  selEngineMode(document.querySelector('#engine-mode-grid .mcard[data-engine="stockfish"]'));
+  setElo(1200);
+  selPersonality('attacky');
+  setBlindConviction(true);
+  document.querySelector('#timing-mode-grid .mcard[data-v="Instantaneous"]').click();
+  startGame();
+});
+await page.waitForTimeout(1500);
+const blindLive = await page.evaluate(() => ({ on: botBlindConviction, active: botActive, human: botPlayerColor }));
+ok(blindLive.on === true && blindLive.active, 'builder → app: Blind Conviction on, game started');
+let blindReplies = 0, blindTries = 0;
+for (let i = 0; i < 3; i++) {
+  const before = await page.evaluate(() => gameMovesAlgebraic.length);
+  // Whichever side the human has: play its first legal move when it is to move.
+  const played = await page.evaluate(() => {
+    const me = botPlayerColor === 'white' ? 'w' : 'b';
+    if (turn !== me || gameOver) return false;
+    for (let sq = 0; sq < 64; sq++) {
+      const p = board[sq];
+      if (!p || p.color !== me) continue;
+      const to = legalMovesFor(sq, board, epSq, castling)[0];
+      if (to != null) { executeMove(sq, typeof to === 'object' ? to.to : to); return true; }
+    }
+    return false;
+  });
+  if (!played) { await page.waitForTimeout(1000); continue; }
+  blindTries++;
+  let after = before;
+  for (let w = 0; w < 20000 && after < before + 2; w += 250) {
+    await page.waitForTimeout(250);
+    after = await page.evaluate(() => gameMovesAlgebraic.length);
+  }
+  if (after >= before + 2) blindReplies++;
+}
+ok(blindTries > 0 && blindReplies === blindTries, 'the Blind bot answered every move (' + blindReplies + '/' + blindTries + ')');
+console.log('    moves: ' + (await page.evaluate(() => gameMovesAlgebraic.join(' '))));
 
 // ── The Lichess page still comes up ──────────────────────────────────────────
 console.log('lichess page:');
