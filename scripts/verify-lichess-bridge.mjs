@@ -351,7 +351,9 @@ await ctx.addInitScript(() => {
 const page = await ctx.newPage();
 const pageErrors = [];
 page.on('pageerror', e => pageErrors.push(e.message));
-page.on('dialog', d => d.accept());
+// Accepted, but kept: a headless host (bot-runner) has nobody to answer one.
+const dialogs = [];
+page.on('dialog', d => { dialogs.push(d.message()); d.accept(); });
 const URL_ = APP + '?lichess&lichessApi=http://localhost:' + MOCK_PORT;
 await page.goto(URL_, { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => typeof quickBotPick === 'function' && typeof lichessBuilderState === 'function');
@@ -539,6 +541,8 @@ await until(() => M.challenges[c4].gameId, 5000);
 const g4 = M.games[M.challenges[c4].gameId];
 await until(() => g4.moves.length >= 6, 90000, 'six plies');
 const pliesAtReload = g4.moves.length;
+check(await page.evaluate(() => !localStorage.getItem('bm_liveGame')), 'a Lichess game writes no resume-a-local-game snapshot');
+const dialogsAtReload = dialogs.length;
 await page.reload({ waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => typeof quickBotPick === 'function');
 check(await page.evaluate(() => lbState === 'connecting') && await panelShown(page), 'the reloaded host shows its panel at once, reconnecting');
@@ -546,6 +550,7 @@ await page.waitForTimeout(800);
 await page.evaluate(() => { quickBotPick('1200'); });
 await until(() => g4.moves.length >= pliesAtReload + 4 || g4.status !== 'started', 90000, 'play after reload');
 check(g4.moves.length >= pliesAtReload + 4 || g4.status !== 'started', 'reconnected and kept playing (' + pliesAtReload + ' → ' + g4.moves.length + ' plies)');
+check(dialogs.length === dialogsAtReload, 'and reconnecting asked nothing (no "forfeit your bot game?")', dialogs.slice(dialogsAtReload));
 await until(() => g4.status !== 'started', 120000, 'game 4 to finish');
 await sleep(800);
 check(await pageBoard() === placement(g4.bd), 'board matches the server after the reload');

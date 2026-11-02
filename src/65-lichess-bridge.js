@@ -73,6 +73,14 @@ function lichessGameLive() {
 function lichessHosting() {
   return lbWantConnected || lichessGameLive();
 }
+// Hosting, or reconnecting as a host tab that has just (re)loaded. Its board
+// belongs to Lichess, so the page's resume-a-live-game snapshot is neither
+// written nor restored here: restored, it was a local game in progress, and
+// Connect stopped to ask whether to forfeit it — a question a headless host
+// never answers. A reload rebuilds from the server's move list instead.
+function lichessHostTab() {
+  return lichessHosting() || lbState === 'connecting';
+}
 function lichessStartingGame() { return lbStarting; }
 function lichessBoardLocked() { return lichessHosting(); }
 // Shown in the human's seat while a Lichess game is on the board.

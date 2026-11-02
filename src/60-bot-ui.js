@@ -1180,6 +1180,7 @@ function botCollectConfig(configName, botNameVal) {
       dayUpper:        (typeof botDayUpper   !== 'undefined') ? botDayUpper   : null,
       badDayMode:      (typeof botBadDayMode !== 'undefined') ? !!botBadDayMode : false,
       convictionPct:   (typeof botConvictionPct  !== 'undefined') ? botConvictionPct  : null,
+      blindConviction: (typeof botBlindConviction !== 'undefined') ? !!botBlindConviction : false,
       maiaTempValue:   (typeof botMaiaTempValue !== 'undefined') ? botMaiaTempValue : null,
       sfTempLevel:     (typeof botSfTempLevel   !== 'undefined') ? botSfTempLevel   : null,
       pressureDepth:   (typeof botPressureDepth !== 'undefined') ? botPressureDepth : null,
@@ -1261,6 +1262,7 @@ function botApplyConfig(cfg) {
         if (_pz.dayUpper   != null) botDayUpper   = _pz.dayUpper;
         botBadDayMode = !!_pz.badDayMode;
         if (_pz.convictionPct  != null) botConvictionPct  = _pz.convictionPct;
+        botBlindConviction = !!_pz.blindConviction;
         if (_pz.maiaTempValue != null && typeof botMaiaTempValue !== 'undefined') botMaiaTempValue = _pz.maiaTempValue;
         if (_pz.sfTempLevel   != null && typeof botSfTempLevel   !== 'undefined') botSfTempLevel   = _pz.sfTempLevel;
         if (_pz.pressureDepth != null) botPressureDepth = _pz.pressureDepth;
@@ -2253,6 +2255,8 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
   // and time pressure; see applyDegradationEvalGuard.)
   botConvictionPct  = (cfg.convictionPct != null)
     ? Math.max(0, Math.min(100, +cfg.convictionPct || 0)) : 30;
+  // Blind Conviction: the personality alone picks the move (blindConvictionPick).
+  botBlindConviction = !!cfg.blindConviction;
 
   // Draw behaviour + stalemate seeking (desperation)
   // Draws: accept unless more than 200 cp ahead, by default. A config from
@@ -2529,6 +2533,11 @@ function bmSessionEligible() {
   if (typeof replayActive !== 'undefined' && replayActive) return false;
   if (typeof gameOver === 'undefined' || gameOver) return false;
   if (typeof gameMovesAlgebraic === 'undefined' || !gameMovesAlgebraic.length) return false;
+  // Lichess holds this game. Asked last: start-up (loadPos → updatePlayerBoxes)
+  // gets here before the bridge's state further down the page exists, and
+  // touching it then throws — but with no moves played, the line above has
+  // already returned.
+  if (typeof lichessHostTab === 'function' && lichessHostTab()) return false;
   return true;
 }
 
@@ -2596,6 +2605,8 @@ function bmSessionRead() {
 }
 
 function bmSessionRestore() {
+  // A snapshot written before host tabs stopped writing one.
+  if (typeof lichessHostTab === 'function' && lichessHostTab()) { bmSessionClear(); return false; }
   const snap = bmSessionRead();
   if (!snap) return false;
   try {

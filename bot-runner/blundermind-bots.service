@@ -1,0 +1,20 @@
+# systemd unit for the bot runner. Paths assume the repo was cloned into the
+# home folder of the user "ubuntu" (Oracle's and AWS's Ubuntu images); change
+# User and WorkingDirectory to match yours. See bot-runner/README.md.
+[Unit]
+Description=Blundermind Lichess bots
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/Blundermindwithbots
+ExecStart=/usr/bin/node bot-runner/runner.mjs
+Restart=always
+RestartSec=30
+# The browsers are the runner's children; they stop with it.
+KillMode=control-group
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
