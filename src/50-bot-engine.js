@@ -4139,6 +4139,7 @@ function botPremoveTryFire() {
     _botPremoveBusted = true;   // next think gets the re-evaluation tax
     botPremoveNote(pre, false);
     botPremoveUpdateBadge();
+    if (typeof pzOnPremove === 'function') pzOnPremove(pre, false);
     return false;
   }
   var legal = legalMovesFor(pre.from, board, epSq, castling);
@@ -4147,6 +4148,7 @@ function botPremoveTryFire() {
     _botPremoveBusted = true;   // next think gets the re-evaluation tax
     botPremoveNote(pre, false);
     botPremoveUpdateBadge();
+    if (typeof pzOnPremove === 'function') pzOnPremove(pre, false);
     return false;
   }
 
@@ -4157,6 +4159,10 @@ function botPremoveTryFire() {
   lastBotMoveSource = 'PREMOVE';
   botPremoveNote(pre, true);
   botPremoveUpdateBadge();
+
+  // A premove puzzle judges the human's move — still the last one recorded —
+  // before the premove lands on it.
+  if (typeof pzOnPremove === 'function') pzOnPremove(pre, true);
 
   // Record for the bot's own move history, same as any engine move
   var san = null;
@@ -4265,6 +4271,10 @@ function botPostMoveHook() {
     botSnapOppClock();
   }
 
+  // A premove puzzle shows its verdict once the move it was waiting for has
+  // landed. A game that just ended never reaches the branch below.
+  if (gameOver && typeof pzAfterMove === 'function') pzAfterMove();
+
   if (botActive && !botThinking && !gameOver) {
     const botColor = botPlayerColor === 'white' ? 'b' : 'w';
     if (turn === botColor) {
@@ -4282,6 +4292,7 @@ function botPostMoveHook() {
       // Arm the bot's own premove for the reply it will make to this turn.
       // Async and non-blocking — the human can move at any point.
       if (typeof botPremoveArm === 'function') botPremoveArm();
+      if (typeof pzAfterMove === 'function') pzAfterMove();
     }
   }
 }

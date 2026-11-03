@@ -1525,6 +1525,8 @@ function render(){
 
   // exploration banner removed
   } catch(e){ console.warn('Indicator render error:',e); }
+  // Premove puzzle arrows: the queued premove, the answer, a busted try.
+  if(typeof pzDrawOverlay==='function') pzDrawOverlay(ctx);
   // (no canvas flip to restore)
   // Draw rank/file labels in screen coords (after restore so not flipped)
   // Coordinates were 9px at 30% black: about 2.9:1 on a light square and
@@ -1889,6 +1891,7 @@ function syncActionRow() {
     btn.className = 'gbtn rematch-btn';
     btn.onclick = () => {
       if (typeof mpRoomId !== 'undefined' && mpRoomId) mpOfferRematch();
+      else if (typeof pzRematch === 'function' && pzRematch()) return;
       else if (typeof botActive !== 'undefined' && botActive) botStart();
       else resetGame();
     };
@@ -2124,6 +2127,8 @@ function updatePlayerBoxes(){
   // Which box is on top follows the drawn orientation, not the seat — so a
   // view flip moves the clocks with the pieces they belong to.
   if(typeof syncBoardOrientation === 'function') syncBoardOrientation();
+  // Close premove puzzles if something else has taken the board.
+  if(typeof pzSync === 'function') pzSync();
   const mat = computeMaterial(board);
   const diff = mat.w - mat.b;
   const inChk = inCheck(board, turn);

@@ -2186,6 +2186,7 @@ function proSync(){
 // amateur action button.
 function gameRematch(){
   if (typeof mpRoomId !== 'undefined' && mpRoomId) mpOfferRematch();
+  else if (typeof pzRematch === 'function' && pzRematch()) return;
   else if (typeof botActive !== 'undefined' && botActive) botStart();
   else resetGame();
 }

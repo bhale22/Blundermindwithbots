@@ -829,7 +829,7 @@ function botEngineTag() {
 }
 
 function botUpdatePlayerNames(humanColor) {
-  var botName   = botGenerateName() + botEngineTag();
+  var botName   = (typeof pzBotName === 'function' && pzBotName()) || (botGenerateName() + botEngineTag());
   var humanName = (typeof lichessOpponentName === 'function' && lichessOpponentName()) || 'You';
   var nameW = document.querySelector('#playerBoxW .player-name');
   var nameB = document.querySelector('#playerBoxB .player-name');
@@ -898,7 +898,10 @@ async function botStart() {
   // Requiring the challenge to be withdrawn first is what makes that impossible.
   const _live    = typeof _isLiveGame === 'function' && _isLiveGame();
   const _pending = typeof _isPendingChallenge === 'function' && _isPendingChallenge();
-  if (_live || _pending) {
+  // Try again / Next on a premove puzzle replaces a puzzle game, which has
+  // nothing to forfeit.
+  const _pzRestart = window._pzStarting && typeof pzGameOnBoard === 'function' && pzGameOnBoard();
+  if ((_live || _pending) && !_pzRestart) {
     if (!confirmAbandonLiveGame('Start a new bot game')) return;
     // Tear down an online game; an active bot game is replaced below anyway
     if (typeof mpRoomId !== 'undefined' && mpRoomId) {
@@ -910,8 +913,13 @@ async function botStart() {
     }
   }
 
-  // This is the bot that was played, whatever happens to the game.
-  bmLastBotSave();
+  // The player's own game closes premove puzzles, which gives their bot back
+  // before anything below reads it.
+  if (!window._pzStarting && typeof pzLeave === 'function') pzLeave(true);
+
+  // This is the bot that was played, whatever happens to the game. A puzzle's
+  // borrowed opponent is not the player's bot.
+  if (!window._pzStarting) bmLastBotSave();
 
   botActive = false;
   botThinking = false;
@@ -921,8 +929,10 @@ async function botStart() {
   botGhostResponses = {};
   botLastHoverSq = -1;
 
-  // Check engine readiness and warn the user if something isn't loaded
-  _checkEngineReady(botTab);
+  // Check engine readiness and warn the user if something isn't loaded. A
+  // premove puzzle's card says so itself, with a download button, instead of
+  // toasting on every Try again.
+  if (!window._pzStarting) _checkEngineReady(botTab);
 
   // Pre-init Stockfish in background
   if (botTab !== 'maia') sfInit().catch(e => console.warn('SF init:', e));
@@ -1994,6 +2004,8 @@ function submitHaiku() {
    BOT CONTROL PANEL MODAL
 ═══════════════════════════════════════════════════════════════ */
 function openBotModal() {
+  // The builder edits the player's own bot, which puzzles have borrowed.
+  if (typeof pzLeave === 'function') pzLeave();
   const modal = document.getElementById('botModal');
   if (modal) modal.style.display = 'block';
   // Ensure Maia worker is running so it can detect the cached model in IndexedDB.
@@ -2531,6 +2543,8 @@ const BM_SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 function bmSessionEligible() {
   if (typeof mpRoomId !== 'undefined' && mpRoomId) return false;   // multiplayer
   if (typeof replayActive !== 'undefined' && replayActive) return false;
+  // A premove puzzle is played on a borrowed bot and restarts in one tap.
+  if (typeof pzGameOnBoard === 'function' && pzGameOnBoard()) return false;
   if (typeof gameOver === 'undefined' || gameOver) return false;
   if (typeof gameMovesAlgebraic === 'undefined' || !gameMovesAlgebraic.length) return false;
   // Lichess holds this game. Asked last: start-up (loadPos → updatePlayerBoxes)
