@@ -1840,7 +1840,7 @@ function _resignRowVisible() {
 // come straight back the moment it ends, which is when they are wanted again.
 function updateGameStartBtns() {
   const live = (typeof _isLiveGame === 'function') ? _isLiveGame() : false;
-  ['botSidebarBtn', 'mpSidebarBtn', 'btnLoadPgn'].forEach(id => {
+  ['botSidebarBtn', 'mpSidebarBtn', 'btnLoadPgn', 'pzFloorBtn'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = live ? 'none' : '';
   });

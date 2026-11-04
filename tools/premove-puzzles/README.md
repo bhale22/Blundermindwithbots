@@ -22,8 +22,11 @@ python fetch_games.py ids.txt games.ndjson 2000
 # 3. Every premove, every alternative to the move actually played (~2.4 s/game on 6 cores)
 python mine.py games.ndjson hits.jsonl path/to/stockfish
 
-# 4. Select the good ones and score every legal reply (~10 min for 500 puzzles)
-python build_data.py path/to/stockfish ../../data/premove-puzzles.json hits.jsonl
+# 4. Select the good ones and score every legal reply, and every follow-up (~40 min for 500 puzzles)
+python build_data.py path/to/stockfish puzzles.json hits.jsonl
+
+# 5. Order them easy to hard with the app's own Maia (server on :3100; from the repo root)
+node scripts/rank-premove-puzzles.mjs tools/premove-puzzles/puzzles.json data/premove-puzzles.json
 ```
 
 `mine.py` scores each candidate three ways (the solver's win%, Lichess conversion):
@@ -37,5 +40,12 @@ python build_data.py path/to/stockfish ../../data/premove-puzzles.json hits.json
 For each one it stores `moves[uci] = [win% if the premove fires, win% if they answer normally]`
 for every legal reply that leaves the premove legal. The app judges any attempt from that table
 without running an engine, and treats a move missing from the table as having busted the premove.
+
+A puzzle takes two moves to solve: the one that lets the premove fire into trouble, then the one
+that cashes in. So for every first move that solves it (an accepted answer, or within 8 win% points
+of the best), `second[first][reply]` scores every follow-up from the position after the premove.
+
+`rank-premove-puzzles.mjs` adds `maia1500`, Maia 1500's probability of playing a solving first
+move, and sorts by it: the most forced-looking first move is the easiest puzzle.
 
 The October 2026 run: 1,968 games, 15,704 premoves, 491 puzzles from 420 games.

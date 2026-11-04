@@ -12,6 +12,12 @@ so the app can judge any attempt without running an engine:
 Win% is the solver's, by the Lichess conversion. A move after which the
 premove is illegal (busted) is left out of the table. A move that ends the
 game stores its result twice: the premove never gets to play.
+
+The solve takes two moves: the one that lets the premove fire, then the one
+that cashes in on it. For every first move that solves the puzzle, the
+position after it and the premove has every reply scored too:
+
+  second[first uci][reply uci] = win% after that reply
 """
 import json, math, sys, multiprocessing as mp
 import chess, chess.engine
@@ -21,6 +27,7 @@ FOLLOW_DEPTH = 16
 PER_GAME = 2
 MAX_RISK = 30
 BACKFIRE_MIN = 25
+SLACK = 8          # win% points short of the best that still solve it (PZ_SLACK in the app)
 
 SF = sys.argv[1]
 
@@ -103,6 +110,23 @@ def build(item):
         b.push(R)
         moves[A.uci()] = [round(wp_for(_eng, b, solver), 1), round(no_premove, 1)]
 
+    best = max(v[0] for v in moves.values())
+    second = {}
+    for u, v in moves.items():
+        if u not in accept and v[0] < best - SLACK:
+            continue
+        b = b0.copy(); b.push(chess.Move.from_uci(u))
+        if b.is_game_over():
+            continue
+        b.push(R)
+        if b.is_game_over():            # the premove itself ended it (the stalemate trick)
+            continue
+        replies = {}
+        for M in b.legal_moves:
+            bm = b.copy(); bm.push(M)
+            replies[M.uci()] = round(wp_for(_eng, bm, solver), 1)
+        second[u] = replies
+
     A = chess.Move.from_uci(c['A_uci'])
     bA = b0.copy(); bA.push(A)
     bAR = bA.copy(); bAR.push(R)
@@ -127,6 +151,7 @@ def build(item):
         'follow': follow, 'stalemate': bAR.is_stalemate(),
         'wpRoot': round(wp_for(_eng, b0, solver), 1),
         'moves': moves,
+        'second': second,
     }
 
 

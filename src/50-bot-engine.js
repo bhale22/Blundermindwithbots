@@ -4284,6 +4284,9 @@ function botPostMoveHook() {
       if (botActivePremove) {
         if (botPremoveTryFire()) return; // executeMove re-enters this hook
       }
+      // A premove puzzle holds the bot while its verdict on the player's
+      // follow-up is up; Play it out releases it.
+      if (typeof pzHoldBot === 'function' && pzHoldBot()) return;
       setTimeout(botMakeMove, 100);
     } else {
       // Player's turn — fire queued premove if any; also arm mirror timer

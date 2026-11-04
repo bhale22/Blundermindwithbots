@@ -2229,23 +2229,23 @@ body.pro-mode .bs-vision{ display:none !important; }
    vanished on hover instead of strengthening. */
 .play-btn.mp:hover{background:var(--st-mp-hv,rgba(74,159,212,0.24));
   border-color:var(--st-mp-bd,#3f8cc0);}
-/* Premove puzzles take the amber the board uses for "what the opponent can
-   do". The text stays the theme's own colour so it reads on every palette. */
-.start-row{display:flex;gap:4px;}
-.start-row .play-btn{flex:1 1 0;min-width:0;}
-.play-btn.pz{background:rgba(200,146,42,0.14);border-color:#c8922a;color:var(--text-primary);}
-.play-btn.pz:hover{background:rgba(200,146,42,0.25);border-color:#c8922a;}
-
 /* ── Premove puzzles ─────────────────────────────────────────────────────── */
+/* The card is the one thing to look at while a puzzle is on: the green of the
+   quick start, so it reads as "the thing you are doing", apart from the
+   overlay controls around it. */
 #pzCard{display:none;flex-direction:column;gap:6px;width:var(--board-size);max-width:100%;
-  box-sizing:border-box;padding:9px 11px;background:var(--bg-panel);
-  border:1px solid rgba(200,146,42,0.6);border-radius:6px;
+  box-sizing:border-box;padding:10px 12px;
+  background:var(--st-go-bg,rgba(90,212,144,0.16));
+  border:1.5px solid var(--st-go-bd,#4aab74);border-radius:6px;
   font-size:12.5px;line-height:1.45;color:var(--text-primary);}
 #pzCard.on{display:flex;}
 #sidebar > #pzCard,#proSide > #pzCard{width:100%;flex-shrink:0;margin-bottom:10px;}
 #pzCard p{margin:0;}
+#pzCard.pz-flash{animation:pzFlash 0.9s ease-out;}
+@keyframes pzFlash{0%{box-shadow:0 0 0 0 rgba(74,171,116,0.75);}100%{box-shadow:0 0 0 12px rgba(74,171,116,0);}}
+@media (prefers-reduced-motion:reduce){#pzCard.pz-flash{animation:none;}}
 .pz-head{display:flex;align-items:baseline;gap:8px;font-size:10px;font-weight:700;
-  letter-spacing:0.08em;text-transform:uppercase;color:#b07a1c;}
+  letter-spacing:0.08em;text-transform:uppercase;color:var(--st-go-fg,#1d6b41);}
 .pz-count{margin-left:auto;font-weight:500;letter-spacing:0.02em;text-transform:none;
   color:var(--text-dim);font-variant-numeric:tabular-nums;}
 .pz-prompt{font-size:13.5px;font-weight:600;}
@@ -2255,8 +2255,9 @@ body.pro-mode .bs-vision{ display:none !important; }
 .pz-mv.pre{color:#b07a1c;}
 .pz-mv.ans{color:#1d8a52;}
 .pz-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;}
-.pz-toggle{display:flex;align-items:center;gap:5px;margin-right:auto;font-size:11.5px;
+.pz-toggle{display:flex;align-items:center;gap:5px;width:fit-content;font-size:11.5px;
   color:var(--text-secondary);cursor:pointer;}
+#pzCard .pz-row .pz-btn{flex:1 1 0;}
 .pz-btn{font:inherit;font-size:11.5px;padding:5px 11px;min-height:30px;border-radius:4px;
   border:1px solid var(--border);background:var(--bg-panel2);color:var(--text-primary);cursor:pointer;}
 .pz-btn:hover{border-color:#c8922a;}
@@ -2278,6 +2279,34 @@ body.pro-mode .bs-vision{ display:none !important; }
 #pzPop .pz-x{position:absolute;top:4px;right:6px;width:30px;height:30px;border:0;background:transparent;
   color:var(--text-dim);font-size:19px;line-height:1;cursor:pointer;}
 #pzPop .pz-row{margin-top:2px;}
+/* Eval bar: only while a puzzle game is on the board (body.pz-eval-on). The
+   board column gives up a strip beside the board on a wide screen, a strip
+   under it on a phone. Colours are set by script from the player's side. */
+#pzEval{display:none;position:absolute;z-index:3;overflow:hidden;border-radius:3px;
+  background:#3b3b3b;box-shadow:0 0 0 1px rgba(0,0,0,0.3);}
+body.pz-eval-on #pzEval{display:block;}
+#pzEvalFill{position:absolute;background:#f2f2f2;transition:height 0.45s ease,width 0.45s ease;}
+#pzEvalLbl{position:absolute;font:700 9px/1 'DM Mono',ui-monospace,Consolas,monospace;
+  font-variant-numeric:tabular-nums;white-space:nowrap;}
+#pzEvalLbl.on-light{color:#2a2a2a;}
+#pzEvalLbl.on-dark{color:#f2f2f2;}
+@media (prefers-reduced-motion:reduce){#pzEvalFill{transition:none;}}
+@media (min-width:761px){
+  #pzEval{top:0;bottom:0;left:calc(100% + 6px);width:20px;}
+  #pzEvalFill{left:0;right:0;bottom:0;height:50%;}
+  #pzEvalLbl{left:0;right:0;text-align:center;}
+  #pzEvalLbl.me{bottom:4px;}
+  #pzEvalLbl.them{top:4px;}
+  body.pz-eval-on #board-col{margin-right:22px;}
+}
+@media (max-width:760px){
+  #pzEval{left:0;right:0;top:calc(100% + 4px);height:14px;}
+  #pzEvalFill{top:0;bottom:0;left:0;width:50%;}
+  #pzEvalLbl{top:2.5px;}
+  #pzEvalLbl.me{left:5px;}
+  #pzEvalLbl.them{right:5px;}
+  body.pz-eval-on #board-canvas-wrap{margin-bottom:18px;}
+}
 .secondary-row{display:flex;gap:3px;margin-top:3px;flex-shrink:0;}
 .secondary-row .ctrl-btn{
   flex:1;text-align:center;font-size:10px;font-weight:600;padding:0 2px;
@@ -2369,6 +2398,12 @@ body.pro-mode .bs-vision{ display:none !important; }
   .sb-tail #bs-open{padding:2px 8px;}
   .sb-tail #bs-open .bs-t1{font-size:11px;}
   .sb-tail #bs-open .bs-t2{font-size:8px;}
+  /* The floor's second row (Training Tips · Premove Puzzles) gives back what
+     it costs: a laptop at 1366×600 has no spare height to pay for it. */
+  #sidebar{--sec-h:21px;}
+  .start-area{margin-bottom:5px;}
+  #bottom-controls{gap:2px;padding-top:2px;}
+  .floor-sep{margin:4px 0 3px;}
 }
 
 /* Tier 3 — past this point the column is choosing between a legible control
@@ -3640,6 +3675,12 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     s = /(^|\.)buildabotchess\.com$/i.test(location.hostname) ? 'pro' : 'amateur';
     try { ls.setItem('bm_shell', s); } catch(e) {}   // storage blocked → session-only default
   }
+  // The premove puzzles link (blundermindchess.com/PremovePuzzles) opens on
+  // the Visualization board for this visit, straight into the puzzles — no
+  // welcome or landing in front of what was shared. The stored choice is left
+  // alone, so the next ordinary visit opens where it always did.
+  var _pzLink = /^\/premovepuzzles\/?$/i.test(location.pathname);
+  if (_pzLink) s = 'amateur';
   window.__bmShell = s;
   // The landing is the first impression and nothing else — a returning visitor
   // has already made the one choice it asks about (it is stored in bm_shell),
@@ -3663,7 +3704,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
   var _key = (s === 'pro') ? 'bm_landingSeen' : 'bm_welcomed';
   var _seen = null;
   try { _seen = ls.getItem(_key); } catch(e) {}
-  if (_seen !== '1') {
+  if (_seen !== '1' && !_pzLink) {
     if (s === 'pro') {
       var _lov = document.getElementById('landingOverlay');
       if (_lov) _lov.style.display = 'block';
@@ -3793,6 +3834,9 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <canvas id="ghostCanvas" width="480" height="480"></canvas>
       <!-- Premove puzzle verdict, over the board (68-premove-puzzles.js). -->
       <div id="pzPop" role="dialog" aria-label="Premove puzzle result" hidden></div>
+      <!-- Eval bar, puzzle games only: beside the board on a wide screen,
+           under it on a phone. -->
+      <div id="pzEval" role="img" aria-label="Evaluation"><div id="pzEvalFill"></div><span id="pzEvalLbl"></span></div>
 
     </div>
 
@@ -4039,12 +4083,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       </div>
     </div>
     <button class="ctrl-btn play-btn" onclick="openBotModal()" id="botSidebarBtn">🤖 Custom Bot Builder</button>
-    <!-- Sharing a row keeps the start area one button tall here: on a
-         1366×600 laptop the page only just fits one screen. -->
-    <div class="start-row">
-      <button class="ctrl-btn play-btn pz" id="pzSidebarBtn" onclick="pzOpen()">⚡ Premove Puzzles</button>
-      <button class="ctrl-btn play-btn mp" id="mpSidebarBtn" onclick="openPanel('mpPanel')">⚔ 2-Player</button>
-    </div>
+    <button class="ctrl-btn play-btn mp" id="mpSidebarBtn" onclick="openPanel('mpPanel')">⚔ 2-Player</button>
     </div><!-- end start-area -->
 
     <!-- ── Core four ────────────────────────────────────────────────────────
@@ -4263,10 +4302,16 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div id="bottom-controls">
       <div class="floor-sep"></div>
       <div class="secondary-row">
-        <button class="ctrl-btn util-btn" id="btnTips" onclick="openHelp('howto')">🎯 Training Tips</button>
         <button class="ctrl-btn util-btn" id="btnLoadPgn" onclick="document.getElementById('pgnFileInput').click()">▶ Load</button>
         <input type="file" id="pgnFileInput" accept=".pgn" style="display:none" onchange="loadPgnFile(event)">
         <button class="ctrl-btn util-btn" id="btnSavePgn" onclick="savePgn()">↓ Save</button>
+      </div>
+      <!-- The floor's last row. Premove puzzles are for the curious, not the
+           first thing a new player should reach for, so they sit down here
+           as quietly as Training Tips. -->
+      <div class="secondary-row">
+        <button class="ctrl-btn util-btn" id="btnTips" onclick="openHelp('howto')">🎯 Training Tips</button>
+        <button class="ctrl-btn util-btn" id="pzFloorBtn" onclick="pzOpen()">⚡ Premove Puzzles</button>
       </div>
       <div class="util-row" style="display:none;"></div>
     </div>
@@ -4327,7 +4372,6 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <!-- Idle actions — shown when no game is live (start things, save/load) -->
     <div class="pro-actions pro-idle" id="proIdleActions" style="display:none;">
       <div class="pro-abtn" onclick="openBotModal()">🤖 Play / Build Bot</div>
-      <div class="pro-abtn" onclick="pzOpen()">⚡ Premove Puzzles</div>
       <div class="pro-abtn" onclick="openPanel('mpPanel')">⚔ 2-Player</div>
       <div class="pro-abtn" onclick="savePgnAs()">💾 Save game</div>
       <div class="pro-abtn" onclick="document.getElementById('pgnFileInput').click()">▶ Load game</div>
@@ -4345,6 +4389,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="pro-abtn icon" onclick="proFlipBoard()" title="Flip board">⇅</div>
       <div class="pro-abtn icon" onclick="openThemePanel('board')" title="Board &amp; background">🎨</div>
       <div class="pro-abtn icon" onclick="openPanel('boardSettingsPanel')" title="Board settings">⚙</div>
+      <div class="pro-abtn icon" id="proPzBtn" onclick="pzOpen()" title="Premove puzzles">⚡</div>
     </div>
 
     <!-- The gear menu that used to sit here is gone. Six items, five of which
