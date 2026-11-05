@@ -837,6 +837,11 @@ function serveHtml(req, res) {
 }
 app.get('/', serveHtml);
 app.get('/blundermind.html', serveHtml);
+// The share link for premove puzzles: the same page, which reads the path and
+// opens straight into them (src/68-premove-puzzles.js). A trailing slash is
+// redirected away so the page's relative asset paths still resolve from /.
+app.get(/^\/premovepuzzles$/i, serveHtml);
+app.get(/^\/premovepuzzles\/$/i, (req, res) => res.redirect(301, '/PremovePuzzles'));
 
 // Serve beautifulblundermind.html with same caching strategy
 let prettyHtmlCache = null, prettyHtmlEtag = null, prettyHtmlMtime = null;

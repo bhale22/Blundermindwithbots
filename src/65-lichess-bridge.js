@@ -279,6 +279,12 @@ async function lichessConnect(opts) {
   const inp = document.getElementById('lbToken');
   const tok = ((inp && inp.value) || lbSettings.token || '').trim();
   if (!tok) { _lbSetState('error', 'Paste the bot account\'s token first.'); return; }
+  // Without the engine this tab would sit "Waiting for challenges" and decline
+  // every one as busy (_lbDeclineReason waits for sfReady), never saying why.
+  if (typeof sfBrowserSupport === 'function' && sfBrowserSupport()) {
+    _lbSetState('error', sfUnsupportedText());
+    return;
+  }
   // Connecting hands the board to Lichess, so a game in progress here ends.
   if (typeof _isLiveGame === 'function' && _isLiveGame()) {
     if (!(opts && opts.confirmed) &&

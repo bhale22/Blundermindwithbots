@@ -267,7 +267,7 @@ try {
   check(byName.fromenv && byName.fromenv.lichess.token === TOKEN && JSON.stringify(byName.fromenv.lastBot) === JSON.stringify(saved.lastBot),
     'the runner reads it back whole, named after the variable', Object.keys(byName));
   check(byName.rawjson && byName.rawjson.lichess.token === TOKEN, 'and takes plain JSON too');
-  check(!byName.broken && logged.some(l => /Skipping BM_BOT_BROKEN: not a bot file/.test(l)), 'and skips one that is not a bot, saying so');
+  check(!byName.broken && logged.some(l => /Skipping BM_BOT_BROKEN: not a bot file, 9 characters/.test(l)), 'and skips one that is not a bot, saying so');
   check(fromEnv.length === 3 && byName.testbot.bot === 'from the variable' && logged.some(l => /\[testbot\] BM_BOT_TESTBOT replaces bots\/testbot\.json/.test(l)),
     'a variable stands in for a file of the same name', fromEnv.map(b => b.name));
   for (const k of ['BM_BOT_FROMENV', 'BM_BOT_RAWJSON', 'BM_BOT_BROKEN', 'BM_BOT_TESTBOT']) delete process.env[k];

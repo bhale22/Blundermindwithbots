@@ -2343,7 +2343,10 @@ async function botFlounderTurn(fen, clockMs, startMs, baseElo) {
   // on a probability, but it is the same control reading the same curves.
   const temp = complexityAdjustedTemp(
     timePressureTempByThink(botMaiaBaseTemp(), roughThinkSec));
-  const pick = await flounderChooseMove(fen, elo, undefined, temp, { staleSeek: true });
+  // The probe gets the turn's think time as its deadline, so on a slow device
+  // the engine's thinking fits inside the time the bot meant to spend anyway.
+  const pick = await flounderChooseMove(fen, elo, undefined, temp,
+    { staleSeek: true, budgetMs: roughThinkSec * 1000 });
 
   let uci, delay;
   if (pick && pick.uci) {
@@ -2874,6 +2877,31 @@ function hustlerPhaseTemp() {
 }
 
 // ── Main bot move trigger ────────────────────────────────────────────────────
+// A legal move for a turn every engine failed to answer (see botMakeMove), with
+// the reason shown once per game. Random rather than clever: anything that
+// evaluates needs the engine that has just failed. A capture is preferred, since
+// on average it gives away less than a random quiet move.
+let _botLastResortGen = -1;
+function _botLastResortMove(fen) {
+  let moves = [];
+  try { moves = _fenLegalUcis(fen); } catch (e) { moves = []; }
+  if (!moves.length) return null;
+  const caps = moves.filter(u => { const m = uciToSq(u); return m && board[m.to]; });
+  const pool = caps.length ? caps : moves;
+  const uci = pool[Math.floor(Math.random() * pool.length)];
+  lastBotMoveSource = 'Fallback';
+  const why = (typeof sfUnsupported !== 'undefined' && sfUnsupported)
+    ? sfUnsupportedText() + ' Until then the bot plays random moves.'
+    : 'The chess engine didn’t answer in time on this device, so the bot played a quick move instead.';
+  console.warn('[engine] no engine move this turn — last-resort ' + uci);
+  if (_botLastResortGen !== _botGameGen) {
+    _botLastResortGen = _botGameGen;
+    if (typeof showEngineWarning === 'function') showEngineWarning('⚠ ' + why);
+    if (typeof lbLog === 'function' && typeof lichessGameLive === 'function' && lichessGameLive()) lbLog(why);
+  }
+  return uci;
+}
+
 async function botMakeMove() {
   // A premove still being worked out for this turn goes first: it either fires
   // (and this call then finds the turn already played) or gives way. Bounded,
@@ -3411,6 +3439,15 @@ async function botMakeMove() {
   botThinking = false;
   document.getElementById('botStatus').textContent = '';
   if (_tookDraw) return;
+
+  // LAST RESORT. Every engine path can come back empty: Stockfish failed to
+  // load, or each search ran out of time on a slow device. Nothing retries a
+  // turn, so an empty one used to freeze the game for good — silently, and on
+  // Lichess until the bot lost on time. Any legal move beats that; the warning
+  // says why the bot is playing one.
+  if (!uciMove && botActive && !gameOver && turn === botColor) {
+    uciMove = _botLastResortMove(fen);
+  }
 
   if (uciMove && botActive) {
     const mv = uciToSq(uciMove);
@@ -4139,6 +4176,7 @@ function botPremoveTryFire() {
     _botPremoveBusted = true;   // next think gets the re-evaluation tax
     botPremoveNote(pre, false);
     botPremoveUpdateBadge();
+    if (typeof pzOnPremove === 'function') pzOnPremove(pre, false);
     return false;
   }
   var legal = legalMovesFor(pre.from, board, epSq, castling);
@@ -4147,6 +4185,7 @@ function botPremoveTryFire() {
     _botPremoveBusted = true;   // next think gets the re-evaluation tax
     botPremoveNote(pre, false);
     botPremoveUpdateBadge();
+    if (typeof pzOnPremove === 'function') pzOnPremove(pre, false);
     return false;
   }
 
@@ -4157,6 +4196,10 @@ function botPremoveTryFire() {
   lastBotMoveSource = 'PREMOVE';
   botPremoveNote(pre, true);
   botPremoveUpdateBadge();
+
+  // A premove puzzle judges the human's move — still the last one recorded —
+  // before the premove lands on it.
+  if (typeof pzOnPremove === 'function') pzOnPremove(pre, true);
 
   // Record for the bot's own move history, same as any engine move
   var san = null;
@@ -4224,17 +4267,14 @@ function botPostMoveHook() {
       }
 
       // Derive UCI from the squares recorded by executeMove.
-      // lastMovePromo is not stored globally, so we check the board for a
-      // promotion piece: if the arriving square has a non-pawn piece of the
-      // mover's color AND the piece left from rank 1/8, it was a promotion.
-      let promo = null;
-      const arrivedPiece = board[lastMoveTo];
-      const fromRank = Math.floor(lastMoveFrom / 8);
-      if (arrivedPiece && arrivedPiece.piece !== 'P' &&
-          (fromRank === 1 || fromRank === 6) &&
-          ['Q','R','B','N'].includes(arrivedPiece.piece)) {
-        promo = arrivedPiece.piece.toLowerCase();
-      }
+      // lastMovePromo is not stored globally, so the promotion comes from the
+      // move's SAN (e8=Q), which gameMovesAlgebraic already holds. The board
+      // can't tell it: a knight leaving d7 looks just like a pawn that left
+      // d7 and became one, and was recorded as d7b6n.
+      // gameMovesAlgebraic has the SAN for every move including this one
+      const humanSan = gameMovesAlgebraic[gameMovesAlgebraic.length - 1] || null;
+      const promoSan = humanSan && /=([QRBN])/i.exec(humanSan);
+      const promo = promoSan ? promoSan[1].toLowerCase() : null;
       const humanUci = sqToUci(lastMoveFrom, lastMoveTo, promo);
       // Only record if not already pushed (bot move path already called botRecordMove)
       const last = botMoveHistory[botMoveHistory.length - 1];
@@ -4257,13 +4297,15 @@ function botPostMoveHook() {
               : 0;
           }
         }
-        // gameMovesAlgebraic has the SAN for every move including this one
-        const humanSan = gameMovesAlgebraic[gameMovesAlgebraic.length - 1] || null;
         botRecordMove(humanUci, humanSan);
       }
     }
     botSnapOppClock();
   }
+
+  // A premove puzzle shows its verdict once the move it was waiting for has
+  // landed. A game that just ended never reaches the branch below.
+  if (gameOver && typeof pzAfterMove === 'function') pzAfterMove();
 
   if (botActive && !botThinking && !gameOver) {
     const botColor = botPlayerColor === 'white' ? 'b' : 'w';
@@ -4274,6 +4316,9 @@ function botPostMoveHook() {
       if (botActivePremove) {
         if (botPremoveTryFire()) return; // executeMove re-enters this hook
       }
+      // A premove puzzle holds the bot while its verdict on the player's
+      // follow-up is up; Play it out releases it.
+      if (typeof pzHoldBot === 'function' && pzHoldBot()) return;
       setTimeout(botMakeMove, 100);
     } else {
       // Player's turn — fire queued premove if any; also arm mirror timer
@@ -4282,6 +4327,7 @@ function botPostMoveHook() {
       // Arm the bot's own premove for the reply it will make to this turn.
       // Async and non-blocking — the human can move at any point.
       if (typeof botPremoveArm === 'function') botPremoveArm();
+      if (typeof pzAfterMove === 'function') pzAfterMove();
     }
   }
 }

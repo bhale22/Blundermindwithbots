@@ -1,3 +1,30 @@
+// ── Can this browser run Stockfish at all? ───────────────────────────────────
+// The vendored build needs WebAssembly with fixed-width SIMD (checked against
+// the binary: it fails validation with SIMD disabled, and needs nothing newer).
+// Without it the worker never reaches readyok, and the bot used to sit silent
+// with no word as to why. This is the 31-byte probe wasm-feature-detect uses:
+// one function returning i8x16.popcnt(i8x16.splat(0)).
+const _SF_SIMD_PROBE = new Uint8Array([0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,
+                                       10,10,1,8,0,65,0,253,15,253,98,11]);
+let sfUnsupported = null;   // null | 'wasm' | 'simd' — set by sfBrowserSupport()
+function sfBrowserSupport() {
+  try {
+    if (typeof WebAssembly !== 'object' || typeof WebAssembly.validate !== 'function') return (sfUnsupported = 'wasm');
+    if (!WebAssembly.validate(_SF_SIMD_PROBE)) return (sfUnsupported = 'simd');
+  } catch (e) { return (sfUnsupported = 'wasm'); }
+  return (sfUnsupported = null);
+}
+function sfUnsupportedText() {
+  return 'This browser can’t run the chess engine (it needs WebAssembly ' +
+    (sfUnsupported === 'simd' ? 'SIMD' : 'support') +
+    '). Try a current Chrome, Edge or Firefox, or a newer device.';
+}
+
+// A slow phone can take far longer than a desktop to compile the 7 MB engine,
+// and a timeout here is permanent for that move: the old 15 s was within reach
+// of an old device. A worker that genuinely fails fires onerror long before this.
+const SF_INIT_TIMEOUT_MS = 45000;
+
 function sfInit() {
   // Return same in-flight promise while init is running, so concurrent callers
   // all wait for the same worker rather than each creating their own.
@@ -5,6 +32,7 @@ function sfInit() {
   // (same pattern as sfGhostInit — fixes the "worker dead but sfWorker non-null" bug).
   if (_sfInitPromise) return _sfInitPromise;
   if (sfWorker && sfReady) return Promise.resolve();
+  if (sfBrowserSupport()) return Promise.reject(new Error('SF unsupported: ' + sfUnsupported));
   // Terminate any stale/errored worker before creating a fresh one
   if (sfWorker) { try { sfWorker.terminate(); } catch(e) {} sfWorker = null; sfReady = false; }
   _sfInitPromise = new Promise(function(resolve, reject) {
@@ -19,6 +47,12 @@ function sfInit() {
         // we already abandoned, not to the current probe.
         if (sfCplxActive && sfBestmovesOwed === 0 && line.startsWith('info') && line.includes('multipv')) {
           sfCplxInfoLines.push(line);
+        }
+        // The current move search's best line so far, so a search that runs
+        // out of time still has an answer (sfGetMove's timeout plays it).
+        if (sfPendingResolve && !sfCplxActive && sfBestmovesOwed === 0 && line.startsWith('info')) {
+          var pvMatch = / pv ([a-h][1-8][a-h][1-8][qrbn]?)/.exec(line);
+          if (pvMatch) sfMovePv = pvMatch[1];
         }
         if (line.startsWith('bestmove')) {
           // Bestmove from an abandoned search — discard it. Without this, a
@@ -57,7 +91,7 @@ function sfInit() {
       };
       sfWorker.onerror = function(e) { console.warn('Bot SF error:', e); reject(e); };
       sfWorker.postMessage('uci');
-      setTimeout(function() { if (!sfReady) reject(new Error('SF timeout')); }, 15000);
+      setTimeout(function() { if (!sfReady) reject(new Error('SF timeout')); }, SF_INIT_TIMEOUT_MS);
     } catch(e) { reject(e); }
   });
   // On failure: clear promise and worker so the next call can retry
@@ -203,13 +237,21 @@ function sfGetMove(fen, levelOrDepth, isDepth=false) {
                 : levelOrDepth <= 4  ? 5
                 : levelOrDepth <= 10 ? 8
                 :                      12;
+    sfMovePv = null;
     sfWorker.postMessage('go depth ' + depth);
-    // Safety timeout — resolve null after 5s to prevent hangs
+    // Safety timeout after 5 s. It used to resolve null, which on a slow
+    // device left the bot with no move at all. The search has been reporting
+    // its best line as it went, so it is stopped (freeing the engine for the
+    // next request) and that line is played. Null only if it never got one.
     setTimeout(() => {
       if (sfPendingResolve === resolve) {
         sfPendingResolve = null;
         sfBestmovesOwed++; // the engine will still emit a bestmove — discard it
-        resolve(null);
+        const pv = sfMovePv;
+        sfMovePv = null;
+        try { sfWorker.postMessage('stop'); } catch (e) {}
+        console.warn('[engine] move search timed out' + (pv ? ' — playing its best line so far' : ' with no move'));
+        resolve(pv || null);
       }
     }, 5000);
   });
@@ -268,8 +310,17 @@ var sfProbeMode = 'cplx'; // 'cplx' | 'evalmoves' — how to parse the probe res
 // {uci: volatility} from the most recent evalmoves probe. Reset per bot move by
 // botMakeMove so a stale position's numbers can never be scored against a new one.
 var sfMoveComplexity = null;
-function sfEvalMoves(fen, moves, depth) {
+// opts.timeoutMs: a tighter deadline than the default (never looser).
+// opts.partialOk: on timeout, resolve with the deepest depth the search had
+//   finished for EVERY candidate (see _parseEvalMovesPartial) rather than null.
+//   Only Flounder asks for this: the guards that also call here fail open on
+//   null by design, and a shallower verdict would change what they allow.
+// sfLastProbeDepth is the depth the last partial result came from (null when
+// the probe finished normally).
+let sfLastProbeDepth = null;
+function sfEvalMoves(fen, moves, depth, opts) {
   return new Promise((resolve) => {
+    sfLastProbeDepth = null;
     if (!sfWorker || !sfReady || !moves || moves.length < 2) { resolve(null); return; }
     if (sfPendingResolve || sfCplxActive) { resolve(null); return; }
     sfCplxActive    = true;
@@ -289,16 +340,27 @@ function sfEvalMoves(fen, moves, depth) {
     // candidate count since a wider MultiPV probe (CP-budget acceptance can
     // send well over a dozen moves) genuinely takes longer than the 2-move
     // degradation-guard probe; capped so a large list still fails open promptly.
-    const timeoutMs = Math.min(REGAN_PROBE_TIMEOUT_MAX_MS, 2000 + moves.length * 150);
+    let timeoutMs = Math.min(REGAN_PROBE_TIMEOUT_MAX_MS, 2000 + moves.length * 150);
+    if (opts && opts.timeoutMs > 0) timeoutMs = Math.min(timeoutMs, opts.timeoutMs);
     setTimeout(() => {
       if (sfCplxPending === resolve) {
         sfCplxActive  = false;
         sfProbeMode   = 'cplx';
         sfCplxPending = null;
         sfBestmovesOwed++; // probe's bestmove will still arrive — discard it
+        // Stop it now: a probe left running holds the single engine thread,
+        // and the next search on a slow device would queue behind it.
+        sfWorker.postMessage('stop');
         sfWorker.postMessage('setoption name MultiPV value 1');
         sfCurrentSkillLevel = -1;
-        resolve(null);
+        const partial = (opts && opts.partialOk) ? _parseEvalMovesPartial(sfCplxInfoLines, moves) : null;
+        if (partial) {
+          sfLastProbeDepth = partial.depth;
+          console.warn('[engine] eval probe timed out at ' + timeoutMs + ' ms — using depth ' + partial.depth);
+          resolve(partial.evals);
+        } else {
+          resolve(null);
+        }
       }
     }, timeoutMs);
   });
@@ -578,13 +640,25 @@ function _fenLegalUcis(fen) {
 // `opts.staleSeek` lets stalemate-seeking take over when it is active. Only the
 // bot's own turn passes it: the desperation scoring reads the LIVE board, so
 // it must not run for a position that is not the one on the board.
+// The shortest a Flounder probe is cut to by the turn's think time. A desktop
+// finishes the depth-8 probe in well under a second, so this floor keeps the
+// calibrated depth everywhere but on hardware that could not reach it anyway.
+const FLOUNDER_PROBE_MIN_MS = 1500;
+
 async function flounderChooseMove(fen, elo, depth, effTemp, opts) {
   try {
     if (!sfReady) { try { await sfInit(); } catch (e) { return null; } }
     const moves = _fenLegalUcis(fen);
     if (!moves.length) return null;
     if (moves.length === 1) return { uci: moves[0], cp: 0, tau: 0, dist: { [moves[0]]: 1 } };
-    const evals = await sfEvalMoves(fen, moves, depth || REGAN_PROBE_DEPTH);
+    // opts.budgetMs is the turn's think time. On normal hardware the probe takes
+    // a fraction of it and nothing changes; on a slow device it stops there and
+    // plays from the deepest depth it finished, instead of spending up to 7 s
+    // and then nothing. Never under FLOUNDER_PROBE_MIN_MS.
+    const budget = (opts && opts.budgetMs > 0)
+      ? Math.max(FLOUNDER_PROBE_MIN_MS, opts.budgetMs) : 0;
+    const evals = await sfEvalMoves(fen, moves, depth || REGAN_PROBE_DEPTH,
+                                    { timeoutMs: budget, partialOk: true });
     if (!evals) return null;
     const scored = moves.filter(m => evals[m] != null);
     if (scored.length < 2) return scored.length ? { uci: scored[0], cp: 0, tau: 0 } : null;
@@ -717,6 +791,32 @@ function _parseEvalMovesScores(lines) {
   var out = {}, n = 0;
   for (var k in best) { out[k] = best[k].cp; n++; }
   return n ? out : null;
+}
+
+// What a probe that ran out of time had finished: the deepest depth at which
+// every candidate has a score, so the moves are compared on equal terms. Mixing
+// depths would not be: the moves searched deeper would read differently only
+// because they had been searched further. Returns { depth, evals } or null.
+function _parseEvalMovesPartial(lines, moves) {
+  var want = new Set(moves);
+  var byDepth = {};
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var dm  = line.match(/\bdepth (\d+)/);
+    var pvm = line.match(/\bpv ([a-h][1-8][a-h][1-8][qrbn]?)/);
+    var cm  = line.match(/\bscore cp (-?\d+)/);
+    var mm  = line.match(/\bscore mate (-?\d+)/);
+    if (!dm || !pvm || !want.has(pvm[1])) continue;
+    var cp = cm ? +cm[1] : mm ? (+mm[1] > 0 ? 10000 - +mm[1] : -10000 - +mm[1]) : null;
+    if (cp === null) continue;
+    (byDepth[dm[1]] = byDepth[dm[1]] || {})[pvm[1]] = cp;   // a later line at a depth wins
+  }
+  var depths = Object.keys(byDepth).map(Number).sort(function (a, b) { return b - a; });
+  for (var j = 0; j < depths.length; j++) {
+    var ev = byDepth[depths[j]];
+    if (Object.keys(ev).length >= want.size) return { depth: depths[j], evals: ev };
+  }
+  return null;
 }
 
 function _computeCplxScore(lines) {

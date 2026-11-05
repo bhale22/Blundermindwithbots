@@ -28,6 +28,7 @@ const SRC_PARTS = [
   '50-bot-engine.js', // pressure curves, attractors, think time, botMakeMove, ghost
   '60-bot-ui.js',     // bot panel UI, opening prefs, save/load, config bridge
   '65-lichess-bridge.js', // ?lichess: this tab plays on Lichess as a BOT account
+  '68-premove-puzzles.js', // premove puzzles: real bullet premoves to punish, vs Maia
   '90-tail.html',     // closing </script>, bot modal markup, </body></html>
 ];
 

@@ -2229,6 +2229,88 @@ body.pro-mode .bs-vision{ display:none !important; }
    vanished on hover instead of strengthening. */
 .play-btn.mp:hover{background:var(--st-mp-hv,rgba(74,159,212,0.24));
   border-color:var(--st-mp-bd,#3f8cc0);}
+/* ── Premove puzzles ─────────────────────────────────────────────────────── */
+/* The card is the one thing to look at while a puzzle is on: the green of the
+   quick start, so it reads as "the thing you are doing", apart from the
+   overlay controls around it. */
+#pzCard{display:none;flex-direction:column;gap:6px;width:var(--board-size);max-width:100%;
+  box-sizing:border-box;padding:10px 12px;
+  background:var(--st-go-bg,rgba(90,212,144,0.16));
+  border:1.5px solid var(--st-go-bd,#4aab74);border-radius:6px;
+  font-size:12.5px;line-height:1.45;color:var(--text-primary);}
+#pzCard.on{display:flex;}
+#sidebar > #pzCard,#proSide > #pzCard{width:100%;flex-shrink:0;margin-bottom:10px;}
+#pzCard p{margin:0;}
+#pzCard.pz-flash{animation:pzFlash 0.9s ease-out;}
+@keyframes pzFlash{0%{box-shadow:0 0 0 0 rgba(74,171,116,0.75);}100%{box-shadow:0 0 0 12px rgba(74,171,116,0);}}
+@media (prefers-reduced-motion:reduce){#pzCard.pz-flash{animation:none;}}
+.pz-head{display:flex;align-items:baseline;gap:8px;font-size:10px;font-weight:700;
+  letter-spacing:0.08em;text-transform:uppercase;color:var(--st-go-fg,#1d6b41);}
+.pz-count{margin-left:auto;font-weight:500;letter-spacing:0.02em;text-transform:none;
+  color:var(--text-dim);font-variant-numeric:tabular-nums;}
+/* The puzzle number is also the way to jump to one. */
+.pz-jump{width:3.6em;box-sizing:border-box;padding:1px 3px;font:inherit;font-weight:700;text-align:right;
+  color:var(--text-primary);background:var(--bg-panel2);border:1px solid var(--border);border-radius:3px;}
+.pz-jump:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
+.pz-prompt{font-size:13.5px;font-weight:600;}
+.pz-note{color:var(--text-secondary);}
+.pz-note:empty{display:none;}
+.pz-mv{font-family:'DM Mono',ui-monospace,Consolas,monospace;font-size:0.95em;white-space:nowrap;}
+.pz-mv.pre{color:#b07a1c;}
+.pz-mv.ans{color:#1d8a52;}
+.pz-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;}
+.pz-toggle{display:flex;align-items:center;gap:5px;width:fit-content;font-size:11.5px;
+  color:var(--text-secondary);cursor:pointer;}
+#pzCard .pz-row .pz-btn{flex:1 1 0;white-space:nowrap;padding-left:6px;padding-right:6px;}
+.pz-btn{font:inherit;font-size:11.5px;padding:5px 11px;min-height:30px;border-radius:4px;
+  border:1px solid var(--border);background:var(--bg-panel2);color:var(--text-primary);cursor:pointer;}
+.pz-btn:hover{border-color:#c8922a;}
+.pz-btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
+.pz-btn.primary{background:#c8922a;border-color:#c8922a;color:#1a1206;font-weight:700;}
+.pz-meta{font-size:10.5px;color:var(--text-dim);}
+.pz-meta a{color:inherit;}
+.pz-meta .pz-btn{margin-left:4px;min-height:24px;padding:2px 8px;font-size:10.5px;}
+#pzPop{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:40;
+  width:min(88%,340px);box-sizing:border-box;display:flex;flex-direction:column;gap:8px;
+  padding:14px 16px 12px;background:var(--bg-panel);color:var(--text-primary);
+  border:1px solid var(--border);border-top:3px solid #c8922a;border-radius:8px;
+  box-shadow:0 10px 30px rgba(0,0,0,0.38);font-size:12.5px;line-height:1.45;}
+#pzPop[hidden]{display:none;}
+#pzPop.good{border-top-color:#22a85a;}
+#pzPop h3{margin:0;padding-right:18px;font-size:17px;line-height:1.2;}
+#pzPop p{margin:0;}
+#pzPop .pz-wp{color:var(--text-secondary);font-variant-numeric:tabular-nums;}
+#pzPop .pz-x{position:absolute;top:4px;right:6px;width:30px;height:30px;border:0;background:transparent;
+  color:var(--text-dim);font-size:19px;line-height:1;cursor:pointer;}
+#pzPop .pz-row{margin-top:2px;}
+/* Eval bar: only while a puzzle game is on the board (body.pz-eval-on). The
+   board column gives up a strip beside the board on a wide screen, a strip
+   under it on a phone. Colours are set by script from the player's side. */
+#pzEval{display:none;position:absolute;z-index:3;overflow:hidden;border-radius:3px;
+  background:#3b3b3b;box-shadow:0 0 0 1px rgba(0,0,0,0.3);}
+body.pz-eval-on #pzEval{display:block;}
+#pzEvalFill{position:absolute;background:#f2f2f2;transition:height 0.45s ease,width 0.45s ease;}
+#pzEvalLbl{position:absolute;font:700 9px/1 'DM Mono',ui-monospace,Consolas,monospace;
+  font-variant-numeric:tabular-nums;white-space:nowrap;}
+#pzEvalLbl.on-light{color:#2a2a2a;}
+#pzEvalLbl.on-dark{color:#f2f2f2;}
+@media (prefers-reduced-motion:reduce){#pzEvalFill{transition:none;}}
+@media (min-width:761px){
+  #pzEval{top:0;bottom:0;left:calc(100% + 6px);width:20px;}
+  #pzEvalFill{left:0;right:0;bottom:0;height:50%;}
+  #pzEvalLbl{left:0;right:0;text-align:center;}
+  #pzEvalLbl.me{bottom:4px;}
+  #pzEvalLbl.them{top:4px;}
+  body.pz-eval-on #board-col{margin-right:22px;}
+}
+@media (max-width:760px){
+  #pzEval{left:0;right:0;top:calc(100% + 4px);height:14px;}
+  #pzEvalFill{top:0;bottom:0;left:0;width:50%;}
+  #pzEvalLbl{top:2.5px;}
+  #pzEvalLbl.me{left:5px;}
+  #pzEvalLbl.them{right:5px;}
+  body.pz-eval-on #board-canvas-wrap{margin-bottom:18px;}
+}
 .secondary-row{display:flex;gap:3px;margin-top:3px;flex-shrink:0;}
 .secondary-row .ctrl-btn{
   flex:1;text-align:center;font-size:10px;font-weight:600;padding:0 2px;
@@ -2663,6 +2745,7 @@ body.pro-mode .bs-vision{ display:none !important; }
 #board-col > #phoneBar         { order: 8; }
 #board-col > #chatBox          { order: 9; }
 #board-col > #distPanel        { order: 10; }
+#board-col > #pzCard           { order: 6; }   /* after whichever player box is underneath (DOM order) */
 /* Flipped (the human is playing Black, or has turned the board round): white's
    box goes on top and black's underneath, so a player's clock is always
    adjacent to their own pieces. */
@@ -3233,6 +3316,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
      own order, or it defaults to 0 and floats to the top of the column, above
      the opponent's clock. It belongs directly under your own clock. */
   body.pro-mode #proChipMount      { order:4; }
+  body.pro-mode #pzCard            { order:4; }
   body.pro-mode #replayControls    { order:5; }
   /* The result and what to do about it sit with the board, before the move
      list: the result shares 5 with the replay controls, which are never up
@@ -3589,6 +3673,12 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     s = /(^|\.)buildabotchess\.com$/i.test(location.hostname) ? 'pro' : 'amateur';
     try { ls.setItem('bm_shell', s); } catch(e) {}   // storage blocked → session-only default
   }
+  // The premove puzzles link (blundermindchess.com/PremovePuzzles) opens on
+  // the Visualization board for this visit, straight into the puzzles — no
+  // welcome or landing in front of what was shared. The stored choice is left
+  // alone, so the next ordinary visit opens where it always did.
+  var _pzLink = /^\/premovepuzzles\/?$/i.test(location.pathname);
+  if (_pzLink) s = 'amateur';
   window.__bmShell = s;
   // The landing is the first impression and nothing else — a returning visitor
   // has already made the one choice it asks about (it is stored in bm_shell),
@@ -3612,7 +3702,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
   var _key = (s === 'pro') ? 'bm_landingSeen' : 'bm_welcomed';
   var _seen = null;
   try { _seen = ls.getItem(_key); } catch(e) {}
-  if (_seen !== '1') {
+  if (_seen !== '1' && !_pzLink) {
     if (s === 'pro') {
       var _lov = document.getElementById('landingOverlay');
       if (_lov) _lov.style.display = 'block';
@@ -3740,6 +3830,11 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div id="board-canvas-wrap">
       <canvas id="cv" width="480" height="480"></canvas>
       <canvas id="ghostCanvas" width="480" height="480"></canvas>
+      <!-- Premove puzzle verdict, over the board (68-premove-puzzles.js). -->
+      <div id="pzPop" role="dialog" aria-label="Premove puzzle result" hidden></div>
+      <!-- Eval bar, puzzle games only: beside the board on a wide screen,
+           under it on a phone. -->
+      <div id="pzEval" role="img" aria-label="Evaluation"><div id="pzEvalFill"></div><span id="pzEvalLbl"></span></div>
 
     </div>
 
@@ -3792,6 +3887,12 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       </div>
       <div class="pb-chip-mount" id="chipMountW"></div>
     </div>
+
+    <!-- Premove puzzle: what you are solving and its controls, under your own
+         clock. Shown only while puzzles are open (68-premove-puzzles.js). -->
+    <div id="pzCard" aria-live="polite"></div>
+    <!-- Where pzCard returns to when pzPlaceCard moves it back from the side column. -->
+    <span id="pzCardHome" hidden></span>
 
     <!-- ── Pinned overlays ──────────────────────────────────────────────────
          The tray is where you SET UP your board vision; this is where you
@@ -4198,6 +4299,12 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
          primary row here sit under the quick start now (#startArea). -->
     <div id="bottom-controls">
       <div class="floor-sep"></div>
+      <!-- Premove puzzles are a work in progress with no button yet: the
+           only way in is blundermindchess.com/PremovePuzzles. When they are
+           ready, their button (id pzFloorBtn, onclick pzOpen()) gets a last
+           row of its own with Training Tips, as in 685a15d, and the
+           max-height:640 tier gets back the floor tightening that pays for it.
+           The Expert board's ⚡ (proPzBtn) goes back right of its ⚙. -->
       <div class="secondary-row">
         <button class="ctrl-btn util-btn" id="btnTips" onclick="openHelp('howto')">🎯 Training Tips</button>
         <button class="ctrl-btn util-btn" id="btnLoadPgn" onclick="document.getElementById('pgnFileInput').click()">▶ Load</button>

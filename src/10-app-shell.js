@@ -36,6 +36,7 @@ let sfPendingResolve = null;
 let sfBestmovesOwed = 0;  // bestmoves still owed by abandoned (stopped/timed-out) searches —
                           // they must be discarded or they resolve the WRONG request
 let sfCurrentSkillLevel = -1; // tracks last set skill level — avoids redundant setoption calls
+let sfMovePv = null;          // first move of the running sfGetMove search's best line so far
 // ── MultiPV complexity probe state ───────────────────────────────────────────
 let sfCplxActive    = false;  // true while a MultiPV depth-12 probe is running
 let sfCplxPending   = null;   // resolve callback for sfGetComplexity()
@@ -2186,6 +2187,7 @@ function proSync(){
 // amateur action button.
 function gameRematch(){
   if (typeof mpRoomId !== 'undefined' && mpRoomId) mpOfferRematch();
+  else if (typeof pzRematch === 'function' && pzRematch()) return;
   else if (typeof botActive !== 'undefined' && botActive) botStart();
   else resetGame();
 }

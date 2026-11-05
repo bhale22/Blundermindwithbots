@@ -124,7 +124,9 @@ function readBots() {
       const v = process.env[k].trim();
       let d;
       try { d = JSON.parse(v.startsWith('{') ? v : Buffer.from(v, 'base64').toString('utf8')); }
-      catch (e) { throw new Error('not a bot file (make one with: node bot-runner/runner.mjs env <name>)'); }
+      // Its length is the one clue a sealed value gives away: env prints the
+      // length it should be.
+      catch (e) { throw new Error('not a bot file, ' + v.length + ' characters (make one with: node bot-runner/runner.mjs env <name>)'); }
       if (found.has(name)) log(name, k + ' replaces bots/' + name + '.json');
       found.set(name, checkBot(name, d));
     } catch (e) {
@@ -395,7 +397,7 @@ function env(name) {
   console.log([
     '',
     'For Railway: the bot service → Variables → New Variable',
-    '  Name:   ' + envName(name),
+    '  Name:   ' + envName(name) + (copied ? '   (type it in: copying it from here replaces the value on the clipboard)' : ''),
     '  Value:  ' + (copied ? 'on the clipboard — paste it (' + value.length + ' characters)' : value),
     'It holds @' + d.account + '\'s token. Once it is added, seal it (the variable\'s ⋮ menu → Seal).',
     '',
