@@ -8,8 +8,10 @@
 // Headless has no Maia model, so the opponent here is Flounder — which is the
 // point of the fallback: nothing needs downloading to play.
 import { chromium } from 'playwright';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 const shot = name => path.join(os.tmpdir(), 'pz-' + name + '.png');
 
 const BASE = 'http://localhost:3100';
@@ -21,6 +23,16 @@ const ok = (cond, name) => {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const browser = await chromium.launch();
+// Every kind of puzzle the code handles, whichever ones the shipped set keeps:
+// the whole mined set from before the Maia filter, when it is here.
+const FULL_SET = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'tools', 'premove-puzzles', 'puzzles.json');
+const HAVE_FULL = fs.existsSync(FULL_SET);
+const newContext = browser.newContext.bind(browser);
+browser.newContext = async o => {
+  const c = await newContext(o);
+  if (HAVE_FULL) await c.route('**/data/premove-puzzles.json', r => r.fulfill({ path: FULL_SET, contentType: 'application/json' }));
+  return c;
+};
 
 async function open(viewport, mobile = false, url = BASE, init = true) {
   const ctx = await browser.newContext({ viewport, isMobile: mobile, hasTouch: mobile });
@@ -107,18 +119,20 @@ await page.evaluate(() => {
 });
 const lastBotBefore = await page.evaluate(() => localStorage.getItem('bm_lastBot'));
 const sel = await pick(page);
-ok(sel.count > 400, `puzzle data loaded (${sel.count})`);
+ok(sel.count > (HAVE_FULL ? 400 : 0), `puzzle data loaded (${sel.count}${HAVE_FULL ? ', the full mined set' : ''})`);
 ok(sel.ranked, 'puzzles run from easiest to hardest (Maia 1500 probability, descending)');
+// No button leads here while puzzles are a work in progress: only the link.
 const rows = await page.evaluate(() => {
   const r = [...document.querySelectorAll('#bottom-controls .secondary-row')].map(row =>
     [...row.querySelectorAll('button')].filter(b => getComputedStyle(b).display !== 'none').map(b => b.id));
   const gear = document.querySelector('#proLiveActions [title="Board settings"]');
-  return { rows: r, proNext: gear && gear.nextElementSibling && gear.nextElementSibling.id };
+  const toPz = [...document.querySelectorAll('[onclick]')].filter(el => /pzOpen/.test(el.getAttribute('onclick'))).length;
+  return { rows: r, proNext: gear && gear.nextElementSibling ? gear.nextElementSibling.id || 'unnamed' : null, toPz };
 });
-ok(JSON.stringify(rows.rows) === JSON.stringify([['btnLoadPgn', 'btnSavePgn'], ['btnTips', 'pzFloorBtn']]),
-   'floor: Load · Save, then Training Tips · Premove Puzzles as the last row');
-ok(rows.proNext === 'proPzBtn', 'Expert board: ⚡ sits right of Board settings');
-await page.click('#pzFloorBtn');
+ok(JSON.stringify(rows.rows) === JSON.stringify([['btnTips', 'btnLoadPgn', 'btnSavePgn']]),
+   'floor: Training Tips · Load · Save, the one row it has on main');
+ok(rows.proNext === null && rows.toPz === 0, 'no Premove Puzzles button on either board');
+await page.evaluate(() => pzOpen());
 await page.waitForTimeout(600);
 const s1 = await page.evaluate(() => ({
   active: pzActive, on: document.getElementById('pzCard').classList.contains('on'),
@@ -352,13 +366,52 @@ console.log('\n10 blundermindchess.com/PremovePuzzles');
   await c2.close();
 }
 
+// ── The last move, and finding your place ────────────────────────────────────
+console.log('\n12 The last move, and finding your place');
+{
+  const { ctx, page, errors } = await open({ width: 1280, height: 900 });
+  await page.evaluate(() => pzLoad().then(() => pzStart(4)));
+  await page.waitForTimeout(400);
+  const s = await page.evaluate(() => {
+    const l = pzCur.lastUci && uciToSq(pzCur.lastUci);
+    return { hl: !!l && lastMoveFrom === l.from && lastMoveTo === l.to, last: pzCur.last,
+      prompt: document.querySelector('#pzCard .pz-prompt').textContent, num: document.querySelector('#pzCard .pz-jump').value };
+  });
+  ok(s.hl, 'the board highlights their last move from the game');
+  ok(s.prompt.includes('just played') && s.prompt.includes(s.last), `and the card names it: “${s.prompt}”`);
+  ok(s.num === '5', 'the card’s corner shows the puzzle number');
+  await page.click('#pzCard [data-act="prev"]');
+  await page.waitForTimeout(200);
+  ok(await page.evaluate(() => pzIdx) === 3, '← Prev goes back one');
+  const n = await page.evaluate(() => pzList.length);
+  const target = Math.min(151, n);
+  await page.fill('#pzCard .pz-jump', String(target));
+  await page.press('#pzCard .pz-jump', 'Enter');
+  await page.waitForTimeout(300);
+  const j = await page.evaluate(() => ({ idx: pzIdx, fen: _gameStartFen === pzCur.fen, num: document.querySelector('#pzCard .pz-jump').value }));
+  ok(j.idx === target - 1 && j.fen && j.num === String(target), `typing ${target} in the corner goes straight to puzzle ${target}`);
+  await page.fill('#pzCard .pz-jump', String(n + 50));
+  await page.press('#pzCard .pz-jump', 'Enter');
+  await page.waitForTimeout(200);
+  const k = await page.evaluate(() => ({ idx: pzIdx, num: document.querySelector('#pzCard .pz-jump').value }));
+  ok(k.idx === target - 1 && k.num === String(target), 'a number past the end stays put');
+  // Back another day: the same puzzle, found by its id, not its place in the set.
+  const id = await page.evaluate(() => pzCur.id);
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(500);
+  await page.evaluate(() => pzOpen());
+  await page.waitForTimeout(600);
+  ok(await page.evaluate(() => pzCur && pzCur.id) === id, 'reopening puzzles picks up at that puzzle');
+  ok(errors.length === 0, 'no page errors (navigation)' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));
+  await ctx.close();
+}
+
 // ── Phone ────────────────────────────────────────────────────────────────────
 console.log('\n11 Phone');
 {
   const { ctx, page, errors } = await open({ width: 412, height: 915 }, true);
   const sel2 = await pick(page);
-  await page.evaluate(() => document.getElementById('pzFloorBtn').scrollIntoView());
-  await page.tap('#pzFloorBtn');
+  await page.evaluate(() => pzOpen());
   await page.waitForTimeout(600);
   await page.waitForFunction(() => document.getElementById('pzEvalLbl').textContent !== '', null, { timeout: 15000 }).catch(() => {});
   const lay = await page.evaluate(() => {

@@ -2248,6 +2248,10 @@ body.pro-mode .bs-vision{ display:none !important; }
   letter-spacing:0.08em;text-transform:uppercase;color:var(--st-go-fg,#1d6b41);}
 .pz-count{margin-left:auto;font-weight:500;letter-spacing:0.02em;text-transform:none;
   color:var(--text-dim);font-variant-numeric:tabular-nums;}
+/* The puzzle number is also the way to jump to one. */
+.pz-jump{width:3.6em;box-sizing:border-box;padding:1px 3px;font:inherit;font-weight:700;text-align:right;
+  color:var(--text-primary);background:var(--bg-panel2);border:1px solid var(--border);border-radius:3px;}
+.pz-jump:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
 .pz-prompt{font-size:13.5px;font-weight:600;}
 .pz-note{color:var(--text-secondary);}
 .pz-note:empty{display:none;}
@@ -2257,7 +2261,7 @@ body.pro-mode .bs-vision{ display:none !important; }
 .pz-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;}
 .pz-toggle{display:flex;align-items:center;gap:5px;width:fit-content;font-size:11.5px;
   color:var(--text-secondary);cursor:pointer;}
-#pzCard .pz-row .pz-btn{flex:1 1 0;}
+#pzCard .pz-row .pz-btn{flex:1 1 0;white-space:nowrap;padding-left:6px;padding-right:6px;}
 .pz-btn{font:inherit;font-size:11.5px;padding:5px 11px;min-height:30px;border-radius:4px;
   border:1px solid var(--border);background:var(--bg-panel2);color:var(--text-primary);cursor:pointer;}
 .pz-btn:hover{border-color:#c8922a;}
@@ -2398,12 +2402,6 @@ body.pz-eval-on #pzEval{display:block;}
   .sb-tail #bs-open{padding:2px 8px;}
   .sb-tail #bs-open .bs-t1{font-size:11px;}
   .sb-tail #bs-open .bs-t2{font-size:8px;}
-  /* The floor's second row (Training Tips · Premove Puzzles) gives back what
-     it costs: a laptop at 1366×600 has no spare height to pay for it. */
-  #sidebar{--sec-h:21px;}
-  .start-area{margin-bottom:5px;}
-  #bottom-controls{gap:2px;padding-top:2px;}
-  .floor-sep{margin:4px 0 3px;}
 }
 
 /* Tier 3 — past this point the column is choosing between a legible control
@@ -4301,17 +4299,17 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
          primary row here sit under the quick start now (#startArea). -->
     <div id="bottom-controls">
       <div class="floor-sep"></div>
+      <!-- Premove puzzles are a work in progress with no button yet: the
+           only way in is blundermindchess.com/PremovePuzzles. When they are
+           ready, their button (id pzFloorBtn, onclick pzOpen()) gets a last
+           row of its own with Training Tips, as in 685a15d, and the
+           max-height:640 tier gets back the floor tightening that pays for it.
+           The Expert board's ⚡ (proPzBtn) goes back right of its ⚙. -->
       <div class="secondary-row">
+        <button class="ctrl-btn util-btn" id="btnTips" onclick="openHelp('howto')">🎯 Training Tips</button>
         <button class="ctrl-btn util-btn" id="btnLoadPgn" onclick="document.getElementById('pgnFileInput').click()">▶ Load</button>
         <input type="file" id="pgnFileInput" accept=".pgn" style="display:none" onchange="loadPgnFile(event)">
         <button class="ctrl-btn util-btn" id="btnSavePgn" onclick="savePgn()">↓ Save</button>
-      </div>
-      <!-- The floor's last row. Premove puzzles are for the curious, not the
-           first thing a new player should reach for, so they sit down here
-           as quietly as Training Tips. -->
-      <div class="secondary-row">
-        <button class="ctrl-btn util-btn" id="btnTips" onclick="openHelp('howto')">🎯 Training Tips</button>
-        <button class="ctrl-btn util-btn" id="pzFloorBtn" onclick="pzOpen()">⚡ Premove Puzzles</button>
       </div>
       <div class="util-row" style="display:none;"></div>
     </div>
@@ -4389,7 +4387,6 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       <div class="pro-abtn icon" onclick="proFlipBoard()" title="Flip board">⇅</div>
       <div class="pro-abtn icon" onclick="openThemePanel('board')" title="Board &amp; background">🎨</div>
       <div class="pro-abtn icon" onclick="openPanel('boardSettingsPanel')" title="Board settings">⚙</div>
-      <div class="pro-abtn icon" id="proPzBtn" onclick="pzOpen()" title="Premove puzzles">⚡</div>
     </div>
 
     <!-- The gear menu that used to sit here is gone. Six items, five of which

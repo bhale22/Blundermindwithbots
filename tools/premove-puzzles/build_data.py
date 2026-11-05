@@ -145,6 +145,7 @@ def build(item):
         'id': r['id'], 'ply': r['ply'], 'fen': r['fen'],
         'solver': 'w' if solver == chess.WHITE else 'b',
         'solverRating': solver_rating, 'premoverRating': premover_rating,
+        'last': r.get('last'), 'lastUci': r.get('last_uci'),
         'played': r['F'], 'playedUci': F.uci(),
         'premove': R.uci(), 'premoveSan': bF.san(R), 'premoveSanVsAnswer': bA.san(R),
         'answer': A.uci(), 'answerSan': b0.san(A), 'accept': accept,

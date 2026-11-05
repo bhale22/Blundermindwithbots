@@ -145,6 +145,8 @@ def analyse_game(line):
             'white': g['players']['white'].get('rating'), 'black': g['players']['black'].get('rating'),
             'solver': 'white' if solver else 'black',
             'fen': pos0.fen(), 'F': pos0.san(F), 'R': after_F.san(R), 'R_uci': R.uci(),
+            # the premover's move that led to pos0, for the board to highlight
+            'last': sans[j - 2] if j >= 2 else None, 'last_uci': moves[j - 2].uci() if j >= 2 else None,
             'wp_F_R': round(base_d, 1), 'wp_F_best': round(f_sound, 1), 'wp_root': round(root_d, 1),
             'root_best': pos0.san(root_best) if root_best else None,
             'punished_in_game': punished,

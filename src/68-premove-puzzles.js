@@ -35,6 +35,7 @@
 const PZ_DATA_URL = '/data/premove-puzzles.json';
 const PZ_LINK_RE = /^\/premovepuzzles\/?$/i;   // blundermindchess.com/PremovePuzzles
 const PZ_POS_KEY = 'bm_pzIndex';
+const PZ_ID_KEY = 'bm_pzId';     // where to pick up again, by puzzle: the set's order can change
 const PZ_SHOW_KEY = 'bm_pzShowPremove';
 const PZ_BUST_PAUSE_MS = 1200;   // the stall before the bot answers a busted premove
 const PZ_REPLY_MS = 700;         // the bot's think time for every other move
@@ -93,7 +94,8 @@ function pzLoad() {
   return pzLoading;
 }
 
-// The entry point: the Premove Puzzles buttons and the share link.
+// The entry point. For now only the share link calls it: the puzzles have no
+// button while they are a work in progress (see the floor in 00-head.html).
 function pzOpen() {
   // Load Maia if it is already on this device (a cache check, never a
   // download) so it can take over from Flounder as soon as it is ready.
@@ -103,9 +105,15 @@ function pzOpen() {
   }
   pzLoad().then(function () {
     if (!pzList.length) return;
+    // Back to the puzzle they were on, wherever it now sits in the set.
     let i = 0;
-    try { i = parseInt(localStorage.getItem(PZ_POS_KEY) || '0', 10) || 0; } catch (e) {}
-    pzStart(i);
+    try {
+      const id = localStorage.getItem(PZ_ID_KEY);
+      const at = id ? pzList.findIndex(function (p) { return p.id === id; }) : -1;
+      if (at >= 0) i = at;
+      else if (!id) i = parseInt(localStorage.getItem(PZ_POS_KEY) || '0', 10) || 0;
+    } catch (e) {}
+    pzStart(i >= 0 && i < pzList.length ? i : 0);
   }).catch(function (e) {
     console.warn('Premove puzzles failed to load:', e);
     if (typeof showEngineWarning === 'function') showEngineWarning('⚠ The premove puzzles could not be loaded. Check the connection and try again.');
@@ -243,7 +251,7 @@ function pzStart(i, show) {
   const same = pzCur && i === pzIdx;
   pzIdx = ((i % pzList.length) + pzList.length) % pzList.length;
   pzCur = pzList[pzIdx];
-  try { localStorage.setItem(PZ_POS_KEY, String(pzIdx)); } catch (e) {}
+  try { localStorage.setItem(PZ_POS_KEY, String(pzIdx)); localStorage.setItem(PZ_ID_KEY, pzCur.id); } catch (e) {}
   pzHidePopup();
   pzApplyBot(pzCur);
 
@@ -271,6 +279,10 @@ function pzStart(i, show) {
   pzNote = '';
   pzFlash = false;
   const ply = gameMovesAlgebraic.length;
+  // Highlight the move that led here, as a game would: their last move from
+  // the game, or the premove that just fired when starting from after it.
+  const lastUci = fromMid ? pzCur.premove : pzCur.lastUci;
+  if (lastUci) { const l = uciToSq(lastUci); lastMoveFrom = l.from; lastMoveTo = l.to; }
 
   if (fromMid) {
     // The premove has already played; the follow-up is all that is left.
@@ -644,6 +656,7 @@ function pzAct(act) {
   const v = pzVerdict;
   if (act === 'retry' || act === 'reset') pzStart(pzIdx);
   else if (act === 'next') pzStart(pzIdx + 1);
+  else if (act === 'prev') pzStart(pzIdx - 1);
   else if (act === 'answer') pzStart(pzIdx, { mode: 'answer' });
   else if (act === 'bust' && v && v.reason) pzStart(pzIdx, { mode: 'bust', attempt: v.uci, reason: v.reason });
   else if (act === 'retryFollow') pzStart(pzIdx, { mode: 'followup' });
@@ -677,6 +690,13 @@ document.addEventListener('keydown', function (e) {
   const el = document.getElementById('pzPop');
   if (e.key === 'Escape' && el && !el.hidden) pzAct('play');
 });
+// The number in the card's corner: type one (or step it) to go straight there.
+document.addEventListener('change', function (e) {
+  if (!e.target.classList || !e.target.classList.contains('pz-jump') || !pzList) return;
+  const n = parseInt(e.target.value, 10);
+  if (n >= 1 && n <= pzList.length && n - 1 !== pzIdx) pzStart(n - 1);
+  else e.target.value = pzIdx + 1;
+});
 
 // ── The card ────────────────────────────────────────────────────────────────
 // Under the board on a phone. On a wide screen the board is tall enough to
@@ -706,27 +726,45 @@ function pzRenderCard() {
   const opp = pzOppName();
   const hidden = !pzShowPremove && !(pzMarks && pzMarks.always);
   const preSan = pzFirst && pzFirst.exact ? p.premoveSanVsAnswer : p.premoveSan;
+  // Their move that led here, numbered as the game numbered it.
+  let last = '';
+  if (p.last) {
+    const full = parseInt(p.fen.split(' ')[5], 10) || 1;
+    last = '<span class="pz-mv">' + (p.solver === 'w' ? (full - 1) + '…' : full + '. ') + p.last + '</span>';
+  }
+  const theyDid = opp + (last ? ' just played ' + last + ' and' : '');
   let prompt;
   if (pzPhase === 'free') prompt = 'Playing it out against ' + opp + '.';
   else if (pzPhase === 'followup' || (pzPhase === 'held' && pzFirst)) {
     prompt = 'Their premove <span class="pz-mv pre">' + preSan + '</span> fired. Now cash in.';
   }
-  else if (hidden) prompt = 'You’re ' + side + '. ' + opp + ' has a premove queued. Work out what it is, then make it backfire.';
-  else prompt = 'You’re ' + side + '. ' + opp + ' premoved <span class="pz-mv pre">' + p.premoveSan + '</span>. Make it backfire.';
+  else if (hidden) prompt = 'You’re ' + side + '. ' + theyDid + ' has a premove queued. Work out what it is, then make it backfire.';
+  else prompt = 'You’re ' + side + '. ' + theyDid + ' premoved <span class="pz-mv pre">' + p.premoveSan + '</span>. Make it backfire.';
+  // Typing a puzzle number survives the card redrawing under it (a move lands).
+  const jump = el.querySelector('.pz-jump');
+  const typing = jump && document.activeElement === jump ? jump.value : null;
   el.innerHTML =
-    '<div class="pz-head"><span>⚡ Premove puzzle</span><span class="pz-count">' + (pzIdx + 1) + ' / ' + pzList.length + '</span></div>' +
+    '<div class="pz-head"><span>⚡ Premove puzzle</span><label class="pz-count">' +
+      '<input class="pz-jump" type="number" inputmode="numeric" min="1" max="' + pzList.length + '" value="' + (pzIdx + 1) +
+      '" aria-label="Go to puzzle number"> / ' + pzList.length + '</label></div>' +
     '<p class="pz-prompt">' + prompt + '</p>' +
     '<p class="pz-note">' + pzNote + '</p>' +
     '<label class="pz-toggle"><input type="checkbox" data-act="toggle"' + (pzShowPremove ? ' checked' : '') + '> Show their premove</label>' +
     '<div class="pz-row">' +
-      '<button type="button" class="pz-btn" data-act="reset">Reset</button>' +
+      '<button type="button" class="pz-btn" data-act="prev">← Prev</button>' +
       '<button type="button" class="pz-btn" data-act="next">Next →</button>' +
+      '<button type="button" class="pz-btn" data-act="reset">Reset</button>' +
       '<button type="button" class="pz-btn" data-act="exit">Exit</button>' +
     '</div>' +
     '<p class="pz-meta">From a Lichess 1+0 game, ' + p.solverRating + ' vs ' + p.premoverRating +
       (p.maia1500 != null ? ' · Maia 1500 finds the first move ' + Math.round(p.maia1500 * 100) + '% of the time' : '') +
       ' · <a href="https://lichess.org/' + p.id + '/' + (p.solver === 'w' ? 'white' : 'black') + '#' + p.ply +
       '" target="_blank" rel="noopener">see the game</a></p>';
+  if (typing !== null) {
+    const j = el.querySelector('.pz-jump');
+    j.value = typing;
+    j.focus({ preventScroll: true });
+  }
   if (pzFlash) {
     pzFlash = false;
     el.classList.remove('pz-flash');

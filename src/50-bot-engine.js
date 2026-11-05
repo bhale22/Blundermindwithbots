@@ -4230,17 +4230,14 @@ function botPostMoveHook() {
       }
 
       // Derive UCI from the squares recorded by executeMove.
-      // lastMovePromo is not stored globally, so we check the board for a
-      // promotion piece: if the arriving square has a non-pawn piece of the
-      // mover's color AND the piece left from rank 1/8, it was a promotion.
-      let promo = null;
-      const arrivedPiece = board[lastMoveTo];
-      const fromRank = Math.floor(lastMoveFrom / 8);
-      if (arrivedPiece && arrivedPiece.piece !== 'P' &&
-          (fromRank === 1 || fromRank === 6) &&
-          ['Q','R','B','N'].includes(arrivedPiece.piece)) {
-        promo = arrivedPiece.piece.toLowerCase();
-      }
+      // lastMovePromo is not stored globally, so the promotion comes from the
+      // move's SAN (e8=Q), which gameMovesAlgebraic already holds. The board
+      // can't tell it: a knight leaving d7 looks just like a pawn that left
+      // d7 and became one, and was recorded as d7b6n.
+      // gameMovesAlgebraic has the SAN for every move including this one
+      const humanSan = gameMovesAlgebraic[gameMovesAlgebraic.length - 1] || null;
+      const promoSan = humanSan && /=([QRBN])/i.exec(humanSan);
+      const promo = promoSan ? promoSan[1].toLowerCase() : null;
       const humanUci = sqToUci(lastMoveFrom, lastMoveTo, promo);
       // Only record if not already pushed (bot move path already called botRecordMove)
       const last = botMoveHistory[botMoveHistory.length - 1];
@@ -4263,8 +4260,6 @@ function botPostMoveHook() {
               : 0;
           }
         }
-        // gameMovesAlgebraic has the SAN for every move including this one
-        const humanSan = gameMovesAlgebraic[gameMovesAlgebraic.length - 1] || null;
         botRecordMove(humanUci, humanSan);
       }
     }

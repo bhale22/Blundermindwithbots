@@ -25,7 +25,8 @@ python mine.py games.ndjson hits.jsonl path/to/stockfish
 # 4. Select the good ones and score every legal reply, and every follow-up (~40 min for 500 puzzles)
 python build_data.py path/to/stockfish puzzles.json hits.jsonl
 
-# 5. Order them easy to hard with the app's own Maia (server on :3100; from the repo root)
+# 5. Keep the fair ones and order them easy to hard, with the app's own Maia
+#    (server on :3100; from the repo root)
 node scripts/rank-premove-puzzles.mjs tools/premove-puzzles/puzzles.json data/premove-puzzles.json
 ```
 
@@ -45,7 +46,17 @@ A puzzle takes two moves to solve: the one that lets the premove fire into troub
 that cashes in. So for every first move that solves it (an accepted answer, or within 8 win% points
 of the best), `second[first][reply]` scores every follow-up from the position after the premove.
 
-`rank-premove-puzzles.mjs` adds `maia1500`, Maia 1500's probability of playing a solving first
-move, and sorts by it: the most forced-looking first move is the easiest puzzle.
+`rank-premove-puzzles.mjs` keeps a puzzle only if the player could have seen it coming. Maia at
+the solver's rating must play one move at least 80% of the time (the move the opponent was
+premoving against), and Maia at the premover's rating must answer that move with the game's
+premove at least 80% of the time. Then you know they are likely to premove, and what. It also drops
+a puzzle where the best honest move does nearly as well as the trap (within 20 win% points), such
+as one with a mate on the board. The thresholds are constants at the top of the script. It records
+`expected`, `expectedP` and `premoveP`, adds `maia1500` (Maia 1500's probability of a solving first
+move), and sorts by that: the most forced-looking first move is the easiest puzzle.
 
-The October 2026 run: 1,968 games, 15,704 premoves, 491 puzzles from 420 games.
+`mine.py` also records the premover's previous move (`last`, `lastUci`), which the board highlights.
+
+The October 2026 run: 1,968 games, 15,704 premoves, 491 puzzles from 420 games before the Maia
+filter, 4 after it. Only about 1 puzzle in 120 passes both 80% tests, so a useful set needs far
+more games.
