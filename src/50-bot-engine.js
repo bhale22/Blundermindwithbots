@@ -2343,7 +2343,10 @@ async function botFlounderTurn(fen, clockMs, startMs, baseElo) {
   // on a probability, but it is the same control reading the same curves.
   const temp = complexityAdjustedTemp(
     timePressureTempByThink(botMaiaBaseTemp(), roughThinkSec));
-  const pick = await flounderChooseMove(fen, elo, undefined, temp, { staleSeek: true });
+  // The probe gets the turn's think time as its deadline, so on a slow device
+  // the engine's thinking fits inside the time the bot meant to spend anyway.
+  const pick = await flounderChooseMove(fen, elo, undefined, temp,
+    { staleSeek: true, budgetMs: roughThinkSec * 1000 });
 
   let uci, delay;
   if (pick && pick.uci) {
@@ -2874,6 +2877,31 @@ function hustlerPhaseTemp() {
 }
 
 // ── Main bot move trigger ────────────────────────────────────────────────────
+// A legal move for a turn every engine failed to answer (see botMakeMove), with
+// the reason shown once per game. Random rather than clever: anything that
+// evaluates needs the engine that has just failed. A capture is preferred, since
+// on average it gives away less than a random quiet move.
+let _botLastResortGen = -1;
+function _botLastResortMove(fen) {
+  let moves = [];
+  try { moves = _fenLegalUcis(fen); } catch (e) { moves = []; }
+  if (!moves.length) return null;
+  const caps = moves.filter(u => { const m = uciToSq(u); return m && board[m.to]; });
+  const pool = caps.length ? caps : moves;
+  const uci = pool[Math.floor(Math.random() * pool.length)];
+  lastBotMoveSource = 'Fallback';
+  const why = (typeof sfUnsupported !== 'undefined' && sfUnsupported)
+    ? sfUnsupportedText() + ' Until then the bot plays random moves.'
+    : 'The chess engine didn’t answer in time on this device, so the bot played a quick move instead.';
+  console.warn('[engine] no engine move this turn — last-resort ' + uci);
+  if (_botLastResortGen !== _botGameGen) {
+    _botLastResortGen = _botGameGen;
+    if (typeof showEngineWarning === 'function') showEngineWarning('⚠ ' + why);
+    if (typeof lbLog === 'function' && typeof lichessGameLive === 'function' && lichessGameLive()) lbLog(why);
+  }
+  return uci;
+}
+
 async function botMakeMove() {
   // A premove still being worked out for this turn goes first: it either fires
   // (and this call then finds the turn already played) or gives way. Bounded,
@@ -3411,6 +3439,15 @@ async function botMakeMove() {
   botThinking = false;
   document.getElementById('botStatus').textContent = '';
   if (_tookDraw) return;
+
+  // LAST RESORT. Every engine path can come back empty: Stockfish failed to
+  // load, or each search ran out of time on a slow device. Nothing retries a
+  // turn, so an empty one used to freeze the game for good — silently, and on
+  // Lichess until the bot lost on time. Any legal move beats that; the warning
+  // says why the bot is playing one.
+  if (!uciMove && botActive && !gameOver && turn === botColor) {
+    uciMove = _botLastResortMove(fen);
+  }
 
   if (uciMove && botActive) {
     const mv = uciToSq(uciMove);

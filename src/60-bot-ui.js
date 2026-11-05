@@ -861,7 +861,9 @@ function _checkEngineReady(tab) {
   var sfTabs = ['sf','stockfish','lcsf','hybrid'];
   var maiaTabs = ['maia3','maia','lcmaia','hybrid'];
   if (sfTabs.includes(tab)) {
-    if (sfWorker && !sfReady) {
+    if (typeof sfBrowserSupport === 'function' && sfBrowserSupport()) {
+      showEngineWarning('⚠ ' + sfUnsupportedText());
+    } else if (sfWorker && !sfReady) {
       showEngineWarning('⚠ The engine is loading — the first move may be delayed.');
     } else if (!sfWorker) {
       // Will be started by sfInit() — no warning needed, just inform
