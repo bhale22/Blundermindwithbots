@@ -991,6 +991,7 @@ async function botStart() {
   // Reset explorer-confidence state so familiarity and surprise start fresh.
   _explorerConfidence    = null;
   _explorerSurpriseBoost = 0;
+  _botLastBookMove       = null;
   // Opening stages for the colour the bot plays this game (the human is pc).
   // Repertoire and Main Line are separate switches, run in that order; see
   // the flags in the app shell.
@@ -2367,6 +2368,7 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
   botOpeningConfig.black        = (cfg.repSlots && cfg.repSlots.black || []).map(mapSlot);
   botOpeningConfig.source       = cfg.openingSource || 'masters';
   botOpeningConfig.maxBookDepth = cfg.openingDepth  || 20;
+  botOpeningConfig.minGames     = cfg.openingMinGames || 4;
   botOpeningConfig.strictness   = 0.8;
   if (cfg.modernOnly) botOpeningConfig.since = '2020-01'; else delete botOpeningConfig.since;
   botOpeningConfig.repWhite      = _stW.rep;

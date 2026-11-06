@@ -1493,6 +1493,22 @@ function explorerMoveUci(m) {
   return castle ? m.uci.slice(0, 2) + (castle[1] ? 'c' : 'g') + m.uci[3] : m.uci;
 }
 
+// How few games still count as book: "Min games" in the builder, one setting for
+// the engine's book and the Main Line. A position with fewer games than this, in
+// the database and rating band being asked, is out of book, and that book stays
+// off for the rest of the game.
+//
+// Without it a book lasted down to a single game, and a position with one game
+// has one move. That is one stranger's choice with nothing for a personality to
+// weigh it against, and it overruled whatever the engine behind the book would
+// have done.
+function bookMinGames() {
+  return botOpeningConfig.minGames || 4;
+}
+function explorerGameCount(moves) {
+  return (moves || []).reduce((s, m) => s + m.white + m.draws + m.black, 0);
+}
+
 async function maiaGetMoveProbs(fen) {
   try {
     // Filter to the selected band only, for more authentic play. lcRatingParam
@@ -1505,8 +1521,8 @@ async function maiaGetMoveProbs(fen) {
     if (!resp.ok) throw new Error('Lichess API error ' + resp.status);
     var data = await resp.json();
     var moves = data.moves || [];
-    if (!moves.length) return null;
-    var total = moves.reduce(function(s, m) { return s + m.white + m.draws + m.black; }, 0) || 1;
+    var total = explorerGameCount(moves);
+    if (total < bookMinGames()) return null;
     var probs = {};
     moves.forEach(function(m) { probs[explorerMoveUci(m)] = (m.white + m.draws + m.black) / total; });
     return probs;
@@ -1681,12 +1697,15 @@ function botBookRatingElo() {
 // Both used to be stored and never read. Every lookup asked Masters first with
 // no date filter and fell back to Lichess at a fixed 1200–1800 band, whatever
 // the two buttons said. The proxy already accepted `since` on both routes.
+const EXPLORER_START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 function _openingBookQuery() {
   const cfgBook = (typeof botOpeningConfig !== 'undefined' && botOpeningConfig) || {};
   return {
     src:     cfgBook.source === 'lichess' ? 'lichess' : 'masters',
     since:   cfgBook.since || null,                        // 'YYYY-MM'
     ratings: lcRatingParam(botBookRatingElo()),
+    minGames: bookMinGames(),
+    startFen: _gameStartFen || EXPLORER_START_FEN,
   };
 }
 // The cache is keyed by everything that changes the answer, not just the moves.
@@ -1694,18 +1713,25 @@ function _openingBookQuery() {
 // its key here too, or it will miss every time.
 function openingCacheKey(moveHistory) {
   const q = _openingBookQuery();
-  return [q.src, q.since || '', q.ratings, moveHistory.join(',')].join('|');
+  return [q.src, q.since || '', q.ratings, q.minGames, q.startFen, moveHistory.join(',')].join('|');
 }
 
 async function openingExplorerFetch(moveHistory) {
-  const { src, since, ratings } = _openingBookQuery();
+  const { src, since, ratings, minGames, startFen } = _openingBookQuery();
   const cacheKey = openingCacheKey(moveHistory);
   if (_openingCache.has(cacheKey)) return _openingCache.get(cacheKey);
 
+  // The moves played, from where this game began. The explorer reads `play` from
+  // `fen`. This used to send `play` alone, which is wrong twice: at the start of
+  // a game there is nothing to send and the proxy refuses the request, so a bot
+  // playing White lost its Main Line before its first move; and in a game begun
+  // from "Play from here" the moves were looked up from the standard position.
+  const where = 'fen=' + encodeURIComponent(startFen) +
+                '&play=' + encodeURIComponent(moveHistory.join(','));
+
   async function fetchMasters() {
-    const play = moveHistory.join(',');
     // Masters dates are whole YEARS (see the /api/masters route).
-    const url = '/api/masters?play=' + encodeURIComponent(play) + '&moves=10' +
+    const url = '/api/masters?' + where + '&moves=10' +
                 (since ? '&since=' + since.slice(0, 4) : '');
     const resp = await bookFetch(url);
     if (!resp.ok) throw new Error('masters proxy ' + resp.status);
@@ -1713,10 +1739,8 @@ async function openingExplorerFetch(moveHistory) {
   }
 
   async function fetchLichess() {
-    const play = moveHistory.join(',');
     // Proxied, never called direct — see the /api/lichess route in server.js.
-    const url = '/api/lichess' +
-                '?play=' + encodeURIComponent(play) +
+    const url = '/api/lichess?' + where +
                 '&speeds=blitz,rapid,classical&ratings=' + encodeURIComponent(ratings) +
                 '&moves=10' + (since ? '&since=' + since : '');
     const resp = await bookFetch(url);
@@ -1725,9 +1749,10 @@ async function openingExplorerFetch(moveHistory) {
   }
 
   try {
-    // Masters: try it first and fall back to Lichess when it is empty or
+    // Masters: try it first and fall back to Lichess when it is too thin or
     // unavailable (master games run out a few moves in). Lichess: ask it only.
-    let data = null;
+    const enough = d => !!d && explorerGameCount(d.moves) >= minGames;
+    let data = null, db = 'masters';
     if (src === 'masters') {
       try {
         data = await fetchMasters();
@@ -1735,10 +1760,11 @@ async function openingExplorerFetch(moveHistory) {
         console.warn('Masters proxy unavailable, falling back to Lichess DB:', e.message);
       }
     }
-    if (!data || !data.moves || !data.moves.length) {
+    if (!enough(data)) {
       data = await fetchLichess();
+      db = 'lichess';
     }
-    if (!data || !data.moves || !data.moves.length) {
+    if (!enough(data)) {
       _openingCache.set(cacheKey, null);
       return null;
     }
@@ -1746,6 +1772,7 @@ async function openingExplorerFetch(moveHistory) {
       (b.white + b.draws + b.black) - (a.white + a.draws + a.black)
     );
     data.moves.forEach(m => { m.uci = explorerMoveUci(m); });
+    data.db = db;   // game counts only compare within one database (botNoteBookReply)
     _openingCache.set(cacheKey, data);
     return data;
   } catch(e) {

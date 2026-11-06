@@ -44,6 +44,11 @@ await ctx.addInitScript(() => {
 });
 await ctx.route(/\/api\/(masters|lichess)\?/, route => {
   const u = new URL(route.request().url());
+  // As server.js does. Answering this anyway is how a Main Line bot playing White
+  // lost its Main Line on move 1 with every check here passing.
+  if (!u.searchParams.get('fen') && !u.searchParams.get('play')) {
+    return route.fulfill({ status: 400, contentType: 'application/json', body: '{"error":"need fen or play"}' });
+  }
   let body;
   if (u.searchParams.has('play')) {
     const play = u.searchParams.get('play') || '';

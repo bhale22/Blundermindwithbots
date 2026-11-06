@@ -262,3 +262,53 @@ test('a slow book move still respects the clock', () => {
   const t = ctx.botBookMoveDelayMs(10000);   // 10 s left on a 30-minute clock
   assert.ok(t <= 1000 + 1, 'emergency rule caps it at 10% of the clock: ' + Math.round(t));
 });
+
+// ── Novelty pause: the human played a move the book rarely sees ──────────────
+const surprise = (ctx, boost) => vm.runInContext('_explorerSurpriseBoost = ' + boost, ctx);
+const boostLeft = ctx => vm.runInContext('_explorerSurpriseBoost', ctx);
+
+test('novelty pause: scales the real think time, once', () => {
+  const ctx = makeCtx();
+  const plain = think(ctx, 600000);
+  surprise(ctx, 1);
+  assert.strictEqual(think(ctx, 600000), plain * 2.5, 'full boost');
+  assert.strictEqual(boostLeft(ctx), 0, 'spent');
+  assert.strictEqual(think(ctx, 600000), plain, 'and gone on the next move');
+  surprise(ctx, 0.5);
+  assert.strictEqual(think(ctx, 600000), plain * 1.75, 'partial boost');
+});
+
+test('novelty pause: the rough estimate neither spends it nor reads it', () => {
+  const ctx = makeCtx();
+  const plain = ctx.botThinkTime(null, 600000, { rough: true });
+  surprise(ctx, 1);
+  assert.strictEqual(ctx.botThinkTime(null, 600000, { rough: true }), plain, 'the estimate is unchanged');
+  assert.strictEqual(boostLeft(ctx), 1, 'still there for the real delay');
+});
+
+test('novelty pause: not where something else sets the pace, and never left pending', () => {
+  for (const mode of ['instant', 'fixed', 'mirror']) {
+    const ctx = makeCtx({ botTimeBehavior: mode, botUserMoveTimestamps: [4000] });
+    const plain = think(ctx, 600000);
+    surprise(ctx, 1);
+    assert.strictEqual(think(ctx, 600000), plain, mode + ' is unchanged');
+    assert.strictEqual(boostLeft(ctx), 0, mode + ' spends it');
+    surprise(ctx, 1);
+    assert.strictEqual(ctx.botSurpriseMult(), 1, mode + ' gives a book move no pause');
+  }
+  const ctx = makeCtx({ botWeaponizerEnabled: true, botOppClockMs: 10000 });
+  surprise(ctx, 1);
+  assert.strictEqual(ctx.botSurpriseMult(), 1, 'Weaponizer pressing');
+  assert.strictEqual(boostLeft(ctx), 0, 'Weaponizer spends it');
+});
+
+test('novelty pause: book moves take it too, inside the clock caps', () => {
+  const ctx = makeCtx({ botCplxBaseMode: 'clock', botStartClockMs: 30 * 60000, clockInc: 0, botBehavClockMirror: false });
+  const plain = ctx.botBookMoveDelayMs(null);
+  assert.strictEqual(ctx.botBookMoveDelayMs(null, 2.5), plain * 2.5, 'a plain book move');
+  assert.ok(ctx.botBookMoveDelayMs(10000, 2.5) <= 1000 + 1, 'the pause cannot flag the bot');
+  surprise(ctx, 1);
+  assert.strictEqual(ctx.botThinkTime(null, 1800000, { book: true }), ctx.botBookMoveDelayMs(1800000, 2.5),
+    'the clock plan\'s book path');
+  assert.strictEqual(boostLeft(ctx), 0, 'and it is spent');
+});
