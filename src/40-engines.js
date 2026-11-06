@@ -1478,6 +1478,21 @@ async function bookFetch(url) {
   finally { clearTimeout(timer); }
 }
 
+// The explorer writes castling as king-takes-rook: O-O comes back as e8h8 and
+// O-O-O as e8a8, from the Lichess and Masters databases alike. Everything else
+// here says king-to-g8: the board's legal moves, Maia, and Stockfish, which
+// outside Chess960 mode ignores e8h8 altogether. Passed through as it came, a
+// book's castling move was a move nothing could play, and the bot sat on it
+// forever. So it is translated where it enters, and nothing past here has to
+// know.
+//
+// Read from the SAN, not the squares: e1h1 is also an ordinary move for a rook
+// or a queen standing on e1.
+function explorerMoveUci(m) {
+  const castle = /^O-O(-O)?/.exec(m.san || '');
+  return castle ? m.uci.slice(0, 2) + (castle[1] ? 'c' : 'g') + m.uci[3] : m.uci;
+}
+
 async function maiaGetMoveProbs(fen) {
   try {
     // Filter to the selected band only, for more authentic play. lcRatingParam
@@ -1493,7 +1508,7 @@ async function maiaGetMoveProbs(fen) {
     if (!moves.length) return null;
     var total = moves.reduce(function(s, m) { return s + m.white + m.draws + m.black; }, 0) || 1;
     var probs = {};
-    moves.forEach(function(m) { probs[m.uci] = (m.white + m.draws + m.black) / total; });
+    moves.forEach(function(m) { probs[explorerMoveUci(m)] = (m.white + m.draws + m.black) / total; });
     return probs;
   } catch(e) {
     console.warn('Lichess Explorer fallback:', e);
@@ -1730,6 +1745,7 @@ async function openingExplorerFetch(moveHistory) {
     data.moves.sort((a, b) =>
       (b.white + b.draws + b.black) - (a.white + a.draws + a.black)
     );
+    data.moves.forEach(m => { m.uci = explorerMoveUci(m); });
     _openingCache.set(cacheKey, data);
     return data;
   } catch(e) {
