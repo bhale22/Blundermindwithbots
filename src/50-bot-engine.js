@@ -2882,7 +2882,7 @@ function hustlerPhaseTemp() {
 // evaluates needs the engine that has just failed. A capture is preferred, since
 // on average it gives away less than a random quiet move.
 let _botLastResortGen = -1;
-function _botLastResortMove(fen) {
+function _botLastResortMove(fen, reason) {
   let moves = [];
   try { moves = _fenLegalUcis(fen); } catch (e) { moves = []; }
   if (!moves.length) return null;
@@ -2890,9 +2890,9 @@ function _botLastResortMove(fen) {
   const pool = caps.length ? caps : moves;
   const uci = pool[Math.floor(Math.random() * pool.length)];
   lastBotMoveSource = 'Fallback';
-  const why = (typeof sfUnsupported !== 'undefined' && sfUnsupported)
+  const why = reason || ((typeof sfUnsupported !== 'undefined' && sfUnsupported)
     ? sfUnsupportedText() + ' Until then the bot plays random moves.'
-    : 'The chess engine didn’t answer in time on this device, so the bot played a quick move instead.';
+    : 'The chess engine didn’t answer in time on this device, so the bot played a quick move instead.');
   console.warn('[engine] no engine move this turn — last-resort ' + uci);
   if (_botLastResortGen !== _botGameGen) {
     _botLastResortGen = _botGameGen;
@@ -2900,6 +2900,14 @@ function _botLastResortMove(fen) {
     if (typeof lbLog === 'function' && typeof lichessGameLive === 'function' && lichessGameLive()) lbLog(why);
   }
   return uci;
+}
+
+// Would the board play this move for the side to move, right now?
+function _botUciIsLegal(uci) {
+  const mv = uciToSq(uci);
+  if (!mv) return false;
+  const p = board[mv.from];
+  return !!p && p.color === turn && legalMovesFor(mv.from, board, epSq, castling).includes(mv.to);
 }
 
 async function botMakeMove() {
@@ -3073,7 +3081,9 @@ async function botMakeMove() {
       // repertoire left the game — its own opening, or wherever the opponent
       // steered out of it.
       const openingMove = await botGetOpeningMove(botMoveHistory);
-      if (openingMove) {
+      // A book move the board will not play is off book, not a move to sit on:
+      // the exit below drops an illegal move without playing anything.
+      if (openingMove && _botUciIsLegal(openingMove)) {
         uciMove = openingMove;
         lastBotMoveSource = 'Book';
         const _od = await openingExplorerFetch(botMoveHistory);
@@ -3445,8 +3455,17 @@ async function botMakeMove() {
   // turn, so an empty one used to freeze the game for good — silently, and on
   // Lichess until the bot lost on time. Any legal move beats that; the warning
   // says why the bot is playing one.
+  //
+  // A pick the board will not play is the same empty turn, and it was harder to
+  // see: the legality check below skipped it with no error and a blank status.
+  let _lastResortWhy;
+  if (uciMove && botActive && !gameOver && turn === botColor && !_botUciIsLegal(uciMove)) {
+    console.warn('[engine] pick ' + uciMove + ' (' + lastBotMoveSource + ') is not legal in ' + fen);
+    uciMove = null;
+    _lastResortWhy = 'The bot chose a move the board wouldn’t accept, so it played a quick move instead.';
+  }
   if (!uciMove && botActive && !gameOver && turn === botColor) {
-    uciMove = _botLastResortMove(fen);
+    uciMove = _botLastResortMove(fen, _lastResortWhy);
   }
 
   if (uciMove && botActive) {
