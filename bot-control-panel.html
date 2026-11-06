@@ -4749,7 +4749,7 @@ const PERSONALITIES = [
     attractors:{complexity:3,compwin:2,spacecadet:1,fortkx:-2,gambito:0,trade:2,structure:-2,hustle:-2,luck:1,pressure:1,attacker:3} },
   { id:'clock',      name:'Clock Watcher',      icon:'⧗', tag:'Clock',      desc:'Conservative when ahead on time, reckless when behind.',
     attractors:{complexity:0,compwin:-2,spacecadet:0,fortkx:0,gambito:0,trade:-1,structure:0,hustle:0,luck:0,pressure:-3,attacker:0} },
-  { id:'badday',     name:'Grandmaster Bad Day', icon:'👑',tag:'Human',      desc:'Maia 2400 but picks the lowest-probability move above 4% — never accidentally brilliant.',
+  { id:'badday',     name:'Grandmaster Bad Day', icon:'👑',tag:'Human',      desc:'Maia 2500 but picks the lowest-probability move above 4% — never accidentally brilliant.',
     attractors:{complexity:0,compwin:0,spacecadet:0,fortkx:0,gambito:0,trade:0,structure:0,hustle:0,luck:5,pressure:2,attacker:0} },
   { id:'drunken',    name:'Drunken Master',      icon:'🍺', tag:'Human',      desc:'Was that a brilliant tactical move — or was it thinking about kittens? Each move: 50% Maia 2400, 50% Maia 1000.',
     attractors:{complexity:3,compwin:2,spacecadet:1,fortkx:-3,gambito:3,trade:1,structure:-2,hustle:2,luck:2,pressure:1,attacker:4} },
@@ -13737,7 +13737,7 @@ function renderPersonalities(){
 const PERS_CONFIRMS = {
   badday: { title:'👑 Grandmaster Bad Day', items:[
     'Engine → Maia 3',
-    'ELO → 2400',
+    'ELO → 2500',
     'Plays lowest probability move that is greater than 4%',
     'Eval-checked: if that move accidentally beats Maia’s top choice, the top choice is played instead',
   ]},
@@ -13957,7 +13957,7 @@ function _applyPersonality(id, confirmed){
   if(id === 'badday'){
     const card = document.querySelector('#engine-mode-grid .mcard[data-engine="maia3"]');
     if(card) selEngineMode(card);
-    setElo(2400);
+    setElo(2500);   // a grandmaster is rated 2500 or better
     const lo = document.getElementById('day-lower'), hi = document.getElementById('day-upper');
     if(lo) lo.value = 4;    // minProbPct=4: keep only moves with individual prob ≥ 4%
     if(hi) hi.value = 100;  // dayUpper=100: engine then selects the lowest-probability acceptable move
@@ -15436,7 +15436,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
       <p>This personality will set:</p>
       <ul id="bdconfirm-list">
         <li>Engine → Maia 3</li>
-        <li>ELO → 2400</li>
+        <li>ELO → 2500</li>
         <li>Plays lowest probability move that is greater than 4%</li>
       </ul>
       <p style="opacity:0.65;margin-bottom:0;">You can adjust any of these manually afterwards.</p>

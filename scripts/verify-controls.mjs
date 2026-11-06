@@ -94,9 +94,14 @@ console.log('\nPHONE  390×844');
   ok('preset name replaces the count', /^Grandmaster Bad Day · \d+ cp$/.test(bd), bd);
   // Bad Day averages 0.64 across 11 attractors — the old code called it "Light bias".
   ok('...and is no longer reported as Light bias', !/Light bias/.test(bd), bd);
+  // A grandmaster is rated 2500 or better, so the preset can't sit below that.
+  const bdBot = await page.evaluate(() => ({ engine: getBotConfig().engine, elo: getBotConfig().elo,
+    said: [PERSONALITIES.find(p => p.id === 'badday').desc, PERS_CONFIRMS.badday.items.join(' ')] }));
+  ok('Grandmaster Bad Day is Maia 2500, and says so', bdBot.engine === 'maia3' && bdBot.elo === 2500
+    && bdBot.said.every(t => /2500/.test(t) && !/2400/.test(t)), bdBot);
 
   // ── 4/5/6. Engine picker ──
-  // Bad Day reconfigures the engine for you (Maia 2400), which reopens the
+  // Bad Day reconfigures the engine for you (Maia 2500), which reopens the
   // Engine section — wait out the 0.45s panel-shell transition or clicks land
   // on a card whose box is still collapsed under the section header.
   await ensureOpen(page, ['engine']);

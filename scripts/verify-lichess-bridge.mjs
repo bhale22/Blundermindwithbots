@@ -463,6 +463,19 @@ for (const [o, want] of cases) {
   await until(() => M.challenges[id].declined, 5000);
   check(M.challenges[id].declined === want, 'declined ' + JSON.stringify(o).slice(0, 60) + ' as ' + want, M.challenges[id].declined);
 }
+// Engines still loading: Lichess hears "later", and the panel and log say why.
+// Pretending keeps the real engine alive, so the rest of the run needs no reload.
+const lbStatusText = () => page.textContent('#lbStatus');
+await page.evaluate(() => { window._keepWarm = _lbWarmEngines; _lbWarmEngines = () => {}; sfReady = false; lbRender(); });
+check(/challenges are declined until they are ready/.test(await lbStatusText()), 'while the engines load, the panel says challenges are declined', await lbStatusText());
+const whileLoading = newChallenge({});
+await until(() => M.challenges[whileLoading].declined, 5000);
+check(M.challenges[whileLoading].declined === 'later', 'a challenge then is declined "later"', M.challenges[whileLoading].declined);
+const loadingLog = await page.evaluate(() => lbLogLines[lbLogLines.length - 1]);
+check(/: engines still loading$/.test(loadingLog), 'and the log says the engines are loading, not that the bot is busy', loadingLog);
+await page.evaluate(() => { _lbWarmEngines = window._keepWarm; sfReady = true; });
+await until(async () => /^Waiting for challenges/.test(await lbStatusText()), 3000);
+check(/^Waiting for challenges/.test(await lbStatusText()), 'when they finish, the panel updates by itself', await lbStatusText());
 
 console.log('\n3. Game 1: bot is Black — draw offer, takeback, refused move, dropped stream, resignation');
 const c1 = newChallenge({ color: 'white', opts: { takebackAtPly: 4, rejectAtPly: 7, dropStreamAtPly: 10, drawOfferAtPly: 14, resignAtPly: 22 } });
