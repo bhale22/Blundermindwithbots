@@ -175,6 +175,7 @@
   </table>
   </div>
   <p class="note">Book delay: 400–1200 ms random pause to simulate human reading time.</p>
+  <p class="note">Novelty pause: when the human answers a Main Line move, their reply's frequency is the games at the new position divided by the games with the bot's move, both from lookups the Main Line already makes. Under 5% multiplies the bot's next think time by 2.5; from 5% to 15% scales down to no change. It applies in or out of book, inside the clock caps, and not on Fixed, Instantaneous or Mirror timing or while Weaponizer is active. The human's first move, a reply to a repertoire move, and the Lichess Opening Book do not trigger it.</p>
 
   <h3>2b · Maia Neural Network</h3>
   <p>Maia is a series of neural networks (600–2600 ELO) trained to predict human moves at each rating level. The bot
@@ -225,8 +226,9 @@ dial    = ELO 600–2400, step 25</div>
   <h3>2d · Lichess Opening Book (in front of either engine)</h3>
   <p>A switch, not an engine: it puts the Lichess explorer in front of Maia or Flounder. While the position is still in
   the explorer at the book's rating, the bot treats how often real players of that rating chose each move as its
-  probabilities and samples from them (temperature applies); the first time the explorer has nothing, the book is off
-  for the rest of the game and the engine plays. The book's rating is pinned to the Elometer by default, or set on its
+  probabilities and samples from them (temperature applies); the first time the explorer has fewer games than Min games
+  (<code>openingMinGames</code>, default 4, shared with the Main Line), the book is off for the rest of the game and the
+  engine plays. The book's rating is pinned to the Elometer by default, or set on its
   own. If the engine behind it is Maia and the model is not downloaded, the handover goes to Flounder at the same
   rating.</p>
 

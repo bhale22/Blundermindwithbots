@@ -43,9 +43,11 @@ async function openPage(book) {
   return { page, ctx, errs };
 }
 
+// openingMinGames 1: the reported position really was one game. The default of 4
+// would now take this bot out of book before it castled, and castling is the subject.
 const BASE_CFG = {
   type: 'botConfig', engine: 'lcmaia', elo: 1325, lcMaiaLcElo: 1325, lcMaiaMaiaElo: 1325,
-  openingBook: true, cpBudget: 160, hardFloorCp: 160, convictionPct: 0, blindConviction: false,
+  openingBook: true, openingMinGames: 1, cpBudget: 160, hardFloorCp: 160, convictionPct: 0, blindConviction: false,
   tcTime: 0, timingMode: 'instant', premoveEnabled: false,
   attractorValues: {}, pieceValues: { pawn: 0, knight: 0, bishop: 0, rook: 0, queen: 0, king: 0 },
   openingRepWhite: false, openingRepBlack: false, openingMainLineWhite: false, openingMainLineBlack: false,
@@ -192,8 +194,7 @@ console.log('Main Line:');
   ok('the bot plays the Nimzo through to 4...O-O', moves === 'd4 Nf6 c4 e6 Nc3 Bb4 e3 O-O', moves);
   ok('and the book played it', s && s.src === 'Book', s && s.src);
 
-  // The surprise check compares the human's move with the book's. Their castling
-  // has to match too, or every castling move reads as a novelty worth a long pause.
+  // Everything past openingExplorerFetch reads the cache, so it has to be translated.
   const standard = await page.evaluate(() => {
     const cached = [..._openingCache.values()].flatMap(d => (d && d.moves) || []);
     return { any: cached.length > 0, raw: cached.filter(m => /h8$|a8$|h1$|a1$/.test(m.uci) && /^O-O/.test(m.san)).length };

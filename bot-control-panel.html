@@ -3420,8 +3420,14 @@ body.fj .picon{font-weight:500;}
               </svg>
             </button>
           </div>
+          <div class="ob-elo" title="The book ends for the rest of the game at the first position with fewer games than this. Also the Main Line's minimum: they are one setting.">
+            <span class="ob-elo-lbl">Min games</span>
+            <input type="number" inputmode="numeric" min="1" max="10000" step="1" value="4" class="book-min-input"
+                   oninput="onBookMinGamesInput(this)" onchange="onBookMinGamesCommit(this)" aria-label="Fewest games a position needs to stay in book">
+          </div>
           <div class="tog-desc">While the game is still in book, play what real players of this rating actually chose</div>
           <div class="tog-desc">A personality still applies here: it chooses among the most popular moves at this rating (up to 15)</div>
+          <div class="tog-desc">The book ends at the first position with fewer games than Min games at this rating. Raise it to leave book sooner, lower it to stay longer</div>
         </div>
       </div>
 
@@ -4776,6 +4782,10 @@ const mainLine = { white:false, black:false };
 let bookSource = 'masters'; // 'masters' | 'lichess'
 let bookModern = false;
 let bookDepth  = 20;
+// Fewest games a position needs to stay in book. One number for both books: the
+// Main Line's bars and the Lichess Opening Book row each show it.
+let bookMinGames = 4;
+const BOOK_MIN_GAMES_MAX = 10000;
 let selectedTempPresetId = 'neutral'; // tracks active temperature preset
 
 // Initialize attractor state
@@ -9152,6 +9162,7 @@ function getBotConfig(){
     openingModeBlack: repOn.black ? 'repertoire' : mainLine.black ? 'mainline' : 'off',
     openingSource:   bookSource,
     openingDepth:    bookDepth,
+    openingMinGames: bookMinGames,
     modernOnly:      bookModern,
     repSlots:        { white: repSlots.white.map(s=>({...s})), black: repSlots.black.map(s=>({...s})) },
     dayLower:        dayLower,
@@ -9513,6 +9524,8 @@ function applyBotConfig(cfg){
   grp(() => {
     bookSource = cfg.openingSource || 'masters';
     bookDepth  = cfg.openingDepth || 20;
+    bookMinGames = cfg.openingMinGames || 4;
+    _syncBookMinGames();
     bookModern = !!cfg.modernOnly;
     repSlots.white.length = 0;
     repSlots.black.length = 0;
@@ -14110,10 +14123,16 @@ function _mainLineBarHTML(){
       '<span class="ml-depth-lbl">Through move</span>' +
       '<input type="number" min="5" max="40" value="' + bookDepth + '" oninput="setBookDepth(this.value)" aria-label="Main Line plays through move">' +
     '</span>' +
+    '<span class="ml-depth" title="The Main Line ends at the first position with fewer games than this (Masters first drops to the Lichess games). Also the Lichess Opening Book\'s minimum: they are one setting.">' +
+      '<span class="ml-depth-lbl">Min games</span>' +
+      '<input type="number" inputmode="numeric" min="1" max="' + BOOK_MIN_GAMES_MAX + '" step="1" value="' + bookMinGames + '" class="book-min-input" ' +
+        'oninput="onBookMinGamesInput(this)" onchange="onBookMinGamesCommit(this)" aria-label="Fewest games a position needs to stay in book">' +
+    '</span>' +
     '</div>' +
     // Inside the bar's HTML, so a redraw of the bar keeps it.
     '<div class="tog-desc" style="margin-top:6px;">Plays the single most popular move every time, so a personality ' +
-      'has no say until the Main Line ends.</div>';
+      'has no say until the Main Line ends. It ends early at a position with fewer games than Min games. ' +
+      'A reply the book rarely sees makes the bot think longer on its next move.</div>';
 }
 
 // Book settings are shared: redraw both bars, leaving the switches alone.
@@ -14132,7 +14151,25 @@ function toggleBookModern(){ bookModern = !bookModern; _refreshMainLineBars(); }
 function setBookDepth(v){
   bookDepth = Math.max(5, Math.min(40, parseInt(v) || 20));
   // Update the other column's depth input in place (avoid clobbering focus here).
-  document.querySelectorAll('.ml-depth input').forEach(inp => { if(+inp.value !== bookDepth) inp.value = bookDepth; });
+  document.querySelectorAll('.ml-depth input:not(.book-min-input)').forEach(inp => { if(+inp.value !== bookDepth) inp.value = bookDepth; });
+}
+
+// Every box showing Min games, except the one being typed in.
+function _syncBookMinGames(except){
+  document.querySelectorAll('.book-min-input').forEach(inp => { if(inp !== except) inp.value = bookMinGames; });
+}
+// Typed numbers, same two-step rule as the book's rating box: mid-edit is left
+// alone, and leaving the box cleans up whatever is in it.
+function onBookMinGamesInput(el){
+  const raw = parseInt(el.value, 10);
+  if(!(raw >= 1 && raw <= BOOK_MIN_GAMES_MAX)) return;
+  bookMinGames = raw;
+  _syncBookMinGames(el);
+}
+function onBookMinGamesCommit(el){
+  const raw = parseInt(el.value, 10);
+  if(Number.isFinite(raw)) bookMinGames = Math.max(1, Math.min(BOOK_MIN_GAMES_MAX, raw));
+  _syncBookMinGames();
 }
 
 function updateOpStatus(){

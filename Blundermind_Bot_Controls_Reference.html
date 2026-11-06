@@ -154,7 +154,9 @@
     at the book's rating, the bot plays what real players of that rating chose, in proportion to how often they chose
     it; once the game leaves the book, Maia or Flounder takes over for the rest of the game. The book's rating is
     pinned to the Elometer by default, or can be set on its own — a master-level opening on a club-level middlegame,
-    or the reverse.</p>
+    or the reverse. Min games (default 4) sets how thin the book can get: the first position with fewer games than that
+    is out of book. Raise it to leave book sooner, or set it to 1 to stay in until the games run out. The Main Line
+    shares this setting.</p>
     <div class="chips"><span class="chip">Explorer + Maia</span><span class="chip">Explorer + Flounder</span></div>
   </div>
   <p class="note">Flounder is not a Stockfish release and is not endorsed by or affiliated with the Stockfish project.
@@ -350,7 +352,7 @@ argmax (Top move): always picks the single highest-probability move (determinist
   <h2 id="openings">6 · Openings</h2>
   <div class="grid g3">
     <div class="card"><h4>Off</h4><p>No opening book. The engine picks from move 1.</p></div>
-    <div class="card"><h4>Main Line</h4><p>Follows the most popular book moves from either the Lichess Masters database or the Lichess community database, up to a configurable book depth (default 20 moves). A "Modern only" filter restricts to games from 2010 onward. White and Black can have separate settings.</p></div>
+    <div class="card"><h4>Main Line</h4><p>Follows the most popular book moves from either the Lichess Masters database or the Lichess community database, up to a configurable book depth (default 20 moves). A "Modern only" filter restricts to games from 2020 onward. White and Black can have separate settings. If you play a move the book rarely sees, the bot thinks longer on its reply (not on Fixed, Instantaneous or Mirror timing).</p></div>
     <div class="card"><h4>Repertoire</h4><p>Define up to several opening lines by name (e.g. "Sicilian Defence", "King's Gambit"). Each line gets a percentage weight. The bot randomly selects a line each game according to the weights, then follows the Lichess book within that opening. White and Black repertoires are configured independently.</p></div>
   </div>
   <p class="note">Book sources: Lichess Masters · Lichess Community</p>

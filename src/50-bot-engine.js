@@ -2514,7 +2514,7 @@ function botRecordMove(uciMove, sanMove) {
 // book knowledge — they may know one line deeply but nothing else.
 let _bookFamiliarityJitter   = 0;    // reset at each new bot game
 let _explorerConfidence     = null; // 0-1 when known; null = no data yet this game
-let _explorerSurpriseBoost  = 0;    // 0-1; consumed by next botThinkTime() call
+let _explorerSurpriseBoost  = 0;    // 0-1; set by botNoteBookReply, spent by botSurpriseMult()
 
 // Compute a 0-1 confidence score from an explorer response.
 // Uses log10 of total game count: 100 games→0.33, 1K→0.50, 10K→0.67, 1M→1.00.
@@ -2656,10 +2656,51 @@ function botBookMoveRangeMs() {
           BOOK_FAST_MS[1] + f * (BOOK_SLOW_MS[1] - BOOK_FAST_MS[1])];
 }
 // One book move's delay, inside the clock caps so a slow book can never flag.
-function botBookMoveDelayMs(clockMs) {
+// `mult` is the novelty pause, when this move has one (botSurpriseMult).
+function botBookMoveDelayMs(clockMs, mult = 1) {
   const [lo, hi] = botBookMoveRangeMs();
-  const ms = lo + Math.random() * (hi - lo);
+  const ms = (lo + Math.random() * (hi - lo)) * mult;
   return (clockMs != null) ? Math.max(200, botApplyClockCaps(ms, clockMs)) : ms;
+}
+
+// ── Novelty pause ─────────────────────────────────────────────────────────────
+// The human just played a move the book rarely sees, so the bot takes longer over
+// its reply: the "wait, I didn't expect that" a person shows even in familiar
+// territory. Up to 2.5x this one move's think time, in or out of book.
+//
+// Collected like the busted-premove stall, and for the same reason: only by the
+// call that sets the real delay. The rough estimate at the top of every Maia and
+// Flounder turn used to spend it, so the move itself never paused.
+//
+// Not where the bot's pace is set by something else: Fixed, Instantaneous and
+// Mirror, or Weaponizer pressing an opponent who is short of time.
+function botSurpriseMult() {
+  const boost = _explorerSurpriseBoost;
+  _explorerSurpriseBoost = 0;
+  if (botTimeBehavior === 'instant' || botTimeBehavior === 'fixed' || botTimeBehavior === 'mirror') return 1;
+  if (botWeaponizerEnabled && botOppClockMs !== null && botOppClockMs <= botWeaponizerTriggerMs) return 1;
+  return 1 + boost * 1.5;
+}
+
+// How rare was the human's reply? Games at the position now, over games with the
+// bot's last book move, both from lookups the Main Line makes anyway. Asking the
+// explorer about the position the human moved from would be exact, but it doubles
+// the Main Line's requests: a fast game then runs into the proxy's rate limit, and
+// a refused lookup ends the Main Line. Transpositions can only raise this number,
+// so they can miss a pause but never cause a false one.
+let _botLastBookMove = null;   // { games, db, ply }: set when the Main Line moves
+function botNoteBookReply(data) {
+  const last = _botLastBookMove;
+  _botLastBookMove = null;
+  // Only as an answer to a book move: nothing to measure the human's first move
+  // against, or a reply to a repertoire move or a bot premove.
+  if (!last || botMoveHistory.length !== last.ply + 1) return;
+  // Not enough games in that database to answer from it (the Main Line ended, or
+  // Masters dropped to Lichess): all that is known is fewer than Min games.
+  const games = (data && data.db === last.db) ? explorerGameCount(data.moves) : bookMinGames();
+  const freq = games / last.games;
+  // <5%: full surprise; 5-15%: partial; ≥15%: expected (no boost)
+  _explorerSurpriseBoost = freq < 0.05 ? 1.0 : freq < 0.15 ? (0.15 - freq) / 0.10 : 0;
 }
 
 // Complexity → multiplier, centred so a typical position (0.5) costs exactly
@@ -2691,6 +2732,7 @@ function botThinkTime(moveProbs, clockMs, opts) {
   opts = opts || {};
   const entropy = moveProbs ? positionEntropy(moveProbs) : 2;
   const bustTax = opts.rough ? 0 : botPremoveBustTaxMs();
+  const surprise = opts.rough ? 1 : botSurpriseMult();
   const withTax = ms => bustTax > 0 ? botApplyClockCaps(ms + bustTax, clockMs) : ms;
 
   // ── Instant ──────────────────────────────────────────────────────────────
@@ -2738,7 +2780,7 @@ function botThinkTime(moveProbs, clockMs, opts) {
     // In book on the clock-based plan: scaled to the time control, like every
     // other book path (botBookMoveDelayMs).
     if (planSec !== null && opts.book) {
-      return withTax(botBookMoveDelayMs(clockMs));
+      return withTax(botBookMoveDelayMs(clockMs, surprise));
     }
     // Prefer sfCplxScore (MultiPV probe) over entropy fallback when available
     const cplx = (sfCplxScore !== null) ? sfCplxScore : Math.min(1, entropy / 4.0);
@@ -2783,16 +2825,9 @@ function botThinkTime(moveProbs, clockMs, opts) {
   const _fam = openingFamiliarity(botMoveHistory.length);
   if (_fam > 0.02) thinkMs *= (0.15 + 0.85 * (1 - _fam));
 
-  // ── Novelty pause ────────────────────────────────────────────────────────
-  // If the human just played a low-frequency move (set by botPostMoveHook after
-  // checking the explorer cache), slow down to model the "wait, I didn't expect
-  // that" recalibration — even in otherwise-familiar opening territory.
+  // ── Novelty pause (botSurpriseMult) ──────────────────────────────────────
   // Applied after familiarity so it partially overrides the speed savings.
-  // _explorerSurpriseBoost is consumed here (fires on this move only).
-  if (_explorerSurpriseBoost > 0) {
-    thinkMs *= (1 + _explorerSurpriseBoost * 1.5);
-    _explorerSurpriseBoost = 0;
-  }
+  thinkMs *= surprise;
 
   // ── Reconsideration pause: occasional extended hesitation ────────────────
   if (botBehavReconsider && Math.random() < 0.15) {
@@ -3081,6 +3116,10 @@ async function botMakeMove() {
       // repertoire left the game — its own opening, or wherever the opponent
       // steered out of it.
       const openingMove = await botGetOpeningMove(botMoveHistory);
+      // What that lookup found. Past the book depth it did not ask, and running out
+      // of depth is not the human surprising anyone.
+      const _bookNow = _openingCache.get(openingCacheKey(botMoveHistory));
+      if (_bookNow !== undefined) botNoteBookReply(_bookNow);
       // A book move the board will not play is off book, not a move to sit on:
       // the exit below drops an illegal move without playing anything.
       if (openingMove && _botUciIsLegal(openingMove)) {
@@ -3090,7 +3129,7 @@ async function botMakeMove() {
         _explorerConfidence = explorerConfidenceFromData(_od);
         document.getElementById('botStatus').textContent = botOpeningStatusText(_od);
         // The lookup itself counts toward the move's time (botBookMoveDelayMs).
-        const bookDelay = Math.max(0, botBookMoveDelayMs(clockMs) - (Date.now() - _botMoveStartMs));
+        const bookDelay = Math.max(0, botBookMoveDelayMs(clockMs, botSurpriseMult()) - (Date.now() - _botMoveStartMs));
         await new Promise(r => setTimeout(r, bookDelay));
         if (_myGen !== _botGameGen) return; // game restarted mid-think — discard
         const _tookDraw = await _botAnswerDrawFirst();
@@ -3107,6 +3146,7 @@ async function botMakeMove() {
               executeMove(mv.from, mv.to, mv.promo || null);
               const _botSan = gameMovesAlgebraic[gameMovesAlgebraic.length - 1] || null;
               botRecordMove(uciMove, _botSan);
+              _botLastBookMove = { games: explorerGameCount(_od.moves.slice(0, 1)), db: _od.db, ply: botMoveHistory.length };
               updatePlayerBoxes();
               const nextMoves = allLegalMoves(board, turn, epSq, castling);
               if (!nextMoves.length) {
@@ -4298,24 +4338,6 @@ function botPostMoveHook() {
       // Only record if not already pushed (bot move path already called botRecordMove)
       const last = botMoveHistory[botMoveHistory.length - 1];
       if (last !== humanUci) {
-        // Explorer surprise detection: was this human move expected?
-        // Cache key is botMoveHistory BEFORE the human's move is pushed — this is
-        // the exact position the bot last fetched from the explorer (Main Line).
-        // Surprise fires only while the Main Line is still on and the cache has data.
-        if (mainLineActive && botMoveHistory.length > 0) {
-          const _preKey = openingCacheKey(botMoveHistory);
-          const _ed = _openingCache.get(_preKey);
-          if (_ed && _ed.moves && _ed.moves.length) {
-            const _total = _ed.moves.reduce((s, m) => s + m.white + m.draws + m.black, 0);
-            const _entry = _ed.moves.find(m => m.uci === humanUci);
-            const _freq  = _entry && _total > 0
-              ? (_entry.white + _entry.draws + _entry.black) / _total : 0;
-            // <5%: full surprise; 5-15%: partial; ≥15%: expected (no boost)
-            _explorerSurpriseBoost = _freq < 0.05 ? 1.0
-              : _freq < 0.15 ? (0.15 - _freq) / 0.10
-              : 0;
-          }
-        }
         botRecordMove(humanUci, humanSan);
       }
     }

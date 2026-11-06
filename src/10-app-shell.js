@@ -85,6 +85,7 @@ let lichessExplorerActive = false;
 let botOpeningConfig = {
   source: 'masters',       // 'masters' | 'lichess'
   maxBookDepth: 20,        // stop using book after this many MOVES (each side; plies = ×2)
+  minGames: 4,             // a position with fewer games than this is out of book (bookMinGames)
   fallbackToEngine: true,
   // loyalty-specific
   ecoPrefix: '',
