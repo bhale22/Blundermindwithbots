@@ -108,17 +108,18 @@ body::before{content:'';position:fixed;inset:0;background-image:repeating-linear
 .start-btn:hover{background:var(--amber-bright);}
 .start-btn:active{transform:scale(0.98);}
 
-/* The green Lichess pill (inside Blundermind only), on its own row between the
-   quick-start bar and the first section, lined up with the sections' edge. */
-.qs-lichess-row{padding:12px 24px 0;}
-.qs-lichess-row[hidden]{display:none;}
-.qs-lichess-pill{
+/* The green pills, on their own row between the quick-start bar and the first
+   section, lined up with the sections' edge: Preset Personalities always, the
+   Lichess one inside Blundermind only (lbcRefresh hides it otherwise). */
+.qs-green-row{display:flex;flex-wrap:wrap;gap:8px;padding:12px 24px 0;}
+.qs-green-pill{
   max-width:100%;padding:2px 12px;
   font-family:var(--font-u);font-size:10px;font-weight:600;letter-spacing:0.04em;line-height:1.4;
   color:#fff;background:#2fa35a;border:none;border-radius:999px;cursor:pointer;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background 0.15s;
 }
-.qs-lichess-pill:hover{background:#38b866;}
+.qs-green-pill[hidden]{display:none;}
+.qs-green-pill:hover{background:#38b866;}
 
 /* Desktop: the bar is as wide as the sections under it (their 24px inset),
    and its pills share that width, so it has no empty end. Engine keeps its
@@ -409,17 +410,17 @@ table.tg td.tg-inc-lbl{
 .pa-piece{font-size:14px;flex-shrink:0;}
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   QUICK PICKERS — Engine, Think Time, Personality, CP Budget
+   QUICK PICKERS — Engine, Think Time, CP Budget
    ────────────────────────────────────────────
-   These four pills used to jump straight into their full section, which
-   dropped a newcomer into every control at once. Each now opens a small
-   picker with the few choices most people want, plus one button into the
-   full section. Every choice here drives the same control the section shows
-   (the engine cards and Elometer, the timing mode cards, the preset cards,
-   the Budget slider), so the two can never disagree.
+   These pills used to jump straight into their full section, which dropped a
+   newcomer into every control at once. Each now opens a small picker with the
+   few choices most people want, plus one button into the full section. Every
+   choice here drives the same control the section shows (the engine cards and
+   Elometer, the timing mode cards, the Budget slider), so the two can never
+   disagree. The Personality pill opens a popup instead (persOpen).
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .qs-sub-drop{min-width:270px;padding:4px 0 10px;}
-#qs-drop-pers,#qs-drop-engine{min-width:310px;}
+#qs-drop-engine{min-width:310px;}
 /* The Engine pill keeps its fixed-width zone (see .qs-engine-zone); inside a
    wrap, the wrap draws the divider. */
 #qs-engine-wrap .qs-engine-zone{border-right:none;}
@@ -454,7 +455,6 @@ table.tg td.tg-inc-lbl{
 /* Maia's one-time download, offered right where Maia is picked. */
 .qsd-dl{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:0 14px 8px 33px;}
 .qsd-dl .bcp-maia-status-txt{font-family:var(--font-m);font-size:9px;}
-.qsd-icon{width:18px;flex-shrink:0;text-align:center;font-size:14px;line-height:1;color:var(--text-primary);}
 .qsd-text{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;}
 .qsd-name{font-family:var(--font-m);font-size:11px;color:var(--text-primary);letter-spacing:0.03em;}
 .qsd-opt.sel .qsd-name{color:var(--amber-bright);}
@@ -1401,6 +1401,88 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
   .lbc-guide > summary{padding:8px 0;}
 }
 
+/* ── Preset Personalities and Personality popups — same chrome as the confirm modal ── */
+#pp-overlay,#pers-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:9000;
+  display:none;align-items:center;justify-content:center;
+}
+#pp-overlay.show,#pers-overlay.show{display:flex;}
+#pp-box,#pers-box{
+  background:var(--carbon-mid,#14161a);border:1px solid var(--border-amber);border-radius:4px;
+  padding:20px 22px;width:92%;max-height:86vh;overflow-y:auto;outline:none;
+  box-shadow:0 8px 32px rgba(0,0,0,0.6);
+}
+#pp-box{max-width:640px;}
+#pers-box{max-width:500px;}
+#pp-box .bdbtns,#pers-box .bdbtns{margin-top:16px;flex-wrap:wrap;}
+
+/* The grid: a name and a small graphic. The description waits for a hover
+   (#pp-tip, placed by ppTip) so the grid stays easy to scan. */
+.pp-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;}
+.pp-cell{
+  display:flex;flex-direction:column;align-items:center;gap:6px;
+  padding:12px 6px;background:var(--carbon-surface);border:0.5px solid var(--border);border-radius:var(--r);
+  cursor:pointer;text-align:center;transition:border-color 0.15s;
+}
+.pp-cell:hover,.pp-cell:focus-visible{border-color:var(--amber);outline:none;}
+.pp-cell.sel{border-color:var(--amber);background:var(--amber-glow);}
+.pp-icon{font-size:20px;line-height:1.2;color:var(--amber);}
+.pp-name{font-family:var(--font-m);font-size:11px;line-height:1.3;color:var(--text-primary);}
+.pp-desc{display:none;}
+#pp-tip{
+  position:fixed;z-index:9100;display:none;max-width:280px;padding:8px 10px;pointer-events:none;
+  background:var(--carbon-surface);border:1px solid var(--border-amber);border-radius:3px;
+  font-family:var(--font-m);font-size:11px;line-height:1.5;color:var(--text-primary);
+  box-shadow:0 4px 16px rgba(0,0,0,0.5);
+}
+#pp-tip.show{display:block;}
+/* Nothing to hover on a touchscreen, so there the description is simply on the
+   row and a tap still chooses. A one-column list, since it now has sentences. */
+@media (hover:none),(max-width:760px){
+  .pp-grid{grid-template-columns:1fr;gap:0;border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden;}
+  .pp-cell{
+    display:grid;grid-template-columns:30px 1fr;gap:1px 10px;align-items:center;justify-items:start;
+    width:100%;min-height:48px;padding:10px 11px;text-align:left;
+    border:none;border-bottom:0.5px solid var(--border);border-radius:0;
+  }
+  .pp-cell:last-child{border-bottom:none;}
+  .pp-icon{grid-row:1 / 3;justify-self:center;}
+  .pp-name{font-size:13px;}
+  .pp-desc{display:block;font-family:var(--font-m);font-size:11.5px;line-height:1.4;color:var(--text-dim);}
+  #pp-tip{display:none !important;}
+}
+
+/* What the personality is set to: label, slider, value on one line. */
+.pers-name{font-family:var(--font-m);font-size:14px;color:var(--text-primary);}
+.pers-desc{font-family:var(--font-m);font-size:10px;line-height:1.5;color:var(--text-dim);margin-top:3px;}
+.pers-row{
+  display:grid;grid-template-columns:minmax(0,1fr) 140px 84px;align-items:center;gap:0 10px;
+  min-height:26px;
+}
+.pers-row > .inert-why{grid-column:1 / -1;margin:0 0 4px;}
+.pers-row > .inert-why,.pers-line .inert-why{font-size:9.5px;}
+/* The section's tick stretches on phones, where its rows are laid out differently. */
+.pers-slider .attr-center-tick{top:50%;bottom:auto;height:12px;transform:translate(-50%,-50%);}
+.pers-lbl{font-family:var(--font-m);font-size:10px;line-height:1.3;color:var(--text-primary);}
+.pers-lbl .attr-head-pole{color:var(--text-dim);}
+.pers-val{font-family:var(--font-m);font-size:10px;color:var(--amber-bright);text-align:right;white-space:nowrap;}
+.pers-line{font-family:var(--font-m);font-size:10px;line-height:1.5;color:var(--text-primary);padding:2px 0;}
+.pers-row.inert .pers-lbl,.pers-row.inert .pers-val,.pers-row.inert input{opacity:0.45;}
+.pers-line.inert{color:var(--text-dim);}
+@media (max-width:760px){
+  /* Label and value on the first line, full-width track under it. */
+  .pers-row{grid-template-columns:minmax(0,1fr) auto;}
+  .pers-row > .pers-slider{grid-column:1 / -1;order:3;}
+  .pers-row > .inert-why{order:4;}
+  .pers-name{font-size:16px;}
+  .pers-desc{font-size:12px;}
+  .pers-lbl,.pers-val,.pers-line{font-size:13px;}
+  .pers-lbl .piece-icon{font-size:16px;}
+  .pers-row > .inert-why,.pers-line .inert-why{font-size:12px;}
+  #pp-box .bdtitle,#pers-box .bdtitle{font-size:12px;}
+  #pp-box .preset-btn,#pers-box .preset-btn{min-height:44px;}
+}
+
 /* ── Info popups (ⓘ buttons) — same chrome as the confirm modal ── */
 #infopop-overlay{
   position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:9000;
@@ -2190,9 +2272,9 @@ body.fj .picon{font-weight:500;}
   }
   /* Clearance so the bar never covers the last section's controls. */
   .page{padding-bottom:96px;}
-  /* The Lichess pill spans the column, at a thumb's height. */
-  .qs-lichess-row{padding:10px 10px 0;}
-  .qs-lichess-pill{display:block;width:100%;min-height:36px;font-size:13px;}
+  /* The green pills span the column, at a thumb's height. */
+  .qs-green-row{padding:10px 10px 0;}
+  .qs-green-pill{display:block;width:100%;min-height:36px;font-size:13px;}
   /* Desktop offsets would push these dropdowns off a phone screen */
   .qs-float-drop{left:0 !important;right:auto;max-width:calc(100vw - 20px);overflow-x:auto;}
   .qs-inplace-drop{min-width:0 !important;}
@@ -2200,7 +2282,7 @@ body.fj .picon{font-weight:500;}
      screen. Their pill wraps stand down as containing blocks, so each picker
      spans the bar (left/right against .quickstart) while top:auto keeps it
      directly under the pill that opened it. */
-  #qs-engine-wrap,#qs-ttime-wrap,#qs-pers-wrap,#qs-cpb-wrap{position:static;}
+  #qs-engine-wrap,#qs-ttime-wrap,#qs-cpb-wrap{position:static;}
   .qs-sub-drop{top:auto;left:8px;right:8px;}
   .qsd-opt{min-height:48px;}
   .qsd-name{font-size:13px;}
@@ -3184,16 +3266,12 @@ body.fj .picon{font-weight:500;}
     </div>
 
     <!-- 6. PERSONALITY — active preset name, bot name, Custom, or None.
-         Quick picker of a few presets; rows are built by renderQsPersonas() -->
+         Opens a popup of everything the personality is set to (persOpen) -->
     <div class="qs-pill-wrap" id="qs-pers-wrap">
-      <button class="qs-pill-btn" id="qs-pers-btn" onclick="toggleQsDropdown('pers')" aria-label="Bot personality" aria-haspopup="true" aria-expanded="false">
+      <button class="qs-pill-btn" id="qs-pers-btn" onclick="persOpen()" aria-label="Bot personality" aria-haspopup="dialog">
         <span class="qs-label">Personality</span>
         <span class="qs-pill-value" id="qs-pers-value">None</span>
       </button>
-      <div class="qs-inplace-drop qs-sub-drop" id="qs-drop-pers">
-        <div id="qsd-pers-list"></div>
-        <button type="button" class="qsd-more" onclick="qsOpenSection('attract','pieces')">Open personality customization panel ▸</button>
-      </div>
     </div>
 
     <!-- 7. CP BUDGET — current centipawn budget; quick slider over r-style -->
@@ -3264,12 +3342,14 @@ body.fj .picon{font-weight:500;}
 
 </div><!-- /quickstart -->
 
-<!-- The green Lichess pill, between the quick-start bar and the sections:
-     this bot as a Lichess BOT account, hosted by this tab. It opens the Play on
-     Lichess popup (lbcOpen); the row is hidden when the builder is opened on
-     its own, outside Blundermind. -->
-<div class="qs-lichess-row" id="qs-lichess-row">
-  <button class="qs-lichess-pill" id="qs-lichess-btn" onclick="lbcOpen()" aria-haspopup="dialog">
+<!-- The green pills, between the quick-start bar and the sections. Preset
+     Personalities opens the grid of presets (ppOpen). The Lichess one is this
+     bot as a Lichess BOT account, hosted by this tab: it opens the Play on
+     Lichess popup (lbcOpen), and is hidden when the builder is opened on its
+     own, outside Blundermind. -->
+<div class="qs-green-row">
+  <button class="qs-green-pill" id="qs-presets-btn" onclick="ppOpen()" aria-haspopup="dialog">Preset Personalities</button>
+  <button class="qs-green-pill" id="qs-lichess-btn" onclick="lbcOpen()" aria-haspopup="dialog">
     <span id="qs-lichess-value">Set up bot to play on Lichess</span>
   </button>
 </div>
@@ -4669,7 +4749,7 @@ const PERSONALITIES = [
     attractors:{complexity:3,compwin:2,spacecadet:1,fortkx:-2,gambito:0,trade:2,structure:-2,hustle:-2,luck:1,pressure:1,attacker:3} },
   { id:'clock',      name:'Clock Watcher',      icon:'⧗', tag:'Clock',      desc:'Conservative when ahead on time, reckless when behind.',
     attractors:{complexity:0,compwin:-2,spacecadet:0,fortkx:0,gambito:0,trade:-1,structure:0,hustle:0,luck:0,pressure:-3,attacker:0} },
-  { id:'badday',     name:'Grandmaster Bad Day', icon:'👑',tag:'Human',      desc:'Maia 2400 but picks the lowest-probability move above 4% — never accidentally brilliant.',
+  { id:'badday',     name:'Grandmaster Bad Day', icon:'👑',tag:'Human',      desc:'Maia 2500 but picks the lowest-probability move above 4% — never accidentally brilliant.',
     attractors:{complexity:0,compwin:0,spacecadet:0,fortkx:0,gambito:0,trade:0,structure:0,hustle:0,luck:5,pressure:2,attacker:0} },
   { id:'drunken',    name:'Drunken Master',      icon:'🍺', tag:'Human',      desc:'Was that a brilliant tactical move — or was it thinking about kittens? Each move: 50% Maia 2400, 50% Maia 1000.',
     attractors:{complexity:3,compwin:2,spacecadet:1,fortkx:-3,gambito:3,trade:1,structure:-2,hustle:2,luck:2,pressure:1,attacker:4} },
@@ -8704,7 +8784,7 @@ document.addEventListener('click', function(e){
   toggleHdrTools(false);
 });
 
-const QS_DROPS = ['engine','time','color','ttime','pers','cpb','bots'];
+const QS_DROPS = ['engine','time','color','ttime','cpb','bots'];
 
 function toggleQsDropdown(which){
   const alreadyOpen = _openDrop === which;
@@ -8715,7 +8795,6 @@ function toggleQsDropdown(which){
   // them since (a loaded bot, a preset, the full section) is what they show.
   if(which === 'engine') qsSyncEngine();
   if(which === 'ttime') qsSyncTtime();
-  if(which === 'pers')  qsSyncPersonas();
   if(which === 'cpb')   updateQsCpBudget();
   const drop = document.getElementById('qs-drop-' + which);
   const btn  = document.getElementById('qs-' + which + '-btn');
@@ -9999,7 +10078,7 @@ const BOT_TOUR = [
   // Overview first: every section closed, no spotlight/backdrop, panel tucked
   // into the corner — the user sees the whole page while reading the map.
   { stage:'Overview', closeAll:true, corner:true, sel:null, title:'Welcome to the Bot Builder',
-    body:'Build an opponent that feels <i>human</i> — with a style, moods, and bad days, not just a level. The <b>quick-start bar</b> at the top has everything needed to just play: engine, time, color, think time, a personality, <b>Start</b>. The sections below go deeper: <b>Engine</b> (the brain and its strength), <b>Personality</b> (style attractors, custom rules, a centipawn budget), <b>Opening Behavior</b>, <b>Move Timing</b>, and <b>Time-Pressure Degradation</b>. Step through with Next — or click anywhere else to close this and explore on your own.' },
+    body:'Build an opponent that feels <i>human</i> — with a style, moods, and bad days, not just a level. The <b>quick-start bar</b> at the top has everything needed to just play: engine, time, color, think time, <b>Start</b>, and the green <b>Preset Personalities</b> pill under it picks a personality. The sections below go deeper: <b>Engine</b> (the brain and its strength), <b>Personality</b> (style attractors, custom rules, a centipawn budget), <b>Opening Behavior</b>, <b>Move Timing</b>, and <b>Time-Pressure Degradation</b>. Step through with Next — or click anywhere else to close this and explore on your own.' },
 
   // Step 2, before anything else is explained: almost every dial past the
   // Engine section reshapes MOVE PROBABILITIES, and only Maia produces those.
@@ -10375,9 +10454,8 @@ function lbcRefresh(st){
   const host = _lbcHost();
   if(st) _lbcState = st;
   else if(host){ try{ _lbcState = host.lichessBuilderState(); }catch(e){} }
-  const row = document.getElementById('qs-lichess-row');
-  if(row) row.hidden = !host;
   const pill = document.getElementById('qs-lichess-btn');
+  if(pill) pill.hidden = !host;
   const s = _lbcState;
   const on = !!(s && s.connected);
   const val = document.getElementById('qs-lichess-value');
@@ -12713,7 +12791,7 @@ function renderCustomControls(){
 /* The collapsed head, built the same way as an attractor row's: the direction
    the control pulls, the gates that narrow when it fires, and its cp share.
    Shared by the initial render and syncCcHead so the two can't drift. */
-function _ccHeadHtml(c){
+function _ccHeadLabel(c){
   const m = _ccMeta(c.metric);
   const PHASE_LBL    = { opening:'Opening', middlegame:'Middlegame', endgame:'Endgame' };
   const gates = [
@@ -12722,9 +12800,13 @@ function _ccHeadHtml(c){
     c.pressure && c.pressure !== 'any' ? (CUSTOM_PRESSURE.find(x => x[0] === c.pressure) || [])[1] : null,
   ].filter(Boolean);
   const v = c.value || 0;
+  return _ccEsc(v === 0 ? m.name : (v > 0 ? m.max : m.min)) +
+    (gates.length ? '<span class="attr-head-pole"> · ' + _ccEsc(gates.join(' · ')) + '</span>' : '');
+}
+function _ccHeadHtml(c){
+  const v = c.value || 0;
   const frac = Math.abs(v) / 5;
-  return `<span class="attr-head-name">${_ccEsc(v === 0 ? m.name : (v > 0 ? m.max : m.min))}${
-      gates.length ? '<span class="attr-head-pole"> · ' + _ccEsc(gates.join(' · ')) + '</span>' : ''}</span>
+  return `<span class="attr-head-name">${_ccHeadLabel(c)}</span>
     <span class="attr-bar"><i class="attr-bar-fill"
       style="left:${v >= 0 ? 50 : 50 - frac * 50}%;width:${frac * 50}%;"></i></span>
     <span class="attr-head-set${v !== 0 ? ' is-set' : ''}">${v === 0 ? '—' : (v > 0 ? '+' + v : v)}</span>
@@ -13272,7 +13354,6 @@ function updateQsPersonality(){
       || customControls.some(c => (c.value??0) !== 0);
     pill.textContent = isCustom ? 'Custom' : 'None';
   }
-  qsSyncPersonas();
   // Runs after every change of preset — including the deselect that moving a
   // slider causes — so the Hustler's hold on the temperature lifts with it.
   syncControlGating();
@@ -13334,7 +13415,7 @@ function openThinkTimeSection(){
   sec?.scrollIntoView({ behavior:'smooth', block:'nearest' });
 }
 
-/* ── Quick pickers: Engine, Think Time, Personality, CP Budget ───────────────
+/* ── Quick pickers: Engine, Think Time, CP Budget ────────────────────────────
    Each choice goes through the same function the full section's own control
    calls, so the section, the pill and the saved config all follow from it. */
 
@@ -13454,32 +13535,176 @@ function qsSyncTtime(){
   if(val) val.textContent = secs === 0 ? 'Instant' : secs + ' sec';
 }
 
-// The handful of presets the quick picker offers — the full set is one click
-// further, in Personality → Preset Personalities.
-const QS_PERSONAS = ['attacky', 'drunken', 'badday', 'pawnchain', 'drawmeister'];
-function renderQsPersonas(){
-  const list = document.getElementById('qsd-pers-list');
-  if(!list) return;
-  list.innerHTML = QS_PERSONAS.map(id => {
-    const p = PERSONALITIES.find(x => x.id === id);
-    if(!p) return '';
-    return '<button type="button" class="qsd-opt" data-pid="' + p.id + '" title="' + _ccEsc(p.desc) + '"'
-      + ' onclick="qsPersonaPick(\'' + p.id + '\')">'
-      + '<span class="qsd-icon">' + p.icon + '</span>'
-      + '<span class="qsd-text"><span class="qsd-name">' + _ccEsc(p.name) + '</span>'
-      + '<span class="qsd-desc">' + _ccEsc(p.desc) + '</span></span></button>';
-  }).join('');
-  qsSyncPersonas();
-}
-function qsSyncPersonas(){
-  document.querySelectorAll('#qsd-pers-list .qsd-opt').forEach(o =>
-    o.classList.toggle('sel', !_activeBotName && o.dataset.pid === selectedPersonality));
-}
-function qsPersonaPick(id){
-  // Close first: three of these presets ask before reconfiguring the engine,
-  // and their confirm should not open under a picker.
+/* ── Preset Personalities popup (the green pill) ─────────────────────────────
+   A grid of names and small graphics. Hovering one shows its description;
+   clicking one chooses it and closes. */
+function ppOpen(){
   closeAllQsDropdowns();
+  const current = _activeBotName ? null : selectedPersonality;
+  document.getElementById('pp-grid').innerHTML = PERSONALITIES.map(p =>
+    '<button type="button" class="pp-cell' + (p.id === current ? ' sel' : '') + '" data-pid="' + p.id + '"'
+    + ' onclick="ppPick(\'' + p.id + '\')" onmouseenter="ppTip(this)" onmouseleave="ppTip()" onfocus="ppTip(this)" onblur="ppTip()">'
+    + '<span class="pp-icon">' + p.icon + '</span>'
+    + '<span class="pp-name">' + _ccEsc(p.name) + '</span>'
+    + '<span class="pp-desc">' + _ccEsc(p.desc) + '</span></button>').join('');
+  document.getElementById('pp-overlay').classList.add('show');
+  document.getElementById('pp-box').focus();
+}
+function ppClose(){
+  ppTip();
+  document.getElementById('pp-overlay').classList.remove('show');
+}
+function ppPick(id){
+  // Close first: three of these presets ask before reconfiguring the engine,
+  // and their confirm should not open over the grid.
+  ppClose();
   selPersonality(id);
+}
+// Under the cell, or above it when there is no room. No cell: hide.
+function ppTip(cell){
+  const tip = document.getElementById('pp-tip');
+  if(!cell){ tip.classList.remove('show'); return; }
+  tip.textContent = cell.querySelector('.pp-desc').textContent;
+  tip.classList.add('show');
+  const c = cell.getBoundingClientRect(), t = tip.getBoundingClientRect();
+  const fitsBelow = c.bottom + 6 + t.height <= innerHeight - 8;
+  tip.style.top  = (fitsBelow ? c.bottom + 6 : Math.max(8, c.top - 6 - t.height)) + 'px';
+  tip.style.left = Math.max(8, Math.min(innerWidth - t.width - 8, c.left + c.width / 2 - t.width / 2)) + 'px';
+}
+
+/* ── Personality popup (the Personality pill) ────────────────────────────────
+   Everything the personality is set to right now, under the section's own
+   headings. Each slider drives the section's own control, so the two cannot
+   disagree, and one the bot will not consult is greyed with the section's own
+   reason (syncControlGating). The rows are fixed while it is open, so a slider
+   taken to 0 stays under the pointer instead of vanishing. */
+let _persRows = [];
+
+// A real control's gate, as syncControlGating left it: its reason, and whether
+// it is disabled. The note sits inside the control or just after it (_setWhy).
+function _persGate(el){
+  if(!el) return {};
+  const nx = el.nextElementSibling;
+  const note = el.querySelector('.inert-why') || (nx && nx.classList.contains('inert-why') ? nx : null);
+  return { why: note ? note.textContent : '', inert: el.classList.contains('inert') };
+}
+// The groups to show, each [heading, slider rows, read-only lines].
+function _persGroups(){
+  const el  = id => document.getElementById(id);
+  const num = id => +el(id).value;
+  const signed = v => v === 0 ? '—' : (v > 0 ? '+' + v : String(v));
+  // Strength, then the share of the Budget it gets ('—' at 0; see updateAttrCpDisplays).
+  const strength = (v, cpId) => v === 0 ? '—' : signed(v) + ' · ' + (el(cpId) ? el(cpId).textContent : 'no cp');
+  const bipolar = { min:-5, max:5, step:1 };
+
+  const spends = () =>
+    ATTRACTORS.some(a => !BUDGETLESS_ATTRACTORS.includes(a.id) && (attractorValues[a.id] ?? 0) !== 0)
+    || PIECE_TYPES.some(p => (pieceValues[p.id] ?? 0) !== 0)
+    || customControls.some(c => (c.value ?? 0) !== 0);
+  const quality = [
+    { name:'Budget', min:0, max:300, step:10, get:() => num('r-style'), set:onGaugeSliderInput,
+      label:() => 'Budget', value:v => v + ' cp',
+      gate:() => !spends() ? { why:'Nothing set here spends the Budget.', inert:false }
+        : num('r-style') === 0 ? { why:'At 0 the sliders that spend the Budget do nothing.', inert:false } : {} },
+    { name:'Conviction', min:0, max:100, step:5, get:_convictionPct, set:onConvictionSlider,
+      label:() => 'Conviction', value:v => v + '%', gate:() => _persGate(el('conviction-row-mirror')) },
+    { name:'Hard Floor', min:0, max:1000, step:10, get:() => num('r-hardfloor'), set:onHardFloorSliderInput,
+      label:() => 'Hard Floor', value:v => v >= 1000 ? 'Off' : v + ' cp', gate:() => _persGate(el('hard-floor-row')) },
+  ];
+  // The Range is a two-handled slider, so it is reported here and set in the section.
+  const lo = num('day-lower'), hi = num('day-upper');
+  const qualityLines = (lo > 0 || hi < 100) && el('move-quality-range').style.visibility !== 'hidden'
+    ? [{ text:'Move Distribution Range: ' + [lo > 0 && 'exclude lowest ' + lo + '%', hi < 100 && 'exclude moves above ' + hi + '%']
+          .filter(Boolean).join(', ') }] : [];
+
+  const strategy = ATTRACTORS.filter(a => (attractorValues[a.id] ?? 0) !== 0).map(a => ({
+    ...bipolar, name:a.labelLeft + ' to ' + a.labelRight,
+    get:() => attractorValues[a.id] ?? 0,
+    // Bad day has no slider of its own in the section (it is a radar axis), so
+    // it goes to the same handler the others reach through their sliders.
+    set:v => a.id === 'luck' ? onAttractorChange('luck', v) : attrSetValue('attr-' + a.id, v),
+    label:v => _attrHeadName('attr-' + a.id, v),
+    value:v => strength(v, 'attrval-' + a.id),
+    gate:() => a.id === 'luck' ? { why:_radarAxisWhy('luck') } : _persGate(el('attrg-attr-' + a.id)),
+  }));
+  const pieces = PIECE_TYPES.filter(p => (pieceValues[p.id] ?? 0) !== 0).map(p => ({
+    ...bipolar, name:p.name,
+    get:() => pieceValues[p.id] ?? 0,
+    set:v => attrSetValue('piece-' + p.id, v),
+    label:v => _attrHeadName('piece-' + p.id, v),
+    value:v => strength(v, 'pieceval-' + p.id),
+  }));
+  const custom = customControls.filter(c => (c.value ?? 0) !== 0).map(c => ({
+    ...bipolar, name:_ccMeta(c.metric).name,
+    get:() => c.value ?? 0,
+    set:v => attrSetValue('ccslider-' + c.id, v),
+    label:() => _ccHeadLabel(c),
+    value:v => strength(v, 'ccval-' + c.id),
+  }));
+
+  // Switches the section has moved off their defaults. Reported, set in the section.
+  const on = id => !!el(id) && el(id).checked;
+  const clock = [];
+  if(on('weaponizer-toggle')) clock.push({ text:'Time Weaponizer', ..._persGate(el('weaponizer-toggle').closest('.tog-row')) });
+  if(!on('cb-clock-mirror'))  clock.push({ text:'Clock-pressure mirroring off' });
+  const draws = [];
+  if(!on('cb-draw-accept')) draws.push({ text:'Never accepts draws' });
+  else if(num('r-draw-margin') !== 200) draws.push({ text:'Accepts draws unless more than ' + num('r-draw-margin') + ' cp ahead' });
+  if(on('cb-draw-offer')) draws.push({ text:'Offers draws when level within ±' + num('r-draw-offer-thresh') + ' cp, from move ' + num('r-draw-offer-move') });
+  if(on('cb-stale-seek')) draws.push({ text:'Seeks stalemate from move ' + num('r-stale-move') + ', when behind by ' + num('r-stale-cp') + ' cp' });
+
+  return [
+    ['Move quality', quality, qualityLines],
+    ['Strategic preferences', strategy, []],
+    ['Piece focus', pieces, []],
+    ['Custom controls', custom, []],
+    ['Clock tactics', [], clock],
+    ['Draws & desperation', [], draws],
+  ].filter(([, rows, lines]) => rows.length || lines.length);
+}
+function persOpen(){
+  closeAllQsDropdowns();
+  _persRows = [];
+  document.getElementById('pers-rows').innerHTML = _persGroups().map(([head, rows, lines]) =>
+    '<div class="lbc-h">' + _ccEsc(head) + '</div>'
+    + rows.map(r => {
+        const i = _persRows.push(r) - 1;
+        return '<div class="pers-row" id="pers-row-' + i + '"><span class="pers-lbl"></span>'
+          + '<span class="attr-slider-wrap pers-slider">' + (r.min < 0 ? '<span class="attr-center-tick"></span>' : '')
+          + '<input type="range" min="' + r.min + '" max="' + r.max + '" step="' + r.step + '"'
+          + ' aria-label="' + _ccEsc(r.name) + '" oninput="persInput(' + i + ',+this.value)"></span>'
+          + '<span class="pers-val"></span></div>';
+      }).join('')
+    + lines.map(l => '<div class="pers-line' + (l.why ? ' inert' : '') + '">' + _ccEsc(l.text)
+        + (l.why ? '<div class="inert-why">' + _ccEsc(l.why) + '</div>' : '') + '</div>').join('')
+  ).join('');
+  persRefresh();
+  document.getElementById('pers-overlay').classList.add('show');
+  document.getElementById('pers-box').focus();
+}
+function persInput(i, v){
+  _persRows[i].set(v);
+  persRefresh();
+}
+// Repaints from the real controls, so whatever they did with the value (Hard
+// Floor stays at or above the Budget, a preset becomes Custom) is what shows.
+function persRefresh(){
+  document.getElementById('pers-name').textContent = document.getElementById('qs-pers-value').textContent;
+  const preset = !_activeBotName && PERSONALITIES.find(p => p.id === selectedPersonality);
+  const none = document.getElementById('qs-pers-value').textContent === 'None';
+  document.getElementById('pers-desc').textContent = preset ? preset.desc
+    : none ? 'No personality is set, so the bot plays its engine’s moves with no style of its own.' : '';
+  _persRows.forEach((r, i) => {
+    const row = document.getElementById('pers-row-' + i), inp = row.querySelector('input'), v = r.get();
+    inp.value = v;
+    row.querySelector('.pers-lbl').innerHTML = r.label(v);
+    row.querySelector('.pers-val').textContent = r.value(v);
+    const g = r.gate ? r.gate() : {};
+    _setWhy(row, g.why || '', { target:inp, noteHost:row, inert:g.inert });
+  });
+}
+function persClose(){
+  document.getElementById('pers-overlay').classList.remove('show');
 }
 
 // "Open … panel" buttons: the full section, on the tab the picker stands in for.
@@ -13512,7 +13737,7 @@ function renderPersonalities(){
 const PERS_CONFIRMS = {
   badday: { title:'👑 Grandmaster Bad Day', items:[
     'Engine → Maia 3',
-    'ELO → 2400',
+    'ELO → 2500',
     'Plays lowest probability move that is greater than 4%',
     'Eval-checked: if that move accidentally beats Maia’s top choice, the top choice is played instead',
   ]},
@@ -13662,7 +13887,7 @@ function closeInfoPop(){
   document.getElementById('infopop-overlay').classList.remove('show');
 }
 document.addEventListener('keydown', function(e){
-  if(e.key === 'Escape'){ closeInfoPop(); lbcClose(); }
+  if(e.key === 'Escape'){ closeInfoPop(); lbcClose(); ppClose(); persClose(); }
 });
 
 function selPersonality(id){
@@ -13732,7 +13957,7 @@ function _applyPersonality(id, confirmed){
   if(id === 'badday'){
     const card = document.querySelector('#engine-mode-grid .mcard[data-engine="maia3"]');
     if(card) selEngineMode(card);
-    setElo(2400);
+    setElo(2500);   // a grandmaster is rated 2500 or better
     const lo = document.getElementById('day-lower'), hi = document.getElementById('day-upper');
     if(lo) lo.value = 4;    // minProbPct=4: keep only moves with individual prob ≥ 4%
     if(hi) hi.value = 100;  // dayUpper=100: engine then selects the lowest-probability acceptable move
@@ -15155,7 +15380,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
   renderCustomControls();
   renderOpColumn('white'); renderOpColumn('black'); updateOpStatus();
   renderPersonalities();
-  renderQsPersonas();
   renderHybridSlots();
   initSpeedo();
   speedoSyncRange();
@@ -15212,7 +15436,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
       <p>This personality will set:</p>
       <ul id="bdconfirm-list">
         <li>Engine → Maia 3</li>
-        <li>ELO → 2400</li>
+        <li>ELO → 2500</li>
         <li>Plays lowest probability move that is greater than 4%</li>
       </ul>
       <p style="opacity:0.65;margin-bottom:0;">You can adjust any of these manually afterwards.</p>
@@ -15244,6 +15468,33 @@ document.addEventListener('DOMContentLoaded', ()=>{
     <div class="bdmsg" id="lbc-body" style="margin-bottom:0;"></div>
     <div id="lbc-status" role="status" aria-live="polite"></div>
     <div class="bdbtns" id="lbc-btns"></div>
+  </div>
+</div>
+
+<!-- Preset Personalities: the grid of presets (ppOpen) -->
+<div id="pp-overlay" role="dialog" aria-modal="true" aria-labelledby="pp-title"
+     onclick="if(event.target===this)ppClose()">
+  <div id="pp-box" tabindex="-1">
+    <div class="bdtitle" id="pp-title">Preset Personalities</div>
+    <div class="pp-grid" id="pp-grid"></div>
+    <div class="bdbtns"><button class="preset-btn" onclick="ppClose()">Close</button></div>
+  </div>
+</div>
+<div id="pp-tip" role="tooltip"></div>
+
+<!-- Personality: everything the personality is set to (persOpen) -->
+<div id="pers-overlay" role="dialog" aria-modal="true" aria-labelledby="pers-title"
+     onclick="if(event.target===this)persClose()">
+  <div id="pers-box" tabindex="-1">
+    <div class="bdtitle" id="pers-title">Personality</div>
+    <div class="pers-name" id="pers-name"></div>
+    <div class="pers-desc" id="pers-desc"></div>
+    <div id="pers-rows"></div>
+    <div class="bdbtns">
+      <button class="preset-btn" onclick="persClose();ppOpen()">Preset Personalities</button>
+      <button class="preset-btn" onclick="persClose();qsOpenSection('attract','pieces')">Open personality customization panel ▸</button>
+      <button class="preset-btn primary" onclick="persClose()">Close</button>
+    </div>
   </div>
 </div>
 

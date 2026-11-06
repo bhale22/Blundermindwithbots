@@ -40,7 +40,8 @@ const LB_DEFAULTS = {
 // Lichess's own order, fastest first — a refusal says which way a speed missed.
 const LB_SPEED_ORDER = ['ultraBullet', 'bullet', 'blitz', 'rapid', 'classical', 'correspondence'];
 const LB_REASON_TEXT = {
-  later: 'busy — one game at a time', tooFast: 'too fast', tooSlow: 'too slow',
+  later: 'busy — one game at a time', loading: 'engines still loading',
+  tooFast: 'too fast', tooSlow: 'too slow',
   timeControl: 'needs a clock', casual: 'casual games only',
   standard: 'standard start position only', variant: 'standard chess only',
   noBot: 'not playing bots', generic: 'declined',
@@ -62,6 +63,7 @@ let lbStarting = false;       // botStart() is running on Lichess's behalf
 let lbReplaying = false;      // rebuilding a game from the server's move list
 let lbLogLines = [];
 let lbQuickCloses = 0;        // event streams that closed right after opening
+let lbLoadingWatch = null;    // redraws the panel once the engines are ready
 let _lbQueue = Promise.resolve();
 
 // ── Hooks the rest of the page calls (all guarded with typeof) ─────────────
@@ -280,7 +282,7 @@ async function lichessConnect(opts) {
   const tok = ((inp && inp.value) || lbSettings.token || '').trim();
   if (!tok) { _lbSetState('error', 'Paste the bot account\'s token first.'); return; }
   // Without the engine this tab would sit "Waiting for challenges" and decline
-  // every one as busy (_lbDeclineReason waits for sfReady), never saying why.
+  // every one (_lbDeclineReason waits for sfReady), never saying why.
   if (typeof sfBrowserSupport === 'function' && sfBrowserSupport()) {
     _lbSetState('error', sfUnsupportedText());
     return;
@@ -406,7 +408,7 @@ function _lbOnEvent(ev) {
 function _lbDeclineReason(c) {
   const s = lbSettings;
   if (lbGame || lbAccepting || lbStarting) return 'later';
-  if (!_lbEnginesReady()) { _lbWarmEngines(); return 'later'; }
+  if (!_lbEnginesReady()) { _lbWarmEngines(); return 'loading'; }
   const v = c.variant && c.variant.key;
   if (v === 'fromPosition') return 'standard';
   if (v !== 'standard') return 'variant';
@@ -431,7 +433,8 @@ async function _lbOnChallenge(c) {
   const reason = _lbDeclineReason(c);
   if (reason) {
     lbLog('Declined ' + what + ': ' + (LB_REASON_TEXT[reason] || reason));
-    await _lbPost('/api/challenge/' + c.id + '/decline', 'reason=' + reason);
+    // Lichess has no "still loading" reason; "later" is the true answer to them.
+    await _lbPost('/api/challenge/' + c.id + '/decline', 'reason=' + (reason === 'loading' ? 'later' : reason));
     return;
   }
   lbAccepting = c.id;
@@ -881,7 +884,17 @@ function lbRender() {
     : (lbSettings.token ? 'token saved' : '');
   $('lbChev').textContent = p.classList.contains('lb-min') ? '▲' : '▼';
   let status = LB_STATUS_TEXT[lbState] || lbState;
-  if (lbState === 'waiting' && !_lbEnginesReady()) status = 'Loading engines — challenges wait until they are ready';
+  if (lbState === 'waiting' && !_lbEnginesReady()) {
+    status = 'Loading engines — challenges are declined until they are ready';
+    // Nothing else redraws the panel when they finish, so watch for it. One
+    // redraw only: each one also rebuilds the builder's popup, if it's open.
+    if (!lbLoadingWatch) lbLoadingWatch = setInterval(() => {
+      if (!_lbEnginesReady()) return;
+      clearInterval(lbLoadingWatch);
+      lbLoadingWatch = null;
+      lbRender();
+    }, 1000);
+  }
   if (g && g.opponent && !g.ended) status = 'Playing ' + _lbWho(g.opponent);
   $('lbStatus').innerHTML = '';
   const s = document.createElement('span');

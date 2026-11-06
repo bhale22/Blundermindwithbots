@@ -375,13 +375,14 @@ check(await page.evaluate(() => !/(^|[?&])lichess(&|$)/.test(location.search)), 
 const openPopup = async () => {
   await page.evaluate(() => openBotModal());
   const f = await (await page.waitForSelector('#botModalFrame')).contentFrame();
-  await f.waitForFunction(() => typeof lbcOpen === 'function' && !document.getElementById('qs-lichess-row').hidden, null, { timeout: 10000 });
+  await f.waitForFunction(() => typeof lbcOpen === 'function' && !document.getElementById('qs-lichess-btn').hidden, null, { timeout: 10000 });
   await f.waitForTimeout(300);
   const at = await f.evaluate(() => {
     const r = s => document.querySelector(s).getBoundingClientRect();
     const bar = r('.quickstart'), eng = r('#sec-engine'), el = document.getElementById('qs-lichess-btn'), p = el.getBoundingClientRect();
     const cells = [...document.querySelectorAll('.qs-bar > *')], last = cells[cells.length - 1].getBoundingClientRect();
-    return { between: p.top >= bar.bottom && p.bottom <= eng.top, lined: Math.abs(p.left - eng.left) <= 1,
+    // The row of green pills starts at the sections' edge; Preset Personalities comes first.
+    return { between: p.top >= bar.bottom && p.bottom <= eng.top, lined: Math.abs(r('#qs-presets-btn').left - eng.left) <= 1,
       barW: Math.round(bar.width), engW: Math.round(eng.width), barL: Math.round(bar.left), engL: Math.round(eng.left),
       lastId: cells[cells.length - 1].id, lastEnd: Math.round(bar.right - last.right),
       startH: Math.round(r('.start-btn').height), colour: getComputedStyle(el).backgroundColor, text: el.textContent.trim() };
@@ -462,6 +463,19 @@ for (const [o, want] of cases) {
   await until(() => M.challenges[id].declined, 5000);
   check(M.challenges[id].declined === want, 'declined ' + JSON.stringify(o).slice(0, 60) + ' as ' + want, M.challenges[id].declined);
 }
+// Engines still loading: Lichess hears "later", and the panel and log say why.
+// Pretending keeps the real engine alive, so the rest of the run needs no reload.
+const lbStatusText = () => page.textContent('#lbStatus');
+await page.evaluate(() => { window._keepWarm = _lbWarmEngines; _lbWarmEngines = () => {}; sfReady = false; lbRender(); });
+check(/challenges are declined until they are ready/.test(await lbStatusText()), 'while the engines load, the panel says challenges are declined', await lbStatusText());
+const whileLoading = newChallenge({});
+await until(() => M.challenges[whileLoading].declined, 5000);
+check(M.challenges[whileLoading].declined === 'later', 'a challenge then is declined "later"', M.challenges[whileLoading].declined);
+const loadingLog = await page.evaluate(() => lbLogLines[lbLogLines.length - 1]);
+check(/: engines still loading$/.test(loadingLog), 'and the log says the engines are loading, not that the bot is busy', loadingLog);
+await page.evaluate(() => { _lbWarmEngines = window._keepWarm; sfReady = true; });
+await until(async () => /^Waiting for challenges/.test(await lbStatusText()), 3000);
+check(/^Waiting for challenges/.test(await lbStatusText()), 'when they finish, the panel updates by itself', await lbStatusText());
 
 console.log('\n3. Game 1: bot is Black — draw offer, takeback, refused move, dropped stream, resignation');
 const c1 = newChallenge({ color: 'white', opts: { takebackAtPly: 4, rejectAtPly: 7, dropStreamAtPly: 10, drawOfferAtPly: 14, resignAtPly: 22 } });
@@ -699,10 +713,14 @@ const conn = await fr.evaluate(() => ({ text: document.getElementById('qs-liches
   start: document.querySelector('.start-btn').textContent }));
 check(/@BMTestBot/.test(conn.text) && /Update Lichess bot/.test(conn.start), 'the builder shows the connection; Start reads Update Lichess bot', conn);
 
-// An update mid-game plays from the next game.
+// An update mid-game plays from the next game. This browser is new, so its
+// Stockfish can still be loading, and until it's ready the bridge declines
+// challenges ("later").
+await until(() => p2.evaluate(() => _lbEnginesReady()), 30000, 'the engines');
 const c8 = newChallenge({ color: 'white', opts: { resignAtPly: 10 } });
 await until(() => M.challenges[c8].gameId, 5000);
 const g8 = M.games[M.challenges[c8].gameId];
+check(g8, 'the challenge is accepted once the engines are ready', { declined: M.challenges[c8].declined });
 await until(() => g8.moves.length >= 2, 30000, 'game under way');
 await fr.evaluate(() => { setElo(1500); startGame(); });
 await p2.waitForTimeout(400);
