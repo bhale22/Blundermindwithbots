@@ -230,7 +230,7 @@ try {
   await until(() => setupCtx && setupCtx.pages().length, 30000, 'the setup window');
   const sp = setupCtx.pages()[0];
   const f = await (await sp.waitForSelector('#botModalFrame', { timeout: 60000 })).contentFrame();
-  await f.waitForFunction(() => typeof lbcOpen === 'function' && !document.getElementById('qs-lichess-row').hidden, null, { timeout: 60000 });
+  await f.waitForFunction(() => typeof lbcOpen === 'function' && !document.getElementById('qs-lichess-btn').hidden, null, { timeout: 60000 });
   check(await sp.evaluate(() => document.getElementById('botModal').style.display !== 'none'), 'the window opens on the Bot Builder');
   await f.click('#qs-lichess-btn');
   await f.waitForFunction(() => document.getElementById('lbc-overlay')?.classList.contains('show'), null, { timeout: 10000 });

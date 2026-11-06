@@ -375,13 +375,14 @@ check(await page.evaluate(() => !/(^|[?&])lichess(&|$)/.test(location.search)), 
 const openPopup = async () => {
   await page.evaluate(() => openBotModal());
   const f = await (await page.waitForSelector('#botModalFrame')).contentFrame();
-  await f.waitForFunction(() => typeof lbcOpen === 'function' && !document.getElementById('qs-lichess-row').hidden, null, { timeout: 10000 });
+  await f.waitForFunction(() => typeof lbcOpen === 'function' && !document.getElementById('qs-lichess-btn').hidden, null, { timeout: 10000 });
   await f.waitForTimeout(300);
   const at = await f.evaluate(() => {
     const r = s => document.querySelector(s).getBoundingClientRect();
     const bar = r('.quickstart'), eng = r('#sec-engine'), el = document.getElementById('qs-lichess-btn'), p = el.getBoundingClientRect();
     const cells = [...document.querySelectorAll('.qs-bar > *')], last = cells[cells.length - 1].getBoundingClientRect();
-    return { between: p.top >= bar.bottom && p.bottom <= eng.top, lined: Math.abs(p.left - eng.left) <= 1,
+    // The row of green pills starts at the sections' edge; Preset Personalities comes first.
+    return { between: p.top >= bar.bottom && p.bottom <= eng.top, lined: Math.abs(r('#qs-presets-btn').left - eng.left) <= 1,
       barW: Math.round(bar.width), engW: Math.round(eng.width), barL: Math.round(bar.left), engL: Math.round(eng.left),
       lastId: cells[cells.length - 1].id, lastEnd: Math.round(bar.right - last.right),
       startH: Math.round(r('.start-btn').height), colour: getComputedStyle(el).backgroundColor, text: el.textContent.trim() };
