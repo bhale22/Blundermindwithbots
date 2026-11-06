@@ -700,10 +700,14 @@ const conn = await fr.evaluate(() => ({ text: document.getElementById('qs-liches
   start: document.querySelector('.start-btn').textContent }));
 check(/@BMTestBot/.test(conn.text) && /Update Lichess bot/.test(conn.start), 'the builder shows the connection; Start reads Update Lichess bot', conn);
 
-// An update mid-game plays from the next game.
+// An update mid-game plays from the next game. This browser is new, so its
+// Stockfish can still be loading, and until it's ready the bridge declines
+// challenges ("later").
+await until(() => p2.evaluate(() => _lbEnginesReady()), 30000, 'the engines');
 const c8 = newChallenge({ color: 'white', opts: { resignAtPly: 10 } });
 await until(() => M.challenges[c8].gameId, 5000);
 const g8 = M.games[M.challenges[c8].gameId];
+check(g8, 'the challenge is accepted once the engines are ready', { declined: M.challenges[c8].declined });
 await until(() => g8.moves.length >= 2, 30000, 'game under way');
 await fr.evaluate(() => { setElo(1500); startGame(); });
 await p2.waitForTimeout(400);
