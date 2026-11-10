@@ -798,19 +798,25 @@ function botGenerateName() {
   var nameEl = document.getElementById('botNameInput');
   if (nameEl && nameEl.value.trim()) return nameEl.value.trim();
 
+  // A preset goes by its own name, and botEngineTag says what it runs on.
+  if (window._bcpPresetName) return window._bcpPresetName;
+
   // Auto-generate from settings
-  var tpLabel = { steady: 'Steady', normal: 'Normal', panicky: 'Panicky' }[botTimePressure] || '';
   var tabLabel = '';
-  if (botTab === 'sf') {
+  // Name the rating the engine plays at, with or without a book in front of it
+  // ('lcsf', 'maia'). A book's own rating is no use here: it is snapped down to
+  // a Lichess band, so a 1950 book reads 1800, and botEngineTag already says
+  // when the book is the one playing.
+  if (botTab === 'sf' || botTab === 'lcsf') {
     tabLabel = 'Flounder ' + flounderSliderElo();
-  } else if (botTab === 'maia3') {
-    tabLabel = 'Maya ' + (maia3SelectedRating || '1200');
-  } else if (botTab === 'maia') {
-    tabLabel = 'Lichess ' + (lcSelectedRating || '1200');
+  } else if (botTab === 'maia3' || botTab === 'maia') {
+    tabLabel = 'Maia ' + (maia3SelectedRating || '1200');
   } else if (botTab === 'hybrid') {
     tabLabel = 'Hybrid Bot';
   }
-  return (tpLabel ? tpLabel + ' ' : '') + tabLabel;
+  // "Custom" means the same as the readout under the opponent picker and the
+  // builder's Personality pill, so the three cannot disagree.
+  return (tabLabel && _quickBotPersonaInfo().has ? 'Custom ' : '') + tabLabel;
 }
 
 // Sets the player name display for the bot and human
@@ -1188,6 +1194,7 @@ function botCollectConfig(configName, botNameVal) {
       hardFloorCp:     window._bcpCpHardFloor,
       customControls:  Array.isArray(window._bcpCustomControls) ? window._bcpCustomControls : [],
       hustlerTempMode: !!window._bcpHustlerTempMode,
+      presetName:      window._bcpPresetName || '',
       minProbPct:      (typeof botMinProbPct !== 'undefined') ? botMinProbPct : null,
       dayLower:        (typeof botDayLower   !== 'undefined') ? botDayLower   : null,
       dayUpper:        (typeof botDayUpper   !== 'undefined') ? botDayUpper   : null,
@@ -1270,6 +1277,7 @@ function botApplyConfig(cfg) {
         if (_pz.hardFloorCp != null) window._bcpCpHardFloor = _pz.hardFloorCp;
         if (Array.isArray(_pz.customControls)) window._bcpCustomControls = _pz.customControls;
         window._bcpHustlerTempMode = !!_pz.hustlerTempMode;
+        window._bcpPresetName = _pz.presetName || '';
         if (_pz.minProbPct != null) botMinProbPct = _pz.minProbPct;
         if (_pz.dayLower   != null) botDayLower   = _pz.dayLower;
         if (_pz.dayUpper   != null) botDayUpper   = _pz.dayUpper;
@@ -2127,7 +2135,7 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
   // botApplyConfig. Without this the two apply paths disagreed: a bot opened
   // from a .json kept its name, while the same bot arriving from the panel (or
   // from a share link, which lands here too) lost it — botGenerateName() then
-  // invented one, so the quick-start selector would offer "Steady Maya 1500"
+  // invented one, so the quick-start selector would offer "Custom Maia 1500"
   // for a bot everything else on screen calls "Café Entropy".
   if (cfg.botName !== undefined) {
     var _ni = document.getElementById('botNameInput');
@@ -2424,6 +2432,7 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
   // User-defined custom controls: [{ id, name, metric, phase, value }]
   window._bcpCustomControls   = Array.isArray(cfg.customControls) ? cfg.customControls : [];
   window._bcpHustlerTempMode  = (cfg.personalityId === 'hustler');
+  window._bcpPresetName       = cfg.personalityName || '';
 
   if (!(opts && opts.keepModal)) closeBotModal();
   // The panel's START button means "apply AND play", which is why this has

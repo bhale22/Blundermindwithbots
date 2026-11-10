@@ -1370,6 +1370,9 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
   font-family:var(--font-m);font-size:10px;color:var(--text-primary);}
 .lbc-checks label{display:inline-flex;align-items:center;gap:4px;cursor:pointer;}
 .lbc-checks input{accent-color:var(--amber);cursor:pointer;}
+.lbc-checks input[type=number]{width:60px;box-sizing:border-box;padding:2px 4px;font:inherit;cursor:text;
+  color:var(--text-primary);background:var(--carbon-surface);border:0.5px solid var(--border);
+  border-radius:2px;outline:none;}
 #lbc-token{width:100%;box-sizing:border-box;padding:6px 8px;font-family:var(--font-m);font-size:11px;
   color:var(--text-primary);background:var(--carbon-surface);border:0.5px solid var(--border);
   border-radius:2px;outline:none;}
@@ -1395,7 +1398,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
   .lbc-h{font-size:11px;}
   .lbc-sum,.lbc-checks,#lbc-status{font-size:12px;}
   .lbc-note{font-size:11px;}
-  #lbc-token{font-size:14px;}
+  #lbc-token,.lbc-checks input[type=number]{font-size:14px;}
   .lbc-checks label{min-height:32px;}
   .lbc-guide,.lbc-cmd{font-size:12px;}
   .lbc-guide > summary{padding:8px 0;}
@@ -2083,6 +2086,13 @@ body.fj .picon{font-weight:500;}
   background:rgba(93,173,226,0.06);border-left:2px solid var(--blue);
   font-size:10.5px;line-height:1.65;color:var(--text-secondary);
 }
+/* "Not available without Maia": the explainer's dialog, sized for a short
+   message. Switching to Flounder opens it, and so does the greyed premove row. */
+.pmt-modal.mg-modal{width:min(440px,96vw);}
+.mg-modal .pmt-body p{font-size:13px;margin-bottom:8px;}
+.mg-modal .pmt-links{margin-bottom:12px;}
+.mg-modal .pmt-links li{font-size:12.5px;}
+#premove-row.inert{cursor:pointer;}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    PHONES / NARROW VIEWPORTS
@@ -4051,7 +4061,7 @@ body.fj .picon{font-weight:500;}
         <div>
           <!-- Premove — bot commits a reply before seeing your move -->
           <div class="dlbl" style="margin-top:0;"><span>Premove</span><button type="button" class="pmt-help-btn" onclick="pmtOpen()">What's a premove trap?</button></div>
-          <div class="tog-row">
+          <div class="tog-row" id="premove-row" onclick="premoveRowTap(this)">
             <div>
               <div class="tog-lbl">Enable premoving</div>
               <div class="tog-desc">Commits its reply in advance and plays it instantly — bait the guess to punish it</div>
@@ -4544,6 +4554,20 @@ body.fj .picon{font-weight:500;}
       <div class="pmt-tip">Raise <span class="pmt-key">Premove rate</span> toward 100% and lower
       <span class="pmt-key">Min confidence</span> in the premove controls to make the bot premove
       more often and more exploitably.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Not available without Maia ═══ -->
+<div class="pmt-overlay" id="mg-overlay" onclick="if(event.target===this)mgClose()">
+  <div class="pmt-modal mg-modal" role="dialog" aria-modal="true" aria-labelledby="mg-title" aria-describedby="mg-body">
+    <div class="pmt-head">
+      <div class="pmt-title" id="mg-title"></div>
+      <button class="pmt-x" onclick="mgClose()" aria-label="Close">&times;</button>
+    </div>
+    <div class="pmt-body">
+      <div id="mg-body"></div>
+      <button type="button" class="tp-gate-go" onclick="mgClose()">OK</button>
     </div>
   </div>
 </div>
@@ -8890,6 +8914,7 @@ function syncWeaponizerTrigger(raw, sourceId){
 // Same reveal/sync pattern as the weaponizer: master toggle reveals the
 // sub-panel, slider/number pairs are two views of one persisted value.
 function showPremove(on, sourceId){
+  _premoveParked = false;   // an explicit setting replaces a parked one
   const sub = document.getElementById('premove-sub');
   if(sub) sub.style.display = on ? 'block' : 'none';
   ['cb-premove'].forEach(id => {
@@ -8899,7 +8924,100 @@ function showPremove(on, sourceId){
   });
   try { localStorage.setItem('bm_premoveOn', on ? '1' : '0'); } catch(e){}
   if(typeof updateTimingStatus === 'function') updateTimingStatus();
+  _premoveEngineGate();   // a loaded bot can say "on" with no Maia to premove with
 }
+
+// Premove guesses the human's reply with Maia and commits Maia's answer, and it
+// skips Flounder turns (botPremoveArm, botPremoveRating), so a bot with no Maia
+// weight can never premove.
+function _botHasNoMaia(){
+  if(baseEngine === 'stockfish') return true;
+  return baseEngine === 'hybrid' && !hybridSlots.some(s => s.type === 'maia' && (+s.pct || 0) > 0);
+}
+function _premoveWhy(){
+  if(_botHasNoMaia())
+    return 'Premove guesses your reply with Maia and commits Maia’s answer — a bot that only plays Flounder has neither, so it never premoves.';
+  if(!_bcpMaiaReady)
+    return 'Premove needs the Maia 3 model — download it in the Engine section.';
+  return '';
+}
+
+// With no Maia the switch reads off, because everything that reports premove
+// reads the switch: the collapsed Move Timing header, the bot summary and the
+// config a game starts from. The user's "on" is only parked, so it comes back
+// with Maia, and bm_premoveOn keeps it across a reload.
+// A missing model does not park: that bot still premoves once the model arrives.
+let _premoveParked = false;
+function _premoveEngineGate(){
+  const cb = document.getElementById('cb-premove');
+  if(!cb) return;
+  const noMaia = _botHasNoMaia();
+  if(noMaia && cb.checked){ _premoveParked = true; cb.checked = false; }
+  else if(!noMaia && _premoveParked){ _premoveParked = false; cb.checked = true; }
+  else return;
+  const sub = document.getElementById('premove-sub');
+  if(sub) sub.style.display = cb.checked ? 'block' : 'none';
+  updateTimingStatus();
+}
+
+// The greyed switch is `inert`, so a tap on it lands on the row. A live row
+// leaves the tap to the switch.
+function premoveRowTap(row){
+  if(!row.classList.contains('inert')) return;
+  const why = _premoveWhy();
+  if(!why) return;
+  mgOpen('Premove not available without Maia', '<p>' + why + (_botHasNoMaia()
+    ? ' To use premoves, switch the engine to Maia 3, or to a Hybrid with a Maia slot.' : '') + '</p>');
+}
+
+// The "not available without Maia" dialog. Callers pass fixed markup, never
+// anything a user typed.
+function mgOpen(title, bodyHtml){
+  const ov = document.getElementById('mg-overlay');
+  if(!ov) return;
+  document.getElementById('mg-title').textContent = title;
+  document.getElementById('mg-body').innerHTML = bodyHtml;
+  ov.classList.add('open');
+  document.addEventListener('keydown', mgEsc);
+  ov.querySelector('.tp-gate-go').focus();
+}
+function mgClose(){
+  const ov = document.getElementById('mg-overlay');
+  if(ov) ov.classList.remove('open');
+  document.removeEventListener('keydown', mgEsc);
+}
+function mgEsc(e){ if(e.key === 'Escape') mgClose(); }
+
+// The bot just lost Maia: say what that costs. The list is read from the gates
+// on the controls themselves (syncControlGating has just run), so it cannot name
+// a control that still works or miss one that went grey.
+function _mgLostMaia(eloBefore){
+  const g = _gatingState();
+  const greyed = id => !!document.getElementById(id)?.classList.contains('inert');
+  const li = (name, rest) => '<li><strong>' + name + '</strong> ' + rest + '</li>';
+  const items = [li('Premove', 'guesses your reply with Maia.')];
+  if(document.getElementById('move-quality-range')?.style.visibility === 'hidden')
+    items.push(li('Move Distribution Range', 'slices a popularity distribution, and Flounder has none.'));
+  if(_radarAxisWhy('luck'))
+    items.push(li('Bad Day', 'shifts the Move Distribution Range.'));
+  // Under Blind Conviction this row is grey on every engine, so Maia is not why.
+  if(greyed('conviction-row') && !g.blind)
+    items.push(li('Conviction', 'chooses from a distribution, and Flounder picks by evaluation.'));
+  if(greyed('hard-floor-row'))
+    items.push(li('Hard Floor', 'caps bad moves, and on Flounder its rating already decides how bad a move can get.'));
+
+  let html = '<p>Flounder can’t use these, so they’re off for this bot. Their settings are kept for when you switch back.</p>'
+    + '<ul class="pmt-links">' + items.join('') + '</ul>';
+  if(g.book)
+    html += '<p>With the opening book on, the Move Distribution Range, Bad Day, '
+      + (g.blind ? '' : 'Conviction ') + 'and Hard Floor still apply to book moves, but not to Flounder’s own.</p>';
+  // The rating is the one setting that does not come back.
+  if(currentElo !== eloBefore)
+    html += '<p>Flounder’s ratings stop at ' + currentElo + ', so this bot went from ' + eloBefore + ' to '
+      + currentElo + ', and it stays there if you switch back.</p>';
+  mgOpen('Not available without Maia', html);
+}
+
 function showPremoveClock(on, sourceId){
   const sub = document.getElementById('premove-clock-ctrl');
   if(sub) sub.style.display = on ? 'block' : 'none';
@@ -9192,6 +9310,10 @@ function getBotConfig(){
     tempValue:         _currentTempValue,
     tempPresetId:      selectedTempPresetId,
     personalityId:     selectedPersonality,
+    // What the board calls the bot; the app has no list of presets to look it up
+    // in. A loaded bot goes by its own name on the Personality pill, so the
+    // preset it was built from does not speak for it.
+    personalityName:   _activeBotName ? null : ((PERSONALITIES.find(p => p.id === selectedPersonality) || {}).name || null),
     badDayMode:        selectedPersonality === 'badday',
     calmPanickyValue:  attractorValues['pressure'] || 0,
     // Calm ↔ Panicky is continuous from here on (−5 untouched … 0 as drawn …
@@ -9232,6 +9354,10 @@ function getBotConfig(){
     staleSeek:           document.getElementById('cb-stale-seek')?.checked || false,
     staleSeekFromMove:   parseInt(document.getElementById('r-stale-move')?.value || '30'),
     staleSeekCp:         parseInt(document.getElementById('r-stale-cp')?.value   || '500'),
+    // Lichess only, set in the Lichess popup: play each game at the challenger's
+    // rating plus the offset (the bridge's _lbApplyMatchedRating).
+    lichessMatchRating:  !!lbcMatchOn,
+    lichessMatchOffset:  lbcMatchOffset || 0,
   };
 }
 
@@ -9570,6 +9696,11 @@ function applyBotConfig(cfg){
     if(!pressureOffA && cfg.ctrlA && cfg.ctrlA.length >= 2) ctrlA = cfg.ctrlA.map(p => ({x: +p.x, y: +p.y}));
     if(!pressureOffB && cfg.ctrlB && cfg.ctrlB.length >= 2) ctrlB = cfg.ctrlB.map(p => ({x: +p.x, y: +p.y}));
     drawA(); drawB(); updatePressureStats();
+  });
+
+  grp(() => {
+    lbcMatchOn = !!cfg.lichessMatchRating;
+    lbcMatchOffset = +cfg.lichessMatchOffset || 0;
   });
 
   grp(() => _updateEnginePanelHeader());
@@ -10455,6 +10586,9 @@ let _lbcView = '';              // connect | upgrade | connected
 let _lbcNewToken = false;       // "use a different token" was pressed
 let _lbcBusy = false;           // a check or upgrade is in flight
 let _lbcPendingUpgrade = null;  // { token, username, games, settings }
+// Part of the bot's config. var, because getBotConfig above can run first.
+var lbcMatchOn = false;         // play each game at the challenger's rating
+var lbcMatchOffset = 0;         // ...plus this much
 
 function _lbcHost(){
   try{
@@ -10484,7 +10618,8 @@ function lbcRefresh(st){
   if(start) start.innerHTML = on ? '&#8635; Update Lichess bot' : '&#9654; Start';
   // An open popup follows the connection, but never wipes a form being filled.
   const open = document.getElementById('lbc-overlay')?.classList.contains('show');
-  if(open && !_lbcBusy && (_lbcView === 'connected' || on)) _lbcRender();
+  if(open && !_lbcBusy && (_lbcView === 'connected' || on) &&
+     document.activeElement?.id !== 'lbc-match-offset') _lbcRender();
 }
 
 // opts.fromBoard: opened by the board's Lichess panel (lichessOpenSetup), which
@@ -10542,6 +10677,11 @@ function _lbcSummary(){
     ['CP Budget', txt('qs-cpb-value')],
     ['Think time', txt('qs-ttime-value')],
   ];
+  if(c.lichessMatchRating && c.engine !== 'hybrid'){
+    const off = c.lichessMatchOffset;
+    rows.splice(1, 0, ['Rating', 'matches each challenger' +
+      (off ? ' ' + (off > 0 ? '+' : '−') + Math.abs(off) : '') + ' · ' + c.elo + ' if they have none']);
+  }
   // Clock-driven timing is where the time-pressure curves run (Fixed and
   // Instant set the pace outright, so they never do) — say whether they will.
   if(c.timingMode === 'complexity' || c.timingMode === 'mirror'){
@@ -10557,6 +10697,31 @@ function _lbcSummary(){
       + (c.offerDraws ? ' · offers draws' : '')]
   );
   return rows.map(([k, v]) => '<dt>' + _ccEsc(k) + '</dt><dd>' + _ccEsc(v) + '</dd>').join('');
+}
+
+// Here rather than in the builder's sections because nothing but a Lichess game
+// reads it. It is still part of the bot's config, so it travels with the bot.
+function _lbcMatchHtml(){
+  const can = currentEngine !== 'hybrid';
+  return '<div class="lbc-h">Rating on Lichess</div>' +
+    '<div class="lbc-checks">' +
+      '<label><input type="checkbox" id="lbc-match" onchange="lbcMatchChange()"' +
+        (can && lbcMatchOn ? ' checked' : '') + (can ? '' : ' disabled') + '>Match the challenger’s rating</label>' +
+      '<label>Offset <input type="number" id="lbc-match-offset" min="-500" max="500" step="25" value="' + lbcMatchOffset + '"' +
+        (can ? '' : ' disabled') + ' oninput="lbcMatchChange()"></label>' +
+    '</div>' +
+    '<div class="lbc-note" style="margin-top:0;">' + (can
+      ? 'Each game is played at their Lichess rating for that speed, plus the offset (−100 plays a little below them). ' +
+        'Anyone with no rating gets the rating set in this builder. ' +
+        'The bot says so in the game chat, and they can type a rating such as 1500ELO there to change it, for that game and any rematch.'
+      : 'A blend has no single rating to match: each slot sets its own.') + '</div>';
+}
+
+function lbcMatchChange(){
+  lbcMatchOn = !!document.getElementById('lbc-match')?.checked;
+  const n = parseInt(document.getElementById('lbc-match-offset')?.value, 10);
+  lbcMatchOffset = Number.isNaN(n) ? 0 : Math.max(-500, Math.min(500, n));
+  _lbcRefreshSummary();
 }
 
 // Bot account steps, for someone who has never done anything like it. Every
@@ -10612,7 +10777,8 @@ function _lbcRender(){
       '<p>This tab plays on Lichess as ' + who + ' — ' + doing + '.</p>' +
       '<p>To change the bot, set it up here and press <b>Update Lichess bot</b> (the Start button). ' +
       'It plays from the next game; a game in progress finishes with the bot it started with.</p>' +
-      (s.nextPending ? '<p class="lbc-note">An update is waiting for the next game.</p>' : '');
+      (s.nextPending ? '<p class="lbc-note">An update is waiting for the next game.</p>' : '') +
+      _lbcMatchHtml();
     _lbcButtons([
       ['Disconnect', () => { try{ host.lichessDisconnect(); }catch(e){} lbcRefresh(); }],
       ['Go to the board', () => { _lbcFromBoard = true; lbcClose(); }, true],
@@ -10666,6 +10832,7 @@ function _lbcRender(){
     '<p>This tab will play on Lichess as your bot account, with the bot set up in this builder.</p>' +
     '<div class="lbc-h">The bot</div><dl class="lbc-sum">' + _lbcSummary() + '</dl>' +
     '<div class="lbc-note">Each game’s time control and colours come from the challenge.</div>' +
+    _lbcMatchHtml() +
     '<div class="lbc-h">Lichess bot account</div>' + tokenHtml + _lbcGuide() +
     '<div class="lbc-h">Accept challenges</div>' +
     '<div class="lbc-note" style="margin-top:0;">Casual games only — rated challenges are declined. ' +
@@ -10844,9 +11011,15 @@ function equalizeEngineSubHeights(){ /* panels stack now; nothing to equalize */
    are a tab strip now (see PHONE — ENGINE PICKER) and never leave the top of
    the section, so there is nothing to dig out from under — and a tab that
    blanks its own pane when you tap it is a trap, not a shortcut. Both layouts
-   just select. */
+   just select.
+
+   This is the user's own pick, so it is where leaving Maia gets explained.
+   Not in selEngineMode: that is also how the board's quick picker and a loaded
+   preset reach this panel, usually while nobody is looking at it. */
 function selEngineCard(card){
+  const hadMaia = !_botHasNoMaia(), eloBefore = currentElo;
   selEngineMode(card);
+  if(hadMaia && _botHasNoMaia()) _mgLostMaia(eloBefore);
 }
 
 // Repeats the selected card's blurb below its controls on phones; see the
@@ -11210,11 +11383,8 @@ function syncControlGating(){
   // ── Premove ───────────────────────────────────────────────────────────────
   // botPremoveArm guesses the human's reply with Maia and commits Maia's
   // answer at the bot's own rating; it skips Flounder turns (botPremoveRating).
-  const pmWhy = (baseEngine === 'stockfish' || (baseEngine === 'hybrid' && g.maiaWeight === 0))
-      ? 'Premove guesses your reply with Maia and commits Maia’s answer — a bot that only plays Flounder has neither, so it never premoves.'
-    : !_bcpMaiaReady
-      ? 'Premove needs the Maia 3 model — download it in the Engine section.'
-    : '';
+  _premoveEngineGate();
+  const pmWhy = _premoveWhy();
   const pmShare = (baseEngine === 'hybrid' && g.totalWeight > 0 && g.maiaWeight < g.totalWeight)
     ? Math.round(100 * g.maiaWeight / g.totalWeight) : null;
   _setTogWhy('cb-premove', pmWhy || (pmShare != null
@@ -13438,7 +13608,7 @@ function openThinkTimeSection(){
 function qsEnginePick(eng){
   const card = document.querySelector('#engine-mode-grid .mcard[data-engine="' + eng + '"]');
   if(!card) return;
-  selEngineMode(card);   // what the card's own onclick runs (selEngineCard)
+  selEngineCard(card);   // what the card's own onclick runs
   qsSyncEngine();
 }
 // The Elometer's own path: snapped to its 25s and held to the engine's range.

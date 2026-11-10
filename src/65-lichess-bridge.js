@@ -58,6 +58,10 @@ let lbStateNote = '';         // detail for the error state
 let lbWantConnected = false;  // the user asked to be connected (streams reopen)
 let lbEventAbort = null;      // aborts the event stream
 let lbGame = null;            // the game this tab is playing, see _lbNewGame
+// Opponent id → the rating they asked for in the game chat. Kept for their
+// rematches; goes when this page reloads.
+const lbRatingChoices = new Map();
+const LB_CHAT_COOLDOWN_MS = 3000;
 let lbAccepting = null;       // challenge id accepted, its gameStart not yet here
 let lbStarting = false;       // botStart() is running on Lichess's behalf
 let lbReplaying = false;      // rebuilding a game from the server's move list
@@ -201,8 +205,9 @@ function _lbSleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // Lichess asks for one request at a time, and a minute's pause after a 429.
 // Every POST goes through this queue, in order — a move always reaches the
-// server before the draw claim that follows it.
-function _lbPost(path, body) {
+// server before the draw claim that follows it. `once` is for what can be lost
+// (chat): one try and no waiting, because whatever is queued behind it waits too.
+function _lbPost(path, body, once) {
   const run = async () => {
     for (let attempt = 0; attempt < 3; attempt++) {
       let res;
@@ -213,10 +218,12 @@ function _lbPost(path, body) {
           body: body || undefined,
         });
       } catch (e) {
+        if (once) break;
         await _lbSleep(1000);
         continue;
       }
       if (res.status === 429) {
+        if (once) return { ok: false, status: 429, data: { error: 'rate limited' } };
         lbLog('Lichess asked for a pause (429) — waiting a minute');
         await _lbSleep(60000);
         continue;
@@ -332,6 +339,8 @@ function lichessDisconnect() {
   lbAccepting = null;
   // An update waiting for the next game is the page's bot now.
   if (lbNextConfig) { botApplyPanelConfig(lbNextConfig, true, { keepModal: true }); lbNextConfig = null; }
+  // Local games play the bot as built, not at the last challenger's rating.
+  _lbApplyMatchedRating(null);
   // A reload no longer reconnects this tab.
   _lbMarkHostTab(false);
   lbLog('Disconnected');
@@ -485,6 +494,7 @@ function _lbNewGame(id) {
     drawPly: -1, takebackPly: -1, claimPly: -1,
     oppDrawOpen: false, // the opponent's draw offer is standing
     drawAnswered: false, drawAccepted: false,   // the bot's answer to it
+    greeted: false, chatAt: 0,   // the opening line is said; when the last command was answered
     goneTimer: null,
   };
 }
@@ -513,7 +523,7 @@ function _lbOnGameMsg(g, m) {
   if (m.type === 'gameFull') _lbOnGameFull(g, m);
   else if (m.type === 'gameState') _lbOnGameState(g, m);
   else if (m.type === 'opponentGone') _lbOnOpponentGone(g, m);
-  // chatLine: not read.
+  else if (m.type === 'chatLine') _lbOnChatLine(g, m);
 }
 
 function _lbMoves(st) {
@@ -528,8 +538,9 @@ function _lbOnGameFull(g, full) {
   g.colorLetter = meWhite ? 'w' : 'b';
   const o = (meWhite ? full.black : full.white) || {};
   g.opponent = {
+    id: o.id || '',
     name: o.name || o.id || (o.aiLevel ? 'Lichess AI level ' + o.aiLevel : 'Anonymous'),
-    title: o.title || '', rating: o.rating || null,
+    title: o.title || '', rating: o.rating || null, provisional: !!o.provisional,
   };
   g.rated = !!full.rated;
   g.speed = full.speed || '';
@@ -549,6 +560,99 @@ function _lbSameMoves(a, b) {
   return a.length === b.length && a.every((u, i) => u === b[i]);
 }
 
+// Is the page's bot one that moves its rating for each opponent? A quick pick
+// on top of the builder's bot replaced it. A blend has no one rating to move:
+// each slot has its own.
+function _lbMatching() {
+  const cfg = window._lastAppliedBotConfig;
+  return !!(cfg && cfg.lichessMatchRating && !window._quickBotLastPick && botTab !== 'hybrid');
+}
+
+function _lbEloRange() {
+  const flounder = botTab === 'sf' || botTab === 'lcsf';
+  return { flounder, min: flounder ? FLOUNDER_ELO_MIN : 600, max: flounder ? FLOUNDER_ELO_MAX : 2600 };
+}
+
+// A bot set to match (the builder's Lichess popup) plays each game at the
+// challenger's Lichess rating for that speed, plus the bot's offset, unless they
+// have asked for a rating in the chat. With no rating to go on, or no game (g
+// null, on disconnecting), it plays at the rating it was built with. Always
+// worked out from the saved config, never from the last game's numbers, so a
+// resync can't stack it up, and the saved bot keeps its own rating. Curve A is
+// shifted too: it holds absolute ratings, and on Maia the curve is what runs, so
+// without this the old rating would still play. Returns the rating, or null for
+// a bot that doesn't match.
+function _lbApplyMatchedRating(g) {
+  if (!_lbMatching()) return null;
+  const cfg = window._lastAppliedBotConfig;
+  const { flounder, min, max } = _lbEloRange();
+  const base = +(flounder && cfg.flounderElo != null ? cfg.flounderElo : cfg.elo) || 1500;
+  const offset = +cfg.lichessMatchOffset || 0;
+  const opp = g && g.opponent;
+  const chosen = opp && opp.id ? lbRatingChoices.get(opp.id) : undefined;
+  const wanted = chosen != null ? chosen : opp && opp.rating ? opp.rating + offset : null;
+  let elo = wanted != null ? Math.max(min, Math.min(max, wanted)) : base;
+  if (flounder) {
+    // The dial only holds whole steps; Maia takes any rating.
+    elo = Math.round(elo / FLOUNDER_ELO_STEP) * FLOUNDER_ELO_STEP;
+    const dial = document.getElementById('flounderElo'), out = document.getElementById('flounderEloVal');
+    if (dial) dial.value = elo;
+    if (out) out.textContent = elo;
+  } else {
+    maia3SetRating(elo);
+  }
+  if (botPressureCurveA && cfg.ctrlA) botPressureCurveA = cfg.ctrlA.map(p => ({ x: p.x, y: +p.y + elo - base }));
+  _quickBotSyncBookRating(elo);
+  if (opp && !g.matchLogged) {
+    g.matchLogged = true;
+    const plays = (flounder ? 'Flounder ' : 'Maia ') + elo;
+    lbLog(chosen != null
+      ? 'Playing at ' + plays + ': ' + opp.name + ' chose it in the chat'
+      : opp.rating
+      ? 'Playing at ' + plays + ': ' + opp.name + ' is rated ' + opp.rating + (opp.provisional ? '?' : '') +
+        (offset ? ', offset ' + (offset > 0 ? '+' : '') + offset : '')
+      : opp.name + ' has no rating to match: playing at ' + plays);
+  }
+  return elo;
+}
+
+// A chat line matters less than a move, and every POST shares one queue, so a
+// line Lichess won't take at once is dropped rather than held in front of the
+// bot's next move.
+function _lbSay(g, text) {
+  _lbPost('/api/bot/game/' + g.id + '/chat', new URLSearchParams({ room: 'player', text }).toString(), true)
+    .then(r => { if (!r.ok) lbLog('Chat line not sent (' + _lbErr(r) + '): ' + text); });
+}
+
+// Only says it matches when it is matching: not with no rating to go on, and
+// not once this opponent has picked a rating of their own.
+function _lbGreet(g, elo) {
+  const { min, max } = _lbEloRange();
+  const matching = g.opponent.rating && !lbRatingChoices.has(g.opponent.id);
+  _lbSay(g, (matching ? 'I match your rating- currently' : 'Currently') + ' playing at ' + elo +
+    ' ELO.   Type between ' + min + 'ELO and ' + max + 'ELO to change.');
+}
+
+// The opponent sets the rating from the player chat with a message that is only
+// that: 1500ELO. The bot reads its rating fresh for each move, so this lands on
+// its next one. Lichess sends the bot's own lines back down this stream too.
+function _lbOnChatLine(g, m) {
+  const opp = g.opponent;
+  if (!g.boardReady || m.room !== 'player' || !opp || !opp.id || String(m.username).toLowerCase() !== opp.id) return;
+  const asked = /^\s*(\d{1,5})\s*elo\s*$/i.exec(m.text || '');
+  if (!asked) return;
+  // Too soon after the last one: nothing changes and nothing is said.
+  if (Date.now() - g.chatAt < LB_CHAT_COOLDOWN_MS) return;
+  g.chatAt = Date.now();
+  if (!_lbMatching()) { _lbSay(g, 'This bot\'s rating can\'t be changed.'); return; }
+  lbRatingChoices.set(opp.id, +asked[1]);
+  const elo = _lbApplyMatchedRating(g);
+  lbLog(_lbWho(opp) + ' asked for ' + asked[1] + ' in the chat: playing at ' + elo);
+  _lbSay(g, 'Playing at ELO ' + elo);
+  if (typeof botUpdatePlayerNames === 'function') botUpdatePlayerNames(botPlayerColor);
+  lbRender();
+}
+
 // Set the board up for this game with the page's bot, then replay whatever
 // has already been played (a reopened stream, or a resync). The user's own
 // colour and clock choices are borrowed for botStart() and put back after.
@@ -562,6 +666,10 @@ function _lbBeginLocalGame(g, moves) {
   // Whatever the board held is finished: Lichess decides what is on it now.
   if (botActive && !gameOver) gameOver = true;
   g.boardReady = false;
+  const matchedElo = _lbApplyMatchedRating(g);
+  // Once a game, and not on coming back to one already under way.
+  if (matchedElo != null && !g.greeted && moves.length < 2) _lbGreet(g, matchedElo);
+  g.greeted = true;
   lbStarting = true;
   try {
     botColorPref = humanColor;
@@ -915,6 +1023,7 @@ function lbRender() {
     gr.style.display = 'none';
   }
   $('lbBot').textContent = ((typeof botGenerateName === 'function') ? botGenerateName() : 'this page\'s bot') +
+    (_lbMatching() ? ' · matches each challenger’s rating' : '') +
     (lbNextConfig ? ' — your update plays from the next game' : '');
   $('lbRules').textContent = _lbRulesText();
   // The accept rules fold behind "edit" — connecting sets them in the popup.

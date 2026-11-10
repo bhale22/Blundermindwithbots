@@ -143,6 +143,7 @@ function pzSaveBot() {
     minProb: botMinProbPct, offerDraws: botOfferDraws, staleSeek: botStaleSeek,
     attractors: window._bcpAttractorValues, pieces: window._bcpPieceValues,
     custom: window._bcpCustomControls, hustler: window._bcpHustlerTempMode,
+    presetName: window._bcpPresetName,
     budget: window._bcpCpBudget, floor: window._bcpCpHardFloor,
   };
 }
@@ -177,6 +178,7 @@ function pzApplyBot(p) {
   window._bcpPieceValues = {};
   window._bcpCustomControls = [];
   window._bcpHustlerTempMode = false;
+  window._bcpPresetName = '';
   window._bcpCpBudget = 0;
   window._bcpCpHardFloor = HARD_FLOOR_OFF_CP;
 }
@@ -229,6 +231,7 @@ function pzRestoreBot(s) {
   window._bcpPieceValues = s.pieces;
   window._bcpCustomControls = s.custom;
   window._bcpHustlerTempMode = s.hustler;
+  window._bcpPresetName = s.presetName;
   window._bcpCpBudget = s.budget;
   window._bcpCpHardFloor = s.floor;
 }

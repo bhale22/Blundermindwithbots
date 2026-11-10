@@ -21,7 +21,7 @@ let botPlayerColor = 'white';
 // last touched (which is what the old resolve-on-click behaviour gave).
 let botColorPref = 'random';
 let botTab = 'sf';
-let botTimePressure = 'steady';   // label only now; botTempPressureMult is what runs
+let botTimePressure = 'steady';   // saved with a bot, not shown; botTempPressureMult is what runs
 // How far curve B's temperature escalation goes: 0 = unaffected by time
 // pressure (fully Calm), 1 = the curve as drawn, 2.5 = fully Panicky. Set from
 // the Calm ↔ Panicky slider by the botConfig handler (tempPressureMult).
@@ -4914,9 +4914,10 @@ function _quickBotFirstVisitDefaults(){
 }
 
 // Does the current config carry a personality at all? Anything the attractor
-// machinery would act on: attractor or piece preferences, custom controls, the
-// bad-day or hustler modes. The CP budget alone is not one — with nothing to
-// spend it on it is inert.
+// machinery would act on: attractor or piece preferences, custom controls that
+// are not at 0, the bad-day or hustler modes. The CP budget alone is not one —
+// with nothing to spend it on it is inert. botGenerateName reads this for the
+// "Custom" in a bot's name; the builder's Personality pill is the same test.
 function _quickBotPersonaInfo(){
   const av = window._bcpAttractorValues || {}, pv = window._bcpPieceValues || {};
   const cc = Array.isArray(window._bcpCustomControls) ? window._bcpCustomControls : [];
@@ -4924,7 +4925,7 @@ function _quickBotPersonaInfo(){
   let badDay = false, hustler = false;
   try{ badDay = !!botBadDayMode; }catch(e){}
   hustler = !!window._bcpHustlerTempMode;
-  const has = nz(av) || nz(pv) || cc.length > 0 || badDay || hustler;
+  const has = nz(av) || nz(pv) || cc.some(c => +c.value) || badDay || hustler;
   const budget = (window._bcpCpBudget != null) ? Math.max(0, +window._bcpCpBudget || 0) : 0;
   const nameEl = document.getElementById('botNameInput');
   const name = nameEl ? nameEl.value.trim() : '';

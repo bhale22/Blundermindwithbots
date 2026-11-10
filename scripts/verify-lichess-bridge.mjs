@@ -89,7 +89,7 @@ function newGame(ch) {
   const botWhite = ch.c.color === 'black' ? true : ch.c.color === 'white' ? false : Math.random() < 0.5;
   const tc = ch.c.timeControl;
   const g = {
-    id, botWhite, rated: ch.c.rated, speed: ch.c.speed, opts: ch.opts,
+    id, botWhite, rated: ch.c.rated, speed: ch.c.speed, opts: ch.opts, opp: ch.c.challenger || HUMAN,
     clock: { initial: tc.limit * 1000, increment: tc.increment * 1000 },
     wtime: tc.limit * 1000, btime: tc.limit * 1000, lastAt: Date.now(),
     bd, turn: 'w', cst: { wK: true, wQ: true, bK: true, bQ: true }, ep: -1,
@@ -97,6 +97,7 @@ function newGame(ch) {
     wdraw: false, bdraw: false, wtakeback: false, btakeback: false,
     streams: new Set(), oppBusy: false, rejected: false, dropped: false,
     botPosts: [], refused: [], draws: [], takebacks: 0, claims: 0, drawOffersByBot: 0,
+    chat: [], chatPosts: 0,
   };
   M.games[id] = g;
   return g;
@@ -111,7 +112,7 @@ function state(g) {
 }
 function full(g) {
   return { type: 'gameFull', id: g.id, variant: { key: 'standard' }, speed: g.speed, rated: g.rated,
-    white: g.botWhite ? BOT : HUMAN, black: g.botWhite ? HUMAN : BOT,
+    white: g.botWhite ? BOT : g.opp, black: g.botWhite ? g.opp : BOT,
     initialFen: 'startpos', clock: g.clock, state: state(g) };
 }
 function broadcast(g) {
@@ -228,6 +229,11 @@ function readBody(req) {
   return new Promise(r => { let b = ''; req.on('data', d => b += d); req.on('end', () => r(b)); });
 }
 
+// A line in the game chat, as the game stream delivers it.
+function chatLine(g, username, text, room) {
+  for (const r of g.streams) line(r, { type: 'chatLine', room: room || 'player', username, text });
+}
+
 // Three accounts for the Bot Builder's connect flow (section 8): the bot
 // account; a fresh one, never played, that can be upgraded (it IS the bot
 // account once it has been, so its games play as BOT); and one that has
@@ -326,6 +332,16 @@ const server = http.createServer(async (req, res) => {
       g.wdraw = g.bdraw = false;
       json(res, 200, { ok: true });
       broadcast(g);
+      return;
+    }
+    if (act === 'chat') {
+      const b = new URLSearchParams(await readBody(req));
+      g.chatPosts++;
+      if (M.chat429) { json(res, 429, { error: 'Too many requests' }); return; }
+      g.chat.push({ room: b.get('room'), text: b.get('text') });
+      json(res, 200, { ok: true });
+      // Like Lichess: the bot's own line comes back down its game stream.
+      chatLine(g, BOT.name, b.get('text'), b.get('room'));
       return;
     }
     if (act === 'takeback/no') { g.takebacks++; json(res, 200, { ok: true }); return; }
@@ -651,6 +667,8 @@ const pop = await fr.evaluate(() => ({ open: document.getElementById('lbc-overla
   casualNote: /Casual games only/.test(document.getElementById('lbc-overlay').textContent) }));
 check(pop.open && /Flounder/.test(pop.sum) && /Conviction/.test(pop.sum) && /Draws/.test(pop.sum), 'the popup summarises the bot', pop.sum.slice(0, 120));
 check(pop.token && !pop.ratedBox && pop.casualNote, 'it asks for a token; casual only, with no rated option', pop);
+check(await fr.evaluate(() => !!document.getElementById('lbc-match') && !document.getElementById('lbc-match').checked),
+  'it offers matching the challenger\'s rating, off');
 // The summary: CP Budget, not Hard Floor; and under clock-driven timing,
 // whether the time-pressure curves are on.
 const tpRows = await fr.evaluate(() => {
@@ -736,6 +754,196 @@ check(await p2.evaluate(() => window._lastAppliedBotConfig.elo === 1500 && !lich
   'the next game plays with the update');
 await until(() => M.games[M.challenges[c9].gameId].status !== 'started', 90000, 'game 9 to finish');
 
+// Matching the challenger's rating: a tick in the popup, carried by the bot's
+// config, worked out afresh each game.
+await until(() => p2.evaluate(() => lbState === 'waiting'), 10000, 'back to waiting');
+await p2.evaluate(() => openBotModal());
+await fr.waitForTimeout(400);
+await fr.click('#qs-lichess-btn');
+const matchOff = await fr.evaluate(() => ({ on: document.getElementById('lbc-match')?.checked, cfg: getBotConfig().lichessMatchRating }));
+check(matchOff.on === false && matchOff.cfg === false, 'matching is off until asked for, connected too', matchOff);
+await fr.check('#lbc-match');
+await fr.fill('#lbc-match-offset', '-200');
+const matchCfg = await fr.evaluate(() => { const c = getBotConfig(); return { on: c.lichessMatchRating, off: c.lichessMatchOffset, row: _lbcSummary() }; });
+check(matchCfg.on === true && matchCfg.off === -200 && /matches each challenger −200 · 1500 if they have none/.test(matchCfg.row),
+  'ticking it puts it in the bot config, and the summary says so', matchCfg);
+await fr.evaluate(() => { lbcClose(); startGame(); });
+await until(() => p2.evaluate(() => window._lastAppliedBotConfig.lichessMatchRating === true), 5000, 'the update');
+const playMatched = async (challenger, seenAt) => {
+  const id = newChallenge({ color: 'black', challenger, opts: { resignAtPly: 4 } });
+  await until(() => M.challenges[id].gameId, 5000, 'the challenge accepted');
+  const g = M.games[M.challenges[id].gameId];
+  await until(() => g.moves.length >= 1, 60000, 'the bot\'s first move');
+  const seen = await p2.evaluate(() => ({ flounder: flounderSliderElo(), maia: maia3SelectedRating, name: botGenerateName(),
+    panel: document.getElementById('lbBot').textContent, log: lbLogLines.slice(-8).join(' | '),
+    applied: window._lastAppliedBotConfig.elo, saved: JSON.parse(localStorage.getItem('bm_lastBot')).cfg.elo }));
+  await until(() => g.status !== 'started', 90000, 'the game to finish');
+  await until(() => p2.evaluate(() => lbState === 'waiting'), 10000, 'back to waiting');
+  seen.chat = g.chat.map(l => l.text);
+  return seen;
+};
+const greeting = (elo, max, matching) => (matching ? 'I match your rating- currently' : 'Currently') +
+  ` playing at ${elo} ELO.   Type between 600ELO and ${max}ELO to change.`;
+// A game that stays open until endGame, with a slow opponent so the chat checks
+// finish well before the game can.
+const openGame = async challenger => {
+  const id = newChallenge({ color: 'black', challenger, opts: { oppDelayMs: 1500 } });
+  await until(() => M.challenges[id].gameId, 5000, 'the challenge accepted');
+  const g = M.games[M.challenges[id].gameId];
+  await until(() => g.moves.length >= 1, 60000, 'the bot\'s first move');
+  return g;
+};
+const endGame = async g => {
+  finish(g, 'resign', g.botWhite ? 'white' : 'black');
+  await until(() => p2.evaluate(() => lbState === 'waiting'), 10000, 'back to waiting');
+};
+const lastSaid = g => g.chat.length ? g.chat[g.chat.length - 1].text : null;
+// The opponent types a command and the bot answers.
+const command = async (g, text) => {
+  const n = g.chat.length;
+  chatLine(g, g.opp.name, text);
+  await until(() => g.chat.length > n, 5000, 'the bot to answer ' + text);
+};
+const pastCooldown = () => sleep(3200);
+const m1 = await playMatched(undefined);   // TestHuman, 1600
+check(m1.flounder === 1400 && /Flounder 1400/.test(m1.name) && /Playing at Flounder 1400: TestHuman is rated 1600, offset -200/.test(m1.log),
+  'a 1600 challenger, offset -200: plays at 1400, and says so', m1);
+check(/matches each challenger/.test(m1.panel), 'the board\'s Lichess panel says it is matching', m1.panel);
+check(m1.applied === 1500 && m1.saved === 1500, 'the saved bot keeps its own rating', m1);
+const m2 = await playMatched({ id: 'newcomer', name: 'Newcomer', rating: 1833, provisional: true });
+check(m2.flounder === 1625 && /Newcomer is rated 1833\?/.test(m2.log),
+  'the next challenger sets it afresh (Flounder\'s dial holds 25s); a provisional rating is marked', m2);
+const m3 = await playMatched({ id: 'magnus', name: 'Magnus', rating: 3000 });
+check(m3.flounder === 2400, 'a rating past the engine\'s range stops at its top', m3);
+const m4 = await playMatched({ id: 'anon', name: 'Anon' });
+check(m4.flounder === 1500 && /Anon has no rating to match: playing at Flounder 1500/.test(m4.log),
+  'no rating: plays at the builder\'s rating', m4);
+check(m1.chat.length === 1 && m1.chat[0] === greeting(1400, 2400, true),
+  'the bot says what it is doing, once, with the range this engine really has', m1.chat);
+check(m4.chat[0] === greeting(1500, 2400, false), 'with no rating to match, it doesn\'t claim to be matching', m4.chat);
+
+// The chat command on Flounder: its dial holds 25s and stops at 2400.
+const fg = await openGame({ id: 'flounderuser', name: 'FlounderUser', rating: 1600 });
+await command(fg, '1530ELO');
+check(lastSaid(fg) === 'Playing at ELO 1525' && await p2.evaluate(() => flounderSliderElo()) === 1525,
+  'Flounder: the reply gives the rating it can really play', lastSaid(fg));
+await pastCooldown();
+await command(fg, '3000ELO');
+check(lastSaid(fg) === 'Playing at ELO 2400' && await p2.evaluate(() => flounderSliderElo()) === 2400,
+  'Flounder: past its top, it says where it stopped', lastSaid(fg));
+await endGame(fg);
+
+// A blend has no single rating to move, so the popup doesn't offer it.
+const hyb = await fr.evaluate(() => {
+  selEngineMode(document.querySelector('#engine-mode-grid .mcard[data-engine="hybrid"]'));
+  lbcOpen();
+  const r = { disabled: document.getElementById('lbc-match').disabled, row: _lbcSummary(), text: document.getElementById('lbc-body').textContent };
+  lbcClose();
+  return r;
+});
+check(hyb.disabled && /no single rating/.test(hyb.text) && !/matches each challenger/.test(hyb.row), 'a blend: the option is greyed, and says why', hyb.disabled);
+
+// The real thing on Maia, with Curve A on: it holds absolute ratings, so unless
+// it moves too, the old rating would go on playing whatever the dial said.
+await p2.evaluate(() => { if (!_maiaReady) maiaDownloadModel(); });
+await until(() => p2.evaluate(() => _maiaReady), 180000, 'Maia to load');
+await fr.evaluate(() => {
+  selEngineMode(document.querySelector('#engine-mode-grid .mcard[data-engine="maia3"]'));
+  setElo(2200);
+  document.querySelector('#timing-mode-grid .mcard[data-v="Complexity-scaled"]').click();
+  startGame();
+});
+await until(() => p2.evaluate(() => window._lastAppliedBotConfig.elo === 2200 && _lbEnginesReady()), 60000, 'the Maia update');
+const curveOn = await p2.evaluate(() => {
+  window._maiaAsked = [];
+  const real = maia3GetMoveProbs;
+  maia3GetMoveProbs = function (fen, elo) { window._maiaAsked.push(+(elo != null ? elo : lcSelectedRating)); return real.apply(this, arguments); };
+  return !!botPressureCurveA;
+});
+check(curveOn, 'this Maia bot has its rating curve on');
+const m5 = await playMatched({ id: 'maiauser', name: 'MaiaUser', rating: 1700 });
+const asked = await p2.evaluate(() => window._maiaAsked);
+check(m5.maia === 1500 && /Maia 1500/.test(m5.name) && m5.applied === 2200 && m5.saved === 2200,
+  'a Maia 2200 bot against a 1700 challenger, offset -200: rated 1500, saved bot still 2200', m5);
+// 1500 at the top of the curve, at most 300 lower where it drops.
+check(asked.length > 0 && asked.every(r => r >= 1200 && r <= 1500), 'and Maia itself is asked for that rating, curve and all', asked);
+
+// The game chat: what the bot says, the command, and who can give it.
+const curveTop = () => p2.evaluate(() => Math.max(...botPressureCurveA.map(p => p.y)));
+const maiaNow = () => p2.evaluate(() => maia3SelectedRating);
+const chatUser = { id: 'chatuser', name: 'ChatUser', rating: 1900 };
+const cg = await openGame(chatUser);
+check(cg.chat.length === 1 && cg.chat[0].room === 'player' && cg.chat[0].text === greeting(1700, 2600, true),
+  'at the start, in the player chat: it matches, at what rating, and how to change it', cg.chat);
+chatLine(cg, 'ChatUser', 'I am 1500 elo lol');
+chatLine(cg, 'Spectator', '1200ELO', 'spectator');
+chatLine(cg, 'SomeoneElse', '1200ELO');
+await sleep(800);
+check(await maiaNow() === 1700 && cg.chat.length === 1, 'chatter, spectators and third parties change nothing, and get no reply', cg.chat);
+await command(cg, '1500ELO');
+check(lastSaid(cg) === 'Playing at ELO 1500' && await maiaNow() === 1500 && await curveTop() === 1500,
+  '1500ELO: the exact reply, and the rating and its curve both move', { said: lastSaid(cg) });
+check(await p2.evaluate(() => /Maia 1500/.test(botGenerateName())), 'the board\'s name for the bot moves too');
+chatLine(cg, 'ChatUser', '1700ELO');
+await sleep(800);
+check(lastSaid(cg) === 'Playing at ELO 1500' && await maiaNow() === 1500, 'a second command inside the cooldown does nothing', lastSaid(cg));
+await p2.evaluate(() => { window._maiaAsked = []; });
+const postsAtChange = cg.botPosts.length;
+await until(() => cg.botPosts.length >= postsAtChange + 2, 60000, 'two more bot moves');
+const askedAfter = await p2.evaluate(() => window._maiaAsked);
+check(askedAfter.length > 0 && askedAfter.every(r => r >= 1200 && r <= 1500), 'the bot\'s next moves are played at it, mid-game', askedAfter);
+await pastCooldown();
+await command(cg, ' 1600 elo ');
+check(lastSaid(cg) === 'Playing at ELO 1600' && await maiaNow() === 1600, 'spaces and lower case are fine', lastSaid(cg));
+await pastCooldown();
+await command(cg, '4000ELO');
+check(lastSaid(cg) === 'Playing at ELO 2600' && await maiaNow() === 2600, 'above the range: stops at the top and says so', lastSaid(cg));
+await pastCooldown();
+await command(cg, '100ELO');
+check(lastSaid(cg) === 'Playing at ELO 600' && await maiaNow() === 600, 'below the range: stops at the bottom and says so', lastSaid(cg));
+await pastCooldown();
+await command(cg, '1500ELO');
+// A rebuild from the server, the bot not being mid-move.
+await until(() => cg.status !== 'started' || cg.turn !== (cg.botWhite ? 'w' : 'b'), 60000, 'the opponent\'s turn');
+const saidBefore = cg.chat.length;
+await p2.evaluate(() => _lbBeginLocalGame(lbGame, lbGame.local.slice()));
+await sleep(400);
+check(await maiaNow() === 1500 && await curveTop() === 1500 && cg.chat.length === saidBefore,
+  'a rebuild from the server keeps the choice and doesn\'t greet again', { maia: await maiaNow(), said: cg.chat.length });
+// Every POST shares one queue and a 429 sleeps a minute in it, so a chat line
+// that retried would sit in front of the bot's next move.
+await pastCooldown();
+M.chat429 = true;
+const chatPosts0 = cg.chatPosts, movePosts0 = cg.botPosts.length, t429 = Date.now();
+chatLine(cg, 'ChatUser', '1500ELO');
+await until(() => cg.chatPosts > chatPosts0, 5000, 'the refused chat line');
+await until(() => cg.botPosts.length > movePosts0, 30000, 'the bot\'s next move');
+const moved429 = cg.botPosts.length > movePosts0, took429 = Date.now() - t429;
+M.chat429 = false;
+await sleep(300);
+check(moved429 && took429 < 30000 && cg.chatPosts === chatPosts0 + 1,
+  'a rate-limited chat line is dropped once, and the bot\'s moves don\'t wait behind it', { moved429, took429, posts: cg.chatPosts - chatPosts0 });
+check(await p2.evaluate(() => lbLogLines.some(l => /Chat line not sent/.test(l))), 'and the host\'s log says it wasn\'t sent');
+check(cg.status === 'started', 'the chat game was still going throughout', cg.status);
+await endGame(cg);
+const cg2 = await openGame(chatUser);
+check(await maiaNow() === 1500 && cg2.chat[0]?.text === greeting(1500, 2600, false),
+  'a rematch keeps their choice, and doesn\'t claim to be matching', cg2.chat);
+await endGame(cg2);
+const cg3 = await openGame({ id: 'nextuser', name: 'NextUser', rating: 1300 });
+check(await maiaNow() === 1100 && cg3.chat[0]?.text === greeting(1100, 2600, true), 'the next player gets their own rating, not the last one\'s choice', cg3.chat);
+await endGame(cg3);
+// A bot not set to match keeps its rating and says so.
+await p2.evaluate(() => { window._lastAppliedBotConfig.lichessMatchRating = false; });
+const fixedElo = await maiaNow();
+const cg4 = await openGame({ id: 'fixeduser', name: 'FixedUser', rating: 1800 });
+const fixedGreeted = cg4.chat.length;
+await command(cg4, '1500ELO');
+check(fixedGreeted === 0 && lastSaid(cg4) === 'This bot\'s rating can\'t be changed.' && await maiaNow() === fixedElo,
+  'a bot not set to match: no greeting, and it says the rating can\'t change', { fixedGreeted, said: lastSaid(cg4) });
+await endGame(cg4);
+await p2.evaluate(() => { window._lastAppliedBotConfig.lichessMatchRating = true; });
+
 // Disconnect from the builder's popup.
 await p2.evaluate(() => openBotModal());
 await fr.waitForTimeout(400);
@@ -749,6 +957,8 @@ const offB = await fr.evaluate(() => ({ text: document.getElementById('qs-liches
 check(off.state === 'off' && !/(^|[?&])lichess(&|$)/.test(off.url) && !(await panelShown(p2)),
   'disconnected; the address no longer marks a host, and the board\'s panel is gone', off);
 check(/Set up bot to play on Lichess/.test(offB.text) && /Start/.test(offB.start) && !/Update/.test(offB.start), 'the builder is back to Start', offB);
+const afterOff = await p2.evaluate(() => ({ maia: maia3SelectedRating, top: Math.max(...botPressureCurveA.map(p => p.y)) }));
+check(afterOff.maia === 2200 && afterOff.top === 2200, 'and local games play the bot as built, not at the last challenger\'s rating', afterOff);
 check(errs2.length === 0, 'no page errors (builder flow)', errs2.slice(0, 5));
 
 // ── 9. A host tab that can't reconnect ──────────────────────────────────────

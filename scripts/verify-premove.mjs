@@ -343,7 +343,7 @@ await page.waitForTimeout(200);
 ok(await page.locator('#pmt-overlay').evaluate(e => e.classList.contains('open')),
    'button opens the explainer');
 
-const note = await page.locator('.pmt-body').textContent();
+const note = await page.locator('#pmt-overlay .pmt-body').textContent();
 ok(/what's a premove\?/i.test(note),      'explains what a premove is first');
 ok(/what's a premove trap\?/i.test(note), 'then explains what a trap is');
 ok(note.search(/what's a premove\?/i) < note.search(/what's a premove trap\?/i),
