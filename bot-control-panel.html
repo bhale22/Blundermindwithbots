@@ -1963,6 +1963,14 @@ body.fj .ptrait{font-size:13.5px;}
 body.fj .ptag{font-size:12px;}
 body.fj .sub-title{font-size:13.5px;}
 body.fj .tag{font-size:13.5px;}
+/* Openings: the repertoire's rows and the List. They kept their mono sizes
+   (8–10px), which in Spectral sat far below the 15px text around them. */
+body.fj .rep-slot .rep-code,body.fj .eco-code,body.fj .eco-sel-code{font-size:13.5px;letter-spacing:0;}
+body.fj .rep-slot .rep-code{min-width:40px;}
+body.fj .rep-slot .rep-name,body.fj .eco-option,body.fj .eco-selected{font-size:15px;}
+body.fj .rep-slot .rep-pct input{width:52px;font-size:13.5px;}
+body.fj .eco-search,body.fj .eco-browse{font-size:15px;}
+body.fj .rep-total,body.fj .rep-none-note,body.fj .eco-count,body.fj .eco-group{font-size:12px;}
 
 /* --font-u name tier: italic Fraunces 500, sentence case. The brief kept these
    at their original size, but 10px italic serif engine/persona names proved too
@@ -14667,7 +14675,7 @@ const REP_NONE_NAME = 'No opening sequence';
 function _repHasNone(color){ return repSlots[color].some(sl => sl.none); }
 function _repNoneOptionHTML(color){
   return '<div class="eco-option eco-none" onclick="repAddNone(event,\'' + color + '\')">' +
-    '<span class="eco-code">—</span>' +
+    '<span class="eco-code">None</span>' +
     '<span class="eco-name">No opening sequence: follow the bot’s own move selection</span></div>';
 }
 function repAddNone(ev, color){
@@ -14707,7 +14715,7 @@ function renderRepSlots(color){
   container.innerHTML = slots.length
     ? slots.map((s,i)=>`
         <div class="rep-slot${s.none ? ' rep-none' : ''}">
-          <span class="rep-code">${s.none ? '—' : s.code}</span>
+          <span class="rep-code">${s.none ? 'None' : s.code}</span>
           <span class="rep-name">${s.none ? 'No opening sequence: the bot’s own moves' : s.name}</span>
           <div class="rep-pct">
             <input type="number" min="0" max="100" step="5" value="${s.pct}"
