@@ -624,6 +624,13 @@ input.ctrl-val[type=number]::-webkit-inner-spin-button{
   -webkit-appearance:none;margin:0;
 }
 .ctrl-hint{font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);margin-top:2px;line-height:1.4;}
+.blind-mix-cell{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-m);font-size:9px;color:var(--text-dim);order:2;}
+.blind-mix-cell input{width:52px;}
+/* Phones: the label on its own line, the four boxes on the next. */
+@media (max-width:760px){
+  #blind-mix-row .ctrl-lbl{flex-basis:100%;}
+  .blind-mix-cell input{width:44px;min-width:44px;}
+}
 /* The two time-pressure columns sit side by side, so their hints must reserve
    the same height or the charts stop bottom-aligning when one wraps and the
    other does not. Two lines is the most either has ever needed. */
@@ -1117,6 +1124,8 @@ body.rs-highvis [style*="font-size:10px"]{font-size:14px !important;}
 .rep-slot{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--carbon-surface);border:0.5px solid var(--border);border-radius:var(--r);margin-bottom:5px;}
 .rep-slot .rep-name{flex:1;font-family:var(--font-m);font-size:10px;color:var(--text-primary);}
 .rep-slot .rep-code{font-family:var(--font-m);font-size:9px;color:var(--amber-dim);min-width:28px;}
+.rep-slot.rep-none .rep-name{font-style:italic;}
+.rep-none-note{margin-top:4px;font-family:var(--font-m);font-size:9px;line-height:1.5;color:var(--text-dim);}
 .rep-slot .rep-pct input{width:42px;padding:2px 4px;font-family:var(--font-m);font-size:10px;color:var(--amber-bright);background:var(--carbon-raise);border:0.5px solid var(--border-amber);border-radius:2px;text-align:center;outline:none;}
 .rep-total{font-family:var(--font-m);font-size:9px;text-align:right;padding:4px 0;}
 .rep-total.ok{color:var(--amber-dim);}
@@ -3695,7 +3704,7 @@ body.fj .picon{font-weight:500;}
           <!-- Blind Conviction — the Personality section's switch, mirrored
                here so the chart's Played bar can be watched as it flips -->
           <div class="tog-row" id="blind-conviction-row-mirror">
-            <div><div class="tog-lbl">Blind conviction</div><div class="tog-desc">The personality alone picks: its favorite within the Budget. Same switch as in Personality.</div></div>
+            <div><div class="tog-lbl">Blind conviction</div><div class="tog-desc">The personality alone picks: its favorites within the Budget, by the Choice mix in Personality. Same switch as in Personality.</div></div>
             <label class="tog"><input type="checkbox" id="cb-blind-conviction-mirror" onchange="setBlindConviction(this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label>
           </div>
           <div class="ctrl-hint" id="temp-chart-hint">Same dial as the Personality section's Centipawmeter — move either one. The middle (blue) bar shows an <em>illustrative</em> personality (loves g4, likes c4, dislikes d4) reshaping Maia's odds; the last bar is what the bot plays: Conviction's share on the top move, the rest temperature samples — or, with Blind conviction on, the one move it chooses.</div>
@@ -3784,8 +3793,21 @@ body.fj .picon{font-weight:500;}
                      among those the Move Distribution Range lets through and
                      within the Budget (blindConvictionPick) -->
                 <div class="tog-row" id="blind-conviction-row">
-                  <div><div class="tog-lbl">Blind conviction</div><div class="tog-desc">Ignores how popular each move is and always plays the personality's favorite within the Budget. Popularity only breaks ties and sets the Move Distribution Range's floor below. Predictable, and no longer plays like a person.</div></div>
+                  <div><div class="tog-lbl">Blind conviction</div><div class="tog-desc">Ignores how popular each move is: the personality ranks the moves, and the bot plays its favorites within the Budget, as often as the Choice mix says. Popularity only breaks ties and sets the Move Distribution Range's floor below. No longer plays like a person.</div></div>
                   <label class="tog"><input type="checkbox" id="cb-blind-conviction" onchange="setBlindConviction(this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label>
+                </div>
+                <!-- Blind Conviction's Choice mix (botBlindChoicePcts): how often
+                     it plays its 1st-4th choice within the Budget. Shown only
+                     while Blind is on, the one place it acts. -->
+                <div id="blind-mix-wrap" style="display:none;">
+                  <div class="ctrl" id="blind-mix-row" style="margin-top:6px;flex-wrap:wrap;gap:6px 10px;">
+                    <span class="ctrl-lbl" style="min-width:80px;">Choice mix</span>
+                    <label class="blind-mix-cell">1st <input type="number" id="n-blind-mix-0" class="ctrl-val" min="0" max="100" step="5" value="60" oninput="onBlindMix()"></label>
+                    <label class="blind-mix-cell">2nd <input type="number" id="n-blind-mix-1" class="ctrl-val" min="0" max="100" step="5" value="20" oninput="onBlindMix()"></label>
+                    <label class="blind-mix-cell">3rd <input type="number" id="n-blind-mix-2" class="ctrl-val" min="0" max="100" step="5" value="15" oninput="onBlindMix()"></label>
+                    <label class="blind-mix-cell">4th <input type="number" id="n-blind-mix-3" class="ctrl-val" min="0" max="100" step="5" value="5" oninput="onBlindMix()"></label>
+                  </div>
+                  <div class="ctrl-hint" id="blind-mix-note"></div>
                 </div>
                 <div class="ctrl" id="hard-floor-row" style="margin-top:8px;">
                   <span class="ctrl-lbl" id="hard-floor-lbl" style="min-width:80px;">Hard Floor</span>
@@ -9263,6 +9285,7 @@ function getBotConfig(){
     // distribution, the rest are temperature samples.
     convictionPct:   _convictionPct(),
     blindConviction: _blindConviction(),
+    blindChoicePcts: _blindMix(),
     color:           color,
     tcTime:          tcTime,
     tcInc:           tcInc,
@@ -9495,6 +9518,8 @@ function applyBotConfig(cfg){
   // belongs to Bad Day and time pressure.
   grp(() => onConvictionSlider(cfg.convictionPct != null ? cfg.convictionPct : 30));
   grp(() => setBlindConviction(!!cfg.blindConviction));
+  // A bot saved before the Choice mix played its favourite every move.
+  grp(() => setBlindMix(Array.isArray(cfg.blindChoicePcts) ? cfg.blindChoicePcts : [100, 0, 0, 0]));
   grp(() => {
     const lo = document.getElementById('day-lower'), hi = document.getElementById('day-upper');
     if(lo && cfg.dayLower != null) lo.value = cfg.dayLower;
@@ -10684,7 +10709,7 @@ function _lbcSummary(){
   const rows = [
     ['Engine', txt('qs-engine-pill')],
     ['Personality', txt('qs-pers-value') + ' · ' +
-      (_blindConviction() ? 'Blind conviction' : 'Conviction ' + _convictionPct() + '%')],
+      (_blindConviction() ? 'Blind conviction · choices ' + _blindMix().join('/') + '%' : 'Conviction ' + _convictionPct() + '%')],
     ['CP Budget', txt('qs-cpb-value')],
     ['Think time', txt('qs-ttime-value')],
   ];
@@ -11410,7 +11435,7 @@ function syncControlGating(){
   // Conviction acts on picks from a distribution (pickFromProbs) — Maia and
   // the opening book — and not at all under Blind Conviction.
   const pickWhy = g.blind
-    ? 'Blind conviction is on: every move is the personality\'s favorite within the Budget, so there is no share to set.'
+    ? 'Blind conviction is on: its Choice mix, under the switch in Personality, says how often it plays each of the personality\'s favorites, so this share has nothing to act on.'
     : g.flounderOnly
     ? 'Flounder picks each move by its evaluation, not from a distribution, so this has nothing to act on. It applies to Maia and opening-book moves.'
     : '';
@@ -11437,7 +11462,7 @@ function syncControlGating(){
   // (hustlerPhaseTemp, which botMaiaBaseTemp reads first on every engine).
   const tz = document.querySelector('#engine-temp-col .temp-slider-zone');
   _setWhy(tz, g.blind
-      ? 'Blind conviction is on: each move is chosen by the personality, not sampled, so temperature has nothing to act on.'
+      ? 'Blind conviction is on: each move is one of the personality\'s choices, drawn by its Choice mix, not sampled from Maia, so temperature has nothing to act on.'
       : g.hustler
       ? 'Coffeehouse Hustler sets the temperature itself, by game phase: 5.0 in the opening, easing to 0.6 by the endgame. Move any personality slider, or pick another preset, to set it here.'
       : '', { target: document.getElementById('temp-t-slider'), after: true });
@@ -12320,8 +12345,9 @@ function _syncTempScaleLabels(){
       + 'about 195 here and c4 overtakes e4; from then on a cold bot plays c4 and means it. '
       + '<b>g4</b> is the personality\'s real favourite, but only 0.4% of players choose it: '
       + 'the personality barely lifts it and Conviction never plays it. <b>Blind conviction</b> '
-      + 'does — Played becomes the one move it chooses: its favourite within the Budget (g4 '
-      + 'costs about 90 cp here) among the moves the Move Distribution Range lets in. '
+      + 'does — Played becomes its choices among the moves the Move Distribution Range lets in: '
+      + 'its favourite within the Budget (g4 costs about 90 cp here) as often as its '
+      + '<b>Choice mix</b> says, its next choices within the Budget the rest of the time. '
       + 'The Budget dial here is the same one as the '
       + 'Personality section\'s Centipawmeter; move either.';
 }
@@ -12377,17 +12403,26 @@ function _chartInRange(probs){
   return kept.map(p => p / s);
 }
 
-// Blind Conviction's pick over the chart's moves (blindConvictionPick): the
-// personality's favourite among the moves in range, ties to the more popular,
-// that costs no more than the Budget against Maia's most popular move. One
-// move, every time — so the Played bar is 100% on it.
-function _chartBlindPlayed(all, inRange, budgetCp){
+// Blind Conviction's picks over the chart's moves (blindConvictionPick): the
+// personality's order among the moves in range, ties to the more popular, kept
+// to those that cost no more than the Budget against Maia's most popular move.
+// The first four of those share the Played bar by the Choice mix (mix, the
+// builder's own when not given), a share with no move to take it passing to the
+// rest in proportion, as the engine plays it.
+function _chartBlindPlayed(all, inRange, budgetCp, mix){
+  mix = mix || _blindMix();
   const top = all.indexOf(Math.max(...all));
   const order = inRange.map((p, i) => i).filter(i => inRange[i] > 0)
     .sort((a, b) => ((PERS_CHART_PREF[b] || 0) - (PERS_CHART_PREF[a] || 0)) || (all[b] - all[a]));
   const cost = i => TEMP_CHART_MOVES[i].cp - TEMP_CHART_MOVES[top].cp;
-  const pick = order.find(i => cost(i) <= budgetCp);
-  return all.map((p, i) => i === (pick != null ? pick : top) ? 1 : 0);
+  const within = order.filter(i => cost(i) <= budgetCp).slice(0, BLIND_MIX_N);
+  const out = all.map(() => 0);
+  if(!within.length){ out[top] = 1; return out; }
+  const w = within.map((i, k) => Math.max(0, +mix[k] || 0));
+  const s = w.reduce((a, b) => a + b, 0);
+  if(!(s > 0)){ out[within[0]] = 1; return out; }
+  within.forEach((i, k) => { out[i] = w[k] / s; });
+  return out;
 }
 
 // A share as the chart's labels print it: whole percents, one decimal under
@@ -12647,9 +12682,45 @@ function _convictionPct(){
 }
 // Blind Conviction (blindConvictionPick): the personality alone picks the
 // move, so Conviction's share and the temperature have nothing to act on —
-// syncControlGating greys them and says why.
+// syncControlGating greys them and says why. Its own Choice mix says how often
+// it plays its first to fourth choice within the Budget.
 function _blindConviction(){
   return !!document.getElementById('cb-blind-conviction')?.checked;
+}
+const BLIND_MIX_N = 4;
+// The mix as the engine reads it (blindChoicePctsFrom): four whole shares,
+// 0-100; all 0 is the favourite every move.
+function _blindMix(){
+  const a = [];
+  for(let i = 0; i < BLIND_MIX_N; i++){
+    const v = +(document.getElementById('n-blind-mix-' + i)?.value);
+    a.push(Number.isFinite(v) ? Math.max(0, Math.min(100, Math.round(v))) : 0);
+  }
+  return a.some(v => v > 0) ? a : [100, 0, 0, 0];
+}
+function setBlindMix(mix){
+  for(let i = 0; i < BLIND_MIX_N; i++){
+    const el = document.getElementById('n-blind-mix-' + i);
+    if(el) el.value = Math.max(0, Math.min(100, Math.round(+(mix || [])[i] || 0)));
+  }
+  onBlindMix();
+}
+function _blindMixNote(){
+  const mix = _blindMix();
+  const sum = mix.reduce((a, b) => a + b, 0);
+  const say = mix[0] === 100 && !mix[1] && !mix[2] && !mix[3]
+    ? 'Its favorite within the Budget, every move: the same game gets the same answers.'
+    : 'How often it plays its favorite within the Budget, its second choice within it, its third and its fourth.';
+  const scale = sum !== 100 ? ' These add to ' + sum + ', so they are used in proportion: '
+      + mix.map(v => Math.round(v * 100 / sum)).join(' / ') + '%.' : '';
+  return say + scale + ' A choice the Budget rules out passes its share to the ones left.';
+}
+function onBlindMix(){
+  const note = document.getElementById('blind-mix-note');
+  if(note) note.textContent = _blindMixNote();
+  if(typeof _currentTempValue !== 'undefined'){
+    try{ drawTempChart(_currentTempValue); }catch(e){}
+  }
 }
 function setBlindConviction(on){
   // One value, two switches: the Personality section's and its mirror by the
@@ -12658,8 +12729,12 @@ function setBlindConviction(on){
     const cb = document.getElementById('cb-blind-conviction' + s);
     if(cb) cb.checked = !!on;
   });
+  const mixWrap = document.getElementById('blind-mix-wrap');
+  if(mixWrap) mixWrap.style.display = on ? '' : 'none';
+  const mixNote = document.getElementById('blind-mix-note');
+  if(mixNote) mixNote.textContent = _blindMixNote();
   syncControlGating();
-  // The chart's Played bar becomes the one move Blind Conviction chooses.
+  // The chart's Played bar becomes Blind Conviction's choices, by its mix.
   try{ drawTempChart(_currentTempValue); }catch(e){}
 }
 function onConvictionSlider(v){
@@ -14456,8 +14531,10 @@ function onRepSearch(query, color){
   const results = ECO_DATA.filter(e =>
     e.n.toLowerCase().includes(q) || e.e.toLowerCase().startsWith(q)
   ).slice(0, 30);
-  if(!results.length){ dd.classList.remove('visible'); return; }
-  dd.innerHTML = results.map(e=>`
+  const noneHit = !_repHasNone(color) &&
+    ('no opening sequence'.startsWith(q) || 'none'.startsWith(q) || 'skip'.startsWith(q));
+  if(!results.length && !noneHit){ dd.classList.remove('visible'); return; }
+  dd.innerHTML = (noneHit ? _repNoneOptionHTML(color) : '') + results.map(e=>`
     <div class="eco-option" onclick="addRepFromSearch('${e.e.replace(/'/g,"\\'")}','${e.n.replace(/'/g,"\\'").replace(/"/g,'&quot;')}','${color}')">
       <span class="eco-code">${e.e}</span>
       <span class="eco-name">${e.n}</span>
@@ -14537,6 +14614,7 @@ function _repRenderFamilies(color){
       '<span class="eco-chev" aria-hidden="true">›</span></div>';
   };
   dd.innerHTML =
+    (_repHasNone(color) ? '' : '<div class="eco-group">Some games without an opening</div>' + _repNoneOptionHTML(color)) +
     '<div class="eco-group">Popular as ' + (color === 'white' ? 'White' : 'Black') + '</div>' +
     REP_POPULAR[color].filter(n => fam.lines.has(n)).map(row).join('') +
     '<div class="eco-group">All openings A–Z</div>' +
@@ -14579,6 +14657,32 @@ function repBrowseFamily(ev, color, idx){
   dd.dataset.view = 'family';
   dd.scrollTop = 0;
 }
+/* ── Repertoire: "No opening sequence" ─────────────────────────────────────
+   A slot with a percentage like any opening, but no line: in its share of the
+   games the bot skips the whole opening sequence (the repertoire and the Main
+   Line) and plays its own move selection from move 1. The app takes it off
+   the matcher's slots and rolls it once a game (botOpeningNoneShare, botStart).
+   One per colour. */
+const REP_NONE_NAME = 'No opening sequence';
+function _repHasNone(color){ return repSlots[color].some(sl => sl.none); }
+function _repNoneOptionHTML(color){
+  return '<div class="eco-option eco-none" onclick="repAddNone(event,\'' + color + '\')">' +
+    '<span class="eco-code">—</span>' +
+    '<span class="eco-name">No opening sequence: follow the bot’s own move selection</span></div>';
+}
+function repAddNone(ev, color){
+  if(ev) ev.stopPropagation();
+  const inp = document.getElementById('rep-search-input-' + color);
+  if(inp) inp.value = '';
+  const dd = document.getElementById('rep-dropdown-' + color);
+  if(dd) dd.classList.remove('visible');
+  _repSyncBrowseBtn(color);
+  if(_repHasNone(color)) return;
+  repSlots[color].push({ code:'', name:REP_NONE_NAME, pct:0, none:true });
+  autoDistributeRepPct(color);
+  renderRepSlots(color);
+  if(!repOn[color]) setOpStage(color, 'rep', true);
+}
 function repAddEco(ev, color, i){
   if(ev) ev.stopPropagation();
   const e = ECO_DATA[i];
@@ -14602,9 +14706,9 @@ function renderRepSlots(color){
   if(!container) return;
   container.innerHTML = slots.length
     ? slots.map((s,i)=>`
-        <div class="rep-slot">
-          <span class="rep-code">${s.code}</span>
-          <span class="rep-name">${s.name}</span>
+        <div class="rep-slot${s.none ? ' rep-none' : ''}">
+          <span class="rep-code">${s.none ? '—' : s.code}</span>
+          <span class="rep-name">${s.none ? 'No opening sequence: the bot’s own moves' : s.name}</span>
           <div class="rep-pct">
             <input type="number" min="0" max="100" step="5" value="${s.pct}"
               oninput="onRepPctChange(${i},+this.value,'${color}')"> %
@@ -14615,6 +14719,17 @@ function renderRepSlots(color){
   if(totalEl) totalEl.style.display = slots.length ? 'block' : 'none';
   updateRepTotal(color);
 }
+// Under the total: what the No opening share does, in this colour's numbers.
+function _repNoneNote(color){
+  const slots = repSlots[color];
+  const none = slots.filter(sl => sl.none).reduce((a, sl) => a + (+sl.pct || 0), 0);
+  if(!slots.some(sl => sl.none)) return '';
+  const total = slots.reduce((a, sl) => a + (+sl.pct || 0), 0);
+  const pct = total > 0 ? Math.round(none * 100 / total) : 0;
+  return 'No opening sequence: in ' + pct + '% of games as ' + (color === 'white' ? 'White' : 'Black') +
+    ' the bot skips the repertoire and the Main Line and plays its own moves from move 1. ' +
+    'The engine’s own Lichess book, if it is on, still plays.';
+}
 
 function updateRepTotal(color){
   const total = repSlots[color].reduce((s,sl)=>s+sl.pct,0);
@@ -14622,6 +14737,15 @@ function updateRepTotal(color){
   if(!el) return;
   el.textContent = 'Total: ' + total + '%';
   el.className = 'rep-total ' + (total===100?'ok':'err');
+  let note = document.getElementById('rep-none-note-' + color);
+  const text = _repNoneNote(color);
+  if(text && !note){
+    note = document.createElement('div');
+    note.id = 'rep-none-note-' + color;
+    note.className = 'rep-none-note';
+    el.insertAdjacentElement('afterend', note);
+  }
+  if(note){ note.textContent = text; note.style.display = text ? '' : 'none'; }
 }
 
 function removeRepSlot(i,color){

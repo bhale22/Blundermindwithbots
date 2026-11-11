@@ -1006,7 +1006,15 @@ async function botStart() {
   const _repOn = !!botOpeningConfig['rep' + _stageCol];
   const _mlOn  = !!botOpeningConfig['mainLine' + _stageCol];
   botOpeningMode = _repOn ? 'preferred' : _mlOn ? 'mainline' : 'none';
-  if (_repOn) {
+  // The repertoire's "No opening sequence" slot, rolled once for the game.
+  const _noOpening = _repOn && botOpeningSkipsThisGame(_stageCol);
+  botNoOpeningThisGame = _noOpening;
+  if (_noOpening) {
+    console.log('[Opening] No opening sequence this game (' +
+      Math.round(100 * botOpeningConfig['none' + _stageCol]) + '% of games as ' + _stageCol +
+      '): the bot plays its own moves from move 1');
+  }
+  if (_repOn && !_noOpening) {
     const _hasSlots = (botOpeningConfig[_resolvedBotCol] || [])
                         .filter(s => s.name).length > 0;
     // Frequency roll: if < 100%, sometimes skip openings for this game
@@ -1019,7 +1027,8 @@ async function botStart() {
   // them. The Main Line and the engine's book stay on: the explorer queries by
   // FEN, so for classic positions it supplies genuine human move frequencies.
   if (_customStart) preferredOpeningActive = false;
-  mainLineActive = _mlOn;
+  // No opening sequence is the whole sequence: the Main Line sits it out too.
+  mainLineActive = _mlOn && !_noOpening;
   // The engine's book is part of the engine, not of Opening Behavior: the
   // lcsf / maia tabs are "explorer, then engine" by definition, and a blend
   // asks via botEngineBook.
@@ -1201,6 +1210,7 @@ function botCollectConfig(configName, botNameVal) {
       badDayMode:      (typeof botBadDayMode !== 'undefined') ? !!botBadDayMode : false,
       convictionPct:   (typeof botConvictionPct  !== 'undefined') ? botConvictionPct  : null,
       blindConviction: (typeof botBlindConviction !== 'undefined') ? !!botBlindConviction : false,
+      blindChoicePcts: (typeof botBlindChoicePcts !== 'undefined') ? botBlindChoicePcts.slice() : null,
       maiaTempValue:   (typeof botMaiaTempValue !== 'undefined') ? botMaiaTempValue : null,
       sfTempLevel:     (typeof botSfTempLevel   !== 'undefined') ? botSfTempLevel   : null,
       pressureDepth:   (typeof botPressureDepth !== 'undefined') ? botPressureDepth : null,
@@ -1284,6 +1294,7 @@ function botApplyConfig(cfg) {
         botBadDayMode = !!_pz.badDayMode;
         if (_pz.convictionPct  != null) botConvictionPct  = _pz.convictionPct;
         botBlindConviction = !!_pz.blindConviction;
+        if (_pz.blindChoicePcts) botBlindChoicePcts = blindChoicePctsFrom(_pz.blindChoicePcts);
         if (_pz.maiaTempValue != null && typeof botMaiaTempValue !== 'undefined') botMaiaTempValue = _pz.maiaTempValue;
         if (_pz.sfTempLevel   != null && typeof botSfTempLevel   !== 'undefined') botSfTempLevel   = _pz.sfTempLevel;
         if (_pz.pressureDepth != null) botPressureDepth = _pz.pressureDepth;
@@ -2280,6 +2291,8 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
     ? Math.max(0, Math.min(100, +cfg.convictionPct || 0)) : 30;
   // Blind Conviction: the personality alone picks the move (blindConvictionPick).
   botBlindConviction = !!cfg.blindConviction;
+  // Its Choice mix; a bot saved before the mix plays its favourite every move.
+  botBlindChoicePcts = blindChoicePctsFrom(cfg.blindChoicePcts);
 
   // Draw behaviour + stalemate seeking (desperation)
   // Draws: accept unless more than 200 cp ahead, by default. A config from
@@ -2372,8 +2385,14 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
     return { eco: s.code, exactEco: s.code, familyPrefix: (s.code || '').slice(0,2),
              name: s.name, pct: s.pct, weight: +s.pct || 0 };
   };
-  botOpeningConfig.white        = (cfg.repSlots && cfg.repSlots.white || []).map(mapSlot);
-  botOpeningConfig.black        = (cfg.repSlots && cfg.repSlots.black || []).map(mapSlot);
+  // "No opening sequence" is a slot in the builder's list, with a percentage
+  // like any opening, but no line to steer into: it leaves the matcher's slots
+  // and becomes the share of games the whole sequence sits out (botStart).
+  var _repList = function(C) { return (cfg.repSlots && cfg.repSlots[C]) || []; };
+  botOpeningConfig.white        = _repList('white').filter(function(s) { return !(s && s.none); }).map(mapSlot);
+  botOpeningConfig.black        = _repList('black').filter(function(s) { return !(s && s.none); }).map(mapSlot);
+  botOpeningConfig.noneWhite    = botOpeningNoneShare(_repList('white'));
+  botOpeningConfig.noneBlack    = botOpeningNoneShare(_repList('black'));
   botOpeningConfig.source       = cfg.openingSource || 'masters';
   botOpeningConfig.maxBookDepth = cfg.openingDepth  || 20;
   botOpeningConfig.minGames     = cfg.openingMinGames || 4;

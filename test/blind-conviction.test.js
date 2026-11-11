@@ -182,3 +182,91 @@ test('the shared pick routes to Blind Conviction when it is on', async () => {
   const probs = { e2e4: 0.97, d2d4: 0.0299, g1h3: 0.0001 };
   assert.equal(await ctx.botPickFromProbs('fen', probs, 1.0), 'g1h3');
 });
+
+// ── The Choice mix ────────────────────────────────────────────────────────────
+
+const ORDER4 = ['g1f3', 'c2c4', 'e2e4', 'd2d4'];
+const EVALS4 = { e2e4: 0, g1f3: -80, c2c4: -60, d2d4: -20 };   // all four within 100
+const rolls = (ctx, ...seq) => {
+  ctx.rollSeq = seq;
+  vm.runInContext('Math.random = () => rollSeq.length ? rollSeq.shift() : 0.5;', ctx);
+};
+
+test('a bot without a mix plays its favourite every move, as before the mix', () => {
+  const ctx = makeCtx();
+  assert.deepEqual(vm.runInContext('botBlindChoicePcts', ctx), [100, 0, 0, 0]);
+  assert.deepEqual(ctx.blindChoicePctsFrom(undefined), [100, 0, 0, 0]);
+  assert.deepEqual(ctx.blindChoicePctsFrom([0, 0, 0, 0]), [100, 0, 0, 0], 'all 0 is the favourite');
+  assert.deepEqual(ctx.blindChoicePctsFrom([60, 20, 15, 5]), [60, 20, 15, 5]);
+  assert.deepEqual(ctx.blindChoicePctsFrom([150, -3, 'x', 5, 9]), [100, 0, 0, 5], 'clamped, four shares');
+});
+
+test('the mix: a roll past the favourite plays the next choice within the Budget', async () => {
+  const ctx = makeCtx();
+  vm.runInContext('botBlindChoicePcts = [60, 20, 15, 5];', ctx);
+  stubProbe(ctx, EVALS4);
+  rolls(ctx, 0.65);   // 65 of 100: past the favourite's 60, inside the second's 20
+  assert.equal(await ctx.blindConvictionPick('fen', PROBS, ORDER4, false), 'c2c4');
+  rolls(ctx, 0.97);   // the fourth's 5
+  assert.equal(await ctx.blindConvictionPick('fen', PROBS, ORDER4, false), 'd2d4');
+  assert.equal(vm.runInContext('_cpBudgetVerifiedThisMove', ctx), true);
+});
+
+test('the mix counts only moves within the Budget', async () => {
+  const ctx = makeCtx();
+  vm.runInContext('botBlindChoicePcts = [60, 20, 15, 5];', ctx);
+  stubProbe(ctx, Object.assign({}, EVALS4, { g1f3: -300 }));   // the favourite is over it
+  rolls(ctx, 0.1);
+  assert.equal(await ctx.blindConvictionPick('fen', PROBS, ORDER4, false), 'c2c4', 'first within the Budget');
+  rolls(ctx, 0.65);
+  assert.equal(await ctx.blindConvictionPick('fen', PROBS, ORDER4, false), 'e2e4', 'second within it');
+});
+
+test('a choice past the moves within the Budget rolls again among those there are', async () => {
+  const ctx = makeCtx();
+  vm.runInContext('botBlindChoicePcts = [60, 20, 15, 5];', ctx);
+  stubProbe(ctx, { e2e4: 0, g1f3: -50, c2c4: -60, d2d4: -500 });
+  // Only g1f3 and e2e4 are within 100 in this order; a roll for the third
+  // choice rolls again over 60:20.
+  rolls(ctx, 0.9, 0.8);   // third; then 64 of 80, the second
+  assert.equal(await ctx.blindConvictionPick('fen', PROBS, ['g1f3', 'd2d4', 'e2e4'], false), 'e2e4');
+});
+
+test('the favourite that is the popular move still costs no engine time; another choice is checked', async () => {
+  const ctx = makeCtx();
+  vm.runInContext('botBlindChoicePcts = [60, 20, 15, 5];', ctx);
+  stubProbe(ctx, { e2e4: 0, d2d4: -10, c2c4: -20 });
+  rolls(ctx, 0.3);
+  assert.equal(await ctx.blindConvictionPick('fen', PROBS, ['e2e4', 'd2d4', 'c2c4'], false), 'e2e4');
+  assert.equal(ctx.probes, 0);
+  rolls(ctx, 0.7);
+  assert.equal(await ctx.blindConvictionPick('fen', PROBS, ['e2e4', 'd2d4', 'c2c4'], false), 'd2d4');
+  assert.equal(ctx.probes, 1);
+});
+
+test('an unchecked choice is never played under the mix either', async () => {
+  const ctx = makeCtx();
+  vm.runInContext('botBlindChoicePcts = [60, 20, 15, 5];', ctx);
+  stubProbe(ctx, null);
+  rolls(ctx, 0.7);
+  assert.equal(await ctx.blindConvictionPick('fen', PROBS, ['e2e4', 'd2d4'], false), 'e2e4', 'the popular move');
+  rolls(ctx, 0.7);
+  assert.equal(await ctx.blindConvictionPick('fen', PROBS, ['e2e4', 'd2d4'], true), null, 'or no premove');
+});
+
+test('played over many moves: 60/20/15/5, and 75/25 when only two are within the Budget', async () => {
+  const ctx = makeCtx();
+  vm.runInContext('botBlindChoicePcts = [60, 20, 15, 5];', ctx);
+  const N = 6000;
+  const share = async (evals, order) => {
+    stubProbe(ctx, evals);
+    const n = {};
+    for (let i = 0; i < N; i++) { const m = await ctx.blindConvictionPick('fen', PROBS, order, false); n[m] = (n[m] || 0) + 1; }
+    return Object.fromEntries(Object.entries(n).map(([m, c]) => [m, c / N]));
+  };
+  const four = await share(EVALS4, ORDER4);
+  [['g1f3', 0.6], ['c2c4', 0.2], ['e2e4', 0.15], ['d2d4', 0.05]].forEach(([m, p]) =>
+    assert.ok(Math.abs((four[m] || 0) - p) < 0.025, m + ' ' + four[m] + ' vs ' + p));
+  const two = await share({ e2e4: 0, g1f3: -50, d2d4: -500 }, ['g1f3', 'd2d4', 'e2e4']);
+  assert.ok(Math.abs((two.g1f3 || 0) - 0.75) < 0.025 && Math.abs((two.e2e4 || 0) - 0.25) < 0.025, JSON.stringify(two));
+});

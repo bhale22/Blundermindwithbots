@@ -112,6 +112,23 @@ function botOpeningStagesFromMode(m) {
 // 0–100: percentage of games where the bot follows its preferred opening.
 // Roll happens in botStart; if skipped, preferredOpeningActive stays false.
 let botOpeningFrequencyPct = 100;
+// "No opening sequence" (Nov 11 2026): a slot in the builder's repertoire list,
+// with a percentage like any opening. Its share of a colour's slots is the
+// share of games that colour skips the opening sequence, the Repertoire and
+// the Main Line both, and plays its own move selection from move 1. The
+// engine's own book (part of the engine, not of Opening Behavior) still plays.
+// botOpeningConfig.noneWhite / noneBlack hold the share, 0–1; botStart rolls it.
+let botNoOpeningThisGame = false;
+function botOpeningNoneShare(slots) {
+  slots = Array.isArray(slots) ? slots : [];
+  var total = 0, none = 0;
+  slots.forEach(function(s) { var p = Math.max(0, +(s && s.pct) || 0); total += p; if (s && s.none) none += p; });
+  return total > 0 ? none / total : 0;
+}
+function botOpeningSkipsThisGame(stageCol) {
+  var share = +botOpeningConfig['none' + stageCol] || 0;
+  return share > 0 && Math.random() < share;
+}
 // In-memory cache: move-history key → explorer result. No TTL needed.
 const _openingCache = new Map();
 // Starting clock in ms — captured when botStart() initialises the clock.

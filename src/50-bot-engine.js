@@ -2078,7 +2078,33 @@ function pickFromProbs(moveProbs, temperature) {
 // than the popular one is always within budget — chosen by a simple formula,
 // it is coincidence, not brilliance. The Budget is purely the centipawn limit
 // here: an argmax does not move when the personality's scale does.
+//
+// The Choice mix (Nov 10 2026) keeps it from repeating itself move for move:
+// how often it plays its favourite within the Budget, its second choice within
+// it, its third and its fourth. A choice the Budget rules out passes its share
+// to the ones left, in proportion. [100, 0, 0, 0] is the favourite every move,
+// as Blind Conviction played before the mix, and what a bot saved before it
+// loads as; the builder starts a new bot at 60/20/15/5.
 var botBlindConviction = false;
+const BLIND_CHOICES = 4;
+var botBlindChoicePcts = [100, 0, 0, 0];
+function blindChoicePctsFrom(v) {
+  if (!Array.isArray(v)) return [100, 0, 0, 0];
+  const a = [];
+  for (let i = 0; i < BLIND_CHOICES; i++) a.push(Math.max(0, Math.min(100, Math.round(+v[i] || 0))));
+  return a.some(x => x > 0) ? a : [100, 0, 0, 0];
+}
+// Which choice to play, 0 = the favourite, out of the first n: weighted by
+// the mix's first n shares, so a share past n goes to the others in proportion.
+function _blindChoiceRoll(n) {
+  const mix = Array.isArray(botBlindChoicePcts) ? botBlindChoicePcts : [100];
+  const w = mix.slice(0, n).map(v => Math.max(0, +v || 0));
+  const s = w.reduce((a, b) => a + b, 0);
+  if (!(s > 0)) return 0;
+  let r = Math.random() * s;
+  for (let i = 0; i < w.length; i++) { r -= w[i]; if (r < 0) return i; }
+  return w.length - 1;
+}
 
 // The personality's order of preference over the candidates. Synchronous: it
 // scores moves against the live board globals, which a premove points at its
@@ -2093,10 +2119,14 @@ function blindConvictionOrder(rawProbs) {
   return cands.sort((a, b) => ((w[b] || 0) - (w[a] || 0)) || ((rawProbs[b] || 0) - (rawProbs[a] || 0)));
 }
 
-// The pick: the first move in that order within the Budget of the most popular
-// move. One probe scores every candidate, so the favourite within budget is
+// The pick: a move in that order within the Budget of the most popular move,
+// the first by default, the second, third or fourth as often as the Choice mix
+// says. One probe scores every candidate, so the favourites within budget are
 // found even when the personality's top choices are all unsound, as a crude
-// heuristic's often are. `evals` skips the probe when the caller has already
+// heuristic's often are. The choice is rolled before the probe, so a favourite
+// that is the popular move itself still costs no engine time, and a choice
+// past the moves within budget rolls again among those there are: each is
+// played at its share of theirs. `evals` skips the probe when the caller has already
 // scored the moves (Flounder's probe covers every legal one). `strict`, as on
 // the other guards: a premove that cannot be checked is not played. A move the
 // bot must play falls back to the popular move, never to an unchecked favourite.
@@ -2106,7 +2136,9 @@ async function blindConvictionPick(fen, rawProbs, order, strict, evals) {
   for (const m in rawProbs) { if (rawProbs[m] > topP) { topP = rawProbs[m]; top = m; } }
   if (!order || !order.length) return top;
   // Stalemate-seeking throws material on purpose, as under ordinary Conviction.
-  if (order[0] === top || _staleSeekThisMove) return order[0];
+  if (_staleSeekThisMove) return order[0];
+  let want = _blindChoiceRoll(BLIND_CHOICES);
+  if (want === 0 && order[0] === top) return order[0];
   const failed = () => (strict ? null : top);
   try {
     const budget = window._bcpCpBudget != null ? Math.max(0, +window._bcpCpBudget || 0) : 100;
@@ -2116,16 +2148,21 @@ async function blindConvictionPick(fen, rawProbs, order, strict, evals) {
     }
     if (!evals || evals[top] == null) return failed();
     _lastEvalProbe = { fen: fen, evals: evals };
+    const within = [];
     for (const m of order) {
       if (evals[m] == null || evals[top] - evals[m] > budget) continue;
-      if (m !== order[0]) {
-        console.log('[Blind] favourite', order[0], 'is over the', budget,
-          'cp budget vs most-popular', top, '— playing', m);
-      }
-      _cpBudgetVerifiedThisMove = true;
-      return m;
+      within.push(m);
+      if (within.length === BLIND_CHOICES) break;
     }
-    return top;
+    if (!within.length) return top;
+    if (want >= within.length) want = _blindChoiceRoll(within.length);
+    const m = within[want];
+    if (m !== order[0]) {
+      console.log('[Blind] choice', want + 1, 'of', within.length, 'within the', budget,
+        'cp budget vs most-popular', top, '(favourite', order[0] + ') — playing', m);
+    }
+    _cpBudgetVerifiedThisMove = true;
+    return m;
   } catch (e) {
     return failed();
   }

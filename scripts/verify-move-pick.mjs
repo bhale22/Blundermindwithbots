@@ -108,7 +108,8 @@ const rare = await page.evaluate(() => {
   const G4 = TEMP_CHART_MOVES.findIndex(m => m.label === 'g4');
   const lo = document.getElementById('day-lower');
   const conv = (budget) => _convictionMix(_persAdjusted(_chartInRange(all), budget), 1.0, 100);
-  const blindAt = (budget) => _chartBlindPlayed(all, _chartInRange(all), budget).indexOf(1);
+  const blindAt = (budget) => _chartBlindPlayed(all, _chartInRange(all), budget, [100, 0, 0, 0]).indexOf(1);
+  const mixAt = (budget, mix) => _chartBlindPlayed(all, _chartInRange(all), budget, mix);
   const out = {
     sum: all.reduce((a, b) => a + b, 0),
     m: all[G4], p300: _persAdjusted(_chartInRange(all), 300)[G4],
@@ -116,6 +117,8 @@ const rare = await page.evaluate(() => {
     convTop190: conv(190).indexOf(1), convTop200: conv(200).indexOf(1),
     blind100: blindAt(100), blind50: blindAt(50), blind0: blindAt(0), G4,
     label: _chartPct(all[G4]),
+    C4: TEMP_CHART_MOVES.findIndex(m => m.label === 'c4'),
+    mix100: mixAt(100, [60, 20, 15, 5]), mix0: mixAt(0, [60, 20, 15, 5]),
   };
   lo.value = 1; onDaySlider();
   out.floor1 = blindAt(100);
@@ -132,6 +135,12 @@ ok(rare.blind100 === rare.G4, 'Blind conviction plays g4 at Budget 100 (it costs
 ok(rare.blind50 === 2 && rare.blind0 === 0, 'Blind under g4\'s cost plays c4 (Budget 50); at Budget 0, e4');
 ok(rare.floor1 === 2, 'Blind with "Exclude lowest" at 1%: g4 is out, c4 is played');
 ok(rare.label === '0.4%', 'the rare share prints as 0.4%, not 0%');
+const mixShares = rare.mix100.filter(p => p > 0).sort((a, b) => b - a);
+ok(near(rare.mix100[rare.G4], 0.6) && near(rare.mix100[rare.C4], 0.2) && near(rare.mix100.reduce((a, b) => a + b, 0), 1) &&
+   mixShares.length === 4 && near(mixShares[2], 0.15) && near(mixShares[3], 0.05),
+   'Choice mix 60/20/15/5: Played is 60% g4, 20% c4, then 15% and 5% (' + rare.mix100.map(p => Math.round(p * 100)).join('/') + ')');
+ok(rare.mix0.filter(p => p > 0).length === 1 && near(rare.mix0[0], 1),
+   'Budget 0: only e4 is within it, so it takes every share');
 ok(rare.redraw === true, 'switching Blind conviction redraws the chart without error');
 const label = await page.evaluate(() => { onConvictionSlider(45); return document.getElementById('v-conviction').textContent; });
 ok(label === '45%', 'the readout follows the slider (' + label + ')');
@@ -278,7 +287,15 @@ const blind = await page.evaluate(() => {
   out.conv = document.getElementById('conviction-row').classList.contains('inert')
           && document.getElementById('conviction-row-mirror').classList.contains('inert')
           && document.getElementById('r-conviction').inert && document.getElementById('r-conviction-mirror').inert;
-  out.convWhy = /Blind conviction is on/.test(why('conviction-row-mirror'));
+  out.convWhy = /Blind conviction is on/.test(why('conviction-row-mirror')) && /Choice mix/.test(why('conviction-row-mirror'));
+  const wrap = document.getElementById('blind-mix-wrap');
+  out.mix = { shown: wrap.style.display !== 'none' && wrap.offsetHeight > 0,
+              dflt: JSON.stringify(getBotConfig().blindChoicePcts),
+              note: document.getElementById('blind-mix-note').textContent };
+  document.getElementById('n-blind-mix-3').value = 25; onBlindMix();
+  out.mix.scaled = document.getElementById('blind-mix-note').textContent;
+  out.mix.summary = _lbcSummary();
+  document.getElementById('n-blind-mix-3').value = 5; onBlindMix();
   onConvictionSlider(0); hideConvToast(); selPersonality('attacky');
   out.noToast = !document.getElementById('conv-toast').classList.contains('show');
   const tz = document.querySelector('#engine-temp-col .temp-slider-zone');
@@ -295,8 +312,18 @@ const blind = await page.evaluate(() => {
   setBlindConviction(false);
   applyBotConfig(saved);
   out.loaded = _blindConviction() === true;
+  setBlindMix([70, 30, 0, 0]);
+  const saved2 = getBotConfig();
+  setBlindMix([60, 20, 15, 5]);
+  applyBotConfig(saved2);
+  out.mixLoaded = JSON.stringify(_blindMix()) === '[70,30,0,0]';
+  const preMix = Object.assign({}, saved2); delete preMix.blindChoicePcts;
+  applyBotConfig(preMix);
+  out.mixLegacy = JSON.stringify(_blindMix()) === '[100,0,0,0]' && /every move/.test(document.getElementById('blind-mix-note').textContent);
+  setBlindMix([60, 20, 15, 5]);
   const legacy = Object.assign({}, saved); delete legacy.blindConviction;
   applyBotConfig(legacy);
+  out.mixHidden = document.getElementById('blind-mix-wrap').style.display === 'none';
   out.legacyOff = _blindConviction() === false;
   out.live = !document.getElementById('conviction-row').classList.contains('inert') &&
              !document.querySelector('#engine-temp-col .temp-slider-zone').classList.contains('inert');
@@ -306,11 +333,18 @@ ok(blind.off, 'off by default, and in the config');
 ok(blind.cfg, 'switched on, the config carries it');
 ok(blind.mirror.followsOn, 'its twin by the Engine chart follows it');
 ok(blind.mirror.offFromMirror && blind.mirror.onFromMirror, 'the twin switches it off and on again');
-ok(blind.conv && blind.convWhy, 'on: both Conviction sliders greyed, with the reason');
+ok(blind.conv && blind.convWhy, 'on: both Conviction sliders greyed, with the reason (the Choice mix)');
+ok(blind.mix.shown && blind.mix.dflt === '[60,20,15,5]' && /favorite within the Budget, its second/.test(blind.mix.note),
+   'on: the Choice mix shows, 60/20/15/5 for a new bot, and says what it does', blind.mix);
+ok(/add to 120.*50 \/ 17 \/ 13 \/ 21%/.test(blind.mix.scaled), 'a mix that doesn\'t add to 100 says how it is used', blind.mix.scaled);
+ok(/Blind conviction · choices 60\/20\/15\/25%/.test(blind.mix.summary), 'the Lichess summary gives the mix', blind.mix.summary);
 ok(blind.noToast, 'on: choosing a personality shows no "Conviction set to 100%" note');
 ok(blind.temp, 'on: the temperature greyed, with the reason');
 ok(blind.rangeFl, 'on, Flounder-only: the Move Distribution Range shows');
 ok(blind.loaded, 'saved and loaded with the bot');
+ok(blind.mixLoaded, 'the Choice mix is saved and loaded with the bot');
+ok(blind.mixLegacy, 'a bot saved before the Choice mix loads as its favourite every move, and the note says so');
+ok(blind.mixHidden, 'off: the Choice mix is hidden');
 ok(blind.legacyOff && blind.live, 'a bot saved before it loads with it off, and the controls live again');
 
 // ── Mirror user with both time-pressure curves off ───────────────────────────

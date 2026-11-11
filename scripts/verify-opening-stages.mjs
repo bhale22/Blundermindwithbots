@@ -83,6 +83,12 @@ const buildConfig = (o) => panel.evaluate((o) => {
   setEngineBook(o.book ? 'on' : 'off');
   repSlots.white.length = 0; repSlots.black.length = 0;
   if (o.italian) addRepFromSearch('C50', 'Italian Game', 'white');
+  // "No opening sequence" at o.nonePct of White's games, the Italian the rest.
+  if (o.nonePct != null) {
+    repAddNone(null, 'white');
+    repSlots.white.forEach(s => { s.pct = s.none ? o.nonePct : 100 - o.nonePct; });
+    renderRepSlots('white');
+  }
   setOpStage('white', 'rep', !!o.rep);
   setOpStage('white', 'ml', !!o.ml);
   setOpStage('black', 'rep', false);
@@ -217,6 +223,72 @@ console.log('\n6   Old bots load as they played');
   });
   ok('app: an old saved session restores to the same stages',
     t.repW && !t.mlW && !t.repB && t.mlB && !t.stale, JSON.stringify(t));
+}
+
+console.log('\n7   No opening sequence');
+{
+  const b = await panel.evaluate(() => {
+    repSlots.white.length = 0; repSlots.black.length = 0;
+    setOpStage('white', 'rep', false);
+    renderRepSlots('white');
+    repBrowse(null, 'white', true);
+    const first = document.querySelector('#rep-dropdown-white .eco-option');
+    const out = { first: first ? first.textContent : '', isNone: !!first && first.classList.contains('eco-none') };
+    if (first) first.click();
+    out.slots = repSlots.white.map(s => ({ ...s }));
+    out.repOn = repOn.white;
+    out.row = document.querySelector('#rep-slots-list-white .rep-slot')?.textContent || '';
+    repBrowse(null, 'white', true);
+    out.gone = !document.querySelector('#rep-dropdown-white .eco-none');
+    onRepSearch('none', 'white');
+    out.searchAfter = !!document.querySelector('#rep-dropdown-white .eco-none');
+    document.getElementById('rep-dropdown-white').classList.remove('visible');
+    addRepFromSearch('C50', 'Italian Game', 'white');
+    repSlots.white.forEach(s => { s.pct = s.none ? 30 : 70; });
+    renderRepSlots('white');
+    out.note = document.getElementById('rep-none-note-white')?.textContent || '';
+    const cfg = getBotConfig();
+    out.cfg = cfg;
+    applyBotConfig(Object.assign({}, cfg, { repSlots: { white: [], black: [] } }));
+    applyBotConfig(cfg);
+    out.reloaded = JSON.stringify(repSlots.white.map(s => [!!s.none, s.pct]));
+    return out;
+  });
+  ok('builder: "No opening sequence" heads the List', b.isNone && /No opening sequence/.test(b.first), b.first);
+  ok('builder: picking it adds it as a slot and switches the repertoire on',
+    b.slots.length === 1 && b.slots[0].none === true && b.slots[0].pct === 100 && b.repOn, JSON.stringify(b.slots));
+  ok('builder: its row says what it is', /No opening sequence/.test(b.row), b.row);
+  ok('builder: one per colour, so it leaves the List and the search', b.gone && !b.searchAfter);
+  ok('builder: the note gives its share of games', /in 30% of games as White/.test(b.note), b.note);
+  ok('builder: saved and loaded with the bot', b.reloaded === '[[true,30],[false,70]]', b.reloaded);
+
+  const a = await app.evaluate((cfg) => new Promise(res => {
+    window.postMessage(Object.assign({}, cfg, { type: 'botConfig', _applyOnly: true }), location.origin);
+    setTimeout(() => {
+      let skipped = 0; const N = 4000;
+      for (let i = 0; i < N; i++) if (botOpeningSkipsThisGame('White')) skipped++;
+      res({ share: botOpeningConfig.noneWhite, slots: botOpeningConfig.white.map(s => s.name), skipped: skipped / N });
+    }, 300);
+  }), b.cfg);
+  ok('app: it is a share of games, not a line: 30%, and only the Italian left to steer into',
+    Math.abs(a.share - 0.3) < 1e-9 && JSON.stringify(a.slots) === '["Italian Game"]', JSON.stringify(a));
+  ok('app: rolled once a game, it comes up in about 30% of them (' + Math.round(a.skipped * 100) + '%)',
+    Math.abs(a.skipped - 0.3) < 0.03, a.skipped);
+
+  const cfg100 = await buildConfig({ italian: true, nonePct: 100, rep: true, ml: true });
+  const log = await play(cfg100, ['e7e5']);
+  console.log('      ' + fmt(log));
+  ok('100%: the bot plays its own moves from move 1, neither the repertoire nor the Main Line',
+    log.length >= 2 && log.every(x => x[1] !== 'ECO' && x[1] !== 'Book' && x[0] !== '(no move)') && asked.play.length === 0,
+    fmt(log) + ' play asks: ' + asked.play.length);
+  const noneNow = await app.evaluate(() => botNoOpeningThisGame);
+  ok('and the app says this game has no opening sequence', noneNow === true);
+
+  const cfg0 = await buildConfig({ italian: true, nonePct: 0, rep: true, ml: true });
+  const log0 = await play(cfg0, []);
+  console.log('      ' + fmt(log0));
+  ok('0%: the slot sits there and the repertoire plays every game: 1.e4 from it',
+    log0[0] && log0[0][0] === 'e2e4' && log0[0][1] === 'ECO', fmt(log0));
 }
 
 ok('no page errors', errs.length === 0, errs.join(' | '));
