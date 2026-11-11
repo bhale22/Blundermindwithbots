@@ -222,7 +222,7 @@ The bot only predicts with its *own* rating band — it has no access to the hum
 
 ### Tuning notes
 
-`botPremoveMinPct` is the setting that determines whether the bot reads as *fast* or as *broken*. At 85% it premoves only on near-forced replies, matching real play. Far below ~60% it commits in positions no human would, and the resulting play looks erratic rather than quick. A configuration of `minPct: 0` with `ratePct: 100` makes the bot premove on essentially every move — useful for testing the trap mechanic, misleading as a general-purpose opponent.
+`botPremoveMinPct` is the setting that determines whether the bot reads as *fast* or as *broken*. At 95% (the default) it premoves only on all-but-forced replies, matching real play. Far below ~60% it commits in positions no human would, and the resulting play looks erratic rather than quick. A configuration of `minPct: 0` with `ratePct: 100` makes the bot premove on essentially every move — useful for testing the trap mechanic, misleading as a general-purpose opponent.
 
 Per-game telemetry (`botPremoveStats`: armed / fired / busted) is surfaced live in the panel so users can see whether their traps are landing. Premove state is also reported in the collapsed Move Timing header, because a bot replying instantly looks like a malfunction if you don't know the setting is on.
 
@@ -261,7 +261,7 @@ Per-game telemetry (`botPremoveStats`: armed / fired / busted) is surfaced live 
 |---|---|---|
 | `botPremoveEnabled` | false | Master on/off |
 | `botPremoveRatePct` | 80 | % of *confidence-clearing* turns it premoves — not of all turns |
-| `botPremoveMinPct` | 85 | Minimum Maia confidence in the predicted human move before committing |
+| `botPremoveMinPct` | 95 | Minimum Maia confidence in the predicted human move before committing |
 | `botPremoveOnlyLowClock` | false | Restrict premoving to time scrambles |
 | `botPremoveOppClockSecs` | 30 | Opponent-clock trigger, seconds; 0 = off |
 | `botPremoveClockSecs` | 30 | Bot's own clock trigger, seconds; 0 = off |

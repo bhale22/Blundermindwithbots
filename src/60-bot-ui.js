@@ -1301,7 +1301,7 @@ function botApplyConfig(cfg) {
       if (cfg.premove) {
         botPremoveEnabled      = !!cfg.premove.enabled;
         botPremoveRatePct      = (cfg.premove.ratePct   != null) ? +cfg.premove.ratePct   : 80;
-        botPremoveMinPct       = (cfg.premove.minPct    != null) ? +cfg.premove.minPct    : 85;
+        botPremoveMinPct       = (cfg.premove.minPct    != null) ? +cfg.premove.minPct    : 95;
         botPremoveOnlyLowClock = !!cfg.premove.onlyLowClock;
         botPremoveOppClockSecs = (cfg.premove.oppClockSecs != null) ? +cfg.premove.oppClockSecs : 30;
         botPremoveClockSecs    = (cfg.premove.clockSecs != null) ? +cfg.premove.clockSecs : 30;
@@ -2257,7 +2257,7 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
   // human can practice baiting a premove and punishing it.
   botPremoveEnabled      = !!cfg.premoveEnabled;
   botPremoveRatePct      = (cfg.premoveRatePct   != null) ? +cfg.premoveRatePct   : 80;
-  botPremoveMinPct       = (cfg.premoveMinPct    != null) ? +cfg.premoveMinPct    : 85;
+  botPremoveMinPct       = (cfg.premoveMinPct    != null) ? +cfg.premoveMinPct    : 95;
   botPremoveOnlyLowClock = !!cfg.premoveOnlyLowClock;
   botPremoveOppClockSecs = (cfg.premoveOppClockSecs != null) ? +cfg.premoveOppClockSecs : 30;
   botPremoveClockSecs    = (cfg.premoveClockSecs != null) ? +cfg.premoveClockSecs : 30;

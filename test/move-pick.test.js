@@ -152,7 +152,7 @@ test('with no think time given, the move\'s own is used (none between moves: no 
   const ctx = makeCtx();
   underTimePressure(ctx);
   stubProbe(ctx, { e2e4: 0, c2c4: 150 });
-  // _botMoveThinkSec is null outside a move; a premove passes its own 1 s.
+  // _botMoveThinkSec is null outside a move; a premove passes its own think time.
   assert.equal(await ctx.applyDegradationEvalGuard('fen', 'c2c4', PROBS), 'c2c4');
   assert.equal(await ctx.applyDegradationEvalGuard('fen', 'c2c4', PROBS, true, 1), 'e2e4');
 });

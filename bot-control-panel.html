@@ -1373,7 +1373,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
 .lbc-checks input[type=number]{width:60px;box-sizing:border-box;padding:2px 4px;font:inherit;cursor:text;
   color:var(--text-primary);background:var(--carbon-surface);border:0.5px solid var(--border);
   border-radius:2px;outline:none;}
-#lbc-token{width:100%;box-sizing:border-box;padding:6px 8px;font-family:var(--font-m);font-size:11px;
+#lbc-token,#lbc-strength{width:100%;box-sizing:border-box;padding:6px 8px;font-family:var(--font-m);font-size:11px;
   color:var(--text-primary);background:var(--carbon-surface);border:0.5px solid var(--border);
   border-radius:2px;outline:none;}
 .lbc-note{font-family:var(--font-m);font-size:9.5px;line-height:1.55;color:var(--text-dim);margin-top:5px;}
@@ -1398,7 +1398,7 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
   .lbc-h{font-size:11px;}
   .lbc-sum,.lbc-checks,#lbc-status{font-size:12px;}
   .lbc-note{font-size:11px;}
-  #lbc-token,.lbc-checks input[type=number]{font-size:14px;}
+  #lbc-token,#lbc-strength,.lbc-checks input[type=number]{font-size:14px;}
   .lbc-checks label{min-height:32px;}
   .lbc-guide,.lbc-cmd{font-size:12px;}
   .lbc-guide > summary{padding:8px 0;}
@@ -4103,10 +4103,10 @@ body.fj .picon{font-weight:500;}
               </div>
               <div class="ctrl has-info">
                 <span class="ctrl-lbl">Min confidence</span>
-                <input type="range" id="r-premove-conf" min="0" max="95" step="5" value="85" oninput="syncPremoveConf(this.value,'r-premove-conf')">
-                <input type="number" id="n-premove-conf" class="ctrl-val" min="0" max="95" step="5" value="85" style="width:52px;" oninput="syncPremoveConf(this.value,'n-premove-conf')">
+                <input type="range" id="r-premove-conf" min="0" max="95" step="5" value="95" oninput="syncPremoveConf(this.value,'r-premove-conf')">
+                <input type="number" id="n-premove-conf" class="ctrl-val" min="0" max="95" step="5" value="95" style="width:52px;" oninput="syncPremoveConf(this.value,'n-premove-conf')">
                 <button type="button" class="info-i" aria-label="About minimum confidence" onclick="infoToggle(this,event)">i</button>
-                <div class="info-pop">Only premoves when Maia is at least this sure of your reply — humans premove on near-forced replies, not coin flips. <strong>85%</strong> mirrors real play; dropping it far below ~60% makes the bot premove into positions a human never would, and its play will look erratic.</div>
+                <div class="info-pop">Only premoves when Maia is at least this sure of your reply — humans premove on near-forced replies, not coin flips. <strong>95%</strong>, the default, keeps it to replies that are all but forced, as a human premoves; dropping it far below ~60% makes the bot premove into positions a human never would, and its play will look erratic.</div>
               </div>
               <div class="ctrl has-info">
                 <span class="ctrl-lbl">Busted-premove delay</span>
@@ -4115,7 +4115,7 @@ body.fj .picon{font-weight:500;}
                 <button type="button" class="info-i" aria-label="About busted-premove delay" onclick="infoToggle(this,event)">i</button>
                 <div class="info-pop">Seconds of extra thinking when you bust a premove — the "didn't see that coming" stall. This is your reward for springing a trap: the bot burns its own clock. <strong>0</strong> = no penalty. Never allowed to flag the bot.</div>
               </div>
-              <div class="ctrl-hint" style="margin-top:8px;">Requires <strong>Maia 3</strong>. A premove is a one-second decision: it plays at the rating and temperature the time-pressure curves give for 1 s, and must pass the CP Budget and Hard Floor like any other move — if the engine can’t check it, the bot thinks normally instead. This game: <span id="premove-stats" style="color:var(--blue);">none yet</span>.</div>
+              <div class="ctrl-hint" style="margin-top:8px;">Requires <strong>Maia 3</strong>. A premove is worked out while you think, so it plays at the rating and temperature the time-pressure curves give for 5 s, and must pass the CP Budget and Hard Floor like any other move — if the engine can’t check it, the bot thinks normally instead. This game: <span id="premove-stats" style="color:var(--blue);">none yet</span>.</div>
             </div>
           </div>
 
@@ -4305,7 +4305,7 @@ body.fj .picon{font-weight:500;}
             <span style="color:var(--amber);">▸ ELO reduction</span> — Full credit to Professor Regan for his work, full blame to me for extrapolating his data-based findings based on full games under different time controls to this unsubstantiated estimation of ELO drop for individual moves under different time constraints.  
             Maia is called at a lower ELO as think time shrinks under time pressure: full ELO at the time control’s nominal pace (base/60 + increment seconds per move), degrading below it following the curve shown above. Every point is draggable if you want a shape different from the formula, and <strong>Match Regan model</strong> puts them all back on it — the Max ELO drop slider caps how deep the curve goes, so at its default the curve stops short of the model in faster time controls<br>
             <span style="color:#5dade2;">▸ Temperature escalation</span> — ELO stays fixed but sampling temperature rises as think time shrinks, flattening Maia's move probabilities toward uniform without ever reordering them: a near-forced move stays the near-certain pick, while a genuine toss-up becomes far less predictable (instinctive, less creative play — typical of a strong player with no time to calculate). A quick engine check ensures a degraded pick never improves on Maia's top choice. How far up the curve the bot actually goes is set by <strong>Calm ↔ Panicky</strong> in Personality: at 0 it follows the curve as drawn (mild by default — Max temp 2), toward Calm it rises less, fully Calm leaves the temperature untouched, and fully Panicky rises 2.5× as fast.<br>
-            <span style="color:var(--amber);">▸ Only when time is really short</span> — both curves describe a bot being forced to move faster than it would like. With <strong>Fixed interval</strong> or <strong>Instantaneous</strong> timing the pace is a number you set, not something the clock forced, so neither curve runs. <strong>Complexity scaled</strong> (From the clock) budgets from the clock and uses them; so does <strong>Mirror user</strong>, which plays at your pace — when you speed up under time pressure it speeds up with you, and degrades the way you do. Premoves are one-second decisions, and play at the rating and temperature these curves give for 1 s.<br>
+            <span style="color:var(--amber);">▸ Only when time is really short</span> — both curves describe a bot being forced to move faster than it would like. With <strong>Fixed interval</strong> or <strong>Instantaneous</strong> timing the pace is a number you set, not something the clock forced, so neither curve runs. <strong>Complexity scaled</strong> (From the clock) budgets from the clock and uses them; so does <strong>Mirror user</strong>, which plays at your pace — when you speed up under time pressure it speeds up with you, and degrades the way you do. Premoves are worked out while the opponent thinks, and play at the rating and temperature these curves give for 5 s.<br>
             Each curve has its own <strong>ON/OFF</strong> toggle next to its title, so you can run either mechanism alone, both together, or switch both off for constant strength regardless of clock.
           </div>
         </div>
@@ -9358,6 +9358,9 @@ function getBotConfig(){
     // rating plus the offset (the bridge's _lbApplyMatchedRating).
     lichessMatchRating:  !!lbcMatchOn,
     lichessMatchOffset:  lbcMatchOffset || 0,
+    // ...and what it was measured to play like, as [setting, plays like] pairs,
+    // so it can be set to whatever plays at the rating wanted.
+    lichessStrength:     lbcStrength.length ? lbcStrength.map(p => [p[0], p[1]]) : null,
   };
 }
 
@@ -9701,6 +9704,12 @@ function applyBotConfig(cfg){
   grp(() => {
     lbcMatchOn = !!cfg.lichessMatchRating;
     lbcMatchOffset = +cfg.lichessMatchOffset || 0;
+    // Through the same reader as the field, so a hand-edited file that doesn't
+    // rise is dropped here rather than half-used.
+    const t = Array.isArray(cfg.lichessStrength)
+      ? _lbcParseStrength(cfg.lichessStrength.map(p => (p || [])[0] + '=' + (p || [])[1]).join(', ')) : [];
+    lbcStrength = t || [];
+    lbcStrengthText = lbcStrength.map(p => p[0] + '=' + p[1]).join(', ');
   });
 
   grp(() => _updateEnginePanelHeader());
@@ -10589,6 +10598,8 @@ let _lbcPendingUpgrade = null;  // { token, username, games, settings }
 // Part of the bot's config. var, because getBotConfig above can run first.
 var lbcMatchOn = false;         // play each game at the challenger's rating
 var lbcMatchOffset = 0;         // ...plus this much
+var lbcStrength = [];           // measured [setting, plays like] pairs, settings rising
+var lbcStrengthText = '';       // ...as typed, kept while it doesn't read
 
 function _lbcHost(){
   try{
@@ -10619,7 +10630,7 @@ function lbcRefresh(st){
   // An open popup follows the connection, but never wipes a form being filled.
   const open = document.getElementById('lbc-overlay')?.classList.contains('show');
   if(open && !_lbcBusy && (_lbcView === 'connected' || on) &&
-     document.activeElement?.id !== 'lbc-match-offset') _lbcRender();
+     !['lbc-match-offset', 'lbc-strength'].includes(document.activeElement?.id)) _lbcRender();
 }
 
 // opts.fromBoard: opened by the board's Lichess panel (lichessOpenSetup), which
@@ -10677,15 +10688,25 @@ function _lbcSummary(){
     ['CP Budget', txt('qs-cpb-value')],
     ['Think time', txt('qs-ttime-value')],
   ];
-  if(c.lichessMatchRating && c.engine !== 'hybrid'){
+  const matching = c.lichessMatchRating && c.engine !== 'hybrid';
+  if(matching){
     const off = c.lichessMatchOffset;
     rows.splice(1, 0, ['Rating', 'matches each challenger' +
       (off ? ' ' + (off > 0 ? '+' : '−') + Math.abs(off) : '') + ' · ' + c.elo + ' if they have none']);
+    const t = c.lichessStrength;
+    if(t && t.length){
+      const { lo, hi } = engineEloRange();
+      rows.splice(2, 0, ['Strength', 'measured: ' + _lbcEngineName() + ' ' + lo + '–' + hi + ' plays like ' +
+        _lbcPlaysLike(lo, t) + '–' + _lbcPlaysLike(hi, t) + ', so it is set to whatever plays at the rating wanted']);
+    }
   }
   // Clock-driven timing is where the time-pressure curves run (Fixed and
   // Instant set the pace outright, so they never do) — say whether they will.
+  // A matching bot's Curve A is rebuilt for each game (the bridge's
+  // _lbReganCurveA), so the builder's drawing is not what runs there.
   if(c.timingMode === 'complexity' || c.timingMode === 'mirror'){
-    const parts = [!c.pressureOffA && 'rating drops', !c.pressureOffB && 'choices widen'].filter(Boolean);
+    const parts = [!c.pressureOffA && (matching ? 'rating drops on the Regan model for each game’s clock' : 'rating drops'),
+      !c.pressureOffB && 'choices widen'].filter(Boolean);
     rows.push(['Time pressure', parts.length
       ? 'on — plays worse the less time it has to think (' + parts.join(', ') + ')'
       : 'off — same strength however fast it moves']);
@@ -10713,8 +10734,76 @@ function _lbcMatchHtml(){
     '<div class="lbc-note" style="margin-top:0;">' + (can
       ? 'Each game is played at their Lichess rating for that speed, plus the offset (−100 plays a little below them). ' +
         'Anyone with no rating gets the rating set in this builder. ' +
-        'The bot says so in the game chat, and they can type a rating such as 1500ELO there to change it, for that game and any rematch.'
-      : 'A blend has no single rating to match: each slot sets its own.') + '</div>';
+        'The bot says so in the game chat, and they can type a rating such as ELO1500 there to change it, for that game and any rematch.'
+      : 'A blend has no single rating to match: each slot sets its own.') + '</div>' +
+    (can
+      ? '<label class="lbc-h" for="lbc-strength" style="display:block;">Measured strength (optional)</label>' +
+        '<input id="lbc-strength" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. 600=725, 2000=1775, 2600=2025"' +
+          ' value="' + _ccEsc(lbcStrengthText) + '" oninput="lbcStrengthChange()">' +
+        '<div class="lbc-note" id="lbc-strength-note">' + _lbcStrengthNote(_lbcParseStrength(lbcStrengthText)) + '</div>'
+      : '');
+}
+
+// ── Measured strength ────────────────────────────────────────────────────────
+// What this bot really plays like at a few engine settings, when that is not
+// the setting itself (Blind Conviction, the guards and the personality all move
+// it). A matching bot works backwards from it to the setting that plays at the
+// rating wanted (the bridge's _lbSettingFor). Typed as setting=plays like pairs.
+const _lbcEngineName = () => _isFlounderTab() ? 'Flounder' : 'Maia';
+// "600=725, 2000=1775" → [[600,725],[2000,1775]]; [] for nothing; null when it
+// doesn't read, or a pair doesn't rise from the one before in both numbers.
+function _lbcParseStrength(s){
+  const txt = String(s || '').trim();
+  if(!txt) return [];
+  const pairs = txt.split(/[,;\n]+/).map(x => x.trim()).filter(Boolean).map(x => {
+    const m = /^(\d{3,4})\s*(?:=|:|->|→)\s*(\d{3,4})$/.exec(x);
+    return m ? [+m[1], +m[2]] : null;
+  });
+  if(!pairs.length || pairs.some(p => !p)) return null;
+  pairs.sort((a, b) => a[0] - b[0]);
+  for(let i = 1; i < pairs.length; i++)
+    if(pairs[i][0] <= pairs[i-1][0] || pairs[i][1] <= pairs[i-1][1]) return null;
+  return pairs;
+}
+// A setting's measured strength: a straight line between pairs, the nearest
+// pair's gap past the ends — as the bridge reads it.
+function _lbcPlaysLike(v, t){
+  if(!t || !t.length) return v;
+  const n = t.length - 1;
+  if(v <= t[0][0]) return Math.round(v - t[0][0] + t[0][1]);
+  if(v >= t[n][0]) return Math.round(v - t[n][0] + t[n][1]);
+  let i = 0;
+  while(v > t[i+1][0]) i++;
+  return Math.round(t[i][1] + (v - t[i][0]) * (t[i+1][1] - t[i][1]) / (t[i+1][0] - t[i][0]));
+}
+function _lbcStrengthNote(t){
+  const name = _lbcEngineName();
+  if(t === null) return '<span style="color:#e05a4a;">Can’t read that, so it isn’t used.</span> ' +
+    'Write setting=plays like pairs, both numbers rising, such as 600=725, 2000=1775.';
+  if(!t.length) return 'Empty: the ' + name + ' setting is taken as its strength. If this bot plays stronger or weaker ' +
+    'than its setting, enter what was measured, and it is set to whatever plays at the rating wanted.';
+  const { lo, hi } = engineEloRange();
+  return 'Reaches about ' + _lbcPlaysLike(lo, t) + ' (' + name + ' ' + lo + ') to ' + _lbcPlaysLike(hi, t) +
+    ' (' + name + ' ' + hi + '). Asked for 1500, it plays at ' + name + ' ' + _lbcSettingFor(1500, t) +
+    ', and says both in the chat.';
+}
+function _lbcSettingFor(v, t){
+  const { lo, hi } = engineEloRange();
+  if(!t || !t.length) return Math.max(lo, Math.min(hi, v));
+  const n = t.length - 1;
+  let s;
+  if(v <= t[0][1]) s = v - t[0][1] + t[0][0];
+  else if(v >= t[n][1]) s = v - t[n][1] + t[n][0];
+  else { let i = 0; while(v > t[i+1][1]) i++; s = t[i][0] + (v - t[i][1]) * (t[i+1][0] - t[i][0]) / (t[i+1][1] - t[i][1]); }
+  return Math.max(lo, Math.min(hi, Math.round(s)));
+}
+function lbcStrengthChange(){
+  lbcStrengthText = document.getElementById('lbc-strength')?.value || '';
+  const t = _lbcParseStrength(lbcStrengthText);
+  lbcStrength = t || [];
+  const note = document.getElementById('lbc-strength-note');
+  if(note) note.innerHTML = _lbcStrengthNote(t);
+  _lbcRefreshSummary();
 }
 
 function lbcMatchChange(){

@@ -51,7 +51,7 @@ const defs = await page.evaluate(() => ({
   lowClk:  document.getElementById('cb-premove-clock').checked,
 }));
 ok(defs.rate === '80',    'default premove rate is 80% (' + defs.rate + ')');
-ok(defs.conf === '85',    'default min confidence is 85% (' + defs.conf + ')');
+ok(defs.conf === '95',    'default min confidence is 95% (' + defs.conf + ')');
 ok(defs.bust === '2',     'default bust delay is 2s (' + defs.bust + ')');
 ok(defs.opp  === '30',    'default opponent-clock threshold is 30s');
 ok(defs.own  === '30',    'default bot-clock threshold is 30s');

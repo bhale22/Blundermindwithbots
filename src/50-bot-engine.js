@@ -3900,7 +3900,7 @@ function ghostSoloDepth() { return ghostDepth(); }
 //                      setting the trap
 var botPremoveEnabled       = false;
 var botPremoveRatePct       = 80;
-var botPremoveMinPct        = 85;
+var botPremoveMinPct        = 95;
 var botPremoveOnlyLowClock  = false;
 var botPremoveOppClockSecs  = 30;
 var botPremoveClockSecs     = 30;
@@ -3963,12 +3963,17 @@ function botPremoveShouldArm() {
 // Maia slot — at that slot's rating — so a premove never plays an engine the
 // blend was not going to play.
 //
-// A premove is a ONE-SECOND decision: committed before the clock for that move
-// even starts. So it is played at the rating and temperature the time-pressure
-// curves give for PREMOVE_THINK_SEC of thought — the same curves every other
-// move reads. Where time pressure does not apply (no clock, or a Fixed /
-// Instantaneous / Mirror pace) that is simply the bot's own rating.
-const PREMOVE_THINK_SEC = 1;
+// A premove is worked out while the opponent thinks and fired the instant they
+// move: a human premoving has had the opponent's whole think to see it coming,
+// and only does it on a reply that is all but forced (the Min confidence
+// default is 95%). So it is played at the rating and temperature the
+// time-pressure curves give for PREMOVE_THINK_SEC of thought, 5 s — the same
+// curves every other move reads. It was 1 s until Nov 10 2026, when Curve A
+// became the Regan model for each Lichess game's clock: at 1 s a bot playing
+// like 1775 premoved like Maia 1060 in 10+5. Where time pressure does not apply
+// (no clock, or a Fixed / Instantaneous / Mirror pace) that is simply the bot's
+// own rating.
+const PREMOVE_THINK_SEC = 5;
 function botPremoveRating() {
   var tab = (typeof botTab !== 'undefined') ? botTab : null;
   if (tab === 'sf' || tab === 'lcsf') return { skip: true };
@@ -4074,8 +4079,8 @@ async function _botPremoveArmRun(pmRating) {
     // near-ties decisive: in one real game Maia rated Bxd5 34.4% and Nxd5
     // 32.4%, and argmax always took the former.
     //
-    // The temperature is the one curve B gives for a 1-second think, like the
-    // rating above (PREMOVE_THINK_SEC). The complexity adjustment is left out:
+    // The temperature is the one curve B gives for the premove's think, like
+    // the rating above (PREMOVE_THINK_SEC). The complexity adjustment is left out:
     // it reads the probe of the position before the human's move, which is not
     // this one.
     // applyMoveAttractors scores each candidate by simulating it against the
