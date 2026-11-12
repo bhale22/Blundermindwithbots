@@ -798,19 +798,25 @@ function botGenerateName() {
   var nameEl = document.getElementById('botNameInput');
   if (nameEl && nameEl.value.trim()) return nameEl.value.trim();
 
+  // A preset goes by its own name, and botEngineTag says what it runs on.
+  if (window._bcpPresetName) return window._bcpPresetName;
+
   // Auto-generate from settings
-  var tpLabel = { steady: 'Steady', normal: 'Normal', panicky: 'Panicky' }[botTimePressure] || '';
   var tabLabel = '';
-  if (botTab === 'sf') {
+  // Name the rating the engine plays at, with or without a book in front of it
+  // ('lcsf', 'maia'). A book's own rating is no use here: it is snapped down to
+  // a Lichess band, so a 1950 book reads 1800, and botEngineTag already says
+  // when the book is the one playing.
+  if (botTab === 'sf' || botTab === 'lcsf') {
     tabLabel = 'Flounder ' + flounderSliderElo();
-  } else if (botTab === 'maia3') {
-    tabLabel = 'Maya ' + (maia3SelectedRating || '1200');
-  } else if (botTab === 'maia') {
-    tabLabel = 'Lichess ' + (lcSelectedRating || '1200');
+  } else if (botTab === 'maia3' || botTab === 'maia') {
+    tabLabel = 'Maia ' + (maia3SelectedRating || '1200');
   } else if (botTab === 'hybrid') {
     tabLabel = 'Hybrid Bot';
   }
-  return (tpLabel ? tpLabel + ' ' : '') + tabLabel;
+  // "Custom" means the same as the readout under the opponent picker and the
+  // builder's Personality pill, so the three cannot disagree.
+  return (tabLabel && _quickBotPersonaInfo().has ? 'Custom ' : '') + tabLabel;
 }
 
 // Sets the player name display for the bot and human
@@ -1000,7 +1006,15 @@ async function botStart() {
   const _repOn = !!botOpeningConfig['rep' + _stageCol];
   const _mlOn  = !!botOpeningConfig['mainLine' + _stageCol];
   botOpeningMode = _repOn ? 'preferred' : _mlOn ? 'mainline' : 'none';
-  if (_repOn) {
+  // The repertoire's "No opening sequence" slot, rolled once for the game.
+  const _noOpening = _repOn && botOpeningSkipsThisGame(_stageCol);
+  botNoOpeningThisGame = _noOpening;
+  if (_noOpening) {
+    console.log('[Opening] No opening sequence this game (' +
+      Math.round(100 * botOpeningConfig['none' + _stageCol]) + '% of games as ' + _stageCol +
+      '): the bot plays its own moves from move 1');
+  }
+  if (_repOn && !_noOpening) {
     const _hasSlots = (botOpeningConfig[_resolvedBotCol] || [])
                         .filter(s => s.name).length > 0;
     // Frequency roll: if < 100%, sometimes skip openings for this game
@@ -1013,7 +1027,8 @@ async function botStart() {
   // them. The Main Line and the engine's book stay on: the explorer queries by
   // FEN, so for classic positions it supplies genuine human move frequencies.
   if (_customStart) preferredOpeningActive = false;
-  mainLineActive = _mlOn;
+  // No opening sequence is the whole sequence: the Main Line sits it out too.
+  mainLineActive = _mlOn && !_noOpening;
   // The engine's book is part of the engine, not of Opening Behavior: the
   // lcsf / maia tabs are "explorer, then engine" by definition, and a blend
   // asks via botEngineBook.
@@ -1188,12 +1203,14 @@ function botCollectConfig(configName, botNameVal) {
       hardFloorCp:     window._bcpCpHardFloor,
       customControls:  Array.isArray(window._bcpCustomControls) ? window._bcpCustomControls : [],
       hustlerTempMode: !!window._bcpHustlerTempMode,
+      presetName:      window._bcpPresetName || '',
       minProbPct:      (typeof botMinProbPct !== 'undefined') ? botMinProbPct : null,
       dayLower:        (typeof botDayLower   !== 'undefined') ? botDayLower   : null,
       dayUpper:        (typeof botDayUpper   !== 'undefined') ? botDayUpper   : null,
       badDayMode:      (typeof botBadDayMode !== 'undefined') ? !!botBadDayMode : false,
       convictionPct:   (typeof botConvictionPct  !== 'undefined') ? botConvictionPct  : null,
       blindConviction: (typeof botBlindConviction !== 'undefined') ? !!botBlindConviction : false,
+      blindChoicePcts: (typeof botBlindChoicePcts !== 'undefined') ? botBlindChoicePcts.slice() : null,
       maiaTempValue:   (typeof botMaiaTempValue !== 'undefined') ? botMaiaTempValue : null,
       sfTempLevel:     (typeof botSfTempLevel   !== 'undefined') ? botSfTempLevel   : null,
       pressureDepth:   (typeof botPressureDepth !== 'undefined') ? botPressureDepth : null,
@@ -1270,12 +1287,14 @@ function botApplyConfig(cfg) {
         if (_pz.hardFloorCp != null) window._bcpCpHardFloor = _pz.hardFloorCp;
         if (Array.isArray(_pz.customControls)) window._bcpCustomControls = _pz.customControls;
         window._bcpHustlerTempMode = !!_pz.hustlerTempMode;
+        window._bcpPresetName = _pz.presetName || '';
         if (_pz.minProbPct != null) botMinProbPct = _pz.minProbPct;
         if (_pz.dayLower   != null) botDayLower   = _pz.dayLower;
         if (_pz.dayUpper   != null) botDayUpper   = _pz.dayUpper;
         botBadDayMode = !!_pz.badDayMode;
         if (_pz.convictionPct  != null) botConvictionPct  = _pz.convictionPct;
         botBlindConviction = !!_pz.blindConviction;
+        if (_pz.blindChoicePcts) botBlindChoicePcts = blindChoicePctsFrom(_pz.blindChoicePcts);
         if (_pz.maiaTempValue != null && typeof botMaiaTempValue !== 'undefined') botMaiaTempValue = _pz.maiaTempValue;
         if (_pz.sfTempLevel   != null && typeof botSfTempLevel   !== 'undefined') botSfTempLevel   = _pz.sfTempLevel;
         if (_pz.pressureDepth != null) botPressureDepth = _pz.pressureDepth;
@@ -1293,7 +1312,7 @@ function botApplyConfig(cfg) {
       if (cfg.premove) {
         botPremoveEnabled      = !!cfg.premove.enabled;
         botPremoveRatePct      = (cfg.premove.ratePct   != null) ? +cfg.premove.ratePct   : 80;
-        botPremoveMinPct       = (cfg.premove.minPct    != null) ? +cfg.premove.minPct    : 85;
+        botPremoveMinPct       = (cfg.premove.minPct    != null) ? +cfg.premove.minPct    : 95;
         botPremoveOnlyLowClock = !!cfg.premove.onlyLowClock;
         botPremoveOppClockSecs = (cfg.premove.oppClockSecs != null) ? +cfg.premove.oppClockSecs : 30;
         botPremoveClockSecs    = (cfg.premove.clockSecs != null) ? +cfg.premove.clockSecs : 30;
@@ -2127,7 +2146,7 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
   // botApplyConfig. Without this the two apply paths disagreed: a bot opened
   // from a .json kept its name, while the same bot arriving from the panel (or
   // from a share link, which lands here too) lost it — botGenerateName() then
-  // invented one, so the quick-start selector would offer "Steady Maya 1500"
+  // invented one, so the quick-start selector would offer "Custom Maia 1500"
   // for a bot everything else on screen calls "Café Entropy".
   if (cfg.botName !== undefined) {
     var _ni = document.getElementById('botNameInput');
@@ -2249,7 +2268,7 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
   // human can practice baiting a premove and punishing it.
   botPremoveEnabled      = !!cfg.premoveEnabled;
   botPremoveRatePct      = (cfg.premoveRatePct   != null) ? +cfg.premoveRatePct   : 80;
-  botPremoveMinPct       = (cfg.premoveMinPct    != null) ? +cfg.premoveMinPct    : 85;
+  botPremoveMinPct       = (cfg.premoveMinPct    != null) ? +cfg.premoveMinPct    : 95;
   botPremoveOnlyLowClock = !!cfg.premoveOnlyLowClock;
   botPremoveOppClockSecs = (cfg.premoveOppClockSecs != null) ? +cfg.premoveOppClockSecs : 30;
   botPremoveClockSecs    = (cfg.premoveClockSecs != null) ? +cfg.premoveClockSecs : 30;
@@ -2272,6 +2291,8 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
     ? Math.max(0, Math.min(100, +cfg.convictionPct || 0)) : 30;
   // Blind Conviction: the personality alone picks the move (blindConvictionPick).
   botBlindConviction = !!cfg.blindConviction;
+  // Its Choice mix; a bot saved before the mix plays its favourite every move.
+  botBlindChoicePcts = blindChoicePctsFrom(cfg.blindChoicePcts);
 
   // Draw behaviour + stalemate seeking (desperation)
   // Draws: accept unless more than 200 cp ahead, by default. A config from
@@ -2364,8 +2385,14 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
     return { eco: s.code, exactEco: s.code, familyPrefix: (s.code || '').slice(0,2),
              name: s.name, pct: s.pct, weight: +s.pct || 0 };
   };
-  botOpeningConfig.white        = (cfg.repSlots && cfg.repSlots.white || []).map(mapSlot);
-  botOpeningConfig.black        = (cfg.repSlots && cfg.repSlots.black || []).map(mapSlot);
+  // "No opening sequence" is a slot in the builder's list, with a percentage
+  // like any opening, but no line to steer into: it leaves the matcher's slots
+  // and becomes the share of games the whole sequence sits out (botStart).
+  var _repList = function(C) { return (cfg.repSlots && cfg.repSlots[C]) || []; };
+  botOpeningConfig.white        = _repList('white').filter(function(s) { return !(s && s.none); }).map(mapSlot);
+  botOpeningConfig.black        = _repList('black').filter(function(s) { return !(s && s.none); }).map(mapSlot);
+  botOpeningConfig.noneWhite    = botOpeningNoneShare(_repList('white'));
+  botOpeningConfig.noneBlack    = botOpeningNoneShare(_repList('black'));
   botOpeningConfig.source       = cfg.openingSource || 'masters';
   botOpeningConfig.maxBookDepth = cfg.openingDepth  || 20;
   botOpeningConfig.minGames     = cfg.openingMinGames || 4;
@@ -2424,6 +2451,7 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
   // User-defined custom controls: [{ id, name, metric, phase, value }]
   window._bcpCustomControls   = Array.isArray(cfg.customControls) ? cfg.customControls : [];
   window._bcpHustlerTempMode  = (cfg.personalityId === 'hustler');
+  window._bcpPresetName       = cfg.personalityName || '';
 
   if (!(opts && opts.keepModal)) closeBotModal();
   // The panel's START button means "apply AND play", which is why this has

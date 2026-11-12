@@ -21,7 +21,7 @@ let botPlayerColor = 'white';
 // last touched (which is what the old resolve-on-click behaviour gave).
 let botColorPref = 'random';
 let botTab = 'sf';
-let botTimePressure = 'steady';   // label only now; botTempPressureMult is what runs
+let botTimePressure = 'steady';   // saved with a bot, not shown; botTempPressureMult is what runs
 // How far curve B's temperature escalation goes: 0 = unaffected by time
 // pressure (fully Calm), 1 = the curve as drawn, 2.5 = fully Panicky. Set from
 // the Calm ↔ Panicky slider by the botConfig handler (tempPressureMult).
@@ -112,6 +112,23 @@ function botOpeningStagesFromMode(m) {
 // 0–100: percentage of games where the bot follows its preferred opening.
 // Roll happens in botStart; if skipped, preferredOpeningActive stays false.
 let botOpeningFrequencyPct = 100;
+// "No opening sequence" (Nov 11 2026): a slot in the builder's repertoire list,
+// with a percentage like any opening. Its share of a colour's slots is the
+// share of games that colour skips the opening sequence, the Repertoire and
+// the Main Line both, and plays its own move selection from move 1. The
+// engine's own book (part of the engine, not of Opening Behavior) still plays.
+// botOpeningConfig.noneWhite / noneBlack hold the share, 0–1; botStart rolls it.
+let botNoOpeningThisGame = false;
+function botOpeningNoneShare(slots) {
+  slots = Array.isArray(slots) ? slots : [];
+  var total = 0, none = 0;
+  slots.forEach(function(s) { var p = Math.max(0, +(s && s.pct) || 0); total += p; if (s && s.none) none += p; });
+  return total > 0 ? none / total : 0;
+}
+function botOpeningSkipsThisGame(stageCol) {
+  var share = +botOpeningConfig['none' + stageCol] || 0;
+  return share > 0 && Math.random() < share;
+}
 // In-memory cache: move-history key → explorer result. No TTL needed.
 const _openingCache = new Map();
 // Starting clock in ms — captured when botStart() initialises the clock.
@@ -4914,9 +4931,10 @@ function _quickBotFirstVisitDefaults(){
 }
 
 // Does the current config carry a personality at all? Anything the attractor
-// machinery would act on: attractor or piece preferences, custom controls, the
-// bad-day or hustler modes. The CP budget alone is not one — with nothing to
-// spend it on it is inert.
+// machinery would act on: attractor or piece preferences, custom controls that
+// are not at 0, the bad-day or hustler modes. The CP budget alone is not one —
+// with nothing to spend it on it is inert. botGenerateName reads this for the
+// "Custom" in a bot's name; the builder's Personality pill is the same test.
 function _quickBotPersonaInfo(){
   const av = window._bcpAttractorValues || {}, pv = window._bcpPieceValues || {};
   const cc = Array.isArray(window._bcpCustomControls) ? window._bcpCustomControls : [];
@@ -4924,7 +4942,7 @@ function _quickBotPersonaInfo(){
   let badDay = false, hustler = false;
   try{ badDay = !!botBadDayMode; }catch(e){}
   hustler = !!window._bcpHustlerTempMode;
-  const has = nz(av) || nz(pv) || cc.length > 0 || badDay || hustler;
+  const has = nz(av) || nz(pv) || cc.some(c => +c.value) || badDay || hustler;
   const budget = (window._bcpCpBudget != null) ? Math.max(0, +window._bcpCpBudget || 0) : 0;
   const nameEl = document.getElementById('botNameInput');
   const name = nameEl ? nameEl.value.trim() : '';

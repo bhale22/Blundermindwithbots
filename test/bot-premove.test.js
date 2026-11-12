@@ -55,6 +55,10 @@ function makeCtx() {
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(SRC, '20-chess-core.js'), 'utf8'), ctx);
   vm.runInContext(fs.readFileSync(path.join(SRC, '50-bot-engine.js'), 'utf8'), ctx);
+  // The stubs below mostly predict the human's reply at 90%, under the 95%
+  // default; the default has its own test, which reads it from here.
+  ctx.loadedPremoveMinPct = ctx.botPremoveMinPct;
+  ctx.botPremoveMinPct = 85;
 
   // ── Stubs for the touchpoints the premove path reaches ────────────────────
   ctx.executed = [];
@@ -131,6 +135,21 @@ test('arms a premove from Maia\'s predicted human move, then Maia\'s reply to it
   assert.equal(ctx.botActivePremove.from, sq(ctx, 'e7'));
   assert.equal(ctx.botActivePremove.to, sq(ctx, 'e5'));
   assert.equal(ctx.botPremoveStats.armed, 1);
+});
+
+test('by default it premoves only when Maia is at least 95% sure of the human reply', async () => {
+  assert.equal(makeCtx().loadedPremoveMinPct, 95);
+  for (const [p, armed] of [[0.94, false], [0.96, true]]) {
+    const ctx = makeCtx();
+    ctx.botPremoveMinPct = ctx.loadedPremoveMinPct;
+    setPos(ctx, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+    ctx.botPlayerColor = 'white';
+    ctx.botPremoveEnabled = true;
+    ctx.botPremoveRatePct = 100;
+    stubMaia(ctx, { e2e4: p, d2d4: 1 - p }, { e7e5: 0.9 });
+    await ctx.botPremoveArm();
+    assert.equal(!!ctx.botActivePremove, armed, 'Maia ' + (p * 100) + '% sure: ' + (armed ? 'arms' : 'does not arm'));
+  }
 });
 
 test('does not arm when Maia is unsure of the human reply (below min confidence)', async () => {
@@ -590,7 +609,7 @@ test('a premove pick the engine cannot check is not armed at all', async () => {
     ctx.botPremoveRatePct = 100;
     ctx.botMaiaTempValue = 1.0;
     // A check has to be required for its failure to matter: under time
-    // pressure (curve B raising T at a premove's 1 s) the degradation check
+    // pressure (curve B raising T at a premove's 5 s) the degradation check
     // probes every off-top pick. (Without it — see the test below — nothing
     // is checked.)
     ctx.botTimePressure = 'normal';
@@ -626,20 +645,20 @@ test('with no Bad Day or time pressure, a premove samples Maia without asking th
     'the second-choice reply is armed in proportion to Maia (' + armedOffTop + '/40)');
 });
 
-test('a premove is played at the rating and temperature for a one-second think', async () => {
+test('a premove is played at the rating and temperature for a five-second think', async () => {
   const ctx = makeCtx();
   setPos(ctx, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
   ctx.botPlayerColor = 'white';
   ctx.botPremoveEnabled = true;
   ctx.botPremoveRatePct = 100;
   ctx.maia3SelectedRating = 2000;
-  // Curve A: full 2000 at a relaxed pace, 1400 at one second.
-  ctx.botPressureCurveA = [{ x: 1, y: 1400 }, { x: 30, y: 2000 }, { x: 200, y: 2000 }];
+  // Curve A: full 2000 at a relaxed pace, 1400 at five seconds, 1000 at one.
+  ctx.botPressureCurveA = [{ x: 1, y: 1000 }, { x: 5, y: 1400 }, { x: 30, y: 2000 }, { x: 200, y: 2000 }];
   const elos = [];
   const queue = [{ e2e4: 0.9 }, { e7e5: 0.9 }];
   ctx.maia3GetMoveProbs = async (fen, elo) => { elos.push(elo); return queue.shift() || null; };
   await ctx.botPremoveArm();
-  assert.deepEqual(elos, [1400, 1400], 'both the guess and the reply use the 1-second rating');
+  assert.deepEqual(elos, [1400, 1400], 'both the guess and the reply use the 5-second rating');
   assert.ok(ctx.botActivePremove, 'the premove should arm');
 
   // With time pressure off (a Fixed pace), the same bot premoves at its own rating.

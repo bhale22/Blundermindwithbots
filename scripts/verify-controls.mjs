@@ -177,6 +177,8 @@ console.log('\nPHONE  390×844');
 
   // Selecting a different engine swaps the sub-panel and never leaves it folded.
   await tap(page, '#sec-engine .mcard[data-engine="stockfish"]');
+  // Leaving Maia says what that costs (verify-maia-gate.mjs); clear it to go on.
+  await page.evaluate(() => mgClose());
   ok('switching engine shows the new sub-panel', await shown(page, '#engine-sub-stockfish'));
   // Temperature reaches Flounder now — it maps to the Weibull shape c, which
   // buys the same trade Maia's temperature does. It used to be hidden here.

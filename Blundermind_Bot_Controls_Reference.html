@@ -419,7 +419,7 @@ argmax (Top move): always picks the single highest-probability move (determinist
   <table>
     <thead><tr><th>Control</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td>Min confidence</td><td><strong>The one that matters most.</strong> How sure Maia must be of your reply before the bot commits. <strong>85%</strong> mirrors real play — humans premove on near-forced replies, not coin flips. Drop it far below ~60% and the bot premoves into positions a human never would, so its play looks erratic rather than fast.</td></tr>
+      <tr><td>Min confidence</td><td><strong>The one that matters most.</strong> How sure Maia must be of your reply before the bot commits. <strong>95%</strong>, the default, keeps it to replies that are all but forced — humans premove on near-forced replies, not coin flips. Drop it far below ~60% and the bot premoves into positions a human never would, so its play looks erratic rather than fast.</td></tr>
       <tr><td>Premove rate</td><td>Of the moves that <em>already cleared</em> the confidence bar, the percentage it actually premoves — not a percentage of all moves. 100% = every time it's confident.</td></tr>
       <tr><td>Only when low on clock</td><td>Optional. Restricts premoving to time scrambles, as humans do. Two independent triggers sit under it — your clock, or the bot's — and <em>either one alone</em> is enough to start it premoving.</td></tr>
       <tr><td>Busted-premove delay</td><td>Extra thinking time when you bust one — the "didn't see that coming" stall. This is your reward for springing the trap. It can never flag the bot.</td></tr>

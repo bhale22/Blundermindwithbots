@@ -624,6 +624,13 @@ input.ctrl-val[type=number]::-webkit-inner-spin-button{
   -webkit-appearance:none;margin:0;
 }
 .ctrl-hint{font-family:var(--font-m);font-size:7.5px;color:var(--text-dim);margin-top:2px;line-height:1.4;}
+.blind-mix-cell{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-m);font-size:9px;color:var(--text-dim);order:2;}
+.blind-mix-cell input{width:52px;}
+/* Phones: the label on its own line, the four boxes on the next. */
+@media (max-width:760px){
+  #blind-mix-row .ctrl-lbl{flex-basis:100%;}
+  .blind-mix-cell input{width:44px;min-width:44px;}
+}
 /* The two time-pressure columns sit side by side, so their hints must reserve
    the same height or the charts stop bottom-aligning when one wraps and the
    other does not. Two lines is the most either has ever needed. */
@@ -1117,6 +1124,8 @@ body.rs-highvis [style*="font-size:10px"]{font-size:14px !important;}
 .rep-slot{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--carbon-surface);border:0.5px solid var(--border);border-radius:var(--r);margin-bottom:5px;}
 .rep-slot .rep-name{flex:1;font-family:var(--font-m);font-size:10px;color:var(--text-primary);}
 .rep-slot .rep-code{font-family:var(--font-m);font-size:9px;color:var(--amber-dim);min-width:28px;}
+.rep-slot.rep-none .rep-name{font-style:italic;}
+.rep-none-note{margin-top:4px;font-family:var(--font-m);font-size:9px;line-height:1.5;color:var(--text-dim);}
 .rep-slot .rep-pct input{width:42px;padding:2px 4px;font-family:var(--font-m);font-size:10px;color:var(--amber-bright);background:var(--carbon-raise);border:0.5px solid var(--border-amber);border-radius:2px;text-align:center;outline:none;}
 .rep-total{font-family:var(--font-m);font-size:9px;text-align:right;padding:4px 0;}
 .rep-total.ok{color:var(--amber-dim);}
@@ -1349,56 +1358,87 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
   #conv-toast .bdmsg{font-size:12px;}
 }
 
-/* ── Play on Lichess popup — same chrome as the confirm modal ── */
+/* ── Play on Lichess popup — same chrome as the confirm modal, but set larger
+   and roomier than the builder's panels (Nov 11 2026). It is read once and
+   carefully, often on a phone, and at the panels' 9–10px it was hard going. ── */
 #lbc-overlay{
   position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:9000;
   display:none;align-items:center;justify-content:center;
 }
 #lbc-overlay.show{ display:flex; }
 #lbc-box{
-  background:var(--carbon-mid,#14161a);border:1px solid var(--border-amber);border-radius:4px;
-  padding:20px 22px;max-width:440px;width:92%;max-height:86vh;overflow-y:auto;
+  background:var(--carbon-mid,#14161a);border:1px solid var(--border-amber);border-radius:6px;
+  padding:24px 28px;max-width:540px;width:92%;max-height:88vh;overflow-y:auto;box-sizing:border-box;
   box-shadow:0 8px 32px rgba(0,0,0,0.6);
 }
-.lbc-h{font-family:var(--font-u);font-size:9px;font-weight:600;letter-spacing:0.12em;
-  text-transform:uppercase;color:var(--text-dim);margin:14px 0 6px;}
-.lbc-sum{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:0;
-  font-family:var(--font-m);font-size:10px;line-height:1.5;}
-.lbc-sum dt{color:var(--text-dim);}
+#lbc-box .bdtitle{font-size:14px;margin-bottom:16px;}
+#lbc-body{font-size:15px;line-height:1.6;}
+#lbc-body p{margin:0 0 12px;}
+#lbc-body ul{margin:0 0 12px;padding-left:22px;}
+#lbc-body li{margin-bottom:6px;}
+.lbc-h{font-family:var(--font-u);font-size:12px;font-weight:600;letter-spacing:0.1em;
+  text-transform:uppercase;color:var(--text-secondary);margin:24px 0 12px;padding-top:18px;
+  border-top:0.5px solid var(--border);}
+.lbc-sum{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;margin:0;
+  font-family:var(--font-m);font-size:14px;line-height:1.5;}
+.lbc-sum dt{color:var(--text-secondary);}
 .lbc-sum dd{margin:0;color:var(--text-primary);}
-.lbc-checks{display:flex;flex-wrap:wrap;gap:6px 14px;margin-bottom:6px;
-  font-family:var(--font-m);font-size:10px;color:var(--text-primary);}
-.lbc-checks label{display:inline-flex;align-items:center;gap:4px;cursor:pointer;}
+.lbc-checks{display:flex;flex-wrap:wrap;align-items:center;gap:8px 22px;margin-bottom:8px;
+  font-family:var(--font-m);font-size:15px;color:var(--text-primary);}
+.lbc-checks label{display:inline-flex;align-items:center;gap:8px;min-height:36px;cursor:pointer;}
 .lbc-checks input{accent-color:var(--amber);cursor:pointer;}
-#lbc-token{width:100%;box-sizing:border-box;padding:6px 8px;font-family:var(--font-m);font-size:11px;
-  color:var(--text-primary);background:var(--carbon-surface);border:0.5px solid var(--border);
-  border-radius:2px;outline:none;}
-.lbc-note{font-family:var(--font-m);font-size:9.5px;line-height:1.55;color:var(--text-dim);margin-top:5px;}
+.lbc-checks input[type=checkbox]{width:18px;height:18px;margin:0;}
+.lbc-checks input[type=number]{width:84px;box-sizing:border-box;padding:6px 8px;font:inherit;cursor:text;
+  color:var(--text-primary);background:var(--carbon-surface);border:1px solid var(--border);
+  border-radius:3px;outline:none;}
+.lbc-label{display:block;margin-top:16px;font-family:var(--font-m);font-size:14px;font-weight:600;color:var(--text-primary);}
+#lbc-token{display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:12px;font-family:var(--font-m);font-size:15px;
+  color:var(--text-primary);background:var(--carbon-surface);border:1px solid var(--border-amber);
+  border-radius:3px;outline:none;}
+#lbc-token:focus{border-color:var(--amber);}
+.lbc-note{font-family:var(--font-m);font-size:13.5px;line-height:1.6;color:var(--text-secondary);margin-top:8px;}
 .lbc-note a,.lbc-link{color:var(--amber);}
 .lbc-link{background:none;border:none;padding:0;font:inherit;text-decoration:underline;cursor:pointer;}
-.lbc-warn{border-left:2px solid #e05a4a;padding:7px 10px;background:rgba(224,90,74,0.08);margin-top:10px;}
-#lbc-status{font-family:var(--font-m);font-size:10px;line-height:1.5;min-height:15px;margin-top:12px;
+.lbc-warn{border-left:3px solid #e05a4a;padding:10px 14px;background:rgba(224,90,74,0.08);margin-top:14px;}
+#lbc-status{font-family:var(--font-m);font-size:14px;line-height:1.5;min-height:20px;margin-top:16px;
   color:var(--text-secondary);}
 #lbc-status.err{color:#e05a4a;}
-#lbc-box .bdbtns{margin-top:12px;flex-wrap:wrap;}
-.lbc-guide{margin-top:10px;font-family:var(--font-m);font-size:10px;line-height:1.55;color:var(--text-primary);}
-.lbc-guide > summary{cursor:pointer;color:var(--amber);font-weight:600;padding:3px 0;}
-.lbc-sub{margin-top:8px;}
-.lbc-sub > summary{font-weight:400;}
-.lbc-steps{margin:6px 0 0;padding-left:18px;}
-.lbc-steps li{margin-bottom:7px;}
+#lbc-box .bdbtns{margin-top:18px;gap:12px;flex-wrap:wrap;}
+#lbc-box .bdbtns .preset-btn{font-size:14px;letter-spacing:0.02em;padding:10px 18px;min-height:44px;}
+.lbc-guide{margin-top:4px;font-family:var(--font-m);font-size:14px;line-height:1.65;color:var(--text-primary);}
+.lbc-guide > summary{cursor:pointer;color:var(--amber);font-weight:600;padding:8px 0;font-size:15px;}
+.lbc-sub{margin-top:10px;}
+.lbc-sub > summary{font-weight:400;font-size:14px;}
+.lbc-steps{margin:10px 0 4px;padding-left:24px;}
+.lbc-steps li{margin-bottom:14px;}
 .lbc-steps a{color:var(--amber);white-space:nowrap;}
-.lbc-cmd{margin:4px 0 8px;padding:6px 8px;background:var(--carbon-surface);border:0.5px solid var(--border);
-  border-radius:2px;font-family:'Courier New',monospace;font-size:10px;line-height:1.4;
+.lbc-cmd{margin:6px 0 10px;padding:8px 10px;background:var(--carbon-surface);border:0.5px solid var(--border);
+  border-radius:3px;font-family:'Courier New',monospace;font-size:12.5px;line-height:1.45;
   white-space:pre-wrap;word-break:break-all;color:var(--text-primary);user-select:all;}
+/* The "?" beside a setting: its explanation, folded until asked for, and
+   opened in the flow (not floated) so it never covers the controls below. */
+.lbc-help{width:28px;height:28px;padding:0;flex-shrink:0;border-radius:50%;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:transparent;border:1.5px solid var(--amber);color:var(--amber);
+  font-family:var(--font-m);font-size:16px;font-weight:700;line-height:1;cursor:pointer;}
+.lbc-help:hover{background:var(--amber-glow);}
+.lbc-help[aria-expanded="true"]{background:var(--amber);color:var(--carbon-mid,#14161a);}
+.lbc-help-text{margin:4px 0 8px;padding:10px 14px;border-left:3px solid var(--amber);
+  background:var(--carbon-surface);border-radius:0 3px 3px 0;}
 @media (max-width:760px){
-  .lbc-h{font-size:11px;}
-  .lbc-sum,.lbc-checks,#lbc-status{font-size:12px;}
-  .lbc-note{font-size:11px;}
-  #lbc-token{font-size:14px;}
-  .lbc-checks label{min-height:32px;}
-  .lbc-guide,.lbc-cmd{font-size:12px;}
-  .lbc-guide > summary{padding:8px 0;}
+  #lbc-overlay{align-items:flex-start;}
+  /* Clear of the host modal's fixed close button (top 10px, 34px tall). */
+  #lbc-box{width:calc(100% - 32px);max-height:calc(100% - 72px);margin-top:56px;padding:20px 18px;}
+  #lbc-body{font-size:16px;}
+  .lbc-note{font-size:14.5px;}
+  /* Each setting's name above its value: two columns crowd a phone. */
+  .lbc-sum{grid-template-columns:1fr;gap:0;font-size:15px;}
+  .lbc-sum dd{margin-bottom:10px;}
+  /* 16px: below it, iOS zooms the page on focus. */
+  #lbc-token,.lbc-checks input[type=number]{font-size:16px;}
+  .lbc-guide{font-size:15px;}
+  .lbc-cmd{font-size:13px;}
+  #lbc-box .bdbtns .preset-btn{flex:1 1 auto;}
 }
 
 /* ── Preset Personalities and Personality popups — same chrome as the confirm modal ── */
@@ -1951,6 +1991,14 @@ body.fj .ptrait{font-size:13.5px;}
 body.fj .ptag{font-size:12px;}
 body.fj .sub-title{font-size:13.5px;}
 body.fj .tag{font-size:13.5px;}
+/* Openings: the repertoire's rows and the List. They kept their mono sizes
+   (8–10px), which in Spectral sat far below the 15px text around them. */
+body.fj .rep-slot .rep-code,body.fj .eco-code,body.fj .eco-sel-code{font-size:13.5px;letter-spacing:0;}
+body.fj .rep-slot .rep-code{min-width:40px;}
+body.fj .rep-slot .rep-name,body.fj .eco-option,body.fj .eco-selected{font-size:15px;}
+body.fj .rep-slot .rep-pct input{width:52px;font-size:13.5px;}
+body.fj .eco-search,body.fj .eco-browse{font-size:15px;}
+body.fj .rep-total,body.fj .rep-none-note,body.fj .eco-count,body.fj .eco-group{font-size:12px;}
 
 /* --font-u name tier: italic Fraunces 500, sentence case. The brief kept these
    at their original size, but 10px italic serif engine/persona names proved too
@@ -2083,6 +2131,13 @@ body.fj .picon{font-weight:500;}
   background:rgba(93,173,226,0.06);border-left:2px solid var(--blue);
   font-size:10.5px;line-height:1.65;color:var(--text-secondary);
 }
+/* "Not available without Maia": the explainer's dialog, sized for a short
+   message. Switching to Flounder opens it, and so does the greyed premove row. */
+.pmt-modal.mg-modal{width:min(440px,96vw);}
+.mg-modal .pmt-body p{font-size:13px;margin-bottom:8px;}
+.mg-modal .pmt-links{margin-bottom:12px;}
+.mg-modal .pmt-links li{font-size:12.5px;}
+#premove-row.inert{cursor:pointer;}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    PHONES / NARROW VIEWPORTS
@@ -3685,7 +3740,7 @@ body.fj .picon{font-weight:500;}
           <!-- Blind Conviction — the Personality section's switch, mirrored
                here so the chart's Played bar can be watched as it flips -->
           <div class="tog-row" id="blind-conviction-row-mirror">
-            <div><div class="tog-lbl">Blind conviction</div><div class="tog-desc">The personality alone picks: its favorite within the Budget. Same switch as in Personality.</div></div>
+            <div><div class="tog-lbl">Blind conviction</div><div class="tog-desc">The personality alone picks: its favorites within the Budget, by the Choice mix in Personality. Same switch as in Personality.</div></div>
             <label class="tog"><input type="checkbox" id="cb-blind-conviction-mirror" onchange="setBlindConviction(this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label>
           </div>
           <div class="ctrl-hint" id="temp-chart-hint">Same dial as the Personality section's Centipawmeter — move either one. The middle (blue) bar shows an <em>illustrative</em> personality (loves g4, likes c4, dislikes d4) reshaping Maia's odds; the last bar is what the bot plays: Conviction's share on the top move, the rest temperature samples — or, with Blind conviction on, the one move it chooses.</div>
@@ -3774,8 +3829,21 @@ body.fj .picon{font-weight:500;}
                      among those the Move Distribution Range lets through and
                      within the Budget (blindConvictionPick) -->
                 <div class="tog-row" id="blind-conviction-row">
-                  <div><div class="tog-lbl">Blind conviction</div><div class="tog-desc">Ignores how popular each move is and always plays the personality's favorite within the Budget. Popularity only breaks ties and sets the Move Distribution Range's floor below. Predictable, and no longer plays like a person.</div></div>
+                  <div><div class="tog-lbl">Blind conviction</div><div class="tog-desc">Ignores how popular each move is: the personality ranks the moves, and the bot plays its favorites within the Budget, as often as the Choice mix says. Popularity only breaks ties and sets the Move Distribution Range's floor below. No longer plays like a person.</div></div>
                   <label class="tog"><input type="checkbox" id="cb-blind-conviction" onchange="setBlindConviction(this.checked)"><div class="tog-track"><div class="tog-thumb"></div></div></label>
+                </div>
+                <!-- Blind Conviction's Choice mix (botBlindChoicePcts): how often
+                     it plays its 1st-4th choice within the Budget. Shown only
+                     while Blind is on, the one place it acts. -->
+                <div id="blind-mix-wrap" style="display:none;">
+                  <div class="ctrl" id="blind-mix-row" style="margin-top:6px;flex-wrap:wrap;gap:6px 10px;">
+                    <span class="ctrl-lbl" style="min-width:80px;">Choice mix</span>
+                    <label class="blind-mix-cell">1st <input type="number" id="n-blind-mix-0" class="ctrl-val" min="0" max="100" step="5" value="60" oninput="onBlindMix()"></label>
+                    <label class="blind-mix-cell">2nd <input type="number" id="n-blind-mix-1" class="ctrl-val" min="0" max="100" step="5" value="20" oninput="onBlindMix()"></label>
+                    <label class="blind-mix-cell">3rd <input type="number" id="n-blind-mix-2" class="ctrl-val" min="0" max="100" step="5" value="15" oninput="onBlindMix()"></label>
+                    <label class="blind-mix-cell">4th <input type="number" id="n-blind-mix-3" class="ctrl-val" min="0" max="100" step="5" value="5" oninput="onBlindMix()"></label>
+                  </div>
+                  <div class="ctrl-hint" id="blind-mix-note"></div>
                 </div>
                 <div class="ctrl" id="hard-floor-row" style="margin-top:8px;">
                   <span class="ctrl-lbl" id="hard-floor-lbl" style="min-width:80px;">Hard Floor</span>
@@ -4051,7 +4119,7 @@ body.fj .picon{font-weight:500;}
         <div>
           <!-- Premove — bot commits a reply before seeing your move -->
           <div class="dlbl" style="margin-top:0;"><span>Premove</span><button type="button" class="pmt-help-btn" onclick="pmtOpen()">What's a premove trap?</button></div>
-          <div class="tog-row">
+          <div class="tog-row" id="premove-row" onclick="premoveRowTap(this)">
             <div>
               <div class="tog-lbl">Enable premoving</div>
               <div class="tog-desc">Commits its reply in advance and plays it instantly — bait the guess to punish it</div>
@@ -4093,10 +4161,10 @@ body.fj .picon{font-weight:500;}
               </div>
               <div class="ctrl has-info">
                 <span class="ctrl-lbl">Min confidence</span>
-                <input type="range" id="r-premove-conf" min="0" max="95" step="5" value="85" oninput="syncPremoveConf(this.value,'r-premove-conf')">
-                <input type="number" id="n-premove-conf" class="ctrl-val" min="0" max="95" step="5" value="85" style="width:52px;" oninput="syncPremoveConf(this.value,'n-premove-conf')">
+                <input type="range" id="r-premove-conf" min="0" max="95" step="5" value="95" oninput="syncPremoveConf(this.value,'r-premove-conf')">
+                <input type="number" id="n-premove-conf" class="ctrl-val" min="0" max="95" step="5" value="95" style="width:52px;" oninput="syncPremoveConf(this.value,'n-premove-conf')">
                 <button type="button" class="info-i" aria-label="About minimum confidence" onclick="infoToggle(this,event)">i</button>
-                <div class="info-pop">Only premoves when Maia is at least this sure of your reply — humans premove on near-forced replies, not coin flips. <strong>85%</strong> mirrors real play; dropping it far below ~60% makes the bot premove into positions a human never would, and its play will look erratic.</div>
+                <div class="info-pop">Only premoves when Maia is at least this sure of your reply — humans premove on near-forced replies, not coin flips. <strong>95%</strong>, the default, keeps it to replies that are all but forced, as a human premoves; dropping it far below ~60% makes the bot premove into positions a human never would, and its play will look erratic.</div>
               </div>
               <div class="ctrl has-info">
                 <span class="ctrl-lbl">Busted-premove delay</span>
@@ -4105,7 +4173,7 @@ body.fj .picon{font-weight:500;}
                 <button type="button" class="info-i" aria-label="About busted-premove delay" onclick="infoToggle(this,event)">i</button>
                 <div class="info-pop">Seconds of extra thinking when you bust a premove — the "didn't see that coming" stall. This is your reward for springing a trap: the bot burns its own clock. <strong>0</strong> = no penalty. Never allowed to flag the bot.</div>
               </div>
-              <div class="ctrl-hint" style="margin-top:8px;">Requires <strong>Maia 3</strong>. A premove is a one-second decision: it plays at the rating and temperature the time-pressure curves give for 1 s, and must pass the CP Budget and Hard Floor like any other move — if the engine can’t check it, the bot thinks normally instead. This game: <span id="premove-stats" style="color:var(--blue);">none yet</span>.</div>
+              <div class="ctrl-hint" style="margin-top:8px;">Requires <strong>Maia 3</strong>. A premove is worked out while you think, so it plays at the rating and temperature the time-pressure curves give for 5 s, and must pass the CP Budget and Hard Floor like any other move — if the engine can’t check it, the bot thinks normally instead. This game: <span id="premove-stats" style="color:var(--blue);">none yet</span>.</div>
             </div>
           </div>
 
@@ -4295,7 +4363,7 @@ body.fj .picon{font-weight:500;}
             <span style="color:var(--amber);">▸ ELO reduction</span> — Full credit to Professor Regan for his work, full blame to me for extrapolating his data-based findings based on full games under different time controls to this unsubstantiated estimation of ELO drop for individual moves under different time constraints.  
             Maia is called at a lower ELO as think time shrinks under time pressure: full ELO at the time control’s nominal pace (base/60 + increment seconds per move), degrading below it following the curve shown above. Every point is draggable if you want a shape different from the formula, and <strong>Match Regan model</strong> puts them all back on it — the Max ELO drop slider caps how deep the curve goes, so at its default the curve stops short of the model in faster time controls<br>
             <span style="color:#5dade2;">▸ Temperature escalation</span> — ELO stays fixed but sampling temperature rises as think time shrinks, flattening Maia's move probabilities toward uniform without ever reordering them: a near-forced move stays the near-certain pick, while a genuine toss-up becomes far less predictable (instinctive, less creative play — typical of a strong player with no time to calculate). A quick engine check ensures a degraded pick never improves on Maia's top choice. How far up the curve the bot actually goes is set by <strong>Calm ↔ Panicky</strong> in Personality: at 0 it follows the curve as drawn (mild by default — Max temp 2), toward Calm it rises less, fully Calm leaves the temperature untouched, and fully Panicky rises 2.5× as fast.<br>
-            <span style="color:var(--amber);">▸ Only when time is really short</span> — both curves describe a bot being forced to move faster than it would like. With <strong>Fixed interval</strong> or <strong>Instantaneous</strong> timing the pace is a number you set, not something the clock forced, so neither curve runs. <strong>Complexity scaled</strong> (From the clock) budgets from the clock and uses them; so does <strong>Mirror user</strong>, which plays at your pace — when you speed up under time pressure it speeds up with you, and degrades the way you do. Premoves are one-second decisions, and play at the rating and temperature these curves give for 1 s.<br>
+            <span style="color:var(--amber);">▸ Only when time is really short</span> — both curves describe a bot being forced to move faster than it would like. With <strong>Fixed interval</strong> or <strong>Instantaneous</strong> timing the pace is a number you set, not something the clock forced, so neither curve runs. <strong>Complexity scaled</strong> (From the clock) budgets from the clock and uses them; so does <strong>Mirror user</strong>, which plays at your pace — when you speed up under time pressure it speeds up with you, and degrades the way you do. Premoves are worked out while the opponent thinks, and play at the rating and temperature these curves give for 5 s.<br>
             Each curve has its own <strong>ON/OFF</strong> toggle next to its title, so you can run either mechanism alone, both together, or switch both off for constant strength regardless of clock.
           </div>
         </div>
@@ -4544,6 +4612,20 @@ body.fj .picon{font-weight:500;}
       <div class="pmt-tip">Raise <span class="pmt-key">Premove rate</span> toward 100% and lower
       <span class="pmt-key">Min confidence</span> in the premove controls to make the bot premove
       more often and more exploitably.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Not available without Maia ═══ -->
+<div class="pmt-overlay" id="mg-overlay" onclick="if(event.target===this)mgClose()">
+  <div class="pmt-modal mg-modal" role="dialog" aria-modal="true" aria-labelledby="mg-title" aria-describedby="mg-body">
+    <div class="pmt-head">
+      <div class="pmt-title" id="mg-title"></div>
+      <button class="pmt-x" onclick="mgClose()" aria-label="Close">&times;</button>
+    </div>
+    <div class="pmt-body">
+      <div id="mg-body"></div>
+      <button type="button" class="tp-gate-go" onclick="mgClose()">OK</button>
     </div>
   </div>
 </div>
@@ -8890,6 +8972,7 @@ function syncWeaponizerTrigger(raw, sourceId){
 // Same reveal/sync pattern as the weaponizer: master toggle reveals the
 // sub-panel, slider/number pairs are two views of one persisted value.
 function showPremove(on, sourceId){
+  _premoveParked = false;   // an explicit setting replaces a parked one
   const sub = document.getElementById('premove-sub');
   if(sub) sub.style.display = on ? 'block' : 'none';
   ['cb-premove'].forEach(id => {
@@ -8899,7 +8982,100 @@ function showPremove(on, sourceId){
   });
   try { localStorage.setItem('bm_premoveOn', on ? '1' : '0'); } catch(e){}
   if(typeof updateTimingStatus === 'function') updateTimingStatus();
+  _premoveEngineGate();   // a loaded bot can say "on" with no Maia to premove with
 }
+
+// Premove guesses the human's reply with Maia and commits Maia's answer, and it
+// skips Flounder turns (botPremoveArm, botPremoveRating), so a bot with no Maia
+// weight can never premove.
+function _botHasNoMaia(){
+  if(baseEngine === 'stockfish') return true;
+  return baseEngine === 'hybrid' && !hybridSlots.some(s => s.type === 'maia' && (+s.pct || 0) > 0);
+}
+function _premoveWhy(){
+  if(_botHasNoMaia())
+    return 'Premove guesses your reply with Maia and commits Maia’s answer — a bot that only plays Flounder has neither, so it never premoves.';
+  if(!_bcpMaiaReady)
+    return 'Premove needs the Maia 3 model — download it in the Engine section.';
+  return '';
+}
+
+// With no Maia the switch reads off, because everything that reports premove
+// reads the switch: the collapsed Move Timing header, the bot summary and the
+// config a game starts from. The user's "on" is only parked, so it comes back
+// with Maia, and bm_premoveOn keeps it across a reload.
+// A missing model does not park: that bot still premoves once the model arrives.
+let _premoveParked = false;
+function _premoveEngineGate(){
+  const cb = document.getElementById('cb-premove');
+  if(!cb) return;
+  const noMaia = _botHasNoMaia();
+  if(noMaia && cb.checked){ _premoveParked = true; cb.checked = false; }
+  else if(!noMaia && _premoveParked){ _premoveParked = false; cb.checked = true; }
+  else return;
+  const sub = document.getElementById('premove-sub');
+  if(sub) sub.style.display = cb.checked ? 'block' : 'none';
+  updateTimingStatus();
+}
+
+// The greyed switch is `inert`, so a tap on it lands on the row. A live row
+// leaves the tap to the switch.
+function premoveRowTap(row){
+  if(!row.classList.contains('inert')) return;
+  const why = _premoveWhy();
+  if(!why) return;
+  mgOpen('Premove not available without Maia', '<p>' + why + (_botHasNoMaia()
+    ? ' To use premoves, switch the engine to Maia 3, or to a Hybrid with a Maia slot.' : '') + '</p>');
+}
+
+// The "not available without Maia" dialog. Callers pass fixed markup, never
+// anything a user typed.
+function mgOpen(title, bodyHtml){
+  const ov = document.getElementById('mg-overlay');
+  if(!ov) return;
+  document.getElementById('mg-title').textContent = title;
+  document.getElementById('mg-body').innerHTML = bodyHtml;
+  ov.classList.add('open');
+  document.addEventListener('keydown', mgEsc);
+  ov.querySelector('.tp-gate-go').focus();
+}
+function mgClose(){
+  const ov = document.getElementById('mg-overlay');
+  if(ov) ov.classList.remove('open');
+  document.removeEventListener('keydown', mgEsc);
+}
+function mgEsc(e){ if(e.key === 'Escape') mgClose(); }
+
+// The bot just lost Maia: say what that costs. The list is read from the gates
+// on the controls themselves (syncControlGating has just run), so it cannot name
+// a control that still works or miss one that went grey.
+function _mgLostMaia(eloBefore){
+  const g = _gatingState();
+  const greyed = id => !!document.getElementById(id)?.classList.contains('inert');
+  const li = (name, rest) => '<li><strong>' + name + '</strong> ' + rest + '</li>';
+  const items = [li('Premove', 'guesses your reply with Maia.')];
+  if(document.getElementById('move-quality-range')?.style.visibility === 'hidden')
+    items.push(li('Move Distribution Range', 'slices a popularity distribution, and Flounder has none.'));
+  if(_radarAxisWhy('luck'))
+    items.push(li('Bad Day', 'shifts the Move Distribution Range.'));
+  // Under Blind Conviction this row is grey on every engine, so Maia is not why.
+  if(greyed('conviction-row') && !g.blind)
+    items.push(li('Conviction', 'chooses from a distribution, and Flounder picks by evaluation.'));
+  if(greyed('hard-floor-row'))
+    items.push(li('Hard Floor', 'caps bad moves, and on Flounder its rating already decides how bad a move can get.'));
+
+  let html = '<p>Flounder can’t use these, so they’re off for this bot. Their settings are kept for when you switch back.</p>'
+    + '<ul class="pmt-links">' + items.join('') + '</ul>';
+  if(g.book)
+    html += '<p>With the opening book on, the Move Distribution Range, Bad Day, '
+      + (g.blind ? '' : 'Conviction ') + 'and Hard Floor still apply to book moves, but not to Flounder’s own.</p>';
+  // The rating is the one setting that does not come back.
+  if(currentElo !== eloBefore)
+    html += '<p>Flounder’s ratings stop at ' + currentElo + ', so this bot went from ' + eloBefore + ' to '
+      + currentElo + ', and it stays there if you switch back.</p>';
+  mgOpen('Not available without Maia', html);
+}
+
 function showPremoveClock(on, sourceId){
   const sub = document.getElementById('premove-clock-ctrl');
   if(sub) sub.style.display = on ? 'block' : 'none';
@@ -9145,6 +9321,7 @@ function getBotConfig(){
     // distribution, the rest are temperature samples.
     convictionPct:   _convictionPct(),
     blindConviction: _blindConviction(),
+    blindChoicePcts: _blindMix(),
     color:           color,
     tcTime:          tcTime,
     tcInc:           tcInc,
@@ -9192,6 +9369,10 @@ function getBotConfig(){
     tempValue:         _currentTempValue,
     tempPresetId:      selectedTempPresetId,
     personalityId:     selectedPersonality,
+    // What the board calls the bot; the app has no list of presets to look it up
+    // in. A loaded bot goes by its own name on the Personality pill, so the
+    // preset it was built from does not speak for it.
+    personalityName:   _activeBotName ? null : ((PERSONALITIES.find(p => p.id === selectedPersonality) || {}).name || null),
     badDayMode:        selectedPersonality === 'badday',
     calmPanickyValue:  attractorValues['pressure'] || 0,
     // Calm ↔ Panicky is continuous from here on (−5 untouched … 0 as drawn …
@@ -9232,6 +9413,10 @@ function getBotConfig(){
     staleSeek:           document.getElementById('cb-stale-seek')?.checked || false,
     staleSeekFromMove:   parseInt(document.getElementById('r-stale-move')?.value || '30'),
     staleSeekCp:         parseInt(document.getElementById('r-stale-cp')?.value   || '500'),
+    // Lichess only, set in the Lichess popup: play each game at the challenger's
+    // rating plus the offset (the bridge's _lbApplyMatchedRating).
+    lichessMatchRating:  !!lbcMatchOn,
+    lichessMatchOffset:  lbcMatchOffset || 0,
   };
 }
 
@@ -9366,6 +9551,8 @@ function applyBotConfig(cfg){
   // belongs to Bad Day and time pressure.
   grp(() => onConvictionSlider(cfg.convictionPct != null ? cfg.convictionPct : 30));
   grp(() => setBlindConviction(!!cfg.blindConviction));
+  // A bot saved before the Choice mix played its favourite every move.
+  grp(() => setBlindMix(Array.isArray(cfg.blindChoicePcts) ? cfg.blindChoicePcts : [100, 0, 0, 0]));
   grp(() => {
     const lo = document.getElementById('day-lower'), hi = document.getElementById('day-upper');
     if(lo && cfg.dayLower != null) lo.value = cfg.dayLower;
@@ -9570,6 +9757,13 @@ function applyBotConfig(cfg){
     if(!pressureOffA && cfg.ctrlA && cfg.ctrlA.length >= 2) ctrlA = cfg.ctrlA.map(p => ({x: +p.x, y: +p.y}));
     if(!pressureOffB && cfg.ctrlB && cfg.ctrlB.length >= 2) ctrlB = cfg.ctrlB.map(p => ({x: +p.x, y: +p.y}));
     drawA(); drawB(); updatePressureStats();
+  });
+
+  grp(() => {
+    lbcMatchOn = !!cfg.lichessMatchRating;
+    lbcMatchOffset = +cfg.lichessMatchOffset || 0;
+    // A file saved with a measured strength table (Nov 10 2026) loads without
+    // it: the builder no longer shows one, so it no longer plays one.
   });
 
   grp(() => _updateEnginePanelHeader());
@@ -10455,6 +10649,10 @@ let _lbcView = '';              // connect | upgrade | connected
 let _lbcNewToken = false;       // "use a different token" was pressed
 let _lbcBusy = false;           // a check or upgrade is in flight
 let _lbcPendingUpgrade = null;  // { token, username, games, settings }
+// Part of the bot's config. var, because getBotConfig above can run first.
+var lbcMatchOn = false;         // play each game at the challenger's rating
+var lbcMatchOffset = 0;         // ...plus this much
+let _lbcHelpOpen = false;       // the matching "?" is open (kept across redraws)
 
 function _lbcHost(){
   try{
@@ -10484,7 +10682,8 @@ function lbcRefresh(st){
   if(start) start.innerHTML = on ? '&#8635; Update Lichess bot' : '&#9654; Start';
   // An open popup follows the connection, but never wipes a form being filled.
   const open = document.getElementById('lbc-overlay')?.classList.contains('show');
-  if(open && !_lbcBusy && (_lbcView === 'connected' || on)) _lbcRender();
+  if(open && !_lbcBusy && (_lbcView === 'connected' || on) &&
+     document.activeElement?.id !== 'lbc-match-offset') _lbcRender();
 }
 
 // opts.fromBoard: opened by the board's Lichess panel (lichessOpenSetup), which
@@ -10538,14 +10737,23 @@ function _lbcSummary(){
   const rows = [
     ['Engine', txt('qs-engine-pill')],
     ['Personality', txt('qs-pers-value') + ' · ' +
-      (_blindConviction() ? 'Blind conviction' : 'Conviction ' + _convictionPct() + '%')],
+      (_blindConviction() ? 'Blind conviction · choices ' + _blindMix().join('/') + '%' : 'Conviction ' + _convictionPct() + '%')],
     ['CP Budget', txt('qs-cpb-value')],
     ['Think time', txt('qs-ttime-value')],
   ];
+  const matching = c.lichessMatchRating && c.engine !== 'hybrid';
+  if(matching){
+    const off = c.lichessMatchOffset;
+    rows.splice(1, 0, ['Rating', 'matches each challenger' +
+      (off ? ' ' + (off > 0 ? '+' : '−') + Math.abs(off) : '') + ' · ' + c.elo + ' if they have none']);
+  }
   // Clock-driven timing is where the time-pressure curves run (Fixed and
   // Instant set the pace outright, so they never do) — say whether they will.
+  // A matching bot's Curve A is rebuilt for each game (the bridge's
+  // _lbReganCurveA), so the builder's drawing is not what runs there.
   if(c.timingMode === 'complexity' || c.timingMode === 'mirror'){
-    const parts = [!c.pressureOffA && 'rating drops', !c.pressureOffB && 'choices widen'].filter(Boolean);
+    const parts = [!c.pressureOffA && (matching ? 'rating drops on the Regan model for each game’s clock' : 'rating drops'),
+      !c.pressureOffB && 'choices widen'].filter(Boolean);
     rows.push(['Time pressure', parts.length
       ? 'on — plays worse the less time it has to think (' + parts.join(', ') + ')'
       : 'off — same strength however fast it moves']);
@@ -10557,6 +10765,44 @@ function _lbcSummary(){
       + (c.offerDraws ? ' · offers draws' : '')]
   );
   return rows.map(([k, v]) => '<dt>' + _ccEsc(k) + '</dt><dd>' + _ccEsc(v) + '</dd>').join('');
+}
+
+// Here rather than in the builder's sections because nothing but a Lichess game
+// reads it. It is still part of the bot's config, so it travels with the bot.
+// Its explanation sits behind a "?" so the row stays one line.
+function _lbcMatchHtml(){
+  const can = currentEngine !== 'hybrid';
+  const help = 'Each game is played at the challenger’s Lichess rating for that speed, plus the offset ' +
+    '(−100 plays a little below them). Anyone with no rating gets the rating set in this builder. ' +
+    'The bot says so in the game chat, and they can type a rating such as ELO1500 there to change it, ' +
+    'for that game and any rematch. If your bot plays stronger or weaker than its engine setting, the offset ' +
+    'can make up the difference, or say what it really plays like in its Lichess profile.';
+  return '<div class="lbc-h">Rating on Lichess</div>' +
+    '<div class="lbc-checks">' +
+      '<label><input type="checkbox" id="lbc-match" onchange="lbcMatchChange()"' +
+        (can && lbcMatchOn ? ' checked' : '') + (can ? '' : ' disabled') + '>Match the challenger’s rating</label>' +
+      (can ? '<button type="button" class="lbc-help" id="lbc-match-help-btn" aria-controls="lbc-match-help"' +
+        ' aria-expanded="' + _lbcHelpOpen + '" aria-label="About matching the challenger’s rating"' +
+        ' title="About matching the challenger’s rating" onclick="lbcHelpToggle()">?</button>' : '') +
+      '<label>Offset <input type="number" id="lbc-match-offset" min="-500" max="500" step="25" value="' + lbcMatchOffset + '"' +
+        (can ? '' : ' disabled') + ' oninput="lbcMatchChange()"></label>' +
+    '</div>' +
+    (can
+      ? '<div class="lbc-note lbc-help-text" id="lbc-match-help"' + (_lbcHelpOpen ? '' : ' hidden') + '>' + help + '</div>'
+      : '<div class="lbc-note" style="margin-top:0;">A blend has no single rating to match: each slot sets its own.</div>');
+}
+function lbcHelpToggle(){
+  _lbcHelpOpen = !_lbcHelpOpen;
+  const box = document.getElementById('lbc-match-help'), btn = document.getElementById('lbc-match-help-btn');
+  if(box) box.hidden = !_lbcHelpOpen;
+  if(btn) btn.setAttribute('aria-expanded', String(_lbcHelpOpen));
+}
+
+function lbcMatchChange(){
+  lbcMatchOn = !!document.getElementById('lbc-match')?.checked;
+  const n = parseInt(document.getElementById('lbc-match-offset')?.value, 10);
+  lbcMatchOffset = Number.isNaN(n) ? 0 : Math.max(-500, Math.min(500, n));
+  _lbcRefreshSummary();
 }
 
 // Bot account steps, for someone who has never done anything like it. Every
@@ -10612,7 +10858,8 @@ function _lbcRender(){
       '<p>This tab plays on Lichess as ' + who + ' — ' + doing + '.</p>' +
       '<p>To change the bot, set it up here and press <b>Update Lichess bot</b> (the Start button). ' +
       'It plays from the next game; a game in progress finishes with the bot it started with.</p>' +
-      (s.nextPending ? '<p class="lbc-note">An update is waiting for the next game.</p>' : '');
+      (s.nextPending ? '<p class="lbc-note">An update is waiting for the next game.</p>' : '') +
+      _lbcMatchHtml();
     _lbcButtons([
       ['Disconnect', () => { try{ host.lichessDisconnect(); }catch(e){} lbcRefresh(); }],
       ['Go to the board', () => { _lbcFromBoard = true; lbcClose(); }, true],
@@ -10655,18 +10902,20 @@ function _lbcRender(){
   const cb = (id, label, on) => '<label><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '>' + label + '</label>';
   const saved = s.tokenSaved && !_lbcNewToken;
   const tokenHtml = saved
-    ? '<div class="lbc-note" style="margin-top:0;">A token for the bot account is saved in this browser. ' +
+    ? '<div class="lbc-note" style="margin-top:12px;">A token for the bot account is saved in this browser. ' +
       '<button type="button" class="lbc-link" onclick="_lbcNewToken=true;_lbcRender();">Use a different token</button> · ' +
       '<button type="button" class="lbc-link" onclick="lbcForgetToken()">Forget it</button></div>'
-    : '<input type="password" id="lbc-token" autocomplete="off" spellcheck="false" placeholder="Paste the bot account’s token (lip_…)">' +
-      '<div class="lbc-note">No token yet? Open “New to this?” below — steps 1–4 get you one, and the ' +
+    : '<label class="lbc-label" for="lbc-token">The bot account’s token</label>' +
+      '<input type="password" id="lbc-token" autocomplete="off" spellcheck="false" placeholder="Paste it here (lip_…)">' +
+      '<div class="lbc-note">No token yet? Open “New to this?” above — steps 1–4 get you one, and the ' +
       '<a href="' + LBC_TOKEN_URL.replace(/&/g, '&amp;') + '" target="_blank" rel="noopener">make a token ↗</a> ' +
       'link ticks the bot permission for you.</div>';
   body.innerHTML =
     '<p>This tab will play on Lichess as your bot account, with the bot set up in this builder.</p>' +
     '<div class="lbc-h">The bot</div><dl class="lbc-sum">' + _lbcSummary() + '</dl>' +
     '<div class="lbc-note">Each game’s time control and colours come from the challenge.</div>' +
-    '<div class="lbc-h">Lichess bot account</div>' + tokenHtml + _lbcGuide() +
+    _lbcMatchHtml() +
+    '<div class="lbc-h">Lichess bot account</div>' + _lbcGuide() + tokenHtml +
     '<div class="lbc-h">Accept challenges</div>' +
     '<div class="lbc-note" style="margin-top:0;">Casual games only — rated challenges are declined. ' +
       'A bot’s strength can be adjusted from game to game, so it has no rating of its own.</div>' +
@@ -10844,9 +11093,15 @@ function equalizeEngineSubHeights(){ /* panels stack now; nothing to equalize */
    are a tab strip now (see PHONE — ENGINE PICKER) and never leave the top of
    the section, so there is nothing to dig out from under — and a tab that
    blanks its own pane when you tap it is a trap, not a shortcut. Both layouts
-   just select. */
+   just select.
+
+   This is the user's own pick, so it is where leaving Maia gets explained.
+   Not in selEngineMode: that is also how the board's quick picker and a loaded
+   preset reach this panel, usually while nobody is looking at it. */
 function selEngineCard(card){
+  const hadMaia = !_botHasNoMaia(), eloBefore = currentElo;
   selEngineMode(card);
+  if(hadMaia && _botHasNoMaia()) _mgLostMaia(eloBefore);
 }
 
 // Repeats the selected card's blurb below its controls on phones; see the
@@ -11148,7 +11403,7 @@ function syncControlGating(){
   // Conviction acts on picks from a distribution (pickFromProbs) — Maia and
   // the opening book — and not at all under Blind Conviction.
   const pickWhy = g.blind
-    ? 'Blind conviction is on: every move is the personality\'s favorite within the Budget, so there is no share to set.'
+    ? 'Blind conviction is on: its Choice mix, under the switch in Personality, says how often it plays each of the personality\'s favorites, so this share has nothing to act on.'
     : g.flounderOnly
     ? 'Flounder picks each move by its evaluation, not from a distribution, so this has nothing to act on. It applies to Maia and opening-book moves.'
     : '';
@@ -11175,7 +11430,7 @@ function syncControlGating(){
   // (hustlerPhaseTemp, which botMaiaBaseTemp reads first on every engine).
   const tz = document.querySelector('#engine-temp-col .temp-slider-zone');
   _setWhy(tz, g.blind
-      ? 'Blind conviction is on: each move is chosen by the personality, not sampled, so temperature has nothing to act on.'
+      ? 'Blind conviction is on: each move is one of the personality\'s choices, drawn by its Choice mix, not sampled from Maia, so temperature has nothing to act on.'
       : g.hustler
       ? 'Coffeehouse Hustler sets the temperature itself, by game phase: 5.0 in the opening, easing to 0.6 by the endgame. Move any personality slider, or pick another preset, to set it here.'
       : '', { target: document.getElementById('temp-t-slider'), after: true });
@@ -11210,11 +11465,8 @@ function syncControlGating(){
   // ── Premove ───────────────────────────────────────────────────────────────
   // botPremoveArm guesses the human's reply with Maia and commits Maia's
   // answer at the bot's own rating; it skips Flounder turns (botPremoveRating).
-  const pmWhy = (baseEngine === 'stockfish' || (baseEngine === 'hybrid' && g.maiaWeight === 0))
-      ? 'Premove guesses your reply with Maia and commits Maia’s answer — a bot that only plays Flounder has neither, so it never premoves.'
-    : !_bcpMaiaReady
-      ? 'Premove needs the Maia 3 model — download it in the Engine section.'
-    : '';
+  _premoveEngineGate();
+  const pmWhy = _premoveWhy();
   const pmShare = (baseEngine === 'hybrid' && g.totalWeight > 0 && g.maiaWeight < g.totalWeight)
     ? Math.round(100 * g.maiaWeight / g.totalWeight) : null;
   _setTogWhy('cb-premove', pmWhy || (pmShare != null
@@ -12061,8 +12313,9 @@ function _syncTempScaleLabels(){
       + 'about 195 here and c4 overtakes e4; from then on a cold bot plays c4 and means it. '
       + '<b>g4</b> is the personality\'s real favourite, but only 0.4% of players choose it: '
       + 'the personality barely lifts it and Conviction never plays it. <b>Blind conviction</b> '
-      + 'does — Played becomes the one move it chooses: its favourite within the Budget (g4 '
-      + 'costs about 90 cp here) among the moves the Move Distribution Range lets in. '
+      + 'does — Played becomes its choices among the moves the Move Distribution Range lets in: '
+      + 'its favourite within the Budget (g4 costs about 90 cp here) as often as its '
+      + '<b>Choice mix</b> says, its next choices within the Budget the rest of the time. '
       + 'The Budget dial here is the same one as the '
       + 'Personality section\'s Centipawmeter; move either.';
 }
@@ -12118,17 +12371,26 @@ function _chartInRange(probs){
   return kept.map(p => p / s);
 }
 
-// Blind Conviction's pick over the chart's moves (blindConvictionPick): the
-// personality's favourite among the moves in range, ties to the more popular,
-// that costs no more than the Budget against Maia's most popular move. One
-// move, every time — so the Played bar is 100% on it.
-function _chartBlindPlayed(all, inRange, budgetCp){
+// Blind Conviction's picks over the chart's moves (blindConvictionPick): the
+// personality's order among the moves in range, ties to the more popular, kept
+// to those that cost no more than the Budget against Maia's most popular move.
+// The first four of those share the Played bar by the Choice mix (mix, the
+// builder's own when not given), a share with no move to take it passing to the
+// rest in proportion, as the engine plays it.
+function _chartBlindPlayed(all, inRange, budgetCp, mix){
+  mix = mix || _blindMix();
   const top = all.indexOf(Math.max(...all));
   const order = inRange.map((p, i) => i).filter(i => inRange[i] > 0)
     .sort((a, b) => ((PERS_CHART_PREF[b] || 0) - (PERS_CHART_PREF[a] || 0)) || (all[b] - all[a]));
   const cost = i => TEMP_CHART_MOVES[i].cp - TEMP_CHART_MOVES[top].cp;
-  const pick = order.find(i => cost(i) <= budgetCp);
-  return all.map((p, i) => i === (pick != null ? pick : top) ? 1 : 0);
+  const within = order.filter(i => cost(i) <= budgetCp).slice(0, BLIND_MIX_N);
+  const out = all.map(() => 0);
+  if(!within.length){ out[top] = 1; return out; }
+  const w = within.map((i, k) => Math.max(0, +mix[k] || 0));
+  const s = w.reduce((a, b) => a + b, 0);
+  if(!(s > 0)){ out[within[0]] = 1; return out; }
+  within.forEach((i, k) => { out[i] = w[k] / s; });
+  return out;
 }
 
 // A share as the chart's labels print it: whole percents, one decimal under
@@ -12388,9 +12650,45 @@ function _convictionPct(){
 }
 // Blind Conviction (blindConvictionPick): the personality alone picks the
 // move, so Conviction's share and the temperature have nothing to act on —
-// syncControlGating greys them and says why.
+// syncControlGating greys them and says why. Its own Choice mix says how often
+// it plays its first to fourth choice within the Budget.
 function _blindConviction(){
   return !!document.getElementById('cb-blind-conviction')?.checked;
+}
+const BLIND_MIX_N = 4;
+// The mix as the engine reads it (blindChoicePctsFrom): four whole shares,
+// 0-100; all 0 is the favourite every move.
+function _blindMix(){
+  const a = [];
+  for(let i = 0; i < BLIND_MIX_N; i++){
+    const v = +(document.getElementById('n-blind-mix-' + i)?.value);
+    a.push(Number.isFinite(v) ? Math.max(0, Math.min(100, Math.round(v))) : 0);
+  }
+  return a.some(v => v > 0) ? a : [100, 0, 0, 0];
+}
+function setBlindMix(mix){
+  for(let i = 0; i < BLIND_MIX_N; i++){
+    const el = document.getElementById('n-blind-mix-' + i);
+    if(el) el.value = Math.max(0, Math.min(100, Math.round(+(mix || [])[i] || 0)));
+  }
+  onBlindMix();
+}
+function _blindMixNote(){
+  const mix = _blindMix();
+  const sum = mix.reduce((a, b) => a + b, 0);
+  const say = mix[0] === 100 && !mix[1] && !mix[2] && !mix[3]
+    ? 'Its favorite within the Budget, every move: the same game gets the same answers.'
+    : 'How often it plays its favorite within the Budget, its second choice within it, its third and its fourth.';
+  const scale = sum !== 100 ? ' These add to ' + sum + ', so they are used in proportion: '
+      + mix.map(v => Math.round(v * 100 / sum)).join(' / ') + '%.' : '';
+  return say + scale + ' A choice the Budget rules out passes its share to the ones left.';
+}
+function onBlindMix(){
+  const note = document.getElementById('blind-mix-note');
+  if(note) note.textContent = _blindMixNote();
+  if(typeof _currentTempValue !== 'undefined'){
+    try{ drawTempChart(_currentTempValue); }catch(e){}
+  }
 }
 function setBlindConviction(on){
   // One value, two switches: the Personality section's and its mirror by the
@@ -12399,8 +12697,12 @@ function setBlindConviction(on){
     const cb = document.getElementById('cb-blind-conviction' + s);
     if(cb) cb.checked = !!on;
   });
+  const mixWrap = document.getElementById('blind-mix-wrap');
+  if(mixWrap) mixWrap.style.display = on ? '' : 'none';
+  const mixNote = document.getElementById('blind-mix-note');
+  if(mixNote) mixNote.textContent = _blindMixNote();
   syncControlGating();
-  // The chart's Played bar becomes the one move Blind Conviction chooses.
+  // The chart's Played bar becomes Blind Conviction's choices, by its mix.
   try{ drawTempChart(_currentTempValue); }catch(e){}
 }
 function onConvictionSlider(v){
@@ -13438,7 +13740,7 @@ function openThinkTimeSection(){
 function qsEnginePick(eng){
   const card = document.querySelector('#engine-mode-grid .mcard[data-engine="' + eng + '"]');
   if(!card) return;
-  selEngineMode(card);   // what the card's own onclick runs (selEngineCard)
+  selEngineCard(card);   // what the card's own onclick runs
   qsSyncEngine();
 }
 // The Elometer's own path: snapped to its 25s and held to the engine's range.
@@ -14197,8 +14499,10 @@ function onRepSearch(query, color){
   const results = ECO_DATA.filter(e =>
     e.n.toLowerCase().includes(q) || e.e.toLowerCase().startsWith(q)
   ).slice(0, 30);
-  if(!results.length){ dd.classList.remove('visible'); return; }
-  dd.innerHTML = results.map(e=>`
+  const noneHit = !_repHasNone(color) &&
+    ('no opening sequence'.startsWith(q) || 'none'.startsWith(q) || 'skip'.startsWith(q));
+  if(!results.length && !noneHit){ dd.classList.remove('visible'); return; }
+  dd.innerHTML = (noneHit ? _repNoneOptionHTML(color) : '') + results.map(e=>`
     <div class="eco-option" onclick="addRepFromSearch('${e.e.replace(/'/g,"\\'")}','${e.n.replace(/'/g,"\\'").replace(/"/g,'&quot;')}','${color}')">
       <span class="eco-code">${e.e}</span>
       <span class="eco-name">${e.n}</span>
@@ -14278,6 +14582,7 @@ function _repRenderFamilies(color){
       '<span class="eco-chev" aria-hidden="true">›</span></div>';
   };
   dd.innerHTML =
+    (_repHasNone(color) ? '' : '<div class="eco-group">Some games without an opening</div>' + _repNoneOptionHTML(color)) +
     '<div class="eco-group">Popular as ' + (color === 'white' ? 'White' : 'Black') + '</div>' +
     REP_POPULAR[color].filter(n => fam.lines.has(n)).map(row).join('') +
     '<div class="eco-group">All openings A–Z</div>' +
@@ -14320,6 +14625,32 @@ function repBrowseFamily(ev, color, idx){
   dd.dataset.view = 'family';
   dd.scrollTop = 0;
 }
+/* ── Repertoire: "No opening sequence" ─────────────────────────────────────
+   A slot with a percentage like any opening, but no line: in its share of the
+   games the bot skips the whole opening sequence (the repertoire and the Main
+   Line) and plays its own move selection from move 1. The app takes it off
+   the matcher's slots and rolls it once a game (botOpeningNoneShare, botStart).
+   One per colour. */
+const REP_NONE_NAME = 'No opening sequence';
+function _repHasNone(color){ return repSlots[color].some(sl => sl.none); }
+function _repNoneOptionHTML(color){
+  return '<div class="eco-option eco-none" onclick="repAddNone(event,\'' + color + '\')">' +
+    '<span class="eco-code">None</span>' +
+    '<span class="eco-name">No opening sequence: follow the bot’s own move selection</span></div>';
+}
+function repAddNone(ev, color){
+  if(ev) ev.stopPropagation();
+  const inp = document.getElementById('rep-search-input-' + color);
+  if(inp) inp.value = '';
+  const dd = document.getElementById('rep-dropdown-' + color);
+  if(dd) dd.classList.remove('visible');
+  _repSyncBrowseBtn(color);
+  if(_repHasNone(color)) return;
+  repSlots[color].push({ code:'', name:REP_NONE_NAME, pct:0, none:true });
+  autoDistributeRepPct(color);
+  renderRepSlots(color);
+  if(!repOn[color]) setOpStage(color, 'rep', true);
+}
 function repAddEco(ev, color, i){
   if(ev) ev.stopPropagation();
   const e = ECO_DATA[i];
@@ -14343,9 +14674,9 @@ function renderRepSlots(color){
   if(!container) return;
   container.innerHTML = slots.length
     ? slots.map((s,i)=>`
-        <div class="rep-slot">
-          <span class="rep-code">${s.code}</span>
-          <span class="rep-name">${s.name}</span>
+        <div class="rep-slot${s.none ? ' rep-none' : ''}">
+          <span class="rep-code">${s.none ? 'None' : s.code}</span>
+          <span class="rep-name">${s.none ? 'No opening sequence: the bot’s own moves' : s.name}</span>
           <div class="rep-pct">
             <input type="number" min="0" max="100" step="5" value="${s.pct}"
               oninput="onRepPctChange(${i},+this.value,'${color}')"> %
@@ -14356,6 +14687,17 @@ function renderRepSlots(color){
   if(totalEl) totalEl.style.display = slots.length ? 'block' : 'none';
   updateRepTotal(color);
 }
+// Under the total: what the No opening share does, in this colour's numbers.
+function _repNoneNote(color){
+  const slots = repSlots[color];
+  const none = slots.filter(sl => sl.none).reduce((a, sl) => a + (+sl.pct || 0), 0);
+  if(!slots.some(sl => sl.none)) return '';
+  const total = slots.reduce((a, sl) => a + (+sl.pct || 0), 0);
+  const pct = total > 0 ? Math.round(none * 100 / total) : 0;
+  return 'No opening sequence: in ' + pct + '% of games as ' + (color === 'white' ? 'White' : 'Black') +
+    ' the bot skips the repertoire and the Main Line and plays its own moves from move 1. ' +
+    'The engine’s own Lichess book, if it is on, still plays.';
+}
 
 function updateRepTotal(color){
   const total = repSlots[color].reduce((s,sl)=>s+sl.pct,0);
@@ -14363,6 +14705,15 @@ function updateRepTotal(color){
   if(!el) return;
   el.textContent = 'Total: ' + total + '%';
   el.className = 'rep-total ' + (total===100?'ok':'err');
+  let note = document.getElementById('rep-none-note-' + color);
+  const text = _repNoneNote(color);
+  if(text && !note){
+    note = document.createElement('div');
+    note.id = 'rep-none-note-' + color;
+    note.className = 'rep-none-note';
+    el.insertAdjacentElement('afterend', note);
+  }
+  if(note){ note.textContent = text; note.style.display = text ? '' : 'none'; }
 }
 
 function removeRepSlot(i,color){

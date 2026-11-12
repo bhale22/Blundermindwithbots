@@ -51,7 +51,7 @@ const defs = await page.evaluate(() => ({
   lowClk:  document.getElementById('cb-premove-clock').checked,
 }));
 ok(defs.rate === '80',    'default premove rate is 80% (' + defs.rate + ')');
-ok(defs.conf === '85',    'default min confidence is 85% (' + defs.conf + ')');
+ok(defs.conf === '95',    'default min confidence is 95% (' + defs.conf + ')');
 ok(defs.bust === '2',     'default bust delay is 2s (' + defs.bust + ')');
 ok(defs.opp  === '30',    'default opponent-clock threshold is 30s');
 ok(defs.own  === '30',    'default bot-clock threshold is 30s');
@@ -343,7 +343,7 @@ await page.waitForTimeout(200);
 ok(await page.locator('#pmt-overlay').evaluate(e => e.classList.contains('open')),
    'button opens the explainer');
 
-const note = await page.locator('.pmt-body').textContent();
+const note = await page.locator('#pmt-overlay .pmt-body').textContent();
 ok(/what's a premove\?/i.test(note),      'explains what a premove is first');
 ok(/what's a premove trap\?/i.test(note), 'then explains what a trap is');
 ok(note.search(/what's a premove\?/i) < note.search(/what's a premove trap\?/i),

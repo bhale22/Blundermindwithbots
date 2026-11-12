@@ -2078,7 +2078,33 @@ function pickFromProbs(moveProbs, temperature) {
 // than the popular one is always within budget — chosen by a simple formula,
 // it is coincidence, not brilliance. The Budget is purely the centipawn limit
 // here: an argmax does not move when the personality's scale does.
+//
+// The Choice mix (Nov 10 2026) keeps it from repeating itself move for move:
+// how often it plays its favourite within the Budget, its second choice within
+// it, its third and its fourth. A choice the Budget rules out passes its share
+// to the ones left, in proportion. [100, 0, 0, 0] is the favourite every move,
+// as Blind Conviction played before the mix, and what a bot saved before it
+// loads as; the builder starts a new bot at 60/20/15/5.
 var botBlindConviction = false;
+const BLIND_CHOICES = 4;
+var botBlindChoicePcts = [100, 0, 0, 0];
+function blindChoicePctsFrom(v) {
+  if (!Array.isArray(v)) return [100, 0, 0, 0];
+  const a = [];
+  for (let i = 0; i < BLIND_CHOICES; i++) a.push(Math.max(0, Math.min(100, Math.round(+v[i] || 0))));
+  return a.some(x => x > 0) ? a : [100, 0, 0, 0];
+}
+// Which choice to play, 0 = the favourite, out of the first n: weighted by
+// the mix's first n shares, so a share past n goes to the others in proportion.
+function _blindChoiceRoll(n) {
+  const mix = Array.isArray(botBlindChoicePcts) ? botBlindChoicePcts : [100];
+  const w = mix.slice(0, n).map(v => Math.max(0, +v || 0));
+  const s = w.reduce((a, b) => a + b, 0);
+  if (!(s > 0)) return 0;
+  let r = Math.random() * s;
+  for (let i = 0; i < w.length; i++) { r -= w[i]; if (r < 0) return i; }
+  return w.length - 1;
+}
 
 // The personality's order of preference over the candidates. Synchronous: it
 // scores moves against the live board globals, which a premove points at its
@@ -2093,10 +2119,14 @@ function blindConvictionOrder(rawProbs) {
   return cands.sort((a, b) => ((w[b] || 0) - (w[a] || 0)) || ((rawProbs[b] || 0) - (rawProbs[a] || 0)));
 }
 
-// The pick: the first move in that order within the Budget of the most popular
-// move. One probe scores every candidate, so the favourite within budget is
+// The pick: a move in that order within the Budget of the most popular move,
+// the first by default, the second, third or fourth as often as the Choice mix
+// says. One probe scores every candidate, so the favourites within budget are
 // found even when the personality's top choices are all unsound, as a crude
-// heuristic's often are. `evals` skips the probe when the caller has already
+// heuristic's often are. The choice is rolled before the probe, so a favourite
+// that is the popular move itself still costs no engine time, and a choice
+// past the moves within budget rolls again among those there are: each is
+// played at its share of theirs. `evals` skips the probe when the caller has already
 // scored the moves (Flounder's probe covers every legal one). `strict`, as on
 // the other guards: a premove that cannot be checked is not played. A move the
 // bot must play falls back to the popular move, never to an unchecked favourite.
@@ -2106,7 +2136,9 @@ async function blindConvictionPick(fen, rawProbs, order, strict, evals) {
   for (const m in rawProbs) { if (rawProbs[m] > topP) { topP = rawProbs[m]; top = m; } }
   if (!order || !order.length) return top;
   // Stalemate-seeking throws material on purpose, as under ordinary Conviction.
-  if (order[0] === top || _staleSeekThisMove) return order[0];
+  if (_staleSeekThisMove) return order[0];
+  let want = _blindChoiceRoll(BLIND_CHOICES);
+  if (want === 0 && order[0] === top) return order[0];
   const failed = () => (strict ? null : top);
   try {
     const budget = window._bcpCpBudget != null ? Math.max(0, +window._bcpCpBudget || 0) : 100;
@@ -2116,16 +2148,21 @@ async function blindConvictionPick(fen, rawProbs, order, strict, evals) {
     }
     if (!evals || evals[top] == null) return failed();
     _lastEvalProbe = { fen: fen, evals: evals };
+    const within = [];
     for (const m of order) {
       if (evals[m] == null || evals[top] - evals[m] > budget) continue;
-      if (m !== order[0]) {
-        console.log('[Blind] favourite', order[0], 'is over the', budget,
-          'cp budget vs most-popular', top, '— playing', m);
-      }
-      _cpBudgetVerifiedThisMove = true;
-      return m;
+      within.push(m);
+      if (within.length === BLIND_CHOICES) break;
     }
-    return top;
+    if (!within.length) return top;
+    if (want >= within.length) want = _blindChoiceRoll(within.length);
+    const m = within[want];
+    if (m !== order[0]) {
+      console.log('[Blind] choice', want + 1, 'of', within.length, 'within the', budget,
+        'cp budget vs most-popular', top, '(favourite', order[0] + ') — playing', m);
+    }
+    _cpBudgetVerifiedThisMove = true;
+    return m;
   } catch (e) {
     return failed();
   }
@@ -2911,24 +2948,105 @@ function hustlerPhaseTemp() {
   return 5.0 + fraction * (0.6 - 5.0); // 5.0 → 0.6
 }
 
+// ── The no-engine move ──────────────────────────────────────────────────────
+// What the bot plays on a turn no engine answered and Stockfish can't be asked
+// either: one reply deep, in plain JavaScript on the board's own move generator.
+// Each legal move scores the material it wins, minus the most the opponent's
+// best reply then wins back. So it takes a piece that is free and gives mate in
+// one; it doesn't leave a piece where the reply wins it, or walk into mate in
+// one; and a piece it still defends costs only the trade, so it is not afraid of
+// ordinary exchanges. Moves that tie, as most quiet moves do, are picked between
+// at random. It sees nothing past the reply: no fork a move later, no plan.
+const _QL_VAL  = { P: 1, N: 3, B: 3, R: 5, Q: 9, K: 0 };
+const _QL_MATE = 1000;
+function _botQuickLookMove() {
+  const me = turn, opp = me === 'w' ? 'b' : 'w';
+  const mine = allLegalMoves(board, me, epSq, castling);
+  if (!mine.length) return null;
+  // Material balance now, so a stalemate scores as the draw it is: a loss of
+  // the bot's lead, or a rescue when it is behind.
+  let balance = 0;
+  for (let s = 0; s < 64; s++) {
+    const p = board[s];
+    if (p) balance += (p.color === me ? 1 : -1) * _QL_VAL[p.piece];
+  }
+  const promoOf = (p, to) => (p.piece === 'P' && (to < 8 || to >= 56)) ? 'Q' : null;
+  // What a move takes off the board, en passant included, plus a promotion.
+  const wins = (bd, p, from, to, ep) =>
+    (bd[to] ? _QL_VAL[bd[to].piece] : (p.piece === 'P' && to === ep ? 1 : 0)) +
+    (promoOf(p, to) ? _QL_VAL.Q - 1 : 0);
+
+  let best = -Infinity, pool = [];
+  for (const m of mine) {
+    const p = board[m.from];
+    const promo = promoOf(p, m.to);
+    const bd = applyMove(m.from, m.to, board, epSq, promo);
+    const ep2 = computeEP(m.from, m.to, board);
+    const cst2 = updateCastling(m.from, m.to, p, castling);
+    const replies = allLegalMoves(bd, opp, ep2, cst2);
+    let val;
+    if (!replies.length) {
+      val = inCheck(bd, opp) ? _QL_MATE : -balance;
+    } else {
+      let worst = 0;
+      for (const r of replies) {
+        const q = bd[r.from];
+        const rPromo = promoOf(q, r.to);
+        const bd3 = applyMove(r.from, r.to, bd, ep2, rPromo);
+        let cost = wins(bd, q, r.from, r.to, ep2);
+        // The bot takes the capturer back, if it can.
+        if (cost > 0 && isAttackedBy(r.to, me, bd3)) cost -= _QL_VAL[bd3[r.to].piece];
+        if (inCheck(bd3, me) && !allLegalMoves(bd3, me, computeEP(r.from, r.to, bd),
+            updateCastling(r.from, r.to, q, cst2)).length) cost = _QL_MATE;
+        if (cost > worst) { worst = cost; if (worst >= _QL_MATE) break; }
+      }
+      val = wins(board, p, m.from, m.to, epSq) - worst;
+    }
+    if (val > best) { best = val; pool = [m]; }
+    else if (val === best) pool.push(m);
+  }
+  const m = pool[Math.floor(Math.random() * pool.length)];
+  return sqToUci(m.from, m.to, promoOf(board[m.from], m.to) ? 'q' : '');
+}
+
 // ── Main bot move trigger ────────────────────────────────────────────────────
 // A legal move for a turn every engine failed to answer (see botMakeMove), with
-// the reason shown once per game. Random rather than clever: anything that
-// evaluates needs the engine that has just failed. A capture is preferred, since
-// on average it gives away less than a random quiet move.
+// the reason shown once per game. In order:
+//   1. a short Stockfish search (3 ply, 1 s) when the engine is loaded and was
+//      not the thing that went quiet — this turn's pick being one the board
+//      refused, say;
+//   2. otherwise the one-reply look above, which needs no engine at all.
+// A random move is only for a position the look can't score, which should not
+// happen. _botLastResortKind says which ran ('sf' | 'look' | 'random').
+const SF_QUICK_DEPTH = 3;
+const SF_QUICK_MS = 1000;
 let _botLastResortGen = -1;
-function _botLastResortMove(fen, reason) {
-  let moves = [];
-  try { moves = _fenLegalUcis(fen); } catch (e) { moves = []; }
-  if (!moves.length) return null;
-  const caps = moves.filter(u => { const m = uciToSq(u); return m && board[m.to]; });
-  const pool = caps.length ? caps : moves;
-  const uci = pool[Math.floor(Math.random() * pool.length)];
+let _botLastResortKind = null;
+async function _botLastResortMove(fen, reason) {
+  let uci = null, kind = null;
+  if (typeof sfReady !== 'undefined' && sfReady && !sfLastSearchSilent) {
+    try {
+      const q = await sfGetMove(fen, SF_QUICK_DEPTH, true,
+        { timeoutMs: SF_QUICK_MS, fullStrength: true });
+      if (q && _botUciIsLegal(q)) { uci = q; kind = 'sf'; }
+    } catch (e) {}
+  }
+  if (!uci) {
+    try { uci = _botQuickLookMove(); kind = 'look'; } catch (e) { uci = null; }
+  }
+  if (!uci) {
+    let moves = [];
+    try { moves = _fenLegalUcis(fen); } catch (e) { moves = []; }
+    if (!moves.length) return null;
+    uci = moves[Math.floor(Math.random() * moves.length)];
+    kind = 'random';
+  }
+  _botLastResortKind = kind;
   lastBotMoveSource = 'Fallback';
   const why = reason || ((typeof sfUnsupported !== 'undefined' && sfUnsupported)
-    ? sfUnsupportedText() + ' Until then the bot plays random moves.'
+    ? sfUnsupportedText() + ' Until then the bot plays simple moves that look only one reply ahead.'
     : 'The chess engine didn’t answer in time on this device, so the bot played a quick move instead.');
-  console.warn('[engine] no engine move this turn — last-resort ' + uci);
+  console.warn('[engine] no engine move this turn — last-resort ' + uci + ' (' + kind + ')');
   if (_botLastResortGen !== _botGameGen) {
     _botLastResortGen = _botGameGen;
     if (typeof showEngineWarning === 'function') showEngineWarning('⚠ ' + why);
@@ -3408,7 +3526,11 @@ async function botMakeMove() {
         let r2 = Math.random() * total;
         let chosen = slots[slots.length - 1];
         for (const sl of slots) { r2 -= sl.weight; if (r2 <= 0) { chosen = sl; break; } }
-        await sfInit(); // always init SF in case maia fails
+        // Started for the slots that use it, but a blend whose slots are all
+        // Maia must not wait on it: when Stockfish couldn't start, this threw,
+        // and every move of a two-Maia blend (Drunken Master) became the last
+        // resort although neither slot needs Stockfish.
+        try { await sfInit(); } catch (e) {}
         if (chosen.type === 'maia') {
           // Maia slot = the Maia3 neural model at the slot's own ELO.
           // (Previously this called the Lichess explorer and fell back to
@@ -3485,16 +3607,18 @@ async function botMakeMove() {
   // A Lichess draw offer is answered before the move that would decline it.
   const _tookDraw = await _botAnswerDrawFirst();
   if (_myGen !== _botGameGen) return;
-
-  botThinking = false;
-  document.getElementById('botStatus').textContent = '';
-  if (_tookDraw) return;
+  if (_tookDraw) {
+    botThinking = false;
+    document.getElementById('botStatus').textContent = '';
+    return;
+  }
 
   // LAST RESORT. Every engine path can come back empty: Stockfish failed to
   // load, or each search ran out of time on a slow device. Nothing retries a
   // turn, so an empty one used to freeze the game for good — silently, and on
   // Lichess until the bot lost on time. Any legal move beats that; the warning
-  // says why the bot is playing one.
+  // says why the bot is playing one. botThinking stays set through it, since
+  // its quick search is a wait another botMakeMove must not slip into.
   //
   // A pick the board will not play is the same empty turn, and it was harder to
   // see: the legality check below skipped it with no error and a blank status.
@@ -3505,8 +3629,11 @@ async function botMakeMove() {
     _lastResortWhy = 'The bot chose a move the board wouldn’t accept, so it played a quick move instead.';
   }
   if (!uciMove && botActive && !gameOver && turn === botColor) {
-    uciMove = _botLastResortMove(fen, _lastResortWhy);
+    uciMove = await _botLastResortMove(fen, _lastResortWhy);
+    if (_myGen !== _botGameGen) return;
   }
+  botThinking = false;
+  document.getElementById('botStatus').textContent = '';
 
   if (uciMove && botActive) {
     const mv = uciToSq(uciMove);
@@ -3900,7 +4027,7 @@ function ghostSoloDepth() { return ghostDepth(); }
 //                      setting the trap
 var botPremoveEnabled       = false;
 var botPremoveRatePct       = 80;
-var botPremoveMinPct        = 85;
+var botPremoveMinPct        = 95;
 var botPremoveOnlyLowClock  = false;
 var botPremoveOppClockSecs  = 30;
 var botPremoveClockSecs     = 30;
@@ -3963,12 +4090,17 @@ function botPremoveShouldArm() {
 // Maia slot — at that slot's rating — so a premove never plays an engine the
 // blend was not going to play.
 //
-// A premove is a ONE-SECOND decision: committed before the clock for that move
-// even starts. So it is played at the rating and temperature the time-pressure
-// curves give for PREMOVE_THINK_SEC of thought — the same curves every other
-// move reads. Where time pressure does not apply (no clock, or a Fixed /
-// Instantaneous / Mirror pace) that is simply the bot's own rating.
-const PREMOVE_THINK_SEC = 1;
+// A premove is worked out while the opponent thinks and fired the instant they
+// move: a human premoving has had the opponent's whole think to see it coming,
+// and only does it on a reply that is all but forced (the Min confidence
+// default is 95%). So it is played at the rating and temperature the
+// time-pressure curves give for PREMOVE_THINK_SEC of thought, 5 s — the same
+// curves every other move reads. It was 1 s until Nov 10 2026, when Curve A
+// became the Regan model for each Lichess game's clock: at 1 s a bot playing
+// like 1775 premoved like Maia 1060 in 10+5. Where time pressure does not apply
+// (no clock, or a Fixed / Instantaneous / Mirror pace) that is simply the bot's
+// own rating.
+const PREMOVE_THINK_SEC = 5;
 function botPremoveRating() {
   var tab = (typeof botTab !== 'undefined') ? botTab : null;
   if (tab === 'sf' || tab === 'lcsf') return { skip: true };
@@ -4074,8 +4206,8 @@ async function _botPremoveArmRun(pmRating) {
     // near-ties decisive: in one real game Maia rated Bxd5 34.4% and Nxd5
     // 32.4%, and argmax always took the former.
     //
-    // The temperature is the one curve B gives for a 1-second think, like the
-    // rating above (PREMOVE_THINK_SEC). The complexity adjustment is left out:
+    // The temperature is the one curve B gives for the premove's think, like
+    // the rating above (PREMOVE_THINK_SEC). The complexity adjustment is left out:
     // it reads the probe of the position before the human's move, which is not
     // this one.
     // applyMoveAttractors scores each candidate by simulating it against the

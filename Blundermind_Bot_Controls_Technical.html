@@ -312,7 +312,7 @@ dial    = ELO 600–2400, step 25</div>
     <thead><tr><th>Setting</th><th>Default</th><th>Behaviour</th></tr></thead>
     <tbody>
       <tr><td><code>botPremoveEnabled</code></td><td>false</td><td>Master switch. Requires the Maia 3 model — the prediction runs on it.</td></tr>
-      <tr><td><code>botPremoveMinPct</code></td><td>85</td><td>Minimum Maia confidence in the predicted human reply. <strong>The setting that decides whether the bot reads as fast or as broken.</strong> 85% ≈ near-forced replies only, matching real play. Far below ~60% it premoves into positions no human would, and play looks erratic.</td></tr>
+      <tr><td><code>botPremoveMinPct</code></td><td>95</td><td>Minimum Maia confidence in the predicted human reply. <strong>The setting that decides whether the bot reads as fast or as broken.</strong> 95% ≈ all-but-forced replies only, matching real play. Far below ~60% it premoves into positions no human would, and play looks erratic.</td></tr>
       <tr><td><code>botPremoveRatePct</code></td><td>80</td><td>Percentage of the moves that <em>already cleared</em> the confidence bar — <strong>not</strong> a percentage of all moves.</td></tr>
       <tr><td><code>botPremoveOnlyLowClock</code></td><td>false</td><td>Optional master gate restricting premoving to time scrambles.</td></tr>
       <tr><td><code>botPremoveOppClockSecs</code></td><td>30</td><td>Trigger: opponent at or below this. The aggressive reason humans premove — keep their clock burning and play for the flag. 0 = off.</td></tr>

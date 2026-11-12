@@ -206,9 +206,18 @@ function sfGhostGetMove(fen, depth, excludeUci, hypBoard, hypTurn, hypEp, hypCas
   });
 }
 
-function sfGetMove(fen, levelOrDepth, isDepth=false) {
+// True when the latest sfGetMove ran out its whole time without the engine
+// reporting even a one-ply best line: it is not answering, so the bot's last
+// resort does not wait on it again (see _botLastResortMove).
+let sfLastSearchSilent = false;
+
+// opts.timeoutMs: the safety timeout (default 5 s).
+// opts.fullStrength: with isDepth, search at Skill Level 20 rather than
+//   whatever level the last request left set.
+function sfGetMove(fen, levelOrDepth, isDepth=false, opts) {
   return new Promise((resolve) => {
     if (!sfWorker || !sfReady) { resolve(null); return; }
+    sfLastSearchSilent = false;
     // Cancel any pending request — its search is still running, so the engine
     // still owes us a bestmove for it; mark it for discard.
     if (sfPendingResolve) {
@@ -222,12 +231,11 @@ function sfGetMove(fen, levelOrDepth, isDepth=false) {
     // ucinewgame is sent once per game in botStart — not here, as clearing the TT
     // every move would throw away the positional knowledge SF just built up.
     // Only update Skill Level when it actually changes.
-    if (!isDepth) {
-      const clampedLevel = Math.max(0, Math.min(20, levelOrDepth));
-      if (clampedLevel !== sfCurrentSkillLevel) {
-        sfWorker.postMessage('setoption name Skill Level value ' + clampedLevel);
-        sfCurrentSkillLevel = clampedLevel;
-      }
+    const wantLevel = !isDepth ? Math.max(0, Math.min(20, levelOrDepth))
+                    : (opts && opts.fullStrength) ? 20 : null;
+    if (wantLevel !== null && wantLevel !== sfCurrentSkillLevel) {
+      sfWorker.postMessage('setoption name Skill Level value ' + wantLevel);
+      sfCurrentSkillLevel = wantLevel;
     }
     sfWorker.postMessage('position fen ' + fen);
     // Levels at or below 0 run Skill 0 (the clamp above floors there) and are
@@ -250,10 +258,11 @@ function sfGetMove(fen, levelOrDepth, isDepth=false) {
         const pv = sfMovePv;
         sfMovePv = null;
         try { sfWorker.postMessage('stop'); } catch (e) {}
+        if (!pv) sfLastSearchSilent = true;
         console.warn('[engine] move search timed out' + (pv ? ' — playing its best line so far' : ' with no move'));
         resolve(pv || null);
       }
-    }, 5000);
+    }, (opts && opts.timeoutMs > 0) ? opts.timeoutMs : 5000);
   });
 }
 
