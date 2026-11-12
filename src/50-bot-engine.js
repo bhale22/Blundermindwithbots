@@ -2948,24 +2948,105 @@ function hustlerPhaseTemp() {
   return 5.0 + fraction * (0.6 - 5.0); // 5.0 → 0.6
 }
 
+// ── The no-engine move ──────────────────────────────────────────────────────
+// What the bot plays on a turn no engine answered and Stockfish can't be asked
+// either: one reply deep, in plain JavaScript on the board's own move generator.
+// Each legal move scores the material it wins, minus the most the opponent's
+// best reply then wins back. So it takes a piece that is free and gives mate in
+// one; it doesn't leave a piece where the reply wins it, or walk into mate in
+// one; and a piece it still defends costs only the trade, so it is not afraid of
+// ordinary exchanges. Moves that tie, as most quiet moves do, are picked between
+// at random. It sees nothing past the reply: no fork a move later, no plan.
+const _QL_VAL  = { P: 1, N: 3, B: 3, R: 5, Q: 9, K: 0 };
+const _QL_MATE = 1000;
+function _botQuickLookMove() {
+  const me = turn, opp = me === 'w' ? 'b' : 'w';
+  const mine = allLegalMoves(board, me, epSq, castling);
+  if (!mine.length) return null;
+  // Material balance now, so a stalemate scores as the draw it is: a loss of
+  // the bot's lead, or a rescue when it is behind.
+  let balance = 0;
+  for (let s = 0; s < 64; s++) {
+    const p = board[s];
+    if (p) balance += (p.color === me ? 1 : -1) * _QL_VAL[p.piece];
+  }
+  const promoOf = (p, to) => (p.piece === 'P' && (to < 8 || to >= 56)) ? 'Q' : null;
+  // What a move takes off the board, en passant included, plus a promotion.
+  const wins = (bd, p, from, to, ep) =>
+    (bd[to] ? _QL_VAL[bd[to].piece] : (p.piece === 'P' && to === ep ? 1 : 0)) +
+    (promoOf(p, to) ? _QL_VAL.Q - 1 : 0);
+
+  let best = -Infinity, pool = [];
+  for (const m of mine) {
+    const p = board[m.from];
+    const promo = promoOf(p, m.to);
+    const bd = applyMove(m.from, m.to, board, epSq, promo);
+    const ep2 = computeEP(m.from, m.to, board);
+    const cst2 = updateCastling(m.from, m.to, p, castling);
+    const replies = allLegalMoves(bd, opp, ep2, cst2);
+    let val;
+    if (!replies.length) {
+      val = inCheck(bd, opp) ? _QL_MATE : -balance;
+    } else {
+      let worst = 0;
+      for (const r of replies) {
+        const q = bd[r.from];
+        const rPromo = promoOf(q, r.to);
+        const bd3 = applyMove(r.from, r.to, bd, ep2, rPromo);
+        let cost = wins(bd, q, r.from, r.to, ep2);
+        // The bot takes the capturer back, if it can.
+        if (cost > 0 && isAttackedBy(r.to, me, bd3)) cost -= _QL_VAL[bd3[r.to].piece];
+        if (inCheck(bd3, me) && !allLegalMoves(bd3, me, computeEP(r.from, r.to, bd),
+            updateCastling(r.from, r.to, q, cst2)).length) cost = _QL_MATE;
+        if (cost > worst) { worst = cost; if (worst >= _QL_MATE) break; }
+      }
+      val = wins(board, p, m.from, m.to, epSq) - worst;
+    }
+    if (val > best) { best = val; pool = [m]; }
+    else if (val === best) pool.push(m);
+  }
+  const m = pool[Math.floor(Math.random() * pool.length)];
+  return sqToUci(m.from, m.to, promoOf(board[m.from], m.to) ? 'q' : '');
+}
+
 // ── Main bot move trigger ────────────────────────────────────────────────────
 // A legal move for a turn every engine failed to answer (see botMakeMove), with
-// the reason shown once per game. Random rather than clever: anything that
-// evaluates needs the engine that has just failed. A capture is preferred, since
-// on average it gives away less than a random quiet move.
+// the reason shown once per game. In order:
+//   1. a short Stockfish search (3 ply, 1 s) when the engine is loaded and was
+//      not the thing that went quiet — this turn's pick being one the board
+//      refused, say;
+//   2. otherwise the one-reply look above, which needs no engine at all.
+// A random move is only for a position the look can't score, which should not
+// happen. _botLastResortKind says which ran ('sf' | 'look' | 'random').
+const SF_QUICK_DEPTH = 3;
+const SF_QUICK_MS = 1000;
 let _botLastResortGen = -1;
-function _botLastResortMove(fen, reason) {
-  let moves = [];
-  try { moves = _fenLegalUcis(fen); } catch (e) { moves = []; }
-  if (!moves.length) return null;
-  const caps = moves.filter(u => { const m = uciToSq(u); return m && board[m.to]; });
-  const pool = caps.length ? caps : moves;
-  const uci = pool[Math.floor(Math.random() * pool.length)];
+let _botLastResortKind = null;
+async function _botLastResortMove(fen, reason) {
+  let uci = null, kind = null;
+  if (typeof sfReady !== 'undefined' && sfReady && !sfLastSearchSilent) {
+    try {
+      const q = await sfGetMove(fen, SF_QUICK_DEPTH, true,
+        { timeoutMs: SF_QUICK_MS, fullStrength: true });
+      if (q && _botUciIsLegal(q)) { uci = q; kind = 'sf'; }
+    } catch (e) {}
+  }
+  if (!uci) {
+    try { uci = _botQuickLookMove(); kind = 'look'; } catch (e) { uci = null; }
+  }
+  if (!uci) {
+    let moves = [];
+    try { moves = _fenLegalUcis(fen); } catch (e) { moves = []; }
+    if (!moves.length) return null;
+    uci = moves[Math.floor(Math.random() * moves.length)];
+    kind = 'random';
+  }
+  _botLastResortKind = kind;
   lastBotMoveSource = 'Fallback';
   const why = reason || ((typeof sfUnsupported !== 'undefined' && sfUnsupported)
-    ? sfUnsupportedText() + ' Until then the bot plays random moves.'
+    ? sfUnsupportedText() + ' Until then the bot plays simple moves that look only one reply ahead.'
     : 'The chess engine didn’t answer in time on this device, so the bot played a quick move instead.');
-  console.warn('[engine] no engine move this turn — last-resort ' + uci);
+  console.warn('[engine] no engine move this turn — last-resort ' + uci + ' (' + kind + ')');
   if (_botLastResortGen !== _botGameGen) {
     _botLastResortGen = _botGameGen;
     if (typeof showEngineWarning === 'function') showEngineWarning('⚠ ' + why);
@@ -3445,7 +3526,11 @@ async function botMakeMove() {
         let r2 = Math.random() * total;
         let chosen = slots[slots.length - 1];
         for (const sl of slots) { r2 -= sl.weight; if (r2 <= 0) { chosen = sl; break; } }
-        await sfInit(); // always init SF in case maia fails
+        // Started for the slots that use it, but a blend whose slots are all
+        // Maia must not wait on it: when Stockfish couldn't start, this threw,
+        // and every move of a two-Maia blend (Drunken Master) became the last
+        // resort although neither slot needs Stockfish.
+        try { await sfInit(); } catch (e) {}
         if (chosen.type === 'maia') {
           // Maia slot = the Maia3 neural model at the slot's own ELO.
           // (Previously this called the Lichess explorer and fell back to
@@ -3522,16 +3607,18 @@ async function botMakeMove() {
   // A Lichess draw offer is answered before the move that would decline it.
   const _tookDraw = await _botAnswerDrawFirst();
   if (_myGen !== _botGameGen) return;
-
-  botThinking = false;
-  document.getElementById('botStatus').textContent = '';
-  if (_tookDraw) return;
+  if (_tookDraw) {
+    botThinking = false;
+    document.getElementById('botStatus').textContent = '';
+    return;
+  }
 
   // LAST RESORT. Every engine path can come back empty: Stockfish failed to
   // load, or each search ran out of time on a slow device. Nothing retries a
   // turn, so an empty one used to freeze the game for good — silently, and on
   // Lichess until the bot lost on time. Any legal move beats that; the warning
-  // says why the bot is playing one.
+  // says why the bot is playing one. botThinking stays set through it, since
+  // its quick search is a wait another botMakeMove must not slip into.
   //
   // A pick the board will not play is the same empty turn, and it was harder to
   // see: the legality check below skipped it with no error and a blank status.
@@ -3542,8 +3629,11 @@ async function botMakeMove() {
     _lastResortWhy = 'The bot chose a move the board wouldn’t accept, so it played a quick move instead.';
   }
   if (!uciMove && botActive && !gameOver && turn === botColor) {
-    uciMove = _botLastResortMove(fen, _lastResortWhy);
+    uciMove = await _botLastResortMove(fen, _lastResortWhy);
+    if (_myGen !== _botGameGen) return;
   }
+  botThinking = false;
+  document.getElementById('botStatus').textContent = '';
 
   if (uciMove && botActive) {
     const mv = uciToSq(uciMove);
