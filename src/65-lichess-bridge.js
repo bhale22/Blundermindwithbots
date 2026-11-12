@@ -573,55 +573,31 @@ function _lbEloRange() {
   return { flounder, min: flounder ? FLOUNDER_ELO_MIN : 600, max: flounder ? FLOUNDER_ELO_MAX : 2600 };
 }
 
-// ── Measured strength ───────────────────────────────────────────────────────
-// A bot's engine setting is not always how strong it plays: Blind Conviction,
-// the guards and the personality all move it. cfg.lichessStrength, filled in the
-// builder's Lichess popup, holds what was measured as [setting, plays like]
-// pairs, settings rising. A matching bot works backwards from it to the setting
-// that plays at the rating wanted. With none, the setting is the strength.
-// Between the pairs it reads a straight line; past the ends, the same gap as the
-// nearest pair.
-function _lbStrengthTable() {
-  const t = (window._lastAppliedBotConfig || {}).lichessStrength;
-  if (!Array.isArray(t) || !t.length) return null;
-  const ok = t.every((p, i) => Array.isArray(p) && Number.isFinite(+p[0]) && Number.isFinite(+p[1]) &&
-    (i === 0 || (+p[0] > +t[i - 1][0] && +p[1] > +t[i - 1][1])));
-  return ok ? t.map(p => [+p[0], +p[1]]) : null;
-}
-// col 0 → col 1 reads setting → strength; col 1 → col 0, strength → setting.
-function _lbStrengthMap(v, t, from) {
-  if (!t) return v;
-  const to = 1 - from, n = t.length - 1;
-  if (v <= t[0][from]) return v - t[0][from] + t[0][to];
-  if (v >= t[n][from]) return v - t[n][from] + t[n][to];
-  let i = 0;
-  while (v > t[i + 1][from]) i++;
-  return t[i][to] + (v - t[i][from]) * (t[i + 1][to] - t[i][to]) / (t[i + 1][from] - t[i][from]);
-}
-const _lbPlaysLike = (setting, t) => Math.round(_lbStrengthMap(setting, t, 0));
-
-// The setting that plays at `wanted`, within what this engine can be set to:
-// { setting, est (what it plays like), edge ('low' | 'high' | null) }.
-function _lbSettingFor(wanted, t) {
+// The setting for the rating wanted, within what this engine can be set to:
+// { setting, est, edge ('low' | 'high' | null) }. The setting is taken as the
+// strength, so est is the setting. A measured table (setting → plays like) was
+// tried Nov 10 2026 and taken out of the builder Nov 11 ("for now"): a bot
+// that plays away from its setting uses the popup's offset, or says what it
+// plays like in its Lichess profile. A saved config that still carries
+// lichessStrength is ignored, since the builder can no longer show it.
+function _lbSettingFor(wanted) {
   const { flounder, min, max } = _lbEloRange();
-  let setting = Math.round(_lbStrengthMap(wanted, t, 1)), edge = null;
+  let setting = Math.round(wanted), edge = null;
   if (setting <= min) { setting = min; edge = 'low'; }
   else if (setting >= max) { setting = max; edge = 'high'; }
   // Flounder's dial only holds whole steps; Maia takes any rating.
   if (flounder) setting = Math.round(setting / FLOUNDER_ELO_STEP) * FLOUNDER_ELO_STEP;
-  return { setting, est: _lbPlaysLike(setting, t), edge };
+  return { setting, est: setting, edge };
 }
 
 // ── Curve A on the Regan model, for this game's clock ───────────────────────
 // The builder's fit (REGAN in bot-control-panel.html): rating lost at s seconds
 // per move, D(s) = 339 − 1442·s^−0.283, anchored at the clock's average pace,
 // base/60 + increment. Full strength at the anchor and slower, Regan's loss
-// below it. The loss is taken off the playing strength, and each point turned
-// back into the setting that plays at it, so a measured bot's curve lands on
-// the strength it says too. Knots where the builder seeds them.
+// below it. Knots where the builder seeds them.
 const LB_REGAN = { C: 339, K: 1442, ALPHA: 0.283, SMIN: 0.05, EXPECTED_MOVES: 60, X_MIN: 1, X_MAX: 200 };
 const _lbReganD = s => LB_REGAN.C - LB_REGAN.K * Math.pow(Math.max(LB_REGAN.SMIN, s), -LB_REGAN.ALPHA);
-function _lbReganCurveA(clock, est, t) {
+function _lbReganCurveA(clock, est) {
   const { min, max } = _lbEloRange();
   const raw = clock.initial / 1000 / LB_REGAN.EXPECTED_MOVES + clock.increment / 1000;
   const anchor = Math.max(1.001, Math.min(LB_REGAN.X_MAX / 2, Math.max(0.5, raw)));
@@ -630,7 +606,7 @@ function _lbReganCurveA(clock, est, t) {
   xs.push(LB_REGAN.X_MIN);
   return xs.map(x => {
     const strength = est + Math.min(0, _lbReganD(x) - _lbReganD(anchor));
-    return { x: +x.toFixed(3), y: Math.max(min, Math.min(max, Math.round(_lbStrengthMap(strength, t, 1)))) };
+    return { x: +x.toFixed(3), y: Math.max(min, Math.min(max, Math.round(strength))) };
   });
 }
 
@@ -639,9 +615,8 @@ function _lbReganCurveA(clock, est, t) {
 // have asked for a rating in the chat. With no rating to go on, or no game (g
 // null, on disconnecting), it plays at the rating it was built with. Always
 // worked out from the saved config, never from the last game's numbers, so a
-// resync can't stack it up, and the saved bot keeps its own rating. The rating
-// wanted is a playing strength: a bot with a measured table is set to whatever
-// plays at it. Curve A moves too, since it holds absolute ratings and on Maia
+// resync can't stack it up, and the saved bot keeps its own rating. Curve A
+// moves too, since it holds absolute ratings and on Maia
 // the curve is what runs: in a game with a clock it is rebuilt on the Regan
 // model for that clock; with none, the builder's curve is shifted. Returns
 // { setting, est, edge }, or null for a bot that doesn't match.
@@ -649,13 +624,12 @@ function _lbApplyMatchedRating(g) {
   if (!_lbMatching()) return null;
   const cfg = window._lastAppliedBotConfig;
   const { flounder } = _lbEloRange();
-  const t = _lbStrengthTable();
   const base = +(flounder && cfg.flounderElo != null ? cfg.flounderElo : cfg.elo) || 1500;
   const offset = +cfg.lichessMatchOffset || 0;
   const opp = g && g.opponent;
   const chosen = opp && opp.id ? lbRatingChoices.get(opp.id) : undefined;
   const wanted = chosen != null ? chosen : opp && opp.rating ? opp.rating + offset : null;
-  const at = wanted != null ? _lbSettingFor(wanted, t) : { setting: base, est: _lbPlaysLike(base, t), edge: null };
+  const at = wanted != null ? _lbSettingFor(wanted) : { setting: base, est: base, edge: null };
   const elo = at.setting;
   if (flounder) {
     const dial = document.getElementById('flounderElo'), out = document.getElementById('flounderEloVal');
@@ -666,13 +640,13 @@ function _lbApplyMatchedRating(g) {
   }
   if (botPressureCurveA && cfg.ctrlA) {
     botPressureCurveA = g && g.clock
-      ? _lbReganCurveA(g.clock, at.est, t)
+      ? _lbReganCurveA(g.clock, at.est)
       : cfg.ctrlA.map(p => ({ x: p.x, y: +p.y + elo - base }));
   }
   _quickBotSyncBookRating(elo);
   if (opp && !g.matchLogged) {
     g.matchLogged = true;
-    const plays = (flounder ? 'Flounder ' : 'Maia ') + elo + (t ? ' (plays like ' + at.est + ')' : '');
+    const plays = (flounder ? 'Flounder ' : 'Maia ') + elo;
     lbLog(chosen != null
       ? 'Playing at ' + plays + ': ' + opp.name + ' asked for ' + chosen + ' in the chat'
       : opp.rating
@@ -693,14 +667,13 @@ function _lbSay(g, text) {
 
 // Only says it matches when it is matching: not with no rating to go on, not
 // once this opponent has picked a rating of their own, and not when their
-// rating is past what the bot can play. The range is in playing strength.
+// rating is past what the bot can play.
 function _lbGreet(g, at) {
   const { min, max } = _lbEloRange();
-  const t = _lbStrengthTable();
   const matching = g.opponent.rating && !lbRatingChoices.has(g.opponent.id) && !at.edge;
-  _lbSay(g, (matching ? 'I match your rating- currently' : 'Currently') + ' playing at ~' + at.est + ' ELO' +
+  _lbSay(g, (matching ? 'I match your rating- currently' : 'Currently') + ' playing at ' + at.est + ' ELO' +
     (at.edge ? ' (' + (at.edge === 'low' ? 'lowest' : 'highest') + ' setting)' : '') +
-    '.   Type between ELO' + _lbPlaysLike(min, t) + ' and ELO' + _lbPlaysLike(max, t) + ' to change.');
+    '.   Type between ELO' + min + ' and ELO' + max + ' to change.');
 }
 
 // The opponent sets the rating from the player chat with a message that is only

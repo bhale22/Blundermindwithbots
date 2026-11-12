@@ -429,6 +429,32 @@ check(fromBoard.folded && fromBoard.opened, 'the guide starts folded and opens w
 check(/^Upgrade to a bot account: paste the token below and press Connect/.test(fromBoard.step5) && fromBoard.diy,
   'step 5 is the upgrade, with the do-it-yourself commands inside it', fromBoard.step5);
 check(/scopes\[\]=bot:play/.test(fromBoard.link), 'the token link pre-ticks bot:play', fromBoard.link);
+const layout = await bf.evaluate(() => {
+  const body = document.getElementById('lbc-body');
+  const guide = body.querySelector(':scope > .lbc-guide'), token = document.getElementById('lbc-token');
+  const help = document.getElementById('lbc-match-help'), btn = document.getElementById('lbc-match-help-btn');
+  const out = { after: !!(guide && token && (guide.compareDocumentPosition(token) & Node.DOCUMENT_POSITION_FOLLOWING)),
+    label: document.querySelector('label[for="lbc-token"]')?.textContent || '',
+    helpHidden: !!help && help.hidden && help.offsetHeight === 0, btn: btn?.textContent,
+    noStrength: !document.getElementById('lbc-strength') && !/Measured strength/i.test(body.textContent) };
+  btn.click();
+  out.helpShown = !help.hidden && help.offsetHeight > 0 && btn.getAttribute('aria-expanded') === 'true' &&
+    /plus the offset/.test(help.textContent) && /ELO1500/.test(help.textContent) && /Lichess profile/.test(help.textContent);
+  btn.click();
+  out.helpFolds = help.hidden;
+  // The smallest type in the popup's text, and its body text.
+  const sizes = [...document.querySelectorAll('#lbc-box *')]
+    .filter(n => n.childNodes.length && [...n.childNodes].some(c => c.nodeType === 3 && c.textContent.trim()) && n.offsetParent)
+    .map(n => parseFloat(getComputedStyle(n).fontSize));
+  out.minFont = Math.min(...sizes);
+  out.bodyFont = parseFloat(getComputedStyle(body).fontSize);
+  return out;
+});
+check(layout.after && /token/i.test(layout.label), 'the token box comes after the steps that end in it, with a label', layout);
+check(layout.btn === '?' && layout.helpHidden && layout.helpShown && layout.helpFolds,
+  'matching\'s explanation is behind a "?": folded, opens and folds again', layout);
+check(layout.noStrength, 'no Measured strength field', layout);
+check(layout.minFont >= 12 && layout.bodyFont >= 15, 'type no smaller than 12px, body text 15px (' + layout.minFont + ', ' + layout.bodyFont + ')', layout);
 await bf.evaluate(() => [...document.querySelectorAll('#lbc-btns button')].find(b => /Cancel/.test(b.textContent)).click());
 await page.waitForTimeout(300);
 check(await bf.evaluate(() => !document.getElementById('lbc-overlay').classList.contains('show')) &&
@@ -767,14 +793,6 @@ await fr.fill('#lbc-match-offset', '-200');
 const matchCfg = await fr.evaluate(() => { const c = getBotConfig(); return { on: c.lichessMatchRating, off: c.lichessMatchOffset, row: _lbcSummary() }; });
 check(matchCfg.on === true && matchCfg.off === -200 && /matches each challenger −200 · 1500 if they have none/.test(matchCfg.row),
   'ticking it puts it in the bot config, and the summary says so', matchCfg);
-await fr.fill('#lbc-strength', '2000=1775, 600=725, 2600=2025');
-const strCfg = await fr.evaluate(() => ({ t: getBotConfig().lichessStrength, row: _lbcSummary(), note: document.getElementById('lbc-strength-note').textContent }));
-check(JSON.stringify(strCfg.t) === '[[600,725],[2000,1775],[2600,2025]]' && /Strength.*measured/.test(strCfg.row) && /Reaches about 725/.test(strCfg.note),
-  'a measured table goes in the config in order, and the summary and note read it back', strCfg);
-await fr.fill('#lbc-strength', '600=725, 2000=700');
-const badCfg = await fr.evaluate(() => ({ t: getBotConfig().lichessStrength, note: document.getElementById('lbc-strength-note').textContent }));
-check(badCfg.t === null && /isn’t used/.test(badCfg.note), 'one that doesn\'t rise is not used, and the note says so', badCfg);
-await fr.fill('#lbc-strength', '');
 await fr.evaluate(() => { lbcClose(); startGame(); });
 await until(() => p2.evaluate(() => window._lastAppliedBotConfig.lichessMatchRating === true), 5000, 'the update');
 const playMatched = async (challenger, seenAt) => {
@@ -791,7 +809,7 @@ const playMatched = async (challenger, seenAt) => {
   return seen;
 };
 const greeting = (est, lo, hi, matching, edge) => (matching ? 'I match your rating- currently' : 'Currently') +
-  ` playing at ~${est} ELO${edge ? ` (${edge} setting)` : ''}.   Type between ELO${lo} and ELO${hi} to change.`;
+  ` playing at ${est} ELO${edge ? ` (${edge} setting)` : ''}.   Type between ELO${lo} and ELO${hi} to change.`;
 const setting = (engine, at, est, edge) => `Setting ${engine} engine to ${at}, estimated ELO~${est}` + (edge ? ` (${edge} setting)` : '');
 // A game that stays open until endGame, with a slow opponent so the chat checks
 // finish well before the game can.
@@ -964,36 +982,21 @@ check(fixedGreeted === 0 && lastSaid(cg4) === 'This bot\'s rating can\'t be chan
 await endGame(cg4);
 await p2.evaluate(() => { window._lastAppliedBotConfig.lichessMatchRating = true; });
 
-// A bot measured to play away from its setting (the attacking Blind Conviction
-// bot, Nov 9): the rating wanted is a playing strength, and it is set to
-// whatever plays at it, at the ends included.
+// A bot saved with a measured strength table (Nov 10 2026, since taken out of
+// the builder) plays its setting as its strength: nothing the builder can't
+// show changes how it plays. The offset is still -200.
 await p2.evaluate(() => { window._lastAppliedBotConfig.lichessStrength = [[600, 725], [1000, 950], [1500, 1375], [2000, 1775], [2600, 2025]]; });
-// The builder's offset is still -200: 1975 asks for 1775, 2300 for 2100.
-const mg = await openGame({ id: 'measureduser', name: 'MeasuredUser', rating: 1975 });
-check(await maiaNow() === 2000 && mg.chat[0]?.text === greeting(1775, 725, 2025, true),
-  'measured: asked for 1775 (a 1975 challenger, offset -200), it plays Maia 2000, and the greeting gives the range it really plays', mg.chat);
-const mc = await curveNow();
-// 1775 less Regan's loss at 1 s, back through the table: 1000 + (strength - 950) x 500/425.
-const mWant1 = 1775 + reganD(1) - reganD(5);
-check(mc.find(p => p.x === 200)?.y === 2000 && mc.find(p => p.x === 1)?.y === Math.round(1000 + (mWant1 - 950) * 500 / 425),
-  'its curve loses Regan\'s strength, not Regan\'s setting', mc);
-await command(mg, 'ELO600');
-check(lastSaid(mg) === setting('Maia3', 600, 725, 'lowest') && await maiaNow() === 600, 'ELO600: the lowest setting, and what it plays like', lastSaid(mg));
-await pastCooldown();
+const mg = await openGame({ id: 'leftoveruser', name: 'LeftoverUser', rating: 1975 });
+check(await maiaNow() === 1775 && mg.chat[0]?.text === greeting(1775, 600, 2600, true),
+  'a leftover measured table is ignored: a 1975 challenger, offset -200, gets Maia 1775', mg.chat);
 await command(mg, 'ELO1775');
-check(lastSaid(mg) === setting('Maia3', 2000, 1775) && await maiaNow() === 2000, 'ELO1775: Maia 2000, estimated 1775', lastSaid(mg));
-await pastCooldown();
-await command(mg, '1500elo');
-check(lastSaid(mg) === setting('Maia3', 1656, 1500) && await maiaNow() === 1656, 'in between: the setting that plays at it', lastSaid(mg));
-await pastCooldown();
-await command(mg, 'ELO2600');
-check(lastSaid(mg) === setting('Maia3', 2600, 2025, 'highest') && await maiaNow() === 2600, 'ELO2600: the highest setting, and what it plays like', lastSaid(mg));
+check(lastSaid(mg) === setting('Maia3', 1775, 1775) && await maiaNow() === 1775, 'ELO1775: Maia 1775, estimated 1775', lastSaid(mg));
 await endGame(mg);
-const hg = await openGame({ id: 'stronguser', name: 'StrongUser', rating: 2300 });
-check(await maiaNow() === 2600 && hg.chat[0]?.text === greeting(2025, 725, 2025, false, 'highest'),
+await p2.evaluate(() => { delete window._lastAppliedBotConfig.lichessStrength; });
+const hg = await openGame({ id: 'stronguser', name: 'StrongUser', rating: 2900 });
+check(await maiaNow() === 2600 && hg.chat[0]?.text === greeting(2600, 600, 2600, false, 'highest'),
   'a challenger past its range: no claim to match them, and it says it is at its top', hg.chat);
 await endGame(hg);
-await p2.evaluate(() => { window._lastAppliedBotConfig.lichessStrength = null; });
 
 // Disconnect from the builder's popup.
 await p2.evaluate(() => openBotModal());

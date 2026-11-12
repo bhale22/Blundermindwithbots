@@ -1358,59 +1358,87 @@ input.attr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 
   #conv-toast .bdmsg{font-size:12px;}
 }
 
-/* ── Play on Lichess popup — same chrome as the confirm modal ── */
+/* ── Play on Lichess popup — same chrome as the confirm modal, but set larger
+   and roomier than the builder's panels (Nov 11 2026). It is read once and
+   carefully, often on a phone, and at the panels' 9–10px it was hard going. ── */
 #lbc-overlay{
   position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:9000;
   display:none;align-items:center;justify-content:center;
 }
 #lbc-overlay.show{ display:flex; }
 #lbc-box{
-  background:var(--carbon-mid,#14161a);border:1px solid var(--border-amber);border-radius:4px;
-  padding:20px 22px;max-width:440px;width:92%;max-height:86vh;overflow-y:auto;
+  background:var(--carbon-mid,#14161a);border:1px solid var(--border-amber);border-radius:6px;
+  padding:24px 28px;max-width:540px;width:92%;max-height:88vh;overflow-y:auto;box-sizing:border-box;
   box-shadow:0 8px 32px rgba(0,0,0,0.6);
 }
-.lbc-h{font-family:var(--font-u);font-size:9px;font-weight:600;letter-spacing:0.12em;
-  text-transform:uppercase;color:var(--text-dim);margin:14px 0 6px;}
-.lbc-sum{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:0;
-  font-family:var(--font-m);font-size:10px;line-height:1.5;}
-.lbc-sum dt{color:var(--text-dim);}
+#lbc-box .bdtitle{font-size:14px;margin-bottom:16px;}
+#lbc-body{font-size:15px;line-height:1.6;}
+#lbc-body p{margin:0 0 12px;}
+#lbc-body ul{margin:0 0 12px;padding-left:22px;}
+#lbc-body li{margin-bottom:6px;}
+.lbc-h{font-family:var(--font-u);font-size:12px;font-weight:600;letter-spacing:0.1em;
+  text-transform:uppercase;color:var(--text-secondary);margin:24px 0 12px;padding-top:18px;
+  border-top:0.5px solid var(--border);}
+.lbc-sum{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;margin:0;
+  font-family:var(--font-m);font-size:14px;line-height:1.5;}
+.lbc-sum dt{color:var(--text-secondary);}
 .lbc-sum dd{margin:0;color:var(--text-primary);}
-.lbc-checks{display:flex;flex-wrap:wrap;gap:6px 14px;margin-bottom:6px;
-  font-family:var(--font-m);font-size:10px;color:var(--text-primary);}
-.lbc-checks label{display:inline-flex;align-items:center;gap:4px;cursor:pointer;}
+.lbc-checks{display:flex;flex-wrap:wrap;align-items:center;gap:8px 22px;margin-bottom:8px;
+  font-family:var(--font-m);font-size:15px;color:var(--text-primary);}
+.lbc-checks label{display:inline-flex;align-items:center;gap:8px;min-height:36px;cursor:pointer;}
 .lbc-checks input{accent-color:var(--amber);cursor:pointer;}
-.lbc-checks input[type=number]{width:60px;box-sizing:border-box;padding:2px 4px;font:inherit;cursor:text;
-  color:var(--text-primary);background:var(--carbon-surface);border:0.5px solid var(--border);
-  border-radius:2px;outline:none;}
-#lbc-token,#lbc-strength{width:100%;box-sizing:border-box;padding:6px 8px;font-family:var(--font-m);font-size:11px;
-  color:var(--text-primary);background:var(--carbon-surface);border:0.5px solid var(--border);
-  border-radius:2px;outline:none;}
-.lbc-note{font-family:var(--font-m);font-size:9.5px;line-height:1.55;color:var(--text-dim);margin-top:5px;}
+.lbc-checks input[type=checkbox]{width:18px;height:18px;margin:0;}
+.lbc-checks input[type=number]{width:84px;box-sizing:border-box;padding:6px 8px;font:inherit;cursor:text;
+  color:var(--text-primary);background:var(--carbon-surface);border:1px solid var(--border);
+  border-radius:3px;outline:none;}
+.lbc-label{display:block;margin-top:16px;font-family:var(--font-m);font-size:14px;font-weight:600;color:var(--text-primary);}
+#lbc-token{display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:12px;font-family:var(--font-m);font-size:15px;
+  color:var(--text-primary);background:var(--carbon-surface);border:1px solid var(--border-amber);
+  border-radius:3px;outline:none;}
+#lbc-token:focus{border-color:var(--amber);}
+.lbc-note{font-family:var(--font-m);font-size:13.5px;line-height:1.6;color:var(--text-secondary);margin-top:8px;}
 .lbc-note a,.lbc-link{color:var(--amber);}
 .lbc-link{background:none;border:none;padding:0;font:inherit;text-decoration:underline;cursor:pointer;}
-.lbc-warn{border-left:2px solid #e05a4a;padding:7px 10px;background:rgba(224,90,74,0.08);margin-top:10px;}
-#lbc-status{font-family:var(--font-m);font-size:10px;line-height:1.5;min-height:15px;margin-top:12px;
+.lbc-warn{border-left:3px solid #e05a4a;padding:10px 14px;background:rgba(224,90,74,0.08);margin-top:14px;}
+#lbc-status{font-family:var(--font-m);font-size:14px;line-height:1.5;min-height:20px;margin-top:16px;
   color:var(--text-secondary);}
 #lbc-status.err{color:#e05a4a;}
-#lbc-box .bdbtns{margin-top:12px;flex-wrap:wrap;}
-.lbc-guide{margin-top:10px;font-family:var(--font-m);font-size:10px;line-height:1.55;color:var(--text-primary);}
-.lbc-guide > summary{cursor:pointer;color:var(--amber);font-weight:600;padding:3px 0;}
-.lbc-sub{margin-top:8px;}
-.lbc-sub > summary{font-weight:400;}
-.lbc-steps{margin:6px 0 0;padding-left:18px;}
-.lbc-steps li{margin-bottom:7px;}
+#lbc-box .bdbtns{margin-top:18px;gap:12px;flex-wrap:wrap;}
+#lbc-box .bdbtns .preset-btn{font-size:14px;letter-spacing:0.02em;padding:10px 18px;min-height:44px;}
+.lbc-guide{margin-top:4px;font-family:var(--font-m);font-size:14px;line-height:1.65;color:var(--text-primary);}
+.lbc-guide > summary{cursor:pointer;color:var(--amber);font-weight:600;padding:8px 0;font-size:15px;}
+.lbc-sub{margin-top:10px;}
+.lbc-sub > summary{font-weight:400;font-size:14px;}
+.lbc-steps{margin:10px 0 4px;padding-left:24px;}
+.lbc-steps li{margin-bottom:14px;}
 .lbc-steps a{color:var(--amber);white-space:nowrap;}
-.lbc-cmd{margin:4px 0 8px;padding:6px 8px;background:var(--carbon-surface);border:0.5px solid var(--border);
-  border-radius:2px;font-family:'Courier New',monospace;font-size:10px;line-height:1.4;
+.lbc-cmd{margin:6px 0 10px;padding:8px 10px;background:var(--carbon-surface);border:0.5px solid var(--border);
+  border-radius:3px;font-family:'Courier New',monospace;font-size:12.5px;line-height:1.45;
   white-space:pre-wrap;word-break:break-all;color:var(--text-primary);user-select:all;}
+/* The "?" beside a setting: its explanation, folded until asked for, and
+   opened in the flow (not floated) so it never covers the controls below. */
+.lbc-help{width:28px;height:28px;padding:0;flex-shrink:0;border-radius:50%;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:transparent;border:1.5px solid var(--amber);color:var(--amber);
+  font-family:var(--font-m);font-size:16px;font-weight:700;line-height:1;cursor:pointer;}
+.lbc-help:hover{background:var(--amber-glow);}
+.lbc-help[aria-expanded="true"]{background:var(--amber);color:var(--carbon-mid,#14161a);}
+.lbc-help-text{margin:4px 0 8px;padding:10px 14px;border-left:3px solid var(--amber);
+  background:var(--carbon-surface);border-radius:0 3px 3px 0;}
 @media (max-width:760px){
-  .lbc-h{font-size:11px;}
-  .lbc-sum,.lbc-checks,#lbc-status{font-size:12px;}
-  .lbc-note{font-size:11px;}
-  #lbc-token,#lbc-strength,.lbc-checks input[type=number]{font-size:14px;}
-  .lbc-checks label{min-height:32px;}
-  .lbc-guide,.lbc-cmd{font-size:12px;}
-  .lbc-guide > summary{padding:8px 0;}
+  #lbc-overlay{align-items:flex-start;}
+  /* Clear of the host modal's fixed close button (top 10px, 34px tall). */
+  #lbc-box{width:calc(100% - 32px);max-height:calc(100% - 72px);margin-top:56px;padding:20px 18px;}
+  #lbc-body{font-size:16px;}
+  .lbc-note{font-size:14.5px;}
+  /* Each setting's name above its value: two columns crowd a phone. */
+  .lbc-sum{grid-template-columns:1fr;gap:0;font-size:15px;}
+  .lbc-sum dd{margin-bottom:10px;}
+  /* 16px: below it, iOS zooms the page on focus. */
+  #lbc-token,.lbc-checks input[type=number]{font-size:16px;}
+  .lbc-guide{font-size:15px;}
+  .lbc-cmd{font-size:13px;}
+  #lbc-box .bdbtns .preset-btn{flex:1 1 auto;}
 }
 
 /* ── Preset Personalities and Personality popups — same chrome as the confirm modal ── */
@@ -9389,9 +9417,6 @@ function getBotConfig(){
     // rating plus the offset (the bridge's _lbApplyMatchedRating).
     lichessMatchRating:  !!lbcMatchOn,
     lichessMatchOffset:  lbcMatchOffset || 0,
-    // ...and what it was measured to play like, as [setting, plays like] pairs,
-    // so it can be set to whatever plays at the rating wanted.
-    lichessStrength:     lbcStrength.length ? lbcStrength.map(p => [p[0], p[1]]) : null,
   };
 }
 
@@ -9737,12 +9762,8 @@ function applyBotConfig(cfg){
   grp(() => {
     lbcMatchOn = !!cfg.lichessMatchRating;
     lbcMatchOffset = +cfg.lichessMatchOffset || 0;
-    // Through the same reader as the field, so a hand-edited file that doesn't
-    // rise is dropped here rather than half-used.
-    const t = Array.isArray(cfg.lichessStrength)
-      ? _lbcParseStrength(cfg.lichessStrength.map(p => (p || [])[0] + '=' + (p || [])[1]).join(', ')) : [];
-    lbcStrength = t || [];
-    lbcStrengthText = lbcStrength.map(p => p[0] + '=' + p[1]).join(', ');
+    // A file saved with a measured strength table (Nov 10 2026) loads without
+    // it: the builder no longer shows one, so it no longer plays one.
   });
 
   grp(() => _updateEnginePanelHeader());
@@ -10631,8 +10652,7 @@ let _lbcPendingUpgrade = null;  // { token, username, games, settings }
 // Part of the bot's config. var, because getBotConfig above can run first.
 var lbcMatchOn = false;         // play each game at the challenger's rating
 var lbcMatchOffset = 0;         // ...plus this much
-var lbcStrength = [];           // measured [setting, plays like] pairs, settings rising
-var lbcStrengthText = '';       // ...as typed, kept while it doesn't read
+let _lbcHelpOpen = false;       // the matching "?" is open (kept across redraws)
 
 function _lbcHost(){
   try{
@@ -10663,7 +10683,7 @@ function lbcRefresh(st){
   // An open popup follows the connection, but never wipes a form being filled.
   const open = document.getElementById('lbc-overlay')?.classList.contains('show');
   if(open && !_lbcBusy && (_lbcView === 'connected' || on) &&
-     !['lbc-match-offset', 'lbc-strength'].includes(document.activeElement?.id)) _lbcRender();
+     document.activeElement?.id !== 'lbc-match-offset') _lbcRender();
 }
 
 // opts.fromBoard: opened by the board's Lichess panel (lichessOpenSetup), which
@@ -10726,12 +10746,6 @@ function _lbcSummary(){
     const off = c.lichessMatchOffset;
     rows.splice(1, 0, ['Rating', 'matches each challenger' +
       (off ? ' ' + (off > 0 ? '+' : '−') + Math.abs(off) : '') + ' · ' + c.elo + ' if they have none']);
-    const t = c.lichessStrength;
-    if(t && t.length){
-      const { lo, hi } = engineEloRange();
-      rows.splice(2, 0, ['Strength', 'measured: ' + _lbcEngineName() + ' ' + lo + '–' + hi + ' plays like ' +
-        _lbcPlaysLike(lo, t) + '–' + _lbcPlaysLike(hi, t) + ', so it is set to whatever plays at the rating wanted']);
-    }
   }
   // Clock-driven timing is where the time-pressure curves run (Fixed and
   // Instant set the pace outright, so they never do) — say whether they will.
@@ -10755,88 +10769,33 @@ function _lbcSummary(){
 
 // Here rather than in the builder's sections because nothing but a Lichess game
 // reads it. It is still part of the bot's config, so it travels with the bot.
+// Its explanation sits behind a "?" so the row stays one line.
 function _lbcMatchHtml(){
   const can = currentEngine !== 'hybrid';
+  const help = 'Each game is played at the challenger’s Lichess rating for that speed, plus the offset ' +
+    '(−100 plays a little below them). Anyone with no rating gets the rating set in this builder. ' +
+    'The bot says so in the game chat, and they can type a rating such as ELO1500 there to change it, ' +
+    'for that game and any rematch. If your bot plays stronger or weaker than its engine setting, the offset ' +
+    'can make up the difference, or say what it really plays like in its Lichess profile.';
   return '<div class="lbc-h">Rating on Lichess</div>' +
     '<div class="lbc-checks">' +
       '<label><input type="checkbox" id="lbc-match" onchange="lbcMatchChange()"' +
         (can && lbcMatchOn ? ' checked' : '') + (can ? '' : ' disabled') + '>Match the challenger’s rating</label>' +
+      (can ? '<button type="button" class="lbc-help" id="lbc-match-help-btn" aria-controls="lbc-match-help"' +
+        ' aria-expanded="' + _lbcHelpOpen + '" aria-label="About matching the challenger’s rating"' +
+        ' title="About matching the challenger’s rating" onclick="lbcHelpToggle()">?</button>' : '') +
       '<label>Offset <input type="number" id="lbc-match-offset" min="-500" max="500" step="25" value="' + lbcMatchOffset + '"' +
         (can ? '' : ' disabled') + ' oninput="lbcMatchChange()"></label>' +
     '</div>' +
-    '<div class="lbc-note" style="margin-top:0;">' + (can
-      ? 'Each game is played at their Lichess rating for that speed, plus the offset (−100 plays a little below them). ' +
-        'Anyone with no rating gets the rating set in this builder. ' +
-        'The bot says so in the game chat, and they can type a rating such as ELO1500 there to change it, for that game and any rematch.'
-      : 'A blend has no single rating to match: each slot sets its own.') + '</div>' +
     (can
-      ? '<label class="lbc-h" for="lbc-strength" style="display:block;">Measured strength (optional)</label>' +
-        '<input id="lbc-strength" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. 600=725, 2000=1775, 2600=2025"' +
-          ' value="' + _ccEsc(lbcStrengthText) + '" oninput="lbcStrengthChange()">' +
-        '<div class="lbc-note" id="lbc-strength-note">' + _lbcStrengthNote(_lbcParseStrength(lbcStrengthText)) + '</div>'
-      : '');
+      ? '<div class="lbc-note lbc-help-text" id="lbc-match-help"' + (_lbcHelpOpen ? '' : ' hidden') + '>' + help + '</div>'
+      : '<div class="lbc-note" style="margin-top:0;">A blend has no single rating to match: each slot sets its own.</div>');
 }
-
-// ── Measured strength ────────────────────────────────────────────────────────
-// What this bot really plays like at a few engine settings, when that is not
-// the setting itself (Blind Conviction, the guards and the personality all move
-// it). A matching bot works backwards from it to the setting that plays at the
-// rating wanted (the bridge's _lbSettingFor). Typed as setting=plays like pairs.
-const _lbcEngineName = () => _isFlounderTab() ? 'Flounder' : 'Maia';
-// "600=725, 2000=1775" → [[600,725],[2000,1775]]; [] for nothing; null when it
-// doesn't read, or a pair doesn't rise from the one before in both numbers.
-function _lbcParseStrength(s){
-  const txt = String(s || '').trim();
-  if(!txt) return [];
-  const pairs = txt.split(/[,;\n]+/).map(x => x.trim()).filter(Boolean).map(x => {
-    const m = /^(\d{3,4})\s*(?:=|:|->|→)\s*(\d{3,4})$/.exec(x);
-    return m ? [+m[1], +m[2]] : null;
-  });
-  if(!pairs.length || pairs.some(p => !p)) return null;
-  pairs.sort((a, b) => a[0] - b[0]);
-  for(let i = 1; i < pairs.length; i++)
-    if(pairs[i][0] <= pairs[i-1][0] || pairs[i][1] <= pairs[i-1][1]) return null;
-  return pairs;
-}
-// A setting's measured strength: a straight line between pairs, the nearest
-// pair's gap past the ends — as the bridge reads it.
-function _lbcPlaysLike(v, t){
-  if(!t || !t.length) return v;
-  const n = t.length - 1;
-  if(v <= t[0][0]) return Math.round(v - t[0][0] + t[0][1]);
-  if(v >= t[n][0]) return Math.round(v - t[n][0] + t[n][1]);
-  let i = 0;
-  while(v > t[i+1][0]) i++;
-  return Math.round(t[i][1] + (v - t[i][0]) * (t[i+1][1] - t[i][1]) / (t[i+1][0] - t[i][0]));
-}
-function _lbcStrengthNote(t){
-  const name = _lbcEngineName();
-  if(t === null) return '<span style="color:#e05a4a;">Can’t read that, so it isn’t used.</span> ' +
-    'Write setting=plays like pairs, both numbers rising, such as 600=725, 2000=1775.';
-  if(!t.length) return 'Empty: the ' + name + ' setting is taken as its strength. If this bot plays stronger or weaker ' +
-    'than its setting, enter what was measured, and it is set to whatever plays at the rating wanted.';
-  const { lo, hi } = engineEloRange();
-  return 'Reaches about ' + _lbcPlaysLike(lo, t) + ' (' + name + ' ' + lo + ') to ' + _lbcPlaysLike(hi, t) +
-    ' (' + name + ' ' + hi + '). Asked for 1500, it plays at ' + name + ' ' + _lbcSettingFor(1500, t) +
-    ', and says both in the chat.';
-}
-function _lbcSettingFor(v, t){
-  const { lo, hi } = engineEloRange();
-  if(!t || !t.length) return Math.max(lo, Math.min(hi, v));
-  const n = t.length - 1;
-  let s;
-  if(v <= t[0][1]) s = v - t[0][1] + t[0][0];
-  else if(v >= t[n][1]) s = v - t[n][1] + t[n][0];
-  else { let i = 0; while(v > t[i+1][1]) i++; s = t[i][0] + (v - t[i][1]) * (t[i+1][0] - t[i][0]) / (t[i+1][1] - t[i][1]); }
-  return Math.max(lo, Math.min(hi, Math.round(s)));
-}
-function lbcStrengthChange(){
-  lbcStrengthText = document.getElementById('lbc-strength')?.value || '';
-  const t = _lbcParseStrength(lbcStrengthText);
-  lbcStrength = t || [];
-  const note = document.getElementById('lbc-strength-note');
-  if(note) note.innerHTML = _lbcStrengthNote(t);
-  _lbcRefreshSummary();
+function lbcHelpToggle(){
+  _lbcHelpOpen = !_lbcHelpOpen;
+  const box = document.getElementById('lbc-match-help'), btn = document.getElementById('lbc-match-help-btn');
+  if(box) box.hidden = !_lbcHelpOpen;
+  if(btn) btn.setAttribute('aria-expanded', String(_lbcHelpOpen));
 }
 
 function lbcMatchChange(){
@@ -10943,11 +10902,12 @@ function _lbcRender(){
   const cb = (id, label, on) => '<label><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '>' + label + '</label>';
   const saved = s.tokenSaved && !_lbcNewToken;
   const tokenHtml = saved
-    ? '<div class="lbc-note" style="margin-top:0;">A token for the bot account is saved in this browser. ' +
+    ? '<div class="lbc-note" style="margin-top:12px;">A token for the bot account is saved in this browser. ' +
       '<button type="button" class="lbc-link" onclick="_lbcNewToken=true;_lbcRender();">Use a different token</button> · ' +
       '<button type="button" class="lbc-link" onclick="lbcForgetToken()">Forget it</button></div>'
-    : '<input type="password" id="lbc-token" autocomplete="off" spellcheck="false" placeholder="Paste the bot account’s token (lip_…)">' +
-      '<div class="lbc-note">No token yet? Open “New to this?” below — steps 1–4 get you one, and the ' +
+    : '<label class="lbc-label" for="lbc-token">The bot account’s token</label>' +
+      '<input type="password" id="lbc-token" autocomplete="off" spellcheck="false" placeholder="Paste it here (lip_…)">' +
+      '<div class="lbc-note">No token yet? Open “New to this?” above — steps 1–4 get you one, and the ' +
       '<a href="' + LBC_TOKEN_URL.replace(/&/g, '&amp;') + '" target="_blank" rel="noopener">make a token ↗</a> ' +
       'link ticks the bot permission for you.</div>';
   body.innerHTML =
@@ -10955,7 +10915,7 @@ function _lbcRender(){
     '<div class="lbc-h">The bot</div><dl class="lbc-sum">' + _lbcSummary() + '</dl>' +
     '<div class="lbc-note">Each game’s time control and colours come from the challenge.</div>' +
     _lbcMatchHtml() +
-    '<div class="lbc-h">Lichess bot account</div>' + tokenHtml + _lbcGuide() +
+    '<div class="lbc-h">Lichess bot account</div>' + _lbcGuide() + tokenHtml +
     '<div class="lbc-h">Accept challenges</div>' +
     '<div class="lbc-note" style="margin-top:0;">Casual games only — rated challenges are declined. ' +
       'A bot’s strength can be adjusted from game to game, so it has no rating of its own.</div>' +
