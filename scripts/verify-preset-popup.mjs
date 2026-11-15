@@ -108,7 +108,7 @@ console.log('\n1   The green pill, inside Blundermind');
       fits: cells.every(c => c.scrollWidth <= c.clientWidth + 1),
     };
   });
-  ok('every preset has a cell', grid.count === grid.want && grid.count === 13, grid);
+  ok('every preset has a cell', grid.count === grid.want && grid.count === 14, grid);
   ok('each with its name and small graphic', grid.names && grid.icons, grid);
   ok('no description until asked for', grid.descHidden && grid.tipHidden, grid);
   ok('a grid, not a list', grid.cols >= 3, grid.cols);
@@ -406,6 +406,45 @@ console.log('\n13  Phone');
   ok('buttons a finger can hit', pers.btnH.every(h => h >= 44), pers.btnH);
   ok('on screen', pers.inView, pers);
   await shot(page, 'phone-personality');
+  await ctx.close();
+}
+
+console.log('\n14  A preset that is a whole bot: Blundermind-01');
+{
+  const { ctx, f } = await hostedBuilder();
+  // The player's own colour and clock first, to see they stay theirs.
+  await f.evaluate(() => { selColor(document.querySelector('.pa-btn[data-color="black"]')); selectTC(3, 2); });
+  const before = await f.evaluate(() => { const c = getBotConfig(); return { color: c.color, tcTime: c.tcTime, tcInc: c.tcInc }; });
+  await f.click('#qs-presets-btn');
+  await f.click('#pp-grid .pp-cell[data-pid="blundermind01"]');
+  const ask = await f.evaluate(() => ({
+    confirm: document.getElementById('bdconfirm-overlay').classList.contains('show'),
+    title: document.getElementById('bdconfirm-title').textContent,
+    items: [...document.querySelectorAll('#bdconfirm-list li')].map(li => li.textContent), sel: selectedPersonality }));
+  ok('it asks first: the whole bot, your colour and time control kept', ask.confirm && /Blundermind-01/.test(ask.title) &&
+    /colour and time control/.test(ask.items[0]) && ask.sel !== 'blundermind01', ask);
+  ok('with no Conviction line: it sets its own', !ask.items.some(t => /Conviction → 100%/.test(t)), ask.items);
+  await f.evaluate(() => _bdApply());
+  await f.waitForTimeout(300);
+  const got = await f.evaluate(() => {
+    const c = getBotConfig(), want = BOT_PRESETS.blundermind01;
+    const off = Object.keys(want).filter(k => JSON.stringify(c[k]) !== JSON.stringify(want[k]))
+      .map(k => k + ': ' + JSON.stringify(c[k]).slice(0, 80) + ' vs ' + JSON.stringify(want[k]).slice(0, 80));
+    return { off, n: Object.keys(want).length, color: c.color, tcTime: c.tcTime, tcInc: c.tcInc,
+      sel: selectedPersonality, name: c.personalityName, pill: document.getElementById('qs-pers-value').textContent,
+      card: document.querySelector('#persona-grid .pcard.sel')?.dataset.pid,
+      xs: c.ctrlA.map(p => p.x), top: Math.max(...c.ctrlA.map(p => p.y)) };
+  });
+  ok('every one of the bot\'s ' + got.n + ' settings is in the builder', got.off.length === 0, got.off);
+  ok('the colour and clock are still the player\'s', got.color === before.color && got.tcTime === before.tcTime && got.tcInc === before.tcInc, { before, got });
+  ok('it reads as Blundermind-01: pill, card, and the name the board is given',
+    got.sel === 'blundermind01' && got.pill === 'Blundermind-01' && got.card === 'blundermind01' && got.name === 'Blundermind-01', got);
+  ok('its rating curve is seeded for this 3+2 clock (5 s a move), at its 2000',
+    got.xs.some(x => Math.abs(x - 5) < 0.01) && !got.xs.includes(15) && got.top === 2000, got);
+  // Changing anything afterwards makes it the player's own bot, as with any preset.
+  await f.evaluate(() => { const s = document.getElementById('attr-tension'); s.value = 4; s.dispatchEvent(new Event('input', { bubbles: true })); });
+  const after = await f.evaluate(() => ({ sel: selectedPersonality, pill: document.getElementById('qs-pers-value').textContent }));
+  ok('moving a slider afterwards lets go of the name', after.sel !== 'blundermind01' && after.pill !== 'Blundermind-01', after);
   await ctx.close();
 }
 

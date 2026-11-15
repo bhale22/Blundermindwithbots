@@ -4847,7 +4847,104 @@ const PERSONALITIES = [
     attractors:{complexity:3,compwin:2,spacecadet:1,fortkx:-3,gambito:3,trade:1,structure:-2,hustle:2,luck:2,pressure:1,attacker:4} },
   { id:'drawmeister',name:'The Drawmeister',     icon:'½', tag:'Human',      desc:'Plays for the draw: solid drawish openings, simplifies everything, and offers a draw whenever things look level.',
     attractors:{complexity:-4,compwin:-3,spacecadet:0,fortkx:3,gambito:-3,trade:4,structure:2,hustle:0,luck:-1,pressure:-2,attacker:0,tension:-3} },
+  // A whole bot, not just a set of traits: choosing it loads everything in
+  // BOT_PRESETS below. Its attractors are listed for anything that reads them
+  // off this list; the bot's own sliders come from BOT_PRESETS.
+  { id:'blundermind01', name:'Blundermind-01', icon:'🤖', tag:'Attack', bot:true,
+    desc:'Our Lichess bot: presses your king and pieces, opens with gambits, and premoves. Maia 2000 that plays like about 1,775.',
+    attractors:{complexity:1,tension:2} },
 ];
+
+// ── Presets that are whole bots ──────────────────────────────
+// The saved setup of a bot we host on Lichess, so a player who met it there can
+// choose it here and change whatever they like. It goes in through the same
+// loader as My Bots (applyBotConfig), so every control it touches shows what it
+// is set to. Left out on purpose: the player's own colour and time control,
+// which stay theirs; the time-pressure curves, which the loader then seeds for
+// that clock (the bot's were the plain seed for 10+5); and blend-only slots.
+// Blundermind-01: Desktop\Blundermind-01.json as hosted on Railway, Nov 15 2026;
+// lichessStrength is its measured strength (Nov 11).
+const BOT_PRESETS = {
+  blundermind01: {
+    engine: "maia3",
+    elo: 2000,
+    sfLevel: 5,
+    flounderElo: null,
+    openingBook: false,
+    sfvar1: 0,
+    sfvar2: 0,
+    maia3Temp: 2.3,
+    cpBudget: 150,
+    hardFloorCp: 250,
+    convictionPct: 85,
+    blindConviction: true,
+    openingRepWhite: true,
+    openingRepBlack: true,
+    openingMainLineWhite: false,
+    openingMainLineBlack: false,
+    openingModeWhite: "repertoire",
+    openingModeBlack: "repertoire",
+    openingSource: "masters",
+    openingDepth: 20,
+    openingMinGames: 4,
+    modernOnly: false,
+    repSlots: {"white":[{"code":"C21","name":"Danish Gambit","pct":18},{"code":"C57","name":"Italian Game: Two Knights Defense, Fried Liver Attack","pct":18},{"code":"B21","name":"Sicilian Defense: Smith-Morra Gambit","pct":17},{"code":"D00","name":"Blackmar-Diemer Gambit","pct":17},{"code":"","name":"No opening sequence","pct":30,"none":true}],"black":[{"code":"B27","name":"Sicilian Defense: Hyperaccelerated Pterodactyl, Exchange Variation","pct":18},{"code":"B90","name":"Sicilian Defense: Najdorf Variation","pct":18},{"code":"A51","name":"Indian Defense: Budapest Defense","pct":17},{"code":"A57","name":"Benko Gambit","pct":17},{"code":"","name":"No opening sequence","pct":30,"none":true}]},
+    dayLower: 1,
+    dayUpper: 100,
+    attractorValues: {"tension":2,"complexity":1,"compwin":0,"spacecadet":0,"fortkx":0,"gambito":0,"trade":0,"structure":0,"hustle":0,"luck":0,"pressure":0,"attacker":0,"grabber":0,"kingsafety":0,"prophylaxis":0},
+    pieceValues: {"pawn":0,"knight":0,"bishop":0,"rook":0,"queen":0,"king":0},
+    customControls: [{"id":"cckingzone01","name":"Enemy king pressure","metric":"kingZoneAttackers","phase":"all","result":"any","pressure":"any","value":5},{"id":"ccattacked01","name":"Enemy pieces attacked","metric":"attackedPieces","phase":"all","result":"any","pressure":"any","value":5}],
+    timingMode: "complexity",
+    fixedDelayMs: 2000,
+    mirrorOffsetPct: 0,
+    cplxBase: 3,
+    cplxMin: 0.4,
+    cplxMax: 2.5,
+    cplxBaseMode: "clock",
+    cplxMovesPerGame: 60,
+    behavReconsider: true,
+    behavBlink: true,
+    behavClockMirror: true,
+    canFlag: true,
+    premoveEnabled: true,
+    premoveRatePct: 90,
+    premoveMinPct: 95,
+    premoveOnlyLowClock: false,
+    premoveOppClockSecs: 30,
+    premoveClockSecs: 30,
+    premoveBustDelayMs: 2500,
+    tempValue: 2.3,
+    tempPresetId: "wild",
+    calmPanickyValue: 0,
+    tempPressureScale: 2,
+    lcsfElo: 2000,
+    lcMaiaLcElo: 2000,
+    lcMaiaMaiaElo: 2000,
+    lcMaiaEloLinked: true,
+    timePressureMaxDrop: 300,
+    timePressureMaxTemp: 2,
+    minProbPct: 1,
+    pressureOffA: false,
+    pressureOffB: false,
+    pressureOff: false,
+    weaponizerEnabled: false,
+    weaponizerTriggerSec: 15,
+    weaponizerMinSec: 0,
+    acceptDraws: true,
+    drawAcceptMarginCp: 300,
+    drawDefaults: 2,
+    offerDraws: false,
+    offerDrawThreshCp: 50,
+    offerDrawFromMove: 20,
+    staleSeek: false,
+    staleSeekFromMove: 30,
+    staleSeekCp: 500,
+    lichessMatchRating: true,
+    lichessMatchOffset: 0,
+    blindChoicePcts: [60,20,15,5],
+    lichessStrength: [[600,850],[1000,1125],[1500,1500],[2000,1775],[2600,2025]],
+  },
+};
 
 /* ══════════════════════════════════════════════════════════════
    STATE
@@ -14154,6 +14251,15 @@ const PERS_CONFIRMS = {
     'Accepts your draw offers unless well ahead (300 cp margin — every bot accepts within 200)',
     'Opening repertoire → solid lines (London, Exchange Slav, Four Knights; Petroff, Berlin, Slav)',
   ]},
+  // A whole bot: it sets its own Conviction, so no Conviction line is added.
+  blundermind01: { title:'🤖 Blundermind-01', bot:true, items:[
+    'The bot we host on Lichess, all of it: it replaces what is set now, except your colour and time control',
+    'Engine → Maia 3 at 2000, which with this personality plays like about 1,775',
+    'Blind Conviction: its favorite move 60% of the time, its 2nd, 3rd and 4th 20%, 15% and 5%',
+    'Attacking traits: Enemy king pressure 5, Enemy pieces attacked 5, Tension 2, Complexity 1 (Budget 150 cp, Hard Floor 250)',
+    'Openings → gambits as White (Danish, Fried Liver, Smith-Morra, Blackmar-Diemer); Pterodactyl, Najdorf, Budapest and Benko as Black; no set opening in 30% of games',
+    'Move timing → Complexity scaled from the clock (a 60-move game); premoves on',
+  ]},
 };
 let _bdPendingId = null;
 function _showBadDayConfirm(id){
@@ -14163,7 +14269,7 @@ function _showBadDayConfirm(id){
     // Applying it will also take Conviction to 100% (_applyPersonality), so
     // the list says so — this modal stands in for the Conviction note.
     const items = c.items.slice();
-    if(_convictionPct() < 100 && !_blindConviction()) items.push('Conviction → 100%: always chooses its favorite move');
+    if(!c.bot && _convictionPct() < 100 && !_blindConviction()) items.push('Conviction → 100%: always chooses its favorite move');
     document.getElementById('bdconfirm-title').textContent = c.title;
     document.getElementById('bdconfirm-list').innerHTML =
       items.map(t => '<li>' + t + '</li>').join('');
@@ -14350,6 +14456,9 @@ function convToastAdjust(){
 function _applyPersonality(id, confirmed){
   const p = PERSONALITIES.find(x=>x.id===id);
   if(!p) return;
+  // A whole bot sets its own Conviction (Blind, with its Choice mix) and
+  // everything else, so none of the steps below apply to it.
+  if(p.bot && BOT_PRESETS[id]){ _applyBotPreset(id); return; }
   if(_convictionPct() < 100){
     onConvictionSlider(100);
     // Under Blind Conviction the slider is greyed and says why; no note.
@@ -14422,6 +14531,22 @@ function _applyPersonality(id, confirmed){
   });
   drawRadar();
   updateAttrCpDisplays();   // → syncAttrHeads + updateAttractorStatus (shows the preset name)
+}
+
+// A preset that is a whole bot (BOT_PRESETS): loaded as My Bots loads one, with
+// the player's colour and time control put back in, and named as the preset, so
+// the board calls it by that name until something is changed.
+function _applyBotPreset(id){
+  const keep = getBotConfig();
+  applyBotConfig(Object.assign({}, BOT_PRESETS[id], {
+    color: keep.color, tcTime: keep.tcTime, tcInc: keep.tcInc, tcBonus: keep.tcBonus,
+    tcBonusAtMove: keep.tcBonusAtMove, tcIncFromMove: keep.tcIncFromMove,
+    personalityId: id,
+  }));
+  _activeBotName = null;
+  updateQsPersonality();
+  updateQsCpBudget();
+  updateAttrCpDisplays();
 }
 
 /* ══════════════════════════════════════════════════════════════

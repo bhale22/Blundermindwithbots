@@ -930,9 +930,6 @@ await command(cg, '1500ELO');
 check(lastSaid(cg) === perf(1500) && await maiaNow() === 1500 && await curveTop() === 1500,
   '1500ELO: the exact reply, and the rating and its curve both move', { said: lastSaid(cg) });
 check(await p2.evaluate(() => /Maia 1500/.test(botGenerateName())), 'the board\'s name for the bot moves too');
-chatLine(cg, 'ChatUser', '1700ELO');
-await sleep(800);
-check(lastSaid(cg) === perf(1500) && await maiaNow() === 1500, 'a second command inside the cooldown does nothing', lastSaid(cg));
 await p2.evaluate(() => { window._maiaAsked = []; });
 const postsAtChange = cg.botPosts.length;
 await until(() => cg.botPosts.length >= postsAtChange + 2, 60000, 'two more bot moves');
@@ -941,6 +938,17 @@ check(askedAfter.length > 0 && askedAfter.every(r => r >= curveLow && r <= 1500)
 await pastCooldown();
 await command(cg, ' 1600 elo ');
 check(lastSaid(cg) === perf(1600) && await maiaNow() === 1600, 'spaces and lower case are fine', lastSaid(cg));
+// Two more inside the 3 s cooldown: held, not dropped. The last one asked is
+// answered once the cooldown ends, and only once.
+const heldAt = cg.chat.length;
+chatLine(cg, 'ChatUser', '2000ELO');
+chatLine(cg, 'ChatUser', '1700ELO');
+await sleep(800);
+check(cg.chat.length === heldAt && await maiaNow() === 1600, 'commands inside the cooldown wait for it', cg.chat.slice(heldAt));
+await until(() => cg.chat.length > heldAt, 5000, 'the held command answered');
+await sleep(1000);
+check(cg.chat.length === heldAt + 1 && lastSaid(cg) === perf(1700) && await maiaNow() === 1700,
+  'then the latest is answered, once, so nothing that arrives goes unanswered', cg.chat.slice(heldAt));
 await pastCooldown();
 await command(cg, '4000ELO');
 check(lastSaid(cg) === perf(2600, 'highest') && await maiaNow() === 2600, 'above the range: stops at the top and says so', lastSaid(cg));
