@@ -207,7 +207,7 @@ let botStaleSeekCp   = 500;       // and only when the bot is worse than −this
 // Rolling window of the human player's move durations (ms), capped at N=6.
 // x domain: 0–∞ ms (practically 200–30000 ms for most games)
 // Reset each botStart(); mutated by botPostMoveHook() on human turns only.
-const BOT_MIRROR_WINDOW = 6;   // how many recent human moves to average
+const BOT_MIRROR_WINDOW = 6;   // how many recent human moves Mirror takes the median of
 let botUserMoveTimestamps = []; // circular buffer of human move durations (ms)
 let botUserTurnStartMs   = null; // wall-clock ms when the human's current turn began
 
