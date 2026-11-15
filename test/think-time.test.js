@@ -214,6 +214,37 @@ test('fixed and mirror modes obey the same ceilings as the main path', () => {
   assert.ok(think(mirror, clockMs) <= budgetMs + 1, 'mirror mode must respect the budget');
 });
 
+// ── Mirror user: the median, at most the game's time ÷ 60 ────────────────────
+// The average let one long break drag the bot's pace out for the next six
+// moves, and the general 45 s cap made a 90-minute game play like rapid.
+const mirrorCtx = (times, extra) => makeCtx(Object.assign({
+  botTimeBehavior: 'mirror', botUserMoveTimestamps: times, botStartClockMs: 90 * 60000, clockInc: 0,
+  botBehavClockMirror: false, botDeficitWeight: 0,
+}, extra));
+
+test('mirror: the median of recent moves, so two hours away changes nothing', () => {
+  const away = mirrorCtx([2000, 2000, 2000, 2000, 2000, 2 * 3600 * 1000]);
+  assert.strictEqual(think(away, 90 * 60000), 2000);
+  const even = mirrorCtx([7000, 1000, 5000, 3000]);
+  assert.strictEqual(think(even, 90 * 60000), 4000, 'an even count takes halfway between the middle two');
+});
+
+test('mirror: never based on more than the game time ÷ 60', () => {
+  const slow = [300000, 300000, 300000];
+  assert.strictEqual(think(mirrorCtx(slow), 90 * 60000), 90000, '90 min: 90 s, past the old 45 s cap');
+  assert.strictEqual(think(mirrorCtx(slow, { botStartClockMs: 180000, clockInc: 2 }), 180000), 5000,
+    '3+2: (180 + 60 × 2) ÷ 60 = 5 s');
+  assert.strictEqual(think(mirrorCtx(slow, { botMirrorOffsetPct: 50 }), 90 * 60000), 135000,
+    'the offset applies on top of the capped baseline');
+  assert.strictEqual(think(mirrorCtx([3000, 3000]), 90 * 60000), 3000, 'under the cap, it is the user\'s own pace');
+  const bonus = mirrorCtx(slow, { clockControl: 'c90', TIME_CONTROLS: { c90: { time: 5400, inc: 0, bonusSecs: 1800, bonusAtMove: 40 } } });
+  assert.strictEqual(think(bonus, 90 * 60000), 120000, 'a mid-game bonus is game time too: (5400 + 1800) ÷ 60');
+});
+
+test('mirror: with no clock the 6 s ceiling stays', () => {
+  assert.strictEqual(think(mirrorCtx([20000, 20000], { botStartClockMs: null }), null), 6000);
+});
+
 // ── Which timing modes feel time pressure ────────────────────────────────────
 // A pace the user set outright (Fixed, Instantaneous) is not time pressure;
 // Mirror plays at the human's pace and cracks when they do; Complexity budgets

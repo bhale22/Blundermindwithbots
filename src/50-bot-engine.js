@@ -2522,7 +2522,8 @@ function botRecordMove(uciMove, sanMove) {
 // Modes (botTimeBehavior):
 //   'instant'    — 0 ms
 //   'fixed'      — botFixedDelayMs
-//   'mirror'     — rolling avg of human times × (1 + botMirrorOffsetPct/100)
+//   'mirror'     — median of the human's last 6 move times, at most the game's
+//                  time ÷ 60 (botMirrorCapMs), × (1 + botMirrorOffsetPct/100)
 //   'complexity' — average × botComplexityMult(complexity), the average being
 //                  the clock plan (botClockPlanSec, the builder's default) or
 //                  botCplxBase; book moves on the clock plan are quick
@@ -2632,6 +2633,25 @@ function botApplyClockCaps(thinkMs, clockMs, planSec) {
 function botThinkCapMs() {
   if (!botStartClockMs) return 6000; // untimed / unknown
   return Math.max(6000, Math.min(45000, botStartClockMs * 0.02));
+}
+
+// ── Mirror user's numbers ─────────────────────────────────────────────────────
+// The most Mirror bases a move on: the game's whole time spread over a 60-move
+// game — the starting clock, 60 increments and any mid-game bonus, ÷ 60. So
+// 90 min → 90 s, 10+5 → 15 s, 3+2 → 5 s. null with no clock.
+const BOT_MIRROR_GAME_MOVES = 60;
+function botMirrorCapMs() {
+  if (!(typeof botStartClockMs === 'number' && botStartClockMs > 0)) return null;
+  const inc = (typeof clockInc === 'number') ? clockInc : 0;
+  const tc = (typeof TIME_CONTROLS !== 'undefined' && typeof clockControl !== 'undefined')
+    ? TIME_CONTROLS[clockControl] : null;
+  const bonus = (tc && tc.bonusSecs && tc.bonusAtMove) ? tc.bonusSecs : 0;
+  return (botStartClockMs / 1000 + BOT_MIRROR_GAME_MOVES * inc + bonus) * 1000 / BOT_MIRROR_GAME_MOVES;
+}
+// The middle value; with an even count, halfway between the middle two.
+function botMedian(xs) {
+  const s = xs.slice().sort((a, b) => a - b), m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
 // ── The clock-based plan (Complexity-scaled, "From the clock") ──────────────
@@ -2797,13 +2817,21 @@ function botThinkTime(moveProbs, clockMs, opts) {
   }
 
   // ── Mirror ───────────────────────────────────────────────────────────────
+  // The middle of the human's recent move times, not their average, so a
+  // couple of hours away from the board leaves the bot's pace where it was.
+  // In a timed game it is never based on more than the game's time ÷ 60
+  // (botMirrorCapMs): a 90-minute game can be mirrored at 90 s a move, where
+  // the general think-time cap stopped it at 45 s. With no clock there is no
+  // game time to go by, so the 6 s ceiling stays.
   if (botTimeBehavior === 'mirror') {
     if (botUserMoveTimestamps.length > 0) {
-      const avg = botUserMoveTimestamps.reduce((a, b) => a + b, 0) / botUserMoveTimestamps.length;
+      const capMs = botMirrorCapMs();
+      const median = botMedian(botUserMoveTimestamps);
+      const base = capMs !== null ? Math.min(median, capMs) : median;
       const jitter = 0.8 + Math.random() * 0.4;
       const offsetMul = 1 + (botMirrorOffsetPct / 100);
-      const mirrorMs = botApplyClockCaps(avg * jitter * offsetMul + bustTax, clockMs);
-      return Math.max(200, Math.min(botThinkCapMs() + bustTax, mirrorMs));
+      const mirrorMs = botApplyClockCaps(base * jitter * offsetMul + bustTax, clockMs);
+      return Math.max(200, capMs !== null ? mirrorMs : Math.min(botThinkCapMs() + bustTax, mirrorMs));
     }
     // No human moves yet — fall through to complexity/pace
   }
@@ -4447,8 +4475,10 @@ function botPostMoveHook() {
       // botUserTurnStartMs was set when the previous bot move completed (or game start).
       if (botTimeBehavior === 'mirror' && botUserTurnStartMs !== null) {
         const humanMoveMs = Date.now() - botUserTurnStartMs;
-        // Only count plausible move times (200 ms – 5 min) to exclude tab-away gaps
-        if (humanMoveMs >= 200 && humanMoveMs <= 300000) {
+        // Every move from 200 ms up counts, long ones too: Mirror takes the
+        // median, so a break away from the board is outvoted rather than
+        // dropped, and a long think in a classical game still counts.
+        if (humanMoveMs >= 200) {
           botUserMoveTimestamps.push(humanMoveMs);
           if (botUserMoveTimestamps.length > BOT_MIRROR_WINDOW) {
             botUserMoveTimestamps.shift(); // keep rolling window
