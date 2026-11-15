@@ -495,6 +495,7 @@ function _lbNewGame(id) {
     oppDrawOpen: false, // the opponent's draw offer is standing
     drawAnswered: false, drawAccepted: false,   // the bot's answer to it
     greeted: false, chatAt: 0,   // the opening line is said; when the last command was answered
+    chatHeld: null, chatTimer: null,   // a command that came inside the cooldown, and its timer
     goneTimer: null,
   };
 }
@@ -718,7 +719,13 @@ function _lbGreet(g, at) {
 // playing strength they want; the reply says the strength it is set to, and
 // the engine setting that plays at it goes to the host's log. The bot reads its
 // rating fresh for each move, so this lands on its next one. Lichess sends the
-// bot's own lines back down this stream too.
+// bot's own lines back down this stream too. Any number is taken (ELO0 to
+// ELO99999); one past the range stops at its end, and the reply says so.
+//
+// What never gets here: Lichess's flood filter (lila Flood.scala) drops a
+// player's line within one character of either of their last two in the past
+// minute, so ELO2200 straight after ELO2100 never reaches the bot. Bots are
+// exempt, so the replies themselves always go out.
 function _lbOnChatLine(g, m) {
   const opp = g.opponent;
   if (!g.boardReady || m.room !== 'player' || !opp || !opp.id || String(m.username).toLowerCase() !== opp.id) return;
@@ -726,8 +733,23 @@ function _lbOnChatLine(g, m) {
   const asked = new RegExp('^\\s*(?:elo\\s*' + num + '|' + num + '\\s*elo)\\s*$', 'i').exec(m.text || '');
   if (!asked) return;
   const wanted = +String(asked[1] || asked[2]).replace(',', '');
-  // Too soon after the last one: nothing changes and nothing is said.
-  if (Date.now() - g.chatAt < LB_CHAT_COOLDOWN_MS) return;
+  // Too soon after the last one: held, and answered when the cooldown ends.
+  // A newer command replaces a held one, so a burst gets one answer, to the
+  // last thing asked, and nothing that arrives goes unanswered.
+  const wait = g.chatAt + LB_CHAT_COOLDOWN_MS - Date.now();
+  if (wait > 0) {
+    g.chatHeld = wanted;
+    if (!g.chatTimer) g.chatTimer = setTimeout(() => {
+      const w = g.chatHeld;
+      g.chatTimer = null; g.chatHeld = null;
+      if (w != null && lbGame === g && !g.ended && g.boardReady) _lbChatRating(g, w);
+    }, wait);
+    return;
+  }
+  _lbChatRating(g, wanted);
+}
+function _lbChatRating(g, wanted) {
+  const opp = g.opponent;
   g.chatAt = Date.now();
   if (!_lbMatching()) { _lbSay(g, 'This bot\'s rating can\'t be changed.'); return; }
   lbRatingChoices.set(opp.id, wanted);
@@ -929,6 +951,7 @@ function _lbFinishGame(g, st) {
     if (typeof updateActionBtn === 'function') updateActionBtn();
   }
   lbLog('Game over: ' + msg);
+  if (g.chatTimer) { clearTimeout(g.chatTimer); g.chatTimer = null; g.chatHeld = null; }
   if (g.abort) { try { g.abort.abort(); } catch (e) {} }
   if (lbGame === g) lbGame = null;
   if (lbWantConnected) _lbSetState('waiting');

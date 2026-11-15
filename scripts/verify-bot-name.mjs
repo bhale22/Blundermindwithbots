@@ -201,7 +201,7 @@ const pickPreset = async (id, engine = 'maia3') => {
 
 console.log('every preset goes by its own name:');
 const presets = await panel.evaluate(() => PERSONALITIES.map((p) => ({ id: p.id, name: p.name })));
-ok(presets.length === 13, 'all 13 of them', presets.length);
+ok(presets.length === 14, 'all 14 of them', presets.length);
 for (const { id, name } of presets) {
   await pickPreset(id);
   r = await build();
