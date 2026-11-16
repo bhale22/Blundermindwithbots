@@ -211,6 +211,73 @@ function sfGhostGetMove(fen, depth, excludeUci, hypBoard, hypTurn, hypEp, hypCas
 // resort does not wait on it again (see _botLastResortMove).
 let sfLastSearchSilent = false;
 
+// ── The game's moves, for Stockfish ──────────────────────────────────────────
+// Stockfish used to be given only the position (`position fen`), so it could
+// not know a move repeats one played earlier in the game. A move that let the
+// game be drawn by threefold repetition read as +8 rather than 0.00, and a
+// winning bot shuffled straight into one: a tester's Flounder bot drew a +8
+// game on Lichess that way (Nov 2026).
+//
+// When the position asked about is the live game's, it now goes as the game's
+// start plus every move played, the way Stockfish is normally driven, and the
+// third repetition scores as the draw it is. Measured on the tester's games
+// (middlegame, a 191-ply rook ending, the +8 position): no slower — 114/105,
+// 39/39, 19/13 ms, position-only vs with the moves — and in the +8 position
+// exactly one move dropped to 0.00: the one that drew the game.
+//
+// Any other position — a premove's guess at the reply, a puzzle, the ghost's
+// hypothetical — has no history and still goes as a bare FEN. So does the live
+// one if the recorded moves fail to replay onto it exactly: a wrong history is
+// worse than none.
+const _SF_START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+let _sfHistKey = null, _sfHistFen4 = null;   // last replay: start|moves -> where it lands
+function _sfFen4(fen) { return String(fen).split(' ').slice(0, 4).join(' '); }
+// Where `moves` (UCI) lead from `start`, as FEN fields 1-4, or null. Pure: it
+// does not touch the live board (parseFen would).
+function _sfReplayFen4(start, moves) {
+  const parts = String(start).split(' ');
+  const rows = (parts[0] || '').split('/');
+  if (rows.length !== 8) return null;
+  let bd = {};
+  for (let r = 0; r < 8; r++) {
+    let c = 0;
+    for (const ch of rows[r]) {
+      if ('12345678'.includes(ch)) c += +ch;
+      else { bd[r * 8 + c] = { piece: ch.toUpperCase(), color: ch === ch.toUpperCase() ? 'w' : 'b' }; c++; }
+    }
+  }
+  let tn = parts[1] === 'b' ? 'b' : 'w';
+  const cs = parts[2] || '-';
+  let cst = { wK: cs.includes('K'), wQ: cs.includes('Q'), bK: cs.includes('k'), bQ: cs.includes('q') };
+  let ep = (parts[3] && parts[3] !== '-') ? fileRankToSq(parts[3]) : -1;
+  for (const u of moves) {
+    const mv = uciToSq(u);
+    const p = mv && bd[mv.from];
+    if (!p || p.color !== tn) return null;
+    const ne = computeEP(mv.from, mv.to, bd);
+    cst = updateCastling(mv.from, mv.to, p, cst);
+    bd = applyMove(mv.from, mv.to, bd, ep, mv.promo || 'Q');
+    ep = ne;
+    tn = tn === 'w' ? 'b' : 'w';
+  }
+  return _sfFen4(boardToFen(bd, tn, cst, ep));
+}
+// The UCI `position` command for `fen`: with the game's moves when it is the
+// live game's position, a bare FEN otherwise.
+function sfPositionCmd(fen) {
+  try {
+    const hist = (typeof botMoveHistory !== 'undefined' && Array.isArray(botMoveHistory)) ? botMoveHistory : null;
+    if (hist && hist.length) {
+      const start = (typeof _gameStartFen !== 'undefined' && _gameStartFen) || _SF_START_FEN;
+      const moves = hist.join(' ');
+      const key = start + '|' + moves;
+      if (key !== _sfHistKey) { _sfHistKey = key; _sfHistFen4 = _sfReplayFen4(start, hist); }
+      if (_sfHistFen4 && _sfHistFen4 === _sfFen4(fen)) return 'position fen ' + start + ' moves ' + moves;
+    }
+  } catch (e) {}
+  return 'position fen ' + fen;
+}
+
 // opts.timeoutMs: the safety timeout (default 5 s).
 // opts.fullStrength: with isDepth, search at Skill Level 20 rather than
 //   whatever level the last request left set.
@@ -237,7 +304,7 @@ function sfGetMove(fen, levelOrDepth, isDepth=false, opts) {
       sfWorker.postMessage('setoption name Skill Level value ' + wantLevel);
       sfCurrentSkillLevel = wantLevel;
     }
-    sfWorker.postMessage('position fen ' + fen);
+    sfWorker.postMessage(sfPositionCmd(fen));
     // Levels at or below 0 run Skill 0 (the clamp above floors there) and are
     // separated by depth alone: 0 -> 4 ply, -1 -> 3, -2 -> 2, -3 -> 1.
     const depth = isDepth ? levelOrDepth
@@ -292,7 +359,7 @@ function sfGetComplexity(fen) {
       sfCurrentSkillLevel = 20;
     }
     sfWorker.postMessage('setoption name MultiPV value 2');
-    sfWorker.postMessage('position fen ' + fen);
+    sfWorker.postMessage(sfPositionCmd(fen));
     sfWorker.postMessage('go depth 12');
     // 3 s safety timeout — avoids indefinite wait if SF is stalled
     setTimeout(() => {
@@ -343,7 +410,7 @@ function sfEvalMoves(fen, moves, depth, opts) {
       sfCurrentSkillLevel = 20;
     }
     sfWorker.postMessage('setoption name MultiPV value ' + moves.length);
-    sfWorker.postMessage('position fen ' + fen);
+    sfWorker.postMessage(sfPositionCmd(fen));
     sfWorker.postMessage('go depth ' + (depth || 10) + ' searchmoves ' + moves.join(' '));
     // Safety timeout — the guard must not stall the bot's move. Scales with
     // candidate count since a wider MultiPV probe (CP-budget acceptance can
@@ -407,6 +474,19 @@ function sfEvalMoves(fen, moves, depth, opts) {
 // too (they are the ones a beatable bot plays), and their relative ordering is
 // stable long before the top move's evaluation settles.
 const REGAN_PROBE_DEPTH = 8;
+
+// In an ending of this many pieces or fewer (kings included) the probe looks
+// deeper. Depth 8 rarely sees a king-and-rook mate coming, so there was little
+// to tell progress from shuffling; at 12 the mate is often in sight, and a
+// position this small costs Stockfish next to nothing to search. On a slow
+// device the probe still stops at the turn's think time and plays from the
+// deepest depth it finished. The ladder is untouched: its games ended at ply
+// 70, long before an ending this small.
+const FLOUNDER_ENDGAME_PIECES = 6, FLOUNDER_ENDGAME_DEPTH = 12;
+function flounderProbeDepth(fen) {
+  const pieces = String(fen).split(' ')[0].replace(/[^a-zA-Z]/g, '').length;
+  return pieces <= FLOUNDER_ENDGAME_PIECES ? FLOUNDER_ENDGAME_DEPTH : REGAN_PROBE_DEPTH;
+}
 
 // Ceiling on the shared eval probe. Raised from 4500 when the legal-move probe
 // (30+ moves) started hitting it; measured below.
@@ -472,6 +552,75 @@ const flounderC = elo =>
 // not to the difference. That ordering is what discounts errors made in an
 // already-decided position, which is the winning/losing/equal conditioning.
 const _flounderScale = v => Math.sign(v) * Math.log(1 + Math.abs(v) / 100);
+
+// ...except in a WON position: the bot's best move is at least this good (cp),
+// or it is at least FLOUNDER_DECIDED_LEAD ahead in material. There:
+//   • moves are compared in plain centipawns (pawns, in d's units: near
+//     equality ln(1 + x/100) is x/100, the yardstick the scale starts from);
+//   • a mate one move slower costs a pawn (_flounderPlainCp), not a centipawn;
+//   • no one move may cost more than FLOUNDER_DECIDED_MAX_LOSS.
+//
+// The perceptual scale discounts errors in a decided position, which is
+// faithful to how humans are MEASURED and wrong for how they PLAY: at +15 it
+// treated everything down to about +7 as the same move, and every mate as the
+// same mate. Sampling fresh each move with nothing to tell progress from
+// shuffling, a winning Flounder wandered until a repetition or the fifty-move
+// rule drew it, and its heavy tail — "a rare move costs a piece" — now and
+// then spent that piece on the rook that was the whole win. A tester's 1825
+// bot did exactly that on Lichess (Nov 2026).
+//
+// Why material as well as the evaluation: Stockfish rates king and rook
+// against king at only about +2.5 at the probe's depth, and shrinks every
+// score as the fifty-move count climbs, so an evaluation threshold alone
+// mostly never fired in the very endings it is for.
+//
+// Why the cap: it is the bound weakened Stockfish has. Its Skill Level picks
+// among its top moves with a random push of at most about a pawn, so it can
+// play slowly but never gives a won ending back. The bar is parity with the
+// Stockfish level beside the rating — Flounder interpolates Stockfish, it does
+// not have to out-convert it — and without the cap Flounder fell short of it.
+//
+// Measured (Nov 2026): 7 won endings x 4 tries against full-strength
+// Stockfish (KR v K from four starts and the tester's game, KQ v K, the
+// tester's rook-and-pawns ending), everyone given the game's moves (see
+// sfPositionCmd), all at 1825:
+//   Stockfish level 2, the level beside 1825      21/28 won, none lost
+//   Flounder as it was (log scale throughout)      7/28 won, often gave the rook back
+//   + won-position rules above                    18/28 won, 1 lost
+//   + deeper probe in small endings (as shipped)   23/27 won, none lost
+// Flounder's wins were also quicker with the deeper probe (mate in 9-39).
+//
+// Losing positions keep the scale: a bot that is lost shrugging off further
+// losses is the human behaviour the scale is there for.
+//
+// The ladder should barely move: its games were cut at ply 70 and scored on
+// material, so a lead this size already counted as the win this converts.
+const FLOUNDER_DECIDED_CP = 500;
+const FLOUNDER_DECIDED_LEAD = 5;        // material points (P 1, N/B 3, R 5, Q 9): a rook
+const FLOUNDER_DECIDED_MAX_LOSS = 1.0;  // pawns, the most one move may cost when won
+// Material ahead for the side to move, in points.
+function _flounderMaterialLead(fen) {
+  const val = { p: 1, n: 3, b: 3, r: 5, q: 9 };
+  const parts = String(fen).split(' ');
+  const me = parts[1] === 'b' ? 'b' : 'w';
+  let lead = 0;
+  for (const ch of parts[0] || '') {
+    const v = val[ch.toLowerCase()];
+    if (!v) continue;
+    const white = ch !== ch.toLowerCase();
+    lead += (white === (me === 'w')) ? v : -v;
+  }
+  return lead;
+}
+// The probe maps a mate to ±(10000 − moves to mate), so a mate one move slower
+// reads as 1 cp worse — nothing, to the sampler, which then drifted from mate
+// in 6 to mate in 10 and back without ever arriving. In a won position a move
+// of mate distance is worth a pawn instead.
+function _flounderPlainCp(v) {
+  if (v >= 9000)  return 10000 - 100 * (10000 - v);
+  if (v <= -9000) return -10000 + 100 * (10000 + v);
+  return v;
+}
 
 // Interpolate ln(s) between measured points; extrapolate on the end slopes.
 function flounderParams(elo) {
@@ -577,11 +726,14 @@ const FLOUNDER_OVERSHOOT_MARGIN = 0.5;
 // of its move, and stalemate-seeking reweights the moves the bot might play.
 // Personality is not included; it is applied to the move, not to this.
 const FLOUNDER_SEL_QUANTILES = 256;
-function flounderSelectionProbs(d, s, cEff) {
+// `tauCap`: the most one move may cost (a won position; see
+// FLOUNDER_DECIDED_MAX_LOSS), so this matches what flounderChooseMove plays.
+function flounderSelectionProbs(d, s, cEff, tauCap) {
   const n = FLOUNDER_SEL_QUANTILES;
   const counts = new Array(d.length).fill(0);
+  const cap = tauCap > 0 ? tauCap : Infinity;
   for (let j = 0; j < n; j++) {
-    const tau = s * Math.pow(-Math.log(1 - (j + 0.5) / n), 1 / cEff);
+    const tau = Math.min(cap, s * Math.pow(-Math.log(1 - (j + 0.5) / n), 1 / cEff));
     let k = -1, gap = Infinity;
     for (let i = 0; i < d.length; i++) {
       if (d[i] > tau + FLOUNDER_OVERSHOOT_MARGIN) continue;
@@ -666,7 +818,7 @@ async function flounderChooseMove(fen, elo, depth, effTemp, opts) {
     // and then nothing. Never under FLOUNDER_PROBE_MIN_MS.
     const budget = (opts && opts.budgetMs > 0)
       ? Math.max(FLOUNDER_PROBE_MIN_MS, opts.budgetMs) : 0;
-    const evals = await sfEvalMoves(fen, moves, depth || REGAN_PROBE_DEPTH,
+    const evals = await sfEvalMoves(fen, moves, depth || flounderProbeDepth(fen),
                                     { timeoutMs: budget, partialOk: true });
     if (!evals) return null;
     const scored = moves.filter(m => evals[m] != null);
@@ -674,14 +826,20 @@ async function flounderChooseMove(fen, elo, depth, effTemp, opts) {
 
     let best = -Infinity;
     for (const m of scored) if (evals[m] > best) best = evals[m];
-    const gBest = _flounderScale(best);
-    const d = scored.map(m => gBest - _flounderScale(evals[m]));
+    // A won position (see FLOUNDER_DECIDED_CP): moves are compared in plain
+    // centipawns, a mate a move slower costs a pawn, and no one move may cost
+    // more than FLOUNDER_DECIDED_MAX_LOSS.
+    const decided = best >= FLOUNDER_DECIDED_CP || _flounderMaterialLead(fen) >= FLOUNDER_DECIDED_LEAD;
+    const gBest = _flounderScale(best), pBest = _flounderPlainCp(best);
+    const d = scored.map(m => decided ? (pBest - _flounderPlainCp(evals[m])) / 100
+                                      : gBest - _flounderScale(evals[m]));
+    const tauCap = decided ? FLOUNDER_DECIDED_MAX_LOSS : Infinity;
 
     const { s, c } = flounderParams(elo);
     const cEff = flounderTempAdjustedC(c, effTemp);
     // Weibull inverse-CDF sample. The heavy tail at c < 1/2 is the point: most
     // turns cost almost nothing and a rare one costs a piece.
-    const tau = s * Math.pow(-Math.log(1 - Math.random()), 1 / cEff);
+    const tau = Math.min(tauCap, s * Math.pow(-Math.log(1 - Math.random()), 1 / cEff));
 
     let k = -1, gap = Infinity;
     for (let i = 0; i < scored.length; i++) {
@@ -692,7 +850,7 @@ async function flounderChooseMove(fen, elo, depth, effTemp, opts) {
     // d = 0 always qualifies, so this is belt-and-braces.
     if (k < 0) { let lo = Infinity; for (let i = 0; i < d.length; i++) if (d[i] < lo) { lo = d[i]; k = i; } }
 
-    const sel = flounderSelectionProbs(d, s, cEff);
+    const sel = flounderSelectionProbs(d, s, cEff, tauCap);
     const dist = {};
     for (let i = 0; i < scored.length; i++) if (sel[i] > 0) dist[scored[i]] = sel[i];
 
@@ -711,19 +869,21 @@ async function flounderChooseMove(fen, elo, depth, effTemp, opts) {
       const shaped = _maybeStaleSeek(dist);
       const pickUci = sampleFromProbs(shaped, 1);
       const ki = scored.indexOf(pickUci);
-      if (ki >= 0) return { uci: scored[ki], cp: best - evals[scored[ki]], tau, dist, evals };
+      if (ki >= 0) return { uci: scored[ki], cp: best - evals[scored[ki]], tau, dist, evals, decided, desperate: true };
     }
 
     // PERSONALITY. The rating has now decided how much this turn throws away;
     // personality decides which way. The hook lives in 50-bot-engine.js because
     // it needs the attractor machinery; when no personality is configured it
     // returns k unchanged, so this file's behaviour is untouched by default.
+    // `decided` tells it d is in plain pawns, so the Budget band is too.
+    let styled = false;
     if (typeof flounderApplyPersonality === 'function') {
       const alt = flounderApplyPersonality(scored, d, tau, k, FLOUNDER_OVERSHOOT_MARGIN,
-        flounderTargetMean(s, cEff));
-      if (Number.isInteger(alt) && alt >= 0 && alt < scored.length) k = alt;
+        flounderTargetMean(s, cEff), decided);
+      if (Number.isInteger(alt) && alt >= 0 && alt < scored.length) { styled = alt !== k; k = alt; }
     }
-    return { uci: scored[k], cp: best - evals[scored[k]], tau, dist, evals };
+    return { uci: scored[k], cp: best - evals[scored[k]], tau, dist, evals, decided, styled };
   } catch (e) {
     return null;
   }

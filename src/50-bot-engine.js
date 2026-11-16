@@ -363,8 +363,32 @@ async function _botDecideDraw(atMove) {
 async function _botAnswerDrawFirst() {
   if (typeof lichessDrawAwaitingAnswer !== 'function') return false;
   for (let i = 0; i < 100 && _botDrawConsidering; i++) await new Promise(r => setTimeout(r, 100));
-  if (lichessDrawAwaitingAnswer()) return await _botDecideDraw(true);
-  return typeof lichessDrawAccepted === 'function' && lichessDrawAccepted();
+  if (lichessDrawAwaitingAnswer()) {
+    if (await _botDecideDraw(true)) return true;
+  } else if (typeof lichessDrawAccepted === 'function' && lichessDrawAccepted()) {
+    return true;
+  }
+  // A threefold or fifty-move draw the opponent's move made claimable is
+  // decided here too, for the same reason: the move would let it pass.
+  return typeof lichessClaimFirst === 'function' && await lichessClaimFirst();
+}
+
+// Should the bot claim a draw by threefold repetition or the fifty-move rule?
+// On Lichess a claim is the player's choice, and the bot makes it on exactly
+// the terms it accepts a draw offer (_botDecideDraw): never if its Draws
+// setting refuses draws or it expects to win on time; otherwise when it is no
+// more than its margin ahead (more when it is about to flag itself), judged by
+// the same reading of the position. A bot clearly winning plays on.
+// Resolves { yes, why }; `why` is worded for the host's Lichess log.
+async function botDecideClaim() {
+  if (!botAcceptDraws) return { yes: false, why: 'this bot never accepts draws (Personality → Draws & desperation)' };
+  if (_botExpectsToFlagOpponent()) return { yes: false, why: 'it expects to win on time' };
+  const adv = botDrawUseObjectiveEval ? await botEvalAdvantageCp() : await botPerceivedAdvantageCp();
+  // No reading of the position: take the draw, as the bot always used to.
+  if (adv === null) return { yes: true, why: 'it could not read the position' };
+  const margin = botDrawAcceptMargin + (_botDesperateForDraw() ? 200 : 0);
+  if (adv <= margin) return { yes: true, why: _botDrawSeesText(adv) + ' (it takes a draw unless more than ' + margin + ' cp ahead)' };
+  return { yes: false, why: _botDrawSeesText(adv) + ' — more than the ' + margin + ' cp it allows' };
 }
 
 // After its move, a draw-offering bot checks whether the position FEELS level
@@ -1243,7 +1267,7 @@ function _ccPressureMatch(cond, botClock, oppClock) {
 // Residual leak, known and deliberate: a personality whose preferences
 // correlate with cost (one that likes sacrifices) still drifts downward.
 // Symmetry makes that second-order and measurable instead of guaranteed.
-function flounderApplyPersonality(moves, d, tau, k0, margin, kernel) {
+function flounderApplyPersonality(moves, d, tau, k0, margin, kernel, plainCp) {
   try {
     const budget = window._bcpCpBudget != null ? +window._bcpCpBudget : 0;
     if (!(budget > 0)) return k0;
@@ -1253,7 +1277,12 @@ function flounderApplyPersonality(moves, d, tau, k0, margin, kernel) {
     // personality quietly louder as the game decides: g() compresses, so 100cp
     // covers far more of the scale near equality than it does at +5 pawns.
     // ln(1 + budget/100) is exactly "budget centipawns at an equal position".
-    const w = Math.log(1 + budget / 100);
+    //
+    // `plainCp`: the bot is far ahead (FLOUNDER_DECIDED_CP) and d is in plain
+    // pawns, so the band is the Budget's centipawns as labelled. On the scale
+    // it was the very widening that let a winning bot's style choose rook
+    // checks over progress: Budget 100 at +15 spanned everything down to +7.
+    const w = plainCp ? budget / 100 : Math.log(1 + budget / 100);
     if (!(w > 0)) return k0;
 
     // How steeply the choice is pulled back toward the sampled cost. This is
@@ -2384,6 +2413,9 @@ async function botFlounderTurn(fen, clockMs, startMs, baseElo) {
   // the engine's thinking fits inside the time the bot meant to spend anyway.
   const pick = await flounderChooseMove(fen, elo, undefined, temp,
     { staleSeek: true, budgetMs: roughThinkSec * 1000 });
+  // Set only when the probe ran out of time and the move came from the
+  // deepest depth it finished — below the depth the ladder was measured at.
+  const probeDepth = (typeof sfLastProbeDepth !== 'undefined') ? sfLastProbeDepth : null;
 
   let uci, delay;
   if (pick && pick.uci) {
@@ -2397,6 +2429,7 @@ async function botFlounderTurn(fen, clockMs, startMs, baseElo) {
       uci = (await blindConvictionMove(fen, probs, false, pick.evals)) || uci;
     }
     lastBotMoveSource = 'Flounder';
+    lastBotMoveDetail = _flounderMoveDetail(elo, baseElo, probeDepth, pick, uci, flounderProbeDepth(fen));
     // The CP-budget, degradation and hard-floor guards are deliberately NOT
     // applied. All three exist because Maia's probabilities are popularity
     // rather than quality, so a sampled move has to be checked against an
@@ -2415,11 +2448,31 @@ async function botFlounderTurn(fen, clockMs, startMs, baseElo) {
       Math.round(1 + (elo - 650) * 19 / 1950)));
     uci = await sfGetMove(fen, lvl);
     lastBotMoveSource = 'SF';
+    lastBotMoveDetail = 'Stockfish level ' + lvl + ' (Flounder\'s check of the moves did not run)';
     delay = botThinkTime(null, clockMs);
   }
   const wait = Math.max(0, delay - (Date.now() - startMs));
   if (wait > 0) await new Promise(r => setTimeout(r, wait));
   return uci;
+}
+
+// "Flounder 1790 (set 1825), depth 5 of 8, cut short, far ahead" — the rating
+// it played at (the degradation curve can lower it from the set one), how deep
+// its check of every move got, and anything that steered the pick.
+// `wantDepth`: the depth the probe was asked for (deeper in a small ending,
+// flounderProbeDepth).
+function _flounderMoveDetail(elo, baseElo, probeDepth, pick, uci, wantDepth) {
+  const e = Math.round(elo), b = Math.round(baseElo);
+  const want = wantDepth || REGAN_PROBE_DEPTH;
+  let s = 'Flounder ' + e + (Number.isFinite(b) && b !== e ? ' (set ' + b + ')' : '');
+  s += probeDepth != null
+    ? ', depth ' + probeDepth + ' of ' + want + ', cut short'
+    : ', depth ' + want;
+  if (pick && pick.decided) s += ', far ahead';
+  if (pick && pick.desperate) s += ', stalemate-seeking';
+  else if (pick && pick.styled) s += ', personality';
+  if (pick && uci && uci !== pick.uci) s += ', Blind Conviction';
+  return s;
 }
 
 // ── Effective Stockfish level (degrades under time pressure) ─────────────────
@@ -3071,6 +3124,9 @@ async function _botLastResortMove(fen, reason) {
   }
   _botLastResortKind = kind;
   lastBotMoveSource = 'Fallback';
+  lastBotMoveDetail = kind === 'sf'   ? 'Fallback: quick Stockfish, depth ' + SF_QUICK_DEPTH + ' (the engine ran out of time)'
+                    : kind === 'look' ? 'Fallback: one-reply look, no engine (the engine did not answer)'
+                    :                   'Fallback: random legal move (nothing else answered)';
   const why = reason || ((typeof sfUnsupported !== 'undefined' && sfUnsupported)
     ? sfUnsupportedText() + ' Until then the bot plays simple moves that look only one reply ahead.'
     : 'The chess engine didn’t answer in time on this device, so the bot played a quick move instead.');
@@ -3116,6 +3172,7 @@ async function botMakeMove() {
   const _myGen = _botGameGen;
 
   const _botMoveStartMs = Date.now(); // for inference-time accounting
+  lastBotMoveDetail = '';              // each path below names itself
   // Real move counters, not the frozen "0 1": halfmoveClock is maintained by
   // executeMove; fullmove = played-plies/2 + 1. Maia ignores these, but Stockfish
   // uses the halfmove clock for 50-move awareness and any exported FEN needs them.
@@ -3215,6 +3272,8 @@ async function botMakeMove() {
               ? '♟ ' + matchedEntry.name + ' (' + matchedEntry.eco + ')'
               : '♟ Preferred Opening';
             document.getElementById('botStatus').textContent = label;
+            lastBotMoveDetail = 'Repertoire: ' + (matchedEntry
+              ? matchedEntry.name + ' (' + matchedEntry.eco + ')' : 'preferred opening');
             // Scaled to the time control on the clock-based plan; the flat
             // 0.4–1.2 s otherwise (botBookMoveDelayMs).
             const bookDelay = Math.max(0, botBookMoveDelayMs(clockMs) - (Date.now() - _botMoveStartMs));
@@ -3272,6 +3331,7 @@ async function botMakeMove() {
         uciMove = openingMove;
         lastBotMoveSource = 'Book';
         const _od = await openingExplorerFetch(botMoveHistory);
+        lastBotMoveDetail = 'Book' + (_od && _od.opening && _od.opening.name ? ': ' + _od.opening.name : '');
         _explorerConfidence = explorerConfidenceFromData(_od);
         document.getElementById('botStatus').textContent = botOpeningStatusText(_od);
         // The lookup itself counts toward the move's time (botBookMoveDelayMs).
@@ -3348,8 +3408,8 @@ async function botMakeMove() {
         const savedRating = lcSelectedRating;
         lcSelectedRating = String(pressureEffectiveMaiaEloByThink(m3RoughThinkSec)); // ELO degradation via ctrlA curve
         m3Probs = await maia3GetMoveProbs(fen);
+        if (m3Probs) { lastBotMoveSource = 'Maia3'; lastBotMoveDetail = 'Maia ' + lcSelectedRating; }
         lcSelectedRating = savedRating;
-        if (m3Probs) lastBotMoveSource = 'Maia3';
       }
       // Collect complexity result — likely already done while Maia was running
       if (cplxPromise) {
@@ -3406,6 +3466,7 @@ async function botMakeMove() {
         probs = await maiaGetMoveProbs(fen);
         if (probs && Object.keys(probs).length) {
           lastBotMoveSource = 'LC Explorer';
+          lastBotMoveDetail = 'Opening explorer';
         } else {
           lichessExplorerActive = false; // off-book — don't call again this game
           _explorerConfidence = 0;
@@ -3417,8 +3478,8 @@ async function botMakeMove() {
         const savedRatingM = lcSelectedRating;
         lcSelectedRating = String(pressureEffectiveMaiaEloByThink(roughThinkSec));
         probs = await maia3GetMoveProbs(fen);
+        if (probs) { lastBotMoveSource = 'Maia3'; lastBotMoveDetail = 'Maia ' + lcSelectedRating; }
         lcSelectedRating = savedRatingM;
-        if (probs) lastBotMoveSource = 'Maia3';
       }
       // Collect complexity result — should be done by now
       if (cplxPromiseMaia) {
@@ -3474,6 +3535,7 @@ async function botMakeMove() {
         lcSelectedRating = savedRating;
         if (lcsfProbs && Object.keys(lcsfProbs).length) {
           lastBotMoveSource = 'LC Explorer';
+          lastBotMoveDetail = 'Opening explorer';
         } else {
           lichessExplorerActive = false; // off-book — don't call again this game
           _explorerConfidence = 0;
@@ -3519,6 +3581,7 @@ async function botMakeMove() {
         const bookProbs = await maiaGetMoveProbs(fen);
         if (bookProbs && Object.keys(bookProbs).length) {
           lastBotMoveSource = 'LC Explorer';
+          lastBotMoveDetail = 'Opening explorer';
           // The complexity probe every other distribution path runs, for the
           // same readers: Front-runner/Swindler, stalemate-seeking, custom
           // controls gated on winning/losing, Complexity-scaled timing. This
@@ -3582,8 +3645,11 @@ async function botMakeMove() {
             const savedRating = lcSelectedRating;
             lcSelectedRating = String(pressureSlotEloByThink(slotElo, hybRoughThinkSec));
             try { probs = await maia3GetMoveProbs(fen); } catch(e) {}
+            if (probs && Object.keys(probs).length) {
+              lastBotMoveSource = 'Maia3';
+              lastBotMoveDetail = 'Maia ' + lcSelectedRating;
+            }
             lcSelectedRating = savedRating;
-            if (probs && Object.keys(probs).length) lastBotMoveSource = 'Maia3';
           }
           if (cplxPromiseHyb) {
             const cr = await cplxPromiseHyb;
@@ -4381,7 +4447,9 @@ function botPremoveTryFire() {
   // A Lichess draw offer came with the human's move: the premove would decline
   // it unread. Set the premove aside — no busted tax, the human did not beat
   // it — and let the normal turn answer the offer, then move.
-  if (typeof lichessDrawAwaitingAnswer === 'function' && lichessDrawAwaitingAnswer()) {
+  // A draw claim the human's move made possible waits on the same turn.
+  if ((typeof lichessDrawAwaitingAnswer === 'function' && lichessDrawAwaitingAnswer()) ||
+      (typeof lichessClaimAwaiting === 'function' && lichessClaimAwaiting())) {
     botPremoveStats.armed--;
     botPremoveUpdateBadge();
     return false;
@@ -4413,6 +4481,7 @@ function botPremoveTryFire() {
 
   botPremoveStats.fired++;
   lastBotMoveSource = 'PREMOVE';
+  lastBotMoveDetail = 'Premove';
   botPremoveNote(pre, true);
   botPremoveUpdateBadge();
 

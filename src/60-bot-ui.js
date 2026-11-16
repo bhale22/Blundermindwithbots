@@ -1118,6 +1118,7 @@ function botStop() {
   sfCurrentSkillLevel = -1;
   // Reset player names
   lastBotMoveSource = '';
+  lastBotMoveDetail = '';
   var nW = document.querySelector('#playerBoxW .player-name');
   var nB = document.querySelector('#playerBoxB .player-name');
   if (nW) nW.textContent = 'White';
