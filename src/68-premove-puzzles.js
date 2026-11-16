@@ -139,7 +139,7 @@ function pzSaveBot() {
     premoveEnabled: botPremoveEnabled, bustDelayMs: botPremoveBustDelayMs,
     engineBook: botEngineBook, maiaTemp: botMaiaTempValue,
     blink: botBehavBlink, reconsider: botBehavReconsider,
-    badDay: botBadDayMode, blind: botBlindConviction, conviction: botConvictionPct,
+    badDay: botBadDayMode, blind: botBlindConviction, blendTemp: botBlendTemp, conviction: botConvictionPct,
     minProb: botMinProbPct, offerDraws: botOfferDraws, staleSeek: botStaleSeek,
     attractors: window._bcpAttractorValues, pieces: window._bcpPieceValues,
     custom: window._bcpCustomControls, hustler: window._bcpHustlerTempMode,
@@ -168,6 +168,7 @@ function pzApplyBot(p) {
   botBehavReconsider = false;
   botBadDayMode = false;
   botBlindConviction = false;
+  botBlendTemp = null;
   botConvictionPct = 0;
   botMinProbPct = 0;
   botOfferDraws = false;
@@ -223,6 +224,7 @@ function pzRestoreBot(s) {
   botBehavReconsider = s.reconsider;
   botBadDayMode = s.badDay;
   botBlindConviction = s.blind;
+  botBlendTemp = s.blendTemp;
   botConvictionPct = s.conviction;
   botMinProbPct = s.minProb;
   botOfferDraws = s.offerDraws;

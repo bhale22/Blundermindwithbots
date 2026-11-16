@@ -833,16 +833,27 @@ const playMatched = async (challenger, seenAt) => {
 // commands are typed.
 const elo = n => n.toLocaleString('en-US');
 // The greeting: what it plays at, then one line for each thing the opponent
-// can change. The spectators get the first line only.
-const stated = (est, runs, cp, edge, think) => `ELO set to ${elo(est)}${edge ? ` (its ${edge})` : ''}: ${runs}, CP budget ${cp}.` +
-  (think != null ? ` Think time ${think} s a move.` : '');
-const GREET_LINES = 5;
-const greeting = (est, runs, cp, lo, hi, edge, think) => [
-  stated(est, runs, cp, edge, think),
+// can change, two for Temp. The spectators get the first line only.
+const stated = (est, runs, cp, edge, think, temp) => `ELO set to ${elo(est)}${edge ? ` (its ${edge})` : ''}: ${runs}, CP budget ${cp}.` +
+  (think != null ? ` Think time ${think} s a move.` : '') + (temp != null ? ` Temp ${temp}.` : '');
+const GREET_LINES = 7;
+// Temp's two lines: 0 plays the top move (Maia's, or Flounder's), 10 the
+// personality's pick, the bot's default when it is built with Blind Conviction;
+// any other bot says how to get back to its own.
+const tempHelp = (flounder, blind) => {
+  const eng = flounder ? "Flounder's" : "Maia's";
+  return [
+    `Type temp0 to temp10: 0 plays ${eng} top move (no personality), 10 plays personality's pick` + (blind ? ' (default).' : '. temp auto: as built.'),
+    `Temp 0.1-1.0 = closer to ${eng} move distribution, Temp 2-9.9 = personality dominated moves.`,
+  ];
+};
+const greeting = (est, runs, cp, lo, hi, edge, think, temp, blind) => [
+  stated(est, runs, cp, edge, think, temp),
   `Type "ELOXXXX" in chat to adjust between ELO${lo} (min) and ELO${hi} (max).`,
   `Type "cpXX" to set centipawn budget between cp0 (pure ${runs.startsWith('Flounder') ? 'Flounder' : 'Maia3'}) and cp300.`,
   'Type "thinkXs" to change move time to X seconds (0-60s range).',
   'Type "Think auto" to go back to human-like timing.',
+  ...tempHelp(runs.startsWith('Flounder'), blind),
 ].join('\n');
 // The player chat's first lines, as the greeting reads (seen.chat holds strings, a game's chat objects).
 const greetOf = g => (g.chat || []).slice(0, GREET_LINES).map(l => typeof l === 'string' ? l : l.text).join('\n');
@@ -1052,6 +1063,49 @@ const cg3 = await openGame({ id: 'nextuser', name: 'NextUser', rating: 1300 });
 await greeted(cg3);
 check(await maiaNow() === 1100 && greetOf(cg3) === greeting(1100, 'Maia 1100', B, 600, 2600), 'the next player gets their own rating, not the last one\'s choice', cg3.chat);
 await endGame(cg3);
+// Temp: 0 plays Maia's top move, 10 the personality's pick, between blends.
+// A game of its own, so the chat game above lasts no longer than it did.
+const tempNow = () => p2.evaluate(() => botBlendTemp);
+const tempUser = { id: 'tempuser', name: 'TempUser', rating: 1900 };
+const tg = await openGame(tempUser, 3000);
+await greeted(tg);
+check(await tempNow() === null && greetOf(tg) === greeting(1700, 'Maia 1700', B, 600, 2600), 'before any temp command the bot picks as it was built', { t: await tempNow(), chat: tg.chat });
+await command(tg, 'temp0');
+check(lastSaid(tg) === "Temp set to 0 (Maia's top move, no personality)" && lastSpect(tg) === lastSaid(tg) && await tempNow() === 0,
+  'temp0: Maia\'s top move, said in both chats', { said: lastSaid(tg), t: await tempNow() });
+await pastCooldown();
+await command(tg, 'temp 2.5');
+check(lastSaid(tg) === 'Temp set to 2.5' && await tempNow() === 2.5, 'temp 2.5: in between, just the number', lastSaid(tg));
+await pastCooldown();
+await command(tg, 'temp 9.9');
+check(lastSaid(tg) === 'Temp set to 9.9' && await tempNow() === 9.9, 'temp 9.9: the top of the blend, still a number', lastSaid(tg));
+await pastCooldown();
+await command(tg, 'temp50');
+check(lastSaid(tg) === "Temp set to 10 (personality's pick)" && await tempNow() === 10,
+  "temp50: stops at 10, the personality's pick", lastSaid(tg));
+await pastCooldown();
+await command(tg, 'ELO1700 temp.5');
+check(lastSaid(tg) === perf(1700, null, 'Maia 1700', B) + ', temp 0.5' && await tempNow() === 0.5,
+  'with a rating: one answer with both (and .5 for 0.5)', lastSaid(tg));
+await pastCooldown();
+await command(tg, 'temp auto');
+check(lastSaid(tg) === "Temp back to the bot's own pick" && await tempNow() === null,
+  'temp auto: back to the pick it was built with', lastSaid(tg));
+check(await p2.evaluate(() => lbLogLines.some(l => /asked for temp 50 in the chat: Temp 10/.test(l))), 'the host\'s log has what was asked and what it set');
+await pastCooldown();
+await command(tg, 'temp2');
+check(tg.status === 'started', 'the temp game was still going throughout', tg.status);
+await endGame(tg);
+const tg2 = await openGame(tempUser);
+await greeted(tg2);
+check(await tempNow() === 2 && greetOf(tg2) === greeting(1700, 'Maia 1700', B, 600, 2600, null, null, 2) &&
+  tg2.spect[0]?.text === stated(1700, 'Maia 1700', B, null, null, 2),
+  'a rematch keeps their temp, and the greeting gives it', { t: await tempNow(), chat: tg2.chat, spect: tg2.spect });
+await endGame(tg2);
+const tg3 = await openGame({ id: 'tempnext', name: 'TempNext', rating: 1300 });
+await greeted(tg3);
+check(await tempNow() === null && greetOf(tg3) === greeting(1100, 'Maia 1100', B, 600, 2600), 'the next player doesn\'t get the last one\'s temp', { t: await tempNow(), chat: tg3.chat });
+await endGame(tg3);
 const cpNow = () => p2.evaluate(() => ({ budget: window._bcpCpBudget, floor: window._bcpCpHardFloor,
   built: window._lastAppliedBotConfig.cpBudget, builtFloor: window._lastAppliedBotConfig.hardFloorCp }));
 // A bot not set to match keeps its rating and says so.
@@ -1068,6 +1122,9 @@ const fixedCp = (await cpNow()).budget;
 await command(cg4, 'cp50');
 check(lastSaid(cg4) === 'This bot\'s CP budget can\'t be changed.' && (await cpNow()).budget === fixedCp,
   'nor its CP budget', lastSaid(cg4));
+await pastCooldown();
+await command(cg4, 'temp0');
+check(lastSaid(cg4) === 'This bot\'s temp can\'t be changed.' && await tempNow() === null, 'nor its temp', lastSaid(cg4));
 await endGame(cg4);
 await p2.evaluate(() => { window._lastAppliedBotConfig.lichessMatchRating = true; });
 
@@ -1162,7 +1219,7 @@ check(await maiaNow() === 2600 && x0.budget === 58 && x0.floor === Math.max(x0.b
   'past Maia 2600: asked for 2700, it plays Maia 2600 at CP budget 58, and the greeting says so, with the range the Budget rows give', { x0, chat: xg.chat });
 check(await p2.evaluate(() => lbLogLines.some(l => /Playing at Maia 2600, CP budget 58 \(plays like 2700\): BudgetUser is rated 2900/.test(l))),
   'the host\'s log gives the Budget beside the setting when it isn\'t the builder\'s');
-check(greeting(2775, 'Flounder 2400', 300, 600, 2775, 'highest', 15.5).split('\n').every(l => l.length <= 140),
+check(greeting(2775, 'Flounder 2400', 300, 600, 2775, 'highest', 15.5, 9.9).split('\n').every(l => l.length <= 140),
   'every line of the longest greeting fits a Lichess chat line (140)');
 // Time pressure moves the setting, not the Budget: Maia 2600 plays 2025 at the
 // builder's Budget, so 1 s a move is Regan's loss from there, at cp58 still.
@@ -1194,6 +1251,31 @@ check(lastSaid(xg) === perf(1500, null, 'Maia 1500', B) && (await cpNow()).budge
   'a rating on its own brings back the Budget that goes with it', lastSaid(xg));
 check(xg.status === 'started', 'the Budget-row game was still going throughout', xg.status);
 await endGame(xg);
+// Its ratings were measured picking as it was built; under a temp they are
+// not what it plays at, and the reply says so. A game of its own, so the one
+// above lasts no longer than it did.
+// Built with Blind Conviction, as Blundermind-01 is: its default is temp 10.
+const builtBlind = await p2.evaluate(() => { const b = botBlindConviction; botBlindConviction = true; return b; });
+const vg = await openGame({ id: 'caveatuser', name: 'CaveatUser', rating: 1700 }, 3000);
+await greeted(vg);
+check(greetOf(vg).split('\n').slice(5).join('\n') === tempHelp(false, true).join('\n'),
+  'a Blind Conviction bot: temp 10 is its default, and the greeting says so', vg.chat.slice(5, 7));
+await command(vg, 'temp0');
+check(lastSaid(vg) === "Temp set to 0 (Maia's top move, no personality). Its ELO was measured at temp 10.",
+  'a measured bot under a temp: the reply says where its ELO was measured', lastSaid(vg));
+await pastCooldown();
+await command(vg, 'ELO1500');
+check(lastSaid(vg) === perf(1500, null, 'Maia 1500', B) + '. Its ELO was measured at temp 10.',
+  'and so does a rating asked for under it', lastSaid(vg));
+await pastCooldown();
+await command(vg, 'temp10');
+check(lastSaid(vg) === "Temp set to 10 (personality's pick)" && await tempNow() === 10,
+  'temp10: where it was measured, nothing to add', lastSaid(vg));
+await pastCooldown();
+await command(vg, 'temp auto');
+check(lastSaid(vg) === "Temp back to the bot's own pick" && await tempNow() === null, 'temp auto: as built', lastSaid(vg));
+await endGame(vg);
+await p2.evaluate(b => { botBlindConviction = b; }, builtBlind);
 await p2.evaluate(() => { window._lastAppliedBotConfig.lichessStrength = null; });
 
 // Disconnect from the builder's popup.
@@ -1210,8 +1292,8 @@ check(off.state === 'off' && !/(^|[?&])lichess(&|$)/.test(off.url) && !(await pa
   'disconnected; the address no longer marks a host, and the board\'s panel is gone', off);
 check(/Set up bot to play on Lichess/.test(offB.text) && /Start/.test(offB.start) && !/Update/.test(offB.start), 'the builder is back to Start', offB);
 const afterOff = await p2.evaluate(() => ({ maia: maia3SelectedRating, top: Math.max(...botPressureCurveA.map(p => p.y)),
-  budget: window._bcpCpBudget, built: window._lastAppliedBotConfig.cpBudget }));
-check(afterOff.maia === 2200 && afterOff.top === 2200 && afterOff.budget === afterOff.built,
+  budget: window._bcpCpBudget, built: window._lastAppliedBotConfig.cpBudget, temp: botBlendTemp }));
+check(afterOff.maia === 2200 && afterOff.top === 2200 && afterOff.budget === afterOff.built && afterOff.temp === null,
   'and local games play the bot as built, not at the last challenger\'s rating or Budget', afterOff);
 check(errs2.length === 0, 'no page errors (builder flow)', errs2.slice(0, 5));
 
