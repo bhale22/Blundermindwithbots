@@ -61,6 +61,10 @@ let lbGame = null;            // the game this tab is playing, see _lbNewGame
 // Opponent id → the rating they asked for in the game chat. Kept for their
 // rematches; goes when this page reloads.
 const lbRatingChoices = new Map();
+// Opponent id → the CP Budget they asked for (cp100), kept the same way. Its
+// range is the builder's Budget slider.
+const lbBudgetChoices = new Map();
+const LB_CP_MIN = 0, LB_CP_MAX = 300;
 const LB_CHAT_COOLDOWN_MS = 3000;
 let lbAccepting = null;       // challenge id accepted, its gameStart not yet here
 let lbStarting = false;       // botStart() is running on Lichess's behalf
@@ -578,19 +582,38 @@ function _lbEloRange() {
 // A bot's engine setting is not always how strong it plays: Blind Conviction,
 // the guards and the personality all move it. cfg.lichessStrength, filled in the
 // builder's Lichess popup, holds what was measured as [setting, plays like]
-// pairs, settings rising. A matching bot works backwards from it to the setting
-// that plays at the rating wanted, so every rating it talks about (the
-// greeting, the range, the chat reply) is a playing strength. With none, the
-// setting is the strength. Between the pairs it reads a straight line; past the
-// ends, the same gap as the nearest pair.
+// rows, or [setting, plays like, cp] for a row measured at another CP Budget
+// than the builder's. A matching bot works backwards from it to the setting,
+// and the Budget, that play at the rating wanted, so every rating it talks
+// about (the greeting, the range, the chat reply) is a playing strength. With
+// none, the setting is the strength.
+//
+// Rows run in rising strength, settings never falling. Two rows can share a
+// setting when a Budget is what moves between them: Blundermind-01 runs out of
+// Maia at 600 and 2600, and goes on past them by Budget alone (Maia 600 at
+// cp300 plays like 600, at its own 150 like 850; Maia 2600 at 150 plays like
+// 2025, at cp50 like 2775). Between two rows it reads a straight line in both
+// the setting and the Budget; past the ends, the same gap as the nearest row,
+// at that row's Budget.
 function _lbStrengthTable() {
   const t = (window._lastAppliedBotConfig || {}).lichessStrength;
   if (!Array.isArray(t) || !t.length) return null;
-  const ok = t.every((p, i) => Array.isArray(p) && Number.isFinite(+p[0]) && Number.isFinite(+p[1]) &&
-    (i === 0 || (+p[0] > +t[i - 1][0] && +p[1] > +t[i - 1][1])));
-  return ok ? t.map(p => [+p[0], +p[1]]) : null;
+  const rows = t.map(p => Array.isArray(p) && p.length >= 2 ? [+p[0], +p[1], p[2] == null ? null : +p[2]] : null);
+  const ok = rows.every((r, i) => r && Number.isFinite(r[0]) && Number.isFinite(r[1]) &&
+    (r[2] == null || Number.isFinite(r[2])) &&
+    (i === 0 || (r[1] > rows[i - 1][1] && (r[0] > rows[i - 1][0] ||
+      (r[0] === rows[i - 1][0] && (r[2] != null || rows[i - 1][2] != null))))));
+  return ok ? rows : null;
 }
-// col 0 → col 1 reads setting → strength; col 1 → col 0, strength → setting.
+// The rows measured at the builder's Budget, as [setting, plays like]: what a
+// setting plays like when nothing else moves (the bot with no rating to
+// match, Flounder's dial steps, the time-pressure curve).
+function _lbPlainRows(t) {
+  const p = t ? t.filter(r => r[2] == null).map(r => [r[0], r[1]]) : [];
+  return p.length ? p : null;
+}
+// Over [setting, plays like] pairs: col 0 → col 1 reads setting → strength;
+// col 1 → col 0, strength → setting.
 function _lbStrengthMap(v, t, from) {
   if (!t) return v;
   const to = 1 - from, n = t.length - 1;
@@ -600,22 +623,46 @@ function _lbStrengthMap(v, t, from) {
   while (v > t[i + 1][from]) i++;
   return t[i][to] + (v - t[i][from]) * (t[i + 1][to] - t[i][to]) / (t[i + 1][from] - t[i][from]);
 }
-const _lbPlaysLike = (setting, t) => Math.round(_lbStrengthMap(setting, t, 0));
+const _lbPlaysLike = (setting, t) => Math.round(_lbStrengthMap(setting, _lbPlainRows(t), 0));
 
-// The setting that plays at `wanted`, within what this engine can be set to:
-// { setting, est (what it plays like), edge ('low' | 'high' | null) }. Inside
-// the range est is the strength asked for: Maia takes any setting, so it lands
-// on it. At an end, or on Flounder's 25-point dial, it is what that setting
-// plays like.
-function _lbSettingFor(wanted, t) {
-  const { flounder, min, max } = _lbEloRange();
-  let setting = Math.round(_lbStrengthMap(wanted, t, 1)), edge = null;
-  if (setting <= min) { setting = min; edge = 'low'; }
-  else if (setting >= max) { setting = max; edge = 'high'; }
+// The setting and the Budget (cp0, the builder's, for a row without one) that
+// play at strength v.
+function _lbRowFor(v, t, cp0) {
+  const n = t.length - 1, cp = r => r[2] != null ? r[2] : cp0;
+  if (v <= t[0][1]) return { setting: v - t[0][1] + t[0][0], cp: cp(t[0]) };
+  if (v >= t[n][1]) return { setting: v - t[n][1] + t[n][0], cp: cp(t[n]) };
+  let i = 0;
+  while (v > t[i + 1][1]) i++;
+  const f = (v - t[i][1]) / (t[i + 1][1] - t[i][1]);
+  return { setting: t[i][0] + f * (t[i + 1][0] - t[i][0]), cp: cp(t[i]) + f * (cp(t[i + 1]) - cp(t[i])) };
+}
+// The strength at which the setting reaches x: the first one (lowest) or the
+// last (highest), since a run of rows can hold one setting.
+function _lbStrengthOf(x, t, last) {
+  const n = t.length - 1;
+  if (x < t[0][0] || (!last && x === t[0][0])) return x - t[0][0] + t[0][1];
+  if (x > t[n][0] || (last && x === t[n][0])) return x - t[n][0] + t[n][1];
+  let i;
+  if (last) { i = n; while (t[i - 1][0] > x) i--; i--; }
+  else { i = 0; while (t[i + 1][0] < x) i++; }
+  return t[i][1] + (x - t[i][0]) * (t[i + 1][1] - t[i][1]) / (t[i + 1][0] - t[i][0]);
+}
+
+// The setting and the Budget that play at `wanted`, within what this engine
+// can be set to: { setting, cp, est (what it plays like), edge ('low' |
+// 'high' | null) }. Inside the range est is the strength asked for: Maia takes
+// any setting, so it lands on it. At an end it is the end; on Flounder's
+// 25-point dial, what that step plays like.
+function _lbSettingFor(wanted, t, cp0) {
+  const { flounder, min, max } = _lbEloRange(), { lo, hi } = _lbPerfRange();
+  const edge = wanted <= lo ? 'low' : wanted >= hi ? 'high' : null;
+  const v = Math.max(lo, Math.min(hi, wanted));
+  const row = t ? _lbRowFor(v, t, cp0) : { setting: v, cp: cp0 };
+  let setting = Math.max(min, Math.min(max, Math.round(row.setting)));
   // Flounder's dial only holds whole steps; Maia takes any rating.
   if (flounder) setting = Math.round(setting / FLOUNDER_ELO_STEP) * FLOUNDER_ELO_STEP;
-  const est = edge || flounder ? _lbPlaysLike(setting, t) : Math.round(wanted);
-  return { setting, est, edge };
+  const est = flounder ? _lbPlaysLike(setting, t) : Math.round(v);
+  return { setting, cp: row.cp != null ? Math.round(row.cp) : row.cp, est, edge };
 }
 
 // ── Curve A on the Regan model, for this game's clock ───────────────────────
@@ -624,11 +671,17 @@ function _lbSettingFor(wanted, t) {
 // base/60 + increment. Full strength at the anchor and slower, Regan's loss
 // below it. The loss is taken off the playing strength, and each point turned
 // back into the setting that plays at it, so a measured bot's curve lands on
-// the strength it says too. Knots where the builder seeds them.
+// the strength it says too. Knots where the builder seeds them. Only the
+// setting moves with the clock, never the Budget, so the loss is read off the
+// rows at the builder's Budget, starting from what this setting plays like
+// there: Maia 2600 at cp50 (2775) loses Regan's points from Maia 2600's 2025,
+// down to a lower Maia still at cp50.
 const LB_REGAN = { C: 339, K: 1442, ALPHA: 0.283, SMIN: 0.05, EXPECTED_MOVES: 60, X_MIN: 1, X_MAX: 200 };
 const _lbReganD = s => LB_REGAN.C - LB_REGAN.K * Math.pow(Math.max(LB_REGAN.SMIN, s), -LB_REGAN.ALPHA);
-function _lbReganCurveA(clock, est, t) {
+function _lbReganCurveA(clock, setting, t) {
   const { min, max } = _lbEloRange();
+  t = _lbPlainRows(t);
+  const est = _lbStrengthMap(setting, t, 0);
   const raw = clock.initial / 1000 / LB_REGAN.EXPECTED_MOVES + clock.increment / 1000;
   const anchor = Math.max(1.001, Math.min(LB_REGAN.X_MAX / 2, Math.max(0.5, raw)));
   const xs = [LB_REGAN.X_MAX, anchor], steps = 5, r = Math.pow(LB_REGAN.X_MIN / anchor, 1 / (steps + 1));
@@ -650,7 +703,7 @@ function _lbReganCurveA(clock, est, t) {
 // plays at it. Curve A moves too, since it holds absolute ratings and on Maia
 // the curve is what runs: in a game with a clock it is rebuilt on the Regan
 // model for that clock; with none, the builder's curve is shifted. Returns
-// { setting, est, edge }, or null for a bot that doesn't match.
+// { setting, cp, est, edge }, or null for a bot that doesn't match.
 function _lbApplyMatchedRating(g) {
   if (!_lbMatching()) return null;
   const cfg = window._lastAppliedBotConfig;
@@ -661,7 +714,8 @@ function _lbApplyMatchedRating(g) {
   const opp = g && g.opponent;
   const chosen = opp && opp.id ? lbRatingChoices.get(opp.id) : undefined;
   const wanted = chosen != null ? chosen : opp && opp.rating ? opp.rating + offset : null;
-  const at = wanted != null ? _lbSettingFor(wanted, t) : { setting: base, est: _lbPlaysLike(base, t), edge: null };
+  const at = wanted != null ? _lbSettingFor(wanted, t, cfg.cpBudget)
+    : { setting: base, cp: cfg.cpBudget, est: _lbPlaysLike(base, t), edge: null };
   const elo = at.setting;
   if (flounder) {
     const dial = document.getElementById('flounderElo'), out = document.getElementById('flounderEloVal');
@@ -672,13 +726,27 @@ function _lbApplyMatchedRating(g) {
   }
   if (botPressureCurveA && cfg.ctrlA) {
     botPressureCurveA = g && g.clock
-      ? _lbReganCurveA(g.clock, at.est, t)
+      ? _lbReganCurveA(g.clock, elo, t)
       : cfg.ctrlA.map(p => ({ x: p.x, y: +p.y + elo - base }));
   }
   _quickBotSyncBookRating(elo);
+  // The CP Budget: the one the measured table gives for this rating (the
+  // builder's, but for a row measured at another), unless they asked for one
+  // in the chat. The Hard Floor is never under the Budget (the builder's own
+  // rule), so a Budget above the bot's Floor lifts the Floor with it. A Budget
+  // they ask for leaves the rating where it was: a smaller Budget plays
+  // stronger than it says, and that is the opponent's choice.
+  const asked = opp && opp.id ? lbBudgetChoices.get(opp.id) : undefined;
+  const cp = asked != null ? asked : at.cp;
+  const floor = cfg.hardFloorCp != null ? cfg.hardFloorCp : cfg.cpBudget;
+  window._bcpCpBudget = cp;
+  window._bcpCpHardFloor = cp != null && floor != null ? Math.max(+floor, cp) : floor;
+  at.cp = cp;
   if (opp && !g.matchLogged) {
     g.matchLogged = true;
-    const plays = (flounder ? 'Flounder ' : 'Maia ') + elo + (t ? ' (plays like ' + at.est + ')' : '');
+    const plays = (flounder ? 'Flounder ' : 'Maia ') + elo + (cp !== cfg.cpBudget ? ', CP budget ' + cp : '') +
+      (t ? ' (plays like ' + at.est + ')' : '');
+    if (asked != null) lbLog('CP budget ' + asked + ': ' + opp.name + ' asked for it in the chat (built with ' + cfg.cpBudget + ')');
     lbLog(chosen != null
       ? 'Playing at ' + plays + ': ' + opp.name + ' asked for ' + chosen + ' in the chat'
       : opp.rating
@@ -698,20 +766,28 @@ function _lbSay(g, text) {
 }
 
 // Every rating the bot says is a playing strength (the measured table's right
-// hand column), never its engine setting: the setting goes to the host's log.
+// hand column). Beside it goes what runs to play at it, the engine setting
+// and the CP Budget, since they can type a Budget too.
 const _lbElo = n => Math.round(n).toLocaleString('en-US');
 const _lbEdgeText = edge => edge ? ' (its ' + (edge === 'low' ? 'lowest' : 'highest') + ')' : '';
-// The range they can type, in the same playing strength.
+const _lbRunsText = at => (_lbEloRange().flounder ? 'Flounder ' : 'Maia ') + at.setting +
+  (at.cp != null ? ', CP budget ' + at.cp : '');
+// The range they can type, in the same playing strength: where the setting
+// reaches the engine's ends, which a row at another Budget can carry past
+// what the setting alone would.
 function _lbPerfRange() {
   const { min, max } = _lbEloRange(), t = _lbStrengthTable();
-  return { lo: _lbPlaysLike(min, t), hi: _lbPlaysLike(max, t) };
+  return t ? { lo: Math.round(_lbStrengthOf(min, t, false)), hi: Math.round(_lbStrengthOf(max, t, true)) }
+    : { lo: min, hi: max };
 }
 
-// Once a game, at its start: what it plays at, and how to change it.
+// Once a game, at its start: what it plays at, what runs, and how to change
+// them. Lichess cuts a chat line at 140 characters, and the longest this can
+// be (an end, Flounder, a three-figure Budget) is 134.
 function _lbGreet(g, at) {
   const { lo, hi } = _lbPerfRange();
-  _lbSay(g, 'ELO set to ' + _lbElo(at.est) + _lbEdgeText(at.edge) +
-    '. Type ELOxxxx to change performance (range ELO' + lo + ' to ELO' + hi + ').');
+  _lbSay(g, 'ELO set to ' + _lbElo(at.est) + _lbEdgeText(at.edge) + ': ' + _lbRunsText(at) +
+    '. Type ELOxxxx (ELO' + lo + ' to ELO' + hi + ') or cpxxx (cp' + LB_CP_MIN + ' to cp' + LB_CP_MAX + ') to change them.');
 }
 
 // The opponent sets the rating from the player chat with a message that is only
@@ -722,41 +798,87 @@ function _lbGreet(g, at) {
 // bot's own lines back down this stream too. Any number is taken (ELO0 to
 // ELO99999); one past the range stops at its end, and the reply says so.
 //
+// The CP Budget the same way: cp100 or 100cp, alone or beside the rating
+// (ELO2000 cp100, either order, a space or comma between). It runs 0 to 300,
+// the builder's Budget slider. A Budget they ask for doesn't move the rating
+// the bot gives, and stays until they ask for a rating on its own, which
+// brings back the Budget that goes with that rating (the measured table's).
+//
 // What never gets here: Lichess's flood filter (lila Flood.scala) drops a
 // player's line within one character of either of their last two in the past
 // minute, so ELO2200 straight after ELO2100 never reaches the bot. Bots are
 // exempt, so the replies themselves always go out.
+function _lbParseCommand(text) {
+  const num = '(\\d{1,2},\\d{3}|\\d{1,5})';
+  const part = new RegExp('^(?:elo\\s*' + num + '|' + num + '\\s*elo|cp\\s*(\\d{1,5})|(\\d{1,5})\\s*cp)(?:[\\s,]+|$|(?=[a-z]))', 'i');
+  let rest = String(text || '').trim();
+  const cmd = {};
+  while (rest) {
+    const m = part.exec(rest);
+    if (!m) return null;
+    if (m[1] || m[2]) {
+      if (cmd.elo != null) return null;
+      cmd.elo = +String(m[1] || m[2]).replace(',', '');
+    } else {
+      if (cmd.cp != null) return null;
+      cmd.cp = +(m[3] || m[4]);
+    }
+    rest = rest.slice(m[0].length);
+  }
+  return cmd.elo != null || cmd.cp != null ? cmd : null;
+}
 function _lbOnChatLine(g, m) {
   const opp = g.opponent;
   if (!g.boardReady || m.room !== 'player' || !opp || !opp.id || String(m.username).toLowerCase() !== opp.id) return;
-  const num = '(\\d{1,2},\\d{3}|\\d{1,5})';
-  const asked = new RegExp('^\\s*(?:elo\\s*' + num + '|' + num + '\\s*elo)\\s*$', 'i').exec(m.text || '');
-  if (!asked) return;
-  const wanted = +String(asked[1] || asked[2]).replace(',', '');
+  const cmd = _lbParseCommand(m.text);
+  if (!cmd) return;
   // Too soon after the last one: held, and answered when the cooldown ends.
-  // A newer command replaces a held one, so a burst gets one answer, to the
-  // last thing asked, and nothing that arrives goes unanswered.
+  // A newer command replaces what it names in a held one (ELO2000, then cp100,
+  // holds both), so a burst gets one answer, to the last thing asked of each,
+  // and nothing that arrives goes unanswered.
   const wait = g.chatAt + LB_CHAT_COOLDOWN_MS - Date.now();
   if (wait > 0) {
-    g.chatHeld = wanted;
+    const held = g.chatHeld || {};
+    g.chatHeld = { elo: cmd.elo != null ? cmd.elo : held.elo, cp: cmd.cp != null ? cmd.cp : held.cp };
     if (!g.chatTimer) g.chatTimer = setTimeout(() => {
       const w = g.chatHeld;
       g.chatTimer = null; g.chatHeld = null;
-      if (w != null && lbGame === g && !g.ended && g.boardReady) _lbChatRating(g, w);
+      if (w && lbGame === g && !g.ended && g.boardReady) _lbChatCommand(g, w);
     }, wait);
     return;
   }
-  _lbChatRating(g, wanted);
+  _lbChatCommand(g, cmd);
 }
-function _lbChatRating(g, wanted) {
+function _lbChatCommand(g, cmd) {
   const opp = g.opponent;
   g.chatAt = Date.now();
-  if (!_lbMatching()) { _lbSay(g, 'This bot\'s rating can\'t be changed.'); return; }
-  lbRatingChoices.set(opp.id, wanted);
+  if (!_lbMatching()) {
+    _lbSay(g, cmd.elo != null ? 'This bot\'s rating can\'t be changed.' : 'This bot\'s CP budget can\'t be changed.');
+    return;
+  }
+  let cp = null, cpEdge = null;
+  if (cmd.elo != null) {
+    lbRatingChoices.set(opp.id, cmd.elo);
+    // A rating on its own comes with its own Budget.
+    if (cmd.cp == null) lbBudgetChoices.delete(opp.id);
+  }
+  if (cmd.cp != null) {
+    cp = Math.max(LB_CP_MIN, Math.min(LB_CP_MAX, cmd.cp));
+    cpEdge = cp <= LB_CP_MIN ? 'low' : cp >= LB_CP_MAX ? 'high' : null;
+    lbBudgetChoices.set(opp.id, cp);
+  }
   const at = _lbApplyMatchedRating(g);
-  const engine = _lbEloRange().flounder ? 'Flounder' : 'Maia3';
-  lbLog(_lbWho(opp) + ' asked for ' + wanted + ' in the chat: ' + engine + ' set to ' + at.setting + ', plays like ' + at.est);
-  _lbSay(g, 'Performance set to ' + _lbElo(at.est) + _lbEdgeText(at.edge));
+  let said;
+  if (cmd.elo != null) {
+    const engine = _lbEloRange().flounder ? 'Flounder' : 'Maia3';
+    lbLog(_lbWho(opp) + ' asked for ' + cmd.elo + ' in the chat: ' + engine + ' set to ' + at.setting +
+      ', CP budget ' + at.cp + ', plays like ' + at.est);
+    said = 'Performance set to ' + _lbElo(at.est) + _lbEdgeText(at.edge) + ': ' + _lbRunsText(at) + _lbEdgeText(cpEdge);
+  } else {
+    said = 'CP budget set to ' + cp + _lbEdgeText(cpEdge);
+  }
+  if (cp != null) lbLog(_lbWho(opp) + ' asked for cp' + cmd.cp + ' in the chat: CP budget ' + cp + ', Hard Floor ' + window._bcpCpHardFloor);
+  _lbSay(g, said);
   if (typeof botUpdatePlayerNames === 'function') botUpdatePlayerNames(botPlayerColor);
   lbRender();
 }

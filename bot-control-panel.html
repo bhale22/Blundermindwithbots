@@ -4863,7 +4863,8 @@ const PERSONALITIES = [
 // which stay theirs; the time-pressure curves, which the loader then seeds for
 // that clock (the bot's were the plain seed for 10+5); and blend-only slots.
 // Blundermind-01: Desktop\Blundermind-01.json as hosted on Railway, Nov 15 2026;
-// lichessStrength is its measured strength (Nov 11).
+// lichessStrength is its measured strength (Nov 11), with rows past Maia 600
+// and 2600 measured at other CP Budgets (Nov 15), rounded to 25 like the rest.
 const BOT_PRESETS = {
   blundermind01: {
     engine: "maia3",
@@ -4942,7 +4943,7 @@ const BOT_PRESETS = {
     lichessMatchRating: true,
     lichessMatchOffset: 0,
     blindChoicePcts: [60,20,15,5],
-    lichessStrength: [[600,850],[1000,1125],[1500,1500],[2000,1775],[2600,2025]],
+    lichessStrength: [[600,600,300],[600,850],[1000,1125],[1500,1500],[2000,1775],[2600,2025],[2600,2350,100],[2600,2550,75],[2600,2775,50]],
   },
 };
 
@@ -9518,9 +9519,10 @@ function getBotConfig(){
     // rating plus the offset (the bridge's _lbApplyMatchedRating).
     lichessMatchRating:  !!lbcMatchOn,
     lichessMatchOffset:  lbcMatchOffset || 0,
-    // ...and what it was measured to play like, as [setting, plays like] pairs,
-    // so it can be set to whatever plays at the rating wanted.
-    lichessStrength:     lbcStrength.length ? lbcStrength.map(p => [p[0], p[1]]) : null,
+    // ...and what it was measured to play like, as [setting, plays like] rows
+    // ([setting, plays like, cp] for one measured at another CP Budget), so it
+    // can be set to whatever plays at the rating wanted.
+    lichessStrength:     lbcStrength.length ? lbcStrength.map(p => p[2] != null ? [p[0], p[1], p[2]] : [p[0], p[1]]) : null,
   };
 }
 
@@ -9869,9 +9871,9 @@ function applyBotConfig(cfg){
     // Through the same reader as the field, so a hand-edited file that doesn't
     // rise is dropped here rather than half-used.
     const t = Array.isArray(cfg.lichessStrength)
-      ? _lbcParseStrength(cfg.lichessStrength.map(p => (p || [])[0] + '=' + (p || [])[1]).join(', ')) : [];
+      ? _lbcParseStrength(_lbcStrengthText(cfg.lichessStrength.map(p => p || []))) : [];
     lbcStrength = t || [];
-    lbcStrengthText = lbcStrength.map(p => p[0] + '=' + p[1]).join(', ');
+    lbcStrengthText = _lbcStrengthText(lbcStrength);
   });
 
   grp(() => _updateEnginePanelHeader());
@@ -10858,9 +10860,9 @@ function _lbcSummary(){
       (off ? ' ' + (off > 0 ? '+' : '−') + Math.abs(off) : '') + ' · ' + c.elo + ' if they have none']);
     const t = c.lichessStrength;
     if(t && t.length){
-      const { lo, hi } = engineEloRange();
-      rows.splice(2, 0, ['Strength', 'measured: ' + _lbcEngineName() + ' ' + lo + '–' + hi + ' plays like ' +
-        _lbcPlaysLike(lo, t) + '–' + _lbcPlaysLike(hi, t) + ', so it is set to whatever plays at the rating wanted']);
+      const r = _lbcRange(t);
+      rows.splice(2, 0, ['Strength', 'measured: plays like ' + r.lo + ' (' + r.loRuns + ') to ' + r.hi + ' (' + r.hiRuns +
+        '), so it is set to whatever plays at the rating wanted']);
     }
   }
   // Clock-driven timing is where the time-pressure curves run (Fixed and
@@ -10891,9 +10893,11 @@ function _lbcMatchHtml(){
   const help = 'Each game is played at the challenger’s Lichess rating for that speed, plus the offset ' +
     '(−100 plays a little below them). Anyone with no rating gets the rating set in this builder. ' +
     'The bot says so in the game chat, and they can type a rating such as ELO1500 there to change it, ' +
-    'for that game and any rematch. If your bot plays stronger or weaker than its engine setting, enter what ' +
+    'for that game and any rematch. They can set its CP Budget the same way (cp100, or ELO1500 cp100), ' +
+    'from 0 to 300, without changing the rating it gives. If your bot plays stronger or weaker than its engine setting, enter what ' +
     'it was measured to play like under Measured strength: every rating is then a playing strength, and the ' +
-    'bot is set to whatever plays at it. The offset still applies on top.';
+    'bot is set to whatever plays at it. A row measured at another CP Budget (2600 cp50=2775) takes it past ' +
+    'the engine’s ends: between rows it moves the Budget as well as the setting. The offset still applies on top.';
   return '<div class="lbc-h">Rating on Lichess</div>' +
     '<div class="lbc-checks">' +
       '<label><input type="checkbox" id="lbc-match" onchange="lbcMatchChange()"' +
@@ -10907,7 +10911,7 @@ function _lbcMatchHtml(){
     (can
       ? '<div class="lbc-note lbc-help-text" id="lbc-match-help"' + (_lbcHelpOpen ? '' : ' hidden') + '>' + help + '</div>' +
         '<label class="lbc-label" for="lbc-strength">Measured strength (optional)</label>' +
-        '<input id="lbc-strength" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. 600=850, 2000=1775, 2600=2025"' +
+        '<input id="lbc-strength" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. 600=850, 2000=1775, 2600 cp50=2775"' +
           ' value="' + _ccEsc(lbcStrengthText) + '" oninput="lbcStrengthChange()">' +
         '<div class="lbc-note" id="lbc-strength-note">' + _lbcStrengthNote(_lbcParseStrength(lbcStrengthText)) + '</div>'
       : '<div class="lbc-note" style="margin-top:0;">A blend has no single rating to match: each slot sets its own.</div>');
@@ -10918,44 +10922,75 @@ function _lbcMatchHtml(){
 // the setting itself (Blind Conviction, the guards and the personality all move
 // it). A matching bot works backwards from it to the setting that plays at the
 // rating wanted (the bridge's _lbSettingFor), and every rating it says in the
-// game chat is a playing strength. Typed as setting=plays like pairs.
+// game chat is a playing strength. Typed as setting=plays like pairs; a row
+// measured at another CP Budget than this builder's carries it, as 2600
+// cp50=2775. Two rows can share a setting when the Budget is what moves
+// between them, which takes the bot past the engine's own ends: between rows
+// the bridge moves the Budget as well as the setting.
 const _lbcEngineName = () => _isFlounderTab() ? 'Flounder' : 'Maia';
-// "600=725, 2000=1775" → [[600,725],[2000,1775]]; [] for nothing; null when it
-// doesn't read, or a pair doesn't rise from the one before in both numbers.
+// "600=725, 2600 cp50=2775" → [[600,725],[2600,2775,50]], strengths rising; []
+// for nothing; null when it doesn't read, a cp is past the Budget slider's 300,
+// two rows share a strength, a setting falls as the strength rises, or two
+// rows at this builder's Budget share a setting.
 function _lbcParseStrength(s){
   const txt = String(s || '').trim();
   if(!txt) return [];
-  const pairs = txt.split(/[,;\n]+/).map(x => x.trim()).filter(Boolean).map(x => {
-    const m = /^(\d{3,4})\s*(?:=|:|->|→)\s*(\d{3,4})$/.exec(x);
-    return m ? [+m[1], +m[2]] : null;
+  const rows = txt.split(/[,;\n]+/).map(x => x.trim()).filter(Boolean).map(x => {
+    const m = /^(\d{3,4})(?:\s*cp\s*(\d{1,3}))?\s*(?:=|:|->|→)\s*(\d{3,4})$/i.exec(x);
+    if(!m || (m[2] != null && +m[2] > 300)) return null;
+    return m[2] != null ? [+m[1], +m[3], +m[2]] : [+m[1], +m[3]];
   });
-  if(!pairs.length || pairs.some(p => !p)) return null;
-  pairs.sort((a, b) => a[0] - b[0]);
-  for(let i = 1; i < pairs.length; i++)
-    if(pairs[i][0] <= pairs[i-1][0] || pairs[i][1] <= pairs[i-1][1]) return null;
-  return pairs;
+  if(!rows.length || rows.some(r => !r)) return null;
+  rows.sort((a, b) => a[1] - b[1]);
+  for(let i = 1; i < rows.length; i++){
+    const a = rows[i-1], b = rows[i];
+    if(b[1] <= a[1] || b[0] < a[0] || (b[0] === a[0] && a[2] == null && b[2] == null)) return null;
+  }
+  return rows;
 }
-// A setting's measured strength: a straight line between pairs, the nearest
-// pair's gap past the ends — as the bridge reads it.
-function _lbcPlaysLike(v, t){
-  if(!t || !t.length) return v;
+const _lbcStrengthText = t => t.map(p => p[0] + (p[2] != null ? ' cp' + p[2] : '') + '=' + p[1]).join(', ');
+// The strength at which the setting reaches x, the first (lowest) or the last
+// (highest): a straight line between rows, the nearest row's gap past the
+// ends — as the bridge reads it (_lbStrengthOf).
+function _lbcStrengthOf(x, t, last){
   const n = t.length - 1;
-  if(v <= t[0][0]) return Math.round(v - t[0][0] + t[0][1]);
-  if(v >= t[n][0]) return Math.round(v - t[n][0] + t[n][1]);
+  if(x < t[0][0] || (!last && x === t[0][0])) return x - t[0][0] + t[0][1];
+  if(x > t[n][0] || (last && x === t[n][0])) return x - t[n][0] + t[n][1];
+  let i;
+  if(last){ i = n; while(t[i-1][0] > x) i--; i--; }
+  else { i = 0; while(t[i+1][0] < x) i++; }
+  return t[i][1] + (x - t[i][0]) * (t[i+1][1] - t[i][1]) / (t[i+1][0] - t[i][0]);
+}
+// The CP Budget the rows give at strength v, as the bridge's _lbRowFor reads
+// them; null where it is this builder's own throughout.
+function _lbcCpAt(v, t){
+  const n = t.length - 1, cp = r => r[2] != null ? r[2] : cpBudget;
+  if(v <= t[0][1]) return t[0][2] != null ? t[0][2] : null;
+  if(v >= t[n][1]) return t[n][2] != null ? t[n][2] : null;
   let i = 0;
-  while(v > t[i+1][0]) i++;
-  return Math.round(t[i][1] + (v - t[i][0]) * (t[i+1][1] - t[i][1]) / (t[i+1][0] - t[i][0]));
+  while(v > t[i+1][1]) i++;
+  if(t[i][2] == null && t[i+1][2] == null) return null;
+  return Math.round(cp(t[i]) + (v - t[i][1]) / (t[i+1][1] - t[i][1]) * (cp(t[i+1]) - cp(t[i])));
+}
+// The strengths it offers in the chat, from where the setting reaches the
+// engine's lowest to where it leaves its highest, and what runs at each end.
+function _lbcRange(t){
+  const { lo, hi } = engineEloRange(), name = _lbcEngineName();
+  const sLo = Math.round(_lbcStrengthOf(lo, t, false)), sHi = Math.round(_lbcStrengthOf(hi, t, true));
+  const runs = (s, v) => { const cp = _lbcCpAt(v, t); return name + ' ' + s + (cp != null ? ', CP Budget ' + cp : ''); };
+  return { lo: sLo, hi: sHi, loRuns: runs(lo, sLo), hiRuns: runs(hi, sHi) };
 }
 function _lbcStrengthNote(t){
   const name = _lbcEngineName();
   if(t === null) return '<span style="color:#e05a4a;">Can’t read that, so it isn’t used.</span> ' +
-    'Write setting=plays like pairs, both numbers rising, such as 600=850, 2000=1775.';
+    'Write setting=plays like pairs, both numbers rising, such as 600=850, 2000=1775. For a row measured at ' +
+    'another CP Budget, add it: 2600 cp50=2775.';
   if(!t.length) return 'Empty: the ' + name + ' setting is taken as its strength. If this bot plays stronger or weaker ' +
     'than its setting, enter what was measured, and it is set to whatever plays at the rating wanted.';
-  const { lo, hi } = engineEloRange();
-  return 'Plays like about ' + _lbcPlaysLike(lo, t) + ' (' + name + ' ' + lo + ') to ' + _lbcPlaysLike(hi, t) +
-    ' (' + name + ' ' + hi + '), the range it offers in the chat. Asked for 1500, it is set to ' + name + ' ' +
-    _lbcSettingFor(1500, t) + '.';
+  const r = _lbcRange(t);
+  return 'Plays like about ' + r.lo + ' (' + r.loRuns + ') to ' + r.hi + ' (' + r.hiRuns + '), the range it offers ' +
+    'in the chat. Asked for 1500, it is set to ' + name + ' ' + _lbcSettingFor(1500, t) + '.' +
+    (t.some(p => p[2] != null) ? ' Between rows it moves the CP Budget as well as the setting.' : '');
 }
 function _lbcSettingFor(v, t){
   const { lo, hi } = engineEloRange();
