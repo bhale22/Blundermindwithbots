@@ -77,8 +77,26 @@ function loadBoardSettingsPref(){
 let positionCounts = {};   // positionKey → times this position has occurred
 let halfmoveClock  = 0;    // plies since the last pawn move or capture
 
+// Quiet moves: a whole game replayed onto the board at once (the Lichess
+// bridge rebuilding from the server's move list). Each move still updates the
+// position, the move list, the draw-rule counts and the end-of-game test, but
+// makes no sound and draws nothing: no board, indicators, player boxes, clock
+// or hooks. The caller then draws the result once with quietMovesDone().
+// Replayed one by one, a 60-move game played 60 sounds and redrew the board
+// and its indicators about 120 times, which on a slow device took seconds.
+let quietMoves = false;
+function quietMovesDone(){
+  atkMap=buildAtk(board);
+  const _pins=computePins(board);pinnedWSquares=_pins.w;pinnedBSquares=_pins.b;
+  clearPreview();   // refreshes the indicators too
+  updatePlayerBoxes();
+  if(!(typeof IND!=='undefined'&&typeof indApply==='function')) render();
+  if(typeof distOnMoveComplete==='function') distOnMoveComplete();
+}
+
 function executeMove(from,to,promo){
   const p=board[from];if(!p)return;
+  const quiet=quietMoves;
   // Snapshot the pre-move position for the Maia move-distribution panel.
   if(typeof distCapturePreMove==='function') distCapturePreMove(from,to,promo);
   // Detect capture before board is modified (includes en passant)
@@ -90,11 +108,13 @@ function executeMove(from,to,promo){
   board=applyMove(from,to,board,epSq,promo||'Q');
   castling=updateCastling(from,to,p,castling);
   epSq=newEP;turn=turn==='w'?'b':'w';
-  atkMap=buildAtk(board);
-  // Recompute pinned squares for rendering
-  const _pins=computePins(board);pinnedWSquares=_pins.w;pinnedBSquares=_pins.b;
+  if(!quiet){
+    atkMap=buildAtk(board);
+    // Recompute pinned squares for rendering
+    const _pins=computePins(board);pinnedWSquares=_pins.w;pinnedBSquares=_pins.b;
+  }
   lastMoveFrom=from; lastMoveTo=to; // record for last-move highlight
-  playMoveSound(isCapture);
+  if(!quiet) playMoveSound(isCapture);
   // ── Input state ───────────────────────────────────────────────────────────
   // The OPPONENT moving must not tear a piece out of the player's hand.
   //
@@ -111,9 +131,12 @@ function executeMove(from,to,promo){
   const _ourMove = (typeof playerColor!=='function') || p.color===playerColor();
   // Keep it only if the same piece is still ours and still standing there —
   // the opponent may have just captured it or moved onto its square.
-  const _keepHeld = !_ourMove && _heldSq>=0 && board[_heldSq]
+  const _keepHeld = !quiet && !_ourMove && _heldSq>=0 && board[_heldSq]
                  && board[_heldSq].color===playerColor();
-  if(_keepHeld){
+  if(quiet){
+    // The preview is cleared once at the end (quietMovesDone), not per move.
+    selSq=-1;legalMoves=[];hoverSq=-1;dragFrom=-1;dragMoved=false;
+  }else if(_keepHeld){
     const _wasDrag=dragFrom>=0, _wasMoved=dragMoved;
     // The set it was picked up with was premoveDests — speculative by design.
     // The position it guessed at now exists, so re-derive it for real.
@@ -151,6 +174,7 @@ function executeMove(from,to,promo){
   }
   // On Lichess, the bot's move goes to the server from here (65-lichess-bridge)
   if(typeof lichessOnLocalMove==='function') lichessOnLocalMove(from,to,promo,p);
+  if(quiet) return;   // drawn once, by quietMovesDone()
   updatePlayerBoxes();
   if(typeof clockAfterMove==='function') clockAfterMove();
   if(typeof IND!=='undefined'&&typeof indApply==='function')indApply();

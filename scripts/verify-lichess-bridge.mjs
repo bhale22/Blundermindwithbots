@@ -158,6 +158,33 @@ function play(g, uci) {
   return true;
 }
 
+// Would the side to move, playing `mv`, leave the other side a mate in one?
+function allowsMateInOne(g, mv) {
+  const me = g.turn, them = me === 'w' ? 'b' : 'w';
+  const p = g.bd[mv.from];
+  const bd = core.applyMove(mv.from, mv.to, g.bd, g.ep, 'Q');
+  const ep = core.computeEP(mv.from, mv.to, g.bd), cst = core.updateCastling(mv.from, mv.to, p, g.cst);
+  for (const r of core.allLegalMoves(bd, them, ep, cst)) {
+    const rp = bd[r.from];
+    const bd2 = core.applyMove(r.from, r.to, bd, ep, 'Q');
+    if (core.inCheck(bd2, me) && !core.allLegalMoves(bd2, me, core.computeEP(r.from, r.to, bd), core.updateCastling(r.from, r.to, rp, cst)).length) return true;
+  }
+  return false;
+}
+
+// A move for the bot's side made by someone else: the bot account playing in
+// another browser. Returns the move, or null.
+function playForBot(g) {
+  if (g.status !== 'started' || g.turn !== botLetter(g)) return null;
+  const all = core.allLegalMoves(g.bd, g.turn, g.ep, g.cst);
+  if (!all.length) return null;
+  const mv = all[Math.floor(Math.random() * all.length)];
+  const p = g.bd[mv.from];
+  const uci = nameOf(mv.from) + nameOf(mv.to) + (p.piece === 'P' && (mv.to < 8 || mv.to >= 56) ? 'q' : '');
+  play(g, uci);
+  return uci;
+}
+
 // The opponent's turn, with whatever trouble this game's opts ask for. The
 // draw offer comes last on purpose: the bot may take it, and that ends the game.
 function opponentTurn(g) {
@@ -200,7 +227,10 @@ function opponentTurn(g) {
       }
       const all = core.allLegalMoves(g.bd, g.turn, g.ep, g.cst);
       if (!all.length) return;
-      const mv = all[Math.floor(Math.random() * all.length)];
+      // A game kept open for chat checks: never a move that allows mate in one.
+      const safe = o.avoidMateInOne ? all.filter(m => !allowsMateInOne(g, m)) : all;
+      const pool = safe.length ? safe : all;
+      const mv = pool[Math.floor(Math.random() * pool.length)];
       const p = g.bd[mv.from];
       const promo = p.piece === 'P' && (mv.to < 8 || mv.to >= 56) ? 'q' : '';
       play(g, nameOf(mv.from) + nameOf(mv.to) + promo);
@@ -210,6 +240,16 @@ function opponentTurn(g) {
         g.offered = true;
       }
       broadcast(g);
+      // The bot's move played elsewhere while the bot is thinking about it.
+      if (o.playForBotAtPly != null && g.moves.length >= o.playForBotAtPly && !g.playedForBot) {
+        const at = g.moves.length;
+        await sleep(o.playForBotDelayMs || 300);
+        if (g.moves.length === at && (g.playedForBot = playForBot(g))) {
+          g.playedForBotPly = at;
+          broadcast(g);
+          setTimeout(() => opponentTurn(g), 0);   // after this turn's finally
+        }
+      }
       // An offer made just after moving, while the bot is thinking.
       if (o.drawMidThinkAtPly != null && ply === o.drawMidThinkAtPly) {
         await sleep(o.midThinkDelayMs || 400);
@@ -316,6 +356,24 @@ const server = http.createServer(async (req, res) => {
       if (g.opts.rejectAtPly != null && g.moves.length >= g.opts.rejectAtPly && !g.rejected) {
         g.rejected = true; g.refused.push(uci);
         json(res, 400, { error: 'Simulated refusal' });
+        return;
+      }
+      // The race: another move was played for the bot elsewhere just before
+      // this one reached the server. The bot has already played its own on its
+      // board. raceRefuseFirst: the refusal reaches the bot before the state.
+      if (g.opts.raceForBotAtPly != null && g.moves.length >= g.opts.raceForBotAtPly && !g.raced) {
+        g.raced = playForBot(g);
+        g.racedPly = g.moves.length - 1;
+        g.refused.push(uci);
+        if (g.opts.raceRefuseFirst) {
+          g.refusedAt = Date.now();
+          json(res, 400, { error: 'Not your turn, or game already over' });
+          setTimeout(() => { broadcast(g); opponentTurn(g); }, 150);
+        } else {
+          broadcast(g);
+          opponentTurn(g);
+          setTimeout(() => json(res, 400, { error: 'Not your turn, or game already over' }), 60);
+        }
         return;
       }
       if (!play(g, uci)) { g.refused.push(uci); json(res, 400, { error: 'Illegal move ' + uci }); return; }
@@ -612,6 +670,80 @@ await sleep(800);
 check(await pageBoard() === placement(g4.bd), 'board matches the server after the reload');
 check(g4.refused.length === 0, 'no move refused after the reload', g4.refused);
 
+console.log('\n6a. A move played for the bot elsewhere, and the race with its own (resync)');
+// Counted on the page: whole-game rebuilds, and for each replay of the server's
+// moves the sounds it played and the times it drew the board.
+await page.evaluate(() => {
+  const rb = window._rb = { begins: [], replays: [], sounds: 0, draws: 0 };
+  const wrap = (name, before) => { const f = window[name]; window[name] = function () { before(arguments); return f.apply(this, arguments); }; };
+  wrap('playMoveSound', () => { rb.sounds++; });
+  wrap('render', () => { rb.draws++; });
+  if (typeof indApply === 'function') wrap('indApply', () => { rb.draws++; });
+  wrap('_lbBeginLocalGame', a => { rb.begins.push({ at: Date.now(), id: a[0] && a[0].id, moves: a[1].length }); });
+  const replay = _lbReplay;
+  window._lbReplay = function (g, moves) {
+    const s0 = rb.sounds, d0 = rb.draws;
+    const r = replay.apply(this, arguments);
+    rb.replays.push({ id: g.id, moves: moves.length, sounds: rb.sounds - s0, draws: rb.draws - d0 });
+    return r;
+  };
+  window._rbKeep = { tb: botTimeBehavior, ms: botFixedDelayMs, pm: botPremoveEnabled };
+});
+const rbOf = id => page.evaluate(id => ({ begins: _rb.begins.filter(b => b.id === id), replays: _rb.replays.filter(r => r.id === id) }), id);
+const logOf = id => page.evaluate(id => { const i = lbLogLines.findIndex(l => l.includes(id)); return i < 0 ? [] : lbLogLines.slice(i); }, id);
+const pace = (ms, premove) => page.evaluate(([ms, premove]) => { botTimeBehavior = 'fixed'; botFixedDelayMs = ms; botPremoveEnabled = premove; }, [ms, premove]);
+
+// The tester's case: thinking 3 s a move, the bot has its move played for it
+// from another browser 0.4 s into its think.
+await pace(3000, false);
+const cElse = newChallenge({ color: 'white', opts: { playForBotAtPly: 5, playForBotDelayMs: 400, resignAtPly: 14 } });
+await until(() => M.challenges[cElse].gameId, 5000);
+const gElse = M.games[M.challenges[cElse].gameId];
+await until(() => gElse.status !== 'started', 120000, 'game 6a to finish');
+await sleep(800);
+const rbElse = await rbOf(gElse.id), logElse = await logOf(gElse.id);
+check(!!gElse.playedForBot, 'the stand-in played ' + gElse.playedForBot + ' for the bot, mid-think');
+check(logElse.some(l => l.includes(' played for the bot elsewhere')), 'the host took it as the bot\'s move, and says so',
+  logElse.filter(l => /elsewhere|rebuild|refused/i.test(l)));
+check(rbElse.begins.length === 1 && !logElse.some(l => /rebuilding/.test(l)), 'with no rebuild (the game was set up once)', rbElse.begins);
+check(gElse.refused.length === 0, 'the bot stopped thinking: it sent nothing for that turn, so nothing was refused', gElse.refused);
+check(gElse.moves.length > gElse.playedForBotPly + 2 && gElse.botPosts.length >= 2, 'and played on after it', { plies: gElse.moves.length, posts: gElse.botPosts });
+check(await pageBoard() === placement(gElse.bd), 'board matches the server');
+
+// The race, state first: the bot has played and sent its own move when the
+// server's arrives. One rebuild, silent, and the refusal adds nothing to it.
+await pace(300, false);
+const cRace = newChallenge({ color: 'white', opts: { raceForBotAtPly: 5, resignAtPly: 14 } });
+await until(() => M.challenges[cRace].gameId, 5000);
+const gRace = M.games[M.challenges[cRace].gameId];
+await until(() => gRace.status !== 'started', 120000, 'game 6a race to finish');
+await sleep(800);
+const rbRace = await rbOf(gRace.id), logRace = await logOf(gRace.id);
+const reRace = rbRace.replays[rbRace.replays.length - 1] || {};
+check(!!gRace.raced, 'the stand-in played ' + gRace.raced + ' for the bot just before its own move arrived');
+check(rbRace.begins.length === 2, 'one rebuild (after the setup), not two', rbRace.begins);
+check(logRace.some(l => /refused .*the board already follows the server/.test(l)) && !logRace.some(l => /resyncing/.test(l)),
+  'the refusal needed no resync of its own', logRace.filter(l => /rebuild|refused|resync/i.test(l)));
+check(reRace.moves >= 6 && reRace.sounds === 0 && reRace.draws <= 2,
+  'the replay of ' + reRace.moves + ' moves was silent and drew the board ' + reRace.draws + ' time(s)', reRace);
+check(gRace.refused.length === 1 && await pageBoard() === placement(gRace.bd), 'board matches the server; only the raced move was refused', gRace.refused);
+
+// The race, refusal first: the resync reopens the stream at once, and the
+// state that follows joins its rebuild.
+const cRace2 = newChallenge({ color: 'white', opts: { raceForBotAtPly: 5, raceRefuseFirst: true, resignAtPly: 14 } });
+await until(() => M.challenges[cRace2].gameId, 5000);
+const gRace2 = M.games[M.challenges[cRace2].gameId];
+await until(() => gRace2.status !== 'started', 120000, 'game 6a refusal-first race to finish');
+await sleep(800);
+const rbRace2 = await rbOf(gRace2.id), logRace2 = await logOf(gRace2.id);
+const refusedAtRace2 = gRace2.refusedAt;
+check(!!gRace2.raced && logRace2.some(l => /refused .*resyncing/.test(l)), 'refused before the server\'s move arrived: it resyncs', logRace2.filter(l => /rebuild|refused|resync/i.test(l)));
+check(rbRace2.begins.length === 2, 'one rebuild, not two', rbRace2.begins);
+check(refusedAtRace2 && rbRace2.begins[1] && rbRace2.begins[1].at - refusedAtRace2 < 900,
+  'within ' + (rbRace2.begins[1] ? rbRace2.begins[1].at - refusedAtRace2 : '?') + ' ms of the refusal (the stream reopens at once, not after a second)');
+check(await pageBoard() === placement(gRace2.bd), 'board matches the server');
+await page.evaluate(() => { botTimeBehavior = _rbKeep.tb; botFixedDelayMs = _rbKeep.ms; botPremoveEnabled = _rbKeep.pm; });
+
 console.log('\n6b. Draw offers the bot must answer before it moves');
 // The bot is told it is lost, so yes is always the right answer. What is
 // checked is WHEN it answers: before its own move goes out, because on Lichess
@@ -832,29 +964,22 @@ const playMatched = async (challenger, seenAt) => {
 // what runs (the engine setting and the CP Budget), and the ranges as the
 // commands are typed.
 const elo = n => n.toLocaleString('en-US');
-// The greeting: what it plays at, then one line for each thing the opponent
-// can change, two for Temp. The spectators get the first line only.
-const stated = (est, runs, cp, edge, think, temp) => `ELO set to ${elo(est)}${edge ? ` (its ${edge})` : ''}: ${runs}, CP budget ${cp}.` +
-  (think != null ? ` Think time ${think} s a move.` : '') + (temp != null ? ` Temp ${temp}.` : '');
-const GREET_LINES = 7;
-// Temp's two lines: 0 plays the top move (Maia's, or Flounder's), 10 the
-// personality's pick, the bot's default when it is built with Blind Conviction;
-// any other bot says how to get back to its own.
-const tempHelp = (flounder, blind) => {
-  const eng = flounder ? "Flounder's" : "Maia's";
+// The greeting, three lines (Ben's wording, Nov 16): everything it is set to,
+// what can be typed, and the ranges. The spectators get the first line only.
+// Think time and Temp read "auto" when nobody has asked for one, but Temp
+// reads 10 for a Blind Conviction bot (`blind`), which is what it plays.
+const stated = (est, runs, cp, edge, think, temp, blind) =>
+  `ELO set to ${elo(est)} (${edge ? `its ${edge}, ` : ''}using ${runs}), CP budget ${cp}, ` +
+  `think ${think != null ? think + 's' : 'auto'}, temp ${temp != null ? temp : blind ? 10 : 'auto'}`;
+const GREET_LINES = 3;
+const greeting = (est, runs, cp, lo, hi, edge, think, temp, blind) => {
+  const flounder = runs.startsWith('Flounder');
   return [
-    `Type temp0 to temp10: 0 plays ${eng} top move (no personality), 10 plays personality's pick` + (blind ? ' (default).' : '. temp auto: as built.'),
-    `Temp 0.1-1.0 = closer to ${eng} move distribution, Temp 2-9.9 = personality dominated moves.`,
-  ];
+    stated(est, runs, cp, edge, think, temp, blind),
+    `Type in chat to change strength (ELO), centipawn budget (cp), Move timing (think), ${flounder ? 'Flounder' : 'Maia'} temperature (temp).`,
+    `ELO ${lo}-${hi}, cp 0-300, think 0-60s, Temp 0 (${flounder ? "Flounder's" : "Maia's"} top move) - 10 (personality driven)`,
+  ].join('\n');
 };
-const greeting = (est, runs, cp, lo, hi, edge, think, temp, blind) => [
-  stated(est, runs, cp, edge, think, temp),
-  `Type "ELOXXXX" in chat to adjust between ELO${lo} (min) and ELO${hi} (max).`,
-  `Type "cpXX" to set centipawn budget between cp0 (pure ${runs.startsWith('Flounder') ? 'Flounder' : 'Maia3'}) and cp300.`,
-  'Type "thinkXs" to change move time to X seconds (0-60s range).',
-  'Type "Think auto" to go back to human-like timing.',
-  ...tempHelp(runs.startsWith('Flounder'), blind),
-].join('\n');
 // The player chat's first lines, as the greeting reads (seen.chat holds strings, a game's chat objects).
 const greetOf = g => (g.chat || []).slice(0, GREET_LINES).map(l => typeof l === 'string' ? l : l.text).join('\n');
 // It comes LB_GREET_DELAY_MS after the game starts.
@@ -866,8 +991,10 @@ const builtCp = () => p2.evaluate(() => window._lastAppliedBotConfig.cpBudget);
 let B = await builtCp();
 // A game that stays open until endGame, with a slow opponent so the chat checks
 // finish well before the game can.
+// The opponent never allows mate in one, so a chat game lasts its checks out:
+// a random mover was sometimes mated mid-way (Maia 2600 after ELO4000).
 const openGame = async (challenger, oppDelayMs = 1500) => {
-  const id = newChallenge({ color: 'black', challenger, opts: { oppDelayMs } });
+  const id = newChallenge({ color: 'black', challenger, opts: { oppDelayMs, avoidMateInOne: true } });
   await until(() => M.challenges[id].gameId, 5000, 'the challenge accepted');
   const g = M.games[M.challenges[id].gameId];
   await until(() => g.moves.length >= 1, 60000, 'the bot\'s first move');
@@ -906,6 +1033,7 @@ check(greetOf(m4) === greeting(1500, 'Flounder 1500', B, 600, 2400), 'with no ra
 
 // The chat command on Flounder: its dial holds 25s and stops at 2400.
 const fg = await openGame({ id: 'flounderuser', name: 'FlounderUser', rating: 1600 });
+await greeted(fg);   // so the greeting can't land in place of the reply
 await command(fg, '1530ELO');
 check(lastSaid(fg) === perf(1525, null, 'Flounder 1525', B) && await p2.evaluate(() => flounderSliderElo()) === 1525,
   'Flounder: the reply gives the rating it can really play', lastSaid(fg));
@@ -964,7 +1092,8 @@ const curveTop = () => p2.evaluate(() => Math.max(...botPressureCurveA.map(p => 
 const maiaNow = () => p2.evaluate(() => maia3SelectedRating);
 const chatUser = { id: 'chatuser', name: 'ChatUser', rating: 1900 };
 // A random mover is mated quickly, so a slow one keeps this game open through every check.
-const cg = await openGame(chatUser, 3000);
+// At 3 s a move it was still mated now and then (Maia 2600 after ELO4000) before the last.
+const cg = await openGame(chatUser, 6000);
 await greeted(cg);
 check(cg.chat.length === GREET_LINES && cg.chat.every(l => l.room === 'player') && greetOf(cg) === greeting(1700, 'Maia 1700', B, 600, 2600),
   'at the start, in the player chat: it matches, at what rating, and how to change it', cg.chat);
@@ -1033,6 +1162,7 @@ await command(cg, '1500ELO');
 // A rebuild from the server, the bot not being mid-move.
 await until(() => cg.status !== 'started' || cg.turn !== (cg.botWhite ? 'w' : 'b'), 60000, 'the opponent\'s turn');
 const saidBefore = cg.chat.length;
+if (cg.status !== 'started') console.log('    (the chat game ended early: ' + cg.status + ' at ply ' + cg.moves.length + ')');
 await p2.evaluate(() => _lbBeginLocalGame(lbGame, lbGame.local.slice()));
 await sleep(400);
 check(await maiaNow() === 1500 && await curveTop() === 1500 && cg.chat.length === saidBefore,
@@ -1132,6 +1262,7 @@ await p2.evaluate(() => { window._lastAppliedBotConfig.lichessMatchRating = true
 // with a slower opponent, so the game outlasts the cooldowns.
 const cpUser = { id: 'cpuser', name: 'CpUser', rating: 1900 };
 const pg = await openGame(cpUser, 3000);
+await greeted(pg);   // so the greeting can't land in place of the reply
 const cp0 = await cpNow();
 check(cp0.budget === cp0.built && await maiaNow() === 1700, 'before any cp command it plays the builder\'s Budget (' + cp0.built + ')', cp0);
 await command(pg, 'cp40');
@@ -1258,8 +1389,8 @@ await endGame(xg);
 const builtBlind = await p2.evaluate(() => { const b = botBlindConviction; botBlindConviction = true; return b; });
 const vg = await openGame({ id: 'caveatuser', name: 'CaveatUser', rating: 1700 }, 3000);
 await greeted(vg);
-check(greetOf(vg).split('\n').slice(5).join('\n') === tempHelp(false, true).join('\n'),
-  'a Blind Conviction bot: temp 10 is its default, and the greeting says so', vg.chat.slice(5, 7));
+check(greetOf(vg).split('\n')[0].endsWith(', think auto, temp 10') && (vg.spect[0] || {}).text === greetOf(vg).split('\n')[0],
+  'a Blind Conviction bot: temp 10 is its default, and the greeting says so (to the spectators too)', vg.chat[0]);
 await command(vg, 'temp0');
 check(lastSaid(vg) === "Temp set to 0 (Maia's top move, no personality). Its ELO was measured at temp 10.",
   'a measured bot under a temp: the reply says where its ELO was measured', lastSaid(vg));
