@@ -439,7 +439,7 @@ const layout = await bf.evaluate(() => {
     strength: !!document.getElementById('lbc-strength') && /Measured strength/.test(document.querySelector('label[for="lbc-strength"]')?.textContent || '') };
   btn.click();
   out.helpShown = !help.hidden && help.offsetHeight > 0 && btn.getAttribute('aria-expanded') === 'true' &&
-    /plus the offset/.test(help.textContent) && /ELO1500/.test(help.textContent) && /Measured strength/.test(help.textContent);
+    /plus the offset/.test(help.textContent) && /ELO1500/.test(help.textContent) && /ELO1500 cp100/.test(help.textContent) && /Measured strength/.test(help.textContent);
   btn.click();
   out.helpFolds = help.hidden;
   // The smallest type in the popup's text, and its body text.
@@ -800,6 +800,17 @@ check(JSON.stringify(strCfg.t) === '[[600,850],[2000,1775],[2600,2025]]' && /Str
 await fr.fill('#lbc-strength', '600=850, 2000=700');
 const badCfg = await fr.evaluate(() => ({ t: getBotConfig().lichessStrength, note: document.getElementById('lbc-strength-note').textContent }));
 check(badCfg.t === null && /isn’t used/.test(badCfg.note), 'one that doesn\'t rise is not used, and the note says so', badCfg);
+// Rows measured at another Budget carry it, and can share a setting: this
+// Flounder dial stops at 2400, so its top is inside the last pair.
+await fr.fill('#lbc-strength', '2600 cp50=2775, 600=850, 600 CP300 = 600, 2600=2025');
+const cpRows = await fr.evaluate(() => ({ t: getBotConfig().lichessStrength, row: _lbcSummary(), note: document.getElementById('lbc-strength-note').textContent }));
+check(JSON.stringify(cpRows.t) === '[[600,600,300],[600,850],[2600,2025],[2600,2775,50]]' &&
+  /plays like 600 \(Flounder 600, CP Budget 300\) to 1908 \(Flounder 2400\)/.test(cpRows.row) && /moves the CP Budget/.test(cpRows.note),
+  'rows measured at another Budget (2600 cp50=2775) go in the config with it, by strength, and each end says what runs there', cpRows);
+await fr.fill('#lbc-strength', '600=850, 600=900');
+check(await fr.evaluate(() => getBotConfig().lichessStrength) === null, 'two rows at the builder\'s own Budget can\'t share a setting');
+await fr.fill('#lbc-strength', '2600 cp400=2900');
+check(await fr.evaluate(() => getBotConfig().lichessStrength) === null, 'nor can a row\'s Budget pass the slider\'s 300');
 await fr.fill('#lbc-strength', '');
 await fr.evaluate(() => { lbcClose(); startGame(); });
 await until(() => p2.evaluate(() => window._lastAppliedBotConfig.lichessMatchRating === true), 5000, 'the update');
@@ -816,16 +827,21 @@ const playMatched = async (challenger, seenAt) => {
   seen.chat = g.chat.map(l => l.text);
   return seen;
 };
-// What the bot says: always a playing strength, with thousands commas, and the
-// range as the command is typed.
+// What the bot says: always a playing strength, with thousands commas, then
+// what runs (the engine setting and the CP Budget), and the ranges as the
+// commands are typed.
 const elo = n => n.toLocaleString('en-US');
-const greeting = (est, lo, hi, edge) =>
-  `ELO set to ${elo(est)}${edge ? ` (its ${edge})` : ''}. Type ELOxxxx to change performance (range ELO${lo} to ELO${hi}).`;
-const perf = (est, edge) => `Performance set to ${elo(est)}` + (edge ? ` (its ${edge})` : '');
+const greeting = (est, runs, cp, lo, hi, edge) =>
+  `ELO set to ${elo(est)}${edge ? ` (its ${edge})` : ''}: ${runs}, CP budget ${cp}. ` +
+  `Type ELOxxxx (ELO${lo} to ELO${hi}) or cpxxx (cp0 to cp300) to change them.`;
+const perf = (est, edge, runs, cp, cpEdge) => `Performance set to ${elo(est)}` + (edge ? ` (its ${edge})` : '') +
+  `: ${runs}, CP budget ${cp}` + (cpEdge ? ` (its ${cpEdge})` : '');
+const builtCp = () => p2.evaluate(() => window._lastAppliedBotConfig.cpBudget);
+let B = await builtCp();
 // A game that stays open until endGame, with a slow opponent so the chat checks
 // finish well before the game can.
-const openGame = async challenger => {
-  const id = newChallenge({ color: 'black', challenger, opts: { oppDelayMs: 1500 } });
+const openGame = async (challenger, oppDelayMs = 1500) => {
+  const id = newChallenge({ color: 'black', challenger, opts: { oppDelayMs } });
   await until(() => M.challenges[id].gameId, 5000, 'the challenge accepted');
   const g = M.games[M.challenges[id].gameId];
   await until(() => g.moves.length >= 1, 60000, 'the bot\'s first move');
@@ -856,18 +872,18 @@ check(m3.flounder === 2400, 'a rating past the engine\'s range stops at its top'
 const m4 = await playMatched({ id: 'anon', name: 'Anon' });
 check(m4.flounder === 1500 && /Anon has no rating to match: playing at Flounder 1500/.test(m4.log),
   'no rating: plays at the builder\'s rating', m4);
-check(m1.chat.length === 1 && m1.chat[0] === greeting(1400, 600, 2400),
+check(m1.chat.length === 1 && m1.chat[0] === greeting(1400, 'Flounder 1400', B, 600, 2400),
   'the bot says what it is doing, once, with the range this engine really has', m1.chat);
-check(m4.chat[0] === greeting(1500, 600, 2400), 'with no rating to match, it gives the builder\'s rating', m4.chat);
+check(m4.chat[0] === greeting(1500, 'Flounder 1500', B, 600, 2400), 'with no rating to match, it gives the builder\'s rating', m4.chat);
 
 // The chat command on Flounder: its dial holds 25s and stops at 2400.
 const fg = await openGame({ id: 'flounderuser', name: 'FlounderUser', rating: 1600 });
 await command(fg, '1530ELO');
-check(lastSaid(fg) === perf(1525) && await p2.evaluate(() => flounderSliderElo()) === 1525,
+check(lastSaid(fg) === perf(1525, null, 'Flounder 1525', B) && await p2.evaluate(() => flounderSliderElo()) === 1525,
   'Flounder: the reply gives the rating it can really play', lastSaid(fg));
 await pastCooldown();
 await command(fg, '3000ELO');
-check(lastSaid(fg) === perf(2400, 'highest') && await p2.evaluate(() => flounderSliderElo()) === 2400,
+check(lastSaid(fg) === perf(2400, 'highest', 'Flounder 2400', B) && await p2.evaluate(() => flounderSliderElo()) === 2400,
   'Flounder: past its top, it says where it stopped', lastSaid(fg));
 await endGame(fg);
 
@@ -892,6 +908,7 @@ await fr.evaluate(() => {
   startGame();
 });
 await until(() => p2.evaluate(() => window._lastAppliedBotConfig.elo === 2200 && _lbEnginesReady()), 60000, 'the Maia update');
+B = await builtCp();
 const curveOn = await p2.evaluate(() => {
   window._maiaAsked = [];
   const real = maia3GetMoveProbs;
@@ -918,8 +935,9 @@ check(asked.length > 0 && asked.every(r => r >= curveLow && r <= 1500), 'and Mai
 const curveTop = () => p2.evaluate(() => Math.max(...botPressureCurveA.map(p => p.y)));
 const maiaNow = () => p2.evaluate(() => maia3SelectedRating);
 const chatUser = { id: 'chatuser', name: 'ChatUser', rating: 1900 };
-const cg = await openGame(chatUser);
-check(cg.chat.length === 1 && cg.chat[0].room === 'player' && cg.chat[0].text === greeting(1700, 600, 2600),
+// A random mover is mated quickly, so a slow one keeps this game open through every check.
+const cg = await openGame(chatUser, 3000);
+check(cg.chat.length === 1 && cg.chat[0].room === 'player' && cg.chat[0].text === greeting(1700, 'Maia 1700', B, 600, 2600),
   'at the start, in the player chat: it matches, at what rating, and how to change it', cg.chat);
 chatLine(cg, 'ChatUser', 'I am 1500 elo lol');
 chatLine(cg, 'Spectator', '1200ELO', 'spectator');
@@ -927,7 +945,7 @@ chatLine(cg, 'SomeoneElse', '1200ELO');
 await sleep(800);
 check(await maiaNow() === 1700 && cg.chat.length === 1, 'chatter, spectators and third parties change nothing, and get no reply', cg.chat);
 await command(cg, '1500ELO');
-check(lastSaid(cg) === perf(1500) && await maiaNow() === 1500 && await curveTop() === 1500,
+check(lastSaid(cg) === perf(1500, null, 'Maia 1500', B) && await maiaNow() === 1500 && await curveTop() === 1500,
   '1500ELO: the exact reply, and the rating and its curve both move', { said: lastSaid(cg) });
 check(await p2.evaluate(() => /Maia 1500/.test(botGenerateName())), 'the board\'s name for the bot moves too');
 await p2.evaluate(() => { window._maiaAsked = []; });
@@ -937,7 +955,7 @@ const askedAfter = await p2.evaluate(() => window._maiaAsked);
 check(askedAfter.length > 0 && askedAfter.every(r => r >= curveLow && r <= 1500), 'the bot\'s next moves are played at it, mid-game', askedAfter);
 await pastCooldown();
 await command(cg, ' 1600 elo ');
-check(lastSaid(cg) === perf(1600) && await maiaNow() === 1600, 'spaces and lower case are fine', lastSaid(cg));
+check(lastSaid(cg) === perf(1600, null, 'Maia 1600', B) && await maiaNow() === 1600, 'spaces and lower case are fine', lastSaid(cg));
 // Two more inside the 3 s cooldown: held, not dropped. The last one asked is
 // answered once the cooldown ends, and only once.
 const heldAt = cg.chat.length;
@@ -947,17 +965,17 @@ await sleep(800);
 check(cg.chat.length === heldAt && await maiaNow() === 1600, 'commands inside the cooldown wait for it', cg.chat.slice(heldAt));
 await until(() => cg.chat.length > heldAt, 5000, 'the held command answered');
 await sleep(1000);
-check(cg.chat.length === heldAt + 1 && lastSaid(cg) === perf(1700) && await maiaNow() === 1700,
+check(cg.chat.length === heldAt + 1 && lastSaid(cg) === perf(1700, null, 'Maia 1700', B) && await maiaNow() === 1700,
   'then the latest is answered, once, so nothing that arrives goes unanswered', cg.chat.slice(heldAt));
 await pastCooldown();
 await command(cg, '4000ELO');
-check(lastSaid(cg) === perf(2600, 'highest') && await maiaNow() === 2600, 'above the range: stops at the top and says so', lastSaid(cg));
+check(lastSaid(cg) === perf(2600, 'highest', 'Maia 2600', B) && await maiaNow() === 2600, 'above the range: stops at the top and says so', lastSaid(cg));
 await pastCooldown();
 await command(cg, '100ELO');
-check(lastSaid(cg) === perf(600, 'lowest') && await maiaNow() === 600, 'below the range: stops at the bottom and says so', lastSaid(cg));
+check(lastSaid(cg) === perf(600, 'lowest', 'Maia 600', B) && await maiaNow() === 600, 'below the range: stops at the bottom and says so', lastSaid(cg));
 await pastCooldown();
 await command(cg, 'ELO1700');
-check(lastSaid(cg) === perf(1700) && await maiaNow() === 1700, 'ELO first works too (ELO1700)', lastSaid(cg));
+check(lastSaid(cg) === perf(1700, null, 'Maia 1700', B) && await maiaNow() === 1700, 'ELO first works too (ELO1700)', lastSaid(cg));
 await pastCooldown();
 await command(cg, '1500ELO');
 // A rebuild from the server, the bot not being mid-move.
@@ -984,12 +1002,14 @@ check(await p2.evaluate(() => lbLogLines.some(l => /Chat line not sent/.test(l))
 check(cg.status === 'started', 'the chat game was still going throughout', cg.status);
 await endGame(cg);
 const cg2 = await openGame(chatUser);
-check(await maiaNow() === 1500 && cg2.chat[0]?.text === greeting(1500, 600, 2600),
+check(await maiaNow() === 1500 && cg2.chat[0]?.text === greeting(1500, 'Maia 1500', B, 600, 2600),
   'a rematch keeps their choice', cg2.chat);
 await endGame(cg2);
 const cg3 = await openGame({ id: 'nextuser', name: 'NextUser', rating: 1300 });
-check(await maiaNow() === 1100 && cg3.chat[0]?.text === greeting(1100, 600, 2600), 'the next player gets their own rating, not the last one\'s choice', cg3.chat);
+check(await maiaNow() === 1100 && cg3.chat[0]?.text === greeting(1100, 'Maia 1100', B, 600, 2600), 'the next player gets their own rating, not the last one\'s choice', cg3.chat);
 await endGame(cg3);
+const cpNow = () => p2.evaluate(() => ({ budget: window._bcpCpBudget, floor: window._bcpCpHardFloor,
+  built: window._lastAppliedBotConfig.cpBudget, builtFloor: window._lastAppliedBotConfig.hardFloorCp }));
 // A bot not set to match keeps its rating and says so.
 await p2.evaluate(() => { window._lastAppliedBotConfig.lichessMatchRating = false; });
 const fixedElo = await maiaNow();
@@ -998,8 +1018,57 @@ const fixedGreeted = cg4.chat.length;
 await command(cg4, '1500ELO');
 check(fixedGreeted === 0 && lastSaid(cg4) === 'This bot\'s rating can\'t be changed.' && await maiaNow() === fixedElo,
   'a bot not set to match: no greeting, and it says the rating can\'t change', { fixedGreeted, said: lastSaid(cg4) });
+await pastCooldown();
+const fixedCp = (await cpNow()).budget;
+await command(cg4, 'cp50');
+check(lastSaid(cg4) === 'This bot\'s CP budget can\'t be changed.' && (await cpNow()).budget === fixedCp,
+  'nor its CP budget', lastSaid(cg4));
 await endGame(cg4);
 await p2.evaluate(() => { window._lastAppliedBotConfig.lichessMatchRating = true; });
+
+// The CP Budget from the chat: cp100 alone, or beside the rating. Its own game,
+// with a slower opponent, so the game outlasts the cooldowns.
+const cpUser = { id: 'cpuser', name: 'CpUser', rating: 1900 };
+const pg = await openGame(cpUser, 3000);
+const cp0 = await cpNow();
+check(cp0.budget === cp0.built && await maiaNow() === 1700, 'before any cp command it plays the builder\'s Budget (' + cp0.built + ')', cp0);
+await command(pg, 'cp40');
+const cp1 = await cpNow();
+check(lastSaid(pg) === 'CP budget set to 40' && cp1.budget === 40 && cp1.floor === cp0.builtFloor && await maiaNow() === 1700,
+  'cp40: the Budget moves, the Floor and rating stay', { said: lastSaid(pg), cp1 });
+await pastCooldown();
+await command(pg, 'ELO1600 cp75');
+const cp2 = await cpNow();
+check(lastSaid(pg) === perf(1600, null, 'Maia 1600', 75) && cp2.budget === 75 && await maiaNow() === 1600,
+  'ELO1600 cp75: both in one line, one reply', lastSaid(pg));
+await pastCooldown();
+await command(pg, '400cp');
+const cp3 = await cpNow();
+check(lastSaid(pg) === 'CP budget set to 300 (its highest)' && cp3.budget === 300 && cp3.floor === Math.max(cp0.builtFloor, 300),
+  'past the top (and number first): stops at 300, says so, and the Floor is never under it', { said: lastSaid(pg), cp3 });
+// Two inside the cooldown, each naming one thing: both are kept, one answer.
+await pastCooldown();
+const heldCp = pg.chat.length;
+await command(pg, 'cp60');
+chatLine(pg, 'CpUser', 'ELO1650');
+chatLine(pg, 'CpUser', 'CP 75');
+await until(() => pg.chat.length > heldCp + 1, 5000, 'the held commands answered');
+await sleep(1000);
+check(pg.chat.length === heldCp + 2 && lastSaid(pg) === perf(1650, null, 'Maia 1650', 75) && (await cpNow()).budget === 75 && await maiaNow() === 1650,
+  'a rating then a Budget inside the cooldown: one answer, with both', pg.chat.slice(heldCp));
+check(await p2.evaluate(() => lbLogLines.some(l => /asked for cp75 in the chat: CP budget 75, Hard Floor/.test(l))), 'the host\'s log has the Budget and Floor');
+chatLine(pg, 'CpUser', 'cp 50 please');
+await sleep(800);
+check((await cpNow()).budget === 75 && pg.chat.length === heldCp + 2, 'a line that is more than the command changes nothing');
+check(pg.status === 'started', 'the cp game was still going throughout', pg.status);
+await endGame(pg);
+const pg2 = await openGame(cpUser);
+check((await cpNow()).budget === 75 && await maiaNow() === 1650, 'a rematch keeps their CP budget (and rating)', await cpNow());
+await endGame(pg2);
+const pg3 = await openGame({ id: 'cpnext', name: 'CpNext', rating: 1300 });
+const cpNext = await cpNow();
+check(cpNext.budget === cpNext.built && cpNext.floor === cpNext.builtFloor, 'the next player gets the builder\'s Budget and Floor', cpNext);
+await endGame(pg3);
 
 // A bot measured to play away from its setting (Blundermind-01, the Blind
 // Conviction bot, measured Nov 11): the rating wanted is a playing strength,
@@ -1007,7 +1076,7 @@ await p2.evaluate(() => { window._lastAppliedBotConfig.lichessMatchRating = true
 await p2.evaluate(() => { window._lastAppliedBotConfig.lichessStrength = [[600, 850], [1000, 1125], [1500, 1500], [2000, 1775], [2600, 2025]]; });
 // The builder's offset is still -200: 1975 asks for 1775, 2300 for 2100.
 const mg = await openGame({ id: 'measureduser', name: 'MeasuredUser', rating: 1975 });
-check(await maiaNow() === 2000 && mg.chat[0]?.text === greeting(1775, 850, 2025),
+check(await maiaNow() === 2000 && mg.chat[0]?.text === greeting(1775, 'Maia 2000', B, 850, 2025),
   'measured: asked for 1775 (a 1975 challenger, offset -200), it plays Maia 2000, and the greeting gives the range it really plays', mg.chat);
 check(await p2.evaluate(() => lbLogLines.some(l => /Playing at Maia 2000 \(plays like 1775\): MeasuredUser is rated 1975/.test(l))),
   'the host\'s log gives the setting beside the strength');
@@ -1017,21 +1086,65 @@ const mWant1 = 1775 + reganD(1) - reganD(5);
 check(mc.find(p => p.x === 200)?.y === 2000 && mc.find(p => p.x === 1)?.y === Math.round(1000 + (mWant1 - 1125) * 500 / 375),
   'its curve loses Regan\'s strength, not Regan\'s setting', mc);
 await command(mg, 'ELO600');
-check(lastSaid(mg) === perf(850, 'lowest') && await maiaNow() === 600, 'ELO600: the lowest setting, and the strength it plays at', lastSaid(mg));
+check(lastSaid(mg) === perf(850, 'lowest', 'Maia 600', B) && await maiaNow() === 600, 'ELO600: the lowest setting, and the strength it plays at', lastSaid(mg));
 await pastCooldown();
 await command(mg, 'ELO1775');
-check(lastSaid(mg) === perf(1775) && await maiaNow() === 2000, 'ELO1775: performance 1,775, which is Maia 2000', lastSaid(mg));
+check(lastSaid(mg) === perf(1775, null, 'Maia 2000', B) && await maiaNow() === 2000, 'ELO1775: performance 1,775, which is Maia 2000', lastSaid(mg));
 await pastCooldown();
 await command(mg, 'elo 1,600');
-check(lastSaid(mg) === perf(1600) && await maiaNow() === 1682, 'in between (and typed with a comma): the setting that plays at it', lastSaid(mg));
+check(lastSaid(mg) === perf(1600, null, 'Maia 1682', B) && await maiaNow() === 1682, 'in between (and typed with a comma): the setting that plays at it', lastSaid(mg));
 await pastCooldown();
 await command(mg, 'ELO2600');
-check(lastSaid(mg) === perf(2025, 'highest') && await maiaNow() === 2600, 'ELO2600: the highest setting, and the strength it plays at', lastSaid(mg));
+check(lastSaid(mg) === perf(2025, 'highest', 'Maia 2600', B) && await maiaNow() === 2600, 'ELO2600: the highest setting, and the strength it plays at', lastSaid(mg));
 await endGame(mg);
 const hg = await openGame({ id: 'stronguser', name: 'StrongUser', rating: 2300 });
-check(await maiaNow() === 2600 && hg.chat[0]?.text === greeting(2025, 850, 2025, 'highest'),
+check(await maiaNow() === 2600 && hg.chat[0]?.text === greeting(2025, 'Maia 2600', B, 850, 2025, 'highest'),
   'a challenger past its range: it says it is at its top', hg.chat);
 await endGame(hg);
+
+// Its whole table (Nov 15): past Maia 600 and 2600 the Budget moves instead,
+// cp300 to 600 at the bottom and cp50 to 2775 at the top, and it says so.
+await p2.evaluate(() => { window._lastAppliedBotConfig.lichessStrength =
+  [[600, 600, 300], [600, 850], [1000, 1125], [1500, 1500], [2000, 1775], [2600, 2025], [2600, 2350, 100], [2600, 2550, 75], [2600, 2775, 50]]; });
+// 2900 less the offset asks for 2700: 2550 → 2775 runs cp75 → cp50, so cp58.
+const xg = await openGame({ id: 'budgetuser', name: 'BudgetUser', rating: 2900 }, 3000);
+const x0 = await cpNow();
+check(await maiaNow() === 2600 && x0.budget === 58 && x0.floor === Math.max(x0.builtFloor, 58) &&
+  xg.chat[0]?.text === greeting(2700, 'Maia 2600', 58, 600, 2775),
+  'past Maia 2600: asked for 2700, it plays Maia 2600 at CP budget 58, and the greeting says so, with the range the Budget rows give', { x0, chat: xg.chat });
+check(await p2.evaluate(() => lbLogLines.some(l => /Playing at Maia 2600, CP budget 58 \(plays like 2700\): BudgetUser is rated 2900/.test(l))),
+  'the host\'s log gives the Budget beside the setting when it isn\'t the builder\'s');
+check(greeting(2775, 'Flounder 2400', 300, 600, 2775, 'highest').length <= 140, 'the longest greeting fits a Lichess chat line (140)');
+// Time pressure moves the setting, not the Budget: Maia 2600 plays 2025 at the
+// builder's Budget, so 1 s a move is Regan's loss from there, at cp58 still.
+const xc = await curveNow();
+const xWant1 = 2025 + reganD(1) - reganD(5);
+check(xc.find(p => p.x === 200)?.y === 2600 && xc.find(p => p.x === 1)?.y === Math.round(1000 + (xWant1 - 1125) * 500 / 375),
+  'its curve still loses Regan\'s strength there, through the setting', xc);
+// 700 is 100 of the 250 from cp300 (600) to the builder's Budget (850).
+await command(xg, 'ELO700');
+const x1 = await cpNow(), cp700 = Math.round(300 + (B - 300) * 100 / 250);
+check(lastSaid(xg) === perf(700, null, 'Maia 600', cp700) && await maiaNow() === 600 && x1.budget === cp700 &&
+  x1.floor === Math.max(x1.builtFloor, cp700),
+  'ELO700: below Maia 600\'s own 850, the Budget rises instead (cp' + cp700 + '), and the Floor with it', { said: lastSaid(xg), x1 });
+await pastCooldown();
+await command(xg, 'ELO3000');
+check(lastSaid(xg) === perf(2775, 'highest', 'Maia 2600', 50) && (await cpNow()).budget === 50,
+  'ELO3000: stops at 2775, Maia 2600 at cp50, and says so', lastSaid(xg));
+await pastCooldown();
+await command(xg, 'ELO100');
+check(lastSaid(xg) === perf(600, 'lowest', 'Maia 600', 300) && (await cpNow()).budget === 300,
+  'ELO100: stops at 600, Maia 600 at cp300, and says so', lastSaid(xg));
+await pastCooldown();
+await command(xg, 'cp120');
+check(lastSaid(xg) === 'CP budget set to 120' && (await cpNow()).budget === 120 && await maiaNow() === 600,
+  'a Budget they ask for replaces the table\'s', lastSaid(xg));
+await pastCooldown();
+await command(xg, 'ELO1500');
+check(lastSaid(xg) === perf(1500, null, 'Maia 1500', B) && (await cpNow()).budget === B && await maiaNow() === 1500,
+  'a rating on its own brings back the Budget that goes with it', lastSaid(xg));
+check(xg.status === 'started', 'the Budget-row game was still going throughout', xg.status);
+await endGame(xg);
 await p2.evaluate(() => { window._lastAppliedBotConfig.lichessStrength = null; });
 
 // Disconnect from the builder's popup.
@@ -1047,8 +1160,10 @@ const offB = await fr.evaluate(() => ({ text: document.getElementById('qs-liches
 check(off.state === 'off' && !/(^|[?&])lichess(&|$)/.test(off.url) && !(await panelShown(p2)),
   'disconnected; the address no longer marks a host, and the board\'s panel is gone', off);
 check(/Set up bot to play on Lichess/.test(offB.text) && /Start/.test(offB.start) && !/Update/.test(offB.start), 'the builder is back to Start', offB);
-const afterOff = await p2.evaluate(() => ({ maia: maia3SelectedRating, top: Math.max(...botPressureCurveA.map(p => p.y)) }));
-check(afterOff.maia === 2200 && afterOff.top === 2200, 'and local games play the bot as built, not at the last challenger\'s rating', afterOff);
+const afterOff = await p2.evaluate(() => ({ maia: maia3SelectedRating, top: Math.max(...botPressureCurveA.map(p => p.y)),
+  budget: window._bcpCpBudget, built: window._lastAppliedBotConfig.cpBudget }));
+check(afterOff.maia === 2200 && afterOff.top === 2200 && afterOff.budget === afterOff.built,
+  'and local games play the bot as built, not at the last challenger\'s rating or Budget', afterOff);
 check(errs2.length === 0, 'no page errors (builder flow)', errs2.slice(0, 5));
 
 // ── 9. A host tab that can't reconnect ──────────────────────────────────────
