@@ -391,6 +391,77 @@ async function botDecideClaim() {
   return { yes: false, why: _botDrawSeesText(adv) + ' — more than the ' + margin + ' cp it allows' };
 }
 
+// ── Repetition: a draw the bot walks into ────────────────────────────────────
+// Maia sees the board in front of it and nothing of the game that led there, so
+// in the same position it plays the same move. A bot shuffling while ahead went
+// round the same positions with its opponent until the game was drawn by
+// threefold repetition, from a position it would never have agreed a draw in.
+//
+// So a repetition is weighed as the draw it is, on the terms the bot weighs a
+// draw offer or a claim (botDecideClaim: its Draws setting and margin, the
+// clock). A move that lets the game be drawn — making a position's third
+// occurrence itself, or leaving the opponent a reply that does — is set aside
+// when the bot would not take that draw, and it picks again from the moves
+// left. Where every move it could play allows the draw (a perpetual check),
+// it plays its move. Stockfish now sees the game's moves (sfPositionCmd), so
+// Flounder already scores such a move as the 0.00 it is.
+
+// The position after a move, without touching the live board.
+function _botAfterMove(bd, t, cst, ep, from, to, promo) {
+  const p = bd[from];
+  const nt = t === 'w' ? 'b' : 'w', nc = updateCastling(from, to, p, cst), ne = computeEP(from, to, bd);
+  const nb = applyMove(from, to, bd, ep, promo || 'Q');
+  return { bd: nb, t: nt, cst: nc, ep: ne, key: positionKey(nb, nt, nc, ne) };
+}
+// A capture or a pawn move makes a position that cannot have been seen before.
+function _botMoveIsIrreversible(bd, from, to) {
+  const p = bd[from];
+  return !p || p.piece === 'P' || !!bd[to];
+}
+// Would playing `uci` now let the game be drawn by threefold repetition?
+function botMoveAllowsRepetition(uci) {
+  if (typeof positionCounts === 'undefined' || typeof positionKey !== 'function') return false;
+  const mv = uciToSq(uci);
+  if (!mv || _botMoveIsIrreversible(board, mv.from, mv.to)) return false;
+  // A third occurrence needs a position already seen twice. Until there is
+  // one — nearly every move of nearly every game — this is all it costs.
+  let twice = false;
+  for (const k in positionCounts) if (positionCounts[k] >= 2) { twice = true; break; }
+  if (!twice) return false;
+  const a = _botAfterMove(board, turn, castling, epSq, mv.from, mv.to, mv.promo);
+  if ((positionCounts[a.key] || 0) >= 2) return true;   // this move makes the third
+  for (const r of allLegalMoves(a.bd, a.t, a.ep, a.cst)) {
+    if (_botMoveIsIrreversible(a.bd, r.from, r.to)) continue;
+    const b = _botAfterMove(a.bd, a.t, a.cst, a.ep, r.from, r.to, null);
+    if ((positionCounts[b.key] || 0) >= 2) return true;
+  }
+  return false;
+}
+// `uci` is the bot's pick from `candidates` (a move distribution); `repick`
+// picks again, the same way, from the ones passed to it. Resolves the move to
+// play.
+async function botSteerClearOfRepetition(uci, candidates, repick) {
+  if (!uci || !botMoveAllowsRepetition(uci)) return uci;
+  const others = {};
+  let n = 0;
+  for (const m in candidates) if (!botMoveAllowsRepetition(m)) { others[m] = candidates[m]; n++; }
+  if (!n) return uci;   // every move allows it: there is no stepping out
+  let v;
+  try { v = await botDecideClaim(); } catch (e) { v = { yes: true, why: '' }; }
+  if (v.yes) return uci;   // a draw it would take anyway
+  let alt = null;
+  try { alt = await repick(others); } catch (e) { alt = null; }
+  // The Move Distribution Range can leave nothing among the rest: the most
+  // popular of them, then — the natural way out a player would take.
+  if (!alt || botMoveAllowsRepetition(alt)) {
+    alt = Object.keys(others).sort((x, y) => others[y] - others[x])[0];
+  }
+  console.log('[repetition] ' + uci + ' would allow a draw by repetition; plays ' + alt + ' — ' + v.why);
+  lastBotMoveDetail = (lastBotMoveDetail ? lastBotMoveDetail + ', ' : '') +
+    'steps out of a repetition (' + v.why + ')';
+  return alt;
+}
+
 // After its move, a draw-offering bot checks whether the position FEELS level
 // (perceived eval at its own strength — a novice may offer from a lost
 // position it believes is fine) and occasionally offers — from the configured
@@ -712,17 +783,28 @@ function botBudgetPressure(clockMs, wantMs) {
 }
 
 // How far behind the opponent's clock we are, 0–1. Zero when level or ahead.
-// Continuous, unlike the binary 60 % step it complements.
+// Continuous; about the bot's own clock, where botOppInTimeTrouble is about the opponent's.
 function botClockDeficit(clockMs) {
   if (clockMs === null || typeof botOppClockMs !== 'number' || botOppClockMs <= 0) return 0;
   return Math.max(0, Math.min(1, 1 - (clockMs / botOppClockMs)));
 }
 
-// How far ahead we are — i.e. how low the OPPONENT is relative to us. Drives
-// the clock-mirroring aggression that used to be a hard ×0.5 at exactly 60 %.
-function botOppClockDeficit(clockMs) {
-  if (clockMs === null || typeof botOppClockMs !== 'number' || clockMs <= 0) return 0;
-  return Math.max(0, Math.min(1, 1 - (botOppClockMs / clockMs)));
+// Is the OPPONENT in real time trouble? Under 30 s in a game with no increment,
+// under 15 s with one, and less time than the bot has. That is when Clock-
+// pressure mirroring plays fast, to keep them in it. Being behind on the clock
+// is not trouble: it used to scale with the ratio of the two clocks, down to
+// 30 % of the bot's usual time, so an opponent with three minutes against the
+// bot's five already had it moving at a third of its pace. In a 5+3 game it
+// spent 101 s where its plan allowed 385 s, and finished with more time than
+// it started with (Nov 2026).
+const BOT_TROUBLE_SECS_NO_INC = 30;
+const BOT_TROUBLE_SECS_INC    = 15;
+const BOT_TROUBLE_SPEEDUP     = 0.3;
+function botOppInTimeTrouble(clockMs) {
+  if (clockMs === null || clockMs === undefined || typeof botOppClockMs !== 'number') return false;
+  const inc = (typeof clockInc === 'number') ? clockInc : 0;
+  const line = (inc > 0 ? BOT_TROUBLE_SECS_INC : BOT_TROUBLE_SECS_NO_INC) * 1000;
+  return botOppClockMs < line && botOppClockMs < clockMs;
 }
 
 // ── Move attractor filtering — applied before sampleFromProbs ─────────────────
@@ -2205,6 +2287,12 @@ function blindConvictionMove(fen, rawProbs, strict, evals) {
 // same on every Maia and opening-book path. Blind Conviction is its own guard:
 // its pick is checked against the Budget, and may beat the popular move.
 async function botPickFromProbs(fen, rawProbs, temperature) {
+  const uci = await _botPickFromProbsOnce(fen, rawProbs, temperature);
+  // Maia cannot see repetitions; the bot steps out of one it would not accept.
+  return botSteerClearOfRepetition(uci, rawProbs,
+    others => _botPickFromProbsOnce(fen, others, temperature));
+}
+async function _botPickFromProbsOnce(fen, rawProbs, temperature) {
   if (botBlindConviction) return blindConvictionMove(fen, rawProbs);
   const shaped = applyMoveAttractors(rawProbs);
   let uci = pickFromProbs(shaped, temperature);
@@ -2584,7 +2672,7 @@ function botRecordMove(uciMove, sanMove) {
 // Human behaviour flags applied to complexity/pace/mirror paths:
 //   botBehavBlink       — near-instant for forced moves (entropy < 0.5, Maia3 only)
 //   botBehavReconsider  — 15% chance of 1.5-2.5× pause (hesitation)
-//   botBehavClockMirror — halve delay when opponent clock < 60% of bot's
+//   botBehavClockMirror — 0.3× while the opponent is in time trouble (botOppInTimeTrouble)
 //   botCanFlag          — if false, always keep ≥3 s on clock
 // Hustle attractor (window._bcpAttractorValues.hustle, −5..+5) scales think time.
 // ── Opening familiarity decay ─────────────────────────────────────────────────
@@ -2663,7 +2751,7 @@ function openingFamiliarity(plies) {
 // Fischer-40 budget cap would only fight it — for a 40-move plan the two are the
 // same number, and every complex move would be clipped back to the average. The
 // plan's own ceiling is its most-complex move instead: average × max multiplier.
-// The emergency and can't-flag rules hold in every mode.
+// The flag ceiling and the can't-flag rule hold in every mode.
 function botApplyClockCaps(thinkMs, clockMs, planSec) {
   if (planSec != null) {
     thinkMs = Math.min(thinkMs, planSec * Math.max(1, botCplxMax) * 1000);
@@ -2672,12 +2760,30 @@ function botApplyClockCaps(thinkMs, clockMs, planSec) {
     if (budgetSec !== null) thinkMs = Math.min(thinkMs, budgetSec * 1000);
   }
   if (clockMs !== null && clockMs !== undefined) {
-    const emergencyMs = (typeof botStartClockMs === 'number' && botStartClockMs > 0)
-      ? Math.min(30000, botStartClockMs * 0.15) : 30000;
-    if (clockMs < emergencyMs) thinkMs = Math.min(thinkMs, clockMs * 0.10);
+    thinkMs = Math.min(thinkMs, botFlagCeilingMs(clockMs));
     if (!botCanFlag) thinkMs = Math.min(thinkMs, Math.max(200, clockMs - 3000));
   }
   return thinkMs;
+}
+
+// ── The flag ceiling: a player trying not to flag ────────────────────────────
+// No one move spends more than a tenth of the clock plus the increment, give or
+// take a fifth so the bot's pace on a short clock is not mechanical — and never
+// more than half of what is left, because the increment only arrives after the
+// move: on a 3 s clock with +3 the tenth-plus-increment is 3.3 s, which would
+// flag. With an increment the clock drains to about twice the increment and
+// the bot lives on it there; without one, each move takes a tenth of what is
+// left.
+//
+// This replaced an emergency rule that only began below 30 s (or 15 % of the
+// starting clock) and ignored the increment: a tenth of the clock, there.
+// Without an increment the two agree; now it holds from the first move, where
+// the plan's own ceiling is nearly always the lower.
+const BOT_FLAG_CLOCK_SHARE = 10;     // the clock ÷ this, plus the increment
+function botFlagCeilingMs(clockMs) {
+  const inc = (typeof clockInc === 'number') ? clockInc : 0;
+  const ceil = (clockMs / BOT_FLAG_CLOCK_SHARE + inc * 1000) * (0.8 + Math.random() * 0.4);
+  return Math.min(ceil, clockMs / 2);
 }
 
 // Upper bound on simulated think time, scaled to the time control: 6 s for
@@ -2711,12 +2817,15 @@ function botMedian(xs) {
 // What a player budgeting a game of N moves can afford per move: the time left
 // plus the increment still to come, over the moves still to play.
 //
-//   movesLeft = N − moves already played        (N = 60 by default, or 40)
+//   N         = 60 for a game of 10 minutes or more, else 40 (botPlanGameMoves)
+//   movesLeft = N − moves already played
 //   plan      = (clock + movesLeft × increment) ÷ movesLeft
 //
-// e.g. 8 moves played in book, 24:00 left, +2 s: 52 left, (1440 + 104) ÷ 52 ≈
-// 29.7 s. Recomputed every move, so a bot that spends quickly banks time for
-// later and one that lingers hurries — the same arithmetic a human does.
+// At the first move that is the game's time ÷ N: 5+3 → (300 + 40 × 3) ÷ 40 =
+// 10.5 s; 15+10 → (900 + 60 × 10) ÷ 60 = 25 s. e.g. 15+2, 8 moves played in
+// book, 24:00 left: 52 left, (1440 + 104) ÷ 52 ≈ 29.7 s. Recomputed every move,
+// so a bot that spends quickly banks time for later and one that lingers
+// hurries — the same arithmetic a human does.
 //
 // Past move N the plan keeps at least BOT_PLAN_MIN_MOVES_LEFT moves in hand, so
 // a long game never bets the whole clock on one move. Returns null when the
@@ -2725,8 +2834,7 @@ const BOT_PLAN_MIN_MOVES_LEFT = 10;
 function botClockPlanSec(clockMs) {
   if (typeof botCplxBaseMode === 'undefined' || botCplxBaseMode !== 'clock') return null;
   if (clockMs === null || clockMs === undefined) return null;
-  const perGame = (typeof botCplxMovesPerGame === 'number' && botCplxMovesPerGame > 0)
-    ? botCplxMovesPerGame : 60;
+  const perGame = botPlanGameMoves();
   // The bot's own moves so far; at its turn that is floor(plies / 2) whichever
   // colour it plays. Counts the whole game, including any moves a game started
   // from a position was given.
@@ -2734,6 +2842,25 @@ function botClockPlanSec(clockMs) {
   const movesLeft = Math.max(BOT_PLAN_MIN_MOVES_LEFT, perGame - Math.floor(plies / 2));
   const inc = (typeof clockInc === 'number') ? clockInc : 0;
   return (clockMs / 1000 + movesLeft * inc) / movesLeft;
+}
+
+// How many moves the plan budgets for. A game of 10 minutes or more — the base
+// time plus forty increments — is planned as 60 moves; anything shorter as 40.
+// Every game was planned as 60 (40 was a choice in the builder), and with the
+// opening played fast a blitz bot finished with most of its clock unspent: a
+// 5+3 game ended with more on the bot's clock than it started with (Nov 2026).
+// The size comes from the time control, not the clock as it stands, so a game
+// rebuilt mid-way (a Lichess resync) is still the game it was. The builder
+// quotes the same rule (_cplxMovesPerGame) — keep the two in step.
+const BOT_PLAN_LONG_GAME_SEC = 600;
+const BOT_PLAN_LONG_MOVES = 60, BOT_PLAN_SHORT_MOVES = 40;
+function botPlanGameMoves() {
+  const tc = (typeof TIME_CONTROLS !== 'undefined' && typeof clockControl !== 'undefined')
+    ? TIME_CONTROLS[clockControl] : null;
+  const base = (tc && tc.time > 0) ? tc.time
+    : (typeof botStartClockMs === 'number' && botStartClockMs > 0) ? botStartClockMs / 1000 : 0;
+  const inc = (typeof clockInc === 'number') ? clockInc : 0;
+  return base + 40 * inc >= BOT_PLAN_LONG_GAME_SEC ? BOT_PLAN_LONG_MOVES : BOT_PLAN_SHORT_MOVES;
 }
 
 // ── How long a book move takes ────────────────────────────────────────────────
@@ -2911,14 +3038,9 @@ function botThinkTime(moveProbs, clockMs, opts) {
     thinkMs = baseSec * complexity * 1000;
   }
 
-  // ── Clock-pressure mirroring: speed up when the OPPONENT is low ──────────
-  // Was a hard ×0.5 the instant their clock crossed 60 % of ours — a step
-  // change a human never makes. Now proportional to how far ahead we are, so
-  // the aggression comes on gradually as they sink.
-  if (botBehavClockMirror) {
-    const oppDef = botOppClockDeficit(clockMs);
-    if (oppDef > 0) thinkMs *= Math.max(0.3, 1 - oppDef);
-  }
+  // ── Clock-pressure mirroring: speed up when the OPPONENT is in time trouble
+  // (botOppInTimeTrouble) — moves at BOT_TROUBLE_SPEEDUP of their usual time.
+  if (botBehavClockMirror && botOppInTimeTrouble(clockMs)) thinkMs *= BOT_TROUBLE_SPEEDUP;
 
   // ── Clock deficit: hurry when WE are the one behind ───────────────────────
   // The most recognisable time-pressure tell in human chess, and previously
@@ -4478,6 +4600,15 @@ function botPremoveTryFire() {
 
   var resolvedPromo = pre.promo ||
     (p.piece === 'P' && (Math.floor(pre.to / 8) === 0 || Math.floor(pre.to / 8) === 7) ? 'Q' : null);
+
+  // A premove that would let the game be drawn by repetition stands aside the
+  // same way: the normal turn weighs that draw (botSteerClearOfRepetition),
+  // and a premove, played without a look at the position, cannot.
+  if (botMoveAllowsRepetition(sqToUci(pre.from, pre.to, resolvedPromo ? resolvedPromo.toLowerCase() : null))) {
+    botPremoveStats.armed--;
+    botPremoveUpdateBadge();
+    return false;
+  }
 
   botPremoveStats.fired++;
   lastBotMoveSource = 'PREMOVE';

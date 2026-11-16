@@ -2248,11 +2248,12 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
   botCplxMin  = cfg.cplxMin  || 0.4;
   botCplxMax  = cfg.cplxMax  || 2.5;
   // Where Complexity-scaled timing gets its average: the clock ('clock', the
-  // builder's default — time left ÷ moves left in a game of N moves), or the
-  // Base time slider ('fixed'). A config from before the choice existed used
-  // the slider, so that is what an absent field means.
+  // builder's default — time left ÷ moves left in a 40- or 60-move game, by
+  // the time control), or the Base time slider ('fixed'). A config from before
+  // the choice existed used the slider, so that is what an absent field means.
+  // A saved cplxMovesPerGame (60 or 40) dates from when the builder chose it;
+  // the time control decides now (botPlanGameMoves), and it is not read.
   botCplxBaseMode     = (cfg.cplxBaseMode === 'clock') ? 'clock' : 'fixed';
-  botCplxMovesPerGame = (+cfg.cplxMovesPerGame === 40) ? 40 : 60;
 
   // Human behaviour modifiers
   botBehavReconsider  = cfg.behavReconsider  !== false;
