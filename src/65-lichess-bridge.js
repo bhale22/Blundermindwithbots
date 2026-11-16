@@ -71,6 +71,13 @@ const LB_CP_MIN = 0, LB_CP_MAX = 300;
 // auto" gives the bot its own timing back.
 const lbThinkChoices = new Map();
 const LB_THINK_MAX_S = 60;
+// Opponent id → the Temp they asked for (temp2, temp 0.5), kept the same way:
+// 0 plays the most popular move every time, 10 lets the personality choose
+// (Blind Conviction), and between them it blends the two (botBlendTemp,
+// src/50-bot-engine.js). The CP Budget still decides which moves may be
+// played. "temp auto" gives the bot its own pick back: for a Blind Conviction
+// bot that is temp 10, which is why the greeting calls 10 the default.
+const lbTempChoices = new Map();
 const LB_CHAT_COOLDOWN_MS = 3000;
 let lbAccepting = null;       // challenge id accepted, its gameStart not yet here
 let lbStarting = false;       // botStart() is running on Lichess's behalf
@@ -724,7 +731,8 @@ function _lbReganCurveA(clock, setting, t) {
 // model for that clock; with none, the builder's curve is shifted. Returns
 // { setting, cp, est, edge }, or null for a bot that doesn't match.
 function _lbApplyMatchedRating(g) {
-  if (!_lbMatching()) return null;
+  // A bot that doesn't match takes no chat commands, Temp among them.
+  if (!_lbMatching()) { botBlendTemp = null; return null; }
   const cfg = window._lastAppliedBotConfig;
   const { flounder } = _lbEloRange();
   const t = _lbStrengthTable();
@@ -762,9 +770,11 @@ function _lbApplyMatchedRating(g) {
   window._bcpCpHardFloor = cp != null && floor != null ? Math.max(+floor, cp) : floor;
   at.cp = cp;
   at.think = _lbApplyThinkChoice(opp);
+  at.temp = _lbApplyTempChoice(opp);
   if (opp && !g.matchLogged) {
     g.matchLogged = true;
     if (at.think != null) lbLog('Think time ' + _lbThinkText(at.think) + ': ' + opp.name + ' asked for it in the chat');
+    if (at.temp != null) lbLog('Temp ' + at.temp + ': ' + opp.name + ' asked for it in the chat');
     const plays = (flounder ? 'Flounder ' : 'Maia ') + elo + (cp !== cfg.cpBudget ? ', CP budget ' + cp : '') +
       (t ? ' (plays like ' + at.est + ')' : '');
     if (asked != null) lbLog('CP budget ' + asked + ': ' + opp.name + ' asked for it in the chat (built with ' + cfg.cpBudget + ')');
@@ -796,6 +806,32 @@ function _lbApplyThinkChoice(opp) {
   return secs;
 }
 const _lbThinkText = s => (Number.isInteger(s) ? s : s.toFixed(1)) + ' s a move';
+
+// The Temp this opponent asked for, put into effect, or none (the bot picks as
+// built). Returns it, or undefined.
+function _lbApplyTempChoice(opp) {
+  const t = opp && opp.id ? lbTempChoices.get(opp.id) : undefined;
+  botBlendTemp = t != null ? t : null;
+  return t;
+}
+// Whose distribution popularity comes from: Maia's, or Flounder's own.
+const _lbTempEngine = () => _lbEloRange().flounder ? 'Flounder\'s' : 'Maia\'s';
+// What the ends of the dial do, beside the number in a reply.
+function _lbTempText(t) {
+  return 'Temp ' + t + (t <= 0 ? ' (' + _lbTempEngine() + ' top move, no personality)'
+    : t >= BLEND_TEMP_MAX ? ' (personality\'s pick)' : '');
+}
+// A measured bot's ratings were measured picking as it was built. Under a
+// Temp they are not what it plays at, and the reply says so when there is room:
+// Temp 0, Maia's top move, is likely the strongest it gets.
+function _lbTempCaveat(text) {
+  if (botBlendTemp == null || !_lbStrengthTable()) return text;
+  if (botBlindConviction && botBlendTemp >= BLEND_TEMP_MAX) return text;
+  const more = '. Its ELO was measured at ' + (botBlindConviction ? 'temp ' + BLEND_TEMP_MAX : 'temp auto') + '.';
+  return text.length + more.length <= LB_CHAT_MAX ? text + more : text;
+}
+// Lichess cuts a chat line at this many characters.
+const LB_CHAT_MAX = 140;
 
 // A chat line matters less than a move, and every POST shares one queue, so a
 // line Lichess won't take at once is dropped rather than held in front of the
@@ -832,21 +868,33 @@ function _lbPerfRange() {
 // Once a game, at its start: what it plays at and what runs, then a line for
 // each thing the opponent can change (Ben's wording, Nov 16). Lichess cuts a
 // chat line at 140 characters; the longest here is the first, at most about
-// 130. The spectators get the first line — what it plays at — without the
-// instructions, which only the opponent can use.
+// 130 (and Temp's first, at most 117). The spectators get the first line —
+// what it plays at — without the instructions, which only the opponent can use.
 //
 // Sent LB_GREET_DELAY_MS after the game starts (see _lbBeginLocalGame).
 function _lbGreet(g, at) {
   const { lo, hi } = _lbPerfRange();
   const pure = _lbEloRange().flounder ? 'Flounder' : 'Maia3';
   const state = 'ELO set to ' + _lbElo(at.est) + _lbEdgeText(at.edge) + ': ' + _lbRunsText(at) + '.' +
-    (at.think != null ? ' Think time ' + _lbThinkText(at.think) + '.' : '');
+    (at.think != null ? ' Think time ' + _lbThinkText(at.think) + '.' : '') +
+    (at.temp != null ? ' Temp ' + at.temp + '.' : '');
   _lbSay(g, state);
   _lbSay(g, 'Type "ELOXXXX" in chat to adjust between ELO' + lo + ' (min) and ELO' + hi + ' (max).');
   _lbSay(g, 'Type "cpXX" to set centipawn budget between cp' + LB_CP_MIN + ' (pure ' + pure + ') and cp' + LB_CP_MAX + '.');
   _lbSay(g, 'Type "thinkXs" to change move time to X seconds (0-' + LB_THINK_MAX_S + 's range).');
   _lbSay(g, 'Type "Think auto" to go back to human-like timing.');
+  _lbTempHelp(g);
   _lbSay(g, state, 'spectator');
+}
+// Temp's two lines (Ben's wording). 10 is the default only for a bot built
+// with Blind Conviction; any other bot's default is off the dial, so it says
+// how to get back to it instead.
+function _lbTempHelp(g) {
+  const eng = _lbTempEngine();
+  _lbSay(g, 'Type temp0 to temp' + BLEND_TEMP_MAX + ': 0 plays ' + eng +
+    ' top move (no personality), ' + BLEND_TEMP_MAX + ' plays personality\'s pick' +
+    (botBlindConviction ? ' (default).' : '. temp auto: as built.'));
+  _lbSay(g, 'Temp 0.1-1.0 = closer to ' + eng + ' move distribution, Temp 2-9.9 = personality dominated moves.');
 }
 // Posted the instant Lichess started the game, the greeting's first line could
 // land before the opponent's game page had joined the chat: saved, but never
@@ -871,6 +919,11 @@ const LB_GREET_DELAY_MS = 2000;
 // time a move, 0 to 60 s — or think auto for the bot's own timing again. It
 // combines with the others (ELO2000 think5s) and is kept until they change it.
 //
+// And Temp: temp2, temp 0.5, temp10 — 0 to 10, how far the personality
+// rather than popularity picks among the moves the Budget allows (see
+// botBlendTemp) — or temp auto for the bot's own pick again. Combines and is
+// kept the same way.
+//
 // What never gets here: Lichess's flood filter (lila Flood.scala) drops a
 // player's line within one character of either of their last two in the past
 // minute, so ELO2200 straight after ELO2100 never reaches the bot. Bots are
@@ -878,7 +931,8 @@ const LB_GREET_DELAY_MS = 2000;
 function _lbParseCommand(text) {
   const num = '(\\d{1,2},\\d{3}|\\d{1,5})';
   const part = new RegExp('^(?:elo\\s*' + num + '|' + num + '\\s*elo|cp\\s*(\\d{1,5})|(\\d{1,5})\\s*cp' +
-    '|think\\s*(\\d{1,5}(?:\\.\\d+)?)\\s*(?:seconds?|secs?|s)?|think\\s*(auto))(?:[\\s,]+|$|(?=[a-z]))', 'i');
+    '|think\\s*(\\d{1,5}(?:\\.\\d+)?)\\s*(?:seconds?|secs?|s)?|think\\s*(auto)' +
+    '|temp\\s*(\\d{1,5}(?:\\.\\d+)?|\\.\\d+)|temp\\s*(auto))(?:[\\s,]+|$|(?=[a-z]))', 'i');
   // The greeting shows each command in quotes ("ELOXXXX"), so quotes typed
   // around one are dropped rather than making it unreadable.
   let rest = String(text || '').replace(/["'“”‘’]/g, '').trim();
@@ -892,13 +946,16 @@ function _lbParseCommand(text) {
     } else if (m[3] != null || m[4] != null) {
       if (cmd.cp != null) return null;
       cmd.cp = +(m[3] || m[4]);
-    } else {
+    } else if (m[5] != null || m[6] != null) {
       if (cmd.think != null) return null;
       cmd.think = m[6] ? 'auto' : +m[5];
+    } else {
+      if (cmd.temp != null) return null;
+      cmd.temp = m[8] ? 'auto' : +m[7];
     }
     rest = rest.slice(m[0].length);
   }
-  return cmd.elo != null || cmd.cp != null || cmd.think != null ? cmd : null;
+  return cmd.elo != null || cmd.cp != null || cmd.think != null || cmd.temp != null ? cmd : null;
 }
 function _lbOnChatLine(g, m) {
   const opp = g.opponent;
@@ -913,7 +970,8 @@ function _lbOnChatLine(g, m) {
   if (wait > 0) {
     const held = g.chatHeld || {};
     g.chatHeld = { elo: cmd.elo != null ? cmd.elo : held.elo, cp: cmd.cp != null ? cmd.cp : held.cp,
-                   think: cmd.think != null ? cmd.think : held.think };
+                   think: cmd.think != null ? cmd.think : held.think,
+                   temp: cmd.temp != null ? cmd.temp : held.temp };
     if (!g.chatTimer) g.chatTimer = setTimeout(() => {
       const w = g.chatHeld;
       g.chatTimer = null; g.chatHeld = null;
@@ -928,7 +986,8 @@ function _lbChatCommand(g, cmd) {
   g.chatAt = Date.now();
   if (!_lbMatching()) {
     _lbSay(g, cmd.elo != null ? 'This bot\'s rating can\'t be changed.'
-      : cmd.cp != null ? 'This bot\'s CP budget can\'t be changed.' : 'This bot\'s think time can\'t be changed.');
+      : cmd.cp != null ? 'This bot\'s CP budget can\'t be changed.'
+      : cmd.think != null ? 'This bot\'s think time can\'t be changed.' : 'This bot\'s temp can\'t be changed.');
     return;
   }
   let think = null;
@@ -936,6 +995,12 @@ function _lbChatCommand(g, cmd) {
   else if (cmd.think != null) {
     think = Math.round(Math.max(0, Math.min(LB_THINK_MAX_S, cmd.think)) * 10) / 10;
     lbThinkChoices.set(opp.id, think);
+  }
+  let temp = null;
+  if (cmd.temp === 'auto') lbTempChoices.delete(opp.id);
+  else if (cmd.temp != null) {
+    temp = Math.round(Math.max(0, Math.min(BLEND_TEMP_MAX, cmd.temp)) * 10) / 10;
+    lbTempChoices.set(opp.id, temp);
   }
   let cp = null, cpEdge = null;
   if (cmd.elo != null) {
@@ -967,8 +1032,16 @@ function _lbChatCommand(g, cmd) {
     said = said ? said + (t ? ', think time ' + t : ', think time back to human-like timing')
                 : (t ? 'Think time set to ' + t : 'Think time back to human-like timing');
   }
-  // Both chats: what the bot plays at is for spectators too.
-  _lbTell(g, said);
+  if (cmd.temp != null) {
+    lbLog(_lbWho(opp) + ' asked for temp ' + cmd.temp + ' in the chat: ' +
+      (temp != null ? 'Temp ' + temp : 'back to the bot\'s own pick'));
+    // Alone, the ends say what they do; beside other replies, just the number.
+    said = said ? said + (temp != null ? ', temp ' + temp : ', temp back to its own')
+                : (temp != null ? _lbTempText(temp).replace('Temp', 'Temp set to') : 'Temp back to the bot\'s own pick');
+  }
+  // Both chats: what the bot plays at is for spectators too. A reply that
+  // gives a rating or a Temp says when the rating wasn't measured at this Temp.
+  _lbTell(g, cmd.elo != null || cmd.temp != null ? _lbTempCaveat(said) : said);
   if (typeof botUpdatePlayerNames === 'function') botUpdatePlayerNames(botPlayerColor);
   lbRender();
 }

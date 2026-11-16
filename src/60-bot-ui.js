@@ -2295,6 +2295,9 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
   botBlindConviction = !!cfg.blindConviction;
   // Its Choice mix; a bot saved before the mix plays its favourite every move.
   botBlindChoicePcts = blindChoicePctsFrom(cfg.blindChoicePcts);
+  // A Temp is an opponent's, asked for in a Lichess game's chat, never part of
+  // a bot: a bot newly applied picks as it was built until the bridge sets one.
+  botBlendTemp = null;
 
   // Draw behaviour + stalemate seeking (desperation)
   // Draws: accept unless more than 200 cp ahead, by default. A config from

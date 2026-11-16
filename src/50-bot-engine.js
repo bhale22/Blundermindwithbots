@@ -1474,7 +1474,10 @@ function applyMoveAttractors(moveProbs, opts) {
 
   const attrVals  = window._bcpAttractorValues || {};
   const pieceVals = window._bcpPieceValues     || {};
-  const cpBudget  = window._bcpCpBudget != null ? window._bcpCpBudget : 100;
+  // opts.budgetCp: weigh the personality at this Budget rather than the bot's
+  // (Temp weighs it at a fixed one; see BLEND_PERSONALITY_CP).
+  const cpBudget  = (opts && opts.budgetCp != null) ? opts.budgetCp
+    : window._bcpCpBudget != null ? window._bcpCpBudget : 100;
 
   // Custom controls (user-defined attractors): keep ones with a non-zero value
   // and a known metric, then gate by current game phase. Phase depends only on
@@ -2217,17 +2220,97 @@ function _blindChoiceRoll(n) {
   return w.length - 1;
 }
 
-// The personality's order of preference over the candidates. Synchronous: it
-// scores moves against the live board globals, which a premove points at its
-// hypothetical position (_botWithPosition) for the length of the call.
-function blindConvictionOrder(rawProbs) {
+// ── Temp: one dial from Maia alone to the personality alone ──────────────────
+// Set by the opponent in a Lichess game's chat (temp2, temp 0.5, temp auto —
+// src/65-lichess-bridge.js); null is off, and the bot picks as it was built.
+// While it is set the bot picks among Blind Conviction's candidates (those the
+// Move Distribution Range lets through), whatever it was built with, from the
+// blend
+//
+//     p(m) × w(m)^(2T)
+//
+// p is the move's popularity (Maia's probability, or Flounder's selection
+// share), w the personality's weight, T the dial, 0 to 10. T/10 of the moves
+// are picked from the top of the blend by the bot's Choice mix (Conviction);
+// the rest are drawn from it at random. So
+//   T = 0        the most popular move, every move.
+//   T = 0.01     Maia's distribution, near enough: the personality squared
+//                to the power 0.02, and 0.1% of moves by Conviction.
+//   T = 0.1-1    popularity leads, the personality pulling harder as T rises.
+//   T = 2-9.9    the personality leads, popularity still counting.
+//   T = 10       Blind Conviction: the personality's order, popularity only
+//                breaking its ties, the Choice mix, never a draw.
+// A move the personality dislikes (w below 1: it lowers what a control wants
+// raised) loses share the same way a liked one gains it.
+//
+// The pull is doubled (BLEND_PULL; Ben, Nov 16 2026). At w^T temp 1 barely
+// moved a mild personality: in the Two Knights after 3...Nf6, Maia 2000 plays
+// Ng5 17% of the time, Blundermind-01 weighs it x1.33, and temp 1 took it to
+// 21%. At w^(2T), to 25%.
+//
+// The personality is weighed at a fixed BLEND_PERSONALITY_CP (one log unit at
+// full strength, CP_PER_LOG_UNIT), not at the CP Budget, so each does one job:
+// the Budget decides which moves may be played (within it of the most popular
+// move, drawn or picked), and Temp how they are chosen. The draw takes
+// popularity as it is (temperature 1), not at the builder's Maia temperature,
+// which Blind Conviction never reads either.
+var botBlendTemp = null;
+const BLEND_TEMP_MAX = 10;
+const BLEND_PERSONALITY_CP = 150;
+const BLEND_PULL = 2;
+// Temp at 0: the most popular move, every move.
+function _blendTempZero() { return botBlendTemp != null && !(botBlendTemp > 0); }
+// The pick goes the Blind Conviction way: built so, or a Temp is set.
+function _blindPicks() { return botBlindConviction || botBlendTemp != null; }
+
+// The candidates in the bot's order of preference, and under a Temp between 0
+// and 10 the blend to draw from, as weights relative to its top move:
+// { order, blend }, blend null otherwise. Synchronous: it scores moves against
+// the live board globals, which a premove points at its hypothetical position
+// (_botWithPosition) for the length of the call.
+function blindConvictionPlan(rawProbs) {
   const luckVal = (window._bcpAttractorValues || {}).luck || 0;
   const cands = Object.keys(_distributionBand(_minProbFloor(rawProbs), luckVal));
-  if (!cands.length) return [];
+  const byPop = (a, b) => (rawProbs[b] || 0) - (rawProbs[a] || 0);
+  if (!cands.length) return { order: [], blend: null };
+  if (_blendTempZero()) return { order: cands.sort(byPop), blend: null };
   const flat = {};
   for (const m of cands) flat[m] = 1 / cands.length;
-  const w = applyMoveAttractors(flat, { rawWeights: true });
-  return cands.sort((a, b) => ((w[b] || 0) - (w[a] || 0)) || ((rawProbs[b] || 0) - (rawProbs[a] || 0)));
+  if (botBlendTemp == null || botBlendTemp >= BLEND_TEMP_MAX) {
+    const w = applyMoveAttractors(flat, botBlendTemp == null ? { rawWeights: true }
+      : { rawWeights: true, budgetCp: BLEND_PERSONALITY_CP });
+    return { order: cands.sort((a, b) => ((w[b] || 0) - (w[a] || 0)) || byPop(a, b)), blend: null };
+  }
+  const w = applyMoveAttractors(flat, { rawWeights: true, budgetCp: BLEND_PERSONALITY_CP });
+  const k = BLEND_PULL * botBlendTemp;
+  const ln = x => x > 0 ? Math.log(x) : -Infinity;
+  const score = {};
+  for (const m of cands) score[m] = ln(rawProbs[m]) + k * ln(w[m]);
+  // -Infinity on both sides is NaN, which falls through to popularity.
+  const order = cands.sort((a, b) => (score[b] - score[a]) || byPop(a, b));
+  // Relative to the top move, so the exponent cannot overflow; a move with no
+  // popularity at all weighs 0. With no finite score there is nothing to draw.
+  const hi = score[order[0]];
+  if (!Number.isFinite(hi)) return { order, blend: null };
+  const blend = {};
+  for (const m of order) blend[m] = Math.exp(score[m] - hi);
+  return { order, blend };
+}
+function blindConvictionOrder(rawProbs) { return blindConvictionPlan(rawProbs).order; }
+
+// One move drawn from relative weights, or null when none weighs anything.
+function _blendDraw(weights) {
+  let s = 0;
+  for (const m in weights) if (weights[m] > 0) s += weights[m];
+  if (!(s > 0)) return null;
+  let r = Math.random() * s, last = null;
+  for (const m in weights) {
+    if (!(weights[m] > 0)) continue;
+    last = m;
+    r -= weights[m];
+    if (r < 0) return m;
+  }
+  return last;
 }
 
 // The pick: a move in that order within the Budget of the most popular move,
@@ -2241,15 +2324,27 @@ function blindConvictionOrder(rawProbs) {
 // scored the moves (Flounder's probe covers every legal one). `strict`, as on
 // the other guards: a premove that cannot be checked is not played. A move the
 // bot must play falls back to the popular move, never to an unchecked favourite.
-async function blindConvictionPick(fen, rawProbs, order, strict, evals) {
+//
+// `blend` (a Temp between 0 and 10; blindConvictionPlan): only Temp/10 of the
+// moves are picked so. The rest are drawn from the blend, and a draw past the
+// Budget is drawn again from the moves within it. The draw also comes before
+// the probe, so drawing the popular move costs no engine time either.
+async function blindConvictionPick(fen, rawProbs, order, strict, evals, blend) {
   _cpBudgetVerifiedThisMove = false;
   let top = null, topP = -1;
   for (const m in rawProbs) { if (rawProbs[m] > topP) { topP = rawProbs[m]; top = m; } }
   if (!order || !order.length) return top;
   // Stalemate-seeking throws material on purpose, as under ordinary Conviction.
   if (_staleSeekThisMove) return order[0];
-  let want = _blindChoiceRoll(BLIND_CHOICES);
-  if (want === 0 && order[0] === top) return order[0];
+  const drawing = !!blend && Math.random() * BLEND_TEMP_MAX >= botBlendTemp;
+  let want = 0, drawn = null;
+  if (drawing) {
+    drawn = _blendDraw(blend);
+    if (drawn == null || drawn === top) return top;
+  } else {
+    want = _blendTempZero() ? 0 : _blindChoiceRoll(BLIND_CHOICES);
+    if (want === 0 && order[0] === top) return order[0];
+  }
   const failed = () => (strict ? null : top);
   try {
     const budget = window._bcpCpBudget != null ? Math.max(0, +window._bcpCpBudget || 0) : 100;
@@ -2259,9 +2354,21 @@ async function blindConvictionPick(fen, rawProbs, order, strict, evals) {
     }
     if (!evals || evals[top] == null) return failed();
     _lastEvalProbe = { fen: fen, evals: evals };
+    const ok = m => evals[m] != null && evals[top] - evals[m] <= budget;
+    if (drawing) {
+      if (!ok(drawn)) {
+        const kept = {};
+        for (const m in blend) if (ok(m)) kept[m] = blend[m];
+        drawn = _blendDraw(kept);
+        if (drawn == null) return top;
+      }
+      console.log('[Temp]', botBlendTemp, 'drew', drawn, 'within the', budget, 'cp budget vs most-popular', top);
+      _cpBudgetVerifiedThisMove = true;
+      return drawn;
+    }
     const within = [];
     for (const m of order) {
-      if (evals[m] == null || evals[top] - evals[m] > budget) continue;
+      if (!ok(m)) continue;
       within.push(m);
       if (within.length === BLIND_CHOICES) break;
     }
@@ -2280,7 +2387,8 @@ async function blindConvictionPick(fen, rawProbs, order, strict, evals) {
 }
 
 function blindConvictionMove(fen, rawProbs, strict, evals) {
-  return blindConvictionPick(fen, rawProbs, blindConvictionOrder(rawProbs), strict, evals);
+  const plan = blindConvictionPlan(rawProbs);
+  return blindConvictionPick(fen, rawProbs, plan.order, strict, evals, plan.blend);
 }
 
 // The pick from one move's distribution, and the guards that hold it — the
@@ -2293,7 +2401,7 @@ async function botPickFromProbs(fen, rawProbs, temperature) {
     others => _botPickFromProbsOnce(fen, others, temperature));
 }
 async function _botPickFromProbsOnce(fen, rawProbs, temperature) {
-  if (botBlindConviction) return blindConvictionMove(fen, rawProbs);
+  if (_blindPicks()) return blindConvictionMove(fen, rawProbs);
   const shaped = applyMoveAttractors(rawProbs);
   let uci = pickFromProbs(shaped, temperature);
   uci = await applyCpBudgetAcceptance(fen, uci, rawProbs, shaped);
@@ -2511,7 +2619,7 @@ async function botFlounderTurn(fen, clockMs, startMs, baseElo) {
     // Blind Conviction: Flounder's own selection distribution stands in for
     // Maia's (its most likely move is the best one), and its probe has already
     // scored every legal move, so the Budget check costs nothing more.
-    if (botBlindConviction && pick.evals) {
+    if (_blindPicks() && pick.evals) {
       const probs = {};
       for (const m in pick.evals) probs[m] = (pick.dist && pick.dist[m]) || 0;
       uci = (await blindConvictionMove(fen, probs, false, pick.evals)) || uci;
@@ -4432,11 +4540,15 @@ async function _botPremoveArmRun(pmRating) {
     // the duration of the call — otherwise every candidate is scored against a
     // board where its piece isn't on the from-square. Swap, shape, restore.
     var pmTemp = timePressureTempByThink(botMaiaBaseTemp(), PREMOVE_THINK_SEC);
-    var shapedReply = null, blindOrder = null;
+    var shapedReply = null, blindOrder = null, blindBlend = null;
     var replyUci = _botWithPosition(hypBoard, hypTurn, hypEp, hypCastle, function() {
       // Blind Conviction ranks here, where the attractors can see the
       // position; its Budget check runs below, with the other guards'.
-      if (botBlindConviction) { blindOrder = blindConvictionOrder(replyProbs); return blindOrder[0]; }
+      if (_blindPicks()) {
+        var plan = blindConvictionPlan(replyProbs);
+        blindOrder = plan.order; blindBlend = plan.blend;
+        return blindOrder[0];
+      }
       shapedReply = applyMoveAttractors(replyProbs);
       return pickFromProbs(shapedReply, pmTemp);
     });
@@ -4450,7 +4562,7 @@ async function _botPremoveArmRun(pmRating) {
     // guard is a no-op when the pick is the popular move itself, so the common
     // case costs no engine time at all.
     if (blindOrder) {
-      replyUci = await blindConvictionPick(hypFen, replyProbs, blindOrder, true);
+      replyUci = await blindConvictionPick(hypFen, replyProbs, blindOrder, true, undefined, blindBlend);
       if (!replyUci || myGen !== _botPremoveGen || myGameGen !== _botGameGen) return;
     } else {
       replyUci = await applyCpBudgetAcceptance(hypFen, replyUci, replyProbs, shapedReply, true);
