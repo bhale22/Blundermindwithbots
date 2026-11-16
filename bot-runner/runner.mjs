@@ -177,8 +177,15 @@ class Host {
     this.dead = null;
     const dir = path.join(PROFILES_DIR, this.name);   // keeps Maia's 44 MB download
     fs.mkdirSync(dir, { recursive: true });
+    // No service worker. The site's worker serves its cached copy of the page
+    // whenever the network takes over 3 s (sw.js NAV_TIMEOUT_MS), which is
+    // right for a phone on a train and wrong here: a bot restarted to pick up
+    // a deploy could come up on the old page and keep it until its next
+    // refresh. Offline play is no use to a bot; Maia's model is cached by its
+    // own worker, not this one, so the 44 MB still survives restarts.
     this.ctx = await chromium.launchPersistentContext(dir, {
       headless: true, viewport: { width: 1280, height: 800 },
+      serviceWorkers: 'block',
     });
     this.ctx.on('close', () => { this.dead = this.dead || 'the browser closed'; });
     await this.ctx.addInitScript(seed, { origin: ORIGIN, items: hostItems(this.bot) });
@@ -205,6 +212,15 @@ class Host {
     this.saidBot = false;
     this.saidNote = '';
     await this.page.goto(pageUrl(true), { waitUntil: 'domcontentloaded', timeout: 120000 });
+    // Which deploy this bot is running, so "is the new code live on the bot?"
+    // is one look at the log: compare it with the bm-build the site serves.
+    try {
+      const build = await this.page.evaluate(() => {
+        const m = document.querySelector('meta[name="bm-build"]');
+        return m ? m.content : null;
+      });
+      this.log('Site build ' + (build || 'unknown'));
+    } catch (e) {}
   }
 
   // Returns when the browser has to be restarted.

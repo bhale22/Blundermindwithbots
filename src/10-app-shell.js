@@ -153,12 +153,11 @@ let botCplxBase = 3;               // complexity mode: base think time (s)
 let botCplxMin  = 0.4;             // complexity mode: min multiplier (simple moves)
 let botCplxMax  = 2.5;             // complexity mode: max multiplier (complex moves)
 // complexity mode: where the average think time comes from — 'clock' (time left
-// ÷ moves left in a game of botCplxMovesPerGame moves) or 'fixed' (botCplxBase).
+// ÷ moves left in a 40- or 60-move game, botClockPlanSec) or 'fixed' (botCplxBase).
 let botCplxBaseMode     = 'fixed';
-let botCplxMovesPerGame = 60;
 let botBehavReconsider  = true;    // human behaviour: reconsideration pauses
 let botBehavBlink       = true;    // human behaviour: instant play on forced moves
-let botBehavClockMirror = true;    // human behaviour: speed up when opponent is low
+let botBehavClockMirror = true;    // human behaviour: speed up when the opponent is in time trouble
 let botCanFlag   = true;           // whether bot is allowed to flag (run clock to 0)
 // ── Time-pressure feel ───────────────────────────────────────────────────────
 // How hard the bot hurries as its own time-per-remaining-move budget tightens

@@ -147,24 +147,42 @@ test('being ahead on the clock does not slow the bot down', () => {
   assert.ok(think(ahead, 120000) <= think(level, 120000) + 1);
 });
 
-test('clock mirroring is graduated, not a step at exactly 60%', () => {
-  const ctx = makeCtx({ botBehavClockMirror: true, botDeficitWeight: 0 });
-  // Opponent sinking from level to nearly flagged, our clock fixed.
-  const ours = 120000;
-  const ratios = [1.0, 0.8, 0.6, 0.4, 0.2];
-  const times = ratios.map((r) => {
-    ctx.botOppClockMs = ours * r;
-    return think(ctx, ours);
-  });
-  for (let i = 1; i < times.length; i++) {
-    assert.ok(times[i] <= times[i - 1] + 1, 'must decrease as the opponent sinks');
-  }
-  // The old code did nothing at 0.61 and halved at 0.59. Adjacent samples
-  // either side of 0.6 must now be close together.
-  ctx.botOppClockMs = ours * 0.61; const justAbove = think(ctx, ours);
-  ctx.botOppClockMs = ours * 0.59; const justBelow = think(ctx, ours);
-  assert.ok(Math.abs(justAbove - justBelow) < 200,
-    'step at the 60% boundary: ' + Math.round(justAbove) + ' vs ' + Math.round(justBelow));
+test('clock mirroring waits for real time trouble, not a clock lead', () => {
+  const at = (opp, inc, ours = 300000) => {
+    const ctx = makeCtx({ botBehavClockMirror: true, botDeficitWeight: 0, clockInc: inc, botOppClockMs: opp });
+    return { t: think(ctx, ours), trouble: ctx.botOppInTimeTrouble(ours) };
+  };
+  const calm = at(null, 0).t;
+  // 5+3, Nov 2026: the opponent at 3 minutes against the bot's 5 had it moving
+  // at a third of its pace. Behind is not trouble.
+  assert.strictEqual(at(180000, 3).trouble, false, '3:00 against 5:00 is not trouble');
+  assert.strictEqual(at(180000, 3).t, calm, 'and the bot keeps its pace');
+  // No increment: trouble under 30 s. With one: under 15 s.
+  assert.strictEqual(at(31000, 0).trouble, false, '31 s, no increment');
+  assert.strictEqual(at(29000, 0).trouble, true, '29 s, no increment');
+  assert.strictEqual(at(20000, 3).trouble, false, '20 s with +3 is not trouble');
+  assert.strictEqual(at(14000, 3).trouble, true, '14 s with +3 is');
+  const fast = at(10000, 0).t;
+  assert.ok(Math.abs(fast - calm * 0.3) < 2, 'in trouble it plays at 0.3x: ' + Math.round(calm) + ' -> ' + Math.round(fast));
+  // Not pressing when the bot has even less time than they do.
+  assert.strictEqual(at(10000, 0, 8000).trouble, false, 'the bot lower still: no');
+  // Untimed: no opponent clock, never trouble.
+  assert.strictEqual(makeCtx().botOppInTimeTrouble(null), false);
+});
+
+test('the flag ceiling: a tenth of the clock plus the increment, never half the clock', () => {
+  // Math.random is 0.5, so the ±20% factor is exactly 1.
+  const c = (inc) => makeCtx({ clockInc: inc });
+  assert.strictEqual(c(3).botFlagCeilingMs(60000), 9000, '5+3 on 1:00: 6 s + 3 s');
+  assert.strictEqual(c(0).botFlagCeilingMs(100000), 10000, 'no increment, 100 s: 10 s');
+  assert.strictEqual(c(3).botFlagCeilingMs(3000), 1500, '3 s on the clock with +3: half the clock, not 3.3 s');
+  const r = makeCtx({ clockInc: 3 });
+  r.Math.random = () => 0; const lo = r.botFlagCeilingMs(60000);
+  r.Math.random = () => 0.999999; const hi = r.botFlagCeilingMs(60000);
+  assert.ok(Math.abs(lo - 7200) < 1 && Math.abs(hi - 10800) < 1, 'give or take a fifth: ' + lo + '–' + hi);
+  // It caps a long think whatever the mode.
+  const fixed = makeCtx({ botTimeBehavior: 'fixed', botFixedDelayMs: 20000, clockInc: 3 });
+  assert.strictEqual(think(fixed, 60000), 9000, 'Fixed 20 s on a 1:00 clock with +3');
 });
 
 test('the bot never plans to spend more than its per-move budget', () => {
@@ -188,7 +206,7 @@ test('untimed games are unaffected by any of the pressure machinery', () => {
   const t = think(ctx, null);
   assert.ok(t >= 200, 'still returns a sane delay');
   assert.strictEqual(ctx.botClockDeficit(null), 0);
-  assert.strictEqual(ctx.botOppClockDeficit(null), 0);
+  assert.strictEqual(ctx.botOppInTimeTrouble(null), false);
 });
 
 test('pressureDepth 0 restores clock-insensitive pacing below the ceilings', () => {
@@ -260,13 +278,29 @@ test('time pressure applies to Complexity and Mirror, not to a Fixed or Instant 
 });
 
 // ── The clock-based plan ─────────────────────────────────────────────────────
-test('the clock plan: (time left + increment to come) ÷ moves left', () => {
-  const ctx = makeCtx({ botCplxBaseMode: 'clock', botCplxMovesPerGame: 60, clockInc: 2,
-                        gameMovesAlgebraic: new Array(16).fill('e4') });   // 8 moves in book
-  // 24:00 left, +2 s: (1440 + 52 × 2) / 52
+test('the clock plan: (time left + increment to come) ÷ moves left, 60 moves from 10 minutes up', () => {
+  // Game size = base + 40 × increment: 60 moves from 10 minutes, 40 below.
+  const n = (min, inc) => makeCtx({ botStartClockMs: min * 60000, clockInc: inc }).botPlanGameMoves();
+  assert.strictEqual(n(5, 3), 40, '5+3 = 7 min');
+  assert.strictEqual(n(3, 2), 40, '3+2');
+  assert.strictEqual(n(8, 2), 40, '8+2 = 9:20');
+  assert.strictEqual(n(10, 0), 60, '10+0, exactly 10 min');
+  assert.strictEqual(n(7, 5), 60, '7+5 = 10:20');
+  assert.strictEqual(n(15, 10), 60, '15+10');
+  // The time control decides, not the clock as it stands (a mid-game rebuild).
+  const tc = makeCtx({ botStartClockMs: 60000, clockInc: 0, clockControl: 'x', TIME_CONTROLS: { x: { time: 900, inc: 0 } } });
+  assert.strictEqual(tc.botPlanGameMoves(), 60, 'from TIME_CONTROLS when it has one');
+
+  const ctx = makeCtx({ botCplxBaseMode: 'clock', botStartClockMs: 15 * 60000, clockInc: 2,
+                        gameMovesAlgebraic: new Array(16).fill('e4') });   // 15+2, 8 moves in book
+  // 24:00 left, +2 s: 52 moves left, (1440 + 52 × 2) / 52
   assert.ok(Math.abs(ctx.botClockPlanSec(24 * 60000) - 1544 / 52) < 1e-9);
-  ctx.botCplxMovesPerGame = 40;
-  assert.ok(Math.abs(ctx.botClockPlanSec(24 * 60000) - (1440 + 64) / 32) < 1e-9);
+  // At the first move it is the game's time ÷ N: 5+3 → 420 / 40.
+  const first = makeCtx({ botCplxBaseMode: 'clock', botStartClockMs: 300000, clockInc: 3, gameMovesAlgebraic: [] });
+  assert.ok(Math.abs(first.botClockPlanSec(300000) - 10.5) < 1e-9, '5+3: 10.5 s');
+  // Past move N − 10 it keeps ten moves in hand.
+  const late = makeCtx({ botCplxBaseMode: 'clock', botStartClockMs: 300000, clockInc: 0, gameMovesAlgebraic: new Array(90).fill('e4') });
+  assert.ok(Math.abs(late.botClockPlanSec(60000) - 6) < 1e-9, '1:00 at move 45: 6 s');
   ctx.botCplxBaseMode = 'fixed';
   assert.strictEqual(ctx.botClockPlanSec(24 * 60000), null, 'Fixed seconds uses the Base time instead');
 });

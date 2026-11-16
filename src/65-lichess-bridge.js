@@ -829,20 +829,29 @@ function _lbPerfRange() {
     : { lo: min, hi: max };
 }
 
-// Once a game, at its start: what it plays at, what runs, and how to change
-// them. Lichess cuts a chat line at 140 characters, and the longest the first
-// line can be (an end, Flounder, a three-figure Budget) is 134, so the think
-// time gets a line of its own. The spectators get what it plays at — without
-// the instructions, which only the opponent can use.
+// Once a game, at its start: what it plays at and what runs, then a line for
+// each thing the opponent can change (Ben's wording, Nov 16). Lichess cuts a
+// chat line at 140 characters; the longest here is the first, at most about
+// 130. The spectators get the first line — what it plays at — without the
+// instructions, which only the opponent can use.
+//
+// Sent LB_GREET_DELAY_MS after the game starts (see _lbBeginLocalGame).
 function _lbGreet(g, at) {
   const { lo, hi } = _lbPerfRange();
-  const state = 'ELO set to ' + _lbElo(at.est) + _lbEdgeText(at.edge) + ': ' + _lbRunsText(at) + '.';
-  const think = at.think != null ? 'Think time ' + _lbThinkText(at.think) + '.' : '';
-  _lbSay(g, state + ' Type ELOxxxx (ELO' + lo + ' to ELO' + hi + ') or cpxxx (cp' + LB_CP_MIN + ' to cp' + LB_CP_MAX + ') to change them.');
-  _lbSay(g, (think ? think + ' ' : '') + 'Type thinkxs (think0s to think' + LB_THINK_MAX_S +
-    's) for a fixed time a move, or think auto for the bot\'s own pace.');
-  _lbSay(g, state + (think ? ' ' + think : ''), 'spectator');
+  const pure = _lbEloRange().flounder ? 'Flounder' : 'Maia3';
+  const state = 'ELO set to ' + _lbElo(at.est) + _lbEdgeText(at.edge) + ': ' + _lbRunsText(at) + '.' +
+    (at.think != null ? ' Think time ' + _lbThinkText(at.think) + '.' : '');
+  _lbSay(g, state);
+  _lbSay(g, 'Type "ELOXXXX" in chat to adjust between ELO' + lo + ' (min) and ELO' + hi + ' (max).');
+  _lbSay(g, 'Type "cpXX" to set centipawn budget between cp' + LB_CP_MIN + ' (pure ' + pure + ') and cp' + LB_CP_MAX + '.');
+  _lbSay(g, 'Type "thinkXs" to change move time to X seconds (0-' + LB_THINK_MAX_S + 's range).');
+  _lbSay(g, 'Type "Think auto" to go back to human-like timing.');
+  _lbSay(g, state, 'spectator');
 }
+// Posted the instant Lichess started the game, the greeting's first line could
+// land before the opponent's game page had joined the chat: saved, but never
+// shown to them live (seen on Blundermind-01, Nov 16).
+const LB_GREET_DELAY_MS = 2000;
 
 // The opponent sets the rating from the player chat with a message that is only
 // that: ELO1500, or 1500ELO (spaces, lower case and 1,500 are fine). It is the
@@ -870,7 +879,9 @@ function _lbParseCommand(text) {
   const num = '(\\d{1,2},\\d{3}|\\d{1,5})';
   const part = new RegExp('^(?:elo\\s*' + num + '|' + num + '\\s*elo|cp\\s*(\\d{1,5})|(\\d{1,5})\\s*cp' +
     '|think\\s*(\\d{1,5}(?:\\.\\d+)?)\\s*(?:seconds?|secs?|s)?|think\\s*(auto))(?:[\\s,]+|$|(?=[a-z]))', 'i');
-  let rest = String(text || '').trim();
+  // The greeting shows each command in quotes ("ELOXXXX"), so quotes typed
+  // around one are dropped rather than making it unreadable.
+  let rest = String(text || '').replace(/["'“”‘’]/g, '').trim();
   const cmd = {};
   while (rest) {
     const m = part.exec(rest);
@@ -953,8 +964,8 @@ function _lbChatCommand(g, cmd) {
     lbLog(_lbWho(opp) + ' asked for think ' + (think != null ? cmd.think + ' s' : 'auto') + ' in the chat: ' +
       (think != null ? 'Fixed timing, ' + _lbThinkText(think) : 'back to the bot\'s own timing'));
     const t = think != null ? _lbThinkText(think) + longest : null;
-    said = said ? said + (t ? ', think time ' + t : ', think time back to its own pace')
-                : (t ? 'Think time set to ' + t : 'Think time back to the bot\'s own pace');
+    said = said ? said + (t ? ', think time ' + t : ', think time back to human-like timing')
+                : (t ? 'Think time set to ' + t : 'Think time back to human-like timing');
   }
   // Both chats: what the bot plays at is for spectators too.
   _lbTell(g, said);
@@ -977,7 +988,15 @@ function _lbBeginLocalGame(g, moves) {
   g.boardReady = false;
   const matched = _lbApplyMatchedRating(g);
   // Once a game, and not on coming back to one already under way.
-  if (matched && !g.greeted && moves.length < 2) _lbGreet(g, matched);
+  // Held LB_GREET_DELAY_MS so the opponent's page is in the chat to see it,
+  // and read afresh then, in case a command has already changed something.
+  if (matched && !g.greeted && moves.length < 2) {
+    setTimeout(() => {
+      if (lbGame !== g || g.ended || !g.boardReady) return;
+      const at = _lbApplyMatchedRating(g);
+      if (at) _lbGreet(g, at);
+    }, LB_GREET_DELAY_MS);
+  }
   g.greeted = true;
   lbStarting = true;
   try {
