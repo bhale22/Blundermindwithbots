@@ -53,6 +53,11 @@ let botLastHoverSq = -1;
 let botGhostResponses = {};
 let botPrecomputePending = false;
 let lastBotMoveSource = ''; // 'LC', 'SF', etc.
+// The long form of the same, for the host's Lichess log (one line a move):
+// the engine, the rating it played at, how deep it looked — e.g.
+// "Flounder 1825, depth 8" or "Fallback: quick Stockfish, depth 3". Cleared at
+// the start of each bot move, so a path that sets none never logs the last one.
+let lastBotMoveDetail = '';
 
 // ── Phase 1: Move history & clock fraction tracking ──────────────────────────
 // botMoveHistory: ordered list of every UCI move played this game (both sides).

@@ -65,11 +65,20 @@ const lbRatingChoices = new Map();
 // range is the builder's Budget slider.
 const lbBudgetChoices = new Map();
 const LB_CP_MIN = 0, LB_CP_MAX = 300;
+// Opponent id → the think time they asked for (think15s), in seconds, kept the
+// same way. It runs the builder's Fixed timing at that many seconds a move
+// (still capped by the bot's clock, so a short game cannot flag it); "think
+// auto" gives the bot its own timing back.
+const lbThinkChoices = new Map();
+const LB_THINK_MAX_S = 60;
 const LB_CHAT_COOLDOWN_MS = 3000;
 let lbAccepting = null;       // challenge id accepted, its gameStart not yet here
 let lbStarting = false;       // botStart() is running on Lichess's behalf
 let lbReplaying = false;      // rebuilding a game from the server's move list
 let lbLogLines = [];
+// Long enough for a whole game: every bot move is a line (what made it — see
+// lastBotMoveDetail), alongside the game's events.
+const LB_LOG_MAX = 400;
 let lbQuickCloses = 0;        // event streams that closed right after opening
 let lbLoadingWatch = null;    // redraws the panel once the engines are ready
 let _lbQueue = Promise.resolve();
@@ -114,8 +123,17 @@ function lichessOnLocalMove(from, to, promo, piece) {
   g.local.push(uci);
   if (lbReplaying) return;
   // The opponent's moves came from the server; only the bot's go back.
-  if (piece && piece.color === g.colorLetter) _lbSendMove(g, uci);
-  _lbCheckClaims(g);
+  const botMoved = !!piece && piece.color === g.colorLetter;
+  if (botMoved) {
+    _lbSendMove(g, uci);
+    // What made the move: "27... Rg8  Flounder 1825, depth 8".
+    const ply = g.local.length;
+    const san = (typeof gameMovesAlgebraic !== 'undefined' && gameMovesAlgebraic[gameMovesAlgebraic.length - 1]) || uci;
+    const how = (typeof lastBotMoveDetail !== 'undefined' && lastBotMoveDetail) ||
+                (typeof lastBotMoveSource !== 'undefined' && lastBotMoveSource) || '';
+    lbLog(Math.ceil(ply / 2) + (ply % 2 ? '. ' : '... ') + san + (how ? '  ' + how : ''));
+  }
+  _lbCheckClaims(g, botMoved);
 }
 
 // The bot's answer to the opponent's standing draw offer, with the reason for
@@ -183,7 +201,7 @@ function lbLog(text) {
   const d = new Date();
   const hh = String(d.getHours()).padStart(2, '0'), mm = String(d.getMinutes()).padStart(2, '0');
   lbLogLines.push(hh + ':' + mm + '  ' + text);
-  if (lbLogLines.length > 40) lbLogLines.shift();
+  if (lbLogLines.length > LB_LOG_MAX) lbLogLines.shift();
   console.log('[lichess]', text);
   lbRender();
 }
@@ -496,6 +514,7 @@ function _lbNewGame(id) {
     local: [],          // UCI moves on this board, in order
     abort: null,        // aborts the game stream (a resync reopens it)
     drawPly: -1, takebackPly: -1, claimPly: -1,
+    claimPending: -1, claimRule: '',   // a draw claim waiting on the bot's turn (_lbCheckClaims)
     oppDrawOpen: false, // the opponent's draw offer is standing
     drawAnswered: false, drawAccepted: false,   // the bot's answer to it
     greeted: false, chatAt: 0,   // the opening line is said; when the last command was answered
@@ -742,8 +761,10 @@ function _lbApplyMatchedRating(g) {
   window._bcpCpBudget = cp;
   window._bcpCpHardFloor = cp != null && floor != null ? Math.max(+floor, cp) : floor;
   at.cp = cp;
+  at.think = _lbApplyThinkChoice(opp);
   if (opp && !g.matchLogged) {
     g.matchLogged = true;
+    if (at.think != null) lbLog('Think time ' + _lbThinkText(at.think) + ': ' + opp.name + ' asked for it in the chat');
     const plays = (flounder ? 'Flounder ' : 'Maia ') + elo + (cp !== cfg.cpBudget ? ', CP budget ' + cp : '') +
       (t ? ' (plays like ' + at.est + ')' : '');
     if (asked != null) lbLog('CP budget ' + asked + ': ' + opp.name + ' asked for it in the chat (built with ' + cfg.cpBudget + ')');
@@ -757,12 +778,39 @@ function _lbApplyMatchedRating(g) {
   return at;
 }
 
+// The think time this opponent asked for, put into effect: the builder's Fixed
+// timing at that many seconds a move, or, with none (or no game), the timing
+// the bot was built with. Returns the seconds, or undefined.
+function _lbApplyThinkChoice(opp) {
+  const cfg = window._lastAppliedBotConfig || {};
+  const secs = opp && opp.id ? lbThinkChoices.get(opp.id) : undefined;
+  if (secs != null) {
+    botTimeBehavior = 'fixed';
+    botFixedDelayMs = Math.round(secs * 1000);
+  } else {
+    // As the builder's config applies it (applyBotConfig).
+    const modes = { complexity: 'complexity', instant: 'instant', fixed: 'fixed', mirror: 'mirror' };
+    botTimeBehavior = modes[cfg.timingMode] || 'pace';
+    botFixedDelayMs = cfg.fixedDelayMs || 5000;
+  }
+  return secs;
+}
+const _lbThinkText = s => (Number.isInteger(s) ? s : s.toFixed(1)) + ' s a move';
+
 // A chat line matters less than a move, and every POST shares one queue, so a
 // line Lichess won't take at once is dropped rather than held in front of the
-// bot's next move.
-function _lbSay(g, text) {
-  _lbPost('/api/bot/game/' + g.id + '/chat', new URLSearchParams({ room: 'player', text }).toString(), true)
-    .then(r => { if (!r.ok) lbLog('Chat line not sent (' + _lbErr(r) + '): ' + text); });
+// bot's next move. `room`: 'player' (the opponent's chat, the default) or
+// 'spectator' (the public one, which anyone watching or replaying sees).
+function _lbSay(g, text, room) {
+  room = room || 'player';
+  _lbPost('/api/bot/game/' + g.id + '/chat', new URLSearchParams({ room, text }).toString(), true)
+    .then(r => { if (!r.ok) lbLog('Chat line not sent (' + _lbErr(r) + (room === 'spectator' ? ', spectators' : '') + '): ' + text); });
+}
+// Said in both chats: what the bot plays at is for anyone watching the game,
+// during it and after, not only the opponent (a tester's request, Nov 2026).
+function _lbTell(g, text) {
+  _lbSay(g, text, 'player');
+  _lbSay(g, text, 'spectator');
 }
 
 // Every rating the bot says is a playing strength (the measured table's right
@@ -782,12 +830,18 @@ function _lbPerfRange() {
 }
 
 // Once a game, at its start: what it plays at, what runs, and how to change
-// them. Lichess cuts a chat line at 140 characters, and the longest this can
-// be (an end, Flounder, a three-figure Budget) is 134.
+// them. Lichess cuts a chat line at 140 characters, and the longest the first
+// line can be (an end, Flounder, a three-figure Budget) is 134, so the think
+// time gets a line of its own. The spectators get what it plays at — without
+// the instructions, which only the opponent can use.
 function _lbGreet(g, at) {
   const { lo, hi } = _lbPerfRange();
-  _lbSay(g, 'ELO set to ' + _lbElo(at.est) + _lbEdgeText(at.edge) + ': ' + _lbRunsText(at) +
-    '. Type ELOxxxx (ELO' + lo + ' to ELO' + hi + ') or cpxxx (cp' + LB_CP_MIN + ' to cp' + LB_CP_MAX + ') to change them.');
+  const state = 'ELO set to ' + _lbElo(at.est) + _lbEdgeText(at.edge) + ': ' + _lbRunsText(at) + '.';
+  const think = at.think != null ? 'Think time ' + _lbThinkText(at.think) + '.' : '';
+  _lbSay(g, state + ' Type ELOxxxx (ELO' + lo + ' to ELO' + hi + ') or cpxxx (cp' + LB_CP_MIN + ' to cp' + LB_CP_MAX + ') to change them.');
+  _lbSay(g, (think ? think + ' ' : '') + 'Type thinkxs (think0s to think' + LB_THINK_MAX_S +
+    's) for a fixed time a move, or think auto for the bot\'s own pace.');
+  _lbSay(g, state + (think ? ' ' + think : ''), 'spectator');
 }
 
 // The opponent sets the rating from the player chat with a message that is only
@@ -804,13 +858,18 @@ function _lbGreet(g, at) {
 // the bot gives, and stays until they ask for a rating on its own, which
 // brings back the Budget that goes with that rating (the measured table's).
 //
+// The think time too: think15s, think 15 s, think2, think 2.5 seconds — a fixed
+// time a move, 0 to 60 s — or think auto for the bot's own timing again. It
+// combines with the others (ELO2000 think5s) and is kept until they change it.
+//
 // What never gets here: Lichess's flood filter (lila Flood.scala) drops a
 // player's line within one character of either of their last two in the past
 // minute, so ELO2200 straight after ELO2100 never reaches the bot. Bots are
 // exempt, so the replies themselves always go out.
 function _lbParseCommand(text) {
   const num = '(\\d{1,2},\\d{3}|\\d{1,5})';
-  const part = new RegExp('^(?:elo\\s*' + num + '|' + num + '\\s*elo|cp\\s*(\\d{1,5})|(\\d{1,5})\\s*cp)(?:[\\s,]+|$|(?=[a-z]))', 'i');
+  const part = new RegExp('^(?:elo\\s*' + num + '|' + num + '\\s*elo|cp\\s*(\\d{1,5})|(\\d{1,5})\\s*cp' +
+    '|think\\s*(\\d{1,5}(?:\\.\\d+)?)\\s*(?:seconds?|secs?|s)?|think\\s*(auto))(?:[\\s,]+|$|(?=[a-z]))', 'i');
   let rest = String(text || '').trim();
   const cmd = {};
   while (rest) {
@@ -819,13 +878,16 @@ function _lbParseCommand(text) {
     if (m[1] || m[2]) {
       if (cmd.elo != null) return null;
       cmd.elo = +String(m[1] || m[2]).replace(',', '');
-    } else {
+    } else if (m[3] != null || m[4] != null) {
       if (cmd.cp != null) return null;
       cmd.cp = +(m[3] || m[4]);
+    } else {
+      if (cmd.think != null) return null;
+      cmd.think = m[6] ? 'auto' : +m[5];
     }
     rest = rest.slice(m[0].length);
   }
-  return cmd.elo != null || cmd.cp != null ? cmd : null;
+  return cmd.elo != null || cmd.cp != null || cmd.think != null ? cmd : null;
 }
 function _lbOnChatLine(g, m) {
   const opp = g.opponent;
@@ -839,7 +901,8 @@ function _lbOnChatLine(g, m) {
   const wait = g.chatAt + LB_CHAT_COOLDOWN_MS - Date.now();
   if (wait > 0) {
     const held = g.chatHeld || {};
-    g.chatHeld = { elo: cmd.elo != null ? cmd.elo : held.elo, cp: cmd.cp != null ? cmd.cp : held.cp };
+    g.chatHeld = { elo: cmd.elo != null ? cmd.elo : held.elo, cp: cmd.cp != null ? cmd.cp : held.cp,
+                   think: cmd.think != null ? cmd.think : held.think };
     if (!g.chatTimer) g.chatTimer = setTimeout(() => {
       const w = g.chatHeld;
       g.chatTimer = null; g.chatHeld = null;
@@ -853,8 +916,15 @@ function _lbChatCommand(g, cmd) {
   const opp = g.opponent;
   g.chatAt = Date.now();
   if (!_lbMatching()) {
-    _lbSay(g, cmd.elo != null ? 'This bot\'s rating can\'t be changed.' : 'This bot\'s CP budget can\'t be changed.');
+    _lbSay(g, cmd.elo != null ? 'This bot\'s rating can\'t be changed.'
+      : cmd.cp != null ? 'This bot\'s CP budget can\'t be changed.' : 'This bot\'s think time can\'t be changed.');
     return;
+  }
+  let think = null;
+  if (cmd.think === 'auto') lbThinkChoices.delete(opp.id);
+  else if (cmd.think != null) {
+    think = Math.round(Math.max(0, Math.min(LB_THINK_MAX_S, cmd.think)) * 10) / 10;
+    lbThinkChoices.set(opp.id, think);
   }
   let cp = null, cpEdge = null;
   if (cmd.elo != null) {
@@ -874,11 +944,20 @@ function _lbChatCommand(g, cmd) {
     lbLog(_lbWho(opp) + ' asked for ' + cmd.elo + ' in the chat: ' + engine + ' set to ' + at.setting +
       ', CP budget ' + at.cp + ', plays like ' + at.est);
     said = 'Performance set to ' + _lbElo(at.est) + _lbEdgeText(at.edge) + ': ' + _lbRunsText(at) + _lbEdgeText(cpEdge);
-  } else {
+  } else if (cmd.cp != null) {
     said = 'CP budget set to ' + cp + _lbEdgeText(cpEdge);
   }
   if (cp != null) lbLog(_lbWho(opp) + ' asked for cp' + cmd.cp + ' in the chat: CP budget ' + cp + ', Hard Floor ' + window._bcpCpHardFloor);
-  _lbSay(g, said);
+  if (cmd.think != null) {
+    const longest = think != null && think >= LB_THINK_MAX_S ? ' (its longest)' : '';
+    lbLog(_lbWho(opp) + ' asked for think ' + (think != null ? cmd.think + ' s' : 'auto') + ' in the chat: ' +
+      (think != null ? 'Fixed timing, ' + _lbThinkText(think) : 'back to the bot\'s own timing'));
+    const t = think != null ? _lbThinkText(think) + longest : null;
+    said = said ? said + (t ? ', think time ' + t : ', think time back to its own pace')
+                : (t ? 'Think time set to ' + t : 'Think time back to the bot\'s own pace');
+  }
+  // Both chats: what the bot plays at is for spectators too.
+  _lbTell(g, said);
   if (typeof botUpdatePlayerNames === 'function') botUpdatePlayerNames(botPlayerColor);
   lbRender();
 }
@@ -1036,16 +1115,73 @@ function _lbResync(g) {
 
 // Blundermind ends a game on threefold repetition and the fifty-move rule by
 // itself; Lichess waits for a claim. Saying yes to a draw is the claim.
-function _lbCheckClaims(g) {
+//
+// The bot claims on the same terms it takes a draw offer (botDecideClaim: the
+// Draws setting, its margin, the clock). It used to claim every time, so a bot
+// 8 pawns up against a shuffling opponent drew the won game itself (a tester's
+// game, Nov 2026). Not claiming costs nothing: the opponent can still claim.
+//
+// After the bot's own move the opponent is to move, so it decides at once.
+// After the opponent's, the bot is about to think; the decision waits for the
+// end of that thinking (lichessClaimFirst, from _botAnswerDrawFirst), as the
+// answer to a draw offer does, so its look at the position never takes
+// Stockfish away from the bot's move. A premove stands aside for it.
+function _lbCheckClaims(g, botMoved) {
   if (gameOver) return;
   const ply = g.local.length;
   const rep = (positionCounts[positionKey(board, turn, castling, epSq)] || 0) >= 3;
   const fifty = halfmoveClock >= 100;
-  if ((rep || fifty) && g.claimPly !== ply) {
-    g.claimPly = ply;
-    lbLog('Claiming a draw (' + (rep ? 'threefold repetition' : 'fifty-move rule') + ')');
-    _lbPost('/api/bot/game/' + g.id + '/draw/yes');
+  if (!(rep || fifty) || g.claimPly === ply) return;
+  g.claimPly = ply;
+  g.claimRule = rep ? 'threefold repetition' : 'fifty-move rule';
+  // Once this move has been recorded (botRecordMove runs just after), so the
+  // look at the position is made with the game's moves.
+  if (botMoved) setTimeout(() => { _lbDecideClaim(g, ply); }, 0);
+  else g.claimPending = ply;
+}
+
+// Decide, and claim if the bot wants the draw. Resolves whether a claim went
+// to Lichess. Dropped if the game moved on while the bot was deciding: a yes
+// then would be a draw OFFER, not a claim.
+async function _lbDecideClaim(g, ply) {
+  const rule = g.claimRule || 'repetition';
+  let v = { yes: true, why: '' };
+  if (typeof botDecideClaim === 'function') {
+    try { v = await botDecideClaim(); } catch (e) { v = { yes: true, why: '' }; }
   }
+  if (lbGame !== g || g.ended) return false;
+  if (g.local.length !== ply) {
+    if (v.yes) lbLog('A draw by ' + rule + ' was there to claim, but the game moved on before the bot decided');
+    return false;
+  }
+  if (!v.yes) { lbLog('Not claiming the draw by ' + rule + (v.why ? ': ' + v.why : '')); return false; }
+  lbLog('Claiming a draw (' + rule + ')' + (v.why ? ': ' + v.why : ''));
+  let r = null;
+  try { r = await _lbPost('/api/bot/game/' + g.id + '/draw/yes'); } catch (e) { r = null; }
+  if (!r || !r.ok) {
+    if (lbGame === g && !g.ended) lbLog('Lichess refused the claim' + (r ? ': ' + _lbErr(r) : ''));
+    return false;
+  }
+  return true;
+}
+
+// A claim is waiting on the bot's turn (the opponent's move made it possible).
+function lichessClaimAwaiting() {
+  const g = lbGame;
+  return !!(g && g.boardReady && !g.ended && g.claimPending === g.local.length);
+}
+// Just before the bot's move goes out: decide a waiting claim. True when the
+// game is over and the move must not be played. A valid claim ends the game
+// at once; if Lichess does not end it (it did not see the repetition the board
+// did), the yes stands as an offer and the bot plays on.
+async function lichessClaimFirst() {
+  const g = lbGame;
+  if (!lichessClaimAwaiting()) return false;
+  const ply = g.claimPending;
+  g.claimPending = -1;
+  if (!(await _lbDecideClaim(g, ply))) return false;
+  for (let i = 0; i < 30 && lbGame === g && !g.ended; i++) await _lbSleep(100);
+  return lbGame !== g || g.ended;
 }
 
 function _lbOnOpponentGone(g, m) {
@@ -1157,7 +1293,7 @@ function _lbBuildPanel() {
 #lbPanel .lb-note{color:var(--text-secondary);}
 #lbPanel .lb-err{color:#c03030;}
 #lbPanel .lb-log{font-family:'Courier New',monospace;font-size:10.5px;color:var(--text-secondary);
-  max-height:62px;overflow:auto;white-space:pre-wrap;border-top:1px solid var(--border2);padding-top:5px;}
+  max-height:140px;overflow:auto;white-space:pre-wrap;border-top:1px solid var(--border2);padding-top:5px;}
 #lbPanel a{color:var(--accent);white-space:nowrap;}
 #lbPanel .lb-link{background:none;border:none;padding:0;color:var(--accent);text-decoration:underline;}`;
   document.head.appendChild(css);
@@ -1270,8 +1406,13 @@ function lbRender() {
   $('lbDisconnect').style.display = on ? '' : 'none';
   $('lbForget').style.display = (!on && lbSettings.token) ? '' : 'none';
   $('lbGameBtns').style.display = g && !g.ended ? '' : 'none';
-  $('lbLog').textContent = lbLogLines.slice(-12).join('\n');
-  $('lbLog').scrollTop = 1e6;
+  // The whole log, scrollable. It follows new lines only while it is scrolled
+  // to the bottom, so scrolling back to read a move is not yanked away by the
+  // next one.
+  const logEl = $('lbLog');
+  const atEnd = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 24;
+  logEl.textContent = lbLogLines.join('\n');
+  if (atEnd) logEl.scrollTop = 1e6;
 }
 
 function lichessSetOpt(key, val) { lbSettings[key] = !!val; _lbSaveSettings(); lbRender(); }

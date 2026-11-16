@@ -97,7 +97,7 @@ function newGame(ch) {
     wdraw: false, bdraw: false, wtakeback: false, btakeback: false,
     streams: new Set(), oppBusy: false, rejected: false, dropped: false,
     botPosts: [], refused: [], draws: [], takebacks: 0, claims: 0, drawOffersByBot: 0,
-    chat: [], chatPosts: 0,
+    chat: [], spect: [], chatPosts: 0,   // chat: the player room; spect: the spectator room
   };
   M.games[id] = g;
   return g;
@@ -338,7 +338,7 @@ const server = http.createServer(async (req, res) => {
       const b = new URLSearchParams(await readBody(req));
       g.chatPosts++;
       if (M.chat429) { json(res, 429, { error: 'Too many requests' }); return; }
-      g.chat.push({ room: b.get('room'), text: b.get('text') });
+      (b.get('room') === 'spectator' ? g.spect : g.chat).push({ room: b.get('room'), text: b.get('text') });
       json(res, 200, { ok: true });
       // Like Lichess: the bot's own line comes back down its game stream.
       chatLine(g, BOT.name, b.get('text'), b.get('room'));
@@ -820,11 +820,12 @@ const playMatched = async (challenger, seenAt) => {
   const g = M.games[M.challenges[id].gameId];
   await until(() => g.moves.length >= 1, 60000, 'the bot\'s first move');
   const seen = await p2.evaluate(() => ({ flounder: flounderSliderElo(), maia: maia3SelectedRating, name: botGenerateName(),
-    panel: document.getElementById('lbBot').textContent, log: lbLogLines.slice(-8).join(' | '),
+    panel: document.getElementById('lbBot').textContent, log: lbLogLines.slice(-20).join(' | '),
     applied: window._lastAppliedBotConfig.elo, saved: JSON.parse(localStorage.getItem('bm_lastBot')).cfg.elo }));
   await until(() => g.status !== 'started', 90000, 'the game to finish');
   await until(() => p2.evaluate(() => lbState === 'waiting'), 10000, 'back to waiting');
   seen.chat = g.chat.map(l => l.text);
+  seen.spect = g.spect.map(l => l.text);
   return seen;
 };
 // What the bot says: always a playing strength, with thousands commas, then
@@ -834,6 +835,12 @@ const elo = n => n.toLocaleString('en-US');
 const greeting = (est, runs, cp, lo, hi, edge) =>
   `ELO set to ${elo(est)}${edge ? ` (its ${edge})` : ''}: ${runs}, CP budget ${cp}. ` +
   `Type ELOxxxx (ELO${lo} to ELO${hi}) or cpxxx (cp0 to cp300) to change them.`;
+// The second line, on the think time; the spectators get the first line's
+// statement without the instructions.
+const thinkHelp = t => (t != null ? `Think time ${t} s a move. ` : '') +
+  "Type thinkxs (think0s to think60s) for a fixed time a move, or think auto for the bot's own pace.";
+const stated = (est, runs, cp, edge) => `ELO set to ${elo(est)}${edge ? ` (its ${edge})` : ''}: ${runs}, CP budget ${cp}.`;
+const lastSpect = g => g.spect.length ? g.spect[g.spect.length - 1].text : null;
 const perf = (est, edge, runs, cp, cpEdge) => `Performance set to ${elo(est)}` + (edge ? ` (its ${edge})` : '') +
   `: ${runs}, CP budget ${cp}` + (cpEdge ? ` (its ${cpEdge})` : '');
 const builtCp = () => p2.evaluate(() => window._lastAppliedBotConfig.cpBudget);
@@ -872,8 +879,10 @@ check(m3.flounder === 2400, 'a rating past the engine\'s range stops at its top'
 const m4 = await playMatched({ id: 'anon', name: 'Anon' });
 check(m4.flounder === 1500 && /Anon has no rating to match: playing at Flounder 1500/.test(m4.log),
   'no rating: plays at the builder\'s rating', m4);
-check(m1.chat.length === 1 && m1.chat[0] === greeting(1400, 'Flounder 1400', B, 600, 2400),
-  'the bot says what it is doing, once, with the range this engine really has', m1.chat);
+check(m1.chat.length === 2 && m1.chat[0] === greeting(1400, 'Flounder 1400', B, 600, 2400) && m1.chat[1] === thinkHelp(),
+  'the bot says what it is doing, once, with the range this engine really has, and how to set a think time', m1.chat);
+check(m1.spect.length === 1 && m1.spect[0] === stated(1400, 'Flounder 1400', B),
+  'and tells the spectators what it plays at, without the instructions', m1.spect);
 check(m4.chat[0] === greeting(1500, 'Flounder 1500', B, 600, 2400), 'with no rating to match, it gives the builder\'s rating', m4.chat);
 
 // The chat command on Flounder: its dial holds 25s and stops at 2400.
@@ -937,16 +946,20 @@ const maiaNow = () => p2.evaluate(() => maia3SelectedRating);
 const chatUser = { id: 'chatuser', name: 'ChatUser', rating: 1900 };
 // A random mover is mated quickly, so a slow one keeps this game open through every check.
 const cg = await openGame(chatUser, 3000);
-check(cg.chat.length === 1 && cg.chat[0].room === 'player' && cg.chat[0].text === greeting(1700, 'Maia 1700', B, 600, 2600),
+check(cg.chat.length === 2 && cg.chat[0].room === 'player' && cg.chat[0].text === greeting(1700, 'Maia 1700', B, 600, 2600) &&
+  cg.chat[1].text === thinkHelp(),
   'at the start, in the player chat: it matches, at what rating, and how to change it', cg.chat);
+check(cg.spect.length === 1 && cg.spect[0].text === stated(1700, 'Maia 1700', B),
+  'and in the spectator chat, what it plays at', cg.spect);
 chatLine(cg, 'ChatUser', 'I am 1500 elo lol');
 chatLine(cg, 'Spectator', '1200ELO', 'spectator');
 chatLine(cg, 'SomeoneElse', '1200ELO');
 await sleep(800);
-check(await maiaNow() === 1700 && cg.chat.length === 1, 'chatter, spectators and third parties change nothing, and get no reply', cg.chat);
+check(await maiaNow() === 1700 && cg.chat.length === 2, 'chatter, spectators and third parties change nothing, and get no reply', cg.chat);
 await command(cg, '1500ELO');
 check(lastSaid(cg) === perf(1500, null, 'Maia 1500', B) && await maiaNow() === 1500 && await curveTop() === 1500,
   '1500ELO: the exact reply, and the rating and its curve both move', { said: lastSaid(cg) });
+check(lastSpect(cg) === perf(1500, null, 'Maia 1500', B), 'the spectators are told the change too', cg.spect);
 check(await p2.evaluate(() => /Maia 1500/.test(botGenerateName())), 'the board\'s name for the bot moves too');
 await p2.evaluate(() => { window._maiaAsked = []; });
 const postsAtChange = cg.botPosts.length;
@@ -976,6 +989,26 @@ check(lastSaid(cg) === perf(600, 'lowest', 'Maia 600', B) && await maiaNow() ===
 await pastCooldown();
 await command(cg, 'ELO1700');
 check(lastSaid(cg) === perf(1700, null, 'Maia 1700', B) && await maiaNow() === 1700, 'ELO first works too (ELO1700)', lastSaid(cg));
+// The think time: the builder's Fixed timing at that many seconds a move.
+const timing = () => p2.evaluate(() => ({ mode: botTimeBehavior, ms: botFixedDelayMs }));
+const builtTiming = await timing();
+await pastCooldown();
+await command(cg, 'think 15 s');
+check(lastSaid(cg) === 'Think time set to 15 s a move' && lastSpect(cg) === 'Think time set to 15 s a move' &&
+  JSON.stringify(await timing()) === JSON.stringify({ mode: 'fixed', ms: 15000 }),
+  'think 15 s: Fixed timing at 15 s a move, said in both chats', { said: lastSaid(cg), t: await timing() });
+await pastCooldown();
+await command(cg, 'think99');
+check(lastSaid(cg) === 'Think time set to 60 s a move (its longest)' && (await timing()).ms === 60000,
+  'think99: stops at 60 s and says so', lastSaid(cg));
+await pastCooldown();
+await command(cg, 'ELO1700 think2.5s');
+check(lastSaid(cg) === perf(1700, null, 'Maia 1700', B) + ', think time 2.5 s a move' && (await timing()).ms === 2500,
+  'with a rating: one answer with both', lastSaid(cg));
+await pastCooldown();
+await command(cg, 'think auto');
+check(lastSaid(cg) === "Think time back to the bot's own pace" &&JSON.stringify(await timing()) === JSON.stringify(builtTiming),
+  'think auto: back to the timing it was built with', { said: lastSaid(cg), t: await timing(), builtTiming });
 await pastCooldown();
 await command(cg, '1500ELO');
 // A rebuild from the server, the bot not being mid-move.
@@ -996,8 +1029,9 @@ await until(() => cg.botPosts.length > movePosts0, 30000, 'the bot\'s next move'
 const moved429 = cg.botPosts.length > movePosts0, took429 = Date.now() - t429;
 M.chat429 = false;
 await sleep(300);
-check(moved429 && took429 < 30000 && cg.chatPosts === chatPosts0 + 1,
-  'a rate-limited chat line is dropped once, and the bot\'s moves don\'t wait behind it', { moved429, took429, posts: cg.chatPosts - chatPosts0 });
+// The reply goes to both chats, player and spectator: one try each.
+check(moved429 && took429 < 30000 && cg.chatPosts === chatPosts0 + 2,
+  'a rate-limited chat line is dropped once in each chat, and the bot\'s moves don\'t wait behind it', { moved429, took429, posts: cg.chatPosts - chatPosts0 });
 check(await p2.evaluate(() => lbLogLines.some(l => /Chat line not sent/.test(l))), 'and the host\'s log says it wasn\'t sent');
 check(cg.status === 'started', 'the chat game was still going throughout', cg.status);
 await endGame(cg);
