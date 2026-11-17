@@ -773,8 +773,8 @@ discoveredself:{title:'My Discovered Attacks',body:`<p>Shows discovered attack o
 <p><span style="color:#c87800">■</span> <strong>Amber</strong> — opponent x-ray pressure on your pieces (threat/warning).</p>
 <p>A dashed ring marks the slider, a dashed ring marks the blocker, a target marks the x-rayed piece. Unlike Discovered Attacks, this includes cases where the blocker cannot legally move off the ray.</p>`},
   overloaded:{title:'Overloaded Pieces',body:`<p>An overloaded piece is the <em>sole</em> defender of two or more pieces. If the opponent attacks both, it can only save one.</p><p>🟡 <strong>Gold ring + number</strong> — overloaded; number = dependent pieces<br>🟡 <strong>Gold dashed ring</strong> — depends on an overloaded defender<br>🟡 <strong>Dashed lines</strong> — connecting to each dependent piece</p>`},
-  weakw:{title:'My Weak Squares',body:`<p>Empty squares not controlled by any of your pieces — the opponent could safely place a piece there.</p><p>Weak squares near your king are entry points for attack. Weak squares in enemy territory are outpost opportunities for them.</p>`},
-  weakb:{title:"Opponent's Weak Squares",body:`<p>Empty squares the opponent doesn't control — squares you could safely occupy.</p><p>These are your outpost opportunities.</p>`},
+  weakw:{title:'My Uncontrolled Squares',body:`<p>Empty squares not controlled by any of your pieces — the opponent could safely place a piece there.</p><p>Uncontrolled squares near your king are entry points for attack.</p>`},
+  weakb:{title:"Opponent's Uncontrolled Squares",body:`<p>Empty squares the opponent doesn't control — squares you could safely occupy.</p>`},
   rings:{title:'Threat/Defense Halos',body:`<p>Stacked arc halos drawn around each piece show defender and attacker counts at a glance.</p>
 <p>🟢 <strong>Green arcs above</strong> — each arc represents one friendly defender</p>
 <p>🔴 <strong>Red arcs below</strong> — each arc represents one enemy attacker</p>

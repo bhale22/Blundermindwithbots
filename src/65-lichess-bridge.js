@@ -129,9 +129,10 @@ function lichessOnLocalMove(from, to, promo, piece) {
   const uci = sqToUci(from, to, isPromo ? String(promo || 'Q').toLowerCase() : '');
   g.local.push(uci);
   if (lbReplaying) return;
-  // The opponent's moves came from the server; only the bot's go back.
+  // The opponent's moves came from the server; only the bot's go back, and not
+  // one the server sent (played for the bot elsewhere: _lbApplyServerBotMove).
   const botMoved = !!piece && piece.color === g.colorLetter;
-  if (botMoved) {
+  if (botMoved && !g.fromServer) {
     _lbSendMove(g, uci);
     // What made the move: "27... Rg8  Flounder 1825, depth 8".
     const ply = g.local.length;
@@ -527,6 +528,9 @@ function _lbNewGame(id) {
     greeted: false, chatAt: 0,   // the opening line is said; when the last command was answered
     chatHeld: null, chatTimer: null,   // a command that came inside the cooldown, and its timer
     goneTimer: null,
+    rebuild: null,      // a rebuild waiting to run: { moves, st, timer } (_lbRequestRebuild)
+    resyncNow: false,   // the stream was closed to resync: reopen it at once
+    fromServer: false,  // the bot's move being played is the server's, not to be sent back
   };
 }
 
@@ -544,6 +548,9 @@ async function _lbGameLoop(g) {
       if (e.name !== 'AbortError') lbLog('Game stream lost (' + (e.message || e) + ') — reconnecting');
     }
     if (g.ended || lbGame !== g || !lbWantConnected) break;
+    // Closed on purpose to resync (_lbResync): reopen at once. It used to wait
+    // the back-off's second like a lost stream, with the bot's clock running.
+    if (g.resyncNow) { g.resyncNow = false; continue; }
     await _lbSleep(backoff);
     backoff = Math.min(backoff * 2, 15000);
   }
@@ -582,9 +589,15 @@ function _lbOnGameFull(g, full) {
     _lbPost('/api/bot/game/' + g.id + '/abort');
     return;
   }
-  const moves = _lbMoves(full.state);
-  if (!g.boardReady || !_lbSameMoves(g.local, moves)) _lbBeginLocalGame(g, moves);
-  _lbAfterState(g, full.state || {});
+  const moves = _lbMoves(full.state), st = full.state || {};
+  // The game's first line on this page: set the board up now.
+  if (!g.boardReady) _lbBeginLocalGame(g, moves);
+  // A reopened stream: one rebuild, joined with any already waiting.
+  else if (g.rebuild || !_lbSameMoves(g.local, moves)) {
+    _lbRequestRebuild(g, moves, st, 'Board out of step with Lichess — rebuilding from the server');
+    return;
+  }
+  _lbAfterState(g, st);
 }
 
 function _lbSameMoves(a, b) {
@@ -865,36 +878,37 @@ function _lbPerfRange() {
     : { lo: min, hi: max };
 }
 
-// Once a game, at its start: what it plays at and what runs, then a line for
-// each thing the opponent can change (Ben's wording, Nov 16). Lichess cuts a
-// chat line at 140 characters; the longest here is the first, at most about
-// 130 (and Temp's first, at most 117). The spectators get the first line —
-// what it plays at — without the instructions, which only the opponent can use.
+// Once a game, at its start, three lines (Ben's wording, Nov 16): everything
+// it is set to, what can be typed, and the ranges, e.g.
+//   ELO set to 1,025 (using Maia 855), CP budget 150, think auto, temp 10
+//   Type in chat to change strength (ELO), centipawn budget (cp), Move timing (think), Maia temperature (temp).
+//   ELO 600-2775, cp 0-300, think 0-60s, Temp 0 (Maia's top move) - 10 (personality driven)
+// Lichess cuts a chat line at 140 characters; the longest here is the second,
+// 111 (a Flounder bot). The spectators get the first line — what it plays at — without the
+// instructions, which only the opponent can use.
 //
 // Sent LB_GREET_DELAY_MS after the game starts (see _lbBeginLocalGame).
 function _lbGreet(g, at) {
   const { lo, hi } = _lbPerfRange();
-  const pure = _lbEloRange().flounder ? 'Flounder' : 'Maia3';
-  const state = 'ELO set to ' + _lbElo(at.est) + _lbEdgeText(at.edge) + ': ' + _lbRunsText(at) + '.' +
-    (at.think != null ? ' Think time ' + _lbThinkText(at.think) + '.' : '') +
-    (at.temp != null ? ' Temp ' + at.temp + '.' : '');
+  const engine = _lbEloRange().flounder ? 'Flounder' : 'Maia';
+  const state = _lbStateLine(at);
   _lbSay(g, state);
-  _lbSay(g, 'Type "ELOXXXX" in chat to adjust between ELO' + lo + ' (min) and ELO' + hi + ' (max).');
-  _lbSay(g, 'Type "cpXX" to set centipawn budget between cp' + LB_CP_MIN + ' (pure ' + pure + ') and cp' + LB_CP_MAX + '.');
-  _lbSay(g, 'Type "thinkXs" to change move time to X seconds (0-' + LB_THINK_MAX_S + 's range).');
-  _lbSay(g, 'Type "Think auto" to go back to human-like timing.');
-  _lbTempHelp(g);
+  _lbSay(g, 'Type in chat to change strength (ELO), centipawn budget (cp), Move timing (think), ' + engine + ' temperature (temp).');
+  _lbSay(g, 'ELO ' + lo + '-' + hi + ', cp ' + LB_CP_MIN + '-' + LB_CP_MAX + ', think 0-' + LB_THINK_MAX_S + 's, Temp 0 (' +
+    _lbTempEngine() + ' top move) - ' + BLEND_TEMP_MAX + ' (personality driven)');
   _lbSay(g, state, 'spectator');
 }
-// Temp's two lines (Ben's wording). 10 is the default only for a bot built
-// with Blind Conviction; any other bot's default is off the dial, so it says
-// how to get back to it instead.
-function _lbTempHelp(g) {
-  const eng = _lbTempEngine();
-  _lbSay(g, 'Type temp0 to temp' + BLEND_TEMP_MAX + ': 0 plays ' + eng +
-    ' top move (no personality), ' + BLEND_TEMP_MAX + ' plays personality\'s pick' +
-    (botBlindConviction ? ' (default).' : '. temp auto: as built.'));
-  _lbSay(g, 'Temp 0.1-1.0 = closer to ' + eng + ' move distribution, Temp 2-9.9 = personality dominated moves.');
+// Everything the bot is set to, in one line: the strength it plays at (and
+// where that is the end of its range), the engine setting that plays at it,
+// the CP Budget, the think time and Temp. With no think time asked for it is
+// "auto"; with no Temp, a Blind Conviction bot is at 10 (that is what it
+// plays) and any other bot is "auto", its own pick.
+function _lbStateLine(at) {
+  const edge = at.edge ? 'its ' + (at.edge === 'low' ? 'lowest' : 'highest') + ', ' : '';
+  const think = at.think != null ? (Number.isInteger(at.think) ? at.think : at.think.toFixed(1)) + 's' : 'auto';
+  const temp = at.temp != null ? at.temp : botBlindConviction ? BLEND_TEMP_MAX : 'auto';
+  return 'ELO set to ' + _lbElo(at.est) + ' (' + edge + 'using ' + (_lbEloRange().flounder ? 'Flounder ' : 'Maia ') + at.setting + ')' +
+    (at.cp != null ? ', CP budget ' + at.cp : '') + ', think ' + think + ', temp ' + temp;
 }
 // Posted the instant Lichess started the game, the greeting's first line could
 // land before the opponent's game page had joined the chat: saved, but never
@@ -1090,11 +1104,14 @@ function _lbBeginLocalGame(g, moves) {
   lbRender();
 }
 
-// Play the server's moves onto the board without the bot answering them.
+// Play the server's moves onto the board without the bot answering them:
+// quietly (no sound, no drawing per move: quietMoves in 30-board-ui.js), then
+// drawn once.
 function _lbReplay(g, moves) {
   const wasActive = botActive;
   botActive = false;
   lbReplaying = true;
+  quietMoves = true;
   try {
     for (const u of moves) {
       const mv = uciToSq(u);
@@ -1102,9 +1119,11 @@ function _lbReplay(g, moves) {
       executeMove(mv.from, mv.to, mv.promo);
     }
   } finally {
+    quietMoves = false;
     lbReplaying = false;
     botActive = wasActive;
   }
+  quietMovesDone();
   // The bot's memory of the game (opening book, explorer) is the move list.
   botMoveHistory = g.local.slice();
   botSanHistory  = gameMovesAlgebraic.slice();
@@ -1118,6 +1137,8 @@ function _lbOnGameState(g, st) {
   if (!g.boardReady) return;
   _lbNoteDrawOffer(g, st);
   const moves = _lbMoves(st), local = g.local;
+  // A rebuild is waiting: it will take these moves instead of the ones it has.
+  if (g.rebuild) { _lbRequestRebuild(g, moves, st); return; }
   // The server may trail the board by the bot's move in flight, never lead
   // it by more than the opponent's one reply, and must agree on the rest.
   const n = Math.min(moves.length, local.length);
@@ -1125,22 +1146,89 @@ function _lbOnGameState(g, st) {
   for (let i = 0; i < n; i++) if (moves[i] !== local[i]) { agree = false; break; }
   const fresh = moves.length - local.length;
   if (!agree || fresh > 1) {
-    lbLog('Board out of step with Lichess — rebuilding from the server');
-    _lbBeginLocalGame(g, moves);
-  } else if (fresh === 1) {
+    _lbRequestRebuild(g, moves, st, 'Board out of step with Lichess — rebuilding from the server');
+    return;
+  }
+  if (fresh === 1) {
     const u = moves[moves.length - 1];
     const mv = uciToSq(u);
     const p = mv && board[mv.from];
-    if (!p || p.color === g.colorLetter || gameOver ||
+    if (!p || gameOver || p.color !== turn ||
         !legalMovesFor(mv.from, board, epSq, castling).includes(mv.to)) {
-      lbLog('Unexpected move ' + u + ' from Lichess — rebuilding');
-      _lbBeginLocalGame(g, moves);
-    } else {
-      // → botPostMoveHook → the bot replies (or its premove fires)
-      executeMove(mv.from, mv.to, mv.promo);
+      _lbRequestRebuild(g, moves, st, 'Unexpected move ' + u + ' from Lichess — rebuilding');
+      return;
     }
+    if (p.color === g.colorLetter) _lbApplyServerBotMove(g, u, mv);
+    // → botPostMoveHook → the bot replies (or its premove fires)
+    else executeMove(mv.from, mv.to, mv.promo);
   }
   _lbAfterState(g, st);
+}
+
+// The bot's own move, made somewhere else: the bot account playing in another
+// browser, as a tester did to finish a won game by hand (Nov 2026). It used to
+// read as "unexpected", and the whole game was rebuilt, while the bot went on
+// thinking about a move already played: its move was refused, and the refusal
+// rebuilt the game again. Now the bot stops thinking, and the move goes on the
+// board as if the bot had played it — with nothing sent back.
+function _lbApplyServerBotMove(g, u, mv) {
+  _lbCancelBotTurn();
+  g.fromServer = true;
+  try {
+    if (typeof clearGhostPieces === 'function') clearGhostPieces();
+    executeMove(mv.from, mv.to, mv.promo);
+  } finally {
+    g.fromServer = false;
+  }
+  // As botMakeMove records its own.
+  const san = (typeof gameMovesAlgebraic !== 'undefined' && gameMovesAlgebraic[gameMovesAlgebraic.length - 1]) || u;
+  if (typeof botRecordMove === 'function') botRecordMove(u, san);
+  const ply = g.local.length;
+  lbLog(Math.ceil(ply / 2) + (ply % 2 ? '. ' : '... ') + san + '  played for the bot elsewhere');
+}
+
+// Stop the bot's work on a turn it will not play. botMakeMove checks
+// _botGameGen after every engine wait, so the reply still on its way is
+// dropped when it lands; a premove being worked out is dropped the same way.
+// The premove's tally for the game is kept (botPremoveReset would clear it).
+function _lbCancelBotTurn() {
+  _botGameGen++;
+  botThinking = false;
+  if (typeof botActivePremove !== 'undefined') botActivePremove = null;
+  if (typeof _botPremoveGen !== 'undefined') _botPremoveGen++;
+  if (typeof botPremoveUpdateBadge === 'function') botPremoveUpdateBadge();
+  const s = document.getElementById('botStatus');
+  if (s && /Thinking/.test(s.textContent)) s.textContent = '';
+}
+
+// Rebuilds come in bursts: the server's move and the refusal of the bot's own
+// arrive together, and a stream reopens a moment after a state. Each used to
+// rebuild the whole game by itself. Now the first waits LB_REBUILD_SETTLE_MS,
+// the bot stops meanwhile (a move it made would be made on the wrong board),
+// and the rest only bring it the newest moves: one rebuild, from the latest.
+// A game the server says is over is rebuilt at once, for the final position.
+const LB_REBUILD_SETTLE_MS = 250;
+function _lbRequestRebuild(g, moves, st, why) {
+  if (g.rebuild) {
+    g.rebuild.moves = moves;
+    if (st) g.rebuild.st = st;
+  } else {
+    if (why) lbLog(why);
+    _lbCancelBotTurn();
+    g.rebuild = { moves, st: st || null, timer: setTimeout(() => _lbFlushRebuild(g), LB_REBUILD_SETTLE_MS) };
+  }
+  if (st && st.status && st.status !== 'started' && st.status !== 'created') _lbFlushRebuild(g);
+}
+function _lbFlushRebuild(g) {
+  const r = g.rebuild;
+  if (!r) return;
+  clearTimeout(r.timer);
+  g.rebuild = null;
+  if (lbGame !== g || g.ended) return;
+  if (!_lbSameMoves(g.local, r.moves)) _lbBeginLocalGame(g, r.moves);
+  // Nothing to rebuild after all: the bot was stopped, so it starts again.
+  else if (!gameOver && turn === g.colorLetter) setTimeout(botMakeMove, 100);
+  if (r.st) _lbAfterState(g, r.st);
 }
 
 function _lbAfterState(g, st) {
@@ -1192,16 +1280,25 @@ function _lbSyncClock(st) {
 }
 
 function _lbSendMove(g, uci) {
+  const ply = g.local.length - 1;   // where the move stands in the game
   _lbPost('/api/bot/game/' + g.id + '/move/' + uci).then(r => {
     if (r.ok || lbGame !== g || g.ended) return;
+    // The server's own move at that ply has already replaced it (another move
+    // was played for the bot meanwhile): a rebuild did, or is about to. A
+    // resync on top of it was a second rebuild.
+    if (g.rebuild || g.local[ply] !== uci) {
+      lbLog('Lichess refused ' + uci + ' (' + _lbErr(r) + '): the board already follows the server');
+      return;
+    }
     lbLog('Lichess refused ' + uci + ' (' + _lbErr(r) + ') — resyncing');
     _lbResync(g);
   });
 }
 
 // Reopening the game stream brings a fresh gameFull, which rebuilds the
-// board if it disagrees with the server.
+// board if it disagrees with the server. Reopened at once (_lbGameLoop).
 function _lbResync(g) {
+  g.resyncNow = true;
   if (g.abort) { try { g.abort.abort(); } catch (e) {} }
 }
 
