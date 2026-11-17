@@ -3613,7 +3613,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <div class="bmo-brand" id="bmoBm">&#9823; Blunder<span class="bmo-acc">mind</span></div>
         <div class="bmo-kind">Visualization training</div>
         <p>A board that draws what a stronger player sees. Thirteen overlays, among
-          them threats, pins, forks, unprotected pieces and weak squares, light up
+          them threats, pins, forks, unprotected pieces and uncontrolled squares, light up
           while you explore a move, so you can check what you pictured against
           what is really on the board.</p>
         <p>Ghost moves can show the likeliest replies before you commit, and Maia
@@ -4171,15 +4171,18 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
            pair on this grid reads "w = mine, b = theirs" — My forks/Opp. forks,
            My/Opp. discovered — and this pair alone had its two labels the other
            way round, so "My weak sq." lit the opponent's holes. Labels now
-           follow the family convention, mine on the left like the rest. -->
+           follow the family convention, mine on the left like the rest.
+           Renamed "uncontrolled" in Nov 2026: in chess a WEAK square is one no
+           pawn can ever defend, and a player rightly said this overlay is not
+           that. The keys stay weakw/weakb. -->
       <div class="ib" id="ib-weakw">
           <button class="ib-main" onclick="ibTap('weakw')">
-            <span class="ib-lbl" data-full="My weak squares">My weak sq.</span>
+            <span class="ib-lbl" data-full="My uncontrolled squares">My uncontr.</span>
           </button>
         </div>
       <div class="ib" id="ib-weakb">
           <button class="ib-main" onclick="ibTap('weakb')">
-            <span class="ib-lbl" data-full="Opponent&#39;s weak squares">Opp. weak sq.</span>
+            <span class="ib-lbl" data-full="Opponent&#39;s uncontrolled squares">Opp. uncontr.</span>
           </button>
         </div>
     </div>

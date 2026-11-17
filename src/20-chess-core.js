@@ -248,63 +248,6 @@ function buildDirectAtk(bd, pinnedW, pinnedB, queenPinnedW, queenPinnedB){
   return a;
 }
 
-// ── Weak squares ────────────────────────────────────────────────────────────
-// The chess meaning, which is not "a square nobody is guarding right now":
-// a weak square is one that none of your PAWNS can ever defend again. The
-// pawns on the two neighbouring files have advanced past it, been traded off,
-// or are stuck behind an enemy pawn. Pieces do not count — a piece guarding a
-// square today can be traded or chased off tomorrow, but a pawn never comes
-// back. That permanence is why an enemy knight planted on a weak square is
-// such a problem, and why the opponent's weak squares are your outposts.
-//
-// The board overlay used to paint every empty square your pieces did not
-// attack, which on an ordinary middlegame board is twenty-odd squares and is
-// not what any chess book means by the word.
-//
-// Pawn captures that would change file are ignored, as they are in the usual
-// definition (and in Stockfish's pawn-attack span): the question is about the
-// structure as it stands.
-
-// Can a pawn of `color` defend `sq`, now or by advancing up its own file?
-function pawnCanCover(bd, sq, color){
-  const f=sq%8, r=(sq/8)|0;          // r is the ROW: 0 is rank 8, 7 is rank 1
-  const back=color==='w'?1:-1;       // toward that side's home rank
-  const atkRow=r+back;               // the row a pawn must stand on to hit sq
-  if(atkRow<0||atkRow>7) return false;
-  for(const df of [-1,1]){
-    const pf=f+df; if(pf<0||pf>7) continue;
-    // Walk from the attacking row back toward home. The first pawn met
-    // decides the file: ours can still get there (only pawns block for good,
-    // pieces move); theirs blocks every pawn of ours behind it.
-    for(let pr=atkRow; pr>=0&&pr<=7; pr+=back){
-      const p=bd[pr*8+pf];
-      if(!p||p.piece!=='P') continue;
-      if(p.color===color) return true;
-      break;
-    }
-  }
-  return false;
-}
-
-// `color`'s weak squares: on that side's 3rd, 4th and 5th ranks — its own
-// camp plus the first rank past the middle, the same band Lichess and
-// Stockfish use for outposts seen from the other side. The 1st and 2nd ranks
-// are left out because no pawn can ever defend them, which makes them weak by
-// the letter of the rule and meaningless on a board. Squares holding a pawn
-// are left out too: that is a weak PAWN, a different idea. A square with a
-// piece on it stays in — an enemy knight sitting in your hole is the case the
-// whole concept exists for.
-function weakSquaresFor(bd, color){
-  const out=new Set();
-  const rows=color==='w'?[5,4,3]:[2,3,4];   // ranks 3-5 from that side
-  for(const r of rows) for(let c=0;c<8;c++){
-    const sq=r*8+c, p=bd[sq];
-    if(p&&p.piece==='P') continue;
-    if(!pawnCanCover(bd,sq,color)) out.add(sq);
-  }
-  return out;
-}
-
 // Battery: SEE-style — simulate full capture sequence from both sides, take max participation
 const VALS={P:1,N:3,B:3,R:5,Q:9,K:100};
 
