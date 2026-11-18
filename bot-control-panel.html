@@ -1124,9 +1124,23 @@ body.rs-highvis [style*="font-size:10px"]{font-size:14px !important;}
 .rep-slot{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--carbon-surface);border:0.5px solid var(--border);border-radius:var(--r);margin-bottom:5px;}
 .rep-slot .rep-name{flex:1;font-family:var(--font-m);font-size:10px;color:var(--text-primary);}
 .rep-slot .rep-code{font-family:var(--font-m);font-size:9px;color:var(--amber-dim);min-width:28px;}
-.rep-slot.rep-none .rep-name{font-style:italic;}
 .rep-none-note{margin-top:4px;font-family:var(--font-m);font-size:9px;line-height:1.5;color:var(--text-dim);}
 .rep-slot .rep-pct input{width:42px;padding:2px 4px;font-family:var(--font-m);font-size:10px;color:var(--amber-bright);background:var(--carbon-raise);border:0.5px solid var(--border-amber);border-radius:2px;text-align:center;outline:none;}
+/* "No opening sequence": one plain line under the search, the openings below. */
+.rep-none-wrap{margin:8px 0 6px;}
+.rep-none-wrap .rep-slot.rep-none{background:transparent;border:none;border-bottom:0.5px dashed var(--border);border-radius:0;
+  padding:4px 10px;margin:0;}
+.rep-slot.rep-none .rep-name{color:var(--text-secondary);}
+.rep-slot.rep-none.alone .rep-pct input{color:var(--text-dim);border-color:var(--border);cursor:default;}
+.rep-xpad{width:18px;flex:0 0 auto;}
+.rep-lock{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;padding:0;
+  background:none;border:none;border-radius:2px;cursor:pointer;color:var(--steel);}
+.rep-lock svg{fill:none;stroke:currentColor;stroke-width:1.2;stroke-linecap:round;}
+.rep-lock:hover{color:var(--amber);opacity:1;}
+.rep-lock.on{color:var(--amber-bright);opacity:1;}
+.rep-lock.on svg rect{fill:currentColor;fill-opacity:0.25;}
+.rep-slot .rep-pct input[readonly]{cursor:default;}
+.rep-slot .rep-lock.on + .rep-pct input{border-style:dashed;}
 .rep-total{font-family:var(--font-m);font-size:9px;text-align:right;padding:4px 0;}
 .rep-total.ok{color:var(--amber-dim);}
 .rep-total.err{color:#c0392b;}
@@ -1166,7 +1180,6 @@ body.rs-highvis [style*="font-size:10px"]{font-size:14px !important;}
 .rep-tag{font-family:var(--font-m);font-size:7px;letter-spacing:0.08em;text-transform:uppercase;padding:1px 5px;border-radius:2px;white-space:nowrap;}
 .rep-tag.way{background:var(--amber-glow);color:var(--amber-bright);}
 .rep-lrow:not(.way) .rep-tag.way{display:none;}
-.rep-tag.their{color:var(--blue);box-shadow:inset 0 0 0 0.5px var(--blue);}
 .rep-more{padding:8px 12px;font-family:var(--font-m);font-size:9px;line-height:1.5;color:var(--text-dim);}
 .eco-count b{color:var(--amber-bright);font-weight:500;}
 .rep-empty{font-family:var(--font-m);font-size:9px;color:var(--text-dim);padding:6px 0;}
@@ -1202,6 +1215,9 @@ body.rs-highvis [style*="font-size:10px"]{font-size:14px !important;}
   .rep-lrow label{font-size:12px;}
   .rep-open{min-height:44px;align-content:center;}
   .rep-slot .rep-pct input,.rep-fpct input{min-height:44px;width:56px;font-size:12px;}
+  .rep-lock{width:44px;height:44px;}
+  .rep-lock svg{width:16px;height:16px;}
+  .rep-xpad{width:22px;}
   .rep-slot .rep-name,.rep-slot .rep-code{font-size:12px;}
 }
 
@@ -9193,46 +9209,24 @@ function updateAttrCpDisplays(){
 /* ══════════════════════════════════════════════════════════════
    OPENING REPERTOIRE — auto-sum to 100%
 ══════════════════════════════════════════════════════════════ */
+// Nov 2026 (a tester, via Ben): a share can be locked. A locked share stays as
+// it is; the unlocked ones, "No opening sequence" among them, fill the rest. A
+// typed value is held to what the locked ones leave, and with nothing unlocked
+// to give way it cannot move at all.
 function onRepPctChange(changedIdx, newVal, color){
   const slots = repSlots[color];
-  if(!slots || !slots.length) return;
-  newVal = Math.max(0, Math.min(100, Math.round(+newVal)));
-  slots[changedIdx].pct = newVal;
-  const remaining = Math.max(0, 100 - newVal);
-  const otherIdxs = slots.map((_, i) => i).filter(i => i !== changedIdx);
-  if(!otherIdxs.length){
-    // Only one slot — force it to 100 and exit
-    slots[changedIdx].pct = 100;
-    const inp = document.querySelectorAll('#rep-slots-list-' + color + ' .rep-pct input');
-    if(inp[changedIdx]) inp[changedIdx].value = 100;
-    updateRepTotal(color);
-    return;
-  }
-  const otherTotal = otherIdxs.reduce((s, i) => s + slots[i].pct, 0);
-  if(otherTotal > 0){
-    // Proportional redistribution
-    let assigned = 0;
-    for(let k = 0; k < otherIdxs.length; k++){
-      const i = otherIdxs[k];
-      if(k === otherIdxs.length - 1){
-        slots[i].pct = Math.max(0, remaining - assigned);
-      } else {
-        const share = Math.round(remaining * slots[i].pct / otherTotal);
-        slots[i].pct = share;
-        assigned += share;
-      }
-    }
-  } else {
-    // Even distribution
-    const each = Math.floor(remaining / otherIdxs.length);
-    const leftover = remaining - each * otherIdxs.length;
-    otherIdxs.forEach((i, k) => { slots[i].pct = each + (k < leftover ? 1 : 0); });
-  }
-  // Update DOM without full re-render (preserves focus on changed input)
-  const inputs = document.querySelectorAll('#rep-slots-list-' + color + ' .rep-pct input');
-  slots.forEach((sl, i) => {
-    if(inputs[i] && i !== changedIdx) inputs[i].value = sl.pct;
-  });
+  const s = slots && slots[changedIdx];
+  if(!s || s.locked) return;
+  const free = slots.filter((x, i) => i !== changedIdx && !x.locked);
+  const held = slots.reduce((a, x, i) => a + (i !== changedIdx && x.locked ? (+x.pct || 0) : 0), 0);
+  const room = Math.max(0, 100 - held);
+  const typed = Math.max(0, Math.round(+newVal || 0));
+  const v = free.length ? Math.min(room, typed) : room;
+  s.pct = v;
+  _repFill(free, room - v);
+  // Update the boxes in place, so the one being typed in keeps its focus; it
+  // is only rewritten when its number could not be kept.
+  _repSyncPctBoxes(color, v === typed ? changedIdx : -1);
   updateRepTotal(color);
 }
 
@@ -15301,7 +15295,8 @@ function renderOpColumn(color){
         '<div class="eco-dropdown" id="rep-dropdown-' + color + '"></div>' +
       '</div>' +
       '<div class="op-rep" id="op-rep-' + color + '">' +
-        '<div id="rep-slots-list-' + color + '" style="margin-top:8px;"></div>' +
+        '<div id="rep-none-line-' + color + '" class="rep-none-wrap"></div>' +
+        '<div id="rep-slots-list-' + color + '"></div>' +
         '<div class="rep-total ok" id="rep-total-' + color + '" style="display:none;"></div>' +
       '</div>' +
     '</div>' +
@@ -15415,9 +15410,11 @@ function updateOpStatus(){
    A slot is one opening name (the part of the table's name before the colon,
    "Italian Game") holding the lines ticked under it, one percentage, and a
    split for each place those lines branch on the bot's own move:
-     { fam, code, name, pct, lines:[{code, name, moves}], fork:{path:{san:pct}} }
+     { fam, code, name, pct, lines:[{code, name, moves}], fork:{path:{san:pct}}, locked? }
    name = fam and code = the lowest code among the lines, for older readers.
-   "No opening sequence" stays a slot of its own: { code:'', name, pct, none }.
+   "No opening sequence" stays a slot of its own: { code:'', name, pct, none, locked? }.
+   It is always there, a line under the search: 100% with no opening ticked,
+   0% once the first one is (_repJoin). It is saved only beside an opening.
 
    The app plays exactly these lines (repDecide in 50-bot-engine.js). On them it
    follows them, the percentages splitting only at the bot's own choices. Off
@@ -15450,9 +15447,6 @@ const _repPrefixes = path => {
   for(let i = 1; i <= mv.length; i++) out.push(mv.slice(0, i).join(' '));
   return out;
 };
-// Does the line's last move belong to the bot? If not, it "ends on their move":
-// the bot steers toward it, and the opponent decides whether it is played.
-const _repEndsOnBot = (n, color) => ((n - 1) % 2 === 0) === (color === 'white');
 function _repFmtMoves(mvs, startPly){
   return mvs.map((san, i) => {
     const ply = startPly + i, num = Math.floor(ply / 2) + 1;
@@ -15599,8 +15593,6 @@ function _repLineRowHTML(r, info, color){
       ' onchange="repToggleRow(event,\'' + color + '\',' + r.i + ',this.checked)">' +
     '<label for="' + id + '"><span class="eco-code">' + r.e + '</span>' +
       '<span class="rep-lname">' + _repEsc(r.sub || r.n) + '</span>' +
-      (_repEndsOnBot(r.mv.length, color) ? '' :
-        '<span class="rep-tag their" title="The line’s last move is the opponent’s: the bot heads for it, and it is played only if they play it">ends on their move</span>') +
       '<span class="rep-tag way" title="The bot passes through this on the way to a line you ticked">on the way</span>' +
       '<span class="rep-lmv" title="' + _repEsc(_repFmtPath(r.path)) + '">' + _repEsc(mv) + '</span></label></div>';
 }
@@ -15631,7 +15623,6 @@ function _repRenderResults(color){
   let h = '';
   if(ui.view === 'list'){
     h += _repBarHTML('Pick an opening, then tick its lines', color);
-    if(!_repHasNone(color)) h += '<div class="eco-group">Some games without an opening</div>' + _repNoneOptionHTML(color);
     h += '<div class="eco-group">Popular as ' + (color === 'white' ? 'White' : 'Black') + '</div>' +
          REP_POPULAR[color].filter(n => fam.lines.has(n)).map(n => _repFamRowHTML(n, info, color)).join('') +
          '<div class="eco-group">All openings A–Z</div>' +
@@ -15653,12 +15644,8 @@ function _repRenderResults(color){
     // The opening most of the matches belong to first: "Italian" is mostly the
     // Italian Game, with the Four Knights' Italian Variation further down.
     const sorted = [...groups.entries()].sort((a, b) => (b[1].length - a[1].length) || a[0].localeCompare(b[0]));
-    const ql = q.toLowerCase();
-    const noneHit = !_repHasNone(color) && !!ql &&
-      ('no opening sequence'.startsWith(ql) || 'none'.startsWith(ql) || 'skip'.startsWith(ql));
     h += _repBarHTML(n ? n + ' named line' + (n === 1 ? '' : 's') + (sorted.length > 1 ? ' in ' + sorted.length + ' openings' : '') +
                          ' · tick the ones to play' : 'No named line matches', color);
-    if(noneHit) h += _repNoneOptionHTML(color);
     let shown = 0;
     for(const [f, rs] of sorted){
       if(shown >= REP_RESULT_CAP) break;
@@ -15667,7 +15654,7 @@ function _repRenderResults(color){
       h += _repGroupHTML(f, take, info, color);
     }
     if(n > shown) h += '<div class="rep-more">Showing ' + shown + ' of ' + n + ' lines. Add a word to narrow it, such as “Italian Evans”.</div>';
-    if(!n && !noneHit) h += '<div class="rep-more">Try part of a name, or an ECO code such as C51.</div>';
+    if(!n) h += '<div class="rep-more">Try part of a name, or an ECO code such as C51.</div>';
   }
   dd.innerHTML = h;
   dd.dataset.view = ui.view;
@@ -15738,24 +15725,43 @@ function repCloseResults(ev, color){
 }
 
 /* ── Ticking ────────────────────────────────────────────────────────────── */
-// A new opening joins at an even share of what "No opening sequence" leaves.
-function _repSpreadEven(color){
-  const ops = _repOpenings(color), none = repSlots[color].find(x => x.none);
-  if(!ops.length) return;
-  const share = Math.max(0, 100 - (none ? (+none.pct || 0) : 0));
-  const each = Math.floor(share / ops.length), rem = share - each * ops.length;
-  ops.forEach((s, k) => { s.pct = each + (k < rem ? 1 : 0); });
+// Share out `share` points over `list`: in proportion to what they hold, or,
+// when they hold nothing, evenly over its openings (else over all of it).
+// Whole numbers, largest remainders first, so they always add up.
+function _repFill(list, share){
+  if(!list.length) return;
+  const held = list.reduce((a, x) => a + (+x.pct || 0), 0);
+  const anyOp = list.some(x => !x.none);
+  const w = held > 0 ? list.map(x => +x.pct || 0) : list.map(x => (anyOp && x.none ? 0 : 1));
+  const wt = w.reduce((a, b) => a + b, 0) || 1;
+  const raw = w.map(v => share * v / wt), out = raw.map(Math.floor);
+  let left = share - out.reduce((a, b) => a + b, 0);
+  raw.map((v, i) => ({ i, r: v - out[i] })).sort((a, b) => (b.r - a.r) || (a.i - b.i))
+     .forEach(({ i }) => { if(left > 0){ out[i]++; left--; } });
+  list.forEach((x, i) => { x.pct = out[i]; });
+}
+// A new opening joins at an even share with the other unlocked openings of
+// what the locked ones and "No opening sequence" leave. With no unlocked
+// opening to share with, it also takes "No opening sequence"'s games, unless
+// that is locked: so the first opening starts at 100% and the line at 0%.
+function _repJoin(color, s){
+  const none = _repNone(color), ops = _repOpenings(color);
+  const free = ops.filter(x => !x.locked), mates = free.filter(x => x !== s);
+  const held = ops.filter(x => x.locked).reduce((a, x) => a + (+x.pct || 0), 0);
+  let share = 100 - held - (+none.pct || 0);
+  if(!mates.length && !none.locked){ share += (+none.pct || 0); none.pct = 0; }
+  share = Math.max(0, share);
+  const each = Math.floor(share / free.length), rem = share - each * free.length;
+  free.forEach((x, k) => { x.pct = each + (k < rem ? 1 : 0); });
 }
 function _repSetTick(color, r, on){
   let s = _repSlotOf(color, r.fam);
   const key = _repRowKey(r);
   if(on){
     if(!s){
-      const none = repSlots[color].find(x => x.none);
-      if(none && (+none.pct || 0) >= 100 && !_repOpenings(color).length) none.pct = 0;
       s = { fam: r.fam, code: r.e, name: r.fam, pct: 0, lines: [], fork: {} };
       repSlots[color].push(s);
-      _repSpreadEven(color);
+      _repJoin(color, s);
     }
     if(!s.lines.some(L => _repLineKey(L) === key)) s.lines.push({ code: r.e, name: r.n, moves: r.path });
     s.code = _repSlotCode(s);
@@ -15812,45 +15818,69 @@ function _repTableLines(code, name){
    games the bot skips the whole opening sequence (the repertoire and the Main
    Line) and plays its own move selection from move 1. The app takes it off
    the matcher's slots and rolls it once a game (botOpeningNoneShare, botStart).
-   One per colour. */
+   One per colour, always present, drawn as the line under the search. */
 const REP_NONE_NAME = 'No opening sequence';
-function _repHasNone(color){ return repSlots[color].some(sl => sl.none); }
-function _repNoneOptionHTML(color){
-  return '<div class="eco-option eco-none" onclick="repAddNone(event,\'' + color + '\')">' +
-    '<span class="eco-code">None</span>' +
-    '<span class="eco-name">No opening sequence: follow the bot’s own move selection</span></div>';
+// The colour's "No opening sequence" slot, made if missing: 100% with no
+// opening beside it, else 0% (an older bot whose shares do not add up shows
+// so in the total rather than having its games quietly moved here).
+function _repNone(color){
+  let n = repSlots[color].find(x => x.none);
+  if(!n){
+    n = { code:'', name:REP_NONE_NAME, pct: _repOpenings(color).length ? 0 : 100, none:true };
+    repSlots[color].unshift(n);
+  }
+  return n;
 }
+// Older entry point (and the tests'): the line is always there now.
 function repAddNone(ev, color){
   if(ev) ev.stopPropagation();
-  const inp = document.getElementById('rep-search-input-' + color);
-  if(inp) inp.value = '';
-  repCloseResults(null, color);
-  if(_repHasNone(color)) return;
-  repSlots[color].push({ code:'', name:REP_NONE_NAME, pct:0, none:true });
-  autoDistributeRepPct(color);
+  _repNone(color);
   renderRepSlots(color);
   if(!repOn[color]) setOpStage(color, 'rep', true);
 }
 
-function autoDistributeRepPct(color){
-  // Distribute 100% evenly across all slots
-  const slots = repSlots[color];
-  if(!slots.length) return;
-  const each = Math.floor(100 / slots.length);
-  const rem  = 100 - each * slots.length;
-  slots.forEach((s,i) => { s.pct = each + (i < rem ? 1 : 0); });
-}
-
 /* ── The openings list under the search ─────────────────────────────────── */
-function _repSlotHTML(s, i, color){
-  const pctBox = '<div class="rep-pct"><input type="number" min="0" max="100" step="5" value="' + s.pct + '"' +
-    ' aria-label="Share for ' + _repEsc(s.none ? REP_NONE_NAME : s.fam) + '"' +
+// A padlock: shut when the share is locked, open when it is free to move.
+function _repLockHTML(s, i, color, label){
+  const on = !!s.locked;
+  const shackle = on ? 'M4 5.5V4a2 2 0 0 1 4 0v1.5' : 'M4 5.5V4a2 2 0 0 1 3.9-.6';
+  return '<button type="button" class="rep-lock' + (on ? ' on' : '') + '" aria-pressed="' + on + '"' +
+    ' onclick="repToggleLock(\'' + color + '\',' + i + ')"' +
+    ' title="' + (on ? 'Unlock this share' : 'Lock this share, so changing the others leaves it alone') + '"' +
+    ' aria-label="' + (on ? 'Unlock' : 'Lock') + ' the share for ' + _repEsc(label) + '">' +
+    '<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="' + shackle + '"/>' +
+    '<rect x="2.5" y="5.5" width="7" height="5" rx="1"/></svg></button>';
+}
+function _repPctHTML(s, i, color, label, off){
+  return '<div class="rep-pct"><input type="number" min="0" max="100" step="5" value="' + s.pct + '"' +
+    ' data-rep-color="' + color + '" data-rep-i="' + i + '"' +
+    (s.locked || off ? ' readonly' : '') + (off ? ' tabindex="-1"' : '') +
+    ' aria-label="Share for ' + _repEsc(label) + '"' +
     ' oninput="onRepPctChange(' + i + ',+this.value,\'' + color + '\')"> %</div>';
+}
+// After a share changes: every other box takes its slot's number. `keep` is
+// the box being typed in, left alone so its caret stays put (-1: none).
+function _repSyncPctBoxes(color, keep){
+  document.querySelectorAll('input[data-rep-color="' + color + '"]').forEach(inp => {
+    const i = +inp.dataset.repI, s = repSlots[color][i];
+    if(s && i !== keep) inp.value = s.pct;
+  });
+}
+// The line under the search. With no opening ticked it is every game, and
+// there is nothing to lock it against.
+function _repNoneLineHTML(color){
+  const slots = repSlots[color], none = _repNone(color), i = slots.indexOf(none);
+  const alone = !_repOpenings(color).length;
+  if(alone){ none.pct = 100; none.locked = false; }
+  return '<div class="rep-slot rep-none' + (alone ? ' alone' : '') + '">' +
+    '<span class="rep-name">' + REP_NONE_NAME + '</span>' +
+    (alone ? '' : _repLockHTML(none, i, color, REP_NONE_NAME)) +
+    _repPctHTML(none, i, color, REP_NONE_NAME, alone) +
+    '<span class="rep-xpad" aria-hidden="true"></span></div>';
+}
+function _repSlotHTML(s, i, color){
+  const pctBox = _repLockHTML(s, i, color, s.fam) + _repPctHTML(s, i, color, s.fam, false);
   const x = '<span class="hybrid-remove" onclick="removeRepSlot(' + i + ',\'' + color + '\')" title="Remove">✕</span>';
-  if(s.none){
-    return '<div class="rep-slot rep-none"><span class="rep-code">None</span>' +
-      '<span class="rep-name">No opening sequence: the bot’s own moves</span>' + pctBox + x + '</div>';
-  }
   const forks = _repSlotForks(s, color), act = repUi[color].active === s.fam, n = s.lines.length;
   const meta = n + ' line' + (n === 1 ? '' : 's') +
     (forks.length ? ' · ' + forks.length + ' split' + (forks.length === 1 ? '' : 's') + ' to set' : '');
@@ -15868,20 +15898,14 @@ function _repDetailHTML(s, i, forks, color){
   const order = s.lines.map((L, li) => ({ L, li }))
     .sort((a, b) => String(a.L.code).localeCompare(String(b.L.code)) || a.L.moves.length - b.L.moves.length);
   let h = '<div class="rep-detail"><div class="rep-dlbl">Ticked lines</div><ul class="rep-tlist">' +
-    order.map(({ L, li }) => {
-      const nMoves = L.moves ? L.moves.split(' ').length : 0;
-      return '<li><div class="rep-tname"><span class="eco-code">' + _repEsc(L.code) + '</span> ' + _repEsc(_repShortName(L.name)) +
-        (_repEndsOnBot(nMoves, color) ? '' : ' <span class="rep-tag their">ends on their move</span>') +
+    order.map(({ L, li }) =>
+      '<li><div class="rep-tname"><span class="eco-code">' + _repEsc(L.code) + '</span> ' + _repEsc(_repShortName(L.name)) +
         '<div class="rep-lmv">' + _repEsc(_repFmtPath(L.moves)) + '</div></div>' +
-        '<span class="hybrid-remove" onclick="repUntickLine(\'' + color + '\',' + i + ',' + li + ')" title="Untick this line">✕</span></li>';
-    }).join('') + '</ul>';
+        '<span class="hybrid-remove" onclick="repUntickLine(\'' + color + '\',' + i + ',' + li + ')" title="Untick this line">✕</span></li>'
+    ).join('') + '</ul>';
   if(forks.length){
     h += '<div class="rep-dlbl">Where the bot chooses</div>' +
-      '<div class="rep-hint">Your ticked lines split on the bot’s move here: it plays each move this share of the time. Each split starts even.</div>' +
       forks.map((f, fi) => _repForkHTML(s, i, f, fi, color)).join('');
-  } else {
-    h += '<div class="rep-hint">These lines never split on the bot’s move, so there is no split to set. ' +
-      'Where they split on the opponent’s move, the bot follows whichever line the opponent picks.</div>';
   }
   return h + '</div>';
 }
@@ -15903,14 +15927,23 @@ function _repForkHTML(s, i, f, fi, color){
 function renderRepSlots(color){
   const slots = repSlots[color];
   const container = document.getElementById('rep-slots-list-' + color);
+  const noneEl = document.getElementById('rep-none-line-' + color);
   const totalEl = document.getElementById('rep-total-' + color);
   if(!container) return;
   if(repUi[color].active && !_repSlotOf(color, repUi[color].active)) repUi[color].active = null;
-  container.innerHTML = slots.length
-    ? slots.map((s, i) => _repSlotHTML(s, i, color)).join('')
+  if(noneEl) noneEl.innerHTML = _repNoneLineHTML(color);
+  const ops = _repOpenings(color).length;
+  container.innerHTML = ops
+    ? slots.map((s, i) => (s.none ? '' : _repSlotHTML(s, i, color))).join('')
     : '<div class="rep-empty">Search above, or open the List, and tick the lines you want.</div>';
-  if(totalEl) totalEl.style.display = slots.length ? 'block' : 'none';
+  if(totalEl) totalEl.style.display = ops ? 'block' : 'none';
   updateRepTotal(color);
+}
+function repToggleLock(color, i){
+  const s = repSlots[color][i];
+  if(!s) return;
+  s.locked = !s.locked;
+  renderRepSlots(color);
 }
 function repToggleActive(color, i){
   const s = repSlots[color][i];
@@ -15950,26 +15983,21 @@ function onRepForkPct(el){
   const box = el.closest('.rep-fork');
   if(box) box.querySelectorAll('input').forEach(inp => { if(inp !== el) inp.value = w[inp.dataset.san]; });
 }
-// Removing an opening hands its share to the others in proportion, so a
-// 60/30/10 that loses the 10 reads 67/33. "No opening sequence" keeps its own.
+// Removing an opening hands its share to the other unlocked openings in
+// proportion, so a 60/30/10 that loses the 10 reads 67/33. "No opening
+// sequence" keeps its own, and takes the share only when no unlocked opening
+// is left to; with no opening left at all it is every game again.
 function _repRemoveSlot(color, idx){
   const slots = repSlots[color];
-  if(idx < 0 || idx >= slots.length) return;
+  if(idx < 0 || idx >= slots.length || slots[idx].none) return;
   const gone = slots.splice(idx, 1)[0];
-  if(!gone || gone.none) return;
-  const ops = _repOpenings(color), none = slots.find(x => x.none);
-  const share = Math.max(0, 100 - (none ? (+none.pct || 0) : 0));
-  const tot = ops.reduce((a, s) => a + (+s.pct || 0), 0);
-  if(ops.length){
-    if(tot > 0){
-      let acc = 0;
-      ops.forEach((s, k) => {
-        if(k === ops.length - 1){ s.pct = Math.max(0, share - acc); return; }
-        s.pct = Math.round(share * (+s.pct || 0) / tot);
-        acc += s.pct;
-      });
-    } else _repSpreadEven(color);
-  }
+  const none = _repNone(color), ops = _repOpenings(color), free = ops.filter(x => !x.locked);
+  const share = +gone.pct || 0;
+  if(!ops.length){ none.pct = 100; none.locked = false; }
+  else if(free.length){
+    const held = free.reduce((a, x) => a + (+x.pct || 0), 0);
+    _repFill(free, held + share);
+  } else none.pct = (+none.pct || 0) + share;
   if(repUi[color].active === gone.fam) repUi[color].active = null;
 }
 function removeRepSlot(i, color){
@@ -15978,17 +16006,7 @@ function removeRepSlot(i, color){
   _repRefreshRows(color);
 }
 
-// Under the total: what the percentages do, in this colour's numbers.
-function _repNoneNote(color){
-  const slots = repSlots[color];
-  const none = slots.filter(sl => sl.none).reduce((a, sl) => a + (+sl.pct || 0), 0);
-  if(!slots.some(sl => sl.none)) return '';
-  const total = slots.reduce((a, sl) => a + (+sl.pct || 0), 0);
-  const pct = total > 0 ? Math.round(none * 100 / total) : 0;
-  return 'No opening sequence: in ' + pct + '% of games as ' + (color === 'white' ? 'White' : 'Black') +
-    ' the bot skips the repertoire and the Main Line and plays its own moves from move 1. ' +
-    'The engine’s own Lichess book, if it is on, still plays.';
-}
+// Under the total: what an opening's share also does.
 function _repReentryNote(color){
   if(!_repOpenings(color).length) return '';
   return 'An opening’s share is also its chance of stepping back in. Once the game leaves your lines, ' +
@@ -16011,24 +16029,27 @@ function updateRepTotal(color){
   if(!el) return;
   el.textContent = 'Total: ' + total + '%';
   el.className = 'rep-total ' + (total === 100 ? 'ok' : 'err');
-  const re = _repReentryNote(color), none = _repNoneNote(color);
+  const re = _repReentryNote(color);
   const reEl = _repNoteEl(color, 'rep-reentry-note-' + color, re ? el : null);
   if(reEl){ reEl.textContent = re; reEl.style.display = re ? '' : 'none'; }
-  const noneEl = _repNoteEl(color, 'rep-none-note-' + color, none ? (reEl || el) : null);
-  if(noneEl){ noneEl.textContent = none; noneEl.style.display = none ? '' : 'none'; }
 }
 
 /* ── Saving and loading ─────────────────────────────────────────────────── */
 // What the config carries: the slots with their lines, and every split the
 // bot will use, written out so the config says what runs.
+// "No opening sequence" goes in only beside an opening, and only when it has
+// games or a lock: alone, its 100% is "no repertoire", and saving it would have
+// the app skip the Main Line too in every game.
 function _repSlotsForConfig(color){
-  return repSlots[color].map(s => {
-    if(s.none) return { code:'', name:REP_NONE_NAME, pct: +s.pct || 0, none:true };
+  const ops = _repOpenings(color).length;
+  return repSlots[color].filter(s => !s.none || (ops && ((+s.pct || 0) > 0 || s.locked))).map(s => {
+    const lock = s.locked ? { locked: true } : {};
+    if(s.none) return Object.assign({ code:'', name:REP_NONE_NAME, pct: +s.pct || 0, none:true }, lock);
     const keep = _repLineSet(s), fork = {};
     Object.keys(s.fork || {}).forEach(p => { if(keep.has(p)) fork[p] = Object.assign({}, s.fork[p]); });
     _repSlotForks(s, color).forEach(f => { fork[f.path] = Object.assign({}, _repForkWeights(s, f.path, f.kids)); });
-    return { fam: s.fam, code: _repSlotCode(s), name: s.fam, pct: +s.pct || 0,
-             lines: s.lines.map(L => ({ code: L.code, name: L.name, moves: L.moves })), fork };
+    return Object.assign({ fam: s.fam, code: _repSlotCode(s), name: s.fam, pct: +s.pct || 0,
+             lines: s.lines.map(L => ({ code: L.code, name: L.name, moves: L.moves })), fork }, lock);
   });
 }
 // A config's slots in this list's form. A slot saved before ticking existed is
@@ -16039,7 +16060,11 @@ function _repNormalizeSlots(list, color){
   const out = [], byFam = new Map();
   (Array.isArray(list) ? list : []).forEach(s => {
     if(!s) return;
-    if(s.none){ out.push({ code:'', name:REP_NONE_NAME, pct: +s.pct || 0, none:true }); return; }
+    if(s.none){
+      if(!out.some(x => x.none)) out.push(Object.assign({ code:'', name:REP_NONE_NAME, pct: +s.pct || 0, none:true },
+                                                         s.locked ? { locked: true } : {}));
+      return;
+    }
     const has = Array.isArray(s.lines) && s.lines.length > 0;
     const lines = has
       ? s.lines.map(L => ({ code: L.code || '', name: L.name || '', moves: String(L.moves || '').trim() })).filter(L => L.moves)
@@ -16054,6 +16079,7 @@ function _repNormalizeSlots(list, color){
       out.push(slot);
     }
     slot.pct += (+s.pct || 0);
+    if(s.locked) slot.locked = true;
     if(s.fork && typeof s.fork === 'object') Object.assign(slot.fork, JSON.parse(JSON.stringify(s.fork)));
     lines.forEach(L => { if(!slot.lines.some(x => _repLineKey(x) === _repLineKey(L))) slot.lines.push(L); });
     slot._src.push({ pct: +s.pct || 0, lines, had: has });
@@ -16075,6 +16101,8 @@ function _repNormalizeSlots(list, color){
       slot.fork[f.path] = w;
     });
   });
+  // The line under the search is always there (see _repNone).
+  if(!out.some(x => x.none)) out.unshift({ code:'', name:REP_NONE_NAME, pct: out.length ? 0 : 100, none:true });
   return out;
 }
 

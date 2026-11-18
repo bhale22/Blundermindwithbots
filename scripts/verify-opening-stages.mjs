@@ -231,40 +231,96 @@ console.log('\n6   Old bots load as they played');
 
 console.log('\n7   No opening sequence');
 {
+  // Nov 18 2026 (Ben): one line under the search, always there. 100% with no
+  // opening ticked, 0% once the first one is; no longer picked from the List.
   const b = await panel.evaluate(() => {
     repSlots.white.length = 0; repSlots.black.length = 0;
     setOpStage('white', 'rep', false);
     renderRepSlots('white');
+    const line = () => document.getElementById('rep-none-line-white');
+    const box = () => line().querySelector('input');
+    const out = { emptyTxt: line().textContent, emptyVal: box().value, emptyRo: box().readOnly,
+                  emptyLock: !!line().querySelector('.rep-lock'),
+                  emptyCfg: JSON.stringify(getBotConfig().repSlots.white) };
     repBrowse(null, 'white', true);
-    const first = document.querySelector('#rep-dropdown-white .eco-option');
-    const out = { first: first ? first.textContent : '', isNone: !!first && first.classList.contains('eco-none') };
-    if (first) first.click();
-    out.slots = repSlots.white.map(s => ({ ...s }));
-    out.repOn = repOn.white;
-    out.row = document.querySelector('#rep-slots-list-white .rep-slot')?.textContent || '';
-    repBrowse(null, 'white', true);
-    out.gone = !document.querySelector('#rep-dropdown-white .eco-none');
+    out.inList = !!document.querySelector('#rep-dropdown-white .eco-none') ||
+                 /No opening sequence/.test(document.getElementById('rep-dropdown-white').textContent);
     onRepSearch('none', 'white');
-    out.searchAfter = !!document.querySelector('#rep-dropdown-white .eco-none');
-    document.getElementById('rep-dropdown-white').classList.remove('visible');
+    out.inSearch = /No opening sequence/.test(document.getElementById('rep-dropdown-white').textContent);
+    repCloseResults(null, 'white');
     addRepFromSearch('C50', 'Italian Game', 'white');
-    repSlots.white.forEach(s => { s.pct = s.none ? 30 : 70; });
-    renderRepSlots('white');
-    out.note = document.getElementById('rep-none-note-white')?.textContent || '';
+    out.afterTick = JSON.stringify(repSlots.white.map(s => [!!s.none, s.pct]));
+    out.afterVal = box().value;
+    out.repOn = repOn.white;
+    out.lockNow = !!line().querySelector('.rep-lock');
+    const ni = repSlots.white.findIndex(s => s.none);
+    box().value = '30';
+    onRepPctChange(ni, 30, 'white');
+    out.typed = JSON.stringify(repSlots.white.map(s => [!!s.none, s.pct]));
+    out.italianBox = document.querySelector('#rep-slots-list-white input[aria-label="Share for Italian Game"]').value;
     const cfg = getBotConfig();
     out.cfg = cfg;
     applyBotConfig(Object.assign({}, cfg, { repSlots: { white: [], black: [] } }));
+    out.cleared = JSON.stringify(repSlots.white.map(s => [!!s.none, s.pct]));
     applyBotConfig(cfg);
     out.reloaded = JSON.stringify(repSlots.white.map(s => [!!s.none, s.pct]));
     return out;
   });
-  ok('builder: "No opening sequence" heads the List', b.isNone && /No opening sequence/.test(b.first), b.first);
-  ok('builder: picking it adds it as a slot and switches the repertoire on',
-    b.slots.length === 1 && b.slots[0].none === true && b.slots[0].pct === 100 && b.repOn, JSON.stringify(b.slots));
-  ok('builder: its row says what it is', /No opening sequence/.test(b.row), b.row);
-  ok('builder: one per colour, so it leaves the List and the search', b.gone && !b.searchAfter);
-  ok('builder: the note gives its share of games', /in 30% of games as White/.test(b.note), b.note);
+  ok('builder: with no opening ticked the line reads 100%, fixed, with no lock',
+    /No opening sequence/.test(b.emptyTxt) && b.emptyVal === '100' && b.emptyRo && !b.emptyLock, JSON.stringify(b));
+  ok('builder: and nothing is saved for it, so the Main Line still plays', b.emptyCfg === '[]', b.emptyCfg);
+  ok('builder: it is no longer offered in the List or the search', !b.inList && !b.inSearch);
+  ok('builder: the first opening takes 100%, the line goes to 0%, the repertoire switches on',
+    b.afterTick === '[[true,0],[false,100]]' && b.afterVal === '0' && b.repOn && b.lockNow, b.afterTick);
+  ok('builder: typing 30% in the line leaves the Italian 70%',
+    b.typed === '[[true,30],[false,70]]' && b.italianBox === '70', b.typed + ' box ' + b.italianBox);
+  ok('builder: a bot with no openings loads at 100%', b.cleared === '[[true,100]]', b.cleared);
   ok('builder: saved and loaded with the bot', b.reloaded === '[[true,30],[false,70]]', b.reloaded);
+
+  // A locked share stays put while the others change (a tester, Nov 18 2026).
+  const L = await panel.evaluate(() => {
+    repSlots.white.length = 0;
+    const tick = p => { const r = ECO_DATA.find(x => x.path === p); repToggleRow(null, 'white', r.i, true); };
+    const st = () => JSON.stringify(repSlots.white.map(s => [s.none ? 'none' : s.fam, s.pct, !!s.locked]));
+    const idx = f => repSlots.white.findIndex(s => (f ? s.fam === f : s.none));
+    const out = {};
+    tick('e4 e5 Nf3 Nc6 Bc4');
+    onRepPctChange(idx('Italian Game'), 50, 'white');
+    repToggleLock('white', idx('Italian Game'));
+    out.lockedBox = document.querySelector('#rep-slots-list-white input[aria-label="Share for Italian Game"]').readOnly;
+    tick('e4 e5 Nf3 Nc6 Bb5');
+    out.ruy = st();
+    tick('e4 e5 Nf3 Nc6 d4');
+    out.scotch = st();
+    onRepPctChange(idx('Ruy Lopez'), 40, 'white');
+    out.ruy40 = st();
+    onRepPctChange(idx('Scotch Game'), 70, 'white');
+    out.capped = st();
+    onRepPctChange(idx('Italian Game'), 10, 'white');
+    out.ignored = st();
+    removeRepSlot(idx('Scotch Game'), 'white');
+    out.removed = st();
+    const cfg = getBotConfig();
+    out.cfgLock = JSON.stringify(cfg.repSlots.white.map(s => [s.fam || 'none', !!s.locked]));
+    applyBotConfig(Object.assign({}, cfg, { repSlots: { white: [], black: [] } }));
+    applyBotConfig(cfg);
+    out.reloaded = st();
+    return out;
+  });
+  ok('lock: the locked box cannot be typed in', L.lockedBox === true);
+  ok('lock: the Ruy joins with the 50% the locked Italian leaves',
+    L.ruy === '[["none",0,false],["Italian Game",50,true],["Ruy Lopez",50,false]]', L.ruy);
+  ok('lock: the Scotch shares it with the Ruy, the Italian stays 50%',
+    L.scotch === '[["none",0,false],["Italian Game",50,true],["Ruy Lopez",25,false],["Scotch Game",25,false]]', L.scotch);
+  ok('lock: Ruy 40% takes from the Scotch, not the Italian',
+    L.ruy40 === '[["none",0,false],["Italian Game",50,true],["Ruy Lopez",40,false],["Scotch Game",10,false]]', L.ruy40);
+  ok('lock: 70% in the Scotch is held to the 50% the lock leaves',
+    L.capped === '[["none",0,false],["Italian Game",50,true],["Ruy Lopez",0,false],["Scotch Game",50,false]]', L.capped);
+  ok('lock: a locked share ignores a typed value', L.ignored === L.capped, L.ignored);
+  ok('lock: removing the Scotch hands its share to the unlocked Ruy',
+    L.removed === '[["none",0,false],["Italian Game",50,true],["Ruy Lopez",50,false]]', L.removed);
+  ok('lock: saved with the bot, and loaded locked',
+    L.cfgLock === '[["Italian Game",true],["Ruy Lopez",false]]' && L.reloaded === L.removed, L.cfgLock + ' ' + L.reloaded);
 
   const a = await app.evaluate((cfg) => new Promise(res => {
     window.postMessage(Object.assign({}, cfg, { type: 'botConfig', _applyOnly: true }), location.origin);
