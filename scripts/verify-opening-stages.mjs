@@ -141,13 +141,17 @@ console.log('\n1   Repertoire (Italian) then Main Line');
     fmt(log.slice(5)));
 }
 
-console.log('\n2   Repertoire alone is unchanged');
+console.log('\n2   Repertoire alone plays its ticked line, then hands to the engine');
 {
   const cfg = await buildConfig({ italian: true, rep: true, ml: false });
   const log = await play(cfg, ['e7e5', 'b8c6', 'f8c5']);
   console.log('      ' + fmt(log));
   ok('moves 1-3 from the repertoire', log.slice(0, 3).every(x => x[1] === 'ECO'), fmt(log.slice(0, 3)));
-  ok('move 4 still follows the C50 lines (no Main Line to hand to)', log[3] && log[3][1] === 'ECO', fmt(log.slice(3)));
+  // Nov 2026: the ticked line is "Italian Game" (3.Bc4). It used to wander on
+  // through every C50 line with equal odds (4.Bxf7+, the Jerome Gambit, one
+  // game in five); now the line ends and the engine plays move 4.
+  ok('move 4 from the engine: the ticked line ended at 3.Bc4', log[3] && log[3][1] !== 'ECO' && log[3][0] !== '(no move)',
+    fmt(log.slice(3)));
   ok('the Main Line book was never asked', asked.play.length === 0, asked.play.join(' | '));
 }
 
@@ -289,6 +293,75 @@ console.log('\n7   No opening sequence');
   console.log('      ' + fmt(log0));
   ok('0%: the slot sits there and the repertoire plays every game: 1.e4 from it',
     log0[0] && log0[0][0] === 'e2e4' && log0[0][1] === 'ECO', fmt(log0));
+}
+
+console.log('\n8   Ticked lines (Nov 2026): follow them, step back in one move away, at the opening\'s share');
+{
+  // White: three Italian lines (4.c3 75 / 4.b4 25 where they part) and the Réti.
+  const ticked = (o) => panel.evaluate((o) => {
+    const card = document.querySelector('#engine-mode-grid .mcard[data-engine="stockfish"]');
+    if (card) selEngineMode(card);
+    setEngineBook('off');
+    repSlots.white.length = 0; repSlots.black.length = 0;
+    const tick = p => { const r = ECO_DATA.find(x => x.path === p); repToggleRow(null, 'white', r.i, true); };
+    ['e4 e5 Nf3 Nc6 Bc4 Bc5 c3', 'e4 e5 Nf3 Nc6 Bc4 Bc5 b4', 'e4 e5 Nf3 Nc6 Bc4 Nf6 d3', 'Nf3 d5 c4'].forEach(tick);
+    const it = repSlots.white.find(s => s.fam === 'Italian Game'), re = repSlots.white.find(s => s.fam === 'Réti Opening');
+    it.pct = o.italian; re.pct = o.reti;
+    it.fork['e4 e5 Nf3 Nc6 Bc4 Bc5'] = { c3: 75, b4: 25 };
+    renderRepSlots('white');
+    setOpStage('white', 'rep', true);
+    setOpStage('white', 'ml', !!o.ml);
+    setOpStage('black', 'rep', false);
+    setOpStage('black', 'ml', false);
+    const cfg = getBotConfig();
+    cfg.color = 'black'; cfg.tcTime = 0; cfg.tcInc = 0;
+    return cfg;
+  }, o);
+  // Fix the app's dice for one game: every draw returns r.
+  const dice = r => app.evaluate((r) => { window.__realRandom = window.__realRandom || Math.random; Math.random = () => r; }, r);
+  const undice = () => app.evaluate(() => { if (window.__realRandom) Math.random = window.__realRandom; });
+
+  let cfg = await ticked({ italian: 65, reti: 35, ml: true });
+  ok('builder: the config carries the ticked lines and the split',
+    cfg.repSlots.white.length === 2 && cfg.repSlots.white[0].lines.length === 3 &&
+    JSON.stringify(cfg.repSlots.white[0].fork['e4 e5 Nf3 Nc6 Bc4 Bc5']) === '{"c3":75,"b4":25}',
+    JSON.stringify(cfg.repSlots.white.map(s => [s.fam, s.pct, s.lines.length])));
+
+  await dice(0.01);
+  let log = await play(cfg, ['d7d5']);
+  console.log('      ' + fmt(log));
+  ok('the Tennison case: 1.e4 from the Italian, and after 1...d5 the Réti does not play 2.Nf3',
+    log[0] && log[0][0] === 'e2e4' && log[0][1] === 'ECO' && log[1] && log[1][1] !== 'ECO' && log[1][0] !== '(no move)',
+    fmt(log));
+
+  log = await play(cfg, ['e7e5', 'b8c6', 'f8c5']);
+  console.log('      ' + fmt(log));
+  ok('the 4th-move split: 4.c3 on a low draw (75%), from the repertoire',
+    log[3] && log[3][0] === 'c2c3' && log[3][1] === 'ECO', fmt(log.slice(3)));
+  // The Réti at 0% so a high draw still opens 1.e4 and reaches the split.
+  cfg = await ticked({ italian: 100, reti: 0, ml: true });
+  await dice(0.99);
+  log = await play(cfg, ['e7e5', 'b8c6', 'f8c5']);
+  console.log('      ' + fmt(log));
+  ok('and 4.b4 on a high one (25%), never an unticked Italian line',
+    log[0] && log[0][0] === 'e2e4' && log[3] && log[3][0] === 'b2b4' && log[3][1] === 'ECO', fmt(log));
+
+  // 1.Nf3 e5: 2.e4 reaches the Italian in one move. Its share is the chance.
+  cfg = await ticked({ italian: 100, reti: 1, ml: false });
+  await dice(0.999);   // picks the 1% Réti, then rolls 99 against the Italian's 100%
+  log = await play(cfg, ['e7e5']);
+  console.log('      ' + fmt(log));
+  const detail = await app.evaluate(() => lastBotMoveDetail);
+  ok('one move away: 1.Nf3 e5 2.e4, stepping back into the Italian (not 2.Nxe5)',
+    log[0] && log[0][0] === 'g1f3' && log[1] && log[1][0] === 'e2e4' && log[1][1] === 'ECO' && /stepped back in/.test(detail),
+    fmt(log) + ' · ' + detail);
+  cfg = await ticked({ italian: 50, reti: 50, ml: false });
+  await dice(0.99);    // the Réti, then a roll of 99 against the Italian's 50%: it stays out
+  log = await play(cfg, ['e7e5']);
+  console.log('      ' + fmt(log));
+  ok('a roll that misses: the engine plays move 2, not the repertoire',
+    log[0] && log[0][0] === 'g1f3' && log[1] && log[1][1] !== 'ECO' && log[1][0] !== '(no move)', fmt(log));
+  await undice();
 }
 
 ok('no page errors', errs.length === 0, errs.join(' | '));

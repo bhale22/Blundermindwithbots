@@ -86,7 +86,7 @@ function parsePgnMoves(pgn) {
 
 // ── ECO prefix index ──────────────────────────────────────────────────────────
 // Built once after _ecoData loads. Maps first SAN move → entries that start with it,
-// so obPreferredNextMoves scans ~50-100 entries instead of all 3,704.
+// so a lookup by first move scans ~50-100 entries instead of all 3,704.
 // Key: first move SAN string (e.g. "e4"). Value: array of _ecoData entries.
 let _ecoIndex = null; // Map<string, entry[]>
 
@@ -155,151 +155,11 @@ async function _obLoadEcoDataOnce() {
   }
 }
 
-// Given the current board state and the played move history (SAN list so far),
-// find which candidate UCI moves steer toward preferred slots.
-// Returns a Set of UCI strings that are "preferred next moves".
-// Uses _ecoIndex to avoid scanning all 3,704 entries — only candidates whose
-// first move matches the game's first move are checked.
-function obPreferredNextMoves(sanHistory, slots, boardState, turnColor, epSq, castling) {
-  if (!_ecoData || !slots.length) return new Set();
-
-  const totalPct = slots.reduce((s, sl) => s + (sl.weight || 0), 0) || 1;
-
-  // Narrow the candidate set using the index.
-  // If we have a game history, only entries starting with sanHistory[0] are relevant.
-  let candidates;
-  if (_ecoIndex && sanHistory.length > 0) {
-    candidates = _ecoIndex.get(sanHistory[0]) || [];
-  } else if (_ecoIndex) {
-    candidates = _ecoData;
-  } else {
-    candidates = _ecoData;
-  }
-
-  // ── "Inside preferred line" detection ────────────────────────────────────────
-  // Openings like the Sicilian span ECO codes B20-B99. After 1.e4 c5 2.Nf3, the
-  // continuation lives in B30-B49, not B20. If we only match by familyPrefix='B2'
-  // we'd find nothing and permanently deactivate. Instead: check if the game's
-  // move history so far is a PREFIX of any preferred ECO entry. If yes, we're
-  // already "inside" the preferred opening and should accept any continuation.
-  let insidePreferredLine = false;
-  if (sanHistory.length > 0) {
-    for (const prefEntry of candidates) {
-      if (prefEntry.sanMoves.length === 0) continue;
-      // Is this entry preferred by any slot?
-      let isPreferred = false;
-      for (const slot of slots) {
-        const exact  = slot.exactEco     || null;
-        const family = slot.familyPrefix || (slot.eco ? slot.eco.slice(0, 2) : null);
-        if ((exact && prefEntry.eco.startsWith(exact)) ||
-            (family && prefEntry.eco.startsWith(family))) { isPreferred = true; break; }
-      }
-      if (!isPreferred) continue;
-      // Does this preferred entry's moves match the FULL game history so far
-      // (or at least up to this entry's length)?
-      const checkLen = Math.min(prefEntry.sanMoves.length, sanHistory.length);
-      let prefMatch = true;
-      for (let i = 0; i < checkLen; i++) {
-        if (prefEntry.sanMoves[i] !== sanHistory[i]) { prefMatch = false; break; }
-      }
-      if (prefMatch) { insidePreferredLine = true; break; }
-    }
-  }
-
-  // Each slot's continuations from here: the next move of every ECO line that
-  // matches the game so far and belongs to that slot — its exact code if it
-  // has any such line, otherwise its ECO family.
-  const slotNext = slots.map(() => ({ exact: new Set(), family: new Set() }));
-  const bookOnly = new Set(); // continuations that belong to no slot
-
-  for (const entry of candidates) {
-    if (entry.sanMoves.length <= sanHistory.length) continue; // too short
-
-    // Check that the played moves so far match the start of this ECO line
-    let matches = true;
-    for (let i = 0; i < sanHistory.length; i++) {
-      if (entry.sanMoves[i] !== sanHistory[i]) { matches = false; break; }
-    }
-    if (!matches) continue;
-
-    // The next SAN move in this line is what we would play
-    const nextSan = entry.sanMoves[sanHistory.length];
-    if (!nextSan) continue;
-
-    let inSlot = false;
-    slots.forEach((slot, si) => {
-      const exact  = slot.exactEco     || null;
-      const family = slot.familyPrefix || (slot.eco ? slot.eco.slice(0,2) : null);
-      if (exact && entry.eco.startsWith(exact))        { slotNext[si].exact.add(nextSan);  inSlot = true; }
-      else if (family && entry.eco.startsWith(family)) { slotNext[si].family.add(nextSan); inSlot = true; }
-    });
-    if (!inSlot) bookOnly.add(nextSan);
-  }
-
-  // Score = the share of games that should play each move. Every slot spends
-  // its own percentage, split evenly across its continuations, and a move that
-  // two slots share collects both shares — so a 40% London and a 30% Exchange
-  // Slav put 70% on 1.d4 and a 30% Four Knights puts 30% on 1.e4.
-  //
-  // This used to take the single best slot's score per move with a 3x bonus for
-  // an exact code, and the caller played the top score. So percentages decided
-  // only which opening ALWAYS got played, never how often — and the builder's
-  // slots arrive carrying `pct`, not the `weight` read here, so every score was
-  // zero and the ties fell to the first ECO line in the file.
-  const moveScores = {};
-  slots.forEach((slot, si) => {
-    const w = (slot.weight || 0) / totalPct;
-    const next = slotNext[si].exact.size ? slotNext[si].exact : slotNext[si].family;
-    if (!(w > 0) || !next.size) return;
-    const share = w / next.size;
-    next.forEach(san => { moveScores[san] = (moveScores[san] || 0) + share; });
-  });
-  const slotWeighted = Object.keys(moveScores).length > 0;
-
-  // No slot line continues from here, but the game is still inside one of the
-  // preferred openings (e.g. a B20 → B30 transposition in the Sicilian): stay in
-  // book on a weak score rather than dropping straight to the engine.
-  if (!slotWeighted && insidePreferredLine) bookOnly.forEach(san => { moveScores[san] = 0.2; });
-
-  if (!Object.keys(moveScores).length) return new Set();
-
-  // Convert SAN moves to UCI using the current board state
-  const preferredUci = new Set();
-  for (const [san, score] of Object.entries(moveScores)) {
-    const mv = algebraicToMove(san, boardState, turnColor, epSq, castling);
-    if (mv) {
-      const uci = sqToUci(mv.from, mv.to, mv.promo ? mv.promo.toLowerCase() : null);
-      preferredUci.add(uci);
-      preferredUci[uci] = score; // piggyback score on the Set object
-    }
-  }
-  // Tells the caller whether the scores are slot percentages (draw in
-  // proportion) or the transposition fallback (take the best).
-  preferredUci._slotWeighted = slotWeighted;
-  return preferredUci;
-}
-
-// Is one of the repertoire's openings on the board? True once the game's moves
-// begin with a slot's own line — the ECO entry the slot was picked as (same
-// code and name), or, when the name is not in the table, its code's shortest
-// line, which is the position the code names. Used when the Main Line follows
-// the repertoire: reaching the opening is where it hands over.
-function obRepertoireReached(sanHistory, slots) {
-  if (!_ecoData || !slots.length) return false;
-  const starts = line => line.length > 0 && line.length <= sanHistory.length &&
-                         line.every((m, i) => sanHistory[i] === m);
-  return slots.some(slot => {
-    const code = slot.exactEco || slot.eco;
-    if (!code) return false;
-    const ofCode = _ecoData.filter(e => e.eco === code && e.sanMoves.length);
-    let lines = ofCode.filter(e => e.name === slot.name);
-    if (!lines.length && ofCode.length) {
-      const shortest = Math.min(...ofCode.map(e => e.sanMoves.length));
-      lines = ofCode.filter(e => e.sanMoves.length === shortest);
-    }
-    return lines.some(e => starts(e.sanMoves));
-  });
-}
+// The repertoire's move choice (ticked lines, one-move re-entry, one roll per
+// opening per game) is repDecide in 50-bot-engine.js. It replaced
+// obPreferredNextMoves / obRepertoireReached, which matched by ECO code: any
+// line of the slot's code counted, so a Réti slot played 2.Nf3 against
+// 1.e4 d5 and an Italian wandered into the Jerome Gambit.
 
 // Kick off load immediately on script parse so it's ready by the time user opens panel
 obLoadEcoData();
@@ -1014,6 +874,8 @@ async function botStart() {
       Math.round(100 * botOpeningConfig['none' + _stageCol]) + '% of games as ' + _stageCol +
       '): the bot plays its own moves from move 1');
   }
+  // The repertoire starts each game on its lines, with no rolls taken yet.
+  botRepState = repNewState();
   if (_repOn && !_noOpening) {
     const _hasSlots = (botOpeningConfig[_resolvedBotCol] || [])
                         .filter(s => s.name).length > 0;
@@ -1033,6 +895,11 @@ async function botStart() {
   // lcsf / maia tabs are "explorer, then engine" by definition, and a blend
   // asks via botEngineBook.
   lichessExplorerActive = !!botEngineBook || botTab === 'lcsf' || botTab === 'maia';
+  // A new game: no takebacks used, and the opening state as it starts, which
+  // a takeback all the way back restores.
+  botTakebacksUsed = 0;
+  _botPlyStates = [];
+  botRecordPlyState();
   // clockTimeW/B are set by clockInit — capture now as the baseline
   try {
     if (typeof clockTimeW !== 'undefined' && clockControl !== 'untimed') {
@@ -1093,6 +960,103 @@ async function botStart() {
   }
 }
 
+// ── Takebacks (Nov 2026, Ben) ────────────────────────────────────────────────
+// "Take back" sits with Offer draw and Resign in a bot game. It undoes the
+// player's last move: with the bot's reply already on the board, both moves
+// (the player is on move again, as on Lichess); while the bot is still
+// thinking, just the player's move, and the bot's thinking is dropped. The bot
+// accepts as many per game as its builder setting says (botTakebackLimit);
+// at 0 the button is not shown at all, and once they are used up it stays
+// on screen, greyed, saying so. Not on a Lichess host tab (there the same
+// limit answers the opponent's requests: _lbOnTakebackAsk) or premove puzzles.
+function _botTakebackPlies() {
+  if (typeof gameMovesAlgebraic === 'undefined') return 0;
+  const prefix = (typeof _gameStartSans !== 'undefined' && _gameStartSans) ? _gameStartSans.length : 0;
+  const played = gameMovesAlgebraic.length - prefix;
+  const human = botPlayerColor === 'white' ? 'w' : 'b';
+  // Player on move: the last two plies are the bot's reply and the player's
+  // move before it. Bot on move: the last ply is the player's.
+  if (turn === human) return played >= 2 ? 2 : 0;
+  return played >= 1 ? 1 : 0;
+}
+function botTakebackUi() {
+  const live = typeof botActive !== 'undefined' && botActive && !gameOver &&
+    !(typeof inReplay !== 'undefined' && inReplay) &&
+    !(typeof lichessGameLive === 'function' && lichessGameLive()) &&
+    !(typeof lichessHostTab === 'function' && lichessHostTab()) &&
+    !(typeof pzGameOnBoard === 'function' && pzGameOnBoard());
+  if (!live || botTakebackLimit === 0) return { show: false };
+  const limited = botTakebackLimit > 0;
+  const left = limited ? Math.max(0, botTakebackLimit - botTakebacksUsed) : Infinity;
+  const k = _botTakebackPlies();
+  const enabled = left > 0 && k > 0;
+  const title = !(left > 0)
+    ? 'This bot accepts ' + botTakebackLimit + ' takeback' + (botTakebackLimit === 1 ? '' : 's') + ' a game, and they are used up'
+    : !k ? 'No move of yours to take back yet'
+    : (k === 2 ? 'Take back your last move and the bot’s reply' : 'Take back your last move')
+      + (limited ? ' (' + left + ' of ' + botTakebackLimit + ' left this game)' : '');
+  return { show: true, enabled, limited, left, k, title };
+}
+// Sidebar row, phone bar and Expert board: one state, three buttons.
+function syncTakebackBtns() {
+  const st = botTakebackUi();
+  const label = n => (st.limited ? n + ' (' + st.left + ')' : n);
+  [['takebackBtn', '↶ Take back'], ['pbTakeback', null], ['proTakebackBtn', '↶ Take back']].forEach(([id, txt]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.display = st.show ? '' : 'none';
+    if (!st.show) return;
+    if (txt) el.textContent = label(txt);
+    else {
+      const l = el.querySelector('.pb-l');
+      // The phone bar's labels are one short word (Resign, Draw, Peek): with
+      // eight buttons up, "Takeback" was cut off.
+      if (l) l.textContent = st.limited ? 'Undo ' + st.left : 'Undo';
+    }
+    el.title = st.title;
+    el.setAttribute('aria-label', st.title);
+    if ('disabled' in el) el.disabled = !st.enabled;
+    el.classList.toggle('disabled', !st.enabled);
+    el.setAttribute('aria-disabled', st.enabled ? 'false' : 'true');
+  });
+}
+function botRequestTakeback() {
+  const st = botTakebackUi();
+  if (!st.show || !st.enabled) return false;
+  const k = st.k;
+  // Whatever the bot was working on is for a position about to go: its move
+  // in flight (every resume point checks _botGameGen), and a premove it armed.
+  _botGameGen++;
+  botThinking = false;
+  if (typeof botActivePremove !== 'undefined') botActivePremove = null;
+  if (typeof _botPremoveGen !== 'undefined') _botPremoveGen++;
+  if (typeof botPremoveUpdateBadge === 'function') botPremoveUpdateBadge();
+  clearGhostPieces();
+  botGhostResponses = {};
+  // A draw the bot offered was for that position too.
+  const _dt = document.getElementById('bm-bot-draw'); if (_dt) _dt.remove();
+  const before = gameMovesAlgebraic.length;
+  const n = gameRewindPlies(k);
+  if (!n) { updatePlayerBoxes(); return false; }
+  botMoveHistory.length = Math.max(0, botMoveHistory.length - n);
+  botSanHistory.length  = Math.max(0, botSanHistory.length - n);
+  botRestorePlyState(before - n);
+  botTakebacksUsed++;
+  console.log('[Takeback] ' + n + ' move' + (n === 1 ? '' : 's') + ' taken back (' + botTakebacksUsed +
+    (botTakebackLimit > 0 ? ' of ' + botTakebackLimit : '') + ' this game)');
+  const left = botTakebackLimit > 0 ? Math.max(0, botTakebackLimit - botTakebacksUsed) : null;
+  const bs = document.getElementById('botStatus');
+  if (bs) bs.textContent = '↶ ' + (n === 2 ? 'Took back your move and the bot’s reply' : 'Took back your move') +
+    (left === null ? '' : left ? ' · ' + left + ' left' : ' · that was the last one');
+  // The player is on move again: time this turn for Mirror, and let the bot
+  // arm a premove for its reply, as after any bot move.
+  botUserTurnStartMs = Date.now();
+  if (typeof botPremoveArm === 'function') botPremoveArm();
+  updatePlayerBoxes();
+  render();
+  return true;
+}
+
 function botStop() {
   botActive = false;
   botThinking = false;
@@ -1115,6 +1079,7 @@ function botStop() {
   preferredOpeningActive = false;
   mainLineActive = false;
   lichessExplorerActive = false;
+  _botPlyStates = [];
   sfCurrentSkillLevel = -1;
   // Reset player names
   lastBotMoveSource = '';
@@ -1176,6 +1141,7 @@ function botCollectConfig(configName, botNameVal) {
     timeBehavior: botTimeBehavior,
     pace: _num('botPace', 40),
     playerColor: botPlayerColor,
+    takebackLimit: botTakebackLimit,
     ghostPieces: !!(document.getElementById('cbGhostPieces') || {}).checked,
     premove: {
       enabled:      botPremoveEnabled,
@@ -1306,6 +1272,7 @@ function botApplyConfig(cfg) {
         if (_pz.canFlag          !== undefined) botCanFlag          = !!_pz.canFlag;
       }
       if (cfg.playerColor) botSetPlayerColor(cfg.playerColor);
+      if (cfg.takebackLimit != null && isFinite(+cfg.takebackLimit)) botTakebackLimit = Math.max(-1, Math.trunc(+cfg.takebackLimit));
       if (cfg.ghostPieces !== undefined) {
         var _gp = document.getElementById('cbGhostPieces');
         if (_gp) _gp.checked = cfg.ghostPieces;
@@ -2313,6 +2280,10 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
     botDrawAcceptMargin = oldDefault ? DRAW_ACCEPT_DEFAULT_CP
                         : (cfg.drawAcceptMarginCp != null ? +cfg.drawAcceptMarginCp : DRAW_ACCEPT_DEFAULT_CP);
   }
+  // Takebacks per game: -1 every one, 0 never, N the first N. A config from
+  // before the setting takes every one back, like a quick-start bot.
+  botTakebackLimit = (cfg.takebackLimit != null && isFinite(+cfg.takebackLimit))
+    ? Math.max(-1, Math.trunc(+cfg.takebackLimit)) : -1;
   // A bot built in the panel judges draws at its own strength unless it says
   // otherwise, so loading one clears the quick-start override.
   botDrawUseObjectiveEval = !!cfg.drawUseObjectiveEval;
@@ -2382,13 +2353,22 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
     return botOpeningStagesFromMode(m || 'off');
   };
   var _stW = _stagesFor('White'), _stB = _stagesFor('Black');
-  // `weight` and `exactEco` are the names the repertoire matcher reads
-  // (obPreferredNextMoves). This used to pass only `pct` and `eco`, so every
-  // builder slot scored zero: White's repertoire deactivated on move one and
-  // Black followed whichever ECO line came first in the file.
+  // A builder slot is one opening name with the lines ticked under it
+  // (`lines`: [{code, name, moves}]) and the splits at the bot's own branch
+  // points (`fork`: {path: {san: pct}}); repDecide plays exactly those. A slot
+  // saved before ticking existed has only a code and a name, and repDecide
+  // reads that as the one table entry it names (repSlotLines). `weight`,
+  // `exactEco` and `familyPrefix` are still filled for the legacy slide-in
+  // panel, which draws from them.
   var mapSlot = function(s) {
-    return { eco: s.code, exactEco: s.code, familyPrefix: (s.code || '').slice(0,2),
-             name: s.name, pct: s.pct, weight: +s.pct || 0 };
+    var out = { eco: s.code, exactEco: s.code, familyPrefix: (s.code || '').slice(0,2),
+                name: s.name, pct: s.pct, weight: +s.pct || 0 };
+    if (s.fam) out.fam = s.fam;
+    if (Array.isArray(s.lines) && s.lines.length) {
+      out.lines = s.lines.map(function(L) { return { code: L.code || '', name: L.name || '', moves: String(L.moves || '') }; });
+      out.fork = JSON.parse(JSON.stringify(s.fork || {}));
+    }
+    return out;
   };
   // "No opening sequence" is a slot in the builder's list, with a percentage
   // like any opening, but no line to steer into: it leaves the matcher's slots
@@ -2620,6 +2600,7 @@ function bmSessionSave() {
         startClockMs: botStartClockMs,
         moveHistory: botMoveHistory.slice(),
         sanHistory: botSanHistory.slice(),
+        takebacksUsed: botTakebacksUsed,
         config: botCollectConfig('session', (document.getElementById('botNameInput') || {}).value || '')
       } : { active: false }
     };
@@ -2670,6 +2651,7 @@ function bmSessionRestore() {
       botStartClockMs = (snap.bot.startClockMs != null) ? snap.bot.startClockMs : null;
       botMoveHistory  = Array.isArray(snap.bot.moveHistory) ? snap.bot.moveHistory.slice() : [];
       botSanHistory   = Array.isArray(snap.bot.sanHistory)  ? snap.bot.sanHistory.slice()  : [];
+      botTakebacksUsed = +snap.bot.takebacksUsed || 0;
     }
 
     // Clocks: clockInit resets the times to the control defaults, so it has to

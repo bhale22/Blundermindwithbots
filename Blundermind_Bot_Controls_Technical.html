@@ -129,7 +129,7 @@
   <table>
     <thead><tr><th>Stage</th><th>Name</th><th>What happens</th></tr></thead>
     <tbody>
-      <tr><td>1</td><td>Opening Book</td><td>ECO table lookup (preferred) or Lichess Masters (mainline). If a matching move is found, it is played immediately after a brief book delay (400–1200 ms). Skipped once the game leaves known lines.</td></tr>
+      <tr><td>1</td><td>Opening Book</td><td>The repertoire's ticked lines, then the Main Line (Lichess Masters). If a matching move is found, it is played immediately after a brief book delay (400–1200 ms). Skipped once the game leaves known lines.</td></tr>
       <tr><td>2</td><td>Think Time</td><td>Actual think time for this move is computed from the timing mode, the Hustle attractor, and clock pressure. The result feeds all downstream degradation curves.</td></tr>
       <tr><td>3</td><td>Engine Query</td><td>A rough think-time estimate picks the Maia ELO (via curve A, if ELO degradation is on). Maia — or, while the Lichess Opening Book is on and the game is still in it, the Lichess explorer — is queried for candidate-move probabilities. A Flounder bot takes its turn through Flounder instead (§2c).</td></tr>
       <tr><td>4</td><td>Distribution Filter</td><td>An absolute min-probability floor removes near-zero candidates. Curve B (if the distribution toggle is on) narrows the upper percentile; the Luck attractor shifts the window (§8).</td></tr>
@@ -163,13 +163,13 @@
   <h2 id="source">2 · Move Source Layer</h2>
 
   <h3>2a · Opening Book</h3>
-  <p>Two independent book modes are available. Either can be active at once; each deactivates permanently the first time
-  it fails to find a candidate move.</p>
+  <p>Two stages, run in order, either or both on. The Main Line deactivates permanently the first time it fails to find a
+  candidate move; the repertoire stays ready to step back in until the game is past its lines.</p>
   <div class="wide">
   <table>
     <thead><tr><th>Mode</th><th>Source</th><th>Behaviour</th></tr></thead>
     <tbody>
-      <tr><td>Preferred</td><td>In-memory ECO table (~3,000 named openings)</td><td>Matches game history against ECO lines whose ECO code or family prefix is in the bot's slot list. Plays the next move from the highest-priority matching line. Exits the book at maxBookDepth (default 20 half-moves).</td></tr>
+      <tr><td>Repertoire</td><td>Ticked lines (ECO table)</td><td>The lines ticked in the builder, each carrying its own moves (from the ECO table, ~3,700 named lines). On the lines it plays their next move: where they branch on the bot's move, the openings split by their percentages and each opening by its saved split; where they branch on the opponent's move, it follows the move played. Off them (the opponent left, or a line ended) the next stage plays. Every later bot move checks, by position (placement, side to move, castling; en passant ignored), for a ticked line on the board or one legal move away, and rolls once per opening per game at that opening's percentage; a miss keeps it out for the game. Done 8 plies past its longest line. A slot from an older config (one ECO code and name) is read as the table entries it names.</td></tr>
       <tr><td>Mainline</td><td>Lichess Masters (live)</td><td>Queries the masters database for the most popular continuation from the current position; falls back to the Lichess community database if there is no masters result. Plays the top-weighted move. Deactivates after the first cache miss or API error.</td></tr>
     </tbody>
   </table>

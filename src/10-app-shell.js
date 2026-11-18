@@ -193,6 +193,14 @@ let botWeaponizerMinMs   = 0;     // floor (ms) on weaponizer move time; 0 = ins
 // (Builder default and quick start agree; see DRAW_ACCEPT_DEFAULT_CP.)
 let botAcceptDraws      = true;   // bot accepts draw offers when not clearly ahead
 let botDrawAcceptMargin = 200;    // accept if bot's advantage ≤ this many cp (engine eval)
+// ── Takebacks (Nov 2026, Ben) ────────────────────────────────────────────────
+// How many of the player's takeback requests the bot accepts in one game:
+// -1 = every one (the default, so quick-start bots and bots saved before the
+// setting take moves back), 0 = never (the button is not shown), N = the first
+// N. Builder: Personality → Draws & takebacks. botTakebacksUsed counts this
+// game's (botStart resets it; the saved session keeps it across a reload).
+let botTakebackLimit = -1;
+let botTakebacksUsed = 0;
 // Which eval the accept decision reads. A built bot judges the position at its
 // OWN strength (botPerceivedAdvantageCp), noise and all — that is the point of
 // a personality, and at 600 ELO the noise is ~700cp, so the answer is close to
@@ -5576,6 +5584,74 @@ function rebuildToReplayIdx(targetIdx){
   if(typeof render==='function') render();
   if(typeof proSync==='function') proSync();
 }
+// ── Take moves back in a live game ───────────────────────────────────────────
+// Rewinds the live game by k plies: the position is rebuilt from the game's
+// base (the standard start, or a from-position game's FEN) through the moves
+// that remain, the way review rebuilds it, so the board, side to move,
+// castling, en passant, the fifty-move count, the repetition counts and the
+// last-move highlight all come back exactly as they were. The moves a
+// "Play from here" game started with are never taken back.
+//
+// The clocks are not rewound (as on Lichess): the side that was on move is
+// charged up to now, and the side now on move runs from now. Nothing pauses.
+// Returns the number of plies taken back (0 when nothing could be).
+function gameRewindPlies(k){
+  const prefix=(typeof _gameStartSans!=='undefined'&&_gameStartSans)?_gameStartSans.length:0;
+  const keep=Math.max(prefix,gameMovesAlgebraic.length-Math.max(0,k|0));
+  const n=gameMovesAlgebraic.length-keep;
+  if(n<=0) return 0;
+  // Replay first, on copies; the live game changes only if every move replays.
+  const baseFen=_gameStartFen||FENS[0];
+  const sv={turn,castling,epSq};
+  let bd=parseFen(baseFen);            // parseFen writes turn/castling/epSq
+  let t=turn,cst={...castling},ep=epSq;
+  turn=sv.turn;castling=sv.castling;epSq=sv.epSq;
+  let hm=parseInt(baseFen.split(' ')[4])||0;
+  const counts={};
+  counts[positionKey(bd,t,cst,ep)]=1;
+  let lf=-1,lt=-1,distSnap=null,distUci=null;
+  const moves=gameMovesAlgebraic.slice(prefix,keep);
+  for(let i=0;i<moves.length;i++){
+    const mv=algebraicToMove(moves[i],bd,t,ep,cst);
+    if(!mv){ console.warn('Takeback: could not replay '+moves[i]+'; nothing taken back'); return 0; }
+    if(i===moves.length-1){
+      distSnap={board:bd,turn:t,castling:{...cst},epSq:ep,fen:boardToFen(bd,t,cst,ep,hm,Math.floor((prefix+i)/2)+1)};
+      distUci=sqToUci(mv.from,mv.to,mv.promo?String(mv.promo).toLowerCase():null);
+    }
+    const prev=bd,piece=prev[mv.from];
+    bd=applyMove(mv.from,mv.to,prev,ep,mv.promo||'Q');
+    hm=(piece&&piece.piece==='P')||prev[mv.to]?0:hm+1;
+    cst=updateCastling(mv.from,mv.to,piece,cst);
+    ep=computeEP(mv.from,mv.to,prev);
+    t=t==='w'?'b':'w';
+    const key=positionKey(bd,t,cst,ep);
+    counts[key]=(counts[key]||0)+1;
+    lf=mv.from;lt=mv.to;
+  }
+  // Charge the side on move for its time so far, before the turn changes.
+  if(clockActive&&_clockAnchorMs){
+    const rem=Math.max(0,_clockAnchorSec-Math.floor((Date.now()-_clockAnchorMs)/1000));
+    if(turn==='w') clockTimeW=rem; else clockTimeB=rem;
+  }
+  board=bd;turn=t;castling=cst;epSq=ep;
+  halfmoveClock=hm;positionCounts=counts;
+  gameMovesAlgebraic.length=keep;
+  lastMoveFrom=lf;lastMoveTo=lt;
+  promotionPending=null;premoveQueue=[];
+  selSq=-1;legalMoves=[];dragFrom=-1;dragMoved=false;hoverSq=-1;
+  clearPreview();
+  if(typeof setAwaitingConfirm==='function') setAwaitingConfirm(false);
+  if(clockActive){ _clockAnchorMs=Date.now(); _clockAnchorSec=turn==='w'?clockTimeW:clockTimeB; }
+  if(typeof clockUpdateDisplay==='function') clockUpdateDisplay();
+  atkMap=buildAtk(board);
+  const pins=computePins(board);
+  pinnedWSquares=pins.w;pinnedBSquares=pins.b;
+  // The Maia odds panel shows the move now last on the board.
+  if(typeof distSetReplayPos==='function') distSetReplayPos(distSnap,distUci);
+  if(typeof IND!=='undefined'&&typeof indApply==='function') indApply(); else render();
+  return n;
+}
+
 function updateReplayInfo(){
   document.getElementById('replayInfo').textContent='Move '+replayIdx+' / '+replayMoves.length;
 }
@@ -5795,35 +5871,8 @@ function _isPendingChallenge(){
          (mpMode==='lobby-waiting'||mpMode==='private-waiting');
 }
 
-// Simple SAN parser
-function algebraicToMove(san,bd,color,ep,castl){
-  if(san==='O-O'||san==='0-0'){const r=color==='w'?7:0;return{from:rcSq(r,4),to:rcSq(r,6)};}
-  if(san==='O-O-O'||san==='0-0-0'){const r=color==='w'?7:0;return{from:rcSq(r,4),to:rcSq(r,2)};}
-  san=san.replace(/[+#!?]/g,'');
-  let promo=null;
-  if(san.includes('=')){promo=san.split('=')[1][0];san=san.replace(/=.*$/,'');}
-  const pieceChars='KQRBN';
-  let piece='P';let s=san.replace('x','');
-  if(pieceChars.includes(s[0])){piece=s[0];s=s.slice(1);}
-  const toFile=s.charCodeAt(s.length-2)-97;
-  const toRank=8-parseInt(s[s.length-1]);
-  const to=rcSq(toRank,toFile);
-  let dfFile=null,dfRank=null;
-  if(s.length>2){
-    const d=s.slice(0,s.length-2);
-    if(/^[a-h]$/.test(d))dfFile=d.charCodeAt(0)-97;
-    else if(/^[1-8]$/.test(d))dfRank=8-parseInt(d);
-    else if(d.length===2){dfFile=d.charCodeAt(0)-97;dfRank=8-parseInt(d[1]);}
-  }
-  for(let sq=0;sq<64;sq++){
-    const p=bd[sq];
-    if(!p||p.color!==color||p.piece!==piece)continue;
-    if(dfFile!==null&&sqRC(sq).c!==dfFile)continue;
-    if(dfRank!==null&&sqRC(sq).r!==dfRank)continue;
-    if(legalMovesFor(sq,bd,ep,castl).includes(to))return{from:sq,to,promo};
-  }
-  return null;
-}
+// algebraicToMove (the SAN parser) lives in 20-chess-core.js: it is pure, and
+// the repertoire engine in 50-bot-engine.js needs it under the unit tests too.
 function updateCastlingRights(from,to){
   if(from===rcSq(7,4)||to===rcSq(7,4)){castling.wK=false;castling.wQ=false;}
   if(from===rcSq(0,4)||to===rcSq(0,4)){castling.bK=false;castling.bQ=false;}

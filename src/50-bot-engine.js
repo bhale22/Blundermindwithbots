@@ -3377,6 +3377,297 @@ function _botUciIsLegal(uci) {
   return !!p && p.color === turn && legalMovesFor(mv.from, board, epSq, castling).includes(mv.to);
 }
 
+// ── Repertoire: the ticked opening lines ────────────────────────────────────
+// Nov 2026 (Ben's rules, after the Tennison report: a Réti slot played 2.Nf3
+// against 1.e4 d5 because any line of the slot's ECO code counted). A slot is
+// one opening name with the lines the user ticked under it, a percentage, and
+// a split for every place those lines branch on the bot's own move.
+//
+//   · On the lines: follow them. Where they branch on the bot's move, the
+//     opening percentages decide between openings and each opening's split
+//     decides within it. Where they branch on the opponent's move, follow
+//     whichever the opponent picked. No rolls while on the lines.
+//   · Off the lines (the opponent left them, or a line ended): the next stage
+//     plays, Main Line or the engine. Every later bot move checks, by
+//     position, whether a ticked line is on the board now or one legal bot
+//     move away. Each opening gets ONE roll per game, at its own percentage:
+//     pass and the bot steps back in; fail and that opening stays out for the
+//     rest of the game, so a line the player finds annoying can't come back
+//     every time it is in reach.
+//
+// Positions compare placement, side to move and castling rights; en passant is
+// left out so that move orders reaching the same position match. Pure (chess
+// core only), so the unit tests can drive it.
+const REP_START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+// Past the longest ticked line by this many plies the repertoire is done for
+// the game. Its positions can't come back by then.
+const REP_REENTRY_SLACK_PLIES = 8;
+
+// parseFen writes the live turn/castling/epSq; this reads a FEN without them.
+function repFenPosition(fen) {
+  const parts = String(fen).split(' '), bd = {};
+  const rows = parts[0].split('/');
+  for (let r = 0; r < 8; r++) {
+    let c = 0;
+    for (const ch of rows[r] || '') {
+      if ('12345678'.includes(ch)) c += +ch;
+      else { bd[r * 8 + c] = { piece: ch.toUpperCase(), color: ch === ch.toUpperCase() ? 'w' : 'b' }; c++; }
+    }
+  }
+  const cs = parts[2] || '-';
+  return {
+    bd, turn: parts[1] || 'w',
+    cst: { wK: cs.includes('K'), wQ: cs.includes('Q'), bK: cs.includes('k'), bQ: cs.includes('q') },
+    ep: -1,
+  };
+}
+function repPosKey(bd, turn, cst) { return positionKey(bd, turn, cst, -1); }
+
+// A slot's lines as move strings. Builder slots carry them; a slot from an
+// older config (one ECO code + name) names one table entry instead, read here
+// from the ECO table (ecoRows: [{eco, name, sanMoves}]): every entry with the
+// same code and name, else the same name, else the code's shortest entries.
+function repSlotLines(slot, ecoRows) {
+  if (slot && Array.isArray(slot.lines) && slot.lines.length) {
+    return slot.lines.map(L => ({ code: L.code || '', name: L.name || '', moves: String(L.moves || '').trim() }))
+                     .filter(L => L.moves);
+  }
+  const rows = Array.isArray(ecoRows) ? ecoRows.filter(e => e && e.sanMoves && e.sanMoves.length) : [];
+  if (!slot || !rows.length) return [];
+  const code = slot.exactEco || slot.eco || slot.code || '';
+  const shortest = list => {
+    if (!list.length) return list;
+    const n = Math.min(...list.map(e => e.sanMoves.length));
+    return list.filter(e => e.sanMoves.length === n);
+  };
+  let pick = rows.filter(e => e.eco === code && e.name === slot.name);
+  if (!pick.length && slot.name) pick = rows.filter(e => e.name === slot.name);
+  if (!pick.length && code) pick = shortest(rows.filter(e => e.eco === code));
+  const fam = slot.familyPrefix || (code ? code.slice(0, 2) : '');
+  if (!pick.length && fam) pick = shortest(rows.filter(e => e.eco.startsWith(fam)));
+  return pick.map(e => ({ code: e.eco, name: e.name, moves: e.sanMoves.join(' ') }));
+}
+
+// Build the lookup for one colour's slots: every position on every ticked line
+// (shared tree of paths, "e4 e5 Nf3"), each slot's paths and branch points,
+// and an index from position to (slot, path).
+function repPrepare(slots, ecoRows) {
+  const start = repFenPosition(REP_START_FEN);
+  const nodes = new Map();
+  nodes.set('', Object.assign({ ply: 0, san: null, parent: null, key: repPosKey(start.bd, start.turn, start.cst) }, start));
+  const out = [];
+  (slots || []).forEach((slot, si) => {
+    const lines = repSlotLines(slot, ecoRows);
+    const paths = new Set();
+    const lineEnds = [];
+    lines.forEach(L => {
+      let path = '', cur = nodes.get('');
+      paths.add('');
+      for (const san of L.moves.split(/\s+/)) {
+        const next = path ? path + ' ' + san : san;
+        let n = nodes.get(next);
+        if (!n) {
+          const m = algebraicToMove(san, cur.bd, cur.turn, cur.ep, cur.cst);
+          if (!m) break;   // a move that isn't legal ends the line where it is
+          const piece = cur.bd[m.from];
+          const bd2 = applyMove(m.from, m.to, cur.bd, cur.ep, m.promo || 'Q');
+          const cst2 = updateCastling(m.from, m.to, piece, cur.cst);
+          const t2 = cur.turn === 'w' ? 'b' : 'w';
+          n = { bd: bd2, turn: t2, cst: cst2, ep: computeEP(m.from, m.to, cur.bd),
+                ply: cur.ply + 1, san, parent: path, key: repPosKey(bd2, t2, cst2) };
+          nodes.set(next, n);
+        }
+        paths.add(next);
+        path = next; cur = n;
+      }
+      if (path) lineEnds.push({ code: L.code, name: L.name, path });
+    });
+    if (!lineEnds.length) return;
+    const kids = new Map();   // path -> [child path] within this slot
+    paths.forEach(p => {
+      if (!p) return;
+      const par = nodes.get(p).parent;
+      if (!kids.has(par)) kids.set(par, []);
+      kids.get(par).push(p);
+    });
+    out.push({
+      idx: si, fam: slot.fam || String(slot.name || '').split(':')[0].trim() || slot.name || '',
+      pct: Math.max(0, +slot.pct || +slot.weight || 0),
+      fork: (slot.fork && typeof slot.fork === 'object') ? slot.fork : {},
+      paths, kids, lines: lineEnds,
+    });
+  });
+  const index = new Map();
+  let maxPly = 0;
+  out.forEach(s => s.paths.forEach(p => {
+    const n = nodes.get(p);
+    if (n.ply > maxPly) maxPly = n.ply;
+    if (!index.has(n.key)) index.set(n.key, []);
+    index.get(n.key).push({ slot: s, path: p });
+  }));
+  return { slots: out, nodes, index, maxPly };
+}
+
+// The split saved for a branch point, fitted to the moves the slot has there
+// now: a move added since gets an even share and the rest keep their
+// proportions; nothing saved is an even split. (The builder does the same.)
+function repForkWeights(slot, path, sans) {
+  if (sans.length === 1) return { [sans[0]]: 1 };
+  const old = slot.fork[path] || {};
+  const raw = sans.map(k => (Object.prototype.hasOwnProperty.call(old, k) ? Math.max(0, +old[k] || 0) : 100 / sans.length));
+  let tot = raw.reduce((a, b) => a + b, 0);
+  const out = {};
+  if (!(tot > 0)) { sans.forEach(k => { out[k] = 1 / sans.length; }); return out; }
+  sans.forEach((k, i) => { out[k] = raw[i] / tot; });
+  return out;
+}
+
+// A fresh game's repertoire state. mode 'line' = on the ticked lines.
+function repNewState() { return { mode: 'line', out: new Set(), rolls: new Map() }; }
+function repCopyState(st) {
+  return st ? { mode: st.mode, out: new Set(st.out), rolls: new Map([...st.rolls].map(([k, v]) => [k, Object.assign({}, v)])) } : repNewState();
+}
+
+// What the repertoire wants on the bot's move at pos ({bd, turn, cst, ep}).
+//   { kind: 'line',    cands }  on the lines; cands carry p (shares sum to 1)
+//   { kind: 'reenter', cands, rolls, ended }  stepping back in after a roll
+//   { kind: 'main',    rolls, ended }  nothing here: the next stage plays
+// cands: [{ san, from, to, promo, p, src: [{ slot, path, via }] }]. Rolls are
+// kept in st; rand() returns [0, 1).
+function repDecide(R, st, pos, rand) {
+  rand = rand || Math.random;
+  const key = repPosKey(pos.bd, pos.turn, pos.cst);
+  const live = k => (R.index.get(k) || []).filter(e => !st.out.has(e.slot.idx));
+  const bySlot = entries => {
+    const m = new Map();
+    entries.forEach(e => { if (!m.has(e.slot)) m.set(e.slot, []); m.get(e.slot).push(e.path); });
+    return m;
+  };
+  // A slot's next moves from the first of its paths here that goes on.
+  const contAt = (slot, paths) => {
+    for (const p of paths) {
+      const kids = slot.kids.get(p);
+      if (kids && kids.length) {
+        const sans = kids.map(k => R.nodes.get(k).san);
+        const w = repForkWeights(slot, p, sans);
+        return kids.map((k, i) => ({ san: sans[i], w: w[sans[i]] || 0, path: k }));
+      }
+    }
+    return [];
+  };
+  const combine = opts => {
+    const tot = opts.reduce((a, o) => a + o.slot.pct, 0);
+    const m = new Map();
+    opts.forEach(o => {
+      const share = tot > 0 ? o.slot.pct / tot : 1 / opts.length;
+      o.mv.forEach(x => {
+        let c = m.get(x.san);
+        if (!c) { c = { san: x.san, from: x.from, to: x.to, promo: x.promo || null, p: 0, src: [] }; m.set(x.san, c); }
+        c.p += share * x.w;
+        c.src.push({ slot: o.slot, path: x.path, via: o.via });
+      });
+    });
+    // Moves the board will not play are dropped (a line that no longer fits).
+    const list = [...m.values()].filter(c => {
+      if (c.from != null) return true;
+      const mv = algebraicToMove(c.san, pos.bd, pos.turn, pos.ep, pos.cst);
+      if (!mv) return false;
+      c.from = mv.from; c.to = mv.to; c.promo = mv.promo || null;
+      return true;
+    });
+    const sum = list.reduce((a, c) => a + c.p, 0);
+    if (sum > 0) list.forEach(c => { c.p /= sum; });
+    else list.forEach(c => { c.p = 1 / list.length; });
+    return list.sort((a, b) => b.p - a.p);
+  };
+
+  let ended = false;
+  if (st.mode === 'line') {
+    const opts = [];
+    bySlot(live(key)).forEach((paths, slot) => {
+      const mv = contAt(slot, paths);
+      if (mv.length) opts.push({ slot, mv, via: 'line' });
+    });
+    const cands = opts.length ? combine(opts) : [];
+    if (cands.length) return { kind: 'line', cands };
+    st.mode = 'off'; ended = true;
+  }
+
+  // Off the lines: a ticked line here (a transposition), or one bot move away.
+  const opts = new Map();
+  bySlot(live(key)).forEach((paths, slot) => {
+    const mv = contAt(slot, paths);
+    if (mv.length) opts.set(slot, { slot, mv, via: 'here' });
+  });
+  allLegalMoves(pos.bd, pos.turn, pos.ep, pos.cst).forEach(m => {
+    const piece = pos.bd[m.from];
+    const bd2 = applyMove(m.from, m.to, pos.bd, pos.ep, 'Q');
+    const k = repPosKey(bd2, pos.turn === 'w' ? 'b' : 'w', updateCastling(m.from, m.to, piece, pos.cst));
+    live(k).forEach(e => {
+      const have = opts.get(e.slot);
+      if (have && have.via === 'here') return;
+      let o = have;
+      if (!o) { o = { slot: e.slot, mv: [], via: 'one' }; opts.set(e.slot, o); }
+      if (!o.mv.some(x => x.from === m.from && x.to === m.to)) {
+        o.mv.push({ san: moveToSAN(m.from, m.to, null, pos.bd, pos.ep, pos.cst).replace(/[+#]/g, ''),
+                    from: m.from, to: m.to, w: 0, path: e.path });
+      }
+    });
+  });
+  opts.forEach(o => { if (o.via === 'one') o.mv.forEach(x => { x.w = 1 / o.mv.length; }); });
+  if (!opts.size) return { kind: 'main', ended, rolls: [] };
+  const rolls = [], pass = [];
+  opts.forEach(o => {
+    const r = repRollFor(o.slot, st, rand);
+    rolls.push({ slot: o.slot, roll: r, via: o.via });
+    if (r.pass) pass.push(o);
+  });
+  if (!pass.length) return { kind: 'main', ended, rolls };
+  const cands = combine(pass);
+  if (!cands.length) return { kind: 'main', ended, rolls };
+  return { kind: 'reenter', ended, rolls, cands };
+}
+
+// One roll per opening per game, at its own percentage; a miss keeps it out.
+function repRollFor(slot, st, rand) {
+  if (st.rolls.has(slot.idx)) return Object.assign({}, st.rolls.get(slot.idx), { fresh: false });
+  const r = Math.floor((rand || Math.random)() * 100);
+  const res = { pct: slot.pct, r, pass: r < slot.pct };
+  st.rolls.set(slot.idx, res);
+  if (!res.pass) st.out.add(slot.idx);
+  return Object.assign({}, res, { fresh: true });
+}
+
+function repPick(cands, rand) {
+  const tot = cands.reduce((a, c) => a + c.p, 0);
+  let r = (rand || Math.random)() * tot;
+  for (const c of cands) { r -= c.p; if (r <= 0) return c; }
+  return cands[cands.length - 1];
+}
+
+// The ticked line a move belongs to, for the status line and the move log.
+function repLineLabel(R, src) {
+  if (!src) return '';
+  const s = src.slot, p = src.path;
+  const thru = s.lines.filter(L => L.path === p || L.path.startsWith(p + ' '))
+                      .sort((a, b) => a.path.length - b.path.length);
+  const L = thru[0] || s.lines[0];
+  if (!L) return s.fam;
+  return (L.name || s.fam) + (L.code ? ' (' + L.code + ')' : '');
+}
+
+// This game's repertoire state (reset in botStart) and the prepared lookup,
+// rebuilt only when the slots change.
+let botRepState = repNewState();
+let _botRepCache = { sig: null, R: null };
+function botRepPrepared(slots, ecoRows) {
+  const sig = JSON.stringify((slots || []).map(s => [s.pct, s.weight, s.lines || null, s.fork || null,
+    s.lines && s.lines.length ? null : [s.exactEco || s.eco || s.code || '', s.name || '']])) +
+    '|' + (Array.isArray(ecoRows) ? ecoRows.length : 0);
+  if (_botRepCache.sig !== sig) _botRepCache = { sig, R: repPrepare(slots, ecoRows) };
+  return _botRepCache.R;
+}
+
 async function botMakeMove() {
   // A premove still being worked out for this turn goes first: it either fires
   // (and this call then finds the turn already played) or gives way. Bounded,
@@ -3425,12 +3716,15 @@ async function botMakeMove() {
     // or follow the Main Line, never the Italian and then the Main Line.
 
     if (preferredOpeningActive) {
-      // ── Repertoire: pure in-memory ECO table lookup ─────────────────────
+      // ── Repertoire: the ticked lines (repDecide above) ───────────────────
       const botCol = botPlayerColor === 'white' ? 'black' : 'white';
       const slots  = (botOpeningConfig[botCol] || []).filter(s => s.name);
+      // Only a slot from an older config (an ECO code and name, no lines of
+      // its own) needs the ECO table.
+      const _needsEco = slots.some(s => !(Array.isArray(s.lines) && s.lines.length));
       if (!slots.length) {
         preferredOpeningActive = false;
-      } else if (!_ecoData || !_ecoData.length) {
+      } else if (_needsEco && (!_ecoData || !_ecoData.length)) {
         // ECO data may still be loading — await it rather than permanently deactivating
         try { await obLoadEcoData(); } catch(e) {}
         if (!_ecoData || !_ecoData.length) { preferredOpeningActive = false; }
@@ -3443,67 +3737,43 @@ async function botMakeMove() {
         document.getElementById('botStatus').textContent = '';
         if (botActive && !gameOver) setTimeout(botMakeMove, 50);
         return;
-      } else if (mainLineActive && obRepertoireReached(botSanHistory, slots)) {
-        // One of the repertoire's openings is on the board, and the Main Line
-        // is on to take it from here. Without this the repertoire carried on
-        // through every named sub-line of the same ECO code with equal odds —
-        // an Italian (C50) went 4.Bxf7+, the Jerome Gambit, one game in five —
-        // and the Main Line only began once those ran out.
-        //
-        // The book depth is the Main Line's ("until move N", in its own row)
-        // and does not cut the repertoire short.
-        preferredOpeningActive = false;
       } else {
-        const preferredUci = obPreferredNextMoves(
-          botSanHistory, slots, board, turn, epSq, castling
-        );
-        if (preferredUci.size) {
-          // When the moves on offer belong to repertoire slots, their scores
-          // ARE the slots' percentages (obPreferredNextMoves splits each slot's
-          // share across its own continuations), so draw in proportion: a
-          // 70/30 repertoire plays the 30% opening three games in ten. Taking
-          // the top score instead meant the smaller share was never played at
-          // all — and while the builder's percentages were not reaching the
-          // app, every score tied and the bot played the first book move in
-          // file order (1...d5 for a Najdorf repertoire).
-          //
-          // With no slot line through this position — only a transposition
-          // back into book — the highest-scored move is still taken, as before.
-          let bestUci = null, bestScore = -1;
-          if (preferredUci._slotWeighted) {
-            let total = 0;
-            preferredUci.forEach(u => { total += (preferredUci[u] || 0); });
-            let r = Math.random() * total;
-            preferredUci.forEach(u => {
-              if (bestUci) return;
-              r -= (preferredUci[u] || 0);
-              if (r <= 0) bestUci = u;
-            });
-            if (!bestUci) preferredUci.forEach(u => { bestUci = u; });
-          } else {
-            preferredUci.forEach(u => {
-              const sc = preferredUci[u] || 1.0;
-              if (sc > bestScore) { bestScore = sc; bestUci = u; }
-            });
-          }
+        const R = botRepPrepared(slots, _ecoData);
+        const _plies = (typeof gameMovesAlgebraic !== 'undefined' ? gameMovesAlgebraic.length : 0);
+        let d = { kind: 'main', rolls: [] };
+        if (!R || !R.slots.length) {
+          preferredOpeningActive = false;
+        } else if (_plies > R.maxPly + REP_REENTRY_SLACK_PLIES) {
+          // Well past the longest ticked line: none of its positions can come
+          // back now, so the repertoire is done for this game.
+          preferredOpeningActive = false;
+        } else {
+          d = repDecide(R, botRepState, { bd: board, turn: turn, cst: castling, ep: epSq });
+          if (d.ended) console.log('[Opening] Off the repertoire\'s lines; ' +
+            (mainLineActive ? 'the Main Line' : 'the engine') + ' plays until a ticked line is one move away');
+          (d.rolls || []).forEach(x => {
+            if (x.roll.fresh) console.log('[Opening] ' + x.slot.fam + ' is ' +
+              (x.via === 'here' ? 'on the board again' : 'one move away') + ': roll ' + x.roll.r +
+              ' against its ' + x.roll.pct + '% → ' + (x.roll.pass ? 'back in' : 'stays out for this game'));
+          });
+        }
+        if (d.kind === 'line' || d.kind === 'reenter') {
+          // Drawn in proportion: on the lines, the opening percentages and the
+          // splits at the bot's own branch points; stepping back in, the same
+          // among the openings whose roll passed.
+          const pick = repPick(d.cands);
+          const bestUci = pick ? sqToUci(pick.from, pick.to, pick.promo ? String(pick.promo).toLowerCase() : null) : null;
           if (bestUci) {
             uciMove = bestUci;
             lastBotMoveSource = 'ECO';
-            const matchedEntry = _ecoData.find(e =>
-              e.sanMoves.length > botSanHistory.length &&
-              botSanHistory.every((m, i) => e.sanMoves[i] === m) &&
-              slots.some(sl => {
-                const ex = sl.exactEco || null;
-                const fam = sl.familyPrefix || (sl.eco ? sl.eco.slice(0,2) : null);
-                return (ex && e.eco.startsWith(ex)) || (fam && e.eco.startsWith(fam));
-              })
-            );
-            const label = matchedEntry
-              ? '♟ ' + matchedEntry.name + ' (' + matchedEntry.eco + ')'
-              : '♟ Preferred Opening';
+            const src = pick.src[0];
+            const lineLbl = repLineLabel(R, src);
+            const label = '♟ ' + (d.kind === 'reenter' ? 'Back into ' : '') + lineLbl;
             document.getElementById('botStatus').textContent = label;
-            lastBotMoveDetail = 'Repertoire: ' + (matchedEntry
-              ? matchedEntry.name + ' (' + matchedEntry.eco + ')' : 'preferred opening');
+            lastBotMoveDetail = 'Repertoire' + (d.kind === 'reenter' ? ' (stepped back in)' : '') + ': ' + lineLbl;
+            // On the lines from here: the opponent's next move decides whether
+            // it stays there (repDecide checks on the bot's next move).
+            botRepState.mode = 'line';
             // Scaled to the time control on the clock-based plan; the flat
             // 0.4–1.2 s otherwise (botBookMoveDelayMs).
             const bookDelay = Math.max(0, botBookMoveDelayMs(clockMs) - (Date.now() - _botMoveStartMs));
@@ -3538,11 +3808,11 @@ async function botMakeMove() {
             return;
           }
         }
-        // No preferred continuation — deactivate for rest of this game
-        preferredOpeningActive = false;
+        // Nothing to play from the repertoire on this move. It stays on (unless
+        // switched off above), so a ticked line one move away later still gets
+        // its roll.
       }
-      // Repertoire ended (deactivated or no move) — fall through to the Main
-      // Line if it is on, otherwise the engine.
+      // Fall through to the Main Line if it is on, otherwise the engine.
     }
 
     if (mainLineActive) {
@@ -4767,8 +5037,47 @@ function botPremoveUpdateBadge() {
   } catch (e) {}
 }
 
+// ── Per-move bot state, for takebacks ────────────────────────────────────────
+// What the bot knew about the opening after each move: which stages were still
+// on, the repertoire's line/off state and rolls, the Main Line's last book
+// move. A takeback back to a position restores what was true there, so a
+// repertoire the player left and then took back is on its lines again, and a
+// roll already lost stays lost only if it was lost before that position.
+// Indexed by gameMovesAlgebraic.length; botStart records the first.
+let _botPlyStates = [];
+function botPlyStateSnapshot() {
+  return {
+    rep: repCopyState(botRepState),
+    preferred: preferredOpeningActive,
+    mainLine: mainLineActive,
+    explorer: lichessExplorerActive,
+    lastBook: (typeof _botLastBookMove !== 'undefined' && _botLastBookMove) ? Object.assign({}, _botLastBookMove) : null,
+    confidence: (typeof _explorerConfidence !== 'undefined') ? _explorerConfidence : null,
+  };
+}
+function botRecordPlyState() {
+  if (typeof gameMovesAlgebraic === 'undefined') return;
+  const n = gameMovesAlgebraic.length;
+  _botPlyStates.length = Math.min(_botPlyStates.length, n);
+  _botPlyStates[n] = botPlyStateSnapshot();
+}
+function botRestorePlyState(n) {
+  const s = _botPlyStates[n];
+  _botPlyStates.length = Math.min(_botPlyStates.length, n + 1);
+  if (!s) return false;
+  botRepState = repCopyState(s.rep);
+  preferredOpeningActive = s.preferred;
+  mainLineActive = s.mainLine;
+  lichessExplorerActive = s.explorer;
+  if (typeof _botLastBookMove !== 'undefined') _botLastBookMove = s.lastBook ? Object.assign({}, s.lastBook) : null;
+  if (typeof _explorerConfidence !== 'undefined') _explorerConfidence = s.confidence;
+  if (typeof _explorerSurpriseBoost !== 'undefined') _explorerSurpriseBoost = 0;
+  return true;
+}
+
 // // We register a callback rather than monkey-patching to avoid hoisting issues
 function botPostMoveHook() {
+  if (botActive) botRecordPlyState();
   clearGhostPieces();
   botGhostResponses = {};
   botLastHoverSq = -1;

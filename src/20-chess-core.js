@@ -480,6 +480,38 @@ function updateCastling(from,to,p,cst){
   return c2;
 }
 
+// Simple SAN parser: the move a SAN names in this position, or null when no
+// legal move matches. Pure (moved here from the app shell so the repertoire
+// engine can use it under the unit tests).
+function algebraicToMove(san,bd,color,ep,castl){
+  if(san==='O-O'||san==='0-0'){const r=color==='w'?7:0;return{from:rcSq(r,4),to:rcSq(r,6)};}
+  if(san==='O-O-O'||san==='0-0-0'){const r=color==='w'?7:0;return{from:rcSq(r,4),to:rcSq(r,2)};}
+  san=san.replace(/[+#!?]/g,'');
+  let promo=null;
+  if(san.includes('=')){promo=san.split('=')[1][0];san=san.replace(/=.*$/,'');}
+  const pieceChars='KQRBN';
+  let piece='P';let s=san.replace('x','');
+  if(pieceChars.includes(s[0])){piece=s[0];s=s.slice(1);}
+  const toFile=s.charCodeAt(s.length-2)-97;
+  const toRank=8-parseInt(s[s.length-1]);
+  const to=rcSq(toRank,toFile);
+  let dfFile=null,dfRank=null;
+  if(s.length>2){
+    const d=s.slice(0,s.length-2);
+    if(/^[a-h]$/.test(d))dfFile=d.charCodeAt(0)-97;
+    else if(/^[1-8]$/.test(d))dfRank=8-parseInt(d);
+    else if(d.length===2){dfFile=d.charCodeAt(0)-97;dfRank=8-parseInt(d[1]);}
+  }
+  for(let sq=0;sq<64;sq++){
+    const p=bd[sq];
+    if(!p||p.color!==color||p.piece!==piece)continue;
+    if(dfFile!==null&&sqRC(sq).c!==dfFile)continue;
+    if(dfRank!==null&&sqRC(sq).r!==dfRank)continue;
+    if(legalMovesFor(sq,bd,ep,castl).includes(to))return{from:sq,to,promo};
+  }
+  return null;
+}
+
 // Convert a move to Standard Algebraic Notation
 function moveToSAN(from, to, promo, bd, ep, cst) {
   const p = bd[from];
