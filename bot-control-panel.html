@@ -10886,7 +10886,10 @@ function _lbcMatchHtml(){
     '(−100 plays a little below them). Anyone with no rating gets the rating set in this builder. ' +
     'The bot says so in the game chat, and they can type a rating such as ELO1500 there to change it, ' +
     'for that game and any rematch. They can set its CP Budget the same way (cp100, or ELO1500 cp100), ' +
-    'from 0 to 300, without changing the rating it gives. If your bot plays stronger or weaker than its engine setting, enter what ' +
+    'from 0 to 300, without changing the rating it gives. They can also set its think time (think5s, think auto, think mirror), ' +
+    'temperature (temp), time-pressure degradation (degrade on/off) and, on Maia, premoves (pm90, conf95; pm0 is none) and ' +
+    'the opening book (book off, or book 10 1800 for the Lichess explorer to move 10 at that rating). ' +
+    'If your bot plays stronger or weaker than its engine setting, enter what ' +
     'it was measured to play like under Measured strength: every rating is then a playing strength, and the ' +
     'bot is set to whatever plays at it. A row measured at another CP Budget (2600 cp50=2775) takes it past ' +
     'the engine’s ends: between rows it moves the Budget as well as the setting. The offset still applies on top.';

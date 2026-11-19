@@ -2139,11 +2139,80 @@ function sampleFromProbs(moveProbs, temperature) {
   return scaled[scaled.length - 1][0];
 }
 
+// ── Maia's temperature from a Lichess game's chat ────────────────────────────
+// A bot with no personality has nothing for Temp's blend to blend with (see
+// botBlendTemp), so on one the opponent's temp sets Maia's own sampling
+// temperature instead (src/65-lichess-bridge.js): 1 samples Maia's
+// distribution as it is, below 1 sharpens it, above flattens it, and 0 plays
+// the most likely move every time. It stands in for the builder's Temperature
+// on every Maia path, the premove's too, and time pressure (curve B) still
+// raises it from there. null: the temperature the bot was built with.
+var botChatMaiaTemp = null;
+const CHAT_MAIA_TEMP_MAX = 4;   // the builder's Temperature slider tops out here
+
+// Does the personality weigh one move against another? Blind Conviction, a
+// trait that scores moves (not the four applyMoveAttractors keeps out of the
+// Budget, BOT_UNSCORED_TRAITS: Calm/Panicky, Hustle, Luck, Front-runner), a
+// piece value or a custom control. Without one, Temp's blend is Maia's
+// distribution whatever its number.
+const BOT_UNSCORED_TRAITS = ['pressure', 'hustle', 'luck', 'compwin'];
+function botWeighsMoves() {
+  if (botBlindConviction) return true;
+  const av = window._bcpAttractorValues || {}, pv = window._bcpPieceValues || {};
+  for (const k in av) if (!BOT_UNSCORED_TRAITS.includes(k) && +av[k]) return true;
+  for (const k in pv) if (+pv[k]) return true;
+  return (window._bcpCustomControls || []).some(c => c && +c.value);
+}
+
+// ── The opening book from a Lichess game's chat ──────────────────────────────
+// What the opponent asked for with "book" (src/65-lichess-bridge.js), in place
+// of every opening stage the bot was built with — its Repertoire, its Main
+// Line and an LC+Maia engine's own explorer:
+//   null                 as built
+//   { depth: 0 }         no book at all: the engine from move 1
+//   { depth, band }      the Lichess explorer's moves, as a distribution drawn
+//                        like Maia's, from games in that rating band, until
+//                        move `depth` (each side's; botGetOpeningMove counts
+//                        the same way) or the position runs out of games
+//                        (Min games, bookMinGames). Then the engine.
+// Maia bots only: it stands in front of Maia, as LC+Maia's explorer does.
+var botChatBook = null;
+var _botChatBookLive = false;   // still in that book this game
+const CHAT_BOOK_MAX_DEPTH = 40;
+
+// The opening stages a chat book replaces, off for this game. botStart calls
+// it after deciding them; the bridge when the opponent asks mid-game.
+function botChatBookTakeOver() {
+  if (!botChatBook) return;
+  preferredOpeningActive = false;
+  mainLineActive = false;
+  lichessExplorerActive = false;
+  _botChatBookLive = botChatBook.depth > 0;
+}
+
+// The explorer's move distribution for this position, or null: no chat book,
+// past its depth, or out of book (which ends it for the game).
+async function botChatBookProbs(fen) {
+  const bk = botChatBook;
+  if (!bk || !(bk.depth > 0) || !_botChatBookLive) return null;
+  if (botMoveHistory.length >= bk.depth * 2) { _botChatBookLive = false; return null; }
+  const saved = lcSelectedRating;
+  let probs = null;
+  try {
+    lcSelectedRating = String(bk.band);   // maiaGetMoveProbs asks at this band
+    probs = await maiaGetMoveProbs(fen);
+  } finally { lcSelectedRating = saved; }
+  if (!probs || !Object.keys(probs).length) { _botChatBookLive = false; return null; }
+  return probs;
+}
+
 // Base Maia temperature as the panel defines it: Hustler phase override, then
 // the panel's Temperature value, then the legacy #maia3Temp input. Extracted so
 // the premove path derives temperature from exactly the same source as a normal
-// move — a second copy of this cascade would silently drift out of sync.
+// move — a second copy of this cascade would silently drift out of sync. A
+// temperature asked for in a Lichess chat comes first (botChatMaiaTemp).
 function botMaiaBaseTemp() {
+  if (botChatMaiaTemp != null && botChatMaiaTemp > 0) return botChatMaiaTemp;
   if (window._bcpHustlerTempMode) return hustlerPhaseTemp();
   if (typeof botMaiaTempValue !== 'undefined' && botMaiaTempValue > 0) return botMaiaTempValue;
   var el = document.getElementById('maia3Temp');
@@ -2170,7 +2239,8 @@ var botConvictionPct = 0;
 function pickFromProbs(moveProbs, temperature) {
   const entries = Object.entries(moveProbs);
   if (!entries.length) return null;
-  if (Math.random() * 100 < botConvictionPct) {
+  // Temperature 0 from the chat: the most likely move, every move.
+  if (botChatMaiaTemp === 0 || Math.random() * 100 < botConvictionPct) {
     let best = entries[0][0], bp = -Infinity;
     for (const [m, p] of entries) { if (p > bp) { bp = p; best = m; } }
     return best;
@@ -3634,7 +3704,13 @@ async function botMakeMove() {
       // Kick off SF complexity probe in parallel with Maia inference (separate workers)
       if (_needsComplexity() && !sfReady) sfInit().catch(() => {}); // warm up SF for next move
       const cplxPromise = (_needsComplexity() && sfReady) ? sfGetComplexity(fen) : null;
-      if (_maiaReady) {
+      // An opening book asked for in a Lichess chat stands in front of Maia.
+      const m3Book = await botChatBookProbs(fen);
+      if (m3Book) {
+        m3Probs = m3Book;
+        lastBotMoveSource = 'LC Explorer';
+        lastBotMoveDetail = 'Opening explorer (' + botChatBook.band + ' band)';
+      } else if (_maiaReady) {
         const savedRating = lcSelectedRating;
         lcSelectedRating = String(pressureEffectiveMaiaEloByThink(m3RoughThinkSec)); // ELO degradation via ctrlA curve
         m3Probs = await maia3GetMoveProbs(fen);
@@ -3654,7 +3730,7 @@ async function botMakeMove() {
         const allMoves = Object.entries(m3Probs).sort((a,b)=>b[1]-a[1]);
         console.log('[Maia3 FULL] elo:', effElo, 'fen:', fen, 'cplx:', sfCplxScore);
         console.log('[Maia3 FULL] all probs:', allMoves.map(([m,p])=>m+'='+p.toFixed(4)).join(' '));
-        const targetDelay = botThinkTime(m3Probs, clockMs);
+        const targetDelay = botThinkTime(m3Probs, clockMs, m3Book ? { book: true } : undefined);
         const preciseThinkSecM3 = targetDelay / 1000;
         const m3EffTemp = timePressureTempByThink(m3Temp, preciseThinkSecM3);
         const inferenceMs = Date.now() - _botMoveStartMs;
@@ -3678,7 +3754,9 @@ async function botMakeMove() {
     } else if (botTab === 'maia') {
       // LC Explorer with Maia3 fallback.
       // Skip LC call entirely if we already know we're off-book this game.
-      const baseTemp = window._bcpHustlerTempMode
+      // A Maia temperature from a Lichess chat comes first, as botMaiaBaseTemp.
+      const baseTemp = (botChatMaiaTemp != null && botChatMaiaTemp > 0) ? botChatMaiaTemp
+        : window._bcpHustlerTempMode
         ? hustlerPhaseTemp()
         : (typeof botMaiaTempValue !== 'undefined' && botMaiaTempValue > 0)
           ? botMaiaTempValue
@@ -3692,7 +3770,13 @@ async function botMakeMove() {
       // Start complexity probe before LC/Maia calls — runs in parallel on sfWorker
       if (_needsComplexity() && !sfReady) sfInit().catch(() => {});
       const cplxPromiseMaia = (_needsComplexity() && sfReady) ? sfGetComplexity(fen) : null;
-      if (lichessExplorerActive) {
+      // A book from a Lichess chat replaces the engine's own (botChatBookTakeOver
+      // has switched lichessExplorerActive off).
+      probs = await botChatBookProbs(fen);
+      if (probs) {
+        lastBotMoveSource = 'LC Explorer';
+        lastBotMoveDetail = 'Opening explorer (' + botChatBook.band + ' band)';
+      } else if (lichessExplorerActive) {
         probs = await maiaGetMoveProbs(fen);
         if (probs && Object.keys(probs).length) {
           lastBotMoveSource = 'LC Explorer';

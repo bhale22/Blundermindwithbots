@@ -67,8 +67,11 @@ const lbBudgetChoices = new Map();
 const LB_CP_MIN = 0, LB_CP_MAX = 300;
 // Opponent id → the think time they asked for (think15s), in seconds, kept the
 // same way. It runs the builder's Fixed timing at that many seconds a move
-// (still capped by the bot's clock, so a short game cannot flag it); "think
-// auto" gives the bot its own timing back.
+// (still capped by the bot's clock, so a short game cannot flag it).
+// Two words besides a number: "think auto" is Complexity-scaled timing (more
+// time on harder moves, paced to the clock), as built if the bot already uses
+// it; "think mirror" plays at the opponent's own pace. Kept as 'auto' or
+// 'mirror'.
 const lbThinkChoices = new Map();
 const LB_THINK_MAX_S = 60;
 // Opponent id → the Temp they asked for (temp2, temp 0.5), kept the same way:
@@ -77,7 +80,27 @@ const LB_THINK_MAX_S = 60;
 // src/50-bot-engine.js). The CP Budget still decides which moves may be
 // played. "temp auto" gives the bot its own pick back: for a Blind Conviction
 // bot that is temp 10, which is why the greeting calls 10 the default.
+// A Maia bot with no personality has nothing to blend, so on one temp is
+// Maia's own sampling temperature instead, 0 to 4: 1 is Maia's own odds, 0 its top
+// move every time (botChatMaiaTemp, _lbTempIsMaia).
 const lbTempChoices = new Map();
+// Opponent id → time-pressure degradation (degrade on / off): true runs the
+// Play Degradation curves the bot was built with, Curve A on the Regan model
+// for the game's clock as always, even where the builder had them switched
+// off; false runs neither. Kept the same way.
+const lbDegradeChoices = new Map();
+// Opponent id → premoves (pm90): of the replies Maia is at least the
+// certainty sure of, the share the bot premoves, 0 to 100, 0 = no premoves —
+// and that certainty (conf95), 0 to 100. Maia bots only: Maia predicts the
+// reply. Kept the same way.
+const lbPremoveRateChoices = new Map();
+const lbPremoveConfChoices = new Map();
+// Opponent id → the opening book (botChatBook): { depth: 0 } for none,
+// Maia from move 1 (book off); { depth, rating } for the Lichess explorer
+// until move `depth`, at the rating's band, or the bot's own rating's when
+// they gave none (book 10, book 10 1800). Maia bots only. Kept the same way.
+const lbBookChoices = new Map();
+const LB_BOOK_DEFAULT_DEPTH = 10;
 const LB_CHAT_COOLDOWN_MS = 3000;
 let lbAccepting = null;       // challenge id accepted, its gameStart not yet here
 let lbStarting = false;       // botStart() is running on Lichess's behalf
@@ -745,7 +768,7 @@ function _lbReganCurveA(clock, setting, t) {
 // { setting, cp, est, edge }, or null for a bot that doesn't match.
 function _lbApplyMatchedRating(g) {
   // A bot that doesn't match takes no chat commands, Temp among them.
-  if (!_lbMatching()) { botBlendTemp = null; return null; }
+  if (!_lbMatching()) { botBlendTemp = null; botChatMaiaTemp = null; botChatBook = null; return null; }
   const cfg = window._lastAppliedBotConfig;
   const { flounder } = _lbEloRange();
   const t = _lbStrengthTable();
@@ -764,11 +787,12 @@ function _lbApplyMatchedRating(g) {
   } else {
     maia3SetRating(elo);
   }
-  if (botPressureCurveA && cfg.ctrlA) {
-    botPressureCurveA = g && g.clock
-      ? _lbReganCurveA(g.clock, elo, t)
-      : cfg.ctrlA.map(p => ({ x: p.x, y: +p.y + elo - base }));
-  }
+  // The Play Degradation curves: as built, or as the opponent asked (degrade).
+  const deg = _lbDegradeWanted(opp);
+  botPressureCurveA = deg.a && Array.isArray(cfg.ctrlA) && cfg.ctrlA.length >= 2
+    ? (g && g.clock ? _lbReganCurveA(g.clock, elo, t) : cfg.ctrlA.map(p => ({ x: p.x, y: +p.y + elo - base })))
+    : null;
+  botPressureCurveB = deg.b ? _lbBuiltCurveB(cfg) : null;
   _quickBotSyncBookRating(elo);
   // The CP Budget: the one the measured table gives for this rating (the
   // builder's, but for a row measured at another), unless they asked for one
@@ -784,10 +808,17 @@ function _lbApplyMatchedRating(g) {
   at.cp = cp;
   at.think = _lbApplyThinkChoice(opp);
   at.temp = _lbApplyTempChoice(opp);
+  at.degrade = deg.asked;
+  at.premove = _lbApplyPremoveChoice(opp);
+  at.book = _lbApplyBookChoice(opp, elo);
   if (opp && !g.matchLogged) {
     g.matchLogged = true;
-    if (at.think != null) lbLog('Think time ' + _lbThinkText(at.think) + ': ' + opp.name + ' asked for it in the chat');
+    if (at.think != null) lbLog('Think time ' + (typeof at.think === 'number' ? _lbThinkText(at.think) : at.think) +
+      ': ' + opp.name + ' asked for it in the chat');
     if (at.temp != null) lbLog('Temp ' + at.temp + ': ' + opp.name + ' asked for it in the chat');
+    if (at.degrade != null) lbLog('Degradation ' + (at.degrade ? 'on' : 'off') + ': ' + opp.name + ' asked for it in the chat');
+    if (at.premove) lbLog('Premoves ' + _lbPremoveState() + ': ' + opp.name + ' asked for it in the chat');
+    if (at.book) lbLog('Opening book ' + _lbBookState() + ': ' + opp.name + ' asked for it in the chat');
     const plays = (flounder ? 'Flounder ' : 'Maia ') + elo + (cp !== cfg.cpBudget ? ', CP budget ' + cp : '') +
       (t ? ' (plays like ' + at.est + ')' : '');
     if (asked != null) lbLog('CP budget ' + asked + ': ' + opp.name + ' asked for it in the chat (built with ' + cfg.cpBudget + ')');
@@ -802,35 +833,71 @@ function _lbApplyMatchedRating(g) {
 }
 
 // The think time this opponent asked for, put into effect: the builder's Fixed
-// timing at that many seconds a move, or, with none (or no game), the timing
-// the bot was built with. Returns the seconds, or undefined.
+// timing at that many seconds a move; "auto", Complexity-scaled timing (the
+// bot's own if it was built with it, else paced to the clock); "mirror", the
+// opponent's own pace. With none (or no game), the timing the bot was built
+// with. Returns the choice (seconds, 'auto' or 'mirror'), or undefined.
 function _lbApplyThinkChoice(opp) {
   const cfg = window._lastAppliedBotConfig || {};
-  const secs = opp && opp.id ? lbThinkChoices.get(opp.id) : undefined;
-  if (secs != null) {
+  const ch = opp && opp.id ? lbThinkChoices.get(opp.id) : undefined;
+  // As the builder's config applies it (applyBotConfig).
+  const modes = { complexity: 'complexity', instant: 'instant', fixed: 'fixed', mirror: 'mirror' };
+  botTimeBehavior = modes[cfg.timingMode] || 'pace';
+  botFixedDelayMs = cfg.fixedDelayMs || 5000;
+  botCplxBaseMode = cfg.cplxBaseMode === 'clock' ? 'clock' : 'fixed';
+  botMirrorOffsetPct = cfg.mirrorOffsetPct || 0;
+  if (typeof ch === 'number') {
     botTimeBehavior = 'fixed';
-    botFixedDelayMs = Math.round(secs * 1000);
-  } else {
-    // As the builder's config applies it (applyBotConfig).
-    const modes = { complexity: 'complexity', instant: 'instant', fixed: 'fixed', mirror: 'mirror' };
-    botTimeBehavior = modes[cfg.timingMode] || 'pace';
-    botFixedDelayMs = cfg.fixedDelayMs || 5000;
+    botFixedDelayMs = Math.round(ch * 1000);
+  } else if (ch === 'mirror') {
+    botTimeBehavior = 'mirror';
+  } else if (ch === 'auto' && botTimeBehavior !== 'complexity') {
+    botTimeBehavior = 'complexity';
+    botCplxBaseMode = 'clock';
   }
-  return secs;
+  return ch;
 }
 const _lbThinkText = s => (Number.isInteger(s) ? s : s.toFixed(1)) + ' s a move';
+// The think time as the greeting and the state line give it.
+function _lbThinkState(ch) {
+  if (typeof ch === 'number') return (Number.isInteger(ch) ? ch : ch.toFixed(1)) + 's';
+  if (ch) return ch;
+  const cfg = window._lastAppliedBotConfig || {};
+  return cfg.timingMode === 'mirror' ? 'mirror'
+    : cfg.timingMode === 'fixed' ? _lbThinkState((cfg.fixedDelayMs || 5000) / 1000)
+    : cfg.timingMode === 'instant' ? '0s' : 'auto';
+}
+const LB_THINK_WORDS = {
+  auto: 'auto (longer on harder moves, paced to the clock)',
+  mirror: 'mirror (it moves at your pace)',
+};
+
+// Is temp Maia's own temperature on this bot? A Maia bot with no personality:
+// Temp's blend would be Maia's distribution whatever its number.
+const _lbTempIsMaia = () => !_lbEloRange().flounder && !botWeighsMoves();
+const _lbTempMax = () => _lbTempIsMaia() ? CHAT_MAIA_TEMP_MAX : BLEND_TEMP_MAX;
+// The Maia temperature the bot was built with, as the chat writes it.
+const _lbBuiltMaiaTemp = () => Math.round((+botMaiaTempValue || 1) * 10) / 10;
 
 // The Temp this opponent asked for, put into effect, or none (the bot picks as
-// built). Returns it, or undefined.
+// built): the blend's, or on a bot without a personality Maia's temperature.
+// Returns it, or undefined.
 function _lbApplyTempChoice(opp) {
   const t = opp && opp.id ? lbTempChoices.get(opp.id) : undefined;
-  botBlendTemp = t != null ? t : null;
-  return t;
+  botBlendTemp = null;
+  botChatMaiaTemp = null;
+  if (t == null) return t;
+  if (_lbTempIsMaia()) return (botChatMaiaTemp = Math.min(CHAT_MAIA_TEMP_MAX, t));
+  return (botBlendTemp = Math.min(BLEND_TEMP_MAX, t));
 }
 // Whose distribution popularity comes from: Maia's, or Flounder's own.
 const _lbTempEngine = () => _lbEloRange().flounder ? 'Flounder\'s' : 'Maia\'s';
 // What the ends of the dial do, beside the number in a reply.
 function _lbTempText(t) {
+  if (_lbTempIsMaia()) {
+    return 'Temp ' + t + (t <= 0 ? ' (Maia\'s top move)' : t === 1 ? ' (Maia\'s own odds)'
+      : t >= CHAT_MAIA_TEMP_MAX ? ' (its highest)' : '');
+  }
   return 'Temp ' + t + (t <= 0 ? ' (' + _lbTempEngine() + ' top move, no personality)'
     : t >= BLEND_TEMP_MAX ? ' (personality\'s pick)' : '');
 }
@@ -838,10 +905,100 @@ function _lbTempText(t) {
 // Temp they are not what it plays at, and the reply says so when there is room:
 // Temp 0, Maia's top move, is likely the strongest it gets.
 function _lbTempCaveat(text) {
-  if (botBlendTemp == null || !_lbStrengthTable()) return text;
-  if (botBlindConviction && botBlendTemp >= BLEND_TEMP_MAX) return text;
-  const more = '. Its ELO was measured at ' + (botBlindConviction ? 'temp ' + BLEND_TEMP_MAX : 'temp auto') + '.';
+  if (!_lbStrengthTable()) return text;
+  let built;
+  if (botChatMaiaTemp != null) {
+    built = _lbBuiltMaiaTemp();
+    if (botChatMaiaTemp === built) return text;
+  } else {
+    if (botBlendTemp == null) return text;
+    if (botBlindConviction && botBlendTemp >= BLEND_TEMP_MAX) return text;
+    built = botBlindConviction ? BLEND_TEMP_MAX : 'auto';
+  }
+  const more = '. Its ELO was measured at temp ' + built + '.';
   return text.length + more.length <= LB_CHAT_MAX ? text + more : text;
+}
+
+// ── Degradation, premoves and the opening book ──────────────────────────────
+// Which Play Degradation curves run for this opponent: { a, b } (Curve A, the
+// rating, and Curve B, the temperature), and what they asked for (asked:
+// true, false or undefined).
+function _lbDegradeWanted(opp) {
+  const cfg = window._lastAppliedBotConfig || {};
+  const asked = opp && opp.id ? lbDegradeChoices.get(opp.id) : undefined;
+  // As applyBotConfig reads the builder's switches.
+  const offA = cfg.pressureOffA != null ? !!cfg.pressureOffA : !!cfg.pressureOff;
+  const offB = cfg.pressureOffB != null ? !!cfg.pressureOffB : !!cfg.pressureOff;
+  return asked != null ? { a: asked, b: asked, asked } : { a: !offA, b: !offB, asked };
+}
+// Curve B as the builder drew it, or null — as applyBotConfig reads it,
+// dropping a curve saved on the old percentage scale.
+function _lbBuiltCurveB(cfg) {
+  const c = cfg.ctrlB;
+  if (!Array.isArray(c) || c.length < 2 || c.some(p => +p.y > 15)) return null;
+  return c;
+}
+const _lbDegradeOn = () => !!(botPressureCurveA || botPressureCurveB);
+// Degradation follows the clock: with a pace set outright (a number of
+// seconds, or none) there is nothing for it to follow (_timePressureApplies).
+const _lbDegradeRuns = () => botTimeBehavior !== 'fixed' && botTimeBehavior !== 'instant';
+
+// Premoves need Maia to predict the reply, and only a Maia bot has it.
+const _lbCanPremove = () => !_lbEloRange().flounder;
+// The premove settings for this opponent, put into effect: the bot's own,
+// then the rate and certainty they asked for. pm0 turns premoves off, and a
+// premove already armed is dropped with them. Returns true when they asked
+// for either.
+function _lbApplyPremoveChoice(opp) {
+  const cfg = window._lastAppliedBotConfig || {};
+  const rate = opp && opp.id ? lbPremoveRateChoices.get(opp.id) : undefined;
+  const conf = opp && opp.id ? lbPremoveConfChoices.get(opp.id) : undefined;
+  // As applyBotConfig reads them.
+  botPremoveEnabled = !!cfg.premoveEnabled;
+  botPremoveRatePct = cfg.premoveRatePct != null ? +cfg.premoveRatePct : 80;
+  botPremoveMinPct = cfg.premoveMinPct != null ? +cfg.premoveMinPct : 95;
+  if (rate != null) {
+    botPremoveEnabled = rate > 0;
+    if (rate > 0) botPremoveRatePct = rate;
+  }
+  if (conf != null) botPremoveMinPct = conf;
+  if (!botPremoveEnabled && botActivePremove) { botActivePremove = null; _botPremoveGen++; }
+  return rate != null || conf != null;
+}
+// pm90, conf95: the premove rate (0 when off) and certainty, as typed.
+const _lbPremoveState = () => 'pm ' + (botPremoveEnabled ? botPremoveRatePct : 0) + ', conf ' + botPremoveMinPct;
+
+// The explorer's rating band for a rating, as its lowest rating ("1800"), or
+// 2200+ for the top one, which takes in 2500 too (lcRatingParam).
+function _lbBookBand(rating) {
+  const p = lcRatingParam(rating);
+  return p.indexOf(',') >= 0 ? p.split(',')[0] + '+' : p;
+}
+// The opening book for this opponent, put into effect (botChatBook): none,
+// or the explorer at the rating they gave or the bot's own, `elo`. Returns
+// it, or null for the bot's own openings. Maia bots only.
+function _lbApplyBookChoice(opp, elo) {
+  const b = opp && opp.id ? lbBookChoices.get(opp.id) : undefined;
+  botChatBook = null;
+  if (!b || _lbEloRange().flounder) return null;
+  botChatBook = b.depth > 0
+    ? { depth: b.depth, band: lcRatingParam(b.rating != null ? b.rating : elo), rating: b.rating }
+    : { depth: 0 };
+  return botChatBook;
+}
+// Does the bot open with anything of its own: a Repertoire or Main Line for
+// the colour it plays (its opening stages), or an LC+Maia engine's explorer?
+function _lbBuiltStages() {
+  const col = botPlayerColor === 'white' ? 'Black' : 'White';
+  return !!(botOpeningConfig['rep' + col] || botOpeningConfig['mainLine' + col]);
+}
+function _lbBuiltBook() { return _lbBuiltStages() || !!botEngineBook || botTab === 'maia'; }
+// The book as the state line gives it: off, the explorer's depth and band
+// ("10 1800"), or auto (the bot's own openings).
+function _lbBookState() {
+  const b = botChatBook;
+  if (!b) return _lbBuiltBook() ? 'auto' : 'off';
+  return b.depth > 0 ? b.depth + ' ' + _lbBookBand(b.band) : 'off';
 }
 // Lichess cuts a chat line at this many characters.
 const LB_CHAT_MAX = 140;
@@ -878,37 +1035,52 @@ function _lbPerfRange() {
     : { lo: min, hi: max };
 }
 
-// Once a game, at its start, three lines (Ben's wording, Nov 16): everything
-// it is set to, what can be typed, and the ranges, e.g.
-//   ELO set to 1,025 (using Maia 855), CP budget 150, think auto, temp 10
-//   Type in chat to change strength (ELO), centipawn budget (cp), Move timing (think), Maia temperature (temp).
-//   ELO 600-2775, cp 0-300, think 0-60s, Temp 0 (Maia's top move) - 10 (personality driven)
-// Lichess cuts a chat line at 140 characters; the longest here is the second,
-// 111 (a Flounder bot). The spectators get the first line — what it plays at — without the
+// Once a game, at its start (Ben's wording, Nov 16, grown to five lines for
+// degradation, premoves and the book, Nov 19): everything it is set to, what
+// can be typed, and the ranges, e.g.
+//   ELO set to 1,500 (using Maia 1500), CP budget 100, think auto, temp 1, degrade on, pm 90, conf 95, book off
+//   Type in chat to change strength (ELO), centipawn budget (cp), Move timing (think), Maia temperature (temp),
+//   time-pressure degradation (degrade), premove rate (pm) and certainty (conf), Lichess opening explorer (book).
+//   ELO 600-2600, cp 0-300, think 0-60s or auto (by complexity) or mirror (your pace), temp 0-4 (0 = top move, 1 = Maia's own odds)
+//   degrade on/off, pm 0-100 (% of sure replies premoved, 0 = off), conf 0-100 (% sure), book off or book 10 1800 (moves, rating)
+// A Flounder bot cannot premove or take the book, and leaves them out. Lichess
+// cuts a chat line at 140 characters (the e2e checks the longest). The
+// spectators get the first line — what it plays at — without the
 // instructions, which only the opponent can use.
 //
 // Sent LB_GREET_DELAY_MS after the game starts (see _lbBeginLocalGame).
 function _lbGreet(g, at) {
   const { lo, hi } = _lbPerfRange();
-  const engine = _lbEloRange().flounder ? 'Flounder' : 'Maia';
+  const flounder = _lbEloRange().flounder;
   const state = _lbStateLine(at);
   _lbSay(g, state);
-  _lbSay(g, 'Type in chat to change strength (ELO), centipawn budget (cp), Move timing (think), ' + engine + ' temperature (temp).');
-  _lbSay(g, 'ELO ' + lo + '-' + hi + ', cp ' + LB_CP_MIN + '-' + LB_CP_MAX + ', think 0-' + LB_THINK_MAX_S + 's, Temp 0 (' +
-    _lbTempEngine() + ' top move) - ' + BLEND_TEMP_MAX + ' (personality driven)');
+  _lbSay(g, 'Type in chat to change strength (ELO), centipawn budget (cp), Move timing (think), ' +
+    (flounder ? 'Flounder' : 'Maia') + ' temperature (temp),');
+  _lbSay(g, flounder ? 'and time-pressure degradation (degrade).'
+    : 'time-pressure degradation (degrade), premove rate (pm) and certainty (conf), Lichess opening explorer (book).');
+  _lbSay(g, 'ELO ' + lo + '-' + hi + ', cp ' + LB_CP_MIN + '-' + LB_CP_MAX + ', think 0-' + LB_THINK_MAX_S +
+    's or auto (by complexity) or mirror (your pace), ' + (_lbTempIsMaia()
+      ? 'temp 0-' + CHAT_MAIA_TEMP_MAX + ' (0 = top move, 1 = Maia\'s own odds)'
+      : 'Temp 0 (' + _lbTempEngine() + ' top move) - ' + BLEND_TEMP_MAX + ' (personality driven)'));
+  _lbSay(g, 'degrade on/off' + (flounder ? '' : ', pm 0-100 (% of sure replies premoved, 0 = off), conf 0-100 (% sure), ' +
+    'book off or book ' + LB_BOOK_DEFAULT_DEPTH + ' 1800 (moves, rating)'));
   _lbSay(g, state, 'spectator');
 }
 // Everything the bot is set to, in one line: the strength it plays at (and
 // where that is the end of its range), the engine setting that plays at it,
-// the CP Budget, the think time and Temp. With no think time asked for it is
-// "auto"; with no Temp, a Blind Conviction bot is at 10 (that is what it
-// plays) and any other bot is "auto", its own pick.
+// the CP Budget, the think time, Temp, degradation, and on Maia the premoves
+// and the book, each as it is typed. With no think time asked for it is the
+// bot's own (auto for Complexity-scaled); with no Temp, a Blind Conviction
+// bot is at 10 (that is what it plays), a bot whose temp is Maia's at the
+// temperature it was built with, and any other bot "auto", its own pick.
 function _lbStateLine(at) {
   const edge = at.edge ? 'its ' + (at.edge === 'low' ? 'lowest' : 'highest') + ', ' : '';
-  const think = at.think != null ? (Number.isInteger(at.think) ? at.think : at.think.toFixed(1)) + 's' : 'auto';
-  const temp = at.temp != null ? at.temp : botBlindConviction ? BLEND_TEMP_MAX : 'auto';
+  const temp = at.temp != null ? at.temp : botBlindConviction ? BLEND_TEMP_MAX
+    : _lbTempIsMaia() ? _lbBuiltMaiaTemp() : 'auto';
   return 'ELO set to ' + _lbElo(at.est) + ' (' + edge + 'using ' + (_lbEloRange().flounder ? 'Flounder ' : 'Maia ') + at.setting + ')' +
-    (at.cp != null ? ', CP budget ' + at.cp : '') + ', think ' + think + ', temp ' + temp;
+    (at.cp != null ? ', CP budget ' + at.cp : '') + ', think ' + _lbThinkState(at.think) + ', temp ' + temp +
+    ', degrade ' + (_lbDegradeOn() ? 'on' : 'off') +
+    (_lbCanPremove() ? ', ' + _lbPremoveState() + ', book ' + _lbBookState() : '');
 }
 // Posted the instant Lichess started the game, the greeting's first line could
 // land before the opponent's game page had joined the chat: saved, but never
@@ -930,13 +1102,27 @@ const LB_GREET_DELAY_MS = 2000;
 // brings back the Budget that goes with that rating (the measured table's).
 //
 // The think time too: think15s, think 15 s, think2, think 2.5 seconds — a fixed
-// time a move, 0 to 60 s — or think auto for the bot's own timing again. It
-// combines with the others (ELO2000 think5s) and is kept until they change it.
+// time a move, 0 to 60 s — think auto for Complexity-scaled timing, or think
+// mirror for their own pace. It combines with the others (ELO2000 think5s) and
+// is kept until they change it.
 //
 // And Temp: temp2, temp 0.5, temp10 — 0 to 10, how far the personality
 // rather than popularity picks among the moves the Budget allows (see
-// botBlendTemp) — or temp auto for the bot's own pick again. Combines and is
-// kept the same way.
+// botBlendTemp), or on a Maia bot with no personality Maia's own temperature,
+// 0 to 4 — or temp auto for the bot's own again. Combines and is kept the
+// same way.
+//
+// Then, kept the same way and combining with all the rest:
+//   degrade on / degrade off / degrade auto   time-pressure degradation
+//   pm90, premove 90%, pm off, pm auto         the premove rate, 0 = none
+//   conf95, pm conf 95, certainty 95, conf auto
+//                                              how sure Maia must be of the reply
+//   book off, book 10, book 10 1800, book10/1800, book 10 elo1800, book auto
+//                                              the opening book: none, or the
+//                                              Lichess explorer to move 10 (at
+//                                              the bot's own rating, or 1800's
+//                                              band). A rating after book is the
+//                                              book's, never the bot's.
 //
 // What never gets here: Lichess's flood filter (lila Flood.scala) drops a
 // player's line within one character of either of their last two in the past
@@ -944,32 +1130,43 @@ const LB_GREET_DELAY_MS = 2000;
 // exempt, so the replies themselves always go out.
 function _lbParseCommand(text) {
   const num = '(\\d{1,2},\\d{3}|\\d{1,5})';
-  const part = new RegExp('^(?:elo\\s*' + num + '|' + num + '\\s*elo|cp\\s*(\\d{1,5})|(\\d{1,5})\\s*cp' +
-    '|think\\s*(\\d{1,5}(?:\\.\\d+)?)\\s*(?:seconds?|secs?|s)?|think\\s*(auto)' +
-    '|temp\\s*(\\d{1,5}(?:\\.\\d+)?|\\.\\d+)|temp\\s*(auto))(?:[\\s,]+|$|(?=[a-z]))', 'i');
+  const dec = '(\\d{1,5}(?:\\.\\d+)?|\\.\\d+)';
+  // One capture group each, in this order (m[1] to m[14] below).
+  const part = new RegExp('^(?:' + [
+    'elo\\s*' + num, num + '\\s*elo',
+    'cp\\s*(\\d{1,5})', '(\\d{1,5})\\s*cp',
+    'think\\s*' + dec + '\\s*(?:seconds?|secs?|s)?', 'think\\s*(auto|mirror)',
+    'temp(?:erature)?\\s*' + dec, 'temp(?:erature)?\\s*(auto)',
+    'degrad(?:e|ation)\\s*(on|off|auto)',
+    '(?:pm\\s*|premoves?\\s*)?(?:conf(?:idence)?|certainty)\\s*(\\d{1,3}|auto)\\s*%?',
+    '(?:pm|premoves?)\\s*(\\d{1,3}|auto|off)\\s*%?',
+    'book\\s*(off|on|auto)',
+    'book\\s*(\\d{1,2})(?:[\\s,@/]+(?:elo\\s*)?(\\d{3,4})(?:\\s*elo)?)?',
+  ].join('|') + ')(?:[\\s,]+|$|(?=[a-z]))', 'i');
   // The greeting shows each command in quotes ("ELOXXXX"), so quotes typed
   // around one are dropped rather than making it unreadable.
   let rest = String(text || '').replace(/["'“”‘’]/g, '').trim();
   const cmd = {};
+  // Each thing once a line: ELO1500 ELO1600 is not a command.
+  const put = (k, v) => { if (cmd[k] !== undefined) return false; cmd[k] = v; return true; };
+  const word = s => s.toLowerCase();
   while (rest) {
     const m = part.exec(rest);
     if (!m) return null;
-    if (m[1] || m[2]) {
-      if (cmd.elo != null) return null;
-      cmd.elo = +String(m[1] || m[2]).replace(',', '');
-    } else if (m[3] != null || m[4] != null) {
-      if (cmd.cp != null) return null;
-      cmd.cp = +(m[3] || m[4]);
-    } else if (m[5] != null || m[6] != null) {
-      if (cmd.think != null) return null;
-      cmd.think = m[6] ? 'auto' : +m[5];
-    } else {
-      if (cmd.temp != null) return null;
-      cmd.temp = m[8] ? 'auto' : +m[7];
-    }
+    let ok;
+    if (m[1] || m[2]) ok = put('elo', +String(m[1] || m[2]).replace(',', ''));
+    else if (m[3] != null || m[4] != null) ok = put('cp', +(m[3] || m[4]));
+    else if (m[5] != null || m[6] != null) ok = put('think', m[6] ? word(m[6]) : +m[5]);
+    else if (m[7] != null || m[8] != null) ok = put('temp', m[8] ? 'auto' : +m[7]);
+    else if (m[9] != null) ok = put('degrade', word(m[9]));
+    else if (m[10] != null) ok = put('conf', /\d/.test(m[10]) ? +m[10] : 'auto');
+    else if (m[11] != null) ok = put('pm', /\d/.test(m[11]) ? +m[11] : word(m[11]) === 'off' ? 0 : 'auto');
+    else if (m[12] != null) ok = put('book', word(m[12]));
+    else ok = put('book', { depth: +m[13], rating: m[14] != null ? +m[14] : null });
+    if (!ok) return null;
     rest = rest.slice(m[0].length);
   }
-  return cmd.elo != null || cmd.cp != null || cmd.think != null || cmd.temp != null ? cmd : null;
+  return Object.keys(cmd).length ? cmd : null;
 }
 function _lbOnChatLine(g, m) {
   const opp = g.opponent;
@@ -982,10 +1179,7 @@ function _lbOnChatLine(g, m) {
   // and nothing that arrives goes unanswered.
   const wait = g.chatAt + LB_CHAT_COOLDOWN_MS - Date.now();
   if (wait > 0) {
-    const held = g.chatHeld || {};
-    g.chatHeld = { elo: cmd.elo != null ? cmd.elo : held.elo, cp: cmd.cp != null ? cmd.cp : held.cp,
-                   think: cmd.think != null ? cmd.think : held.think,
-                   temp: cmd.temp != null ? cmd.temp : held.temp };
+    g.chatHeld = Object.assign({}, g.chatHeld || {}, cmd);
     if (!g.chatTimer) g.chatTimer = setTimeout(() => {
       const w = g.chatHeld;
       g.chatTimer = null; g.chatHeld = null;
@@ -995,26 +1189,54 @@ function _lbOnChatLine(g, m) {
   }
   _lbChatCommand(g, cmd);
 }
+// What a refusal calls each thing, in the order a line is answered.
+const LB_CMD_NAMES = { elo: 'rating', cp: 'CP budget', think: 'think time', temp: 'temp',
+  degrade: 'degradation', pm: 'premoves', conf: 'premoves', book: 'opening book' };
+const _lbRound1 = x => Math.round(x * 10) / 10;
+const _lbClamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
+// The explorer's band, as the reply gives it: games rated 1800-1999, or 2200+.
+function _lbBandText(band) {
+  const lo = parseInt(band, 10) || 0, i = LC_RATING_BUCKETS.indexOf(lo);
+  return i >= 0 && i < LC_RATING_BUCKETS.length - 2 ? lo + '-' + (LC_RATING_BUCKETS[i + 1] - 1) : lo + '+';
+}
 function _lbChatCommand(g, cmd) {
   const opp = g.opponent;
   g.chatAt = Date.now();
   if (!_lbMatching()) {
-    _lbSay(g, cmd.elo != null ? 'This bot\'s rating can\'t be changed.'
-      : cmd.cp != null ? 'This bot\'s CP budget can\'t be changed.'
-      : cmd.think != null ? 'This bot\'s think time can\'t be changed.' : 'This bot\'s temp can\'t be changed.');
+    _lbSay(g, 'This bot\'s ' + LB_CMD_NAMES[Object.keys(LB_CMD_NAMES).find(k => cmd[k] != null)] + ' can\'t be changed.');
     return;
   }
+  // Premoves and the book run on Maia: a Flounder bot says so, and takes the rest.
+  let maiaOnly = null;
+  if (_lbEloRange().flounder && (cmd.pm != null || cmd.conf != null || cmd.book != null)) {
+    maiaOnly = 'Premoves and the opening book need a Maia bot.';
+    cmd = Object.assign({}, cmd);
+    delete cmd.pm; delete cmd.conf; delete cmd.book;
+    if (!Object.keys(cmd).length) { _lbSay(g, maiaOnly); return; }
+  }
   let think = null;
-  if (cmd.think === 'auto') lbThinkChoices.delete(opp.id);
+  if (cmd.think === 'auto' || cmd.think === 'mirror') lbThinkChoices.set(opp.id, cmd.think);
   else if (cmd.think != null) {
-    think = Math.round(Math.max(0, Math.min(LB_THINK_MAX_S, cmd.think)) * 10) / 10;
+    think = _lbRound1(_lbClamp(cmd.think, 0, LB_THINK_MAX_S));
     lbThinkChoices.set(opp.id, think);
   }
   let temp = null;
   if (cmd.temp === 'auto') lbTempChoices.delete(opp.id);
   else if (cmd.temp != null) {
-    temp = Math.round(Math.max(0, Math.min(BLEND_TEMP_MAX, cmd.temp)) * 10) / 10;
+    temp = _lbRound1(_lbClamp(cmd.temp, 0, _lbTempMax()));
     lbTempChoices.set(opp.id, temp);
+  }
+  if (cmd.degrade === 'auto') lbDegradeChoices.delete(opp.id);
+  else if (cmd.degrade != null) lbDegradeChoices.set(opp.id, cmd.degrade === 'on');
+  if (cmd.pm === 'auto') lbPremoveRateChoices.delete(opp.id);
+  else if (cmd.pm != null) lbPremoveRateChoices.set(opp.id, Math.round(_lbClamp(cmd.pm, 0, 100)));
+  if (cmd.conf === 'auto') lbPremoveConfChoices.delete(opp.id);
+  else if (cmd.conf != null) lbPremoveConfChoices.set(opp.id, Math.round(_lbClamp(cmd.conf, 0, 100)));
+  if (cmd.book === 'auto') lbBookChoices.delete(opp.id);
+  else if (cmd.book === 'off') lbBookChoices.set(opp.id, { depth: 0 });
+  else if (cmd.book === 'on') lbBookChoices.set(opp.id, { depth: LB_BOOK_DEFAULT_DEPTH, rating: null });
+  else if (cmd.book != null) {
+    lbBookChoices.set(opp.id, { depth: Math.round(_lbClamp(cmd.book.depth, 0, CHAT_BOOK_MAX_DEPTH)), rating: cmd.book.rating });
   }
   let cp = null, cpEdge = null;
   if (cmd.elo != null) {
@@ -1023,12 +1245,21 @@ function _lbChatCommand(g, cmd) {
     if (cmd.cp == null) lbBudgetChoices.delete(opp.id);
   }
   if (cmd.cp != null) {
-    cp = Math.max(LB_CP_MIN, Math.min(LB_CP_MAX, cmd.cp));
+    cp = _lbClamp(cmd.cp, LB_CP_MIN, LB_CP_MAX);
     cpEdge = cp <= LB_CP_MIN ? 'low' : cp >= LB_CP_MAX ? 'high' : null;
     lbBudgetChoices.set(opp.id, cp);
   }
   const at = _lbApplyMatchedRating(g);
-  let said;
+  // A book asked for mid-game takes over from here; the bot's own explorer
+  // comes back with "book auto" (its Repertoire and Main Line with the next game).
+  if (cmd.book != null && g.boardReady) {
+    if (botChatBook) botChatBookTakeOver();
+    else lichessExplorerActive = !!botEngineBook || botTab === 'lcsf' || botTab === 'maia';
+  }
+  // The reply: each thing asked, in this order. Alone, a thing says what it
+  // does; beside the others, it is said shortly.
+  let said = null;
+  const add = (alone, beside) => { said = said ? said + beside : alone; };
   if (cmd.elo != null) {
     const engine = _lbEloRange().flounder ? 'Flounder' : 'Maia3';
     lbLog(_lbWho(opp) + ' asked for ' + cmd.elo + ' in the chat: ' + engine + ' set to ' + at.setting +
@@ -1040,24 +1271,71 @@ function _lbChatCommand(g, cmd) {
   if (cp != null) lbLog(_lbWho(opp) + ' asked for cp' + cmd.cp + ' in the chat: CP budget ' + cp + ', Hard Floor ' + window._bcpCpHardFloor);
   if (cmd.think != null) {
     const longest = think != null && think >= LB_THINK_MAX_S ? ' (its longest)' : '';
-    lbLog(_lbWho(opp) + ' asked for think ' + (think != null ? cmd.think + ' s' : 'auto') + ' in the chat: ' +
-      (think != null ? 'Fixed timing, ' + _lbThinkText(think) : 'back to the bot\'s own timing'));
-    const t = think != null ? _lbThinkText(think) + longest : null;
-    said = said ? said + (t ? ', think time ' + t : ', think time back to human-like timing')
-                : (t ? 'Think time set to ' + t : 'Think time back to human-like timing');
+    lbLog(_lbWho(opp) + ' asked for think ' + (think != null ? cmd.think + ' s' : cmd.think) + ' in the chat: ' +
+      (think != null ? 'Fixed timing, ' + _lbThinkText(think) : botTimeBehavior + ' timing'));
+    if (think != null) add('Think time set to ' + _lbThinkText(think) + longest, ', think time ' + _lbThinkText(think) + longest);
+    else add('Think time set to ' + LB_THINK_WORDS[cmd.think], ', think ' + cmd.think);
   }
   if (cmd.temp != null) {
+    const maia = _lbTempIsMaia();
     lbLog(_lbWho(opp) + ' asked for temp ' + cmd.temp + ' in the chat: ' +
-      (temp != null ? 'Temp ' + temp : 'back to the bot\'s own pick'));
-    // Alone, the ends say what they do; beside other replies, just the number.
-    said = said ? said + (temp != null ? ', temp ' + temp : ', temp back to its own')
-                : (temp != null ? _lbTempText(temp).replace('Temp', 'Temp set to') : 'Temp back to the bot\'s own pick');
+      (temp != null ? (maia ? 'Maia temperature ' : 'Temp ') + temp : 'back to the bot\'s own'));
+    if (temp != null) add(_lbTempText(temp).replace('Temp', 'Temp set to'), ', temp ' + temp);
+    else add(maia ? 'Temp back to the bot\'s own (' + _lbBuiltMaiaTemp() + ')' : 'Temp back to the bot\'s own pick',
+      ', temp back to its own');
   }
+  if (cmd.degrade != null) {
+    const on = _lbDegradeOn();
+    lbLog(_lbWho(opp) + ' asked for degrade ' + cmd.degrade + ' in the chat: ' +
+      (on ? 'Curve A ' + (botPressureCurveA ? 'on' : 'off') + ', Curve B ' + (botPressureCurveB ? 'on' : 'off') : 'off'));
+    // On, it follows the clock: a pace set outright gives it nothing to follow.
+    const idle = on && !_lbDegradeRuns() ? ' (it runs with think auto or mirror)' : '';
+    const none = cmd.degrade === 'on' && !on ? ': this bot has no degradation curves' : '';
+    add((cmd.degrade === 'auto' ? 'Time-pressure degradation back to the bot\'s own: ' : 'Time-pressure degradation ') +
+      (on ? 'on' : 'off') + idle + none, ', degradation ' + (on ? 'on' : 'off'));
+  }
+  if (cmd.pm != null || cmd.conf != null) {
+    const back = (cmd.pm == null || cmd.pm === 'auto') && (cmd.conf == null || cmd.conf === 'auto');
+    lbLog(_lbWho(opp) + ' asked for' + (cmd.pm != null ? ' pm ' + cmd.pm : '') + (cmd.conf != null ? ' conf ' + cmd.conf : '') +
+      ' in the chat: ' + _lbPremoveState());
+    const desc = botPremoveEnabled ? botPremoveRatePct + '% of replies Maia is ' + botPremoveMinPct + '% sure of'
+      : 'off' + (cmd.conf != null ? ' (certainty ' + botPremoveMinPct + '% when on)' : '');
+    add((back ? 'Premoves back to the bot\'s own: ' : 'Premoves: ') + desc,
+      ', premoves ' + (botPremoveEnabled ? botPremoveRatePct + '% at ' + botPremoveMinPct + '% sure' : 'off'));
+  }
+  if (cmd.book != null) {
+    const b = botChatBook, played = typeof botMoveHistory !== 'undefined' ? botMoveHistory.length : 0;
+    lbLog(_lbWho(opp) + ' asked for book ' + (typeof cmd.book === 'string' ? cmd.book
+      : cmd.book.depth + (cmd.book.rating != null ? ' ' + cmd.book.rating : '')) + ' in the chat: ' + _lbBookState());
+    if (!b) {
+      const later = played > 0 && _lbBuiltStages();
+      add('Opening book back to the bot\'s own' + (later ? ' from the next game' : ''), ', book back to its own');
+    } else if (!(b.depth > 0)) {
+      add('Opening book off: Maia from ' + (played > 0 ? 'here' : 'move 1'), ', book off');
+    } else {
+      const past = played >= b.depth * 2 ? ' (past it already this game)' : '';
+      add('Opening book: Lichess explorer games rated ' + _lbBandText(b.band) + ', until move ' + b.depth + past,
+        ', book ' + b.depth + ' ' + _lbBookBand(b.band));
+    }
+  }
+  if (maiaOnly) said += '. ' + maiaOnly;
   // Both chats: what the bot plays at is for spectators too. A reply that
   // gives a rating or a Temp says when the rating wasn't measured at this Temp.
-  _lbTell(g, cmd.elo != null || cmd.temp != null ? _lbTempCaveat(said) : said);
+  for (const line of _lbChatLines(cmd.elo != null || cmd.temp != null ? _lbTempCaveat(said) : said)) _lbTell(g, line);
   if (typeof botUpdatePlayerNames === 'function') botUpdatePlayerNames(botPlayerColor);
   lbRender();
+}
+// A reply longer than a chat line, split where its parts join (", ").
+function _lbChatLines(text) {
+  if (text.length <= LB_CHAT_MAX) return [text];
+  const out = [];
+  let cur = '';
+  for (const piece of text.split(', ')) {
+    const next = cur ? cur + ', ' + piece : piece;
+    if (cur && next.length >= LB_CHAT_MAX) { out.push(cur + ','); cur = piece; } else cur = next;   // room for the comma
+  }
+  if (cur) out.push(cur);
+  return out;
 }
 
 // Set the board up for this game with the page's bot, then replay whatever

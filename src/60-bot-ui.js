@@ -1033,6 +1033,10 @@ async function botStart() {
   // lcsf / maia tabs are "explorer, then engine" by definition, and a blend
   // asks via botEngineBook.
   lichessExplorerActive = !!botEngineBook || botTab === 'lcsf' || botTab === 'maia';
+  // A book the Lichess opponent asked for in the chat replaces all of the above
+  // (botChatBook: none at all, or the explorer to a depth).
+  _botChatBookLive = false;
+  if (typeof botChatBookTakeOver === 'function') botChatBookTakeOver();
   // clockTimeW/B are set by clockInit — capture now as the baseline
   try {
     if (typeof clockTimeW !== 'undefined' && clockControl !== 'untimed') {
@@ -2297,7 +2301,10 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
   botBlindChoicePcts = blindChoicePctsFrom(cfg.blindChoicePcts);
   // A Temp is an opponent's, asked for in a Lichess game's chat, never part of
   // a bot: a bot newly applied picks as it was built until the bridge sets one.
+  // So are a Maia temperature and an opening book asked for there.
   botBlendTemp = null;
+  botChatMaiaTemp = null;
+  botChatBook = null;
 
   // Draw behaviour + stalemate seeking (desperation)
   // Draws: accept unless more than 200 cp ahead, by default. A config from
