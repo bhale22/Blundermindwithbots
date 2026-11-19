@@ -270,7 +270,7 @@ console.log('\n1   The green pill, inside Blundermind');
     document.getElementById('r-draw-margin').value = 300;
   });
   await f.click('#qs-pers-btn');
-  ok('all the headings', JSON.stringify(await heads(f)) === JSON.stringify(['Move quality', 'Strategic preferences', 'Piece focus', 'Custom controls', 'Clock tactics', 'Draws & desperation']), await heads(f));
+  ok('all the headings', JSON.stringify(await heads(f)) === JSON.stringify(['Move quality', 'Strategic preferences', 'Piece focus', 'Custom controls', 'Clock tactics', 'Draws, takebacks & desperation']), await heads(f));
   const knight = await row(f, 'Knight');
   ok('piece focus: name, direction, value', /Knight · seeks/.test(knight.label) && /^\+3 · \d+ cp$/.test(knight.value), knight);
   rs = await rows(f);

@@ -141,13 +141,17 @@ console.log('\n1   Repertoire (Italian) then Main Line');
     fmt(log.slice(5)));
 }
 
-console.log('\n2   Repertoire alone is unchanged');
+console.log('\n2   Repertoire alone plays its ticked line, then hands to the engine');
 {
   const cfg = await buildConfig({ italian: true, rep: true, ml: false });
   const log = await play(cfg, ['e7e5', 'b8c6', 'f8c5']);
   console.log('      ' + fmt(log));
   ok('moves 1-3 from the repertoire', log.slice(0, 3).every(x => x[1] === 'ECO'), fmt(log.slice(0, 3)));
-  ok('move 4 still follows the C50 lines (no Main Line to hand to)', log[3] && log[3][1] === 'ECO', fmt(log.slice(3)));
+  // Nov 2026: the ticked line is "Italian Game" (3.Bc4). It used to wander on
+  // through every C50 line with equal odds (4.Bxf7+, the Jerome Gambit, one
+  // game in five); now the line ends and the engine plays move 4.
+  ok('move 4 from the engine: the ticked line ended at 3.Bc4', log[3] && log[3][1] !== 'ECO' && log[3][0] !== '(no move)',
+    fmt(log.slice(3)));
   ok('the Main Line book was never asked', asked.play.length === 0, asked.play.join(' | '));
 }
 
@@ -227,40 +231,96 @@ console.log('\n6   Old bots load as they played');
 
 console.log('\n7   No opening sequence');
 {
+  // Nov 18 2026 (Ben): one line under the search, always there. 100% with no
+  // opening ticked, 0% once the first one is; no longer picked from the List.
   const b = await panel.evaluate(() => {
     repSlots.white.length = 0; repSlots.black.length = 0;
     setOpStage('white', 'rep', false);
     renderRepSlots('white');
+    const line = () => document.getElementById('rep-none-line-white');
+    const box = () => line().querySelector('input');
+    const out = { emptyTxt: line().textContent, emptyVal: box().value, emptyRo: box().readOnly,
+                  emptyLock: !!line().querySelector('.rep-lock'),
+                  emptyCfg: JSON.stringify(getBotConfig().repSlots.white) };
     repBrowse(null, 'white', true);
-    const first = document.querySelector('#rep-dropdown-white .eco-option');
-    const out = { first: first ? first.textContent : '', isNone: !!first && first.classList.contains('eco-none') };
-    if (first) first.click();
-    out.slots = repSlots.white.map(s => ({ ...s }));
-    out.repOn = repOn.white;
-    out.row = document.querySelector('#rep-slots-list-white .rep-slot')?.textContent || '';
-    repBrowse(null, 'white', true);
-    out.gone = !document.querySelector('#rep-dropdown-white .eco-none');
+    out.inList = !!document.querySelector('#rep-dropdown-white .eco-none') ||
+                 /No opening sequence/.test(document.getElementById('rep-dropdown-white').textContent);
     onRepSearch('none', 'white');
-    out.searchAfter = !!document.querySelector('#rep-dropdown-white .eco-none');
-    document.getElementById('rep-dropdown-white').classList.remove('visible');
+    out.inSearch = /No opening sequence/.test(document.getElementById('rep-dropdown-white').textContent);
+    repCloseResults(null, 'white');
     addRepFromSearch('C50', 'Italian Game', 'white');
-    repSlots.white.forEach(s => { s.pct = s.none ? 30 : 70; });
-    renderRepSlots('white');
-    out.note = document.getElementById('rep-none-note-white')?.textContent || '';
+    out.afterTick = JSON.stringify(repSlots.white.map(s => [!!s.none, s.pct]));
+    out.afterVal = box().value;
+    out.repOn = repOn.white;
+    out.lockNow = !!line().querySelector('.rep-lock');
+    const ni = repSlots.white.findIndex(s => s.none);
+    box().value = '30';
+    onRepPctChange(ni, 30, 'white');
+    out.typed = JSON.stringify(repSlots.white.map(s => [!!s.none, s.pct]));
+    out.italianBox = document.querySelector('#rep-slots-list-white input[aria-label="Share for Italian Game"]').value;
     const cfg = getBotConfig();
     out.cfg = cfg;
     applyBotConfig(Object.assign({}, cfg, { repSlots: { white: [], black: [] } }));
+    out.cleared = JSON.stringify(repSlots.white.map(s => [!!s.none, s.pct]));
     applyBotConfig(cfg);
     out.reloaded = JSON.stringify(repSlots.white.map(s => [!!s.none, s.pct]));
     return out;
   });
-  ok('builder: "No opening sequence" heads the List', b.isNone && /No opening sequence/.test(b.first), b.first);
-  ok('builder: picking it adds it as a slot and switches the repertoire on',
-    b.slots.length === 1 && b.slots[0].none === true && b.slots[0].pct === 100 && b.repOn, JSON.stringify(b.slots));
-  ok('builder: its row says what it is', /No opening sequence/.test(b.row), b.row);
-  ok('builder: one per colour, so it leaves the List and the search', b.gone && !b.searchAfter);
-  ok('builder: the note gives its share of games', /in 30% of games as White/.test(b.note), b.note);
+  ok('builder: with no opening ticked the line reads 100%, fixed, with no lock',
+    /No opening sequence/.test(b.emptyTxt) && b.emptyVal === '100' && b.emptyRo && !b.emptyLock, JSON.stringify(b));
+  ok('builder: and nothing is saved for it, so the Main Line still plays', b.emptyCfg === '[]', b.emptyCfg);
+  ok('builder: it is no longer offered in the List or the search', !b.inList && !b.inSearch);
+  ok('builder: the first opening takes 100%, the line goes to 0%, the repertoire switches on',
+    b.afterTick === '[[true,0],[false,100]]' && b.afterVal === '0' && b.repOn && b.lockNow, b.afterTick);
+  ok('builder: typing 30% in the line leaves the Italian 70%',
+    b.typed === '[[true,30],[false,70]]' && b.italianBox === '70', b.typed + ' box ' + b.italianBox);
+  ok('builder: a bot with no openings loads at 100%', b.cleared === '[[true,100]]', b.cleared);
   ok('builder: saved and loaded with the bot', b.reloaded === '[[true,30],[false,70]]', b.reloaded);
+
+  // A locked share stays put while the others change (a tester, Nov 18 2026).
+  const L = await panel.evaluate(() => {
+    repSlots.white.length = 0;
+    const tick = p => { const r = ECO_DATA.find(x => x.path === p); repToggleRow(null, 'white', r.i, true); };
+    const st = () => JSON.stringify(repSlots.white.map(s => [s.none ? 'none' : s.fam, s.pct, !!s.locked]));
+    const idx = f => repSlots.white.findIndex(s => (f ? s.fam === f : s.none));
+    const out = {};
+    tick('e4 e5 Nf3 Nc6 Bc4');
+    onRepPctChange(idx('Italian Game'), 50, 'white');
+    repToggleLock('white', idx('Italian Game'));
+    out.lockedBox = document.querySelector('#rep-slots-list-white input[aria-label="Share for Italian Game"]').readOnly;
+    tick('e4 e5 Nf3 Nc6 Bb5');
+    out.ruy = st();
+    tick('e4 e5 Nf3 Nc6 d4');
+    out.scotch = st();
+    onRepPctChange(idx('Ruy Lopez'), 40, 'white');
+    out.ruy40 = st();
+    onRepPctChange(idx('Scotch Game'), 70, 'white');
+    out.capped = st();
+    onRepPctChange(idx('Italian Game'), 10, 'white');
+    out.ignored = st();
+    removeRepSlot(idx('Scotch Game'), 'white');
+    out.removed = st();
+    const cfg = getBotConfig();
+    out.cfgLock = JSON.stringify(cfg.repSlots.white.map(s => [s.fam || 'none', !!s.locked]));
+    applyBotConfig(Object.assign({}, cfg, { repSlots: { white: [], black: [] } }));
+    applyBotConfig(cfg);
+    out.reloaded = st();
+    return out;
+  });
+  ok('lock: the locked box cannot be typed in', L.lockedBox === true);
+  ok('lock: the Ruy joins with the 50% the locked Italian leaves',
+    L.ruy === '[["none",0,false],["Italian Game",50,true],["Ruy Lopez",50,false]]', L.ruy);
+  ok('lock: the Scotch shares it with the Ruy, the Italian stays 50%',
+    L.scotch === '[["none",0,false],["Italian Game",50,true],["Ruy Lopez",25,false],["Scotch Game",25,false]]', L.scotch);
+  ok('lock: Ruy 40% takes from the Scotch, not the Italian',
+    L.ruy40 === '[["none",0,false],["Italian Game",50,true],["Ruy Lopez",40,false],["Scotch Game",10,false]]', L.ruy40);
+  ok('lock: 70% in the Scotch is held to the 50% the lock leaves',
+    L.capped === '[["none",0,false],["Italian Game",50,true],["Ruy Lopez",0,false],["Scotch Game",50,false]]', L.capped);
+  ok('lock: a locked share ignores a typed value', L.ignored === L.capped, L.ignored);
+  ok('lock: removing the Scotch hands its share to the unlocked Ruy',
+    L.removed === '[["none",0,false],["Italian Game",50,true],["Ruy Lopez",50,false]]', L.removed);
+  ok('lock: saved with the bot, and loaded locked',
+    L.cfgLock === '[["Italian Game",true],["Ruy Lopez",false]]' && L.reloaded === L.removed, L.cfgLock + ' ' + L.reloaded);
 
   const a = await app.evaluate((cfg) => new Promise(res => {
     window.postMessage(Object.assign({}, cfg, { type: 'botConfig', _applyOnly: true }), location.origin);
@@ -289,6 +349,75 @@ console.log('\n7   No opening sequence');
   console.log('      ' + fmt(log0));
   ok('0%: the slot sits there and the repertoire plays every game: 1.e4 from it',
     log0[0] && log0[0][0] === 'e2e4' && log0[0][1] === 'ECO', fmt(log0));
+}
+
+console.log('\n8   Ticked lines (Nov 2026): follow them, step back in one move away, at the opening\'s share');
+{
+  // White: three Italian lines (4.c3 75 / 4.b4 25 where they part) and the Réti.
+  const ticked = (o) => panel.evaluate((o) => {
+    const card = document.querySelector('#engine-mode-grid .mcard[data-engine="stockfish"]');
+    if (card) selEngineMode(card);
+    setEngineBook('off');
+    repSlots.white.length = 0; repSlots.black.length = 0;
+    const tick = p => { const r = ECO_DATA.find(x => x.path === p); repToggleRow(null, 'white', r.i, true); };
+    ['e4 e5 Nf3 Nc6 Bc4 Bc5 c3', 'e4 e5 Nf3 Nc6 Bc4 Bc5 b4', 'e4 e5 Nf3 Nc6 Bc4 Nf6 d3', 'Nf3 d5 c4'].forEach(tick);
+    const it = repSlots.white.find(s => s.fam === 'Italian Game'), re = repSlots.white.find(s => s.fam === 'Réti Opening');
+    it.pct = o.italian; re.pct = o.reti;
+    it.fork['e4 e5 Nf3 Nc6 Bc4 Bc5'] = { c3: 75, b4: 25 };
+    renderRepSlots('white');
+    setOpStage('white', 'rep', true);
+    setOpStage('white', 'ml', !!o.ml);
+    setOpStage('black', 'rep', false);
+    setOpStage('black', 'ml', false);
+    const cfg = getBotConfig();
+    cfg.color = 'black'; cfg.tcTime = 0; cfg.tcInc = 0;
+    return cfg;
+  }, o);
+  // Fix the app's dice for one game: every draw returns r.
+  const dice = r => app.evaluate((r) => { window.__realRandom = window.__realRandom || Math.random; Math.random = () => r; }, r);
+  const undice = () => app.evaluate(() => { if (window.__realRandom) Math.random = window.__realRandom; });
+
+  let cfg = await ticked({ italian: 65, reti: 35, ml: true });
+  ok('builder: the config carries the ticked lines and the split',
+    cfg.repSlots.white.length === 2 && cfg.repSlots.white[0].lines.length === 3 &&
+    JSON.stringify(cfg.repSlots.white[0].fork['e4 e5 Nf3 Nc6 Bc4 Bc5']) === '{"c3":75,"b4":25}',
+    JSON.stringify(cfg.repSlots.white.map(s => [s.fam, s.pct, s.lines.length])));
+
+  await dice(0.01);
+  let log = await play(cfg, ['d7d5']);
+  console.log('      ' + fmt(log));
+  ok('the Tennison case: 1.e4 from the Italian, and after 1...d5 the Réti does not play 2.Nf3',
+    log[0] && log[0][0] === 'e2e4' && log[0][1] === 'ECO' && log[1] && log[1][1] !== 'ECO' && log[1][0] !== '(no move)',
+    fmt(log));
+
+  log = await play(cfg, ['e7e5', 'b8c6', 'f8c5']);
+  console.log('      ' + fmt(log));
+  ok('the 4th-move split: 4.c3 on a low draw (75%), from the repertoire',
+    log[3] && log[3][0] === 'c2c3' && log[3][1] === 'ECO', fmt(log.slice(3)));
+  // The Réti at 0% so a high draw still opens 1.e4 and reaches the split.
+  cfg = await ticked({ italian: 100, reti: 0, ml: true });
+  await dice(0.99);
+  log = await play(cfg, ['e7e5', 'b8c6', 'f8c5']);
+  console.log('      ' + fmt(log));
+  ok('and 4.b4 on a high one (25%), never an unticked Italian line',
+    log[0] && log[0][0] === 'e2e4' && log[3] && log[3][0] === 'b2b4' && log[3][1] === 'ECO', fmt(log));
+
+  // 1.Nf3 e5: 2.e4 reaches the Italian in one move. Its share is the chance.
+  cfg = await ticked({ italian: 100, reti: 1, ml: false });
+  await dice(0.999);   // picks the 1% Réti, then rolls 99 against the Italian's 100%
+  log = await play(cfg, ['e7e5']);
+  console.log('      ' + fmt(log));
+  const detail = await app.evaluate(() => lastBotMoveDetail);
+  ok('one move away: 1.Nf3 e5 2.e4, stepping back into the Italian (not 2.Nxe5)',
+    log[0] && log[0][0] === 'g1f3' && log[1] && log[1][0] === 'e2e4' && log[1][1] === 'ECO' && /stepped back in/.test(detail),
+    fmt(log) + ' · ' + detail);
+  cfg = await ticked({ italian: 50, reti: 50, ml: false });
+  await dice(0.99);    // the Réti, then a roll of 99 against the Italian's 50%: it stays out
+  log = await play(cfg, ['e7e5']);
+  console.log('      ' + fmt(log));
+  ok('a roll that misses: the engine plays move 2, not the repertoire',
+    log[0] && log[0][0] === 'g1f3' && log[1] && log[1][1] !== 'ECO' && log[1][0] !== '(no move)', fmt(log));
+  await undice();
 }
 
 ok('no page errors', errs.length === 0, errs.join(' | '));

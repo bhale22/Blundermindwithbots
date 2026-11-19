@@ -353,7 +353,7 @@ argmax (Top move): always picks the single highest-probability move (determinist
   <div class="grid g3">
     <div class="card"><h4>Off</h4><p>No opening book. The engine picks from move 1.</p></div>
     <div class="card"><h4>Main Line</h4><p>Follows the most popular book moves from either the Lichess Masters database or the Lichess community database, up to a configurable book depth (default 20 moves). A "Modern only" filter restricts to games from 2020 onward. White and Black can have separate settings. If you play a move the book rarely sees, the bot thinks longer on its reply (not on Fixed, Instantaneous or Mirror timing).</p></div>
-    <div class="card"><h4>Repertoire</h4><p>Define up to several opening lines by name (e.g. "Sicilian Defence", "King's Gambit"). Each line gets a percentage weight. The bot randomly selects a line each game according to the weights, then follows the Lichess book within that opening. White and Black repertoires are configured independently.</p></div>
+    <div class="card"><h4>Repertoire</h4><p>Search an opening by name or ECO code, or browse the List, and tick the named lines the bot should play: typing "Italian" lists every Italian line, each with a tick box. Ticked lines group under their opening, which gets one percentage. The line under the search, No opening sequence, is the share of games that skip the opening sequence: 100% until the first opening is ticked, then 0% until you raise it. The padlock beside a percentage locks it, so changing the others leaves it alone. On its lines the bot follows them: where they branch on its own move, the openings' percentages and each opening's split decide; where they branch on yours, it follows your move. Off them (you left, or a line ended) the next stage plays, the Main Line or the engine, and the bot steps back in only when a ticked line is one move away, rolling once a game at that opening's percentage; an opening that misses stays out for the game. White and Black repertoires are configured independently.</p></div>
   </div>
   <p class="note">Book sources: Lichess Masters · Lichess Community</p>
 
@@ -492,7 +492,10 @@ argmax (Top move): always picks the single highest-probability move (determinist
     <div class="card">
       <h4>During the game</h4>
       <p><strong>Resign</strong> — ends the game immediately; prompts for confirmation.<br>
-      <strong>Draw offer</strong> — handled by the bot's draw behaviour (Personality → Draws &amp; Desperation): it can
+      <strong>Take back</strong> — undoes your last move, and the bot's reply if it has made one. The bot accepts as many a
+      game as its setting allows (Personality → Draws &amp; Takebacks: never, 1, 2, 3, 5 or every one; every one by default).
+      The clocks are not rewound. On Lichess the same setting answers the opponent's takeback requests.<br>
+      <strong>Draw offer</strong> — handled by the bot's draw behaviour (Personality → Draws &amp; Takebacks): it can
       accept and offer draws judged at its <em>own</em> rating's blurred evaluation, and seek stalemate swindles when
       lost — or leave it all off for a bot that always plays on.<br>
       <strong>Save game</strong> — download the game as PGN at any point.<br>

@@ -309,17 +309,24 @@ story.append(PageBreak())
 story += section('2. Move Source Layer')
 story += subsection('2a. Opening Book')
 story += [
-    body('Two independent book modes are available. Either can be active simultaneously; '
-         'each deactivates permanently the first time it fails to find a candidate move.'),
+    body('Two stages, run in order, either or both on. The Main Line deactivates permanently '
+         'the first time it fails to find a candidate move; the repertoire stays ready to step '
+         'back in until the game is past its lines.'),
     spacer(4),
 ]
 
 book_rows = [
     ['Mode', 'Source', 'Behaviour'],
-    ['Preferred', 'In-memory ECO table (~3 000 named openings)',
-     'Matches game history against ECO lines whose ECO code or family prefix is in '
-     'the bot\'s slot list. Plays the next move from the highest-priority matching line. '
-     'Exits the book at maxBookDepth (default 20 half-moves).'],
+    ['Repertoire', 'Ticked lines (ECO table, ~3 700 named lines)',
+     'The lines ticked in the builder, each carrying its own moves. On the lines it plays '
+     'their next move: where they branch on the bot\'s move, the openings split by their '
+     'percentages and each opening by its saved split; where they branch on the opponent\'s '
+     'move, it follows the move played. Off them (the opponent left, or a line ended) the '
+     'next stage plays. Every later bot move checks, by position (placement, side to move, '
+     'castling; en passant ignored), for a ticked line on the board or one legal move away, '
+     'and rolls once per opening per game at that opening\'s percentage; a miss keeps it out '
+     'for the game. Done 8 plies past its longest line. A slot from an older config (one ECO '
+     'code and name) is read as the table entries it names.'],
     ['Mainline', 'Lichess Masters API (live)',
      'Queries masters database for the most popular continuation from the current '
      'position. Falls back to Lichess database if no masters result. Plays the top-weighted '
@@ -910,6 +917,23 @@ story += [
          'weight ×= exp( mobilityBoost + desperadoBoost )'),
     note('These picks are exempt from the §9 CP-budget check. Arming this behaviour also '
          'forces the complexity/eval probe every move so the trigger stays current.'),
+]
+
+story += [spacer(6)]
+story += subsection('10e. Takebacks — botRequestTakeback()')
+story += [
+    body('In a bot game, Take back undoes the player\'s last move: with the bot\'s reply on '
+         'the board, both plies (the player is on move again); while the bot is still thinking, '
+         'one ply, and its move in flight is dropped (the game-generation token). The position is '
+         'rebuilt from the game\'s base through the remaining moves, so castling, en passant, the '
+         'fifty-move count and the repetition counts come back exactly. The bot\'s opening state '
+         '(repertoire line/off state and rolls, Main Line, Lichess book) is restored to what it '
+         'was at that position. The clocks are not rewound and never stop.'),
+    code('takebackLimit: -1 = every one (default) · 0 = never (no button) · N = the first N a game'),
+    note('On Lichess the same limit answers the opponent\'s takeback requests (counted per '
+         'Lichess game): the bot stops thinking, says yes, and rewinds to the shorter move list '
+         'Lichess sends back; once they are used up it declines and says so in the chat. '
+         'Premove puzzles have no Take back.'),
 ]
 story.append(PageBreak())
 

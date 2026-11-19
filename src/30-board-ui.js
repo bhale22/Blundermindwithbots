@@ -1948,6 +1948,9 @@ function syncActionRow() {
     .some(el => el && el.style.display !== 'none');
   ga.style.display = any ? 'flex' : 'none';
 
+  // Take back: bot games only, on all three boards' rows at once.
+  if (typeof syncTakebackBtns === 'function') syncTakebackBtns();
+
   // The phone's own game bar carries the same two live-game buttons. Synced
   // from here rather than from its own listener so the two can never disagree
   // about whether a game is running.

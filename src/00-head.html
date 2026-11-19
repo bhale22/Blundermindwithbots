@@ -465,6 +465,8 @@ canvas{
 .gbtn.draw-btn{border-color:rgba(40,80,180,0.4);color:#5a7ab0;}
 .gbtn.draw-btn:hover{border-color:#4060c0;}
 .gbtn.resign-btn{border-color:rgba(180,40,40,0.4);color:#a05050;}
+.gbtn.takeback-btn{border-color:rgba(120,120,120,0.45);}
+.gbtn.takeback-btn:disabled,#pbTakeback:disabled,#proTakebackBtn.disabled{opacity:0.45;cursor:default;}
 .gbtn.resign-btn:hover{border-color:#c04040;}
 
 /* ── Chat widget — floating overlay on board bottom-right ─────────────────── */
@@ -3937,6 +3939,8 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <span class="pb-i">⚑</span><span class="pb-l">Resign</span></button>
       <button type="button" class="pbtn" id="pbDraw" onclick="offerDraw()">
         <span class="pb-i">½</span><span class="pb-l">Draw</span></button>
+      <button type="button" class="pbtn" id="pbTakeback" onclick="botRequestTakeback()" style="display:none;">
+        <span class="pb-i">↶</span><span class="pb-l">Undo</span></button>
       <!-- Their end-of-game successors, in the same slot. -->
       <button type="button" class="pbtn" id="pbRematch" onclick="gameRematch()" style="display:none;">
         <span class="pb-i">↺</span><span class="pb-l">Rematch</span></button>
@@ -4285,6 +4289,9 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <!-- Draw/Resign (multiplayer only) -->
     <div id="gameActions">
       <div class="game-row">
+        <!-- Bot games only, and only when the bot takes moves back
+             (syncTakebackBtns). -->
+        <button class="gbtn takeback-btn" id="takebackBtn" onclick="botRequestTakeback()" style="display:none;">↶ Take back</button>
         <button class="gbtn draw-btn" onclick="offerDraw()">½ Offer draw</button>
         <button class="gbtn resign-btn" onclick="resign()">⚑ Resign</button>
         <!-- The end-of-game pair lands in this same row. syncActionRow() owns
@@ -4387,6 +4394,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <div class="pro-actions" id="proLiveActions">
       <div class="pro-abtn danger" id="proResignBtn" onclick="resign()">⚑ Resign</div>
       <div class="pro-abtn draw" id="proDrawBtn" onclick="offerDraw()">½ Draw</div>
+      <div class="pro-abtn takeback" id="proTakebackBtn" onclick="botRequestTakeback()" style="display:none;">↶ Take back</div>
       <div class="pro-abtn icon" onclick="proFlipBoard()" title="Flip board">⇅</div>
       <div class="pro-abtn icon" onclick="openThemePanel('board')" title="Board &amp; background">🎨</div>
       <div class="pro-abtn icon" onclick="openPanel('boardSettingsPanel')" title="Board settings">⚙</div>

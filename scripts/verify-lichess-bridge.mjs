@@ -97,6 +97,7 @@ function newGame(ch) {
     wdraw: false, bdraw: false, wtakeback: false, btakeback: false,
     streams: new Set(), oppBusy: false, rejected: false, dropped: false,
     botPosts: [], refused: [], draws: [], takebacks: 0, claims: 0, drawOffersByBot: 0,
+    tbAnswers: [], tbTaken: 0, tbAsked: 0,   // takeback answers ('yes'/'no'), ones carried out, requests made
     chat: [], spect: [], chatPosts: 0,   // chat: the player room; spect: the spectator room
   };
   M.games[id] = g;
@@ -150,12 +151,28 @@ function play(g, uci) {
   g.turn = g.turn === 'w' ? 'b' : 'w';
   g.moves.push(uci);
   g.wdraw = g.bdraw = false;
+  g.wtakeback = g.btakeback = false;   // on Lichess a move clears a takeback request too
   const next = core.allLegalMoves(g.bd, g.turn, g.ep, g.cst);
   if (!next.length) {
     if (core.inCheck(g.bd, g.turn)) { g.status = 'mate'; g.winner = g.turn === 'w' ? 'black' : 'white'; }
     else g.status = 'stalemate';
   }
   return true;
+}
+
+// Take moves back: the position again from the start through `keep`. The
+// clocks are left as they are, as on Lichess.
+function rebuildTo(g, keep) {
+  const wt = g.wtime, bt = g.btime, last = g.lastAt;
+  g.bd = core.parseFen(START); g.turn = 'w'; g.cst = { wK: true, wQ: true, bK: true, bQ: true }; g.ep = -1; g.moves = [];
+  for (const u of keep) {
+    const from = sqOf(u.slice(0, 2)), to = sqOf(u.slice(2, 4)), p = g.bd[from];
+    const ne = core.computeEP(from, to, g.bd);
+    g.cst = core.updateCastling(from, to, p, g.cst);
+    g.bd = core.applyMove(from, to, g.bd, g.ep, u[4] ? u[4].toUpperCase() : 'Q');
+    g.ep = ne; g.turn = g.turn === 'w' ? 'b' : 'w'; g.moves.push(u);
+  }
+  g.wtime = wt; g.btime = bt; g.lastAt = last;
 }
 
 // Would the side to move, playing `mv`, leave the other side a mate in one?
@@ -219,11 +236,13 @@ function opponentTurn(g) {
         await sleep(2500);   // give the bot time to answer before moving on
         if (g.status !== 'started') return;
       }
-      if (o.takebackAtPly != null && ply === o.takebackAtPly) {
+      if (o.takebackAtPly != null && ply === o.takebackAtPly && g.tbAsked < (o.takebackTimes || 1)) {
+        g.tbAsked++;
         if (oc === 'w') g.wtakeback = true; else g.btakeback = true;
         broadcast(g);
-        await sleep(600);
+        await sleep(o.takebackWaitMs || 600);
         g.wtakeback = g.btakeback = false;
+        if (g.status !== 'started' || g.turn === botLetter(g)) return;
       }
       const all = core.allLegalMoves(g.bd, g.turn, g.ep, g.cst);
       if (!all.length) return;
@@ -248,6 +267,19 @@ function opponentTurn(g) {
           g.playedForBotPly = at;
           broadcast(g);
           setTimeout(() => opponentTurn(g), 0);   // after this turn's finally
+        }
+      }
+      // A takeback asked just after moving, while the bot is thinking: on
+      // Lichess that takes back the opponent's own move only.
+      if (o.takebackMidThinkAt != null && g.moves.length === o.takebackMidThinkAt && !g.tbMidAsked) {
+        g.tbMidAsked = true;
+        await sleep(o.midThinkDelayMs || 400);
+        if (g.status === 'started' && g.turn === botLetter(g)) {
+          g.tbAsked++;
+          if (oc === 'w') g.wtakeback = true; else g.btakeback = true;
+          broadcast(g);
+          await sleep(1500);
+          g.wtakeback = g.btakeback = false;
         }
       }
       // An offer made just after moving, while the bot is thinking.
@@ -402,7 +434,23 @@ const server = http.createServer(async (req, res) => {
       chatLine(g, BOT.name, b.get('text'), b.get('room'));
       return;
     }
-    if (act === 'takeback/no') { g.takebacks++; json(res, 200, { ok: true }); return; }
+    if (act === 'takeback/no') { g.takebacks++; g.tbAnswers.push('no'); g.wtakeback = g.btakeback = false; json(res, 200, { ok: true }); broadcast(g); return; }
+    if (act === 'takeback/yes') {
+      g.tbAnswers.push('yes');
+      const oc = g.botWhite ? 'b' : 'w';
+      if (g.status !== 'started' || !(oc === 'w' ? g.wtakeback : g.btakeback)) { json(res, 400, { error: 'No takeback request' }); return; }
+      // Lichess: the requester's last move, and the reply to it if there is one.
+      const k = g.turn === oc ? 2 : 1;
+      rebuildTo(g, g.moves.slice(0, Math.max(0, g.moves.length - k)));
+      g.wtakeback = g.btakeback = false;
+      g.tbTaken++;
+      json(res, 200, { ok: true });
+      broadcast(g);
+      // The opponent is on move again: it moves once its current turn is done.
+      const nudge = () => { if (g.oppBusy) setTimeout(nudge, 100); else opponentTurn(g); };
+      setTimeout(nudge, 0);
+      return;
+    }
     if (act === 'resign') { json(res, 200, { ok: true }); finish(g, 'resign', g.botWhite ? 'black' : 'white'); return; }
     if (act === 'abort') {
       if (g.moves.length >= 2) { json(res, 400, { error: 'Too late to abort' }); return; }
@@ -614,7 +662,7 @@ await page.evaluate(() => { quickBotStart(); });
 check(await page.evaluate(() => _botGameGen) === genBefore && await lbState() === 'playing', 'Start Game is refused while hosting');
 await until(() => g1.status !== 'started', 240000, 'game 1 to finish');
 await sleep(800);
-check(g1.takebacks === 1, 'takeback request declined', g1.takebacks);
+check(g1.tbTaken === 1 && g1.tbAnswers.join() === 'yes', 'takeback request accepted (every one, the default)', g1.tbAnswers);
 check(g1.draws.length >= 1 && ['yes', 'no'].includes(g1.draws[0]), 'answered the draw offer (' + g1.draws.join(',') + ')', g1.draws);
 check(g1.rejected && g1.refused.length >= 1, 'the refused move happened', g1.refused);
 check(g1.dropped, 'the dropped game stream was survived', { dropped: g1.dropped, plies: g1.moves.length });
@@ -669,6 +717,46 @@ await until(() => g4.status !== 'started', 120000, 'game 4 to finish');
 await sleep(800);
 check(await pageBoard() === placement(g4.bd), 'board matches the server after the reload');
 check(g4.refused.length === 0, 'no move refused after the reload', g4.refused);
+
+console.log('\n6t. Takebacks: the builder\'s limit answers the opponent');
+{
+  const tbLog = id => page.evaluate(id => { const i = lbLogLines.findIndex(l => l.includes(id)); return i < 0 ? [] : lbLogLines.slice(i); }, id);
+  const keep = await page.evaluate(() => ({ tb: botTimeBehavior, ms: botFixedDelayMs, limit: botTakebackLimit }));
+  const playTb = async (limit, opts, fixedMs) => {
+    await page.evaluate(([l, ms]) => { botTakebackLimit = l; if (ms) { botTimeBehavior = 'fixed'; botFixedDelayMs = ms; } }, [limit, fixedMs || 0]);
+    const c = newChallenge({ color: 'white', opts });
+    await until(() => M.challenges[c].gameId, 5000);
+    const g = M.games[M.challenges[c].gameId];
+    await until(() => g.status !== 'started', 180000, 'takeback game to finish');
+    await sleep(800);
+    return g;
+  };
+
+  // Every one: after the bot's reply (two plies), and twice; then while it thinks (one ply).
+  const ta = await playTb(-1, { takebackAtPly: 4, takebackTimes: 2, takebackMidThinkAt: 9, midThinkDelayMs: 500, resignAtPly: 16 }, 2500);
+  const la = await tbLog(ta.id);
+  check(ta.tbTaken === 3 && ta.tbAnswers.every(a => a === 'yes'), 'every one: all three requests accepted', ta.tbAnswers);
+  check(la.filter(l => /Took back 2 moves/.test(l)).length === 2 && la.some(l => /Took back 1 move$/.test(l)),
+    'two plies after the bot\'s reply, one while it was thinking', la.filter(l => /Took back|Takeback/.test(l)));
+  check(ta.refused.length === 0 && !la.some(l => /rebuilding/.test(l)), 'no move refused, no rebuild: the board rewound in place',
+    { refused: ta.refused, log: la.filter(l => /rebuild|refused/i.test(l)) });
+  check(await pageBoard() === placement(ta.bd), 'board matches the server at the end (' + ta.moves.length + ' plies)');
+
+  // A limit of 1: the second request is declined, and the bot says why, once.
+  const tl = await playTb(1, { takebackAtPly: 4, takebackTimes: 2, takebackMidThinkAt: 7, midThinkDelayMs: 500, resignAtPly: 12 });
+  const ll = await tbLog(tl.id);
+  check(tl.tbAnswers.join() === 'yes,no,no' && tl.tbTaken === 1, 'limit 1: the first accepted, the rest declined', tl.tbAnswers);
+  check(tl.chat.filter(c => /No more takebacks this game: I allow 1\./.test(c.text)).length === 1,
+    'and the chat says so once', tl.chat.map(c => c.text));
+  check(ll.some(l => /Takeback request declined \(all 1 used\)/.test(l)), 'the log says why', ll.filter(l => /Takeback/.test(l)));
+  check(await pageBoard() === placement(tl.bd), 'board matches the server');
+
+  // Never.
+  const tn = await playTb(0, { takebackAtPly: 4, resignAtPly: 10 });
+  check(tn.tbAnswers.join() === 'no' && tn.tbTaken === 0, 'never: declined', tn.tbAnswers);
+  check(tn.chat.some(c => /I don’t take moves back/.test(c.text)), 'with a word in the chat', tn.chat.map(c => c.text));
+  await page.evaluate(k => { botTimeBehavior = k.tb; botFixedDelayMs = k.ms; botTakebackLimit = k.limit; }, keep);
+}
 
 console.log('\n6a. A move played for the bot elsewhere, and the race with its own (resync)');
 // Counted on the page: whole-game rebuilds, and for each replay of the server's

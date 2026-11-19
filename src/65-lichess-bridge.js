@@ -521,7 +521,11 @@ function _lbNewGame(id) {
     ended: false,
     local: [],          // UCI moves on this board, in order
     abort: null,        // aborts the game stream (a resync reopens it)
-    drawPly: -1, takebackPly: -1, claimPly: -1,
+    drawPly: -1, claimPly: -1,
+    // Takebacks: the opponent's request standing (answered once per request),
+    // the move count an accepted one leaves the game at (-1: none on its way),
+    // how many this game, and whether the bot has said it has none to give.
+    oppTakebackOpen: false, takebackExpect: -1, takebacksUsed: 0, takebackSaid: false,
     claimPending: -1, claimRule: '',   // a draw claim waiting on the bot's turn (_lbCheckClaims)
     oppDrawOpen: false, // the opponent's draw offer is standing
     drawAnswered: false, drawAccepted: false,   // the bot's answer to it
@@ -1145,7 +1149,14 @@ function _lbOnGameState(g, st) {
   let agree = true;
   for (let i = 0; i < n; i++) if (moves[i] !== local[i]) { agree = false; break; }
   const fresh = moves.length - local.length;
-  if (!agree || fresh > 1) {
+  // A takeback the bot accepted: the server's moves are the board's, less the
+  // ones it took back. Only then: one move short is also the server trailing
+  // the bot's move in flight, which is not a takeback.
+  if (agree && fresh < 0 && g.takebackExpect >= 0 && moves.length === g.takebackExpect) {
+    _lbApplyTakeback(g, moves, st);
+    return;
+  }
+  if (!agree || fresh > 1 || fresh < -1) {
     _lbRequestRebuild(g, moves, st, 'Board out of step with Lichess — rebuilding from the server');
     return;
   }
@@ -1225,6 +1236,11 @@ function _lbFlushRebuild(g) {
   clearTimeout(r.timer);
   g.rebuild = null;
   if (lbGame !== g || g.ended) return;
+  // A takeback that landed while a rebuild was waiting is still one of the game's.
+  if (g.takebackExpect >= 0 && r.moves.length === g.takebackExpect && r.moves.length < g.local.length) {
+    g.takebacksUsed++;
+    g.takebackExpect = -1;
+  }
   if (!_lbSameMoves(g.local, r.moves)) _lbBeginLocalGame(g, r.moves);
   // Nothing to rebuild after all: the bot was stopped, so it starts again.
   else if (!gameOver && turn === g.colorLetter) setTimeout(botMakeMove, 100);
@@ -1250,14 +1266,92 @@ function _lbAfterState(g, st) {
     g.drawAccepted = false;
     if (turn === g.colorLetter && !botThinking && !gameOver) setTimeout(botMakeMove, 100);
   }
-  const oppTakeback = g.colorLetter === 'w' ? st.btakeback : st.wtakeback;
-  if (oppTakeback && g.takebackPly !== ply) {
-    g.takebackPly = ply;
-    lbLog('Takeback request declined');
-    _lbPost('/api/bot/game/' + g.id + '/takeback/no');
-  }
+  // Each request is answered once, when it appears: a request asked again at
+  // the same move is a new one (it used to be ignored, and sat unanswered).
+  const oppTakeback = !!(g.colorLetter === 'w' ? st.btakeback : st.wtakeback);
+  if (oppTakeback && !g.oppTakebackOpen && !gameOver) _lbOnTakebackAsk(g, st);
+  g.oppTakebackOpen = oppTakeback;
   if (st.status && st.status !== 'started' && st.status !== 'created') _lbFinishGame(g, st);
   else lbRender();
+}
+
+// ── Takebacks (Nov 2026) ────────────────────────────────────────────────────
+// The opponent asks for a takeback. The bot answers by the builder's setting,
+// as in a game on the site (botTakebackLimit): every one, never, or the first
+// N of the game. The count is kept per Lichess game here (g.takebacksUsed): a
+// rebuild restarts the page's own game, and its count with it.
+//
+// Lichess takes back the opponent's last move, and the bot's reply too if it
+// has made one. So the bot stops thinking before it says yes (a move sent
+// then would answer a position about to go), and it notes the move count the
+// takeback will leave, so the shorter move list that follows is read as the
+// takeback and not as the server trailing the bot's own move.
+function _lbOnTakebackAsk(g, st) {
+  const limit = (typeof botTakebackLimit !== 'undefined') ? botTakebackLimit : 0;
+  const left = limit < 0 ? Infinity : Math.max(0, limit - g.takebacksUsed);
+  const serverPly = _lbMoves(st).length;
+  const oppLetter = g.colorLetter === 'w' ? 'b' : 'w';
+  // The opponent on move: the bot has replied, so two plies go; else one.
+  const k = (serverPly % 2 === 0 ? 'w' : 'b') === oppLetter ? 2 : 1;
+  if (!(left > 0) || serverPly < k) {
+    lbLog('Takeback request declined' + (limit === 0 ? ' (this bot never takes moves back)'
+      : serverPly < k ? '' : ' (all ' + limit + ' used)'));
+    _lbPost('/api/bot/game/' + g.id + '/takeback/no');
+    if (serverPly >= k && !g.takebackSaid) {
+      g.takebackSaid = true;
+      _lbSay(g, limit === 0 ? 'Sorry, I don’t take moves back.'
+        : 'No more takebacks this game: I allow ' + limit + (limit === 1 ? '.' : ' a game.'));
+    }
+    return;
+  }
+  if (turn === g.colorLetter) _lbCancelBotTurn();
+  g.takebackExpect = serverPly - k;
+  lbLog('Takeback accepted' + (limit > 0 ? ' (' + (g.takebacksUsed + 1) + ' of ' + limit + ')' : ''));
+  _lbPost('/api/bot/game/' + g.id + '/takeback/yes').then(r => {
+    if (lbGame !== g || g.ended) return;
+    if (!r.ok) {
+      lbLog('Lichess did not take the moves back (' + _lbErr(r) + ')');
+      _lbTakebackFell(g);
+      return;
+    }
+    // Lichess answers with the shorter move list. Should it never come, the
+    // bot was stopped for nothing: it moves.
+    setTimeout(() => { if (g.takebackExpect === serverPly - k) _lbTakebackFell(g); }, 5000);
+  });
+}
+function _lbTakebackFell(g) {
+  g.takebackExpect = -1;
+  if (lbGame === g && !g.ended && !gameOver && !g.rebuild && turn === g.colorLetter && !botThinking) setTimeout(botMakeMove, 100);
+}
+// The shorter move list: rewind the board by the moves taken back (the same
+// rewind as a takeback on the site, gameRewindPlies), and the bot's memory of
+// the game with it.
+function _lbApplyTakeback(g, moves, st) {
+  const k = g.local.length - moves.length;
+  _lbCancelBotTurn();
+  const n = (typeof gameRewindPlies === 'function') ? gameRewindPlies(k) : 0;
+  g.takebackExpect = -1;
+  if (n !== k) {
+    _lbRequestRebuild(g, moves, st, 'Takeback did not replay on the board — rebuilding from the server');
+    g.takebacksUsed++;
+    return;
+  }
+  g.local.length = moves.length;
+  botMoveHistory = g.local.slice();
+  botSanHistory  = gameMovesAlgebraic.slice();
+  if (typeof botRestorePlyState === 'function') botRestorePlyState(gameMovesAlgebraic.length);
+  g.takebacksUsed++;
+  g.claimPly = -1; g.claimPending = -1;
+  const limit = (typeof botTakebackLimit !== 'undefined') ? botTakebackLimit : -1;
+  lbLog('Took back ' + k + ' move' + (k === 1 ? '' : 's') + (limit > 0 ? ' (' + g.takebacksUsed + ' of ' + limit + ' this game)' : ''));
+  const s = document.getElementById('botStatus');
+  if (s) s.textContent = 'Lichess · took back ' + k + ' move' + (k === 1 ? '' : 's');
+  updatePlayerBoxes();
+  if (!gameOver) {
+    if (turn === g.colorLetter) setTimeout(botMakeMove, 100);
+    else botUserTurnStartMs = Date.now();
+  }
+  _lbAfterState(g, st);
 }
 
 // The server's clock is the clock. Its times are as of the last move, so the
