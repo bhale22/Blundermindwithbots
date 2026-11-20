@@ -36,6 +36,9 @@ const LB_KEY = 'bm_lichessBot';
 const LB_DEFAULTS = {
   token: '', auto: true, bots: false,
   speeds: { bullet: false, blitz: true, rapid: true, classical: true },
+  // Chess960 challenges too (off until asked for: how Maia plays it has not
+  // been measured). Standard chess is always accepted.
+  chess960: false,
 };
 // Lichess's own order, fastest first — a refusal says which way a speed missed.
 const LB_SPEED_ORDER = ['ultraBullet', 'bullet', 'blitz', 'rapid', 'classical', 'correspondence'];
@@ -44,6 +47,7 @@ const LB_REASON_TEXT = {
   tooFast: 'too fast', tooSlow: 'too slow',
   timeControl: 'needs a clock', casual: 'casual games only',
   standard: 'standard start position only', variant: 'standard chess only',
+  variant960: 'standard chess and Chess960 only',
   noBot: 'not playing bots', generic: 'declined',
 };
 const LB_STATUS_TEXT = {
@@ -468,7 +472,8 @@ function _lbDeclineReason(c) {
   if (!_lbEnginesReady()) { _lbWarmEngines(); return 'loading'; }
   const v = c.variant && c.variant.key;
   if (v === 'fromPosition') return 'standard';
-  if (v !== 'standard') return 'variant';
+  if (v === 'chess960' && !s.chess960) return 'variant';
+  if (v !== 'standard' && v !== 'chess960') return 'variant';
   if (!c.timeControl || c.timeControl.type !== 'clock') return 'timeControl';
   if (c.speed === 'ultraBullet') return 'tooFast';
   if (!s.speeds[c.speed]) {
@@ -486,10 +491,12 @@ async function _lbOnChallenge(c) {
   if (!c || !c.id) return;
   // Our own outgoing challenges come down the same stream.
   if (c.direction === 'out' || (lbAccount && c.challenger && c.challenger.id === lbAccount.id)) return;
-  const what = _lbWho(c.challenger) + ' (' + _lbChallengeTc(c) + ', ' + (c.rated ? 'rated' : 'casual') + ')';
+  const what = _lbWho(c.challenger) + ' (' + _lbChallengeTc(c) + ', ' + (c.rated ? 'rated' : 'casual') +
+    (c.variant && c.variant.key && c.variant.key !== 'standard' ? ', ' + (c.variant.name || c.variant.key) : '') + ')';
   const reason = _lbDeclineReason(c);
   if (reason) {
-    lbLog('Declined ' + what + ': ' + (LB_REASON_TEXT[reason] || reason));
+    const why = (reason === 'variant' && lbSettings.chess960) ? 'variant960' : reason;
+    lbLog('Declined ' + what + ': ' + (LB_REASON_TEXT[why] || reason));
     // Lichess has no "still loading" reason; "later" is the true answer to them.
     await _lbPost('/api/challenge/' + c.id + '/decline', 'reason=' + (reason === 'loading' ? 'later' : reason));
     return;
@@ -606,7 +613,14 @@ function _lbOnGameFull(g, full) {
   g.speed = full.speed || '';
   g.clock = full.clock || null;
   const START = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
-  if (full.initialFen && full.initialFen !== 'startpos' && full.initialFen !== START) {
+  // A Chess960 game starts from the position Lichess dealt (initialFen), and
+  // writes its castles king takes rook — as the board does in Chess960.
+  g.chess960 = !!(full.variant && full.variant.key === 'chess960');
+  if (g.chess960) {
+    g.startFen = (full.initialFen && full.initialFen !== 'startpos') ? full.initialFen : START;
+    const n = (typeof chess960NumberOf === 'function') ? chess960NumberOf(g.startFen) : -1;
+    if (!g.boardReady) lbLog('Chess960' + (n >= 0 ? ', position ' + n : ''));
+  } else if (full.initialFen && full.initialFen !== 'startpos' && full.initialFen !== START) {
     lbLog('This game starts from a set position, which the bridge does not play — aborting');
     _lbPost('/api/bot/game/' + g.id + '/abort');
     return;
@@ -620,6 +634,16 @@ function _lbOnGameFull(g, full) {
     return;
   }
   _lbAfterState(g, st);
+}
+
+// A move from Lichess as this board plays it. In Chess960 Lichess writes a
+// castle king takes rook, as the board does; a castle written the standard way
+// (king onto g1/c1) is taken too, as long as it can only mean the castle.
+function _lbMoveOnBoard(u) {
+  const mv = uciToSq(u);
+  if (mv && typeof chess960CastleAlias === 'function')
+    mv.to = chess960CastleAlias(board, mv.from, mv.to, epSq, castling);
+  return mv;
 }
 
 function _lbSameMoves(a, b) {
@@ -1249,6 +1273,10 @@ function _lbBeginLocalGame(g, moves) {
   }
   g.greeted = true;
   lbStarting = true;
+  // The game's start: Lichess's Chess960 position, or the standard one. A
+  // position staged on this page ("Play from here") is not the game's.
+  const savedPending = window._pendingStartPos;
+  window._pendingStartPos = g.chess960 ? { fen: g.startFen, sans: [], chess960: true } : null;
   try {
     botColorPref = humanColor;
     botSelectedTC = g.clock ? 'lichess' : 'untimed';
@@ -1257,6 +1285,7 @@ function _lbBeginLocalGame(g, moves) {
     lbStarting = false;
     botColorPref = savedPref;
     botSelectedTC = savedTC;
+    window._pendingStartPos = savedPending;
   }
   g.local = [];
   g.boardReady = true;
@@ -1277,7 +1306,7 @@ function _lbReplay(g, moves) {
   quietMoves = true;
   try {
     for (const u of moves) {
-      const mv = uciToSq(u);
+      const mv = _lbMoveOnBoard(u);
       if (!mv || !board[mv.from]) { lbLog('Could not replay ' + u); break; }
       executeMove(mv.from, mv.to, mv.promo);
     }
@@ -1321,7 +1350,7 @@ function _lbOnGameState(g, st) {
   }
   if (fresh === 1) {
     const u = moves[moves.length - 1];
-    const mv = uciToSq(u);
+    const mv = _lbMoveOnBoard(u);
     const p = mv && board[mv.from];
     if (!p || gameOver || p.color !== turn ||
         !legalMovesFor(mv.from, board, epSq, castling).includes(mv.to)) {
@@ -1763,6 +1792,8 @@ function _lbBuildPanel() {
       <label><input type="checkbox" id="lbSp-blitz" onchange="lichessSetSpeed('blitz',this.checked)">Blitz</label>
       <label><input type="checkbox" id="lbSp-rapid" onchange="lichessSetSpeed('rapid',this.checked)">Rapid</label>
       <label><input type="checkbox" id="lbSp-classical" onchange="lichessSetSpeed('classical',this.checked)">Classical</label></div>
+    <div class="lb-row">
+      <label><input type="checkbox" id="lb960" onchange="lichessSetOpt('chess960',this.checked)">Chess960 too</label></div>
     <div class="lb-row"><label><input type="checkbox" id="lbAuto" onchange="lichessSetOpt('auto',this.checked)">Reconnect when this page opens</label></div>
   </div>
   <div class="lb-log" id="lbLog"></div>
@@ -1785,7 +1816,8 @@ function _lbRulesText() {
   const s = lbSettings;
   const speeds = ['bullet', 'blitz', 'rapid', 'classical'].filter(k => s.speeds[k]);
   if (!speeds.length) return 'nothing — every challenge is declined';
-  return 'casual only · ' + speeds.join(', ') + (s.bots ? ' · bots too' : ' · no bots');
+  return 'casual only · ' + speeds.join(', ') + (s.chess960 ? ' · Chess960 too' : '') +
+    (s.bots ? ' · bots too' : ' · no bots');
 }
 
 function lbRender() {
@@ -1839,6 +1871,7 @@ function lbRender() {
   p.classList.toggle('lb-edit', p.dataset.edit === '1');
   $('lbEditBtn').textContent = p.dataset.edit === '1' ? 'done' : 'edit';
   $('lbBots').checked = !!lbSettings.bots;
+  $('lb960').checked = !!lbSettings.chess960;
   $('lbAuto').checked = !!lbSettings.auto;
   ['bullet', 'blitz', 'rapid', 'classical'].forEach(k => { $('lbSp-' + k).checked = !!lbSettings.speeds[k]; });
   // Not connected, the panel is only up to show why connecting failed: try
@@ -1906,7 +1939,7 @@ function lichessBuilderState() {
     playing: !!g, opponent: g && g.opponent ? _lbWho(g.opponent) : null,
     nextPending: !!lbNextConfig,
     localGame: !lbWantConnected && typeof _isLiveGame === 'function' && _isLiveGame(),
-    settings: { bots: !!s.bots, speeds: Object.assign({}, s.speeds) },
+    settings: { bots: !!s.bots, chess960: !!s.chess960, speeds: Object.assign({}, s.speeds) },
   };
 }
 // Tell an open builder, so its Lichess pill and Start button say what is true.
@@ -1977,6 +2010,7 @@ function lichessConnectFromBuilder(o) {
   if (!lbSettings) lbSettings = _lbLoadSettings();
   const st = o.settings || {};
   if ('bots' in st) lbSettings.bots = !!st.bots;
+  if ('chess960' in st) lbSettings.chess960 = !!st.chess960;
   if (st.speeds) Object.keys(lbSettings.speeds).forEach(k => { if (k in st.speeds) lbSettings.speeds[k] = !!st.speeds[k]; });
   if (o.token) lbSettings.token = String(o.token).trim();
   _lbSaveSettings();

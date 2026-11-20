@@ -532,6 +532,20 @@ function botSetPlayerColor(col) {
   });
 }
 
+// ── Variant: standard chess or Chess960 ─────────────────────────────────────
+// A setting of the game, like the colour: the builder's Play as picker and the
+// quick start both show it, and a Chess960 bot game is dealt a fresh start
+// position every game (botStart). A Lichess game plays whatever the challenge
+// was, whatever this says.
+let botVariantPref = 'standard';
+function botSetVariant(v) {
+  if (v !== 'chess960') v = 'standard';
+  botVariantPref = v;
+  document.querySelectorAll('#quickBotVariant').forEach(sel => {
+    if (sel.value !== v) sel.value = v;
+  });
+}
+
 // Hybrid slot management
 function botAddHybridSlot() {
   const slot = { type: 'sf', level: 8, weight: 33 };
@@ -838,7 +852,17 @@ async function botStart() {
   if (window._pendingStartPos && window._pendingStartPos.fen) {
     const sp = window._pendingStartPos;
     window._pendingStartPos = null;
+    // A position from a Chess960 game (its review, or a Lichess Chess960
+    // game's deal) is played as Chess960: that decides which rooks castle.
+    if (sp.chess960) setChess960(true);
     _customStart = applyStartPosition(sp.fen, sp.sans);
+  } else if (botVariantPref === 'chess960' && !window._pzStarting &&
+             !(typeof lichessStartingGame === 'function' && lichessStartingGame())) {
+    // Chess960: a fresh start position every game, as on Lichess.
+    setChess960(true);
+    const _n960 = chess960RandomNumber();
+    applyStartPosition(chess960StartFen(_n960), []);
+    console.log('[Chess960] Position ' + _n960 + ': ' + chess960BackRank(_n960));
   }
 
   // Phase 1: reset move history and capture starting clock for fracRemaining
@@ -895,6 +919,13 @@ async function botStart() {
   // lcsf / maia tabs are "explorer, then engine" by definition, and a blend
   // asks via botEngineBook.
   lichessExplorerActive = !!botEngineBook || botTab === 'lcsf' || botTab === 'maia';
+  // Chess960: every opening source here is standard chess (the repertoire's
+  // lines, the Main Line, the explorer's book), so the engine plays from move 1.
+  if (chess960) {
+    preferredOpeningActive = false;
+    mainLineActive = false;
+    lichessExplorerActive = false;
+  }
   // A new game: no takebacks used, and the opening state as it starts, which
   // a takeback all the way back restores.
   botTakebacksUsed = 0;
@@ -2141,6 +2172,8 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
   // select, the welcome panel's), so the controls agree with what Start will
   // actually deal. It maps anything unrecognised to 'random' on its own.
   botSetPlayerColor(cfg.color || 'random');
+  // Standard chess or Chess960, chosen beside the colour in the builder.
+  botSetVariant(cfg.variant || 'standard');
 
   // Time control — build a 'custom' entry so clockInit() finds a valid key
   if (cfg.tcTime > 0) {
@@ -2483,6 +2516,7 @@ function bmLastBotSave(cfgOverride) {
       cfg: cfg,
       pick: window._quickBotLastPick || null,
       color: botColorPref,
+      variant: botVariantPref,
       clock: clock
     }));
   } catch (e) {
@@ -2504,6 +2538,7 @@ function bmLastBotRestore() {
     }
     if (rec.pick && typeof quickBotPick === 'function') quickBotPick(String(rec.pick), true);
     if (rec.color) botSetPlayerColor(rec.color);
+    if (rec.variant) botSetVariant(rec.variant);
     if (rec.clock && rec.clock.time > 0) {
       botSetBaseMin(Math.round(rec.clock.time / 60));
       botSetIncSec(rec.clock.inc || 0);
@@ -2588,6 +2623,7 @@ function bmSessionSave() {
       lastMoveFrom: lastMoveFrom,
       lastMoveTo: lastMoveTo,
       startFen: (typeof _gameStartFen !== 'undefined') ? _gameStartFen : null,
+      chess960: !!chess960,
       startSans: (typeof _gameStartSans !== 'undefined' && _gameStartSans) ? _gameStartSans.slice() : [],
       halfmoveClock: halfmoveClock,
       positionCounts: Object.assign({}, positionCounts),
@@ -2668,7 +2704,10 @@ function bmSessionRestore() {
       clockTimeB = snap.clock.b;
     }
 
-    // Position. parseFen sets turn/castling/epSq as a side effect.
+    // Position. parseFen sets turn/castling/epSq as a side effect. A Chess960
+    // game reads its start first: that position says which rooks castle.
+    setChess960(!!snap.chess960);
+    if (snap.chess960 && snap.startFen) parseFen(snap.startFen);
     board = parseFen(snap.fen);
     // Charge the player who was on move for the time the app was gone. The
     // snapshot records when it was written, so this is real elapsed time, not

@@ -8,6 +8,7 @@ let _gameStartFen   = null; // custom starting FEN of the live game (null = stan
 let _gameStartSans  = [];   // SAN move prefix that led to _gameStartFen (for full-PGN saves)
 let mpStartFen      = null; // agreed custom start position for the current MP room
 let mpStartSans     = [];
+let mpChess960      = false; // the room plays Chess960 (mpStartFen is its position)
 
 // ── Bot & SF state — declared first to avoid TDZ errors ─────────────────────
 // These let variables must be declared before loadPos()/render() runs at startup.
@@ -2095,14 +2096,16 @@ function proRenderNotation(){
   if(peek) peek.textContent = proNotationPeekText();
   const el = document.getElementById('proMoves');
   if(!el || typeof gameMovesAlgebraic === 'undefined') return;
-  if(!gameMovesAlgebraic.length){ el.innerHTML = '<div class="pro-moves-empty">No moves yet</div>'; return; }
+  const _vt = (typeof variantTagText === 'function') ? variantTagText() : '';
+  const _vtHtml = _vt ? '<div class="pro-moves-empty" style="font-style:normal;">' + _vt + '</div>' : '';
+  if(!gameMovesAlgebraic.length){ el.innerHTML = _vtHtml + '<div class="pro-moves-empty">No moves yet</div>'; return; }
   // During replay, highlight the move at the current replay position.
   const hiIdx = (typeof inReplay !== 'undefined' && inReplay && typeof replayIdx !== 'undefined')
     ? replayIdx - 1 : -1;
   // Outside live play, moves are clickable — jump the board to that position
   const clickable = typeof _isLiveGame === 'function' && !_isLiveGame();
   const attrs = i => clickable ? ' pro-mclick" onclick="proMoveClick(' + i + ')"' : '"';
-  let html = '';
+  let html = _vtHtml;
   for(let i=0;i<gameMovesAlgebraic.length;i+=2){
     const n = i/2 + 1;
     const w = gameMovesAlgebraic[i] || '';
@@ -3415,7 +3418,7 @@ function mpWithdrawChallenge() {
    (bot-panel quickstart pattern). The action buttons act immediately using
    whatever the pills show — no confirm/review step.
 ──────────────────────────────────────────────────────────────────────────────*/
-const MP_QS_KEYS = ['handle', 'rating', 'range', 'time', 'color'];
+const MP_QS_KEYS = ['handle', 'rating', 'range', 'time', 'color', 'variant'];
 
 function mpQsToggle(key) {
   const opening = !document.getElementById('mpQsEd-' + key).classList.contains('open');
@@ -3453,6 +3456,8 @@ function mpQsRefresh() {
   const cv = document.getElementById('mpQsColorVal');
   if (cv) cv.textContent = mpHostColor === 'white' ? 'White ♔'
                          : mpHostColor === 'black' ? 'Black ♚' : 'Random';
+  const vv = document.getElementById('mpQsVariantVal');
+  if (vv) vv.textContent = mpVariant === 'chess960' ? 'Chess960' : 'Standard';
   mpUpdateTCDisplay();   // time pill (#mpTCDisplay)
 }
 
@@ -3490,6 +3495,9 @@ function mpPostSummaryRows() {
     !rating || mpRatingRange >= 9999]);
   rows.push(['Time', mpBaseMin === 0 ? 'Untimed'
     : mpBaseMin + ' min + ' + mpIncSec + ' sec', false]);
+  rows.push(['Variant', mpVariant === 'chess960'
+    ? 'Chess960 — a random start position, dealt when you post' : 'Standard chess',
+    mpVariant !== 'chess960']);
   rows.push(['You play',
     mpHostColor === 'white' ? 'White ♔'
     : mpHostColor === 'black' ? 'Black ♚'
@@ -3633,6 +3641,7 @@ function mpApplyResume(msg) {
   }
   mpStartFen  = (typeof msg.startFen === 'string' && msg.startFen) ? msg.startFen : null;
   mpStartSans = Array.isArray(msg.startSans) ? msg.startSans : [];
+  mpChess960  = !!msg.chess960 && !!mpStartFen;
 
   mpSetMode('ingame');
   mpStartGame(msg.tc || mpSelectedTC);
@@ -3777,6 +3786,7 @@ function mpHandleMessage(msg) {
       // Custom start position from the host (a "play from here" invite)
       mpStartFen  = (typeof msg.startFen === 'string' && msg.startFen) ? msg.startFen : null;
       mpStartSans = Array.isArray(msg.startSans) ? msg.startSans : [];
+      mpChess960  = !!msg.chess960 && !!mpStartFen;
       mpSetMode('ingame');
       mpShowStatus('✓ Joined as ' + (msg.role === 'white' ? 'White ♔' : 'Black ♚') + '. Starting…');
       mpStartGame(mpSelectedTC);
@@ -3796,6 +3806,7 @@ function mpHandleMessage(msg) {
       if (typeof msg.startFen === 'string' && msg.startFen) {
         mpStartFen  = msg.startFen;
         mpStartSans = Array.isArray(msg.startSans) ? msg.startSans : [];
+        mpChess960  = !!msg.chess960;
       }
       mpSetMode('ingame');
       mpShowStatus('✓ Opponent joined! You are ' + (mpRole === 'white' ? 'White ♔' : 'Black ♚'));
@@ -3936,9 +3947,14 @@ function mpPostChallenge() {
   const name     = (nameEl && nameEl.value.trim()) || 'Anonymous';
   const rating   = (ratingEl && ratingEl.value.trim()) ? parseInt(ratingEl.value) : null;
   const tcLabel  = mpBaseMin === 0 ? 'Untimed' : mpBaseMin + '+' + mpIncSec;
+  // A Chess960 challenge carries its position, dealt now, so whoever accepts
+  // plays the same one (and a rematch does too, colours swapped).
+  mpChess960  = mpVariant === 'chess960';
+  mpStartFen  = mpChess960 ? chess960StartFen(chess960RandomNumber()) : null;
+  mpStartSans = [];
   mpConnect(() => {
     if (mpWs && mpWs.readyState === WebSocket.OPEN) {
-      mpWs.send(JSON.stringify({
+      const payload = {
         type: 'create', lobby: true,
         tc: mpSelectedTC, tcLabel,
         tcBaseMin: mpBaseMin, tcIncSec: mpIncSec,
@@ -3946,7 +3962,9 @@ function mpPostChallenge() {
         ratingType: rating != null ? mpRatingType : null,
         ratingRange: mpRatingRange,
         hostColor: mpHostColor
-      }));
+      };
+      if (mpChess960) { payload.chess960 = true; payload.startFen = mpStartFen; }
+      mpWs.send(JSON.stringify(payload));
     } else {
       mpShowStatus('Connection failed — try again', true);
     }
@@ -3982,7 +4000,8 @@ function mpRenderLobby(challenges) {
         '<div style="font-family:var(--mp-font-u);font-size:9.5px;font-weight:500;color:var(--mp-text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
           nameStr + ratingStr + rangeStr +
         '</div>' +
-        '<div style="font-family:var(--mp-font-m);font-size:8px;color:var(--mp-text-dim);margin-top:1px;">⏱ ' + tcLabel + '</div>' +
+        '<div style="font-family:var(--mp-font-m);font-size:8px;color:var(--mp-text-dim);margin-top:1px;">⏱ ' + tcLabel +
+          (ch.chess960 ? ' · <span style="color:var(--mp-amber);">Chess960</span>' : '') + '</div>' +
       '</div>' +
       '<button onclick="mpAcceptLobbyChallenge(\'' + ch.code + '\')" ' +
       'style="padding:5px 14px;font-family:var(--mp-font-u);font-size:9px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;background:rgba(50,160,100,0.14);' +
@@ -4066,6 +4085,10 @@ function mpCreatePrivate() {
   if (typeof _mpRefreshStartPosBanner === 'function') _mpRefreshStartPosBanner();
   mpStartFen  = sp && sp.fen ? sp.fen : null;
   mpStartSans = sp && sp.sans ? sp.sans.slice() : [];
+  // A position from a Chess960 game stays one. Otherwise the Variant pill
+  // decides, and Chess960 deals a fresh position for the room.
+  mpChess960  = sp ? !!sp.chess960 : mpVariant === 'chess960';
+  if (!sp && mpChess960) { mpStartFen = chess960StartFen(chess960RandomNumber()); mpStartSans = []; }
   mpConnect(() => {
     if (mpWs && mpWs.readyState === WebSocket.OPEN) {
       const payload = {
@@ -4075,6 +4098,7 @@ function mpCreatePrivate() {
         hostColor: mpHostColor
       };
       if (mpStartFen) { payload.startFen = mpStartFen; payload.startSans = mpStartSans; }
+      if (mpChess960) payload.chess960 = true;
       mpWs.send(JSON.stringify(payload));
     }
     else mpShowStatus('Connection failed — try again', true);
@@ -4214,6 +4238,7 @@ function mpLeave(keepBoard) {
   mpSeatToken = null;
   mpOriginalRole = null; mpGameCount = 0;
   mpStartFen = null; mpStartSans = [];   // don't leak a from-position start into the next room
+  mpChess960 = false;
   clearInterval(mpLobbyRefreshTimer);
   chatShow(false);
   const cm = document.getElementById('chatMessages'); if (cm) cm.innerHTML = '';
@@ -4248,6 +4273,7 @@ function mpStartGame(tcKey) {
   clockInit(tc);
   // From-position room: both clients set up the agreed position (rematches
   // restart from the same position too, with colors swapped as usual)
+  if (mpChess960) setChess960(true);
   if (mpStartFen) applyStartPosition(mpStartFen, mpStartSans);
   chatShow(true);
   boardFlipped = (mpRole === 'black');
@@ -4504,6 +4530,20 @@ function mpSetHostColor(c) {
   if (typeof mpQsRefresh === 'function') mpQsRefresh();
 }
 
+// ── Variant: standard chess or Chess960 ──────────────────────────────────────
+// For games you create. A Chess960 room is dealt its position when it is made,
+// and the server hands that position to whoever joins; rematches replay it with
+// colours swapped, so each player gets both sides of it.
+let mpVariant = 'standard';
+function mpSetVariant(v) {
+  if (v !== 'chess960') v = 'standard';
+  mpVariant = v;
+  document.querySelectorAll('[data-mpvariant]').forEach(b =>
+    b.classList.toggle('tc-active', b.dataset.mpvariant === v));
+  try { localStorage.setItem('bm_mpVariant', v); } catch (e) {}
+  if (typeof mpQsRefresh === 'function') mpQsRefresh();
+}
+
 // ── Persist "Your Info" (handle / rating / range) across sessions ────────────
 function mpSaveInfo() {
   const nameEl   = document.getElementById('mpLobbyName');
@@ -4526,6 +4566,8 @@ function mpLoadInfo() {
     if (rt) mpSetRatingType(rt);
     const hc = localStorage.getItem('bm_mpHostColor');
     if (hc) mpSetHostColor(hc);
+    const vr = localStorage.getItem('bm_mpVariant');
+    if (vr) mpSetVariant(vr);
     // Last-used time control ("Untimed" the very first time)
     const tb = parseInt(localStorage.getItem('bm_mpTcBase'));
     const ti = parseInt(localStorage.getItem('bm_mpTcInc'));
@@ -5420,6 +5462,9 @@ function buildPgnText(){
   const result  = _pgnResultToken();
   let pgn = '[Event "Blundermind Game"]\n[Site "Blundermindchess.com"]\n[Date "' + date +
             '"]\n[White "White"]\n[Black "Black"]\n[Result "' + result + '"]\n';
+  // Chess960 says so, the way Lichess and other readers expect it: without the
+  // tag a castle reads as a standard one and the game will not load.
+  if(typeof chess960!=='undefined' && chess960) pgn += '[Variant "Chess960"]\n';
   // Games started from a bare position (no SAN prefix) need SetUp/FEN tags so
   // the PGN reloads correctly; games with a SAN prefix are complete from move 1.
   if(typeof _gameStartFen!=='undefined' && _gameStartFen &&
@@ -5528,6 +5573,10 @@ function parsePgnAndStartReplay(pgnText){
   if(typeof _isLiveGame==='function'&&_isLiveGame()) abandonLiveGameContexts();
   // A [FEN "..."] header means the game starts from a set-up position
   const fenTag=pgnText.match(/\[FEN\s+"([^"]+)"\]/);
+  // A Chess960 game (Lichess writes "Chess960"; older files "Fischerandom").
+  // Set before the position is read: it decides which rooks castle.
+  const _v=pgnText.match(/\[Variant\s+"([^"]+)"\]/i);
+  setChess960(!!(_v&&/960|fischer/i.test(_v[1])));
   // Strip header tags ([...]) and comments ({...}) line by line
   let moves=pgnText.split('\n')
     .filter(l=>!l.trim().startsWith('['))
@@ -5589,7 +5638,7 @@ function rebuildToReplayIdx(targetIdx){
     _bd=applyMove(mv.from,mv.to,_bd,_ep,mv.promo||'Q');
     const movedPiece=prevBoard[mv.from];
     // Halfmove clock: reset on pawn moves and captures, else increment
-    _hm=(movedPiece&&movedPiece.piece==='P')||prevBoard[mv.to]?0:_hm+1;
+    _hm=(movedPiece&&movedPiece.piece==='P')||moveCaptures(prevBoard,mv.from,mv.to,_ep)?0:_hm+1;
     _cst=updateCastling(mv.from,mv.to,movedPiece,_cst);
     _ep=computeEP(mv.from,mv.to,prevBoard);
     _turn=_turn==='w'?'b':'w';
@@ -5644,7 +5693,7 @@ function gameRewindPlies(k){
     }
     const prev=bd,piece=prev[mv.from];
     bd=applyMove(mv.from,mv.to,prev,ep,mv.promo||'Q');
-    hm=(piece&&piece.piece==='P')||prev[mv.to]?0:hm+1;
+    hm=(piece&&piece.piece==='P')||moveCaptures(prev,mv.from,mv.to,ep)?0:hm+1;
     cst=updateCastling(mv.from,mv.to,piece,cst);
     ep=computeEP(mv.from,mv.to,prev);
     t=t==='w'?'b':'w';
@@ -5868,7 +5917,8 @@ function _replayCurrentPos(){
   const fullmove=Math.floor(replayIdx/2)+1;
   return {
     fen: boardToFen(board,turn,castling,epSq,_replayHalfmove,fullmove),
-    sans: replayMoves.slice(0,replayIdx)
+    sans: replayMoves.slice(0,replayIdx),
+    chess960: !!chess960
   };
 }
 

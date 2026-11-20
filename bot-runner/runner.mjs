@@ -85,7 +85,7 @@ function probe() {
 }
 
 // ── Bot files ───────────────────────────────────────────────────────────────
-// { account, bot, saved, site, lichess: { token, bots, speeds }, lastBot }
+// { account, bot, saved, site, lichess: { token, bots, speeds, chess960 }, lastBot }
 // lastBot is the page's own record of the bot it plays (bm_lastBot), copied
 // whole, so it restores the way a reload of a desktop host tab does.
 //
@@ -379,7 +379,7 @@ async function setup(name) {
     if (!lichess || !lichess.token || !lastBot || !lastBot.cfg) continue;
     const out = {
       account: s.account, bot: s.bot, saved: new Date().toISOString(), site: SITE,
-      lichess: { token: lichess.token, bots: !!lichess.bots, speeds: lichess.speeds || {} },
+      lichess: { token: lichess.token, bots: !!lichess.bots, speeds: lichess.speeds || {}, chess960: !!lichess.chess960 },
       lastBot,
     };
     const key = JSON.stringify([out.account, out.lichess, out.lastBot]);

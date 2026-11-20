@@ -114,8 +114,9 @@ function executeMove(from,to,promo){
   const quiet=quietMoves;
   // Snapshot the pre-move position for the Maia move-distribution panel.
   if(typeof distCapturePreMove==='function') distCapturePreMove(from,to,promo);
-  // Detect capture before board is modified (includes en passant)
-  const isCapture=!!(board[to]||(p.piece==='P'&&to===epSq));
+  // Detect capture before board is modified (includes en passant). A Chess960
+  // castle lands on the king's own rook, which is not one.
+  const isCapture=moveCaptures(board,from,to,epSq);
   const isPawnMove=p.piece==='P';
   // Record move in algebraic notation before applying
   try{ gameMovesAlgebraic.push(moveToSAN(from,to,promo,board,epSq,castling)); }catch(e){}
@@ -561,6 +562,17 @@ cv.addEventListener('mousedown',e=>{
     dragFrom=-1;dragMoved=false;render();
     if(!isOwnPiece)return; // tapped empty space: just cancel
     // Tapped another piece: fall through and select it below.
+  }
+  // Chess960: the king castles by landing on its own rook. With the king picked
+  // up, a click on that rook is the castle, not a new selection. (Dragging the
+  // king onto it already works: a drop never reselects.)
+  const _kSel=(selSq>=0)?selSq:premoveFrom;
+  if(isOwnPiece&&!isConfirmMode()&&_kSel>=0&&_kSel!==sq&&inpBoard[_kSel]&&
+     inpBoard[_kSel].piece==='K'&&inpBoard[sq].piece==='R'&&
+     inpBoard[_kSel].color===inpBoard[sq].color&&legalMoves.includes(sq)){
+    dragFrom=-1;dragMoved=false;selSq=-1;
+    if(!tryCommit(_kSel,sq)){legalMoves=[];clearPreview();atkMap=buildAtk(board);render();}
+    return;
   }
   if(isOwnPiece){
     if(selSq===sq){selSq=-1;legalMoves=[];clearPreview();atkMap=buildAtk(board);dragFrom=-1;dragMoved=false;render();}
@@ -2027,6 +2039,9 @@ function resetGame(){
   if(typeof bmSessionClear==='function') bmSessionClear();
   cancelResign();cancelDrawOffer();showRematchBtn(false);clockStop();clockInit(clockControl);
   lastMoveFrom=-1;lastMoveTo=-1;_gameStartFen=null;_gameStartSans=[];
+  // Every game starts as standard chess; a Chess960 start turns it back on
+  // (setChess960) before applying its position.
+  setChess960(false);
   // Every game start funnels through here: kill any lingering replay/review
   // state so the old game's move selector can't hijack the new game's board.
   // (Continuations re-apply their FEN + SAN prefix AFTER this reset.)
@@ -2165,6 +2180,16 @@ function matAdvString(lead, pieces, oppPieces){
            : '');
 }
 
+// "Chess960 · #518" while a Chess960 game, or its review, is on the board.
+// The number is looked up once per start position.
+let _variantTagCache = { fen: null, n: -1 };
+function variantTagText(){
+  if(typeof chess960==='undefined'||!chess960) return '';
+  const fen=(typeof inReplay!=='undefined'&&inReplay&&typeof replayBaseFen!=='undefined'&&replayBaseFen)
+    ? replayBaseFen : _gameStartFen;
+  if(fen!==_variantTagCache.fen) _variantTagCache={ fen, n: fen ? chess960NumberOf(fen) : -1 };
+  return 'Chess960' + (_variantTagCache.n>=0 ? ' · #' + _variantTagCache.n : '');
+}
 function updatePlayerBoxes(){
   // Which box is on top follows the drawn orientation, not the seat — so a
   // view flip moves the clocks with the pieces they belong to.
@@ -2175,6 +2200,10 @@ function updatePlayerBoxes(){
   const diff = mat.w - mat.b;
   const inChk = inCheck(board, turn);
   const isWhiteTurn = turn === 'w';
+
+  // ── Variant ──────────────────────────────────────────────────────
+  const _vt = document.getElementById('variantTag');
+  if(_vt){ const t = variantTagText(); _vt.textContent = t; _vt.style.display = t ? '' : 'none'; }
 
   // ── Material bars ────────────────────────────────────────────────
   const matW = document.getElementById('matW');

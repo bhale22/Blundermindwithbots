@@ -158,6 +158,7 @@ function sfGhostGetMove(fen, depth, excludeUci, hypBoard, hypTurn, hypEp, hypCas
     if (sfGhostPending) { sfGhostPending(null); sfGhostPending = null; sfGhostBestmovesOwed++; }
     sfGhostWorker.postMessage('stop');
     sfGhostPending = resolve;
+    sf960Sync(sfGhostWorker);
     sfGhostWorker.postMessage('position fen ' + fen);
 
     var goCmd = 'go depth ' + Math.max(4, Math.min(12, depth));
@@ -247,8 +248,7 @@ function _sfReplayFen4(start, moves) {
     }
   }
   let tn = parts[1] === 'b' ? 'b' : 'w';
-  const cs = parts[2] || '-';
-  let cst = { wK: cs.includes('K'), wQ: cs.includes('Q'), bK: cs.includes('k'), bQ: cs.includes('q') };
+  let cst = parseCastlingField(parts[2] || '-', bd).cst;
   let ep = (parts[3] && parts[3] !== '-') ? fileRankToSq(parts[3]) : -1;
   for (const u of moves) {
     const mv = uciToSq(u);
@@ -262,6 +262,19 @@ function _sfReplayFen4(start, moves) {
   }
   return _sfFen4(boardToFen(bd, tn, cst, ep));
 }
+// Stockfish plays Chess960 only with UCI_Chess960 on, and then reads and writes
+// castling as king takes rook, which is how this board plays it in a Chess960
+// game (20-chess-core). Each worker is told before every position it is sent,
+// and only when the game's variant differs from what it was last told, so a
+// standard game after a Chess960 one turns it back off.
+function sf960Sync(w) {
+  if (!w) return;
+  const want = (typeof chess960 !== 'undefined') && !!chess960;
+  if (w._bm960 === want) return;
+  w.postMessage('setoption name UCI_Chess960 value ' + (want ? 'true' : 'false'));
+  w._bm960 = want;
+}
+
 // The UCI `position` command for `fen`: with the game's moves when it is the
 // live game's position, a bare FEN otherwise.
 function sfPositionCmd(fen) {
@@ -304,6 +317,7 @@ function sfGetMove(fen, levelOrDepth, isDepth=false, opts) {
       sfWorker.postMessage('setoption name Skill Level value ' + wantLevel);
       sfCurrentSkillLevel = wantLevel;
     }
+    sf960Sync(sfWorker);
     sfWorker.postMessage(sfPositionCmd(fen));
     // Levels at or below 0 run Skill 0 (the clamp above floors there) and are
     // separated by depth alone: 0 -> 4 ply, -1 -> 3, -2 -> 2, -3 -> 1.
@@ -359,6 +373,7 @@ function sfGetComplexity(fen) {
       sfCurrentSkillLevel = 20;
     }
     sfWorker.postMessage('setoption name MultiPV value 2');
+    sf960Sync(sfWorker);
     sfWorker.postMessage(sfPositionCmd(fen));
     sfWorker.postMessage('go depth 12');
     // 3 s safety timeout — avoids indefinite wait if SF is stalled
@@ -410,6 +425,7 @@ function sfEvalMoves(fen, moves, depth, opts) {
       sfCurrentSkillLevel = 20;
     }
     sfWorker.postMessage('setoption name MultiPV value ' + moves.length);
+    sf960Sync(sfWorker);
     sfWorker.postMessage(sfPositionCmd(fen));
     sfWorker.postMessage('go depth ' + (depth || 10) + ' searchmoves ' + moves.join(' '));
     // Safety timeout — the guard must not stall the bot's move. Scales with
@@ -1072,10 +1088,9 @@ function boardToFen(bd, turnColor, cst, ep, halfmove = 0, fullmove = 1) {
     if (empty) row += empty;
     rows.push(row);
   }
-  let castStr = '';
-  if (cst.wK) castStr += 'K'; if (cst.wQ) castStr += 'Q';
-  if (cst.bK) castStr += 'k'; if (cst.bQ) castStr += 'q';
-  if (!castStr) castStr = '-';
+  // KQkq; in a Chess960 game X-FEN, which names a rook's file when K/Q would
+  // not say which rook it is (castlingFieldFor, 20-chess-core).
+  const castStr = castlingFieldFor(bd, cst);
   const epStr = ep >= 0 ? (String.fromCharCode(97 + ep % 8) + (8 - Math.floor(ep / 8))) : '-';
   return rows.join('/') + ' ' + turnColor + ' ' + castStr + ' ' + epStr + ' ' + halfmove + ' ' + fullmove;
 }
@@ -1203,8 +1218,7 @@ function _maiaLegalMask(fen) {
     }
   }
 
-  var cst = { wK: castlingStr.includes('K'), wQ: castlingStr.includes('Q'),
-               bK: castlingStr.includes('k'), bQ: castlingStr.includes('q') };
+  var cst = parseCastlingField(castlingStr, tmpBoard).cst;
   var epSqTmp = -1;
   if (epStr !== '-') {
     var ef = epStr.charCodeAt(0) - 'a'.charCodeAt(0);
@@ -1227,6 +1241,14 @@ function _maiaLegalMask(fen) {
     return fromFile + fromRank + toFile + toRank + promo;
   }
 
+  // Chess960 castles. Maia learned castling from standard games, where O-O is
+  // the king's two-square step (e1g1). A Chess960 castle is played here as king
+  // takes rook (e1h1), a from-to pair Maia only ever saw as a rook or queen
+  // sliding along the rank. So each castle is asked for under the standard
+  // spelling, king onto its castled square, wherever that is free to mean the
+  // castle: not when the king already stands there, nor when it is also an
+  // ordinary king step. castleMap turns Maia's answer back (_maiaProcess).
+  var castleMap = {};
   for (var sq = 0; sq < 64; sq++) {
     var p = tmpBoard[sq];
     if (!p || p.color !== sideToMove) continue;
@@ -1234,6 +1256,15 @@ function _maiaLegalMask(fen) {
     for (var mi = 0; mi < moves.length; mi++) {
       var fromStr = sqToUci(sq);
       var toStr   = sqToUci(moves[mi]);
+      var _rk = tmpBoard[moves[mi]];
+      if (p.piece === 'K' && _rk && _rk.color === p.color) {
+        var _dest = Math.floor(sq / 8) * 8 + (moves[mi] > sq ? 6 : 2);
+        if (_dest !== sq && moves.indexOf(_dest) < 0) {
+          var _alias = fromStr + sqToUci(_dest);
+          castleMap[_alias] = fromStr + toStr;
+          toStr = sqToUci(_dest);
+        }
+      }
       var isPromo = p.piece === 'P' && (
         (sideToMove === 'w' && Math.floor(moves[mi] / 8) === 0) ||
         (sideToMove === 'b' && Math.floor(moves[mi] / 8) === 7)
@@ -1253,6 +1284,7 @@ function _maiaLegalMask(fen) {
       }
     }
   }
+  mask.castleMap = castleMap;
   return mask;
 }
 
@@ -1285,6 +1317,8 @@ function _maiaProcess(fen, logitsMove, logitsValue, legalMask) {
       var promo = moveStr.length > 4 ? moveStr[4] : '';
       moveStr = fromFile + fromRank + toFile + toRank + promo;
     }
+    // A Chess960 castle asked for under its standard spelling (_maiaLegalMask).
+    if (legalMask.castleMap && legalMask.castleMap[moveStr]) moveStr = legalMask.castleMap[moveStr];
 
     probs[moveStr] = expL[j] / sumE;
   }
@@ -1679,6 +1713,8 @@ function explorerGameCount(moves) {
 }
 
 async function maiaGetMoveProbs(fen) {
+  // The explorer holds standard games only: nothing in it is a Chess960 game.
+  if (typeof chess960 !== 'undefined' && chess960) return null;
   try {
     // Filter to the selected band only, for more authentic play. lcRatingParam
     // maps continuous Elo onto the explorer's rating enum — see its comment.
@@ -1886,6 +1922,8 @@ function openingCacheKey(moveHistory) {
 }
 
 async function openingExplorerFetch(moveHistory) {
+  // Standard games only — see maiaGetMoveProbs.
+  if (typeof chess960 !== 'undefined' && chess960) return null;
   const { src, since, ratings, minGames, startFen } = _openingBookQuery();
   const cacheKey = openingCacheKey(moveHistory);
   if (_openingCache.has(cacheKey)) return _openingCache.get(cacheKey);

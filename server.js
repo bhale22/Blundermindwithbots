@@ -912,6 +912,7 @@ function roomStatePayload(room, role) {
     tcIncSec: room.tcIncSec,
     startFen: room.startFen || undefined,
     startSans: room.startSans || undefined,
+    chess960: room.chess960 || undefined,
     moves: room.moves || [],
     timeW: (typeof room.timeW === 'number') ? room.timeW : undefined,
     timeB: (typeof room.timeB === 'number') ? room.timeB : undefined,
@@ -1056,7 +1057,9 @@ wss.on('connection', (ws, req) => {
       // Optional custom start position ("play from here" invites, private only):
       // sanitized, stored on the room, handed to the joiner. Clients validate
       // the FEN themselves; the server just relays a bounded string.
-      const startFen = (!isLobby && typeof msg.startFen === 'string' &&
+      // A Chess960 room carries its dealt position, open challenges included.
+      const chess960 = msg.chess960 === true;
+      const startFen = ((!isLobby || chess960) && typeof msg.startFen === 'string' &&
                         msg.startFen.length <= 120 && /^[\w\/\- ]+$/.test(msg.startFen))
         ? msg.startFen : null;
       const startSans = (startFen && Array.isArray(msg.startSans))
@@ -1083,6 +1086,8 @@ wss.on('connection', (ws, req) => {
         tc: msg.tc || 'untimed',
         tcBaseMin, tcIncSec,
         startFen, startSans,
+        // Chess960 only with a position to play it from.
+        chess960: chess960 && !!startFen,
         // Authoritative game state, so a reconnecting client can be rebuilt.
         moves: [], timeW: null, timeB: null,
         started: false, over: false,
@@ -1106,6 +1111,7 @@ wss.on('connection', (ws, req) => {
           tc:          String(msg.tc || 'untimed').slice(0, 20),
           tcLabel:     String(msg.tcLabel || 'Untimed').slice(0, 20),
           tcBaseMin, tcIncSec,
+          chess960: !!rooms[code].chess960,
         };
         broadcastLobbyList();
       }
@@ -1136,11 +1142,13 @@ wss.on('connection', (ws, req) => {
       }
       ws.send(JSON.stringify({ type: 'joined', code, role: openRole, token: joinToken,
         tc: room.tc, tcBaseMin: room.tcBaseMin, tcIncSec: room.tcIncSec,
-        startFen: room.startFen || undefined, startSans: room.startSans || undefined }));
+        startFen: room.startFen || undefined, startSans: room.startSans || undefined,
+        chess960: room.chess960 || undefined }));
       if (host && host.readyState === 1) {
         host.send(JSON.stringify({ type: 'opponent_joined',
           tc: room.tc, tcBaseMin: room.tcBaseMin, tcIncSec: room.tcIncSec,
-          startFen: room.startFen || undefined, startSans: room.startSans || undefined }));
+          startFen: room.startFen || undefined, startSans: room.startSans || undefined,
+          chess960: room.chess960 || undefined }));
       }
 
     } else if (msg.type === 'resume') {
