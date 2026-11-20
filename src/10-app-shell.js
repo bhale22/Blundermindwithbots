@@ -336,12 +336,27 @@ function resizeBoard() {
   // and no board-column clocks to protect.)
   let replayH = 0;
   const rcEl = document.getElementById('replayControls');
-  if (rcEl && rcEl.offsetParent !== null && !(typeof proMode !== 'undefined' && proMode) && !(stacked && shortVp)) {
+  const isPro = typeof proMode !== 'undefined' && proMode;
+  if (rcEl && rcEl.offsetParent !== null && !isPro && !(stacked && shortVp)) {
     replayH = rcEl.offsetHeight + 8;
   }
+  // In a review the Maia odds sit directly under the review controls, on both
+  // boards (distPlace, Nov 2026). The board makes room for them, as for the
+  // controls, so the panel is read without scrolling. On the Expert board the
+  // controls, the panel and the end-of-game row share the 96px its column does
+  // not spend on clocks.
+  let distH = 0;
+  const dpEl = document.getElementById('distPanel');
+  if (dpEl && document.body.classList.contains('dist-review') && dpEl.offsetParent !== null && !(stacked && shortVp)) {
+    distH = dpEl.offsetHeight + 8;
+    if (isPro && !stacked) {
+      const hOf = id => { const el = document.getElementById(id); return el && el.offsetParent !== null ? el.offsetHeight + 6 : 0; };
+      distH = Math.max(0, distH + hOf('replayControls') + hOf('proPostGame') - playerH);
+    }
+  }
   const maxFromHeight = stacked
-    ? window.innerHeight - topH - playerH - 8 - phoneChrome - replayH
-    : window.innerHeight - topH - playerH - footerH - 12 - replayH;
+    ? window.innerHeight - topH - playerH - 8 - phoneChrome - replayH - distH
+    : window.innerHeight - topH - playerH - footerH - 12 - replayH - distH;
   const boardPx = Math.max(280, Math.min(maxFromWidth, maxFromHeight, 900));
   const bpx = boardPx + 'px';
   const cv = document.getElementById('cv');
@@ -1764,7 +1779,8 @@ function syncPhoneBar(){
   // hidden on a phone, and until this bar carried them a finished game on a
   // phone could not be reviewed at all.
   const over = typeof gameOver !== 'undefined' && gameOver;
-  show('pbRematch', over);
+  // A bot game's review keeps Rematch (it opens by itself when the game ends).
+  show('pbRematch', over || (inReplay && typeof _reviewRematchBot !== 'undefined' && _reviewRematchBot));
   show('pbReview',  over && typeof gameMovesAlgebraic !== 'undefined' &&
                     gameMovesAlgebraic.length > 0 && !inReplay);
   // Chat follows the chat box itself rather than re-deriving "is this a
@@ -2219,6 +2235,9 @@ function gameRematch(){
   if (typeof mpRoomId !== 'undefined' && mpRoomId) mpOfferRematch();
   else if (typeof pzRematch === 'function' && pzRematch()) return;
   else if (typeof botActive !== 'undefined' && botActive) botStart();
+  // Reviewing a bot game: the review stopped the bot, and its settings are
+  // still the ones it played with, so this is the same bot again.
+  else if (inReplay && _reviewRematchBot) botStart();
   else resetGame();
 }
 function proRematch(){ gameRematch(); }
@@ -5379,6 +5398,9 @@ document.getElementById('themePanel').addEventListener('transitionend',()=>{
 let _gameAutoSaved = false;   // guards one auto-save per finished game
 
 function _pgnResultToken(){
+  // A review has cleared the game-over state; it kept the result.
+  if(!(typeof gameOverMsg !== 'undefined' && gameOverMsg) && typeof inReplay !== 'undefined' && inReplay &&
+     typeof _reviewResult !== 'undefined' && _reviewResult) return _reviewResult.token;
   const m = (typeof gameOverMsg !== 'undefined' ? gameOverMsg : '') || '';
   if(/1-0|white wins/i.test(m)) return '1-0';
   if(/0-1|black wins/i.test(m)) return '0-1';
@@ -5521,9 +5543,11 @@ function parsePgnAndStartReplay(pgnText){
   gameMovesAlgebraic=[];gameOverMsg='';gameOver=false;
   selSq=-1;legalMoves=[];clearPreview();
   replayMoves=tokens;inReplay=true;
+  _reviewResult=null;_reviewRematchBot=false;
   if(typeof distSetReviewCtx==='function') distSetReviewCtx(null,null);
   const rc=document.getElementById('replayControls');
   if(rc) rc.style.display='block';
+  _syncReviewExtras();
   // Position-only PGNs open at the position itself; games open at move 0
   rebuildToReplayIdx(tokens.length?0:0);
   if(typeof distOpenForReview==='function') distOpenForReview();
@@ -5657,6 +5681,7 @@ function updateReplayInfo(){
 }
 function exitReplay(){
   inReplay=false;replayMoves=[];replayIdx=0;replayBaseFen=null;
+  _reviewResult=null;_reviewRematchBot=false;_syncReviewExtras();
   document.getElementById('replayControls').style.display='none';
   if(typeof distEndReview==='function') distEndReview();
   if(typeof resizeBoard==='function') resizeBoard();
@@ -5666,6 +5691,7 @@ function exitReplay(){
 // Leave replay mode without touching the board (used by "play from here")
 function _exitReplayKeepBoard(){
   inReplay=false;replayMoves=[];replayIdx=0;replayBaseFen=null;
+  _reviewResult=null;_reviewRematchBot=false;_syncReviewExtras();
   const rc=document.getElementById('replayControls');
   if(rc) rc.style.display='none';
   if(typeof distEndReview==='function') distEndReview();
@@ -5719,6 +5745,51 @@ function abandonLiveGameContexts(){
 // Drops the bot/2-player context (like explore mode) but keeps the move list,
 // entering replay at the final position so the user can step back anywhere and
 // restart play from there.
+//
+// What a review keeps of the game it was opened from (Nov 2026): the result,
+// shown under the review controls and used for a .pgn saved from the review,
+// and whether it was a bot game, so Rematch can still play that bot.
+let _reviewResult=null;        // { msg, token } or null
+let _reviewRematchBot=false;
+function _syncReviewExtras(){
+  const res=document.getElementById('replayResult');
+  if(res){
+    const m=inReplay&&_reviewResult?_reviewResult.msg:'';
+    res.textContent=m;res.style.display=m?'':'none';
+  }
+  const rb=document.getElementById('replayRematchBtn');
+  if(rb) rb.style.display=(inReplay&&_reviewRematchBot)?'':'none';
+}
+
+// A bot game that ends opens its own review (Nov 2026, Ben), on whichever
+// board it was played: the Maia odds come up under the review controls, and
+// Rematch stays in reach (gameRematch). Not a 2-player game, where reviewing
+// closes the room and with it the rematch offer and the chat; not a tab
+// hosting the Lichess bot, whose next game is Lichess's to start; not a
+// premove puzzle, which has its own next step. Once per game, on the next
+// tick, so whatever ended the game (the bot's own move code, a flag) has
+// finished first, and only if nothing has started since. Not later: the
+// end-of-game buttons would flash up and vanish, and the review opens on the
+// final position with the result under its controls anyway.
+let _autoReviewDone=false;
+function _autoReviewApplies(){
+  return typeof botActive!=='undefined'&&botActive&&gameOver&&!inReplay&&
+    gameMovesAlgebraic.length>0&&
+    !(typeof mpRoomId!=='undefined'&&mpRoomId)&&
+    !(typeof lichessHostTab==='function'&&lichessHostTab())&&
+    !(typeof lichessGameLive==='function'&&lichessGameLive())&&
+    !(typeof pzGameOnBoard==='function'&&pzGameOnBoard());
+}
+function maybeAutoReview(){
+  if(typeof gameOver==='undefined') return;
+  if(!gameOver){ _autoReviewDone=false; return; }
+  if(_autoReviewDone||!_autoReviewApplies()) return;
+  _autoReviewDone=true;
+  const moves=gameMovesAlgebraic.length;
+  setTimeout(()=>{
+    if(_autoReviewApplies()&&gameMovesAlgebraic.length===moves) startReplayOfCurrentGame();
+  },0);
+}
 function startReplayOfCurrentGame(){
   if(typeof gameMovesAlgebraic==='undefined'||!gameMovesAlgebraic.length) return;
   const liveBot=(typeof botActive!=='undefined'&&botActive&&!gameOver);
@@ -5735,6 +5806,10 @@ function startReplayOfCurrentGame(){
       ?(botPlayerColor==='white'?'w':'b'):null;
     distSetReviewCtx(_ctxRating,_ctxHuman);
   }
+  // What the review shows of the game's end, and whether Rematch can play the
+  // same bot again: both are cleared below, with the game-over state.
+  _reviewResult=(gameOver&&gameOverMsg)?{msg:gameOverMsg,token:_pgnResultToken()}:null;
+  _reviewRematchBot=(typeof botActive!=='undefined'&&!!botActive);
   if(typeof botActive!=='undefined'&&botActive&&typeof botStop==='function') botStop();
   if(typeof mpRoomId!=='undefined'&&mpRoomId){
     if(mpWs){try{mpWs.close();}catch(e){} mpWs=null;}
@@ -5755,6 +5830,7 @@ function startReplayOfCurrentGame(){
   replayMoves=moves;inReplay=true;
   const rc=document.getElementById('replayControls');
   if(rc) rc.style.display='block';
+  _syncReviewExtras();
   rebuildToReplayIdx(moves.length);
   if(typeof distOpenForReview==='function') distOpenForReview();
   if(typeof resizeBoard==='function') resizeBoard();   // room for the replay controls
