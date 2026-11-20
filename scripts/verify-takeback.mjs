@@ -6,6 +6,8 @@
 // is still thinking, one, and the bot's move in flight is dropped. The bot
 // accepts as many a game as its builder setting says: every one by default,
 // none (no button), or the first N. The clocks are not rewound and never stop.
+// Later Nov 18 (Ben): the button is the player's choice, off until "Take-back
+// button" is turned on in Board settings, and never in a 2-player game.
 import { chromium } from 'playwright';
 
 const BASE = process.env.BASE || 'http://localhost:3100';
@@ -100,6 +102,37 @@ const state = () => app.evaluate(() => {
   };
 });
 const START = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -';
+
+console.log('\n1b  Board settings: off until the player turns it on, never in a 2-player game');
+{
+  await startGame({ limit: -1 });
+  await human('e2e4'); await waitBot(2);
+  const off = await app.evaluate(() => ({
+    box: document.getElementById('cbTakeback').checked, stored: localStorage.getItem('bm_takeback'),
+    shown: ['takebackBtn', 'pbTakeback', 'proTakebackBtn'].filter(id => document.getElementById(id).style.display !== 'none'),
+    asked: botRequestTakeback(), moves: gameMovesAlgebraic.length,
+  }));
+  ok('off by default: no button on any board, and asking takes nothing back',
+    !off.box && off.stored === null && !off.shown.length && off.asked === false && off.moves === 2, JSON.stringify(off));
+  const on = await app.evaluate(() => {
+    const cb = document.getElementById('cbTakeback');
+    cb.checked = true; cb.dispatchEvent(new Event('change'));
+    const btn = document.getElementById('takebackBtn');
+    return { stored: localStorage.getItem('bm_takeback'), shown: btn.style.display !== 'none', disabled: btn.disabled };
+  });
+  ok('turned on in Board settings, mid-game: the button is there at once, and remembered',
+    on.stored === '1' && on.shown && !on.disabled, JSON.stringify(on));
+  const mp = await app.evaluate(() => {
+    const was = mpRoomId; mpRoomId = 'TEST';
+    const ui = botTakebackUi(); syncTakebackBtns();
+    const shown = document.getElementById('takebackBtn').style.display !== 'none';
+    mpRoomId = was; syncTakebackBtns();
+    return { show: ui.show, shown };
+  });
+  ok('in a 2-player room it is never offered, whatever the setting', !mp.show && !mp.shown, JSON.stringify(mp));
+  const loaded = await app.evaluate(() => { const cb = document.getElementById('cbTakeback'); cb.checked = false; loadTakebackPref(); return cb.checked; });
+  ok('the saved choice is read back on the next visit', loaded === true);
+}
 
 console.log('\n2   Every takeback accepted (the default)');
 {

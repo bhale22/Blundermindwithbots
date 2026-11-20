@@ -1013,6 +1013,30 @@ await fr.fill('#lbc-match-offset', '-200');
 const matchCfg = await fr.evaluate(() => { const c = getBotConfig(); return { on: c.lichessMatchRating, off: c.lichessMatchOffset, row: _lbcSummary() }; });
 check(matchCfg.on === true && matchCfg.off === -200 && /matches each challenger −200 · 1500 if they have none/.test(matchCfg.row),
   'ticking it puts it in the bot config, and the summary says so', matchCfg);
+// The chat commands it takes besides the rating are ticks: cp, think and temp
+// to start (as every bot took before there was a choice), degrade not.
+const cmdsCfg = await fr.evaluate(() => {
+  const box = k => document.querySelector('#lbc-cmds input[data-cmd="' + k + '"]');
+  const boxes = [...document.querySelectorAll('#lbc-cmds input[data-cmd]')].map(b => b.dataset.cmd + (b.checked ? '+' : '-'));
+  const before = getBotConfig().lichessCommands.join();
+  box('degrade').click(); box('cp').click();
+  const ticked = getBotConfig().lichessCommands.join(), row = _lbcSummary();
+  box('degrade').click(); box('cp').click();
+  return { boxes: boxes.join(' '), before, ticked, row, after: getBotConfig().lichessCommands.join() };
+});
+check(cmdsCfg.boxes === 'cp+ think+ temp+ degrade-' && cmdsCfg.before === 'cp,think,temp' && cmdsCfg.ticked === 'think,temp,degrade' &&
+  /Chat commands<\/dt><dd>ELO, think, temp, degrade</.test(cmdsCfg.row) && cmdsCfg.after === 'cp,think,temp',
+  'the chat commands it takes are ticks in the popup (cp, think and temp to start), and the config and summary follow them', cmdsCfg);
+// Takebacks: 10 a game is one of the builder's own buttons (Blundermind-M3's).
+const tb10 = await fr.evaluate(() => {
+  const was = getBotConfig().takebackLimit;
+  document.querySelector('#tb-seg .seg-btn[data-tb="10"]').click();
+  const got = { cfg: getBotConfig().takebackLimit, sel: document.querySelector('#tb-seg .seg-btn.sel')?.textContent,
+    extra: document.querySelectorAll('#tb-seg .tb-extra').length };
+  setTakebackLimit(was);
+  return Object.assign(got, { back: getBotConfig().takebackLimit === was });
+});
+check(tb10.cfg === 10 && tb10.sel === '10' && tb10.extra === 0 && tb10.back, 'takebacks: 10 a game is a button of its own', tb10);
 await fr.fill('#lbc-strength', '2000=1775, 600=850, 2600=2025');
 const strCfg = await fr.evaluate(() => ({ t: getBotConfig().lichessStrength, row: _lbcSummary(), note: document.getElementById('lbc-strength-note').textContent }));
 check(JSON.stringify(strCfg.t) === '[[600,850],[2000,1775],[2600,2025]]' && /Strength.*measured/.test(strCfg.row) && /Plays like about 850/.test(strCfg.note),
@@ -1052,20 +1076,32 @@ const playMatched = async (challenger, seenAt) => {
 // what runs (the engine setting and the CP Budget), and the ranges as the
 // commands are typed.
 const elo = n => n.toLocaleString('en-US');
-// The greeting, three lines (Ben's wording, Nov 16): everything it is set to,
-// what can be typed, and the ranges. The spectators get the first line only.
-// Think time and Temp read "auto" when nobody has asked for one, but Temp
-// reads 10 for a Blind Conviction bot (`blind`), which is what it plays.
-const stated = (est, runs, cp, edge, think, temp, blind) =>
-  `ELO set to ${elo(est)} (${edge ? `its ${edge}, ` : ''}using ${runs}), CP budget ${cp}, ` +
-  `think ${think != null ? think + 's' : 'auto'}, temp ${temp != null ? temp : blind ? 10 : 'auto'}`;
+// The greeting, three lines (Ben's wording, Nov 16 and 20) for a bot that
+// takes cp, think and temp: everything it is set to, what can be typed, and
+// the ranges. The spectators get the first line only. Think time and Temp
+// read "auto" when nobody has asked for one, but Temp reads 10 for a Blind
+// Conviction bot (`blind`), which is what it plays — and on a Maia bot with
+// no personality temp is Maia's own temperature, at the one it was built with
+// (SAYS.maiaTemp, read from the page as each bot is applied).
+const SAYS = { maiaTemp: null };
+const readSays = async () => Object.assign(SAYS, await p2.evaluate(() => ({
+  maiaTemp: botWeighsMoves() ? null : Math.round(botMaiaTempValue * 10) / 10 })));
+const MAIA_TEMP_RANGE = "temp 0-4: 0 = Maia's top move, 1 = matches Maia's odds, 4 = wild";
+const stated = (est, runs, cp, edge, think, temp, blind) => {
+  const maiaTemp = !runs.startsWith('Flounder') && !blind && SAYS.maiaTemp != null;
+  return `ELO set to ${elo(est)} (${edge ? `its ${edge}, ` : ''}using ${runs}), CP budget ${cp}, ` +
+    `think ${think != null ? (typeof think === 'number' ? think + 's' : think) : 'auto'}, ` +
+    `temp ${temp != null ? temp : blind ? 10 : maiaTemp ? SAYS.maiaTemp : 'auto'}`;
+};
 const GREET_LINES = 3;
 const greeting = (est, runs, cp, lo, hi, edge, think, temp, blind) => {
   const flounder = runs.startsWith('Flounder');
+  const maiaTemp = !flounder && !blind && SAYS.maiaTemp != null;
   return [
     stated(est, runs, cp, edge, think, temp, blind),
     `Type in chat to change strength (ELO), centipawn budget (cp), Move timing (think), ${flounder ? 'Flounder' : 'Maia'} temperature (temp).`,
-    `ELO ${lo}-${hi}, cp 0-300, think 0-60s, Temp 0 (${flounder ? "Flounder's" : "Maia's"} top move) - 10 (personality driven)`,
+    `ELO ${lo}-${hi}, cp 0-300, think 0-60s or auto or mirror, ` +
+      (maiaTemp ? MAIA_TEMP_RANGE : `Temp 0 (${flounder ? "Flounder's" : "Maia's"} top move) - 10 (personality driven)`),
   ].join('\n');
 };
 // The player chat's first lines, as the greeting reads (seen.chat holds strings, a game's chat objects).
@@ -1153,6 +1189,8 @@ await fr.evaluate(() => {
 });
 await until(() => p2.evaluate(() => window._lastAppliedBotConfig.elo === 2200 && _lbEnginesReady()), 60000, 'the Maia update');
 B = await builtCp();
+await readSays();
+check(SAYS.maiaTemp != null, 'this Maia bot has no personality, so its temp is Maia\'s own temperature', SAYS);
 const curveOn = await p2.evaluate(() => {
   window._maiaAsked = [];
   const real = maia3GetMoveProbs;
@@ -1285,6 +1323,11 @@ await endGame(cg3);
 // A game of its own, so the chat game above lasts no longer than it did.
 const tempNow = () => p2.evaluate(() => botBlendTemp);
 const tempUser = { id: 'tempuser', name: 'TempUser', rating: 1900 };
+// Temp's blend needs a personality to blend with (with none, temp is Maia's
+// own temperature: the M3 games below). A knight lover, for these games.
+const builtPieces = await p2.evaluate(() => { const v = window._bcpPieceValues; window._bcpPieceValues = { knight: 1 }; return v; });
+const builtMaiaTemp = SAYS.maiaTemp;
+SAYS.maiaTemp = null;
 const tg = await openGame(tempUser, 3000);
 await greeted(tg);
 check(await tempNow() === null && greetOf(tg) === greeting(1700, 'Maia 1700', B, 600, 2600), 'before any temp command the bot picks as it was built', { t: await tempNow(), chat: tg.chat });
@@ -1324,6 +1367,8 @@ const tg3 = await openGame({ id: 'tempnext', name: 'TempNext', rating: 1300 });
 await greeted(tg3);
 check(await tempNow() === null && greetOf(tg3) === greeting(1100, 'Maia 1100', B, 600, 2600), 'the next player doesn\'t get the last one\'s temp', { t: await tempNow(), chat: tg3.chat });
 await endGame(tg3);
+await p2.evaluate(v => { window._bcpPieceValues = v; }, builtPieces);
+SAYS.maiaTemp = builtMaiaTemp;
 const cpNow = () => p2.evaluate(() => ({ budget: window._bcpCpBudget, floor: window._bcpCpHardFloor,
   built: window._lastAppliedBotConfig.cpBudget, builtFloor: window._lastAppliedBotConfig.hardFloorCp }));
 // A bot not set to match keeps its rating and says so.
@@ -1391,6 +1436,95 @@ const cpNext = await cpNow();
 check(cpNext.budget === cpNext.built && cpNext.floor === cpNext.builtFloor, 'the next player gets the builder\'s Budget and Floor', cpNext);
 await endGame(pg3);
 
+// ── Blundermind-M3 (Nov 20): plain Maia, taking only its own commands ───────
+// think, temp and degrade, not cp. Temp is Maia's own temperature; think
+// mirror is their pace; blink goes with its own timing only; degrade moves
+// the rating alone (Curve A on the Regan model), and never with a fixed time.
+const builtM3 = await p2.evaluate(() => {
+  const c = window._lastAppliedBotConfig;
+  const was = { cmds: c.lichessCommands, offA: c.pressureOffA, blink: c.behavBlink };
+  c.lichessCommands = ['think', 'temp', 'degrade'];
+  c.pressureOffA = true;
+  c.behavBlink = true;
+  return was;
+});
+const knobs = () => p2.evaluate(() => ({ chatTemp: botChatMaiaTemp, blend: botBlendTemp, base: botMaiaBaseTemp(),
+  mode: botTimeBehavior, ms: botFixedDelayMs, blink: botBehavBlink, b: !!botPressureCurveB, budget: window._bcpCpBudget,
+  a: botPressureCurveA ? botPressureCurveA.map(p => ({ x: p.x, y: p.y })) : null }));
+const curveBBuilt = (await knobs()).b;
+const m3Greet = (est, think, temp, deg) => [
+  `ELO set to ${elo(est)} (using Maia ${est}), think ${think}, temp ${temp}, degrade ${deg}`,
+  'Type in chat to change strength (ELO), Move timing (think), Maia temperature (temp), time-pressure degradation (degrade).',
+  'ELO 600-2600, think 0-60s or auto or mirror, degrade on/off, ' + MAIA_TEMP_RANGE,
+].join('\n');
+const m3User = { id: 'm3user', name: 'M3User', rating: 1900 };
+const ug = await openGame(m3User, 6000);
+await greeted(ug);
+let kn = await knobs();
+check(greetOf(ug) === m3Greet(1700, 'auto', SAYS.maiaTemp, 'off') && ug.spect[0]?.text === greetOf(ug).split('\n')[0],
+  'M3: the greeting names only what it takes, temp as Maia\'s temperature, degrade off as built', ug.chat);
+check(kn.a === null && kn.blink === true && kn.mode === 'complexity', 'as built: no rating curve, its own Complexity timing, with blink', kn);
+await command(ug, 'temp0');
+kn = await knobs();
+check(lastSaid(ug) === "Temp set to 0 (Maia's top move)" && kn.chatTemp === 0 && kn.blend === null,
+  'temp0: Maia\'s top move, and no blend', { said: lastSaid(ug), kn });
+await pastCooldown();
+await command(ug, 'temp1');
+kn = await knobs();
+check(lastSaid(ug) === "Temp set to 1 (matches Maia's odds)" && kn.chatTemp === 1 && kn.base === 1, 'temp1: Maia\'s own odds', { said: lastSaid(ug), kn });
+await pastCooldown();
+await command(ug, 'temp 9');
+check(lastSaid(ug) === 'Temp set to 4 (wild)' && (await knobs()).chatTemp === 4, 'temp 9: stops at 4, wild', lastSaid(ug));
+await pastCooldown();
+await command(ug, 'think mirror');
+kn = await knobs();
+check(lastSaid(ug) === 'Think time set to mirror (your pace)' && kn.mode === 'mirror' && kn.blink === false,
+  'think mirror: their pace, without blink', { said: lastSaid(ug), kn });
+await pastCooldown();
+await command(ug, 'degrade on');
+kn = await knobs();
+const ua1 = kn.a && kn.a.find(p => p.x === 1), ua200 = kn.a && kn.a.find(p => p.x === 200);
+check(lastSaid(ug) === 'Time-pressure degradation on' && ua200?.y === 1700 && ua1?.y === Math.round(1700 + reganD(1) - reganD(5)) &&
+  kn.b === curveBBuilt, 'degrade on: the rating curve, on the Regan model for the 3+2 clock; the temperature curve untouched', { said: lastSaid(ug), kn });
+await pastCooldown();
+await command(ug, 'think 5s');
+kn = await knobs();
+check(lastSaid(ug) === 'Think time set to 5 s a move' && kn.mode === 'fixed' && kn.ms === 5000 && kn.blink === false,
+  'think 5s: exactly that, without blink', { said: lastSaid(ug), kn });
+await pastCooldown();
+await command(ug, 'degrade on');
+check(lastSaid(ug) === 'Time-pressure degradation on (not with a fixed think time)', 'degrade on with a fixed time: it says it can\'t run then', lastSaid(ug));
+await pastCooldown();
+await command(ug, 'think auto');
+kn = await knobs();
+check(lastSaid(ug) === 'Think time back to human-like timing' && kn.mode === 'complexity' && kn.blink === true,
+  'think auto: its own timing again, blink and all', { said: lastSaid(ug), kn });
+await pastCooldown();
+await command(ug, 'cp50');
+check(lastSaid(ug) === "This bot's CP budget can't be changed." && (await knobs()).budget === kn.budget, 'cp50: not one it takes, and it says so', lastSaid(ug));
+await pastCooldown();
+await command(ug, 'ELO1800 cp50');
+check(lastSaid(ug) === "Performance set to 1,800: Maia 1800. This bot's CP budget can't be changed." && await maiaNow() === 1800,
+  'ELO1800 cp50: the rating, no Budget, and why', lastSaid(ug));
+await pastCooldown();
+await command(ug, 'degrade off');
+check(lastSaid(ug) === 'Time-pressure degradation off' && (await knobs()).a === null, 'degrade off: no rating curve', lastSaid(ug));
+check(ug.status === 'started', 'the M3 game was still going throughout', ug.status);
+await endGame(ug);
+const ug2 = await openGame(m3User);
+await greeted(ug2);
+check(greetOf(ug2).split('\n')[0] === 'ELO set to 1,800 (using Maia 1800), think auto, temp 4, degrade off' && (await knobs()).chatTemp === 4,
+  'a rematch keeps their choices, and the greeting gives them', ug2.chat);
+await endGame(ug2);
+const ug3 = await openGame({ id: 'm3next', name: 'M3Next', rating: 1300 });
+await greeted(ug3);
+kn = await knobs();
+check(greetOf(ug3) === m3Greet(1100, 'auto', SAYS.maiaTemp, 'off') && kn.chatTemp === null && kn.a === null &&
+  kn.mode === 'complexity' && kn.blink === true, 'the next player gets M3 as built', { chat: ug3.chat, kn });
+await endGame(ug3);
+await p2.evaluate(w => { const c = window._lastAppliedBotConfig;
+  c.lichessCommands = w.cmds; c.pressureOffA = w.offA; c.behavBlink = w.blink; }, builtM3);
+
 // A bot measured to play away from its setting (Blundermind-01, the Blind
 // Conviction bot, measured Nov 11): the rating wanted is a playing strength,
 // it is set to whatever plays at it, and all it says is that strength.
@@ -1438,8 +1572,9 @@ check(await maiaNow() === 2600 && x0.budget === 58 && x0.floor === Math.max(x0.b
   'past Maia 2600: asked for 2700, it plays Maia 2600 at CP budget 58, and the greeting says so, with the range the Budget rows give', { x0, chat: xg.chat });
 check(await p2.evaluate(() => lbLogLines.some(l => /Playing at Maia 2600, CP budget 58 \(plays like 2700\): BudgetUser is rated 2900/.test(l))),
   'the host\'s log gives the Budget beside the setting when it isn\'t the builder\'s');
-check(greeting(2775, 'Flounder 2400', 300, 600, 2775, 'highest', 15.5, 9.9).split('\n').every(l => l.length <= 140),
-  'every line of the longest greeting fits a Lichess chat line (140)');
+check([greeting(2775, 'Flounder 2400', 300, 600, 2775, 'highest', 15.5, 9.9),
+  greeting(2775, 'Maia 2600', 300, 600, 2775, 'highest', 'mirror', 4)].every(gr => gr.split('\n').every(l => l.length <= 140)),
+  'every line of the longest greetings fits a Lichess chat line (140)');
 // Time pressure moves the setting, not the Budget: Maia 2600 plays 2025 at the
 // builder's Budget, so 1 s a move is Regan's loss from there, at cp58 still.
 const xc = await curveNow();
@@ -1511,8 +1646,9 @@ check(off.state === 'off' && !/(^|[?&])lichess(&|$)/.test(off.url) && !(await pa
   'disconnected; the address no longer marks a host, and the board\'s panel is gone', off);
 check(/Set up bot to play on Lichess/.test(offB.text) && /Start/.test(offB.start) && !/Update/.test(offB.start), 'the builder is back to Start', offB);
 const afterOff = await p2.evaluate(() => ({ maia: maia3SelectedRating, top: Math.max(...botPressureCurveA.map(p => p.y)),
-  budget: window._bcpCpBudget, built: window._lastAppliedBotConfig.cpBudget, temp: botBlendTemp }));
-check(afterOff.maia === 2200 && afterOff.top === 2200 && afterOff.budget === afterOff.built && afterOff.temp === null,
+  budget: window._bcpCpBudget, built: window._lastAppliedBotConfig.cpBudget, temp: botBlendTemp, chatTemp: botChatMaiaTemp }));
+check(afterOff.maia === 2200 && afterOff.top === 2200 && afterOff.budget === afterOff.built && afterOff.temp === null &&
+  afterOff.chatTemp === null,
   'and local games play the bot as built, not at the last challenger\'s rating or Budget', afterOff);
 check(errs2.length === 0, 'no page errors (builder flow)', errs2.slice(0, 5));
 

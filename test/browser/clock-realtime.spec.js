@@ -134,7 +134,13 @@ describe('clock charges real time', { concurrency: 1 }, () => {
     await page.waitForSelector('#cv');
     await page.waitForTimeout(1400);
 
-    const st = await page.evaluate(() => ({ over: gameOver, msg: gameOverMsg, w: clockTimeW }));
+    // Since Nov 2026 a finished bot game opens its review by itself, which
+    // clears the game-over state and keeps the result (_reviewResult).
+    const st = await page.evaluate(() => ({
+      over: gameOver || (inReplay && !!_reviewResult),
+      msg: gameOverMsg || (inReplay && _reviewResult ? _reviewResult.msg : ''),
+      w: clockTimeW,
+    }));
     assert.strictEqual(st.w, 0, 'white should be out of time');
     assert.strictEqual(st.over, true, 'the game should be over');
     assert.match(st.msg, /ran out of time/, 'and say so: ' + st.msg);

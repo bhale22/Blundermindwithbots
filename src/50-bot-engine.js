@@ -2139,11 +2139,39 @@ function sampleFromProbs(moveProbs, temperature) {
   return scaled[scaled.length - 1][0];
 }
 
+// ── Maia's temperature from a Lichess game's chat ────────────────────────────
+// A bot with no personality has nothing for Temp's blend to blend with (see
+// botBlendTemp): every weight is 1, so the blend was Maia's distribution
+// whatever its number, with the Choice mix picking among her top moves. On
+// such a bot the opponent's temp sets Maia's own sampling temperature instead
+// (src/65-lichess-bridge.js; Blundermind-M3, Nov 2026): 1 samples her odds as
+// they are, below 1 sharpens them, above flattens them (4, the builder's top,
+// is wild), and 0 plays her most likely move every time. It stands in for the
+// builder's Temperature on every Maia path, the premove's too, and time
+// pressure (curve B) still raises it from there. null: the bot's own.
+var botChatMaiaTemp = null;
+const CHAT_MAIA_TEMP_MAX = 4;
+
+// Does the personality weigh one move against another? Blind Conviction, a
+// trait that scores moves, a piece value or a custom control. Four traits never
+// score a move, which is why applyMoveAttractors keeps them out of the Budget:
+// Calm/Panicky, Hustle, Luck and Front-runner.
+const BOT_UNSCORED_TRAITS = ['pressure', 'hustle', 'luck', 'compwin'];
+function botWeighsMoves() {
+  if (botBlindConviction) return true;
+  const av = window._bcpAttractorValues || {}, pv = window._bcpPieceValues || {};
+  for (const k in av) if (!BOT_UNSCORED_TRAITS.includes(k) && +av[k]) return true;
+  for (const k in pv) if (+pv[k]) return true;
+  return (window._bcpCustomControls || []).some(c => c && +c.value);
+}
+
 // Base Maia temperature as the panel defines it: Hustler phase override, then
 // the panel's Temperature value, then the legacy #maia3Temp input. Extracted so
 // the premove path derives temperature from exactly the same source as a normal
-// move — a second copy of this cascade would silently drift out of sync.
+// move — a second copy of this cascade would silently drift out of sync. A
+// temperature asked for in a Lichess chat comes first (botChatMaiaTemp).
 function botMaiaBaseTemp() {
+  if (botChatMaiaTemp != null && botChatMaiaTemp > 0) return botChatMaiaTemp;
   if (window._bcpHustlerTempMode) return hustlerPhaseTemp();
   if (typeof botMaiaTempValue !== 'undefined' && botMaiaTempValue > 0) return botMaiaTempValue;
   var el = document.getElementById('maia3Temp');
@@ -2170,7 +2198,8 @@ var botConvictionPct = 0;
 function pickFromProbs(moveProbs, temperature) {
   const entries = Object.entries(moveProbs);
   if (!entries.length) return null;
-  if (Math.random() * 100 < botConvictionPct) {
+  // Temperature 0 from a Lichess chat: the most likely move, every move.
+  if (botChatMaiaTemp === 0 || Math.random() * 100 < botConvictionPct) {
     let best = entries[0][0], bp = -Infinity;
     for (const [m, p] of entries) { if (p > bp) { bp = p; best = m; } }
     return best;
@@ -3948,7 +3977,9 @@ async function botMakeMove() {
     } else if (botTab === 'maia') {
       // LC Explorer with Maia3 fallback.
       // Skip LC call entirely if we already know we're off-book this game.
-      const baseTemp = window._bcpHustlerTempMode
+      // A Maia temperature from a Lichess chat comes first, as in botMaiaBaseTemp.
+      const baseTemp = (botChatMaiaTemp != null && botChatMaiaTemp > 0) ? botChatMaiaTemp
+        : window._bcpHustlerTempMode
         ? hustlerPhaseTemp()
         : (typeof botMaiaTempValue !== 'undefined' && botMaiaTempValue > 0)
           ? botMaiaTempValue

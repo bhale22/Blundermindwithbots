@@ -4049,10 +4049,11 @@ body.fj .picon{font-weight:500;}
               <button type="button" class="seg-btn" role="radio" data-tb="2" onclick="setTakebackLimit(2)">2</button>
               <button type="button" class="seg-btn" role="radio" data-tb="3" onclick="setTakebackLimit(3)">3</button>
               <button type="button" class="seg-btn" role="radio" data-tb="5" onclick="setTakebackLimit(5)">5</button>
+              <button type="button" class="seg-btn" role="radio" data-tb="10" onclick="setTakebackLimit(10)">10</button>
               <button type="button" class="seg-btn sel" role="radio" data-tb="-1" onclick="setTakebackLimit(-1)">Every one</button>
             </div>
           </div>
-          <div class="ctrl-hint" id="tb-hint">Takebacks per game. While you play, <strong>↶ Take back</strong> sits beside Offer draw and Resign: it undoes your last move, and the bot's reply if it has made one. The clocks carry on as they are. Set to Never, the button doesn't appear. On Lichess the same setting answers the opponent's takeback requests; once they are used up, it declines and says so in the chat.</div>
+          <div class="ctrl-hint" id="tb-hint">Takebacks per game. The <strong>↶ Take back</strong> button is off until the player turns it on in Board settings; then it sits beside Offer draw and Resign and undoes your last move, and the bot's reply if it has made one. The clocks carry on as they are. Set to Never, the button doesn't appear. On Lichess the same setting answers the opponent's takeback requests; once they are used up, it declines and says so in the chat.</div>
           <!-- Draw behaviour + desperation -->
           <div class="dlbl"><span>Draws &amp; desperation</span></div>
           <div class="tog-row">
@@ -9972,7 +9973,7 @@ function syncClockMirror(on, sourceId){
 /* ── Takebacks ── how many of the player's requests the bot accepts a game.
    -1 = every one, 0 = never (the game shows no button), N = the first N. */
 let takebackLimit = -1;
-const TAKEBACK_CHOICES = [0, 1, 2, 3, 5, -1];
+const TAKEBACK_CHOICES = [0, 1, 2, 3, 5, 10, -1];
 function setTakebackLimit(v){
   v = Math.trunc(+v);
   if(!isFinite(v) || v < -1) v = -1;
@@ -10182,6 +10183,8 @@ function getBotConfig(){
     // ([setting, plays like, cp] for one measured at another CP Budget), so it
     // can be set to whatever plays at the rating wanted.
     lichessStrength:     lbcStrength.length ? lbcStrength.map(p => p[2] != null ? [p[0], p[1], p[2]] : [p[0], p[1]]) : null,
+    // ...and which chat commands it takes besides the rating.
+    lichessCommands:     Array.isArray(lbcCommands) ? lbcCommands.slice() : ['cp', 'think', 'temp'],
   };
 }
 
@@ -10537,6 +10540,9 @@ function applyBotConfig(cfg){
       ? _lbcParseStrength(_lbcStrengthText(cfg.lichessStrength.map(p => p || []))) : [];
     lbcStrength = t || [];
     lbcStrengthText = _lbcStrengthText(lbcStrength);
+    // A bot saved before there was a choice takes the three there were then.
+    lbcCommands = Array.isArray(cfg.lichessCommands)
+      ? ['cp', 'think', 'temp', 'degrade'].filter(k => cfg.lichessCommands.includes(k)) : ['cp', 'think', 'temp'];
   });
 
   grp(() => _updateEnginePanelHeader());
@@ -11427,6 +11433,12 @@ var lbcMatchOn = false;         // play each game at the challenger's rating
 var lbcMatchOffset = 0;         // ...plus this much
 var lbcStrength = [];           // measured [setting, plays like] pairs, settings rising
 var lbcStrengthText = '';       // ...as typed, kept while it doesn't read
+// The chat commands a matching bot takes besides the rating (the bridge's
+// _lbCommands). A bot saved before there was a choice takes cp, think and temp.
+var LBC_COMMANDS = [['cp', 'CP Budget (cp)'], ['think', 'Think time (think)'], ['temp', 'Temp (temp)'],
+  ['degrade', 'Time-pressure degradation (degrade)']];
+var LBC_COMMANDS_DEFAULT = ['cp', 'think', 'temp'];
+var lbcCommands = LBC_COMMANDS_DEFAULT.slice();
 let _lbcHelpOpen = false;       // the matching "?" is open (kept across redraws)
 
 function _lbcHost(){
@@ -11520,7 +11532,8 @@ function _lbcSummary(){
   if(matching){
     const off = c.lichessMatchOffset;
     rows.splice(1, 0, ['Rating', 'matches each challenger' +
-      (off ? ' ' + (off > 0 ? '+' : '−') + Math.abs(off) : '') + ' · ' + c.elo + ' if they have none']);
+      (off ? ' ' + (off > 0 ? '+' : '−') + Math.abs(off) : '') + ' · ' + c.elo + ' if they have none'],
+      ['Chat commands', ['ELO'].concat(c.lichessCommands || []).join(', ')]);
     const t = c.lichessStrength;
     if(t && t.length){
       const r = _lbcRange(t);
@@ -11535,9 +11548,11 @@ function _lbcSummary(){
   if(c.timingMode === 'complexity' || c.timingMode === 'mirror'){
     const parts = [!c.pressureOffA && (matching ? 'rating drops on the Regan model for each game’s clock' : 'rating drops'),
       !c.pressureOffB && 'choices widen'].filter(Boolean);
-    rows.push(['Time pressure', parts.length
+    rows.push(['Time pressure', (parts.length
       ? 'on — plays worse the less time it has to think (' + parts.join(', ') + ')'
-      : 'off — same strength however fast it moves']);
+      : 'off — same strength however fast it moves') +
+      (matching && (c.lichessCommands || []).includes('degrade')
+        ? ' · a challenger can switch the rating drop with degrade on/off' : '')]);
   }
   rows.push(
     ['Premoves', c.premoveEnabled
@@ -11558,8 +11573,13 @@ function _lbcMatchHtml(){
   const help = 'Each game is played at the challenger’s Lichess rating for that speed, plus the offset ' +
     '(−100 plays a little below them). Anyone with no rating gets the rating set in this builder. ' +
     'The bot says so in the game chat, and they can type a rating such as ELO1500 there to change it, ' +
-    'for that game and any rematch. They can set its CP Budget the same way (cp100, or ELO1500 cp100), ' +
-    'from 0 to 300, without changing the rating it gives. If your bot plays stronger or weaker than its engine setting, enter what ' +
+    'for that game and any rematch. The ticks below say what else they can change the same way: its CP Budget ' +
+    '(cp100, or ELO1500 cp100, from 0 to 300, without changing the rating it gives); its think time (think5s, ' +
+    'think mirror for their own pace, think auto for this bot’s own — only its own timing blinks on forced moves); ' +
+    'its temp (on a bot with no personality, Maia’s own temperature: temp0 is her top move, temp1 her odds, ' +
+    'temp4 wild; with a personality, how far it picks over popularity, 0 to 10); and time-pressure degradation ' +
+    '(degrade on drops the rating Maia is called with on the Regan model for the game’s clock, and never with a fixed think time). ' +
+    'If your bot plays stronger or weaker than its engine setting, enter what ' +
     'it was measured to play like under Measured strength: every rating is then a playing strength, and the ' +
     'bot is set to whatever plays at it. A row measured at another CP Budget (2600 cp50=2775) takes it past ' +
     'the engine’s ends: between rows it moves the Budget as well as the setting. The offset still applies on top.';
@@ -11575,6 +11595,10 @@ function _lbcMatchHtml(){
     '</div>' +
     (can
       ? '<div class="lbc-note lbc-help-text" id="lbc-match-help"' + (_lbcHelpOpen ? '' : ' hidden') + '>' + help + '</div>' +
+        '<div class="lbc-note" style="margin-top:2px;">Besides the rating, a challenger can change in the game chat:</div>' +
+        '<div class="lbc-checks" id="lbc-cmds">' + LBC_COMMANDS.map(([k, label]) =>
+          '<label><input type="checkbox" data-cmd="' + k + '" onchange="lbcCommandsChange()"' +
+          (lbcCommands.includes(k) ? ' checked' : '') + '>' + label + '</label>').join('') + '</div>' +
         '<label class="lbc-label" for="lbc-strength">Measured strength (optional)</label>' +
         '<input id="lbc-strength" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. 600=850, 2000=1775, 2600 cp50=2775"' +
           ' value="' + _ccEsc(lbcStrengthText) + '" oninput="lbcStrengthChange()">' +
@@ -11680,6 +11704,12 @@ function lbcHelpToggle(){
   const box = document.getElementById('lbc-match-help'), btn = document.getElementById('lbc-match-help-btn');
   if(box) box.hidden = !_lbcHelpOpen;
   if(btn) btn.setAttribute('aria-expanded', String(_lbcHelpOpen));
+}
+
+function lbcCommandsChange(){
+  lbcCommands = LBC_COMMANDS.map(c => c[0])
+    .filter(k => document.querySelector('#lbc-cmds input[data-cmd="' + k + '"]')?.checked);
+  _lbcRefreshSummary();
 }
 
 function lbcMatchChange(){

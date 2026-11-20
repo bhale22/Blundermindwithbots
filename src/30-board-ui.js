@@ -28,6 +28,21 @@ function playMoveSound(isCapture){
 function saveSoundPref(){const el=document.getElementById('cbSound');if(el)localStorage.setItem('bm_sound',el.checked?'1':'0');}
 function loadSoundPref(){const v=localStorage.getItem('bm_sound');const el=document.getElementById('cbSound');if(el&&v!==null)el.checked=(v==='1');}
 
+// The Take back button is the player's choice (Nov 2026, Ben): off unless
+// turned on in Board settings, so the habit the board teaches is checking a
+// move before playing it. Turning it on mid-game shows it at once.
+function takebackButtonOn(){const el=document.getElementById('cbTakeback');return !!(el&&el.checked);}
+function saveTakebackPref(){
+  const el=document.getElementById('cbTakeback');
+  if(el)try{localStorage.setItem('bm_takeback',el.checked?'1':'0');}catch(e){}
+  if(typeof syncTakebackBtns==='function')syncTakebackBtns();
+}
+function loadTakebackPref(){
+  const el=document.getElementById('cbTakeback');if(!el)return;
+  let v=null;try{v=localStorage.getItem('bm_takeback');}catch(e){}
+  el.checked=(v==='1');
+}
+
 // Influence is the one exploration overlay that is a Board-settings checkbox
 // rather than a button, so the IND defaults never reached it: it drew for
 // everyone, every visit, and turning it off did not survive a reload. A first
@@ -2253,6 +2268,8 @@ function updatePlayerBoxes(){
   // runs after every move and turn change.
   if(typeof syncCommitChipMount==='function') syncCommitChipMount();
   if(typeof maybeAutoSaveGame==='function') maybeAutoSaveGame();
+  // A finished bot game opens its review (after the save, which reads the result).
+  if(typeof maybeAutoReview==='function') maybeAutoReview();
   // A finished multiplayer game has nothing to rejoin — drop the seat token so
   // a later reload does not try to resume a game that is already over.
   if(gameOver && typeof mpSessionClear==='function') mpSessionClear();
@@ -2967,6 +2984,7 @@ if (!localStorage.getItem('bm_bgTheme')) applyBgTheme('lightblue'); // Cool blue
 if (!localStorage.getItem('bm_pieceSet')) { currentPieceSet = 'staunton'; }
 loadPrefs();
 loadSoundPref();
+loadTakebackPref();
 loadInfluencePref();
 loadBoardSettingsPref();
 // The phone furniture. All three no-op above the breakpoint: the tray is a

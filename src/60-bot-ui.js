@@ -969,6 +969,9 @@ async function botStart() {
 // at 0 the button is not shown at all, and once they are used up it stays
 // on screen, greyed, saying so. Not on a Lichess host tab (there the same
 // limit answers the opponent's requests: _lbOnTakebackAsk) or premove puzzles.
+// Later the same day Ben made the button the player's choice: it is off until
+// "Take-back button" is turned on in Board settings (takebackButtonOn), and
+// never in a 2-player game, whatever the setting.
 function _botTakebackPlies() {
   if (typeof gameMovesAlgebraic === 'undefined') return 0;
   const prefix = (typeof _gameStartSans !== 'undefined' && _gameStartSans) ? _gameStartSans.length : 0;
@@ -981,6 +984,8 @@ function _botTakebackPlies() {
 }
 function botTakebackUi() {
   const live = typeof botActive !== 'undefined' && botActive && !gameOver &&
+    typeof takebackButtonOn === 'function' && takebackButtonOn() &&
+    !(typeof mpRoomId !== 'undefined' && mpRoomId) &&
     !(typeof inReplay !== 'undefined' && inReplay) &&
     !(typeof lichessGameLive === 'function' && lichessGameLive()) &&
     !(typeof lichessHostTab === 'function' && lichessHostTab()) &&
@@ -1713,10 +1718,14 @@ let _distReviewCtx = null;
 // the only instrument that closes that loop AFTER the move, which is exactly
 // where it belongs. Being retrospective, it also cannot pick your move for you.
 // Still off in multiplayer, where engine input undercuts human-vs-human play.
+// A review is the exception on the Expert board (Nov 2026, Ben): the game is
+// over, so the odds cannot help anyone play, and stepping through them move
+// by move is what the review is for.
 function _distApplicable() {
   const pro  = (typeof proMode  !== 'undefined' && proMode);
   const inMp = (typeof mpRoomId !== 'undefined' && mpRoomId);
-  return !pro && !inMp;
+  const rev  = (typeof inReplay !== 'undefined' && inReplay);
+  return (!pro || rev) && !inMp;
 }
 
 // Which Maia rating the odds are read at.
@@ -1768,29 +1777,19 @@ function distUpdateVisibility() {
   distPlace();
 }
 
-// Where the panel sits. Under the board is right for live play, and wrong for
-// a desktop review: the board is sized to fill the window's height, so
-// anything under it starts below the fold — and in review the odds are the
-// thing being read, a step at a time. So a desktop review lifts the panel to
-// the top of the side column, and everything else puts it back at #distHome.
-// Phones keep it under the board, where the column already is the page.
+// Where the panel sits. Under the board's game rows while playing; in a review
+// (Nov 2026, Ben), directly under the review controls, on both boards and
+// every width, so stepping through the game and reading the odds happen in
+// one place. It used to be lifted to the top of the side column on a desktop
+// review. body.dist-review is what moves it (CSS order) and what resizeBoard
+// reads to leave room for it, so the board shrinks instead of the clock under
+// the panel going below the fold.
 function distPlace() {
-  const panel = document.getElementById('distPanel');
-  const home  = document.getElementById('distHome');
-  const side  = document.getElementById('sidebar');
-  if (!panel || !home || !side) return;
-  const wide = !window.matchMedia('(max-width:760px)').matches;
-  const want = wide && typeof inReplay !== 'undefined' && inReplay && _distApplicable();
-  if (want && panel.parentNode !== side) {
-    side.insertBefore(panel, side.firstChild);
-    panel.classList.add('dist-side');
-  } else if (!want && panel.parentNode === side) {
-    home.parentNode.insertBefore(panel, home);
-    panel.classList.remove('dist-side');
-  }
-  document.body.classList.toggle('dist-review-side', want);
+  const want = typeof inReplay !== 'undefined' && inReplay && _distApplicable();
+  if (document.body.classList.contains('dist-review') === want) return;
+  document.body.classList.toggle('dist-review', want);
+  if (typeof resizeBoard === 'function') resizeBoard();
 }
-window.addEventListener('resize', distPlace);
 
 // Starting a review opens the panel, because the odds are most of what a
 // review is for, and a collapsed header reading "MAIA MOVE ODDS ▼" was easy
@@ -1867,6 +1866,9 @@ function distToggle() {
   const chev = document.getElementById('distChevron');
   if (body) body.style.display = _distExpanded ? 'flex' : 'none';
   if (chev) chev.style.transform = _distExpanded ? 'rotate(180deg)' : '';
+  // In a review the board is sized around the panel: give back the room when
+  // it folds, take it again when it opens.
+  if (document.body.classList.contains('dist-review') && typeof resizeBoard === 'function') resizeBoard();
   if (_distExpanded) distRefresh();
 }
 
@@ -2264,7 +2266,9 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
   botBlindChoicePcts = blindChoicePctsFrom(cfg.blindChoicePcts);
   // A Temp is an opponent's, asked for in a Lichess game's chat, never part of
   // a bot: a bot newly applied picks as it was built until the bridge sets one.
+  // So is a Maia temperature asked for there.
   botBlendTemp = null;
+  botChatMaiaTemp = null;
 
   // Draw behaviour + stalemate seeking (desperation)
   // Draws: accept unless more than 200 cp ahead, by default. A config from

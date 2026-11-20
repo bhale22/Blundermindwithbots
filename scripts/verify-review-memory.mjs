@@ -10,11 +10,13 @@
 //   4  the last bot played comes back on the next visit — a quick pick, a
 //      builder config, and a quick pick on top of a builder config — and the
 //      builder iframe shows the same bot
-//   5  a finished game can be reviewed on a phone (it could not be at all)
-//   6  a desktop review opens Maia's odds where they can be read
-//   7  an Expert-board game can be reviewed on the Visualization board
-//   8  the Expert board's end-of-game buttons sit under the board, and the
-//      side column no longer runs long after a game
+//   5  a finished game opens its review on a phone, Rematch kept on the bar
+//   6  a desktop game opens its review by itself, Maia's odds directly under
+//      the review controls, the result and Rematch kept (Nov 18 2026, Ben)
+//   7  an Expert-board game opens its own review with the odds, and can be
+//      reviewed on the Visualization board
+//   8  the Expert board's review, odds and overlay-review row sit under the
+//      board, and the side column no longer runs long after a game
 //   9  bots take a draw unless more than 200 cp ahead — by default, from the
 //      builder, and for configs saved under the old default
 //  10  offering a draw asks first, from every draw button
@@ -333,193 +335,194 @@ console.log('\n4    The last bot played comes back on the next visit');
   await c4.close();
 }
 
-console.log('\n5    A finished game can be reviewed on a phone');
+// Where things sit, top to bottom, while a review is up.
+const reviewLayout = page => page.evaluate(() => {
+  const box = id => { const el = document.getElementById(id); if (!el || !el.offsetParent) return null;
+    const b = el.getBoundingClientRect(); return { top: Math.round(b.top), bottom: Math.round(b.bottom),
+      left: Math.round(b.left), width: Math.round(b.width) }; };
+  return {
+    inReplay, atEnd: replayIdx === replayMoves.length, expanded: _distExpanded,
+    cls: document.body.classList.contains('dist-review'),
+    board: box('board-canvas-wrap'), controls: box('replayControls'), odds: box('distPanel'),
+    oddsBody: box('distBody'), result: document.getElementById('replayResult').textContent,
+    rematch: !!document.getElementById('replayRematchBtn').offsetParent,
+    vh: innerHeight, over: document.documentElement.scrollHeight - innerHeight,
+  };
+});
+const under = (a, b) => !!a && !!b && b.top >= a.bottom - 1;
+
+console.log('\n5    A finished game opens its review on a phone');
 {
   const { ctx, page, errors } = await open({ width: 412, height: 915, phone: true });
   ok('no Review on the bar before a game', await page.evaluate(() =>
     getComputedStyle(document.getElementById('pbReview')).display === 'none'));
   await finishGame(page);
-  const over = await page.evaluate(() => {
+  const rv = await reviewLayout(page);
+  const bar = await page.evaluate(() => {
     const vis = id => { const el = document.getElementById(id); return !!el.offsetParent && getComputedStyle(el).display !== 'none'; };
     return { review: vis('pbReview'), rematch: vis('pbRematch'), resign: vis('pbResign') };
   });
-  ok('the game bar carries Review once the game is over', over.review);
-  ok('and Rematch', over.rematch);
-  ok('in place of Resign', !over.resign);
-  await page.evaluate(() => document.getElementById('pbReview').click());
-  await page.waitForTimeout(400);
-  const rv = await page.evaluate(() => ({
-    inReplay, expanded: _distExpanded,
-    under: document.getElementById('distPanel').parentNode.id,
-    reviewGone: getComputedStyle(document.getElementById('pbReview')).display === 'none',
-    controls: getComputedStyle(document.getElementById('replayControls')).display !== 'none',
-  }));
-  ok('Review steps into the game', rv.inReplay && rv.controls);
-  ok('with Maia’s odds opened', rv.expanded);
-  ok('which stay under the board on a phone', rv.under === 'board-col', rv.under);
-  ok('and Review leaves the bar while reviewing', rv.reviewGone);
+  ok('the review opens by itself when the game ends, at the final position', rv.inReplay && rv.atEnd && !!rv.controls, JSON.stringify(rv));
+  ok('saying how the game ended', /resigned/.test(rv.result), rv.result);
+  ok('the game bar keeps Rematch, in place of Resign', bar.rematch && !bar.resign, JSON.stringify(bar));
+  ok('and has no Review button while reviewing', !bar.review);
+  ok('Maia’s odds are open, directly under the review controls', rv.expanded && rv.cls && under(rv.controls, rv.odds) &&
+     rv.odds.top - rv.controls.bottom <= 12, JSON.stringify([rv.controls, rv.odds]));
+  ok('as wide as the controls', Math.abs(rv.odds.width - rv.controls.width) <= 2, rv.odds.width + ' vs ' + rv.controls.width);
   ok('no page errors', errors.length === 0, errors.join('; '));
   await ctx.close();
 }
 
-console.log('\n6    A desktop review opens the odds where they can be read');
+console.log('\n6    A desktop game opens its review, with the odds under the controls');
 {
   const { ctx, page, errors } = await open();
   await finishGame(page);
-  const btn = await page.evaluate(() => {
-    const b = document.getElementById('reviewBtn');
-    return { shown: !!b.offsetParent, size: parseFloat(getComputedStyle(b).fontSize) };
-  });
-  ok('Review is on screen after the game', btn.shown);
-  ok('at a readable size (it was 9px)', btn.size >= 11, btn.size + 'px');
-  ok('the odds start closed', await page.evaluate(() => !_distExpanded));
-  await page.evaluate(() => document.getElementById('reviewBtn').click());
-  await page.waitForTimeout(400);
-  const rv = await page.evaluate(() => {
-    const p = document.getElementById('distPanel');
-    const body = document.getElementById('distBody').getBoundingClientRect();
-    return { inReplay, expanded: _distExpanded, parent: p.parentNode.id, first: p.parentNode.firstElementChild === p,
-             bodyTop: Math.round(body.top), bodyBottom: Math.round(body.bottom), vh: innerHeight,
-             width: Math.round(p.getBoundingClientRect().width),
-             side: Math.round(document.getElementById('sidebar').getBoundingClientRect().width) };
-  });
-  ok('Review steps into the game', rv.inReplay);
-  ok('and opens Maia’s odds', rv.expanded);
-  ok('at the top of the side column', rv.parent === 'sidebar' && rv.first, rv.parent);
-  ok('the full width of it', Math.abs(rv.width - rv.side) <= 2, rv.width + ' vs ' + rv.side);
-  ok('above the fold', rv.bodyBottom <= rv.vh, rv.bodyTop + '..' + rv.bodyBottom + ' of ' + rv.vh);
-  const room = await page.evaluate(() => ({ over: document.documentElement.scrollHeight - innerHeight,
-    qb: getComputedStyle(document.getElementById('quickBot')).display }));
-  ok('in the quick-start block’s place, so the page does not scroll', room.qb === 'none' && room.over <= 0,
-     JSON.stringify(room));
+  const rv = await reviewLayout(page);
+  ok('the review opens by itself when the game ends', rv.inReplay && rv.atEnd, JSON.stringify(rv));
+  ok('saying how the game ended, with Rematch beside the controls', /resigned/.test(rv.result) && rv.rematch, rv.result);
+  ok('Maia’s odds open, directly under the review controls', rv.expanded && under(rv.controls, rv.odds) &&
+     rv.odds.top - rv.controls.bottom <= 12, JSON.stringify([rv.controls, rv.odds]));
+  ok('the board’s width, like the controls', Math.abs(rv.odds.width - rv.controls.width) <= 2 &&
+     Math.abs(rv.odds.width - rv.board.width) <= 4, JSON.stringify([rv.board, rv.controls, rv.odds]));
+  ok('the board makes room: the odds are above the fold and the page does not scroll',
+     rv.oddsBody.bottom <= rv.vh && rv.over <= 0, JSON.stringify([rv.oddsBody, rv.vh, rv.over]));
+  // Stepping back keeps everything where it is.
+  await page.evaluate(() => replayStep(-1));
+  await page.waitForTimeout(300);
+  const st = await reviewLayout(page);
+  ok('stepping back a move moves nothing', JSON.stringify([st.board, st.controls, st.odds]) ===
+     JSON.stringify([rv.board, rv.controls, rv.odds]), JSON.stringify([st.odds, rv.odds]));
+  ok('a .pgn saved from the review keeps the result', await page.evaluate(() => _pgnResultToken()) === '0-1');
+  // Rematch from the review plays the same bot again.
+  await page.evaluate(() => document.getElementById('replayRematchBtn').click());
+  await page.waitForTimeout(600);
+  const rm = await page.evaluate(() => ({ inReplay, botActive, gameOver, moves: gameMovesAlgebraic.length,
+    cls: document.body.classList.contains('dist-review'),
+    controls: getComputedStyle(document.getElementById('replayControls')).display }));
+  ok('Rematch leaves the review and starts the bot again', !rm.inReplay && rm.botActive && !rm.gameOver &&
+     rm.controls === 'none' && !rm.cls, JSON.stringify(rm));
+  await page.evaluate(() => { resign(); confirmResign(); });
+  await page.waitForTimeout(300);
   await page.evaluate(() => exitReplay());
   await page.waitForTimeout(200);
-  const ex = await page.evaluate(() => ({ parent: document.getElementById('distPanel').parentNode.id,
-    expanded: _distExpanded, next: (document.getElementById('distPanel').nextElementSibling || {}).id }));
-  ok('leaving the review puts the panel back under the board', ex.parent === 'board-col' && ex.next === 'distHome',
-     JSON.stringify(ex));
+  const ex = await page.evaluate(() => ({ cls: document.body.classList.contains('dist-review'), expanded: _distExpanded,
+    order: getComputedStyle(document.getElementById('distPanel')).order }));
+  ok('leaving the review puts the panel back in its place', !ex.cls && ex.order === '10', JSON.stringify(ex));
   ok('closed again, as it was before', !ex.expanded);
-  ok('and the quick-start block is back',
-     await page.evaluate(() => getComputedStyle(document.getElementById('quickBot')).display !== 'none'));
   ok('no page errors', errors.length === 0, errors.join('; '));
   await ctx.close();
 }
 
-console.log('\n7    An Expert-board game, reviewed on the Visualization board');
+console.log('\n7    An Expert-board game: its own review with the odds, or on the Visualization board');
 {
   const { ctx, page, errors } = await open({ shell: 'pro' });
+  ok('the Expert board shows no odds while playing', await page.evaluate(() =>
+    getComputedStyle(document.getElementById('distPanel')).display === 'none'));
   await finishGame(page);
+  const rv = await reviewLayout(page);
+  ok('the Expert board opens its own review when the game ends',
+     await page.evaluate(() => document.body.classList.contains('pro-mode')) && rv.inReplay && rv.atEnd, JSON.stringify(rv));
+  ok('with Maia’s odds open under the review controls', rv.expanded && rv.cls && under(rv.controls, rv.odds), JSON.stringify([rv.controls, rv.odds]));
+  ok('the page does not scroll', rv.over <= 0, 'over by ' + rv.over);
   const b = await page.evaluate(() => {
     const el = document.getElementById('proReviewVisBtn');
     return { shown: !!el.offsetParent, text: el.textContent };
   });
-  ok('the Expert board offers a review with the odds', b.shown && /Maia/.test(b.text), b.text);
-  ok('the Expert board shows no odds itself', await page.evaluate(() =>
-    getComputedStyle(document.getElementById('distPanel')).display === 'none'));
+  ok('and offers the same review on the Visualization board', b.shown && /overlays/.test(b.text), b.text);
   await page.evaluate(() => document.getElementById('proReviewVisBtn').click());
   await page.waitForTimeout(500);
   const r = await page.evaluate(() => ({
     pro: document.body.classList.contains('pro-mode'), inReplay, expanded: _distExpanded,
-    parent: document.getElementById('distPanel').parentNode.id,
+    cls: document.body.classList.contains('dist-review'),
     human: _distReviewCtx && _distReviewCtx.human, atEnd: replayIdx === replayMoves.length,
   }));
   ok('it switches to the Visualization board', !r.pro);
-  ok('in review, at the final position', r.inReplay && r.atEnd, JSON.stringify(r));
-  ok('with the odds open in the side column', r.expanded && r.parent === 'sidebar', JSON.stringify(r));
+  ok('still in review, at the final position', r.inReplay && r.atEnd, JSON.stringify(r));
+  ok('with the odds open under the controls there too', r.expanded && r.cls, JSON.stringify(r));
   ok('knowing which side the reviewer played', r.human === 'w', String(r.human));
   ok('with the Visualization board’s overlays back on (the Expert board used to wipe them)',
      await page.evaluate(() => IND.threats.pre && IND.counts.pre && IND.unprotected.pre));
   await ctx.close();
 
-  // Reviewing on the Expert board first, then flipping the header switch,
-  // carries the review across and opens the odds there too.
+  // Stepping on the Expert board, then flipping the header switch, carries
+  // the review across at the same move, with the odds reading it.
   const { ctx: c2, page: p2 } = await open({ shell: 'pro' });
   await finishGame(p2);
-  await p2.evaluate(() => { startReplayOfCurrentGame(); rebuildToReplayIdx(1); });
+  await p2.evaluate(() => rebuildToReplayIdx(1));
   await p2.evaluate(() => document.getElementById('shellToggle').click());
   await p2.waitForTimeout(400);
   const f = await p2.evaluate(() => ({ inReplay, idx: replayIdx, expanded: _distExpanded,
-    snap: !!_distPreMove, parent: document.getElementById('distPanel').parentNode.id }));
+    snap: !!_distPreMove, cls: document.body.classList.contains('dist-review') }));
   ok('the header switch carries an Expert-board review across, at the same move',
      f.inReplay && f.idx === 1, JSON.stringify(f));
-  ok('and the odds have the position to read', f.snap && f.expanded && f.parent === 'sidebar', JSON.stringify(f));
+  ok('and the odds have the position to read', f.snap && f.expanded && f.cls, JSON.stringify(f));
   ok('no page errors', errors.length === 0, errors.join('; '));
   await c2.close();
 }
 
-console.log('\n8    Expert board: the end-of-game buttons sit under the board');
+console.log('\n8    Expert board after a game: review controls, odds, then the overlay review, under the board');
 for (const [w, h] of [[1440, 900], [1366, 657]]) {
   const { ctx, page, errors } = await open({ width: w, height: h, shell: 'pro' });
-  const before = await page.evaluate(() => Math.round(document.getElementById('proSide').scrollHeight));
+  // The side column's content, not its box: the box stretches to the board
+  // column, which is taller in a review (controls, odds, row).
+  const sideContent = () => page.evaluate(() => {
+    const side = document.getElementById('proSide');
+    const kids = [...side.children].filter(c => c.offsetParent);
+    return Math.round(Math.max(...kids.map(c => c.getBoundingClientRect().bottom)) - side.getBoundingClientRect().top);
+  });
+  const before = await sideContent();
   await finishGame(page);
+  const rv = await reviewLayout(page);
+  const sideAfter = await sideContent();
   const r = await page.evaluate(() => {
     const row = document.getElementById('proPostGame');
-    const board = document.getElementById('board-canvas-wrap').getBoundingClientRect();
     const rr = row.getBoundingClientRect();
-    const ids = ['proRematchBtn', 'proReviewBtn', 'proReviewVisBtn'];
     const side = document.getElementById('proSide');
-    const lastSide = [...side.children].filter(c => c.offsetParent).pop().getBoundingClientRect();
-    const tops = ids.map(id => Math.round(document.getElementById(id).getBoundingClientRect().top));
     return {
-      shown: getComputedStyle(row).display !== 'none',
-      under: rr.top >= board.bottom - 1 && Math.abs(rr.left - board.left) < 3,
-      width: Math.round(rr.width), boardW: Math.round(board.width),
-      inRow: ids.every(id => row.contains(document.getElementById(id)) && !!document.getElementById(id).offsetParent),
-      oneRow: Math.max(...tops) - Math.min(...tops) < 3,
-      notInSide: ids.every(id => !side.contains(document.getElementById(id))),
-      sideBottom: Math.round(lastSide.bottom), boardBottom: Math.round(board.bottom),
+      shown: getComputedStyle(row).display !== 'none', top: Math.round(rr.top), left: Math.round(rr.left), width: Math.round(rr.width),
+      vis: !!document.getElementById('proReviewVisBtn').offsetParent,
+      review: !!document.getElementById('proReviewBtn').offsetParent,
+      rematch: !!document.getElementById('proRematchBtn').offsetParent,
+      notInSide: ['proRematchBtn', 'proReviewBtn', 'proReviewVisBtn'].every(id => !side.contains(document.getElementById(id))),
       sideH: Math.round(side.scrollHeight),
-      over: document.documentElement.scrollHeight - innerHeight,
     };
   });
-  ok(w + 'x' + h + ': a row of end-of-game buttons appears after the game', r.shown);
-  ok(w + 'x' + h + ': directly under the board, its width', r.under && Math.abs(r.width - r.boardW) <= 2, JSON.stringify(r));
-  ok(w + 'x' + h + ': Rematch, Review game and Review with overlays are in it', r.inRow);
-  ok(w + 'x' + h + ': on one row', r.oneRow);
-  ok(w + 'x' + h + ': and no longer in the side column', r.notInSide);
-  ok(w + 'x' + h + ': the side column grows by no more than the result line after a game', r.sideH - before <= 60,
-     before + ' → ' + r.sideH);
-  // On a short screen the column is taller than the board before any game;
-  // what matters there is that the game's end does not add to it.
-  if (h >= 900) ok(w + 'x' + h + ': and ends level with the board or above', r.sideBottom <= r.boardBottom + 2,
-     r.sideBottom + ' vs board ' + r.boardBottom);
-  ok(w + 'x' + h + ': the page does not scroll', r.over <= 0, 'over by ' + r.over);
+  ok(w + 'x' + h + ': the review controls sit directly under the board', under(rv.board, rv.controls) &&
+     Math.abs(rv.controls.left - rv.board.left) < 3, JSON.stringify([rv.board, rv.controls]));
+  ok(w + 'x' + h + ': then the odds', under(rv.controls, rv.odds), JSON.stringify([rv.controls, rv.odds]));
+  ok(w + 'x' + h + ': then the row, offering only the overlay review (Rematch is with the controls)',
+     r.shown && r.vis && !r.review && !r.rematch && rv.rematch && r.top >= rv.odds.bottom - 1, JSON.stringify(r));
+  ok(w + 'x' + h + ': none of them in the side column', r.notInSide);
+  ok(w + 'x' + h + ': the side column grows by no more than a line after a game', sideAfter - before <= 60,
+     before + ' → ' + sideAfter);
+  ok(w + 'x' + h + ': the page does not scroll', rv.over <= 0, 'over by ' + rv.over);
   ok('no page errors', errors.length === 0, errors.join('; '));
-  // In an Expert-board review the row keeps only what still applies.
-  await page.evaluate(() => startReplayOfCurrentGame());
-  await page.waitForTimeout(200);
-  const rv = await page.evaluate(() => ({
-    row: getComputedStyle(document.getElementById('proPostGame')).display !== 'none',
-    vis: !!document.getElementById('proReviewVisBtn').offsetParent,
-    review: !!document.getElementById('proReviewBtn').offsetParent,
-    rematch: !!document.getElementById('proRematchBtn').offsetParent,
-    over: document.documentElement.scrollHeight - innerHeight,
-  }));
-  ok(w + 'x' + h + ': reviewing on the Expert board, the row offers only the overlay review',
-     rv.row && rv.vis && !rv.review && !rv.rematch, JSON.stringify(rv));
-  ok(w + 'x' + h + ': with the replay controls up, still no scroll', rv.over <= 0, 'over by ' + rv.over);
   await ctx.close();
 }
 {
-  // The Visualization board never shows it.
+  // The Visualization board never shows the Expert row.
   const { ctx, page } = await open();
   await finishGame(page);
   ok('the Visualization board does not show the Expert row',
      await page.evaluate(() => getComputedStyle(document.getElementById('proPostGame')).display === 'none'));
   await ctx.close();
-  // Phone, Expert board: result and buttons right under your clock.
+  // Phone, Expert board: under your clock, the review (with the result), the
+  // odds, the row, then the move list.
   const { ctx: c2, page: p2 } = await open({ width: 412, height: 915, phone: true, shell: 'pro' });
   await finishGame(p2);
   const ph = await p2.evaluate(() => {
     const y = id => document.getElementById(id).getBoundingClientRect().top;
-    return { clock: y('proPlayerBottom'), result: y('proResultBar'), row: y('proPostGame'), notes: y('proNotationCard'),
+    return { clock: y('proPlayerBottom'), controls: y('replayControls'), odds: y('distPanel'), row: y('proPostGame'),
+             notes: y('proNotationCard'), result: document.getElementById('replayResult').textContent,
              over: document.documentElement.scrollWidth - innerWidth };
   });
-  ok('phone, Expert board: your clock, the result, then the buttons, then the move list',
-     ph.clock < ph.result && ph.result < ph.row && ph.row < ph.notes, JSON.stringify(ph));
+  ok('phone, Expert board: your clock, the review and its result, the odds, the row, then the move list',
+     ph.clock < ph.controls && ph.controls < ph.odds && ph.odds < ph.row && ph.row < ph.notes && /resigned/.test(ph.result),
+     JSON.stringify(ph));
   ok('phone, Expert board: no sideways scroll', ph.over <= 0, String(ph.over));
   await c2.close();
 }
+
 
 console.log('\n9    Bots take a draw unless more than 200 cp ahead');
 {
