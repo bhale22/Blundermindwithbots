@@ -68,7 +68,10 @@ const LB_CP_MIN = 0, LB_CP_MAX = 300;
 // Opponent id → the think time they asked for (think15s), in seconds, kept the
 // same way. It runs the builder's Fixed timing at that many seconds a move
 // (still capped by the bot's clock, so a short game cannot flag it); "think
-// auto" gives the bot its own timing back.
+// mirror" ('mirror') plays at the opponent's own pace; "think auto" gives the
+// bot its own timing back. Blink on forced moves goes with the bot's own
+// timing only (Ben, Nov 20): a fixed time is that time, and mirror is their
+// pace, so neither blinks.
 const lbThinkChoices = new Map();
 const LB_THINK_MAX_S = 60;
 // Opponent id → the Temp they asked for (temp2, temp 0.5), kept the same way:
@@ -76,8 +79,23 @@ const LB_THINK_MAX_S = 60;
 // (Blind Conviction), and between them it blends the two (botBlendTemp,
 // src/50-bot-engine.js). The CP Budget still decides which moves may be
 // played. "temp auto" gives the bot its own pick back: for a Blind Conviction
-// bot that is temp 10, which is why the greeting calls 10 the default.
+// bot that is temp 10, which is why the greeting calls 10 the default. On a
+// Maia bot with no personality there is nothing to blend, so there temp is
+// Maia's own temperature, 0 to 4 (botChatMaiaTemp, _lbTempIsMaia).
 const lbTempChoices = new Map();
+// Opponent id → time-pressure degradation (degrade on / off), kept the same
+// way: true runs Curve A, the rating Maia is called with, on the Regan model
+// for the game's clock (_lbReganCurveA); false runs it not at all; "degrade
+// auto" gives the bot its own again. Curve B, the temperature, is never
+// touched: degrade moves the rating only (Ben, Nov 20). The curve follows the
+// think time, so with a fixed one it does nothing (_timePressureApplies).
+const lbDegradeChoices = new Map();
+// The commands a bot takes besides the rating: its own list, ticked in the
+// builder's Lichess popup (cfg.lichessCommands). A bot saved before there was
+// a list takes the three there were then, so Blundermind-01 is as it was.
+// Blundermind-M3, plain Maia (Nov 20): think, temp and degrade.
+const LB_COMMANDS = ['cp', 'think', 'temp', 'degrade'];
+const LB_COMMANDS_DEFAULT = ['cp', 'think', 'temp'];
 const LB_CHAT_COOLDOWN_MS = 3000;
 let lbAccepting = null;       // challenge id accepted, its gameStart not yet here
 let lbStarting = false;       // botStart() is running on Lichess's behalf
@@ -621,6 +639,13 @@ function _lbEloRange() {
   return { flounder, min: flounder ? FLOUNDER_ELO_MIN : 600, max: flounder ? FLOUNDER_ELO_MAX : 2600 };
 }
 
+// The chat commands this bot takes besides the rating, in LB_COMMANDS' order.
+function _lbCommands() {
+  const c = (window._lastAppliedBotConfig || {}).lichessCommands;
+  return Array.isArray(c) ? LB_COMMANDS.filter(k => c.includes(k)) : LB_COMMANDS_DEFAULT.slice();
+}
+const _lbOffers = k => _lbCommands().includes(k);
+
 // ── Measured strength ───────────────────────────────────────────────────────
 // A bot's engine setting is not always how strong it plays: Blind Conviction,
 // the guards and the personality all move it. cfg.lichessStrength, filled in the
@@ -745,11 +770,13 @@ function _lbReganCurveA(clock, setting, t) {
 // wanted is a playing strength: a bot with a measured table is set to whatever
 // plays at it. Curve A moves too, since it holds absolute ratings and on Maia
 // the curve is what runs: in a game with a clock it is rebuilt on the Regan
-// model for that clock; with none, the builder's curve is shifted. Returns
-// { setting, cp, est, edge }, or null for a bot that doesn't match.
+// model for that clock; with none, the builder's curve is shifted. Whether it
+// runs at all is the bot's, or the opponent's (degrade). Returns
+// { setting, cp, est, edge, think, temp, degrade }, or null for a bot that
+// doesn't match.
 function _lbApplyMatchedRating(g) {
   // A bot that doesn't match takes no chat commands, Temp among them.
-  if (!_lbMatching()) { botBlendTemp = null; return null; }
+  if (!_lbMatching()) { botBlendTemp = null; botChatMaiaTemp = null; return null; }
   const cfg = window._lastAppliedBotConfig;
   const { flounder } = _lbEloRange();
   const t = _lbStrengthTable();
@@ -768,11 +795,10 @@ function _lbApplyMatchedRating(g) {
   } else {
     maia3SetRating(elo);
   }
-  if (botPressureCurveA && cfg.ctrlA) {
-    botPressureCurveA = g && g.clock
-      ? _lbReganCurveA(g.clock, elo, t)
-      : cfg.ctrlA.map(p => ({ x: p.x, y: +p.y + elo - base }));
-  }
+  botPressureCurveA = !_lbCurveAWanted(opp) ? null
+    : g && g.clock ? _lbReganCurveA(g.clock, elo, t)
+    : Array.isArray(cfg.ctrlA) && cfg.ctrlA.length >= 2 ? cfg.ctrlA.map(p => ({ x: p.x, y: +p.y + elo - base }))
+    : null;
   _quickBotSyncBookRating(elo);
   // The CP Budget: the one the measured table gives for this rating (the
   // builder's, but for a row measured at another), unless they asked for one
@@ -780,7 +806,7 @@ function _lbApplyMatchedRating(g) {
   // rule), so a Budget above the bot's Floor lifts the Floor with it. A Budget
   // they ask for leaves the rating where it was: a smaller Budget plays
   // stronger than it says, and that is the opponent's choice.
-  const asked = opp && opp.id ? lbBudgetChoices.get(opp.id) : undefined;
+  const asked = _lbOffers('cp') && opp && opp.id ? lbBudgetChoices.get(opp.id) : undefined;
   const cp = asked != null ? asked : at.cp;
   const floor = cfg.hardFloorCp != null ? cfg.hardFloorCp : cfg.cpBudget;
   window._bcpCpBudget = cp;
@@ -788,10 +814,12 @@ function _lbApplyMatchedRating(g) {
   at.cp = cp;
   at.think = _lbApplyThinkChoice(opp);
   at.temp = _lbApplyTempChoice(opp);
+  at.degrade = _lbOffers('degrade') && opp && opp.id ? lbDegradeChoices.get(opp.id) : undefined;
   if (opp && !g.matchLogged) {
     g.matchLogged = true;
-    if (at.think != null) lbLog('Think time ' + _lbThinkText(at.think) + ': ' + opp.name + ' asked for it in the chat');
+    if (at.think != null) lbLog('Think time ' + _lbThinkWord(at.think) + ': ' + opp.name + ' asked for it in the chat');
     if (at.temp != null) lbLog('Temp ' + at.temp + ': ' + opp.name + ' asked for it in the chat');
+    if (at.degrade != null) lbLog('Time-pressure degradation ' + (at.degrade ? 'on' : 'off') + ': ' + opp.name + ' asked for it in the chat');
     const plays = (flounder ? 'Flounder ' : 'Maia ') + elo + (cp !== cfg.cpBudget ? ', CP budget ' + cp : '') +
       (t ? ' (plays like ' + at.est + ')' : '');
     if (asked != null) lbLog('CP budget ' + asked + ': ' + opp.name + ' asked for it in the chat (built with ' + cfg.cpBudget + ')');
@@ -806,35 +834,59 @@ function _lbApplyMatchedRating(g) {
 }
 
 // The think time this opponent asked for, put into effect: the builder's Fixed
-// timing at that many seconds a move, or, with none (or no game), the timing
-// the bot was built with. Returns the seconds, or undefined.
+// timing at that many seconds a move, or mirror, their own pace — neither with
+// blink — or, with none (or no game, or a bot that doesn't take think), the
+// timing the bot was built with, blink and all. Returns the choice (seconds
+// or 'mirror'), or undefined.
 function _lbApplyThinkChoice(opp) {
   const cfg = window._lastAppliedBotConfig || {};
-  const secs = opp && opp.id ? lbThinkChoices.get(opp.id) : undefined;
-  if (secs != null) {
+  const ch = _lbOffers('think') && opp && opp.id ? lbThinkChoices.get(opp.id) : undefined;
+  // As the builder's config applies it (applyBotConfig).
+  const modes = { complexity: 'complexity', instant: 'instant', fixed: 'fixed', mirror: 'mirror' };
+  botTimeBehavior = modes[cfg.timingMode] || 'pace';
+  botFixedDelayMs = cfg.fixedDelayMs || 5000;
+  botBehavBlink = cfg.behavBlink !== false;
+  if (typeof ch === 'number') {
     botTimeBehavior = 'fixed';
-    botFixedDelayMs = Math.round(secs * 1000);
-  } else {
-    // As the builder's config applies it (applyBotConfig).
-    const modes = { complexity: 'complexity', instant: 'instant', fixed: 'fixed', mirror: 'mirror' };
-    botTimeBehavior = modes[cfg.timingMode] || 'pace';
-    botFixedDelayMs = cfg.fixedDelayMs || 5000;
+    botFixedDelayMs = Math.round(ch * 1000);
+    botBehavBlink = false;
+  } else if (ch === 'mirror') {
+    botTimeBehavior = 'mirror';
+    botBehavBlink = false;
   }
-  return secs;
+  return ch;
 }
 const _lbThinkText = s => (Number.isInteger(s) ? s : s.toFixed(1)) + ' s a move';
+// A think choice in a reply or the log: "15 s a move", "mirror (your pace)".
+const _lbThinkWord = ch => ch === 'mirror' ? 'mirror (your pace)' : _lbThinkText(ch);
+
+// Is temp Maia's own temperature on this bot? A Maia bot with no personality:
+// there Temp's blend would be Maia's distribution whatever its number.
+const _lbTempIsMaia = () => !_lbEloRange().flounder && !botWeighsMoves();
+const _lbTempMax = () => _lbTempIsMaia() ? CHAT_MAIA_TEMP_MAX : BLEND_TEMP_MAX;
+// The Maia temperature the bot was built with, as the chat writes it.
+const _lbBuiltMaiaTemp = () => Math.round((+botMaiaTempValue || 1) * 10) / 10;
 
 // The Temp this opponent asked for, put into effect, or none (the bot picks as
-// built). Returns it, or undefined.
+// built): the blend's, or on a bot with no personality Maia's temperature.
+// Returns it, or undefined.
 function _lbApplyTempChoice(opp) {
-  const t = opp && opp.id ? lbTempChoices.get(opp.id) : undefined;
-  botBlendTemp = t != null ? t : null;
-  return t;
+  const t = _lbOffers('temp') && opp && opp.id ? lbTempChoices.get(opp.id) : undefined;
+  botBlendTemp = null;
+  botChatMaiaTemp = null;
+  if (t == null) return t;
+  if (_lbTempIsMaia()) return (botChatMaiaTemp = Math.min(CHAT_MAIA_TEMP_MAX, t));
+  return (botBlendTemp = Math.min(BLEND_TEMP_MAX, t));
 }
 // Whose distribution popularity comes from: Maia's, or Flounder's own.
 const _lbTempEngine = () => _lbEloRange().flounder ? 'Flounder\'s' : 'Maia\'s';
-// What the ends of the dial do, beside the number in a reply.
+// What the dial's marks do, beside the number in a reply (Ben's words for
+// Maia's: 0 = Maia's top move, 1 = matches Maia's odds, 4 = wild).
 function _lbTempText(t) {
+  if (_lbTempIsMaia()) {
+    return 'Temp ' + t + (t <= 0 ? ' (Maia\'s top move)' : t === 1 ? ' (matches Maia\'s odds)'
+      : t >= CHAT_MAIA_TEMP_MAX ? ' (wild)' : '');
+  }
   return 'Temp ' + t + (t <= 0 ? ' (' + _lbTempEngine() + ' top move, no personality)'
     : t >= BLEND_TEMP_MAX ? ' (personality\'s pick)' : '');
 }
@@ -842,11 +894,35 @@ function _lbTempText(t) {
 // Temp they are not what it plays at, and the reply says so when there is room:
 // Temp 0, Maia's top move, is likely the strongest it gets.
 function _lbTempCaveat(text) {
-  if (botBlendTemp == null || !_lbStrengthTable()) return text;
-  if (botBlindConviction && botBlendTemp >= BLEND_TEMP_MAX) return text;
-  const more = '. Its ELO was measured at ' + (botBlindConviction ? 'temp ' + BLEND_TEMP_MAX : 'temp auto') + '.';
+  if (!_lbStrengthTable()) return text;
+  let built;
+  if (botChatMaiaTemp != null) {
+    built = _lbBuiltMaiaTemp();
+    if (botChatMaiaTemp === built) return text;
+  } else {
+    if (botBlendTemp == null) return text;
+    if (botBlindConviction && botBlendTemp >= BLEND_TEMP_MAX) return text;
+    built = botBlindConviction ? BLEND_TEMP_MAX : 'auto';
+  }
+  const more = '. Its ELO was measured at temp ' + built + '.';
   return text.length + more.length <= LB_CHAT_MAX ? text + more : text;
 }
+
+// ── Time-pressure degradation ────────────────────────────────────────────────
+// Does Curve A run for this opponent? As the opponent asked (degrade), on a
+// bot that takes it, or as the bot was built: its switch on and a curve drawn.
+function _lbCurveAWanted(opp) {
+  const cfg = window._lastAppliedBotConfig || {};
+  const asked = _lbOffers('degrade') && opp && opp.id ? lbDegradeChoices.get(opp.id) : undefined;
+  if (asked != null) return asked;
+  const off = cfg.pressureOffA != null ? !!cfg.pressureOffA : !!cfg.pressureOff;
+  return !off && Array.isArray(cfg.ctrlA) && cfg.ctrlA.length >= 2;
+}
+// The curve follows the think time, so a pace set outright (a fixed time, or
+// instant) leaves it nothing to follow: it never runs then.
+const _lbDegradeRuns = () => botTimeBehavior !== 'fixed' && botTimeBehavior !== 'instant';
+// Is the rating dropping with the think time right now?
+const _lbDegradeOn = () => !!botPressureCurveA && _lbDegradeRuns();
 // Lichess cuts a chat line at this many characters.
 const LB_CHAT_MAX = 140;
 
@@ -871,8 +947,10 @@ function _lbTell(g, text) {
 // and the CP Budget, since they can type a Budget too.
 const _lbElo = n => Math.round(n).toLocaleString('en-US');
 const _lbEdgeText = edge => edge ? ' (its ' + (edge === 'low' ? 'lowest' : 'highest') + ')' : '';
+// The Budget only where they can type one: on a bot that doesn't take cp it
+// is nothing they can change (and on plain Maia, nothing that runs).
 const _lbRunsText = at => (_lbEloRange().flounder ? 'Flounder ' : 'Maia ') + at.setting +
-  (at.cp != null ? ', CP budget ' + at.cp : '');
+  (at.cp != null && _lbOffers('cp') ? ', CP budget ' + at.cp : '');
 // The range they can type, in the same playing strength: where the setting
 // reaches the engine's ends, which a row at another Budget can carry past
 // what the setting alone would.
@@ -882,37 +960,80 @@ function _lbPerfRange() {
     : { lo: min, hi: max };
 }
 
-// Once a game, at its start, three lines (Ben's wording, Nov 16): everything
-// it is set to, what can be typed, and the ranges, e.g.
+// Once a game, at its start (Ben's wording, Nov 16 and 20): everything it is
+// set to, what can be typed, and the ranges — only for the commands this bot
+// takes. Blundermind-01 (cp, think, temp):
 //   ELO set to 1,025 (using Maia 855), CP budget 150, think auto, temp 10
 //   Type in chat to change strength (ELO), centipawn budget (cp), Move timing (think), Maia temperature (temp).
-//   ELO 600-2775, cp 0-300, think 0-60s, Temp 0 (Maia's top move) - 10 (personality driven)
-// Lichess cuts a chat line at 140 characters; the longest here is the second,
-// 111 (a Flounder bot). The spectators get the first line — what it plays at — without the
-// instructions, which only the opponent can use.
+//   ELO 600-2775, cp 0-300, think 0-60s or auto or mirror, Temp 0 (Maia's top move) - 10 (personality driven)
+// Blundermind-M3 (think, temp, degrade; plain Maia, so temp is Maia's own):
+//   ELO set to 1,500 (using Maia 1500), think auto, temp 1, degrade off
+//   Type in chat to change strength (ELO), Move timing (think), Maia temperature (temp), time-pressure degradation (degrade).
+//   ELO 600-2600, think 0-60s or auto or mirror, degrade on/off, temp 0-4: 0 = Maia's top move, 1 = matches Maia's odds, 4 = wild
+// Lichess cuts a chat line at 140 characters, so a list that would run past
+// it carries on in another line (_lbPack); none of these does. The spectators
+// get the first line — what it plays at — without the instructions, which
+// only the opponent can use.
 //
 // Sent LB_GREET_DELAY_MS after the game starts (see _lbBeginLocalGame).
 function _lbGreet(g, at) {
-  const { lo, hi } = _lbPerfRange();
-  const engine = _lbEloRange().flounder ? 'Flounder' : 'Maia';
-  const state = _lbStateLine(at);
-  _lbSay(g, state);
-  _lbSay(g, 'Type in chat to change strength (ELO), centipawn budget (cp), Move timing (think), ' + engine + ' temperature (temp).');
-  _lbSay(g, 'ELO ' + lo + '-' + hi + ', cp ' + LB_CP_MIN + '-' + LB_CP_MAX + ', think 0-' + LB_THINK_MAX_S + 's, Temp 0 (' +
-    _lbTempEngine() + ' top move) - ' + BLEND_TEMP_MAX + ' (personality driven)');
-  _lbSay(g, state, 'spectator');
+  const lines = _lbGreetLines(at);
+  for (const l of lines) _lbSay(g, l);
+  _lbSay(g, lines[0], 'spectator');
 }
-// Everything the bot is set to, in one line: the strength it plays at (and
-// where that is the end of its range), the engine setting that plays at it,
-// the CP Budget, the think time and Temp. With no think time asked for it is
+const LB_COMMAND_NAMES = {
+  cp: 'centipawn budget (cp)', think: 'Move timing (think)', degrade: 'time-pressure degradation (degrade)',
+};
+function _lbGreetLines(at) {
+  const { lo, hi } = _lbPerfRange();
+  const flounder = _lbEloRange().flounder, cmds = _lbCommands();
+  const names = ['strength (ELO)'].concat(cmds.map(k =>
+    k === 'temp' ? (flounder ? 'Flounder' : 'Maia') + ' temperature (temp)' : LB_COMMAND_NAMES[k]));
+  const ranges = ['ELO ' + lo + '-' + hi];
+  if (cmds.includes('cp')) ranges.push('cp ' + LB_CP_MIN + '-' + LB_CP_MAX);
+  if (cmds.includes('think')) ranges.push('think 0-' + LB_THINK_MAX_S + 's or auto or mirror');
+  if (cmds.includes('degrade')) ranges.push('degrade on/off');
+  if (cmds.includes('temp')) ranges.push(_lbTempIsMaia()
+    ? 'temp 0-' + CHAT_MAIA_TEMP_MAX + ': 0 = Maia\'s top move, 1 = matches Maia\'s odds, ' + CHAT_MAIA_TEMP_MAX + ' = wild'
+    : 'Temp 0 (' + _lbTempEngine() + ' top move) - ' + BLEND_TEMP_MAX + ' (personality driven)');
+  return [_lbStateLine(at)].concat(_lbPack('Type in chat to change ', names, '.'), _lbPack('', ranges, ''));
+}
+// parts joined with commas after `prefix`, `end` after the last, in as few
+// lines as fit a Lichess chat line.
+function _lbPack(prefix, parts, end) {
+  const lines = [];
+  let cur = '';
+  parts.forEach((p, i) => {
+    const tail = i === parts.length - 1 ? end : '';
+    if (cur && (cur + ', ' + p + tail).length > LB_CHAT_MAX) { lines.push(cur + ','); cur = p + tail; }
+    else cur = (cur ? cur + ', ' : prefix) + p + tail;
+  });
+  if (cur) lines.push(cur);
+  return lines;
+}
+// Everything the bot is set to that they can change, in one line: the
+// strength it plays at (and where that is the end of its range), the engine
+// setting that plays at it, then the CP Budget, think time, Temp and
+// degradation as this bot takes them. With no think time asked for it is
 // "auto"; with no Temp, a Blind Conviction bot is at 10 (that is what it
-// plays) and any other bot is "auto", its own pick.
+// plays), one whose temp is Maia's at the temperature it was built with, and
+// any other bot "auto", its own pick. Degradation says whether the rating is
+// dropping with the think time now, so it is off with a fixed time whatever
+// was asked.
 function _lbStateLine(at) {
+  const cmds = _lbCommands();
   const edge = at.edge ? 'its ' + (at.edge === 'low' ? 'lowest' : 'highest') + ', ' : '';
-  const think = at.think != null ? (Number.isInteger(at.think) ? at.think : at.think.toFixed(1)) + 's' : 'auto';
-  const temp = at.temp != null ? at.temp : botBlindConviction ? BLEND_TEMP_MAX : 'auto';
-  return 'ELO set to ' + _lbElo(at.est) + ' (' + edge + 'using ' + (_lbEloRange().flounder ? 'Flounder ' : 'Maia ') + at.setting + ')' +
-    (at.cp != null ? ', CP budget ' + at.cp : '') + ', think ' + think + ', temp ' + temp;
+  let s = 'ELO set to ' + _lbElo(at.est) + ' (' + edge + 'using ' + (_lbEloRange().flounder ? 'Flounder ' : 'Maia ') + at.setting + ')';
+  if (cmds.includes('cp') && at.cp != null) s += ', CP budget ' + at.cp;
+  if (cmds.includes('think')) {
+    s += ', think ' + (at.think == null ? 'auto'
+      : typeof at.think === 'number' ? (Number.isInteger(at.think) ? at.think : at.think.toFixed(1)) + 's' : at.think);
+  }
+  if (cmds.includes('temp')) {
+    s += ', temp ' + (at.temp != null ? at.temp : botBlindConviction ? BLEND_TEMP_MAX : _lbTempIsMaia() ? _lbBuiltMaiaTemp() : 'auto');
+  }
+  if (cmds.includes('degrade')) s += ', degrade ' + (_lbDegradeOn() ? 'on' : 'off');
+  return s;
 }
 // Posted the instant Lichess started the game, the greeting's first line could
 // land before the opponent's game page had joined the chat: saved, but never
@@ -939,8 +1060,12 @@ const LB_GREET_DELAY_MS = 2000;
 //
 // And Temp: temp2, temp 0.5, temp10 — 0 to 10, how far the personality
 // rather than popularity picks among the moves the Budget allows (see
-// botBlendTemp) — or temp auto for the bot's own pick again. Combines and is
-// kept the same way.
+// botBlendTemp), or on a Maia bot with no personality Maia's own temperature,
+// 0 to 4 — or temp auto for the bot's own pick again. Combines and is kept
+// the same way. So do think mirror (their pace) and degrade on / off / auto.
+//
+// A bot takes only the commands ticked for it (_lbCommands): the rest of a
+// line is still done, and the reply says what this bot can't change.
 //
 // What never gets here: Lichess's flood filter (lila Flood.scala) drops a
 // player's line within one character of either of their last two in the past
@@ -949,8 +1074,8 @@ const LB_GREET_DELAY_MS = 2000;
 function _lbParseCommand(text) {
   const num = '(\\d{1,2},\\d{3}|\\d{1,5})';
   const part = new RegExp('^(?:elo\\s*' + num + '|' + num + '\\s*elo|cp\\s*(\\d{1,5})|(\\d{1,5})\\s*cp' +
-    '|think\\s*(\\d{1,5}(?:\\.\\d+)?)\\s*(?:seconds?|secs?|s)?|think\\s*(auto)' +
-    '|temp\\s*(\\d{1,5}(?:\\.\\d+)?|\\.\\d+)|temp\\s*(auto))(?:[\\s,]+|$|(?=[a-z]))', 'i');
+    '|think\\s*(\\d{1,5}(?:\\.\\d+)?)\\s*(?:seconds?|secs?|s)?|think\\s*(auto|mirror)' +
+    '|temp\\s*(\\d{1,5}(?:\\.\\d+)?|\\.\\d+)|temp\\s*(auto)|degrade\\s*(on|off|auto))(?:[\\s,]+|$|(?=[a-z]))', 'i');
   // The greeting shows each command in quotes ("ELOXXXX"), so quotes typed
   // around one are dropped rather than making it unreadable.
   let rest = String(text || '').replace(/["'“”‘’]/g, '').trim();
@@ -966,14 +1091,17 @@ function _lbParseCommand(text) {
       cmd.cp = +(m[3] || m[4]);
     } else if (m[5] != null || m[6] != null) {
       if (cmd.think != null) return null;
-      cmd.think = m[6] ? 'auto' : +m[5];
+      cmd.think = m[6] ? m[6].toLowerCase() : +m[5];
+    } else if (m[9] != null) {
+      if (cmd.degrade != null) return null;
+      cmd.degrade = m[9].toLowerCase();
     } else {
       if (cmd.temp != null) return null;
       cmd.temp = m[8] ? 'auto' : +m[7];
     }
     rest = rest.slice(m[0].length);
   }
-  return cmd.elo != null || cmd.cp != null || cmd.think != null || cmd.temp != null ? cmd : null;
+  return cmd.elo != null || cmd.cp != null || cmd.think != null || cmd.temp != null || cmd.degrade != null ? cmd : null;
 }
 function _lbOnChatLine(g, m) {
   const opp = g.opponent;
@@ -989,7 +1117,8 @@ function _lbOnChatLine(g, m) {
     const held = g.chatHeld || {};
     g.chatHeld = { elo: cmd.elo != null ? cmd.elo : held.elo, cp: cmd.cp != null ? cmd.cp : held.cp,
                    think: cmd.think != null ? cmd.think : held.think,
-                   temp: cmd.temp != null ? cmd.temp : held.temp };
+                   temp: cmd.temp != null ? cmd.temp : held.temp,
+                   degrade: cmd.degrade != null ? cmd.degrade : held.degrade };
     if (!g.chatTimer) g.chatTimer = setTimeout(() => {
       const w = g.chatHeld;
       g.chatTimer = null; g.chatHeld = null;
@@ -999,17 +1128,26 @@ function _lbOnChatLine(g, m) {
   }
   _lbChatCommand(g, cmd);
 }
+// What a bot that can't change something says (and its name in a list).
+const LB_CANT = { elo: 'rating', cp: 'CP budget', think: 'think time', temp: 'temp', degrade: 'time-pressure degradation' };
+const _lbCantText = ks => 'This bot\'s ' + ks.map(k => LB_CANT[k]).join(' and ') + ' can\'t be changed.';
 function _lbChatCommand(g, cmd) {
   const opp = g.opponent;
   g.chatAt = Date.now();
   if (!_lbMatching()) {
-    _lbSay(g, cmd.elo != null ? 'This bot\'s rating can\'t be changed.'
-      : cmd.cp != null ? 'This bot\'s CP budget can\'t be changed.'
-      : cmd.think != null ? 'This bot\'s think time can\'t be changed.' : 'This bot\'s temp can\'t be changed.');
+    _lbSay(g, _lbCantText([['elo', 'cp', 'think', 'temp', 'degrade'].find(k => cmd[k] != null)]));
     return;
+  }
+  // What this bot doesn't take is left out; the reply says so.
+  const refused = LB_COMMANDS.filter(k => cmd[k] != null && !_lbOffers(k));
+  if (refused.length) {
+    cmd = Object.assign({}, cmd);
+    for (const k of refused) delete cmd[k];
+    if (cmd.elo == null && LB_COMMANDS.every(k => cmd[k] == null)) { _lbSay(g, _lbCantText(refused)); return; }
   }
   let think = null;
   if (cmd.think === 'auto') lbThinkChoices.delete(opp.id);
+  else if (cmd.think === 'mirror') lbThinkChoices.set(opp.id, think = 'mirror');
   else if (cmd.think != null) {
     think = Math.round(Math.max(0, Math.min(LB_THINK_MAX_S, cmd.think)) * 10) / 10;
     lbThinkChoices.set(opp.id, think);
@@ -1017,9 +1155,11 @@ function _lbChatCommand(g, cmd) {
   let temp = null;
   if (cmd.temp === 'auto') lbTempChoices.delete(opp.id);
   else if (cmd.temp != null) {
-    temp = Math.round(Math.max(0, Math.min(BLEND_TEMP_MAX, cmd.temp)) * 10) / 10;
+    temp = Math.round(Math.max(0, Math.min(_lbTempMax(), cmd.temp)) * 10) / 10;
     lbTempChoices.set(opp.id, temp);
   }
+  if (cmd.degrade === 'auto') lbDegradeChoices.delete(opp.id);
+  else if (cmd.degrade != null) lbDegradeChoices.set(opp.id, cmd.degrade === 'on');
   let cp = null, cpEdge = null;
   if (cmd.elo != null) {
     lbRatingChoices.set(opp.id, cmd.elo);
@@ -1043,23 +1183,42 @@ function _lbChatCommand(g, cmd) {
   }
   if (cp != null) lbLog(_lbWho(opp) + ' asked for cp' + cmd.cp + ' in the chat: CP budget ' + cp + ', Hard Floor ' + window._bcpCpHardFloor);
   if (cmd.think != null) {
-    const longest = think != null && think >= LB_THINK_MAX_S ? ' (its longest)' : '';
-    lbLog(_lbWho(opp) + ' asked for think ' + (think != null ? cmd.think + ' s' : 'auto') + ' in the chat: ' +
-      (think != null ? 'Fixed timing, ' + _lbThinkText(think) : 'back to the bot\'s own timing'));
-    const t = think != null ? _lbThinkText(think) + longest : null;
+    const longest = typeof think === 'number' && think >= LB_THINK_MAX_S ? ' (its longest)' : '';
+    lbLog(_lbWho(opp) + ' asked for think ' + (typeof think === 'number' ? cmd.think + ' s' : cmd.think) + ' in the chat: ' +
+      (think === 'mirror' ? 'Mirror timing, at their pace, no blink'
+        : think != null ? 'Fixed timing, ' + _lbThinkText(think) + ', no blink' : 'back to the bot\'s own timing'));
+    const t = think != null ? _lbThinkWord(think) + longest : null;
     said = said ? said + (t ? ', think time ' + t : ', think time back to human-like timing')
                 : (t ? 'Think time set to ' + t : 'Think time back to human-like timing');
   }
   if (cmd.temp != null) {
+    const own = _lbTempIsMaia() ? 'back to its own, ' + _lbBuiltMaiaTemp() : null;
     lbLog(_lbWho(opp) + ' asked for temp ' + cmd.temp + ' in the chat: ' +
-      (temp != null ? 'Temp ' + temp : 'back to the bot\'s own pick'));
-    // Alone, the ends say what they do; beside other replies, just the number.
-    said = said ? said + (temp != null ? ', temp ' + temp : ', temp back to its own')
-                : (temp != null ? _lbTempText(temp).replace('Temp', 'Temp set to') : 'Temp back to the bot\'s own pick');
+      (temp != null ? (_lbTempIsMaia() ? 'Maia temperature ' : 'Temp ') + temp : own || 'back to the bot\'s own pick'));
+    // Alone, the marks say what they do; beside other replies, just the number.
+    said = said ? said + (temp != null ? ', temp ' + temp : ', temp ' + (own || 'back to its own'))
+                : (temp != null ? _lbTempText(temp).replace('Temp', 'Temp set to')
+                  : own ? 'Temp ' + own : 'Temp back to the bot\'s own pick');
+  }
+  if (cmd.degrade != null) {
+    // On or off is what runs now: with a fixed think time it is off, whatever
+    // they asked, and the reply says why.
+    const on = _lbDegradeOn();
+    const word = cmd.degrade === 'auto' ? 'back to its own (' + (on ? 'on' : 'off') + ')' : cmd.degrade;
+    const note = cmd.degrade === 'on' && !_lbDegradeRuns() ? ' (not with a fixed think time)' : '';
+    lbLog(_lbWho(opp) + ' asked for degrade ' + cmd.degrade + ' in the chat: Curve A ' +
+      (botPressureCurveA ? 'on, Regan model for this clock' : 'off') + (note ? ', but the think time is fixed' : ''));
+    said = said ? said + ', degrade ' + word + note : 'Time-pressure degradation ' + word + note;
   }
   // Both chats: what the bot plays at is for spectators too. A reply that
   // gives a rating or a Temp says when the rating wasn't measured at this Temp.
-  _lbTell(g, cmd.elo != null || cmd.temp != null ? _lbTempCaveat(said) : said);
+  said = cmd.elo != null || cmd.temp != null ? _lbTempCaveat(said) : said;
+  // And what this bot can't change, where there's room.
+  if (refused.length) {
+    const cant = (said.endsWith('.') ? ' ' : '. ') + _lbCantText(refused);
+    if ((said + cant).length <= LB_CHAT_MAX) said += cant;
+  }
+  _lbTell(g, said);
   if (typeof botUpdatePlayerNames === 'function') botUpdatePlayerNames(botPlayerColor);
   lbRender();
 }

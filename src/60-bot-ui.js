@@ -2266,7 +2266,9 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
   botBlindChoicePcts = blindChoicePctsFrom(cfg.blindChoicePcts);
   // A Temp is an opponent's, asked for in a Lichess game's chat, never part of
   // a bot: a bot newly applied picks as it was built until the bridge sets one.
+  // So is a Maia temperature asked for there.
   botBlendTemp = null;
+  botChatMaiaTemp = null;
 
   // Draw behaviour + stalemate seeking (desperation)
   // Draws: accept unless more than 200 cp ahead, by default. A config from
