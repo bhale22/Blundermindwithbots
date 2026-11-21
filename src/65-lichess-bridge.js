@@ -85,7 +85,7 @@ const LB_THINK_MAX_S = 60;
 // played. "temp auto" gives the bot its own pick back: for a Blind Conviction
 // bot that is temp 10, which is why the greeting calls 10 the default. On a
 // Maia bot with no personality there is nothing to blend, so there temp is
-// Maia's own temperature, 0 to 4 (botChatMaiaTemp, _lbTempIsMaia).
+// Maia's own temperature, 0 to 2 (botChatMaiaTemp, _lbTempIsMaia).
 const lbTempChoices = new Map();
 // Opponent id → time-pressure degradation (degrade on / off), kept the same
 // way: true runs Curve A, the rating Maia is called with, on the Regan model
@@ -993,7 +993,7 @@ function _lbPerfRange() {
 // Blundermind-M3 (think, temp, degrade; plain Maia, so temp is Maia's own):
 //   ELO set to 1,500 (using Maia 1500), think auto, temp 1, degrade off
 //   Type in chat to change strength (ELO), Move timing (think), Maia temperature (temp), time-pressure degradation (degrade).
-//   ELO 600-2600, think 0-60s or auto or mirror, degrade on/off, temp 0-4: 0 = Maia's top move, 1 = matches Maia's odds, 4 = wild
+//   ELO 600-2600, think 0-60s or auto or mirror, degrade on/off, temp 0-2: 0 = Maia's top move, 1 = matches Maia's odds, 2 = wild
 // Lichess cuts a chat line at 140 characters, so a list that would run past
 // it carries on in another line (_lbPack); none of these does. The spectators
 // get the first line — what it plays at — without the instructions, which
@@ -1085,7 +1085,7 @@ const LB_GREET_DELAY_MS = 2000;
 // And Temp: temp2, temp 0.5, temp10 — 0 to 10, how far the personality
 // rather than popularity picks among the moves the Budget allows (see
 // botBlendTemp), or on a Maia bot with no personality Maia's own temperature,
-// 0 to 4 — or temp auto for the bot's own pick again. Combines and is kept
+// 0 to 2 — or temp auto for the bot's own pick again. Combines and is kept
 // the same way. So do think mirror (their pace) and degrade on / off / auto.
 //
 // A bot takes only the commands ticked for it (_lbCommands): the rest of a
