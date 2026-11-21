@@ -407,6 +407,7 @@ table.tg td.tg-inc-lbl{
 .pa-btn:last-child{border-bottom:none;}
 .pa-btn:hover{background:var(--carbon-raise);color:var(--text-secondary);}
 .pa-btn.sel{color:var(--amber);background:var(--amber-glow);}
+.pa-head{padding:7px 20px 5px;font-family:var(--font-m);font-size:8px;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-dim);border-bottom:0.5px solid var(--border);border-top:0.5px solid var(--border);}
 .pa-piece{font-size:14px;flex-shrink:0;}
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -3386,6 +3387,11 @@ body.fj .picon{font-weight:500;}
         <div class="pa-btn sel" data-color="random" onclick="selColor(this)">&#9684; Random</div>
         <div class="pa-btn" data-color="white" onclick="selColor(this)">&#9812; White</div>
         <div class="pa-btn" data-color="black" onclick="selColor(this)">&#9818; Black</div>
+        <!-- Standard chess or Chess960: a game setting like the colour, and
+             Chess960 deals a new shuffled start each game. -->
+        <div class="pa-head">Variant</div>
+        <div class="pa-btn sel" data-variant="standard" onclick="selVariant(this)">Standard</div>
+        <div class="pa-btn" data-variant="chess960" onclick="selVariant(this)">Chess960</div>
       </div>
     </div>
 
@@ -10029,11 +10035,24 @@ function openEngineSection(){
 }
 
 function selColor(btn){
-  document.querySelectorAll('.pa-btn').forEach(b => b.classList.remove('sel'));
+  document.querySelectorAll('.pa-btn[data-color]').forEach(b => b.classList.remove('sel'));
   btn.classList.add('sel');
-  const labels = { random:'Random', white:'White', black:'Black' };
-  document.getElementById('qs-color-value').textContent = labels[btn.dataset.color] || 'Random';
+  _paintPlayAsPill();
   setTimeout(() => closeAllQsDropdowns(), 240);
+}
+function selVariant(btn){
+  document.querySelectorAll('.pa-btn[data-variant]').forEach(b => b.classList.remove('sel'));
+  btn.classList.add('sel');
+  _paintPlayAsPill();
+  setTimeout(() => closeAllQsDropdowns(), 240);
+}
+// The pill names both choices it holds: "Random", or "Random · 960".
+function _paintPlayAsPill(){
+  const c = document.querySelector('.pa-btn.sel[data-color]');
+  const v = document.querySelector('.pa-btn.sel[data-variant]');
+  const labels = { random:'Random', white:'White', black:'Black' };
+  document.getElementById('qs-color-value').textContent =
+    (labels[c && c.dataset.color] || 'Random') + (v && v.dataset.variant === 'chess960' ? ' · 960' : '');
 }
 
 // Read the mode off the SELECTED CARD, which is the single source of truth.
@@ -10054,8 +10073,9 @@ function _getTimingMode(){
 }
 
 function getBotConfig(){
-  const colorBtn = document.querySelector('.pa-btn.sel');
+  const colorBtn = document.querySelector('.pa-btn.sel[data-color]');
   const color    = colorBtn ? colorBtn.dataset.color : 'random';
+  const varBtn   = document.querySelector('.pa-btn.sel[data-variant]');
   const cpBudget = parseInt(document.getElementById('r-style')?.value || '100');
   // maia3Temp mirrors the Temperature control (clamped to the legacy element's
   // 0.3–3.0 range). It used to be derived from the CP Budget — which made the
@@ -10085,6 +10105,8 @@ function getBotConfig(){
     blindConviction: _blindConviction(),
     blindChoicePcts: _blindMix(),
     color:           color,
+    // 'standard' | 'chess960' — a game setting, like the colour.
+    variant:         varBtn ? varBtn.dataset.variant : 'standard',
     tcTime:          tcTime,
     tcInc:           tcInc,
     tcBonus:         tcBonus,
@@ -10273,6 +10295,8 @@ function applyBotConfig(cfg){
   grp(() => {
     const btn = document.querySelector('.pa-btn[data-color="' + (cfg.color || 'random') + '"]');
     if(btn) selColor(btn);
+    const vb = document.querySelector('.pa-btn[data-variant="' + (cfg.variant === 'chess960' ? 'chess960' : 'standard') + '"]');
+    if(vb) selVariant(vb);
   });
   grp(() => {
     tcTime        = (cfg.tcTime        != null) ? cfg.tcTime        : 30;
@@ -11833,7 +11857,8 @@ function _lbcRender(){
     '<div class="lbc-h">Accept challenges</div>' +
     '<div class="lbc-note" style="margin-top:0;">Casual games only — rated challenges are declined. ' +
       'A bot’s strength can be adjusted from game to game, so it has no rating of its own.</div>' +
-    '<div class="lbc-checks">' + cb('lbc-bots', 'From other bots', set.bots) + '</div>' +
+    '<div class="lbc-checks">' + cb('lbc-bots', 'From other bots', set.bots) +
+      cb('lbc-960', 'Chess960 too', set.chess960) + '</div>' +
     '<div class="lbc-checks">' + ['bullet', 'blitz', 'rapid', 'classical'].map(k =>
       cb('lbc-' + k, k[0].toUpperCase() + k.slice(1), set.speeds && set.speeds[k])).join('') + '</div>' +
     (s.localGame ? '<div class="lbc-warn">The game on the board now will end.</div>' : '') +
@@ -11864,6 +11889,7 @@ function _lbcReadSettings(){
   const on = id => !!document.getElementById(id)?.checked;
   return {
     bots: on('lbc-bots'),
+    chess960: on('lbc-960'),
     speeds: { bullet: on('lbc-bullet'), blitz: on('lbc-blitz'), rapid: on('lbc-rapid'), classical: on('lbc-classical') },
   };
 }

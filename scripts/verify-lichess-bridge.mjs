@@ -47,6 +47,12 @@ vm.runInContext(fs.readFileSync(path.join(ROOT, 'src', '20-chess-core.js'), 'utf
 const sqOf = s => core.fileRankToSq(s);
 const nameOf = i => core.sqName(i);
 function placement(bd) { let s = ''; for (let i = 0; i < 64; i++) s += bd[i] ? bd[i].color + bd[i].piece : '..'; return s; }
+// The core's rules are global (standard or Chess960, and which rooks castle):
+// set them for a game before working on its position.
+function useRules(g) {
+  core.setChess960(!!g.chess960);
+  if (g.chess960) core.parseFen(g.startFen);
+}
 
 // ── The stand-in Lichess ────────────────────────────────────────────────────
 const M = {
@@ -85,7 +91,11 @@ function newChallenge(o) {
 
 function newGame(ch) {
   const id = ('gm' + (++seq) + 'abcdefgh').slice(0, 8);
-  const bd = core.parseFen(START);
+  // A Chess960 challenge is dealt its position here, as Lichess does.
+  const is960 = ch.c.variant && ch.c.variant.key === 'chess960';
+  const startFen = is960 ? core.chess960StartFen(ch.opts.sp != null ? ch.opts.sp : Math.floor(Math.random() * 960)) : START;
+  useRules({ chess960: is960, startFen });
+  const bd = core.parseFen(startFen);
   const botWhite = ch.c.color === 'black' ? true : ch.c.color === 'white' ? false : Math.random() < 0.5;
   const tc = ch.c.timeControl;
   const g = {
@@ -93,6 +103,7 @@ function newGame(ch) {
     clock: { initial: tc.limit * 1000, increment: tc.increment * 1000 },
     wtime: tc.limit * 1000, btime: tc.limit * 1000, lastAt: Date.now(),
     bd, turn: 'w', cst: { wK: true, wQ: true, bK: true, bQ: true }, ep: -1,
+    chess960: is960, startFen, castles: [],
     moves: [], status: 'started', winner: null,
     wdraw: false, bdraw: false, wtakeback: false, btakeback: false,
     streams: new Set(), oppBusy: false, rejected: false, dropped: false,
@@ -112,9 +123,9 @@ function state(g) {
   return st;
 }
 function full(g) {
-  return { type: 'gameFull', id: g.id, variant: { key: 'standard' }, speed: g.speed, rated: g.rated,
+  return { type: 'gameFull', id: g.id, variant: { key: g.chess960 ? 'chess960' : 'standard' }, speed: g.speed, rated: g.rated,
     white: g.botWhite ? BOT : g.opp, black: g.botWhite ? g.opp : BOT,
-    initialFen: 'startpos', clock: g.clock, state: state(g) };
+    initialFen: g.chess960 ? g.startFen : 'startpos', clock: g.clock, state: state(g) };
 }
 function broadcast(g) {
   const st = state(g);
@@ -133,6 +144,7 @@ function finish(g, status, winner) {
 
 // Apply a UCI move to the stand-in's position; returns false if illegal.
 function play(g, uci) {
+  useRules(g);
   const from = sqOf(uci.slice(0, 2)), to = sqOf(uci.slice(2, 4));
   const p = g.bd[from];
   if (!p || p.color !== g.turn) return false;
@@ -145,6 +157,7 @@ function play(g, uci) {
   if (g.turn === 'w') g.wtime += g.clock.increment; else g.btime += g.clock.increment;
   g.lastAt = now;
   const ne = core.computeEP(from, to, g.bd);
+  if (core.isCastleMove(g.bd, from, to)) g.castles.push(g.turn + ':' + uci);
   g.cst = core.updateCastling(from, to, p, g.cst);
   g.bd = core.applyMove(from, to, g.bd, g.ep, uci[4] ? uci[4].toUpperCase() : 'Q');
   g.ep = ne;
@@ -164,7 +177,8 @@ function play(g, uci) {
 // clocks are left as they are, as on Lichess.
 function rebuildTo(g, keep) {
   const wt = g.wtime, bt = g.btime, last = g.lastAt;
-  g.bd = core.parseFen(START); g.turn = 'w'; g.cst = { wK: true, wQ: true, bK: true, bQ: true }; g.ep = -1; g.moves = [];
+  useRules(g);
+  g.bd = core.parseFen(g.startFen || START); g.turn = 'w'; g.cst = { ...core.castling }; g.ep = -1; g.moves = [];
   for (const u of keep) {
     const from = sqOf(u.slice(0, 2)), to = sqOf(u.slice(2, 4)), p = g.bd[from];
     const ne = core.computeEP(from, to, g.bd);
@@ -193,6 +207,7 @@ function allowsMateInOne(g, mv) {
 // another browser. Returns the move, or null.
 function playForBot(g) {
   if (g.status !== 'started' || g.turn !== botLetter(g)) return null;
+  useRules(g);
   const all = core.allLegalMoves(g.bd, g.turn, g.ep, g.cst);
   if (!all.length) return null;
   const mv = all[Math.floor(Math.random() * all.length)];
@@ -244,11 +259,14 @@ function opponentTurn(g) {
         g.wtakeback = g.btakeback = false;
         if (g.status !== 'started' || g.turn === botLetter(g)) return;
       }
+      useRules(g);
       const all = core.allLegalMoves(g.bd, g.turn, g.ep, g.cst);
       if (!all.length) return;
       // A game kept open for chat checks: never a move that allows mate in one.
       const safe = o.avoidMateInOne ? all.filter(m => !allowsMateInOne(g, m)) : all;
-      const pool = safe.length ? safe : all;
+      // A Chess960 game: castle whenever it can, to put castles through the bridge.
+      const castles = o.preferCastle ? safe.filter(m => core.isCastleMove(g.bd, m.from, m.to)) : [];
+      const pool = castles.length ? castles : safe.length ? safe : all;
       const mv = pool[Math.floor(Math.random() * pool.length)];
       const p = g.bd[mv.from];
       const promo = p.piece === 'P' && (mv.to < 8 || mv.to >= 56) ? 'q' : '';
@@ -717,6 +735,35 @@ await until(() => g4.status !== 'started', 120000, 'game 4 to finish');
 await sleep(800);
 check(await pageBoard() === placement(g4.bd), 'board matches the server after the reload');
 check(g4.refused.length === 0, 'no move refused after the reload', g4.refused);
+
+console.log('\n6c. Chess960: accepted only when ticked; Lichess\'s position, castles both ways');
+{
+  // Off (the default), section 2 saw it declined as a variant. Ticked:
+  await page.evaluate(() => lichessSetOpt('chess960', true));
+  check(/Chess960 too/.test(await page.textContent('#lbRules')), 'the panel\'s accept rules name Chess960', await page.textContent('#lbRules'));
+  // Position 3, BQNNRKRB: king f1, rook g1, so O-O is legal at once and is the
+  // king and rook trading squares (f1g1: king takes rook). The opponent castles
+  // whenever it can.
+  const c = newChallenge({ variant: 'chess960', color: 'white', opts: { sp: 3, preferCastle: true, resignAtPly: 24 } });
+  await until(() => M.challenges[c].gameId || M.challenges[c].declined, 5000);
+  check(!!M.challenges[c].gameId, 'a Chess960 challenge is accepted once ticked', M.challenges[c].declined);
+  const g = M.games[M.challenges[c].gameId];
+  await until(() => g && g.moves.length >= 2, 30000, 'two plies');
+  const p960 = await page.evaluate(() => ({ on: chess960, start: _gameStartFen, tag: (document.getElementById('variantTag') || {}).textContent }));
+  check(p960.on && p960.start === g.startFen, 'the page plays Chess960 from Lichess\'s position', p960);
+  check(p960.tag === 'Chess960 · #3', 'and names it on the board', p960.tag);
+  check(g.castles[0] === 'w:f1g1', 'the opponent castled at once, king takes rook (f1g1)', g.castles);
+  await until(() => g.status !== 'started', 180000, 'the Chess960 game to finish');
+  await sleep(800);
+  check(await pageBoard() === placement(g.bd), 'board matches the server at the end (' + g.moves.length + ' plies, castles ' + g.castles.join(' ') + ')');
+  check(g.refused.length === 0, 'no move of the bot\'s refused', g.refused);
+  const pgn = await page.evaluate(() => buildPgnText().pgn);
+  check(/\[Variant "Chess960"\]/.test(pgn) && pgn.includes('[FEN "' + g.startFen + '"]'), 'its PGN says Chess960 and gives the start', pgn.slice(0, 300));
+  check(/\bO-O\b/.test(pgn), 'the castle reads O-O in the PGN', pgn.split('\n\n')[1]);
+  await page.evaluate(() => lichessSetOpt('chess960', false));
+  await until(async () => (await lbState()) === 'waiting', 5000);
+  // The next game is standard again: section 6t's games check the board against the server.
+}
 
 console.log('\n6t. Takebacks: the builder\'s limit answers the opponent');
 {

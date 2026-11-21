@@ -181,6 +181,7 @@ body.pro-mode #shellToggle .st-pro{
 .mid-col{flex:1;display:flex;flex-direction:column;justify-content:center;gap:2px;overflow:hidden;min-width:0;}
 .mat-bar{font-size:11px;color:var(--text-secondary);line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .hint-text{font-size:7px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2;}
+.variant-tag{font-size:9px;font-weight:600;letter-spacing:0.04em;color:var(--accent,#4a9fd4);white-space:nowrap;line-height:1.2;}
 .hint-text.check{color:#c03030;}
 .right-col{display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:3px;flex-shrink:0;}
 .turn-pill{font-size:7px;font-weight:500;padding:1px 6px;border-radius:8px;background:rgba(74,159,212,0.15);color:#2878b8;white-space:nowrap;border:0.5px solid rgba(74,159,212,0.3);}
@@ -2501,6 +2502,7 @@ body.pz-eval-on #pzEval{display:block;}
   .player-name{font-size:12px;}
   .player-time{font-size:15px;}
   .hint-text{font-size:9px;}
+  .variant-tag{font-size:10px;}
   .mat-bar{font-size:12px;}
 
   /* ── The settings drawer ── */
@@ -3812,6 +3814,8 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       </div>
       <div class="mid-col">
         <div class="mat-bar" id="matB"></div>
+        <!-- Chess960 games name their start position here (variantTagText). -->
+        <div class="variant-tag" id="variantTag" style="display:none"></div>
       </div>
       <div class="right-col" id="rightColB"></div>
       <div class="pb-chip-mount" id="chipMountB"></div>
@@ -4089,6 +4093,15 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         </select>
         <select class="qb-sel" id="quickBotTime" onchange="quickBotSetTime(this.value)"
                 aria-label="Choose the time control"></select>
+      </div>
+      <!-- Standard chess or Chess960 (a new shuffled start every game). The
+           builder's Play as picker holds the same setting. -->
+      <div class="qb-row">
+        <select class="qb-sel" id="quickBotVariant" onchange="botSetVariant(this.value)"
+                aria-label="Choose the variant">
+          <option value="standard">Standard chess</option>
+          <option value="chess960">Chess960 (shuffled start)</option>
+        </select>
       </div>
     </div>
     <button class="ctrl-btn play-btn" onclick="openBotModal()" id="botSidebarBtn">🤖 Custom Bot Builder</button>
@@ -5088,6 +5101,10 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
             <span class="mp-qs-lbl">Play as</span>
             <span class="mp-qs-val" id="mpQsColorVal">Random</span>
           </button>
+          <button class="mp-qs-pill" id="mpQsPill-variant" onclick="mpQsToggle('variant')">
+            <span class="mp-qs-lbl">Variant</span>
+            <span class="mp-qs-val" id="mpQsVariantVal">Standard</span>
+          </button>
         </div>
 
         <!-- Editors — one open at a time, below the stationary pill rows -->
@@ -5126,6 +5143,13 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
             <button onclick="mpSetHostColor('white')"  class="tc-btn" data-mpcolor="white">♔ White</button>
             <button onclick="mpSetHostColor('random')" class="tc-btn tc-active" data-mpcolor="random">⚄ Random</button>
             <button onclick="mpSetHostColor('black')"  class="tc-btn" data-mpcolor="black">♚ Black</button>
+          </div>
+        </div>
+        <div class="mp-qs-editor" id="mpQsEd-variant">
+          <div class="mp-micro-lbl" style="margin-bottom:6px;">Variant of games you create <span style="font-weight:400;font-style:italic;">(Chess960: the back ranks are shuffled; a rematch keeps the position)</span></div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;">
+            <button onclick="mpSetVariant('standard')" class="tc-btn tc-active" data-mpvariant="standard">Standard</button>
+            <button onclick="mpSetVariant('chess960')" class="tc-btn" data-mpvariant="chess960">Chess960</button>
           </div>
         </div>
       </div>

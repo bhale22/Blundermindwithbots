@@ -1,10 +1,155 @@
+// ── Chess960 ────────────────────────────────────────────────────────────────
+// A Chess960 game starts from one of 960 back ranks: the king somewhere between
+// its two rooks, the bishops on opposite colours. Castling ends exactly as in
+// standard chess (O-O: king g-file, rook f-file; O-O-O: king c-file, rook
+// d-file), but the king and rook can start almost anywhere, so "the king moves
+// two squares" no longer identifies it: the king may move one square, or none,
+// and a one-square castle looks just like an ordinary king step.
+//
+// So in a Chess960 game a castle is written KING TAKES ITS OWN ROOK (e1h1, b1a1),
+// the way Lichess and Stockfish (UCI_Chess960) write it. A king can never
+// otherwise land on its own piece, so the move cannot be mistaken for anything
+// else. Standard games keep king-two-squares (e1g1), which everything else in the
+// app (Maia, the opening explorer, the book) speaks; nothing changes for them.
+//
+// chess960 says which game this is, and castleFiles which rook each castling
+// right belongs to. Both are fixed for a game: a right is lost for good when its
+// rook leaves home. setChess960() sets them at the start of every game;
+// parseFen() reads the rook files from a FEN while chess960 is on.
+var chess960 = false;
+var castleFiles = { wK: 7, wQ: 0, bK: 7, bQ: 0 };
+function setChess960(on){
+  chess960 = !!on;
+  castleFiles = { wK: 7, wQ: 0, bK: 7, bQ: 0 };
+}
+// The square of the rook a castling right belongs to. side: 'K' | 'Q'.
+function castleRookSq(color, side){
+  return rcSq(color==='w'?7:0, castleFiles[color+side]);
+}
+// The file of the outermost rook on one side of the king on its home rank, or
+// -1. That is what K/Q/k/q name in a Chess960 FEN (X-FEN).
+function _outerRookFile(bd, color, side){
+  const r=color==='w'?7:0;
+  let kf=-1;
+  for(let c=0;c<8;c++){const p=bd[rcSq(r,c)];if(p&&p.piece==='K'&&p.color===color){kf=c;break;}}
+  if(kf<0)return -1;
+  const isRook=(c)=>{const p=bd[rcSq(r,c)];return !!p&&p.piece==='R'&&p.color===color;};
+  if(side==='K'){for(let c=7;c>kf;c--)if(isRook(c))return c;}
+  else{for(let c=0;c<kf;c++)if(isRook(c))return c;}
+  return -1;
+}
+// A FEN castling field -> { cst, files }. Reads KQkq and Shredder/X-FEN file
+// letters (HAha, or a mix). files has a rook file for each right present: the
+// letter's file, or for K/Q the outermost rook on that side (the corner rook in
+// standard chess). Pure.
+function parseCastlingField(cs, bd){
+  const cst={wK:false,wQ:false,bK:false,bQ:false}, files={wK:7,wQ:0,bK:7,bQ:0};
+  if(!cs||cs==='-')return{cst,files};
+  for(const ch of cs){
+    const col=ch===ch.toUpperCase()?'w':'b', up=ch.toUpperCase();
+    if(up==='K'||up==='Q'){
+      cst[col+up]=true;
+      const f=_outerRookFile(bd,col,up);
+      if(f>=0)files[col+up]=f;
+    }else if(up>='A'&&up<='H'){
+      const f=up.charCodeAt(0)-65;
+      const r=col==='w'?7:0;
+      let kf=4;
+      for(let c=0;c<8;c++){const p=bd[rcSq(r,c)];if(p&&p.piece==='K'&&p.color===col){kf=c;break;}}
+      const side=f>kf?'K':'Q';
+      cst[col+side]=true;files[col+side]=f;
+    }
+  }
+  return{cst,files};
+}
+// The castling field for a FEN. Standard: KQkq. Chess960: X-FEN — K/Q/k/q when
+// the right's rook is the outermost one on that side (always so at the start),
+// its file letter otherwise — which Stockfish and Lichess both read.
+function castlingFieldFor(bd, cst){
+  let s='';
+  for(const[col,side,ch]of[['w','K','K'],['w','Q','Q'],['b','K','k'],['b','Q','q']]){
+    if(!cst||!cst[col+side])continue;
+    if(!chess960){s+=ch;continue;}
+    const f=castleFiles[col+side];
+    s+=(_outerRookFile(bd,col,side)===f)?ch:String.fromCharCode((col==='w'?65:97)+f);
+  }
+  return s||'-';
+}
+// The back rank of Chess960 position n (0-959), in the standard numbering
+// (Scharnagl's, as Lichess and FIDE use): 518 is the standard RNBQKBNR.
+function chess960BackRank(n){
+  n=((Math.floor(+n)%960)+960)%960;
+  const rank=Array(8).fill(null);
+  rank[2*(n%4)+1]='B'; n=Math.floor(n/4);          // light-squared bishop: b, d, f, h
+  rank[2*(n%4)]='B';   n=Math.floor(n/4);          // dark-squared bishop: a, c, e, g
+  const empty=()=>rank.map((p,i)=>p?-1:i).filter(i=>i>=0);
+  rank[empty()[n%6]]='Q'; n=Math.floor(n/6);
+  const KN=[[0,1],[0,2],[0,3],[0,4],[1,2],[1,3],[1,4],[2,3],[2,4],[3,4]][n];
+  const e=empty();
+  rank[e[KN[0]]]='N';rank[e[KN[1]]]='N';
+  const rest=empty();
+  rank[rest[0]]='R';rank[rest[1]]='K';rank[rest[2]]='R';
+  return rank.join('');
+}
+function chess960StartFen(n){
+  const br=chess960BackRank(n);
+  return br.toLowerCase()+'/pppppppp/8/8/8/8/PPPPPPPP/'+br+' w KQkq - 0 1';
+}
+function chess960RandomNumber(){ return Math.floor(Math.random()*960); }
+// Which Chess960 position a FEN's back ranks are, or -1 (not a start position).
+function chess960NumberOf(fen){
+  const rows=String(fen||'').split(' ')[0].split('/');
+  if(rows.length!==8||rows[1]!=='pppppppp'||rows[6]!=='PPPPPPPP')return -1;
+  if(rows[0]!==rows[7].toLowerCase())return -1;
+  for(let n=0;n<960;n++)if(chess960BackRank(n)===rows[7])return n;
+  return -1;
+}
+// Is from->to a castle on this board? Either form: king takes own rook
+// (Chess960), or king two squares along its rank (standard).
+function isCastleMove(bd, from, to){
+  const p=bd[from];if(!p||p.piece!=='K')return false;
+  const t=bd[to];
+  if(t&&t.color===p.color&&t.piece==='R')return true;
+  return Math.floor(from/8)===Math.floor(to/8)&&Math.abs(to%8-from%8)===2;
+}
+// Does from->to take a piece? A Chess960 castle lands on the king's own rook,
+// which is not a capture.
+function moveCaptures(bd, from, to, ep){
+  const p=bd[from];if(!p)return false;
+  const t=bd[to];
+  if(t)return t.color!==p.color;
+  return p.piece==='P'&&to===ep;
+}
+// A king move as an engine or a player may write it in a Chess960 game, as the
+// move this board plays: king onto the castling destination (e1g1, the standard
+// spelling) becomes king takes rook (e1h1) when that is a legal castle and the
+// destination is not a legal king step of its own. Everything else as given.
+function chess960CastleAlias(bd, from, to, ep, cst){
+  if(!chess960)return to;
+  const p=bd[from];if(!p||p.piece!=='K')return to;
+  const r=Math.floor(from/8);
+  if(r!==(p.color==='w'?7:0)||Math.floor(to/8)!==r)return to;
+  const side=to%8===6?'K':to%8===2?'Q':null;
+  if(!side||!cst||!cst[p.color+side])return to;
+  const legal=legalMovesFor(from,bd,ep,cst);
+  if(legal.includes(to))return to;
+  const rk=castleRookSq(p.color,side);
+  return legal.includes(rk)?rk:to;
+}
+
 function parseFen(fen){
   const parts=fen.split(' '),b={};
   const rows=parts[0].split('/');
   for(let r=0;r<8;r++){let c=0;for(const ch of rows[r]){if('12345678'.includes(ch)){c+=+ch;}else{b[r*8+c]={piece:ch.toUpperCase(),color:ch===ch.toUpperCase()?'w':'b'};c++;}}}
   turn=parts[1]||'w';
   const cs=parts[2]||'-';
-  castling={wK:cs.includes('K'),wQ:cs.includes('Q'),bK:cs.includes('k'),bQ:cs.includes('q')};
+  const pc=parseCastlingField(cs,b);
+  castling=pc.cst;
+  // The rook files only mean something in a Chess960 game; in a standard one
+  // the rights belong to the corner rooks, whatever the FEN.
+  if(chess960){
+    for(const k of['wK','wQ','bK','bQ'])if(pc.cst[k])castleFiles[k]=pc.files[k];
+  }
   epSq=parts[3]&&parts[3]!=='-'?fileRankToSq(parts[3]):-1;
   return b;
 }
@@ -366,18 +511,41 @@ function kingSquare(bd,color){for(let s=0;s<64;s++)if(bd[s]&&bd[s].piece==='K'&&
 function isAttackedBy(sq,byColor,bd){for(let s=0;s<64;s++){if(!bd[s]||bd[s].color!==byColor)continue;if(rawAttacks(s,bd).includes(sq))return true;}return false;}
 function inCheck(bd,color){return isAttackedBy(kingSquare(bd,color),color==='w'?'b':'w',bd);}
 
+// The parts of a castle that do not depend on attacks: the king on its home
+// rank (on the e-file in standard chess), the right's rook at home on the
+// correct side of it, and every square either piece crosses or lands on empty
+// but for the two of them. Returns the king and rook squares and the king's
+// destination file, or null. In standard chess this is exactly the old test:
+// f and g empty for O-O; b, c and d for O-O-O.
+function _castleGeometry(bd,color,side){
+  const r=color==='w'?7:0;
+  const kSq=kingSquare(bd,color);
+  if(kSq<0||Math.floor(kSq/8)!==r)return null;
+  const kf=kSq%8;
+  if(!chess960&&kf!==4)return null;
+  const rf=castleFiles[color+side];
+  const rSq=rcSq(r,rf);
+  const rp=bd[rSq];
+  if(!rp||rp.piece!=='R'||rp.color!==color)return null;
+  if(side==='K'?rf<=kf:rf>=kf)return null;
+  const kTo=side==='K'?6:2, rTo=side==='K'?5:3;
+  // The two paths together always make one unbroken stretch of the rank.
+  const lo=Math.min(kf,kTo,rf,rTo), hi=Math.max(kf,kTo,rf,rTo);
+  for(let c=lo;c<=hi;c++){const s=rcSq(r,c);if(s!==kSq&&s!==rSq&&bd[s])return null;}
+  return{kSq,rSq,kf,kTo,r};
+}
 function castlingLegal(bd,color,side){
-  const opp=color==='w'?'b':'w',r=color==='w'?7:0,kSq=rcSq(r,4);
-  if(!bd[kSq]||bd[kSq].piece!=='K'||bd[kSq].color!==color)return false;
+  const g=_castleGeometry(bd,color,side);
+  if(!g)return false;
   if(inCheck(bd,color))return false;
-  if(side==='K'){
-    const rSq=rcSq(r,7);if(!bd[rSq]||bd[rSq].piece!=='R'||bd[rSq].color!==color)return false;
-    if(bd[rcSq(r,5)]||bd[rcSq(r,6)])return false;
-    if(isAttackedBy(rcSq(r,5),opp,bd)||isAttackedBy(rcSq(r,6),opp,bd))return false;
-  }else{
-    const rSq=rcSq(r,0);if(!bd[rSq]||bd[rSq].piece!=='R'||bd[rSq].color!==color)return false;
-    if(bd[rcSq(r,3)]||bd[rcSq(r,2)]||bd[rcSq(r,1)])return false;
-    if(isAttackedBy(rcSq(r,3),opp,bd)||isAttackedBy(rcSq(r,2),opp,bd))return false;
+  // The king may not cross or land on an attacked square. A castle that only
+  // uncovers an attack once the rook has moved is caught by legalMovesFor,
+  // which plays the move and looks for check.
+  const opp=color==='w'?'b':'w';
+  if(g.kf!==g.kTo){
+    const step=g.kTo>g.kf?1:-1;
+    for(let c=g.kf+step;c!==g.kTo+step;c+=step)
+      if(isAttackedBy(rcSq(g.r,c),opp,bd))return false;
   }
   return true;
 }
@@ -392,11 +560,13 @@ function pseudoMoves(sq,bd,ep,cst){
     for(const dc of[-1,1]){if(valid(r+d,c+dc)){const tsq=rcSq(r+d,c+dc);if(bd[tsq]&&bd[tsq].color===opp)moves.push(tsq);if(tsq===ep)moves.push(tsq);}}
   }else if(p.piece==='K'){
     for(const[dr,dc2]of[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]])if(valid(r+dr,c+dc2))addIfNotOwn(rcSq(r+dr,c+dc2));
-    if(c===4){
-      if(col==='w'&&cst.wK&&castlingLegal(bd,col,'K'))moves.push(rcSq(r,6));
-      if(col==='w'&&cst.wQ&&castlingLegal(bd,col,'Q'))moves.push(rcSq(r,2));
-      if(col==='b'&&cst.bK&&castlingLegal(bd,col,'K'))moves.push(rcSq(r,6));
-      if(col==='b'&&cst.bQ&&castlingLegal(bd,col,'Q'))moves.push(rcSq(r,2));
+    // Castling: to the destination square in standard chess, onto the rook in
+    // Chess960 (see castleRookSq).
+    if(cst&&r===(col==='w'?7:0)){
+      for(const side of['K','Q']){
+        if(cst[col+side]&&castlingLegal(bd,col,side))
+          moves.push(chess960?castleRookSq(col,side):rcSq(r,side==='K'?6:2));
+      }
     }
   }else{for(const t of rawAttacks(sq,bd))addIfNotOwn(t);}
   return moves;
@@ -447,12 +617,13 @@ function premoveDests(sq,bd,cst){
   }else if(p.piece==='K'){
     for(const[dr,dc]of[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]])add(r+dr,c+dc);
     // Castling rights and an empty path are knowable now; passing through check
-    // is not, so that part is left to fire-time validation.
-    if(c===4&&cst){
-      const rk=col==='w'?{K:cst.wK,Q:cst.wQ}:{K:cst.bK,Q:cst.bQ};
-      const rookAt=(cc)=>{const t=rcSq(r,cc);return bd[t]&&bd[t].piece==='R'&&bd[t].color===col;};
-      if(rk.K&&rookAt(7)&&!bd[rcSq(r,5)]&&!bd[rcSq(r,6)])out.add(rcSq(r,6));
-      if(rk.Q&&rookAt(0)&&!bd[rcSq(r,3)]&&!bd[rcSq(r,2)]&&!bd[rcSq(r,1)])out.add(rcSq(r,2));
+    // is not, so that part is left to fire-time validation. In Chess960 the
+    // castle is the king onto its own rook, so that square is offered too.
+    if(cst&&r===(col==='w'?7:0)){
+      for(const side of['K','Q']){
+        if(cst[col+side]&&_castleGeometry(bd,col,side))
+          out.add(chess960?castleRookSq(col,side):rcSq(r,side==='K'?6:2));
+      }
     }
   }else{
     const dirs=p.piece==='R'?[[-1,0],[1,0],[0,-1],[0,1]]
@@ -465,7 +636,16 @@ function premoveDests(sq,bd,cst){
 }
 
 function applyMove(from,to,bd,ep,promo){
-  const bd2={...bd},p=bd2[from];bd2[to]=p;delete bd2[from];
+  const bd2={...bd},p=bd2[from];
+  // Chess960 castle, written king takes own rook: both land on the standard
+  // castled squares (O-O: Kg Rf; O-O-O: Kc Rd), whichever they started on.
+  if(p&&p.piece==='K'&&bd2[to]&&bd2[to].color===p.color&&bd2[to].piece==='R'){
+    const rook=bd2[to],r=Math.floor(from/8),ks=to>from;
+    delete bd2[from];delete bd2[to];
+    bd2[rcSq(r,ks?6:2)]=p;bd2[rcSq(r,ks?5:3)]=rook;
+    return bd2;
+  }
+  bd2[to]=p;delete bd2[from];
   if(p.piece==='P'&&to===ep)delete bd2[rcSq(Math.floor(from/8),to%8)];
   if(p.piece==='K'){const{r,c:fc}=sqRC(from);const{c:tc}=sqRC(to);if(Math.abs(tc-fc)===2){if(tc===6){bd2[rcSq(r,5)]=bd2[rcSq(r,7)];delete bd2[rcSq(r,7)];}if(tc===2){bd2[rcSq(r,3)]=bd2[rcSq(r,0)];delete bd2[rcSq(r,0)];}}}
   if(p.piece==='P'&&(Math.floor(to/8)===0||Math.floor(to/8)===7))bd2[to]={piece:promo||'Q',color:p.color};
@@ -475,8 +655,12 @@ function computeEP(from,to,bd){const p=bd[from];if(p&&p.piece==='P'&&Math.abs(Ma
 function updateCastling(from,to,p,cst){
   const c2={...cst};
   if(p.piece==='K'){if(p.color==='w'){c2.wK=false;c2.wQ=false;}else{c2.bK=false;c2.bQ=false;}}
-  if(from===rcSq(7,0)||to===rcSq(7,0))c2.wQ=false;if(from===rcSq(7,7)||to===rcSq(7,7))c2.wK=false;
-  if(from===rcSq(0,0)||to===rcSq(0,0))c2.bQ=false;if(from===rcSq(0,7)||to===rcSq(0,7))c2.bK=false;
+  // A right goes when its rook leaves home or is taken there. The corner rooks
+  // in standard chess; in Chess960 wherever the game's rooks started.
+  for(const k of['wK','wQ','bK','bQ']){
+    const s=rcSq(k[0]==='w'?7:0,castleFiles[k]);
+    if(from===s||to===s)c2[k]=false;
+  }
   return c2;
 }
 
@@ -484,8 +668,14 @@ function updateCastling(from,to,p,cst){
 // legal move matches. Pure (moved here from the app shell so the repertoire
 // engine can use it under the unit tests).
 function algebraicToMove(san,bd,color,ep,castl){
-  if(san==='O-O'||san==='0-0'){const r=color==='w'?7:0;return{from:rcSq(r,4),to:rcSq(r,6)};}
-  if(san==='O-O-O'||san==='0-0-0'){const r=color==='w'?7:0;return{from:rcSq(r,4),to:rcSq(r,2)};}
+  const _c=String(san).replace(/[+#!?]/g,'');
+  if(chess960&&(_c==='O-O'||_c==='0-0'||_c==='O-O-O'||_c==='0-0-0')){
+    // Chess960: the king onto the right's rook, wherever the two started.
+    const side=(_c.length>3)?'Q':'K', k=kingSquare(bd,color), to=castleRookSq(color,side);
+    return (k>=0&&legalMovesFor(k,bd,ep,castl).includes(to))?{from:k,to}:null;
+  }
+  if(_c==='O-O'||_c==='0-0'){const r=color==='w'?7:0;return{from:rcSq(r,4),to:rcSq(r,6)};}
+  if(_c==='O-O-O'||_c==='0-0-0'){const r=color==='w'?7:0;return{from:rcSq(r,4),to:rcSq(r,2)};}
   san=san.replace(/[+#!?]/g,'');
   let promo=null;
   if(san.includes('=')){promo=san.split('=')[1][0];san=san.replace(/=.*$/,'');}
@@ -521,27 +711,33 @@ function moveToSAN(from, to, promo, bd, ep, cst) {
   const toFile = String.fromCharCode(97+tc);
   const toRank = String(8-tr);
   const capture = !!bd[to] || (p.piece==='P' && tc!==fc); // en passant
-  // Castling
-  if(p.piece==='K' && Math.abs(tc-fc)===2){
+  // Castling: king two squares (standard) or king onto its own rook (Chess960).
+  if(p.piece==='K' && (Math.abs(tc-fc)===2 || (bd[to] && bd[to].color===p.color))){
     return tc>fc ? 'O-O' : 'O-O-O';
   }
   let san = '';
   if(p.piece !== 'P'){
     san += p.piece;
-    // Disambiguation: find other pieces of same type that can also go to 'to'
-    let ambigFile=false, ambigRank=false;
+    // Disambiguation, when another piece of the same kind can also go to 'to':
+    // the file if none of them shares this piece's file, else the rank if none
+    // shares its rank, else both. (It used to swap the two: rooks on a1 and f1
+    // wrote Rf1-d1 as "R1d1", which names neither, and the SAN parser then
+    // moved the a1 rook in review and takebacks.)
+    let conflict=false, sameFile=false, sameRank=false;
     for(let s=0;s<64;s++){
       if(s===from) continue;
       const q=bd[s];
       if(!q||q.color!==p.color||q.piece!==p.piece) continue;
       if(legalMovesFor(s,bd,ep,cst).includes(to)){
         const {r:sr,c:sc}=sqRC(s);
-        if(sc===fc) ambigRank=true; else ambigFile=true;
+        conflict=true;
+        if(sc===fc) sameFile=true;
+        if(sr===fr) sameRank=true;
       }
     }
-    if(ambigFile||ambigRank){
-      if(!ambigFile) san += String.fromCharCode(97+fc);
-      else if(!ambigRank) san += String(8-fr);
+    if(conflict){
+      if(!sameFile) san += String.fromCharCode(97+fc);
+      else if(!sameRank) san += String(8-fr);
       else san += String.fromCharCode(97+fc)+String(8-fr);
     }
   } else if(capture){

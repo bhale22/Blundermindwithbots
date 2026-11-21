@@ -3312,8 +3312,9 @@ function _botQuickLookMove() {
   }
   const promoOf = (p, to) => (p.piece === 'P' && (to < 8 || to >= 56)) ? 'Q' : null;
   // What a move takes off the board, en passant included, plus a promotion.
+  // (A Chess960 castle lands on the king's own rook: it takes nothing.)
   const wins = (bd, p, from, to, ep) =>
-    (bd[to] ? _QL_VAL[bd[to].piece] : (p.piece === 'P' && to === ep ? 1 : 0)) +
+    (bd[to] ? (bd[to].color !== p.color ? _QL_VAL[bd[to].piece] : 0) : (p.piece === 'P' && to === ep ? 1 : 0)) +
     (promoOf(p, to) ? _QL_VAL.Q - 1 : 0);
 
   let best = -Infinity, pool = [];
