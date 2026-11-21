@@ -2145,12 +2145,19 @@ function sampleFromProbs(moveProbs, temperature) {
 // whatever its number, with the Choice mix picking among her top moves. On
 // such a bot the opponent's temp sets Maia's own sampling temperature instead
 // (src/65-lichess-bridge.js; Blundermind-M3, Nov 2026): 1 samples her odds as
-// they are, below 1 sharpens them, above flattens them (4, the builder's top,
-// is wild), and 0 plays her most likely move every time. It stands in for the
-// builder's Temperature on every Maia path, the premove's too, and time
-// pressure (curve B) still raises it from there. null: the bot's own.
+// they are, below 1 sharpens them, above flattens them, and 0 plays her most
+// likely move every time. It stands in for the builder's Temperature on every
+// Maia path, the premove's too, and time pressure (curve B) still raises it
+// from there. null: the bot's own.
+//
+// The chat stops at 2, not the builder's 4. The temperature works on every
+// legal move (p^(1/T)), and at 4 the moves she gives under 1% outweigh her real
+// choices: measured on Maia 2600, a move dropping 300+ cp in a quiet position
+// goes from about 0.03% at temp 1 to 1.5% at 2 and 5–7% at 4, and with the queen
+// attacked it failed to move it 46% of the time at 4 (11% at 2). Maia 2600 and
+// Maia 1025 also play almost alike at 4, so the rating it gives means nothing.
 var botChatMaiaTemp = null;
-const CHAT_MAIA_TEMP_MAX = 4;
+const CHAT_MAIA_TEMP_MAX = 2;
 
 // Does the personality weigh one move against another? Blind Conviction, a
 // trait that scores moves, a piece value or a custom control. Four traits never

@@ -1133,7 +1133,7 @@ const elo = n => n.toLocaleString('en-US');
 const SAYS = { maiaTemp: null };
 const readSays = async () => Object.assign(SAYS, await p2.evaluate(() => ({
   maiaTemp: botWeighsMoves() ? null : Math.round(botMaiaTempValue * 10) / 10 })));
-const MAIA_TEMP_RANGE = "temp 0-4: 0 = Maia's top move, 1 = matches Maia's odds, 4 = wild";
+const MAIA_TEMP_RANGE = "temp 0-2: 0 = Maia's top move, 1 = matches Maia's odds, 2 = wild";
 const stated = (est, runs, cp, edge, think, temp, blind) => {
   const maiaTemp = !runs.startsWith('Flounder') && !blind && SAYS.maiaTemp != null;
   return `ELO set to ${elo(est)} (${edge ? `its ${edge}, ` : ''}using ${runs}), CP budget ${cp}, ` +
@@ -1521,7 +1521,7 @@ kn = await knobs();
 check(lastSaid(ug) === "Temp set to 1 (matches Maia's odds)" && kn.chatTemp === 1 && kn.base === 1, 'temp1: Maia\'s own odds', { said: lastSaid(ug), kn });
 await pastCooldown();
 await command(ug, 'temp 9');
-check(lastSaid(ug) === 'Temp set to 4 (wild)' && (await knobs()).chatTemp === 4, 'temp 9: stops at 4, wild', lastSaid(ug));
+check(lastSaid(ug) === 'Temp set to 2 (wild)' && (await knobs()).chatTemp === 2, 'temp 9: stops at 2, wild', lastSaid(ug));
 await pastCooldown();
 await command(ug, 'think mirror');
 kn = await knobs();
@@ -1560,7 +1560,7 @@ check(ug.status === 'started', 'the M3 game was still going throughout', ug.stat
 await endGame(ug);
 const ug2 = await openGame(m3User);
 await greeted(ug2);
-check(greetOf(ug2).split('\n')[0] === 'ELO set to 1,800 (using Maia 1800), think auto, temp 4, degrade off' && (await knobs()).chatTemp === 4,
+check(greetOf(ug2).split('\n')[0] === 'ELO set to 1,800 (using Maia 1800), think auto, temp 2, degrade off' && (await knobs()).chatTemp === 2,
   'a rematch keeps their choices, and the greeting gives them', ug2.chat);
 await endGame(ug2);
 const ug3 = await openGame({ id: 'm3next', name: 'M3Next', rating: 1300 });

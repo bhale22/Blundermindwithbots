@@ -10,7 +10,7 @@
 //     chat turns it off.
 //   - degrade on / off switches Curve A only, the rating Maia is called with,
 //     on the Regan model for the game's clock. It never runs with a fixed time.
-//   - temp on a Maia bot with no personality is Maia's own temperature, 0 to 4
+//   - temp on a Maia bot with no personality is Maia's own temperature, 0 to 2
 //     (0 = her top move, 1 = her own odds), not Temp's blend.
 //
 // The parser and the greeting are pure; the rest runs in a vm with the engine
@@ -190,7 +190,7 @@ test('Blundermind-M3\'s greeting: what it is set to, what can be typed, and what
   assert.deepStrictEqual(lines, [
     'ELO set to 1,500 (using Maia 1500), think auto, temp 1, degrade off',
     'Type in chat to change strength (ELO), Move timing (think), Maia temperature (temp), time-pressure degradation (degrade).',
-    "ELO 600-2600, think 0-60s or auto or mirror, degrade on/off, temp 0-4: 0 = Maia's top move, 1 = matches Maia's odds, 4 = wild",
+    "ELO 600-2600, think 0-60s or auto or mirror, degrade on/off, temp 0-2: 0 = Maia's top move, 1 = matches Maia's odds, 2 = wild",
   ]);
   for (const l of lines) assert.ok(l.length <= 140, l.length + ': ' + l);
 });
