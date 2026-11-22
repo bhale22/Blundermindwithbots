@@ -433,10 +433,13 @@ const _lichessCache = new Map();
 const LICHESS_CACHE_TTL = 6 * 60 * 60 * 1000; // 6h — live stats drift, slowly
 const LICHESS_CACHE_MAX = 5000;
 
-// Query params: play and/or fen, ratings, speeds, moves, since, until.
+// Query params: play and/or fen, ratings, speeds, moves, since, until, variant.
 // `ratings` is snapped to the legal enum here, so callers may pass a raw Elo.
 // `since`/`until` accept 'YYYY-MM' or a bare 'YYYY' (widened to Jan/Dec).
+// `variant`: only 'chess960' is passed on (the Chess960 book); anything else is
+// the upstream's default, standard chess.
 app.get('/api/lichess', (req, res) => {
+  const variant = req.query.variant === 'chess960' ? 'chess960' : null;
   const fen     = cleanFen(req.query.fen);
   const play    = (req.query.play || '').replace(/[^a-zA-Z0-9,]/g, '');
   const ratings = ratingsParam(req.query.ratings);
@@ -449,6 +452,7 @@ app.get('/api/lichess', (req, res) => {
   // fen and play compose: play continues FROM fen. Sending both when we have
   // both is what lets the upstream still name the opening.
   const query = '?' + [
+    variant ? 'variant=' + variant : null,
     fen ? 'fen=' + encodeURIComponent(fen) : null,
     play ? 'play=' + encodeURIComponent(play) : null,
     ratings ? 'ratings=' + ratings : null,
@@ -912,6 +916,7 @@ function roomStatePayload(room, role) {
     tcIncSec: room.tcIncSec,
     startFen: room.startFen || undefined,
     startSans: room.startSans || undefined,
+    startBase: room.startBase || undefined,
     chess960: room.chess960 || undefined,
     moves: room.moves || [],
     timeW: (typeof room.timeW === 'number') ? room.timeW : undefined,
@@ -1065,6 +1070,11 @@ wss.on('connection', (ws, req) => {
       const startSans = (startFen && Array.isArray(msg.startSans))
         ? msg.startSans.slice(0, 600).map(s => String(s).slice(0, 12))
         : null;
+      // Where those moves start, when not the standard start: a set position
+      // or Chess960 deal the host reviewed before "Play from here".
+      const startBase = (startSans && startSans.length && typeof msg.startBase === 'string' &&
+                         msg.startBase.length <= 120 && /^[\w\/\- ]+$/.test(msg.startBase))
+        ? msg.startBase : null;
       // Host colour preference: white / black / random (resolved here so the
       // assignment is authoritative for both clients).
       const hostRole = msg.hostColor === 'black' ? 'black'
@@ -1085,7 +1095,7 @@ wss.on('connection', (ws, req) => {
         lobby: isLobby,
         tc: msg.tc || 'untimed',
         tcBaseMin, tcIncSec,
-        startFen, startSans,
+        startFen, startSans, startBase,
         // Chess960 only with a position to play it from.
         chess960: chess960 && !!startFen,
         // Authoritative game state, so a reconnecting client can be rebuilt.
@@ -1143,11 +1153,13 @@ wss.on('connection', (ws, req) => {
       ws.send(JSON.stringify({ type: 'joined', code, role: openRole, token: joinToken,
         tc: room.tc, tcBaseMin: room.tcBaseMin, tcIncSec: room.tcIncSec,
         startFen: room.startFen || undefined, startSans: room.startSans || undefined,
+        startBase: room.startBase || undefined,
         chess960: room.chess960 || undefined }));
       if (host && host.readyState === 1) {
         host.send(JSON.stringify({ type: 'opponent_joined',
           tc: room.tc, tcBaseMin: room.tcBaseMin, tcIncSec: room.tcIncSec,
           startFen: room.startFen || undefined, startSans: room.startSans || undefined,
+          startBase: room.startBase || undefined,
           chess960: room.chess960 || undefined }));
       }
 

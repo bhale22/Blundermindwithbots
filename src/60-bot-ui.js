@@ -822,6 +822,8 @@ async function botStart() {
   // not on every single move (which would actively hurt its play quality).
   if (sfWorker && sfReady) {
     sfWorker.postMessage('ucinewgame');
+    // Clearing it is timed as part of the next search: not a speed reading.
+    if (typeof _sfAfterNewGame !== 'undefined') _sfAfterNewGame = true;
   }
   sfCurrentSkillLevel = -1; // force skill-level to be (re)sent on first move
 
@@ -855,7 +857,7 @@ async function botStart() {
     // A position from a Chess960 game (its review, or a Lichess Chess960
     // game's deal) is played as Chess960: that decides which rooks castle.
     if (sp.chess960) setChess960(true);
-    _customStart = applyStartPosition(sp.fen, sp.sans);
+    _customStart = applyStartPosition(sp.fen, sp.sans, sp.base);
   } else if (botVariantPref === 'chess960' && !window._pzStarting &&
              !(typeof lichessStartingGame === 'function' && lichessStartingGame())) {
     // Chess960: a fresh start position every game, as on Lichess.
@@ -890,8 +892,9 @@ async function botStart() {
   const _repOn = !!botOpeningConfig['rep' + _stageCol];
   const _mlOn  = !!botOpeningConfig['mainLine' + _stageCol];
   botOpeningMode = _repOn ? 'preferred' : _mlOn ? 'mainline' : 'none';
-  // The repertoire's "No opening sequence" slot, rolled once for the game.
-  const _noOpening = _repOn && botOpeningSkipsThisGame(_stageCol);
+  // The repertoire's "No opening sequence" slot, rolled once for the game. Not
+  // in Chess960, where the repertoire sits out and its slot has nothing to skip.
+  const _noOpening = _repOn && !chess960 && botOpeningSkipsThisGame(_stageCol);
   botNoOpeningThisGame = _noOpening;
   if (_noOpening) {
     console.log('[Opening] No opening sequence this game (' +
@@ -919,12 +922,19 @@ async function botStart() {
   // lcsf / maia tabs are "explorer, then engine" by definition, and a blend
   // asks via botEngineBook.
   lichessExplorerActive = !!botEngineBook || botTab === 'lcsf' || botTab === 'maia';
-  // Chess960: every opening source here is standard chess (the repertoire's
-  // lines, the Main Line, the explorer's book), so the engine plays from move 1.
+  // Chess960: the repertoire's lines, the Main Line and the engine's book are
+  // all standard chess, so they sit out. The Chess960 row in Opening Behavior
+  // is the opening instead: off, the engine plays from move 1; on, the Lichess
+  // 960 book plays on the Main Line's path (botGetOpeningMove picks the most
+  // common move or samples) until Min games ends it.
   if (chess960) {
     preferredOpeningActive = false;
-    mainLineActive = false;
     lichessExplorerActive = false;
+    mainLineActive = botBook960Mode() !== 'off';
+    botOpeningMode = mainLineActive ? 'mainline' : 'none';
+    if (mainLineActive) console.log('[Opening] Chess960 book: ' +
+      (botBook960Mode() === 'top' ? 'the most common move' : 'moves in proportion to their games') +
+      ', Lichess 960 games at ' + lcRatingParam(botBookRatingElo()) + ', until fewer than ' + bookMinGames() + ' games');
   }
   // A new game: no takebacks used, and the opening state as it starts, which
   // a takeback all the way back restores.
@@ -2418,6 +2428,8 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
   botOpeningConfig.source       = cfg.openingSource || 'masters';
   botOpeningConfig.maxBookDepth = cfg.openingDepth  || 20;
   botOpeningConfig.minGames     = cfg.openingMinGames || 4;
+  // Chess960 opening: a bot saved before the setting plays 960 from move 1, as it did.
+  botOpeningConfig.book960      = (cfg.opening960 === 'top' || cfg.opening960 === 'sample') ? cfg.opening960 : 'off';
   botOpeningConfig.strictness   = 0.8;
   if (cfg.modernOnly) botOpeningConfig.since = '2020-01'; else delete botOpeningConfig.since;
   botOpeningConfig.repWhite      = _stW.rep;
@@ -2625,6 +2637,7 @@ function bmSessionSave() {
       startFen: (typeof _gameStartFen !== 'undefined') ? _gameStartFen : null,
       chess960: !!chess960,
       startSans: (typeof _gameStartSans !== 'undefined' && _gameStartSans) ? _gameStartSans.slice() : [],
+      startBase: (typeof _gameStartBase !== 'undefined') ? _gameStartBase : null,
       halfmoveClock: halfmoveClock,
       positionCounts: Object.assign({}, positionCounts),
       flipped: !!boardFlipped,
@@ -2728,6 +2741,7 @@ function bmSessionRestore() {
     lastMoveTo         = (snap.lastMoveTo   != null) ? snap.lastMoveTo   : -1;
     _gameStartFen      = snap.startFen  || null;
     _gameStartSans     = Array.isArray(snap.startSans) ? snap.startSans.slice() : [];
+    _gameStartBase     = (_gameStartSans.length && snap.startBase) || null;
     gameOver = false; gameOverMsg = '';
     promotionPending = null; premoveQueue = [];
     selSq = -1; legalMoves = []; dragFrom = -1; dragMoved = false; hoverSq = -1;

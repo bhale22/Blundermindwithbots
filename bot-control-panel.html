@@ -3976,6 +3976,22 @@ body.fj .picon{font-weight:500;}
                 <div class="dual-range-labels"><span>← Rare, less-expected moves</span><span>Mainstream, most-expected moves →</span></div>
                 <div class="ctrl-hint" style="margin-top:6px;">The slice of Maia's move distribution the bot may pick from — popularity at this rating, not move quality. Click <span class="hint-link" onclick="openInfoPop('distrange')">ⓘ for details</span>.</div>
                 </div><!-- /move-quality-range -->
+                <!-- Moves checked per turn: a setting of THIS DEVICE, not of the bot
+                     (sfCheckCap in the page, localStorage bm_checkCap; a bot file
+                     carries no part of it). The personality's checks score its
+                     candidates with Stockfish each turn; on a slow computer fewer is
+                     quicker. The engine's measured speed, what checks cost here and
+                     the recommendation come from the page (sfSpeedReport). -->
+                <div id="check-cap-wrap" style="margin-top:12px;">
+                  <div class="dlbl"><span>Moves checked per turn · this device</span></div>
+                  <div class="ctrl" style="flex-wrap:wrap;gap:6px 10px;">
+                    <span class="ctrl-lbl" style="min-width:80px;">Check at most</span>
+                    <select id="sel-check-cap" class="cc-field cc-select" style="width:auto;flex:0 1 190px;order:2;" onchange="onCheckCap(+this.value)"></select>
+                    <button type="button" class="cc-add-btn" id="btn-check-cap-rec" style="display:none;margin-top:0;order:3;" onclick="useRecommendedCheckCap()"></button>
+                  </div>
+                  <div class="ctrl-hint" id="check-cap-speed"></div>
+                  <div class="ctrl-hint">Each turn the personality has Stockfish score its candidate moves: up to 16 for the Budget check, every move the Move Distribution Range lets through under Blind conviction. Fewer is quicker on a slow computer; favorites past the limit are not considered. Saved on this device only, not in the bot. Flounder always checks every legal move.</div>
+                </div>
               </div>
 
             </div>
@@ -4129,6 +4145,31 @@ body.fj .picon{font-weight:500;}
           </div>
         </div>
         <div class="ctrl-hint" style="margin-top:10px;">The bot works down each column, with either step on or both: the <strong>opening repertoire</strong> plays the lines you tick (shares sum to 100%), the <strong>main line</strong> plays the database's most popular move from wherever the game stands, and the engine plays the rest. When the game leaves your lines, or a line ends, the next step takes over; the repertoire steps back in only when a ticked line is one move away, and only at that opening's share, once a game.</div>
+      </div>
+
+      <!-- Chess960 (Nov 21 2026, Ben): the columns above are standard chess and
+           sit out of a 960 game; this one setting, for both colours, is its
+           opening instead. The app reads it as book960 (botBook960Mode). -->
+      <div class="pr op-960" id="op-960">
+        <div class="dlbl"><span>In Chess960 games</span></div>
+        <div class="seg-row" role="radiogroup" aria-label="Chess960 opening">
+          <button type="button" class="seg-btn sel" data-b960="off" role="radio" aria-checked="true" onclick="setBook960('off')"
+                  title="The engine plays from move 1">Off</button>
+          <button type="button" class="seg-btn" data-b960="top" role="radio" aria-checked="false" onclick="setBook960('top')"
+                  title="Temperature 0: always the move Lichess players chose most">Most common move</button>
+          <button type="button" class="seg-btn" data-b960="sample" role="radio" aria-checked="false" onclick="setBook960('sample')"
+                  title="Temperature 1: each move as often as Lichess players chose it">Follow the distribution</button>
+        </div>
+        <div class="ml-bar" style="margin-top:8px;">
+          <span class="ml-depth" title="The Chess960 book ends at the first position with fewer games than this. Also the Main Line's and the Lichess Opening Book's minimum: they are one setting.">
+            <span class="ml-depth-lbl">Min games</span>
+            <input type="number" inputmode="numeric" min="1" max="10000" step="1" value="4" class="book-min-input"
+                   oninput="onBookMinGamesInput(this)" onchange="onBookMinGamesCommit(this)" aria-label="Fewest games a Chess960 position needs to stay in book">
+          </span>
+        </div>
+        <div class="tog-desc" style="margin-top:6px;">A Chess960 game skips the repertoire and main line above, which are standard chess. This is its opening instead, as White and as Black: Lichess Chess960 games from the same start position, at the rating the engine plays at.</div>
+        <div class="tog-desc"><strong>Most common move</strong> plays what those players chose most. <strong>Follow the distribution</strong> plays each move as often as they chose it. Either way a personality has no say until the book ends.</div>
+        <div class="tog-desc">It ends at the first position with fewer games than Min games. Each start position has about 30,000 Lichess games across all ratings, and far fewer at any one, so that usually comes within a few moves.</div>
       </div>
 
     </div>
@@ -5080,6 +5121,9 @@ let bookDepth  = 20;
 // Main Line's bars and the Lichess Opening Book row each show it.
 let bookMinGames = 4;
 const BOOK_MIN_GAMES_MAX = 10000;
+// Chess960 opening, both colours: 'off' | 'top' (most common move) | 'sample'
+// (follow the distribution). Saved as opening960; see the Opening Behavior row.
+let book960 = 'off';
 let selectedTempPresetId = 'neutral'; // tracks active temperature preset
 
 // Initialize attractor state
@@ -10125,6 +10169,7 @@ function getBotConfig(){
     openingDepth:    bookDepth,
     openingMinGames: bookMinGames,
     modernOnly:      bookModern,
+    opening960:      book960,
     repSlots:        { white: _repSlotsForConfig('white'), black: _repSlotsForConfig('black') },
     dayLower:        dayLower,
     dayUpper:        dayUpper,
@@ -10507,6 +10552,8 @@ function applyBotConfig(cfg){
     bookMinGames = cfg.openingMinGames || 4;
     _syncBookMinGames();
     bookModern = !!cfg.modernOnly;
+    // A bot saved before the setting plays Chess960 from move 1, as it did.
+    setBook960(cfg.opening960);
     repSlots.white.length = 0;
     repSlots.black.length = 0;
     // Older configs carry one ECO code + name per slot; _repNormalizeSlots
@@ -11836,7 +11883,7 @@ function _lbcRender(){
 
   _lbcView = 'connect';
   title.textContent = 'Play on Lichess';
-  const set = s.settings || { bots: false, speeds: { blitz: true, rapid: true, classical: true } };
+  const set = s.settings || { bots: false, fromPosition: true, speeds: { blitz: true, rapid: true, classical: true } };
   const cb = (id, label, on) => '<label><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '>' + label + '</label>';
   const saved = s.tokenSaved && !_lbcNewToken;
   const tokenHtml = saved
@@ -11858,7 +11905,10 @@ function _lbcRender(){
     '<div class="lbc-note" style="margin-top:0;">Casual games only — rated challenges are declined. ' +
       'A bot’s strength can be adjusted from game to game, so it has no rating of its own.</div>' +
     '<div class="lbc-checks">' + cb('lbc-bots', 'From other bots', set.bots) +
-      cb('lbc-960', 'Chess960 too', set.chess960) + '</div>' +
+      cb('lbc-960', 'Chess960 too', set.chess960) +
+      cb('lbc-frompos', 'Set positions too', set.fromPosition !== false) + '</div>' +
+    '<div class="lbc-note">Set positions: the challenger sets up a position on Lichess (an ending, say) ' +
+      'and the game is played from there.</div>' +
     '<div class="lbc-checks">' + ['bullet', 'blitz', 'rapid', 'classical'].map(k =>
       cb('lbc-' + k, k[0].toUpperCase() + k.slice(1), set.speeds && set.speeds[k])).join('') + '</div>' +
     (s.localGame ? '<div class="lbc-warn">The game on the board now will end.</div>' : '') +
@@ -11890,6 +11940,7 @@ function _lbcReadSettings(){
   return {
     bots: on('lbc-bots'),
     chess960: on('lbc-960'),
+    fromPosition: on('lbc-frompos'),
     speeds: { bullet: on('lbc-bullet'), blitz: on('lbc-blitz'), rapid: on('lbc-rapid'), classical: on('lbc-classical') },
   };
 }
@@ -11954,6 +12005,70 @@ function _lbcFinish(token, settings){
   host.lichessConnectFromBuilder({ token: token, settings: settings, config: getBotConfig() });
   lbcRefresh();
 }
+// ── Moves checked per turn (this device) ─────────────────────────────────
+// The page owns the setting and the engine's speed (sfCheckCap, sfSpeedReport);
+// this row shows them and sets the one. Kept live while it is on screen: the
+// speed is re-read from every search, and the last check's time with it.
+function _ccapPage() {
+  try {
+    const p = window.parent;
+    return (p && p !== window && typeof p.sfSpeedReport === 'function') ? p : null;
+  } catch (e) { return null; }
+}
+function _ccapSecs(ms) { return ms < 95 ? (ms / 1000).toFixed(2) : (ms / 1000).toFixed(1); }
+let _ccapAsked = false;
+function renderCheckCap() {
+  const sel = document.getElementById('sel-check-cap');
+  if (!sel) return;
+  const p = _ccapPage();
+  const r = p ? p.sfSpeedReport() : null;
+  const lbl = n => n ? n + ' moves' : 'All candidates';
+  const opts = [0].concat((r ? r.choices : [2, 3, 4, 6, 8, 12, 16, 24]).slice().reverse());
+  const cap = r ? r.cap : 0, rec = r ? r.recommended : null;
+  const html = opts.map(n => '<option value="' + n + '"' + (n === cap ? ' selected' : '') + '>' +
+    lbl(n) + (rec === n ? ' (recommended)' : '') + '</option>').join('');
+  if (sel.dataset.html !== html) { sel.innerHTML = html; sel.dataset.html = html; }
+  const btn = document.getElementById('btn-check-cap-rec');
+  if (btn) {
+    const show = rec != null && rec !== cap;
+    btn.style.display = show ? '' : 'none';
+    if (show) btn.textContent = 'Use recommended: ' + (rec ? 'at most ' + rec : 'all');
+  }
+  const sp = document.getElementById('check-cap-speed');
+  if (!sp) return;
+  if (!r || !r.measured) {
+    // Start the engine so its speed is known: any game needs it anyway.
+    if (p && !_ccapAsked && typeof p.sfInit === 'function') {
+      _ccapAsked = true;
+      try { p.sfInit().then(renderCheckCap).catch(() => {}); } catch (e) {}
+    }
+    sp.textContent = p ? 'Measuring this device’s engine speed…' : '';
+    return;
+  }
+  sp.textContent = r.text + '. A check here takes about ' +
+    r.expected.map(e => _ccapSecs(e.ms)).join(' / ') + ' s for ' +
+    r.expected.map(e => e.n).join(' / ') + ' moves.' +
+    (rec == null ? '' : rec ? ' Recommended: at most ' + rec + ', the most it checks inside a desktop’s time limit.'
+                            : ' Recommended: all of them.') +
+    (r.last ? ' Last check: ' + r.last.n + ' moves in ' + _ccapSecs(r.last.ms) + ' s' +
+      (r.last.cut ? ', stopped at its ' + _ccapSecs(r.last.limitMs) + ' s limit.' : '.') : '');
+}
+function onCheckCap(n) {
+  const p = _ccapPage();
+  if (p && typeof p.sfSetCheckCap === 'function') p.sfSetCheckCap(n);
+  renderCheckCap();
+}
+function useRecommendedCheckCap() {
+  const p = _ccapPage(), r = p && p.sfSpeedReport();
+  if (r && r.recommended != null) onCheckCap(r.recommended);
+}
+document.addEventListener('DOMContentLoaded', () => {
+  renderCheckCap();
+  setInterval(() => {
+    const w = document.getElementById('check-cap-wrap');
+    if (w && w.offsetParent) renderCheckCap();
+  }, 2000);
+});
 document.addEventListener('DOMContentLoaded', () => lbcRefresh());
 
 /* ══════════════════════════════════════════════════════════════
@@ -15455,7 +15570,19 @@ function updateOpStatus(){
   const lbl = c => (repOn[c] && mainLine[c]) ? 'Repertoire → Main Line'
                  : repOn[c] ? 'Repertoire' : mainLine[c] ? 'Main Line' : 'Off';
   const w = lbl('white'), b = lbl('black');
-  st.textContent = (w===b) ? w : 'W: ' + w + ' · B: ' + b;
+  st.textContent = ((w===b) ? w : 'W: ' + w + ' · B: ' + b) +
+    (book960 === 'top' ? ' · 960: Most common' : book960 === 'sample' ? ' · 960: Distribution' : '');
+}
+
+// The Chess960 row's three-way switch.
+function setBook960(v){
+  book960 = (v === 'top' || v === 'sample') ? v : 'off';
+  document.querySelectorAll('#op-960 .seg-btn[data-b960]').forEach(b => {
+    const on = b.dataset.b960 === book960;
+    b.classList.toggle('sel', on);
+    b.setAttribute('aria-checked', String(on));
+  });
+  updateOpStatus();
 }
 
 /* ── Opening Repertoire: ticked lines under each opening ─────────────────────

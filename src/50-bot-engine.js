@@ -593,6 +593,18 @@ let _lastEvalProbe = null;
 // skipped just because it wasn't in a short shortlist. MultiPV cost scales
 // with this number, so it's a probe-depth/latency tradeoff, not free.
 const CP_BUDGET_WALK_SIZE = 15;
+// The moves one check may score: cut to this device's "Moves checked per turn"
+// (sfCapCandidates, 40-engines), the first ones kept.
+function _botCapChecks(list) {
+  return typeof sfCapCandidates === 'function' ? sfCapCandidates(list) : list;
+}
+// A premove's checks (`strict`) keep the desktop's limit (2 s + 0.15 s a move,
+// at most 7 s) on a slow device too: they run in the opponent's time, and one
+// stretched past it would still hold the engine when the bot's own turn came,
+// whose checks would then find it busy and let the move through unchecked.
+function _botCheckOpts(strict, n) {
+  return strict ? { timeoutMs: Math.min(7000, 2000 + 150 * n) } : undefined;
+}
 
 // `strict` (the three guards below all take it): when a check cannot be
 // completed — the engine busy, the probe timed out — return null instead of
@@ -619,7 +631,10 @@ async function applyCpBudgetAcceptance(fen, chosenUci, rawProbs, shapedProbs, st
     const walk = [chosenUci, ...order.filter(m => m !== chosenUci && m !== topMove)]
       .slice(0, CP_BUDGET_WALK_SIZE);
     if (!sfReady) { try { await sfInit(); } catch (e) { return failed(); } }
-    const evals = await sfEvalMoves(fen, [topMove, ...walk], 10);
+    // At most the moves this device checks a turn (sfCapCandidates): the popular
+    // move and the pick always, then the personality's next favourites.
+    const list = _botCapChecks([topMove, ...walk]);
+    const evals = await sfEvalMoves(fen, list, 10, _botCheckOpts(strict, list.length));
     if (!evals || evals[topMove] == null) return failed(); // fail-open on probe failure (unless strict)
     _lastEvalProbe = { fen: fen, evals: evals };
     let accepted = topMove;
@@ -681,7 +696,7 @@ async function applyDegradationEvalGuard(fen, chosenUci, rawProbs, strict, think
     for (const m in rawProbs) { if (rawProbs[m] > topP) { topP = rawProbs[m]; topMove = m; } }
     if (!topMove || topMove === chosenUci) return chosenUci;
     if (!sfReady) { try { await sfInit(); } catch (e) { return failed(); } }
-    const evals = await sfEvalMoves(fen, [chosenUci, topMove]);
+    const evals = await sfEvalMoves(fen, [chosenUci, topMove], undefined, _botCheckOpts(strict, 2));
     if (!evals || evals[chosenUci] == null || evals[topMove] == null) return failed();
     _lastEvalProbe = { fen: fen, evals: evals };
     // Upside allowance: the Budget for personality, zero for everything else.
@@ -728,7 +743,7 @@ async function applyHardFloorBackstop(fen, chosenUci, rawProbs, strict) {
       evals = _lastEvalProbe.evals;
     } else {
       if (!sfReady) { try { await sfInit(); } catch (e) { return failed(); } }
-      evals = await sfEvalMoves(fen, [chosenUci, topMove]);
+      evals = await sfEvalMoves(fen, [chosenUci, topMove], undefined, _botCheckOpts(strict, 2));
       if (!evals || evals[chosenUci] == null || evals[topMove] == null) return failed();
     }
     if (evals[topMove] - evals[chosenUci] > floor) {
@@ -2386,7 +2401,11 @@ async function blindConvictionPick(fen, rawProbs, order, strict, evals, blend) {
     const budget = window._bcpCpBudget != null ? Math.max(0, +window._bcpCpBudget || 0) : 100;
     if (!evals || evals[top] == null) {
       if (!sfReady) { try { await sfInit(); } catch (e) { return failed(); } }
-      evals = await sfEvalMoves(fen, [top, ...order.filter(m => m !== top)], 10);
+      // The popular move, a drawn move, then the favourites in order, up to the
+      // moves this device checks a turn (sfCapCandidates).
+      const extra = drawing && drawn !== top ? [drawn] : [];
+      const list = _botCapChecks([top, ...extra, ...order.filter(m => m !== top && m !== drawn)]);
+      evals = await sfEvalMoves(fen, list, 10, _botCheckOpts(strict, list.length));
     }
     if (!evals || evals[top] == null) return failed();
     _lastEvalProbe = { fen: fen, evals: evals };
@@ -2583,8 +2602,8 @@ async function _ensureMoveComplexity(fen, probs) {
   if (typeof sfMoveComplexity === 'undefined' || sfMoveComplexity) return;
   const v = (window._bcpAttractorValues || {})['complexity'] || 0;
   if (!v || !probs) return;
-  const top = Object.entries(probs)
-    .sort((a, b) => b[1] - a[1]).slice(0, 10).map(e => e[0]);
+  const top = _botCapChecks(Object.entries(probs)
+    .sort((a, b) => b[1] - a[1]).slice(0, 10).map(e => e[0]));
   if (top.length < 2) return;
   if (!sfReady) { try { await sfInit(); } catch (e) { return; } }
   try { await sfEvalMoves(fen, top, REGAN_PROBE_DEPTH); } catch (e) {}
@@ -3375,7 +3394,7 @@ async function _botLastResortMove(fen, reason) {
   if (typeof sfReady !== 'undefined' && sfReady && !sfLastSearchSilent) {
     try {
       const q = await sfGetMove(fen, SF_QUICK_DEPTH, true,
-        { timeoutMs: SF_QUICK_MS, fullStrength: true });
+        { timeoutMs: typeof sfLimitMs === 'function' ? sfLimitMs(SF_QUICK_MS) : SF_QUICK_MS, fullStrength: true });
       if (q && _botUciIsLegal(q)) { uci = q; kind = 'sf'; }
     } catch (e) {}
   }
@@ -3731,6 +3750,7 @@ async function botMakeMove() {
 
   const _botMoveStartMs = Date.now(); // for inference-time accounting
   lastBotMoveDetail = '';              // each path below names itself
+  if (typeof sfTurnChecks !== 'undefined') sfTurnChecks = [];   // this turn's engine checks
   // Real move counters, not the frozen "0 1": halfmoveClock is maintained by
   // executeMove; fullmove = played-plies/2 + 1. Maia ignores these, but Stockfish
   // uses the halfmove clock for 50-move awareness and any exported FEN needs them.
@@ -3868,7 +3888,10 @@ async function botMakeMove() {
         uciMove = openingMove;
         lastBotMoveSource = 'Book';
         const _od = await openingExplorerFetch(botMoveHistory);
-        lastBotMoveDetail = 'Book' + (_od && _od.opening && _od.opening.name ? ': ' + _od.opening.name : '');
+        const _m960 = botBook960Mode();
+        lastBotMoveDetail = (_m960 === 'top' ? 'Chess960 book (most common move)'
+                           : _m960 === 'sample' ? 'Chess960 book (sampled)' : 'Book') +
+          (_od && _od.opening && _od.opening.name ? ': ' + _od.opening.name : '');
         _explorerConfidence = explorerConfidenceFromData(_od);
         document.getElementById('botStatus').textContent = botOpeningStatusText(_od);
         // The lookup itself counts toward the move's time (botBookMoveDelayMs).
@@ -3889,7 +3912,10 @@ async function botMakeMove() {
               executeMove(mv.from, mv.to, mv.promo || null);
               const _botSan = gameMovesAlgebraic[gameMovesAlgebraic.length - 1] || null;
               botRecordMove(uciMove, _botSan);
-              _botLastBookMove = { games: explorerGameCount(_od.moves.slice(0, 1)), db: _od.db, ply: botMoveHistory.length };
+              // The games behind the move played: the top one, or in a sampled
+              // Chess960 book whichever was drawn.
+              const _played = _od.moves.find(m => m.uci === uciMove) || _od.moves[0];
+              _botLastBookMove = { games: explorerGameCount([_played]), db: _od.db, ply: botMoveHistory.length };
               updatePlayerBoxes();
               const nextMoves = allLegalMoves(board, turn, epSq, castling);
               if (!nextMoves.length) {
@@ -4267,6 +4293,11 @@ async function botMakeMove() {
   }
   botThinking = false;
   document.getElementById('botStatus').textContent = '';
+  // What the engine's checks cost this turn, on the move's log line: "checked
+  // 12 moves in 2.3 s (expected 2.1 s)". The count is the candidates the
+  // personality had to score, so it varies move to move.
+  const _checks = (typeof sfTurnChecksText === 'function') ? sfTurnChecksText() : '';
+  if (_checks) lastBotMoveDetail = (lastBotMoveDetail ? lastBotMoveDetail + ', ' : '') + _checks;
 
   if (uciMove && botActive) {
     const mv = uciToSq(uciMove);

@@ -41,7 +41,15 @@ function sfInit() {
       sfWorker.onmessage = function(e) {
         var line = e.data;
         if (line === 'uciok')   sfWorker.postMessage('isready');
-        if (line === 'readyok') { sfReady = true; resolve(); }
+        // Ready. First a moment's measurement of how fast it runs here (a
+        // desktop takes ~20 ms over it), and only then is it the bot's.
+        if (_sfBench) { _sfBenchLine(line); return; }
+        if (line === 'readyok') {
+          if (!sfReady) _sfBenchStart(function () { sfReady = true; resolve(); });
+          return;
+        }
+        // Positions searched so far by the search running now: the speed reading.
+        if (_sfGoAt && sfBestmovesOwed === 0 && line.startsWith('info')) _sfNoteNodes(line);
         // Collect MultiPV info lines for the complexity probe.
         // Skip while bestmoves are owed — those info lines belong to a search
         // we already abandoned, not to the current probe.
@@ -59,6 +67,7 @@ function sfInit() {
           // stopped/timed-out search's result resolves the NEXT request with a
           // move computed for a different position.
           if (sfBestmovesOwed > 0) { sfBestmovesOwed--; return; }
+          _sfSpeedSampleRunning();
           if (sfCplxActive) {
             // This bestmove closes a probe (complexity or eval-moves), not a
             // normal move request
@@ -97,10 +106,336 @@ function sfInit() {
   // On failure: clear promise and worker so the next call can retry
   _sfInitPromise.catch(function() {
     _sfInitPromise = null;
+    if (_sfBench) { clearTimeout(_sfBench.timer); _sfBench = null; }
     if (sfWorker) { try { sfWorker.terminate(); } catch(e) {} }
     sfWorker = null; sfReady = false;
   });
   return _sfInitPromise;
+}
+
+// ── How fast this device runs the engine ─────────────────────────────────────
+// A tester on a slow computer found the engine's time limits too short for it
+// (Nov 2026): they were set on a desktop. So the engine's speed is measured, in
+// positions searched per second over the time the page waited (what a time
+// limit is up against): once as it starts, on a fixed search, and then from
+// every search it finishes, so a computer that slows down as it goes (heat,
+// other programs) is caught a move or two later. The speed a limit is planned
+// on is a slow one of the last dozen readings (SF_SPEED_QUANTILE), not their
+// average, and the limits stretch by half as much again as the slowdown.
+//
+// The reference is Ben's desktop, Nov 2026, on this build (SF_REF_NPS): 0.9 M,
+// what it reads in play. Its clean start-up search runs at 0.9-1.0 M, and the
+// 25th percentile of its readings over a game at 0.82-0.9 M (the probe table's
+// fresh-hash measurements below ran at ~1.0 M).
+const SF_REF_NPS = 900000;
+// The start-up search: this position to this depth is the same 19,971
+// positions on every run of this build, ~20 ms on the reference desktop. It
+// runs three times and the faster of the last two is the reading: the first,
+// on a freshly loaded engine, ran at half speed (40 ms on the same desktop,
+// 5 page loads of 5), the browser not yet having optimised the engine's code,
+// and would have called the desktop 2× slower than itself. About 70 ms on the
+// desktop, once, before the engine is the bot's.
+const SF_BENCH_FEN = 'r1bq1rk1/pp2bppp/2n1pn2/2pp4/3P4/2PBPN2/PP1N1PPP/R1BQ1RK1 w - - 0 8';
+const SF_BENCH_DEPTH = 10;
+const SF_BENCH_MAX_MS = 4000;       // stopped there; what it got through is the reading
+const SF_BENCH_GRACE_MS = 1500;     // for the stop to be answered
+const SF_SPEED_SAMPLES = 12;        // the readings kept
+const SF_SPEED_QUANTILE = 0.25;     // the speed planned on: a slow one of them
+const SF_SAMPLE_MIN_MS = 60;        // in shorter ones a few ms of messages and hash
+                                    // clearing (a new game's) would read as slowness
+const SF_SAMPLE_MIN_NODES = 15000;  // and ones this small are mostly overhead too
+const SF_STRETCH_MAX = 10;
+const sfSpeed = { benchNps: null, benchMs: null, benchNodes: 0, samples: [] };
+let _sfBench = null;
+let _sfGoAt = 0, _sfGoNodes = 0;    // the running search: when it was sent, positions so far
+let _sfAfterNewGame = false;        // set by botStart's ucinewgame: skip the next reading
+
+function _sfBenchStart(done) {
+  const b = _sfBench = { done: done, run: 0, t0: 0, nodes: 0, best: null, stopped: false, timer: null };
+  sfWorker.postMessage('setoption name Skill Level value 20');
+  sfCurrentSkillLevel = 20;
+  // The whole measurement has SF_BENCH_MAX_MS. The search running then is
+  // stopped and what it got through is the reading; an engine that does not
+  // answer the stop within SF_BENCH_GRACE_MS is handed over unmeasured (an
+  // engine that answers "ready" but never searches: its searches then meet
+  // their own limits, as they always did). Its bestmove, should it ever come,
+  // is owed and discarded.
+  b.timer = setTimeout(function () {
+    if (_sfBench !== b) return;
+    b.stopped = true;
+    try { sfWorker.postMessage('stop'); } catch (e) {}
+    b.timer = setTimeout(function () {
+      if (_sfBench !== b) return;
+      if (b.t0) sfBestmovesOwed++;
+      _sfBenchFinish(b, b.best || (b.t0 && b.nodes ? { ms: performance.now() - b.t0, nodes: b.nodes } : null));
+    }, SF_BENCH_GRACE_MS);
+  }, SF_BENCH_MAX_MS);
+  _sfBenchRun();
+}
+// Each run starts on an empty hash, and is timed from the engine's word that
+// it has emptied it (clearing 16 MB is no part of the search).
+function _sfBenchRun() {
+  const b = _sfBench;
+  b.run++; b.nodes = 0; b.t0 = 0;
+  sfWorker.postMessage('ucinewgame');
+  sfWorker.postMessage('isready');
+}
+function _sfBenchLine(line) {
+  const b = _sfBench;
+  if (line === 'readyok') {
+    if (b.t0) return;
+    if (b.stopped) { _sfBenchFinish(b, b.best); return; }
+    b.t0 = performance.now();
+    sfWorker.postMessage('position fen ' + SF_BENCH_FEN);
+    sfWorker.postMessage('go depth ' + SF_BENCH_DEPTH);
+    return;
+  }
+  if (line.startsWith('info')) { const m = / nodes (\d+)/.exec(line); if (m) b.nodes = +m[1]; return; }
+  if (!line.startsWith('bestmove')) return;
+  const ms = performance.now() - b.t0;
+  const r = { ms, nodes: b.nodes };
+  // Runs 2 and 3 are timed and the faster kept (the second could still be
+  // half-optimised: 21-27 ms on the desktop where the third settled at ~20).
+  // The first is the reading only when there is no other: a run so long that
+  // another is not worth the wait, or the measurement's time ran out.
+  const nps = x => x && x.nodes > 0 && x.ms > 0 ? x.nodes / x.ms : 0;
+  if (b.run > 1 && nps(r) > nps(b.best)) b.best = r;
+  if (!b.stopped && b.run < 3 && ms < SF_BENCH_MAX_MS / 3) { _sfBenchRun(); return; }
+  _sfBenchFinish(b, b.best || r);
+}
+function _sfBenchFinish(b, r) {
+  clearTimeout(b.timer);
+  _sfBench = null;
+  if (r && r.nodes > 0 && r.ms > 0) {
+    sfSpeed.benchMs = r.ms;
+    sfSpeed.benchNodes = r.nodes;
+    sfSpeed.benchNps = r.nodes / r.ms * 1000;
+    _sfSpeedPush(sfSpeed.benchNps);
+  }
+  // No ucinewgame after it: each game sends its own (botStart), and one here
+  // would be timed as part of the first real search.
+  console.log('[engine] ' + sfSpeedText());
+  b.done();
+}
+// Every search on the bot's engine starts here, so it can be timed.
+function _sfGo(cmd) {
+  _sfGoAt = _sfAfterNewGame ? 0 : performance.now();
+  _sfAfterNewGame = false;
+  _sfGoNodes = 0;
+  sfWorker.postMessage(cmd);
+}
+function _sfNoteNodes(line) {
+  const m = / nodes (\d+)/.exec(line);
+  if (m) _sfGoNodes = +m[1];
+}
+function _sfSpeedPush(nps) {
+  sfSpeed.samples.push(nps);
+  if (sfSpeed.samples.length > SF_SPEED_SAMPLES) sfSpeed.samples.shift();
+}
+// The running search ended (its bestmove came, or a limit stopped it): one
+// reading, if it ran long enough to say anything.
+function _sfSpeedSampleRunning() {
+  if (!_sfGoAt) return;
+  const ms = performance.now() - _sfGoAt;
+  _sfGoAt = 0;
+  if (_sfGoNodes >= SF_SAMPLE_MIN_NODES && ms >= SF_SAMPLE_MIN_MS) _sfSpeedPush(_sfGoNodes / ms * 1000);
+}
+// Positions a second, as planned on; null before the first reading.
+function sfDeviceNps() {
+  const xs = sfSpeed.samples.slice().sort(function (a, b) { return a - b; });
+  return xs.length ? xs[Math.floor((xs.length - 1) * SF_SPEED_QUANTILE)] : null;
+}
+// How many times slower than the reference desktop (below 1: faster).
+function sfSlowdown() {
+  const v = sfDeviceNps();
+  return v ? SF_REF_NPS / v : 1;
+}
+// What the time limits are multiplied by: 1 at the desktop's speed, then half
+// as much again as the slowdown (2× slower → 2.5×, 4× → 5.5×), at most 10×.
+function sfTimeStretch() {
+  return Math.max(1, Math.min(SF_STRETCH_MAX, 1.5 * sfSlowdown() - 0.5));
+}
+// A time limit of `baseMs` on the desktop, on this device. In a timed bot game a
+// stretched limit stops at the flag ceiling, a tenth of the clock plus the
+// increment (botFlagCeilingMs, without its jitter), but never below the
+// desktop's own limit: on a desktop nothing changes.
+function sfLimitMs(baseMs) {
+  const s = sfTimeStretch();
+  if (!(s > 1)) return baseMs;
+  let ms = baseMs * s;
+  const cap = _sfClockCapMs();
+  if (cap != null) ms = Math.max(baseMs, Math.min(ms, cap));
+  return Math.round(ms);
+}
+function _sfClockCapMs() {
+  try {
+    if (typeof botActive === 'undefined' || !botActive || typeof botClockMs !== 'function') return null;
+    const c = botClockMs();
+    if (c == null) return null;
+    const inc = (typeof clockInc === 'number') ? clockInc : 0;
+    return c / 10 + inc * 1000;
+  } catch (e) { return null; }
+}
+
+// ── What a check of n moves costs ────────────────────────────────────────────
+// The personality's checks (sfEvalMoves) score n candidate moves in one search.
+// Positions searched at depth 10 (the Budget checks), by n: the 75th percentile
+// over 249 positions from 16 Maia 1500 self-play games, Maia's top n moves in
+// each, a fresh hash every time (Nov 2026). A slow end of the spread, so most
+// checks come in under the estimate. The median is about half of it:
+//
+//   n            2     4     8    12    16    24    32
+//   median     6.6k   15k   32k   55k   79k  129k  189k
+//   75th pct    21k   46k   82k  120k  158k  213k  306k
+//
+// On the reference desktop that is 1.0 M positions a second throughout (the
+// 25th percentile of each n's speeds 0.96-1.02 M), with no fixed overhead
+// worth counting: a 16-move check ~150 ms, 32 moves ~300 ms. Each ply either
+// side of 10 doubles or halves it (depth 8 over every legal move, ~32: 77k
+// at the 75th percentile against 306k / 4).
+const SF_PROBE_NODES = [[2, 21000], [4, 46000], [8, 82000], [12, 120000],
+                        [16, 158000], [24, 213000], [32, 306000]];
+// How the same check scales with the pieces on the board, against the table
+// (75th percentiles by band over the same positions, n = 4, 8 and 16 alike):
+//   pieces    ≤12    13-18   19-24   25-28   29-32
+//   × table   0.35   0.35    0.9     1.1     1.85
+// An opening position costs nearly twice a middlegame's, an ending a third.
+const SF_PROBE_PIECES = [[16, 0.35], [21.5, 0.9], [26.5, 1.1], [30.5, 1.85]];
+const SF_PROBE_OVERHEAD_MS = 2;
+function _sfPieceFactor(fen) {
+  if (!fen) return 1;
+  const k = String(fen).split(' ')[0].replace(/[^a-zA-Z]/g, '').length, t = SF_PROBE_PIECES;
+  if (k <= t[0][0]) return t[0][1];
+  for (let i = 1; i < t.length; i++) {
+    if (k <= t[i][0]) return t[i - 1][1] + (t[i][1] - t[i - 1][1]) * (k - t[i - 1][0]) / (t[i][0] - t[i - 1][0]);
+  }
+  return t[t.length - 1][1];
+}
+// `fen` (optional) scales it by the pieces on the board.
+function sfProbeNodes(n, depth, fen) {
+  const t = SF_PROBE_NODES, scale = Math.pow(2, (depth || 10) - 10) * _sfPieceFactor(fen);
+  if (n <= t[0][0]) return t[0][1] * scale;
+  for (let i = 1; i < t.length; i++) {
+    if (n <= t[i][0]) {
+      const [n0, v0] = t[i - 1], [n1, v1] = t[i];
+      return (v0 + (v1 - v0) * (n - n0) / (n1 - n0)) * scale;
+    }
+  }
+  const [na, va] = t[t.length - 2], [nb, vb] = t[t.length - 1];
+  return (vb + (vb - va) * (n - nb) / (nb - na)) * scale;
+}
+// Milliseconds a check of n moves at `depth` should take here, in the position
+// `fen` if given (else a middlegame's); null before the engine is measured.
+function sfExpectedProbeMs(n, depth, fen) {
+  const v = sfDeviceNps();
+  if (!v || !(n >= 2)) return null;
+  return sfProbeNodes(n, depth || 10, fen) / v * 1000 + SF_PROBE_OVERHEAD_MS;
+}
+// The limit a check of n moves runs under: the desktop's (2 s plus 0.15 s a
+// move, at most 7 s), stretched for this device.
+function sfProbeBaseLimitMs(n) {
+  return Math.min(REGAN_PROBE_TIMEOUT_MAX_MS, 2000 + n * 150);
+}
+
+// ── Moves checked per turn (this device) ─────────────────────────────────────
+// The most moves one personality check may score, set in the builder for this
+// device only (a bot file carries no part of it): 0 = all of them. The
+// recommendation is the most this device checks inside the desktop's own limit
+// for that many (sfRecommendedCheckCap); a desktop is recommended all of them.
+const SF_CHECK_CAP_KEY = 'bm_checkCap';
+const SF_CHECK_CAP_CHOICES = [2, 3, 4, 6, 8, 12, 16, 24];
+function sfCheckCap() {
+  try {
+    const v = parseInt(localStorage.getItem(SF_CHECK_CAP_KEY), 10);
+    return v >= 2 ? v : 0;
+  } catch (e) { return 0; }
+}
+function sfSetCheckCap(n) {
+  try {
+    if (n >= 2) localStorage.setItem(SF_CHECK_CAP_KEY, String(n | 0));
+    else localStorage.removeItem(SF_CHECK_CAP_KEY);
+  } catch (e) {}
+}
+// The candidates a check is allowed: `list` cut to the device's cap. The first
+// entries are the ones that matter (the popular move, the pick), so they stay.
+function sfCapCandidates(list) {
+  const cap = sfCheckCap();
+  return cap && list.length > cap ? list.slice(0, cap) : list;
+}
+// The most moves (a builder choice, or 0 = all) whose check this device is
+// expected to finish inside the desktop's limit for it. null before it has been
+// measured.
+function sfRecommendedCheckCap() {
+  if (!sfDeviceNps()) return null;
+  // Expected × 1.5 for the spread between positions and readings.
+  const fits = n => sfExpectedProbeMs(n, 10) * 1.5 <= sfProbeBaseLimitMs(n);
+  if (fits(40)) return 0;
+  let best = 2;
+  for (const n of SF_CHECK_CAP_CHOICES) if (fits(n)) best = n;
+  return best;
+}
+function _sfMs(ms) {
+  return ms < 1000 ? Math.round(ms) + ' ms' : (ms / 1000).toFixed(ms < 10000 ? 1 : 0) + ' s';
+}
+// "Engine speed 0.21 M positions/s, 4.8× slower than a desktop: time limits ×6.7"
+// (below 0.1 M in thousands: "45k positions/s")
+function sfSpeedText() {
+  const v = sfDeviceNps();
+  if (!v) return 'Engine speed not measured yet';
+  const f = sfSlowdown(), s = sfTimeStretch();
+  return 'Engine speed ' + (v >= 1e5 ? (v / 1e6).toFixed(2) + ' M' : Math.round(v / 1000) + 'k') + ' positions/s' +
+    (f >= 1.15 ? ', ' + f.toFixed(1) + '× slower than a desktop' : f <= 0.87 ? ', ' + (1 / f).toFixed(1) + '× a desktop' : ', about a desktop\'s') +
+    (f >= 1.15 ? ': time limits ×' + s.toFixed(1) : '');
+}
+// What the builder and the Lichess log show: the speed, what checks cost here,
+// the recommendation and the setting.
+function sfSpeedReport() {
+  const v = sfDeviceNps();
+  const cap = sfCheckCap(), rec = sfRecommendedCheckCap();
+  return {
+    measured: !!v,
+    text: sfSpeedText(),
+    slowdown: sfSlowdown(),
+    stretch: sfTimeStretch(),
+    expected: v ? [4, 8, 16, 32].map(n => ({ n, ms: sfExpectedProbeMs(n, 10) })) : [],
+    cap, recommended: rec,
+    choices: SF_CHECK_CAP_CHOICES.slice(),
+    last: sfLastCheck,
+  };
+}
+
+// "Engine speed 0.21 M positions/s, 4.8× slower than a desktop: time limits
+// ×6.7. Checking 4 / 8 / 16 / 32 moves ≈ 0.3 / 0.6 / 1.1 / 2.2 s here. Moves
+// checked a turn: all (recommended: at most 8, in the builder's Personality)."
+function sfSpeedLogLine() {
+  const r = sfSpeedReport();
+  if (!r.measured) return r.text;
+  const secs = r.expected.map(e => e.ms < 95 ? (e.ms / 1000).toFixed(2) : (e.ms / 1000).toFixed(1));
+  const capTxt = c => c ? 'at most ' + c : 'all';
+  return r.text + '. Checking ' + r.expected.map(e => e.n).join(' / ') + ' moves ≈ ' +
+    secs.join(' / ') + ' s here. Moves checked a turn: ' + capTxt(r.cap) +
+    (r.recommended == null || r.recommended === r.cap ? ''
+      : ' (recommended: ' + capTxt(r.recommended) + ", in the builder's Personality)");
+}
+
+// The checks the bot's current turn ran (sfEvalMoves), for its log line:
+// reset as each turn starts (botMakeMove).
+let sfTurnChecks = [];
+let sfLastCheck = null;
+// "checked 12 moves in 2.3 s (expected 2.1 s)", one count per check ("10 + 12
+// moves"), or '' when nothing was checked.
+function sfTurnChecksText() {
+  if (!sfTurnChecks.length) return '';
+  let ms = 0, exp = 0, haveExp = true, cut = null;
+  const ns = [];
+  for (const c of sfTurnChecks) {
+    ns.push(c.n); ms += c.ms;
+    if (c.expectedMs == null) haveExp = false; else exp += c.expectedMs;
+    if (c.cut) cut = c.limitMs;
+  }
+  return 'checked ' + ns.join(' + ') + ' moves in ' + _sfMs(ms) +
+    (haveExp ? ' (expected ' + _sfMs(exp) + ')' : '') +
+    (cut != null ? ', stopped at its ' + _sfMs(cut) + ' limit' : '');
 }
 
 // ── Ghost-only Stockfish worker (completely separate — never shared with bot) ─
@@ -291,7 +626,8 @@ function sfPositionCmd(fen) {
   return 'position fen ' + fen;
 }
 
-// opts.timeoutMs: the safety timeout (default 5 s).
+// opts.timeoutMs: the safety timeout (default 5 s on a desktop, stretched on a
+//   slower device: sfLimitMs).
 // opts.fullStrength: with isDepth, search at Skill Level 20 rather than
 //   whatever level the last request left set.
 function sfGetMove(fen, levelOrDepth, isDepth=false, opts) {
@@ -327,13 +663,14 @@ function sfGetMove(fen, levelOrDepth, isDepth=false, opts) {
                 : levelOrDepth <= 10 ? 8
                 :                      12;
     sfMovePv = null;
-    sfWorker.postMessage('go depth ' + depth);
+    _sfGo('go depth ' + depth);
     // Safety timeout after 5 s. It used to resolve null, which on a slow
     // device left the bot with no move at all. The search has been reporting
     // its best line as it went, so it is stopped (freeing the engine for the
     // next request) and that line is played. Null only if it never got one.
     setTimeout(() => {
       if (sfPendingResolve === resolve) {
+        _sfSpeedSampleRunning();
         sfPendingResolve = null;
         sfBestmovesOwed++; // the engine will still emit a bestmove — discard it
         const pv = sfMovePv;
@@ -343,7 +680,7 @@ function sfGetMove(fen, levelOrDepth, isDepth=false, opts) {
         console.warn('[engine] move search timed out' + (pv ? ' — playing its best line so far' : ' with no move'));
         resolve(pv || null);
       }
-    }, (opts && opts.timeoutMs > 0) ? opts.timeoutMs : 5000);
+    }, (opts && opts.timeoutMs > 0) ? opts.timeoutMs : sfLimitMs(5000));
   });
 }
 
@@ -375,10 +712,12 @@ function sfGetComplexity(fen) {
     sfWorker.postMessage('setoption name MultiPV value 2');
     sf960Sync(sfWorker);
     sfWorker.postMessage(sfPositionCmd(fen));
-    sfWorker.postMessage('go depth 12');
-    // 3 s safety timeout — avoids indefinite wait if SF is stalled
+    _sfGo('go depth 12');
+    // 3 s safety timeout (on a desktop; sfLimitMs) — avoids an indefinite wait
+    // if SF is stalled
     setTimeout(() => {
       if (sfCplxPending === resolve) {
+        _sfSpeedSampleRunning();
         sfCplxActive  = false;
         sfCplxPending = null;
         sfBestmovesOwed++; // probe's bestmove will still arrive — discard it
@@ -386,7 +725,7 @@ function sfGetComplexity(fen) {
         sfCurrentSkillLevel = -1;
         resolve(null);
       }
-    }, 3000);
+    }, sfLimitMs(3000));
   });
 }
 
@@ -414,9 +753,25 @@ function sfEvalMoves(fen, moves, depth, opts) {
     sfLastProbeDepth = null;
     if (!sfWorker || !sfReady || !moves || moves.length < 2) { resolve(null); return; }
     if (sfPendingResolve || sfCplxActive) { resolve(null); return; }
+    // Safety timeout — the guard must not stall the bot's move. Scales with
+    // candidate count since a wider MultiPV probe (CP-budget acceptance can
+    // send well over a dozen moves) genuinely takes longer than the 2-move
+    // degradation-guard probe; capped so a large list still fails open promptly.
+    // Stretched on a slower device (sfLimitMs); a caller's deadline still wins.
+    let timeoutMs = sfLimitMs(sfProbeBaseLimitMs(moves.length));
+    if (opts && opts.timeoutMs > 0) timeoutMs = Math.min(timeoutMs, opts.timeoutMs);
+    // Each check is noted for the turn's log line (sfTurnChecksText): how many
+    // moves, how long it took against what this device was expected to take.
+    const t0 = performance.now(), d = depth || 10;
+    const expectedMs = sfExpectedProbeMs(moves.length, d, fen);
+    const note = (cut) => {
+      sfLastCheck = { n: moves.length, depth: d, ms: performance.now() - t0, expectedMs, limitMs: timeoutMs, cut };
+      sfTurnChecks.push(sfLastCheck);
+    };
+    const done = (r) => { note(false); resolve(r); };
     sfCplxActive    = true;
     sfProbeMode     = 'evalmoves';
-    sfCplxPending   = resolve;
+    sfCplxPending   = done;
     sfCplxInfoLines = [];
     sfCplxFen       = null; // never serve this probe's residue as a cached complexity result
     sfWorker.postMessage('stop');
@@ -427,15 +782,11 @@ function sfEvalMoves(fen, moves, depth, opts) {
     sfWorker.postMessage('setoption name MultiPV value ' + moves.length);
     sf960Sync(sfWorker);
     sfWorker.postMessage(sfPositionCmd(fen));
-    sfWorker.postMessage('go depth ' + (depth || 10) + ' searchmoves ' + moves.join(' '));
-    // Safety timeout — the guard must not stall the bot's move. Scales with
-    // candidate count since a wider MultiPV probe (CP-budget acceptance can
-    // send well over a dozen moves) genuinely takes longer than the 2-move
-    // degradation-guard probe; capped so a large list still fails open promptly.
-    let timeoutMs = Math.min(REGAN_PROBE_TIMEOUT_MAX_MS, 2000 + moves.length * 150);
-    if (opts && opts.timeoutMs > 0) timeoutMs = Math.min(timeoutMs, opts.timeoutMs);
+    _sfGo('go depth ' + d + ' searchmoves ' + moves.join(' '));
     setTimeout(() => {
-      if (sfCplxPending === resolve) {
+      if (sfCplxPending === done) {
+        _sfSpeedSampleRunning();
+        note(true);
         sfCplxActive  = false;
         sfProbeMode   = 'cplx';
         sfCplxPending = null;
@@ -832,8 +1183,10 @@ async function flounderChooseMove(fen, elo, depth, effTemp, opts) {
     // a fraction of it and nothing changes; on a slow device it stops there and
     // plays from the deepest depth it finished, instead of spending up to 7 s
     // and then nothing. Never under FLOUNDER_PROBE_MIN_MS.
+    // The floor stretches on a slower device (sfLimitMs), so it still reaches
+    // the depth the ladder was measured at where it can.
     const budget = (opts && opts.budgetMs > 0)
-      ? Math.max(FLOUNDER_PROBE_MIN_MS, opts.budgetMs) : 0;
+      ? Math.max(sfLimitMs(FLOUNDER_PROBE_MIN_MS), opts.budgetMs) : 0;
     const evals = await sfEvalMoves(fen, moves, depth || flounderProbeDepth(fen),
                                     { timeoutMs: budget, partialOk: true });
     if (!evals) return null;
@@ -1691,7 +2044,11 @@ async function bookFetch(url) {
 //
 // Read from the SAN, not the squares: e1h1 is also an ordinary move for a rook
 // or a queen standing on e1.
+//
+// A Chess960 game already spells a castle king-takes-rook (setChess960), so the
+// 960 book's moves pass through as they came.
 function explorerMoveUci(m) {
+  if (typeof chess960 !== 'undefined' && chess960) return m.uci;
   const castle = /^O-O(-O)?/.exec(m.san || '');
   return castle ? m.uci.slice(0, 2) + (castle[1] ? 'c' : 'g') + m.uci[3] : m.uci;
 }
@@ -1713,7 +2070,8 @@ function explorerGameCount(moves) {
 }
 
 async function maiaGetMoveProbs(fen) {
-  // The explorer holds standard games only: nothing in it is a Chess960 game.
+  // Standard games only. A Chess960 game's book is the Opening Behavior
+  // section's Chess960 row, played on the Main Line's path (botGetOpeningMove).
   if (typeof chess960 !== 'undefined' && chess960) return null;
   try {
     // Filter to the selected band only, for more authentic play. lcRatingParam
@@ -1903,14 +2261,28 @@ function botBookRatingElo() {
 // no date filter and fell back to Lichess at a fixed 1200–1800 band, whatever
 // the two buttons said. The proxy already accepted `since` on both routes.
 const EXPLORER_START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+// The Chess960 book (Opening Behavior's Chess960 row): 'off' | 'top' | 'sample',
+// or 'off' in a standard game. See botOpeningConfig.book960.
+function botBook960Mode() {
+  if (typeof chess960 === 'undefined' || !chess960) return 'off';
+  const m = (typeof botOpeningConfig !== 'undefined' && botOpeningConfig) ? botOpeningConfig.book960 : null;
+  return (m === 'top' || m === 'sample') ? m : 'off';
+}
+
+// In a Chess960 game the book is Lichess's 960 games from this game's start
+// position, at the bot's rating: Masters holds no 960 games, and Modern (2020+)
+// is left out, as 960 has too few games to cut by date.
 function _openingBookQuery() {
   const cfgBook = (typeof botOpeningConfig !== 'undefined' && botOpeningConfig) || {};
+  const is960 = typeof chess960 !== 'undefined' && !!chess960;
   return {
-    src:     cfgBook.source === 'lichess' ? 'lichess' : 'masters',
-    since:   cfgBook.since || null,                        // 'YYYY-MM'
+    src:     (is960 || cfgBook.source === 'lichess') ? 'lichess' : 'masters',
+    since:   is960 ? null : (cfgBook.since || null),       // 'YYYY-MM'
     ratings: lcRatingParam(botBookRatingElo()),
     minGames: bookMinGames(),
     startFen: _gameStartFen || EXPLORER_START_FEN,
+    variant: is960 ? 'chess960' : 'standard',
   };
 }
 // The cache is keyed by everything that changes the answer, not just the moves.
@@ -1918,12 +2290,14 @@ function _openingBookQuery() {
 // its key here too, or it will miss every time.
 function openingCacheKey(moveHistory) {
   const q = _openingBookQuery();
-  return [q.src, q.since || '', q.ratings, q.minGames, q.startFen, moveHistory.join(',')].join('|');
+  return [q.variant, q.src, q.since || '', q.ratings, q.minGames, q.startFen, moveHistory.join(',')].join('|');
 }
 
 async function openingExplorerFetch(moveHistory) {
-  // Standard games only — see maiaGetMoveProbs.
-  if (typeof chess960 !== 'undefined' && chess960) return null;
+  // A Chess960 game asks the 960 database, and only while its book is on. The
+  // engine's own book (maiaGetMoveProbs) stays standard-only.
+  const _is960 = typeof chess960 !== 'undefined' && !!chess960;
+  if (_is960 && botBook960Mode() === 'off') return null;
   const { src, since, ratings, minGames, startFen } = _openingBookQuery();
   const cacheKey = openingCacheKey(moveHistory);
   if (_openingCache.has(cacheKey)) return _openingCache.get(cacheKey);
@@ -1947,9 +2321,11 @@ async function openingExplorerFetch(moveHistory) {
 
   async function fetchLichess() {
     // Proxied, never called direct — see the /api/lichess route in server.js.
-    const url = '/api/lichess?' + where +
+    // 960 asks for the proxy's most moves (20), as a sampled book can play any
+    // of them and the distribution is drawn over what comes back.
+    const url = '/api/lichess?' + (_is960 ? 'variant=chess960&' : '') + where +
                 '&speeds=blitz,rapid,classical&ratings=' + encodeURIComponent(ratings) +
-                '&moves=10' + (since ? '&since=' + since : '');
+                '&moves=' + (_is960 ? 20 : 10) + (since ? '&since=' + since : '');
     const resp = await bookFetch(url);
     if (!resp.ok) throw new Error('lichess explorer ' + resp.status);
     return resp.json();
@@ -1996,15 +2372,32 @@ async function openingExplorerFetch(moveHistory) {
 // play a repertoire. botMakeMove only ever called it in Main Line mode, so that
 // branch never ran; the repertoire is the ECO-table stage in botMakeMove.
 async function botGetOpeningMove(moveHistory) {
+  const mode960 = botBook960Mode();
   // The depth is in MOVES, as the builder labels it ("Until move 20") and as a
   // player means it; moveHistory counts plies, both sides. This used to compare
   // the two directly, so a book set to 20 moves left after 10.
+  //
+  // The Chess960 book has no depth of its own: its row shows only Min games, and
+  // 960 data runs out at that long before any depth would bite.
   const maxDepth = (botOpeningConfig.maxBookDepth || 20) * 2;
-  if (moveHistory.length >= maxDepth) return null;
+  if (mode960 === 'off' && moveHistory.length >= maxDepth) return null;
 
   const data = await openingExplorerFetch(moveHistory);
   if (!data || !data.moves || !data.moves.length) return null;
+  // Chess960 "Follow the distribution": each move in proportion to its games.
+  if (mode960 === 'sample') return bookSampleMove(data.moves).uci;
   return data.moves[0].uci;   // highest game count (openingExplorerFetch sorts)
+}
+
+// One move drawn in proportion to its games (temperature 1). `rand` is for tests.
+function bookSampleMove(moves, rand) {
+  const total = explorerGameCount(moves);
+  let r = (rand != null ? rand : Math.random()) * total;
+  for (const m of moves) {
+    r -= m.white + m.draws + m.black;
+    if (r < 0) return m;
+  }
+  return moves[moves.length - 1];
 }
 
 // Update botStatus while in opening
