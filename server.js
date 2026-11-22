@@ -433,10 +433,13 @@ const _lichessCache = new Map();
 const LICHESS_CACHE_TTL = 6 * 60 * 60 * 1000; // 6h — live stats drift, slowly
 const LICHESS_CACHE_MAX = 5000;
 
-// Query params: play and/or fen, ratings, speeds, moves, since, until.
+// Query params: play and/or fen, ratings, speeds, moves, since, until, variant.
 // `ratings` is snapped to the legal enum here, so callers may pass a raw Elo.
 // `since`/`until` accept 'YYYY-MM' or a bare 'YYYY' (widened to Jan/Dec).
+// `variant`: only 'chess960' is passed on (the Chess960 book); anything else is
+// the upstream's default, standard chess.
 app.get('/api/lichess', (req, res) => {
+  const variant = req.query.variant === 'chess960' ? 'chess960' : null;
   const fen     = cleanFen(req.query.fen);
   const play    = (req.query.play || '').replace(/[^a-zA-Z0-9,]/g, '');
   const ratings = ratingsParam(req.query.ratings);
@@ -449,6 +452,7 @@ app.get('/api/lichess', (req, res) => {
   // fen and play compose: play continues FROM fen. Sending both when we have
   // both is what lets the upstream still name the opening.
   const query = '?' + [
+    variant ? 'variant=' + variant : null,
     fen ? 'fen=' + encodeURIComponent(fen) : null,
     play ? 'play=' + encodeURIComponent(play) : null,
     ratings ? 'ratings=' + ratings : null,

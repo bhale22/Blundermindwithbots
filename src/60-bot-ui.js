@@ -890,8 +890,9 @@ async function botStart() {
   const _repOn = !!botOpeningConfig['rep' + _stageCol];
   const _mlOn  = !!botOpeningConfig['mainLine' + _stageCol];
   botOpeningMode = _repOn ? 'preferred' : _mlOn ? 'mainline' : 'none';
-  // The repertoire's "No opening sequence" slot, rolled once for the game.
-  const _noOpening = _repOn && botOpeningSkipsThisGame(_stageCol);
+  // The repertoire's "No opening sequence" slot, rolled once for the game. Not
+  // in Chess960, where the repertoire sits out and its slot has nothing to skip.
+  const _noOpening = _repOn && !chess960 && botOpeningSkipsThisGame(_stageCol);
   botNoOpeningThisGame = _noOpening;
   if (_noOpening) {
     console.log('[Opening] No opening sequence this game (' +
@@ -919,12 +920,19 @@ async function botStart() {
   // lcsf / maia tabs are "explorer, then engine" by definition, and a blend
   // asks via botEngineBook.
   lichessExplorerActive = !!botEngineBook || botTab === 'lcsf' || botTab === 'maia';
-  // Chess960: every opening source here is standard chess (the repertoire's
-  // lines, the Main Line, the explorer's book), so the engine plays from move 1.
+  // Chess960: the repertoire's lines, the Main Line and the engine's book are
+  // all standard chess, so they sit out. The Chess960 row in Opening Behavior
+  // is the opening instead: off, the engine plays from move 1; on, the Lichess
+  // 960 book plays on the Main Line's path (botGetOpeningMove picks the most
+  // common move or samples) until Min games ends it.
   if (chess960) {
     preferredOpeningActive = false;
-    mainLineActive = false;
     lichessExplorerActive = false;
+    mainLineActive = botBook960Mode() !== 'off';
+    botOpeningMode = mainLineActive ? 'mainline' : 'none';
+    if (mainLineActive) console.log('[Opening] Chess960 book: ' +
+      (botBook960Mode() === 'top' ? 'the most common move' : 'moves in proportion to their games') +
+      ', Lichess 960 games at ' + lcRatingParam(botBookRatingElo()) + ', until fewer than ' + bookMinGames() + ' games');
   }
   // A new game: no takebacks used, and the opening state as it starts, which
   // a takeback all the way back restores.
@@ -2418,6 +2426,8 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
   botOpeningConfig.source       = cfg.openingSource || 'masters';
   botOpeningConfig.maxBookDepth = cfg.openingDepth  || 20;
   botOpeningConfig.minGames     = cfg.openingMinGames || 4;
+  // Chess960 opening: a bot saved before the setting plays 960 from move 1, as it did.
+  botOpeningConfig.book960      = (cfg.opening960 === 'top' || cfg.opening960 === 'sample') ? cfg.opening960 : 'off';
   botOpeningConfig.strictness   = 0.8;
   if (cfg.modernOnly) botOpeningConfig.since = '2020-01'; else delete botOpeningConfig.since;
   botOpeningConfig.repWhite      = _stW.rep;

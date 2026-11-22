@@ -1691,7 +1691,11 @@ async function bookFetch(url) {
 //
 // Read from the SAN, not the squares: e1h1 is also an ordinary move for a rook
 // or a queen standing on e1.
+//
+// A Chess960 game already spells a castle king-takes-rook (setChess960), so the
+// 960 book's moves pass through as they came.
 function explorerMoveUci(m) {
+  if (typeof chess960 !== 'undefined' && chess960) return m.uci;
   const castle = /^O-O(-O)?/.exec(m.san || '');
   return castle ? m.uci.slice(0, 2) + (castle[1] ? 'c' : 'g') + m.uci[3] : m.uci;
 }
@@ -1713,7 +1717,8 @@ function explorerGameCount(moves) {
 }
 
 async function maiaGetMoveProbs(fen) {
-  // The explorer holds standard games only: nothing in it is a Chess960 game.
+  // Standard games only. A Chess960 game's book is the Opening Behavior
+  // section's Chess960 row, played on the Main Line's path (botGetOpeningMove).
   if (typeof chess960 !== 'undefined' && chess960) return null;
   try {
     // Filter to the selected band only, for more authentic play. lcRatingParam
@@ -1903,14 +1908,28 @@ function botBookRatingElo() {
 // no date filter and fell back to Lichess at a fixed 1200–1800 band, whatever
 // the two buttons said. The proxy already accepted `since` on both routes.
 const EXPLORER_START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+// The Chess960 book (Opening Behavior's Chess960 row): 'off' | 'top' | 'sample',
+// or 'off' in a standard game. See botOpeningConfig.book960.
+function botBook960Mode() {
+  if (typeof chess960 === 'undefined' || !chess960) return 'off';
+  const m = (typeof botOpeningConfig !== 'undefined' && botOpeningConfig) ? botOpeningConfig.book960 : null;
+  return (m === 'top' || m === 'sample') ? m : 'off';
+}
+
+// In a Chess960 game the book is Lichess's 960 games from this game's start
+// position, at the bot's rating: Masters holds no 960 games, and Modern (2020+)
+// is left out, as 960 has too few games to cut by date.
 function _openingBookQuery() {
   const cfgBook = (typeof botOpeningConfig !== 'undefined' && botOpeningConfig) || {};
+  const is960 = typeof chess960 !== 'undefined' && !!chess960;
   return {
-    src:     cfgBook.source === 'lichess' ? 'lichess' : 'masters',
-    since:   cfgBook.since || null,                        // 'YYYY-MM'
+    src:     (is960 || cfgBook.source === 'lichess') ? 'lichess' : 'masters',
+    since:   is960 ? null : (cfgBook.since || null),       // 'YYYY-MM'
     ratings: lcRatingParam(botBookRatingElo()),
     minGames: bookMinGames(),
     startFen: _gameStartFen || EXPLORER_START_FEN,
+    variant: is960 ? 'chess960' : 'standard',
   };
 }
 // The cache is keyed by everything that changes the answer, not just the moves.
@@ -1918,12 +1937,14 @@ function _openingBookQuery() {
 // its key here too, or it will miss every time.
 function openingCacheKey(moveHistory) {
   const q = _openingBookQuery();
-  return [q.src, q.since || '', q.ratings, q.minGames, q.startFen, moveHistory.join(',')].join('|');
+  return [q.variant, q.src, q.since || '', q.ratings, q.minGames, q.startFen, moveHistory.join(',')].join('|');
 }
 
 async function openingExplorerFetch(moveHistory) {
-  // Standard games only — see maiaGetMoveProbs.
-  if (typeof chess960 !== 'undefined' && chess960) return null;
+  // A Chess960 game asks the 960 database, and only while its book is on. The
+  // engine's own book (maiaGetMoveProbs) stays standard-only.
+  const _is960 = typeof chess960 !== 'undefined' && !!chess960;
+  if (_is960 && botBook960Mode() === 'off') return null;
   const { src, since, ratings, minGames, startFen } = _openingBookQuery();
   const cacheKey = openingCacheKey(moveHistory);
   if (_openingCache.has(cacheKey)) return _openingCache.get(cacheKey);
@@ -1947,9 +1968,11 @@ async function openingExplorerFetch(moveHistory) {
 
   async function fetchLichess() {
     // Proxied, never called direct — see the /api/lichess route in server.js.
-    const url = '/api/lichess?' + where +
+    // 960 asks for the proxy's most moves (20), as a sampled book can play any
+    // of them and the distribution is drawn over what comes back.
+    const url = '/api/lichess?' + (_is960 ? 'variant=chess960&' : '') + where +
                 '&speeds=blitz,rapid,classical&ratings=' + encodeURIComponent(ratings) +
-                '&moves=10' + (since ? '&since=' + since : '');
+                '&moves=' + (_is960 ? 20 : 10) + (since ? '&since=' + since : '');
     const resp = await bookFetch(url);
     if (!resp.ok) throw new Error('lichess explorer ' + resp.status);
     return resp.json();
@@ -1996,15 +2019,32 @@ async function openingExplorerFetch(moveHistory) {
 // play a repertoire. botMakeMove only ever called it in Main Line mode, so that
 // branch never ran; the repertoire is the ECO-table stage in botMakeMove.
 async function botGetOpeningMove(moveHistory) {
+  const mode960 = botBook960Mode();
   // The depth is in MOVES, as the builder labels it ("Until move 20") and as a
   // player means it; moveHistory counts plies, both sides. This used to compare
   // the two directly, so a book set to 20 moves left after 10.
+  //
+  // The Chess960 book has no depth of its own: its row shows only Min games, and
+  // 960 data runs out at that long before any depth would bite.
   const maxDepth = (botOpeningConfig.maxBookDepth || 20) * 2;
-  if (moveHistory.length >= maxDepth) return null;
+  if (mode960 === 'off' && moveHistory.length >= maxDepth) return null;
 
   const data = await openingExplorerFetch(moveHistory);
   if (!data || !data.moves || !data.moves.length) return null;
+  // Chess960 "Follow the distribution": each move in proportion to its games.
+  if (mode960 === 'sample') return bookSampleMove(data.moves).uci;
   return data.moves[0].uci;   // highest game count (openingExplorerFetch sorts)
+}
+
+// One move drawn in proportion to its games (temperature 1). `rand` is for tests.
+function bookSampleMove(moves, rand) {
+  const total = explorerGameCount(moves);
+  let r = (rand != null ? rand : Math.random()) * total;
+  for (const m of moves) {
+    r -= m.white + m.draws + m.black;
+    if (r < 0) return m;
+  }
+  return moves[moves.length - 1];
 }
 
 // Update botStatus while in opening

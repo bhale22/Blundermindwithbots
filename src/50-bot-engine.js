@@ -3868,7 +3868,10 @@ async function botMakeMove() {
         uciMove = openingMove;
         lastBotMoveSource = 'Book';
         const _od = await openingExplorerFetch(botMoveHistory);
-        lastBotMoveDetail = 'Book' + (_od && _od.opening && _od.opening.name ? ': ' + _od.opening.name : '');
+        const _m960 = botBook960Mode();
+        lastBotMoveDetail = (_m960 === 'top' ? 'Chess960 book (most common move)'
+                           : _m960 === 'sample' ? 'Chess960 book (sampled)' : 'Book') +
+          (_od && _od.opening && _od.opening.name ? ': ' + _od.opening.name : '');
         _explorerConfidence = explorerConfidenceFromData(_od);
         document.getElementById('botStatus').textContent = botOpeningStatusText(_od);
         // The lookup itself counts toward the move's time (botBookMoveDelayMs).
@@ -3889,7 +3892,10 @@ async function botMakeMove() {
               executeMove(mv.from, mv.to, mv.promo || null);
               const _botSan = gameMovesAlgebraic[gameMovesAlgebraic.length - 1] || null;
               botRecordMove(uciMove, _botSan);
-              _botLastBookMove = { games: explorerGameCount(_od.moves.slice(0, 1)), db: _od.db, ply: botMoveHistory.length };
+              // The games behind the move played: the top one, or in a sampled
+              // Chess960 book whichever was drawn.
+              const _played = _od.moves.find(m => m.uci === uciMove) || _od.moves[0];
+              _botLastBookMove = { games: explorerGameCount([_played]), db: _od.db, ply: botMoveHistory.length };
               updatePlayerBoxes();
               const nextMoves = allLegalMoves(board, turn, epSq, castling);
               if (!nextMoves.length) {

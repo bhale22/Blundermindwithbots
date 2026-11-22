@@ -107,6 +107,13 @@ let botOpeningConfig = {
   repBlack: false,
   mainLineWhite: false,
   mainLineBlack: false,
+  // Chess960 games (Nov 21 2026, Ben): the stages above are standard chess and
+  // sit out. This is the whole opening instead, one setting for both colours:
+  //   'off'    — the engine plays from move 1
+  //   'top'    — the Lichess 960 database's most common move (temperature 0)
+  //   'sample' — a move drawn in proportion to its games (temperature 1)
+  // Played on the Main Line's path (botGetOpeningMove), so Min games ends it.
+  book960: 'off',
   strictness: 0.8,
 };
 // Configs and sessions saved before the stages were separate carry one mode per
