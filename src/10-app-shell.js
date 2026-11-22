@@ -2080,12 +2080,20 @@ function proToggleNotation(){
 // Last two full moves, for the collapsed notation strip. Kept to two pairs so
 // it fits the strip at phone width without truncating — the newest move is the
 // point of the peek, and an ellipsis would eat it.
+// The position the Expert board's move list counts from: a review's own
+// start, or a live game's set position (see moveNumberStart).
+function _proNotationStart(){
+  return moveNumberStart((typeof inReplay !== 'undefined' && inReplay)
+    ? (typeof replayBaseFen !== 'undefined' ? replayBaseFen : null) : _pgnSetupFen());
+}
 function proNotationPeekText(){
   if(typeof gameMovesAlgebraic === 'undefined' || !gameMovesAlgebraic.length) return '';
-  const start = Math.max(0, gameMovesAlgebraic.length - 4) & ~1;   // whole move pairs
+  const st = _proNotationStart(), off = st.black ? 1 : 0;
+  const plies = gameMovesAlgebraic.length + off;
   let out = [];
-  for(let i=start;i<gameMovesAlgebraic.length;i+=2){
-    out.push((i/2 + 1) + '.' + gameMovesAlgebraic[i] +
+  for(let r = Math.floor(Math.max(0, plies - 4) / 2); r*2 < plies; r++){   // whole move pairs
+    const i = r*2 - off;
+    out.push((st.num + r) + '.' + (i >= 0 ? gameMovesAlgebraic[i] : '…') +
              (gameMovesAlgebraic[i+1] ? ' ' + gameMovesAlgebraic[i+1] : ''));
   }
   return out.join('  ');
@@ -2106,14 +2114,20 @@ function proRenderNotation(){
   const clickable = typeof _isLiveGame === 'function' && !_isLiveGame();
   const attrs = i => clickable ? ' pro-mclick" onclick="proMoveClick(' + i + ')"' : '"';
   let html = _vtHtml;
-  for(let i=0;i<gameMovesAlgebraic.length;i+=2){
-    const n = i/2 + 1;
-    const w = gameMovesAlgebraic[i] || '';
+  // A game from a set position counts from its move, and when Black moved
+  // first the first row's White column is empty ("30. … h6").
+  const st = _proNotationStart();
+  const off = st.black ? 1 : 0;   // the list's index i is ply i + off of the rows
+  for(let r=0; r*2 < gameMovesAlgebraic.length + off; r++){
+    const i = r*2 - off;          // White's move in this row (-1: before the start)
+    const n = st.num + r;
+    const w = i >= 0 ? gameMovesAlgebraic[i] || '' : '…';
     const b = gameMovesAlgebraic[i+1] || '';
-    const wHi = i === hiIdx ? ' pro-mhi' : '';
+    const wHi = i >= 0 && i === hiIdx ? ' pro-mhi' : '';
     const bHi = i+1 === hiIdx ? ' pro-mhi' : '';
     html += '<div class="pro-moverow"><span class="pro-mnum">' + n + '.</span>' +
-            '<span class="pro-mw' + wHi + attrs(i) + '>' + w + '</span>' +
+            (i >= 0 ? '<span class="pro-mw' + wHi + attrs(i) + '>' + w + '</span>'
+                    : '<span class="pro-mw">' + w + '</span>') +
             (b ? '<span class="pro-mb' + bHi + attrs(i+1) + '>' + b + '</span>'
                : '<span class="pro-mb"></span>') + '</div>';
   }
@@ -2139,7 +2153,9 @@ function proBotRatingText(){
 function proSync(){
   if(!proMode) return;
   proRenderNotation();
-  const flipped = (typeof boardFlipped !== 'undefined') && boardFlipped;
+  // As the board is drawn — the seat and any view flip together (a Lichess
+  // host's board is turned to the bot's side) — not the seat alone.
+  const flipped = boardViewFlipped();
   const topIsWhite = flipped;             // top strip = side at top of the board
   const tTime = document.getElementById(topIsWhite ? 'timeW' : 'timeB');
   const bTime = document.getElementById(topIsWhite ? 'timeB' : 'timeW');
@@ -3259,7 +3275,7 @@ function clockUpdateDisplay() {
   }
   // Keep pro-mode clock column in sync without waiting for a move
   if(typeof proMode !== 'undefined' && proMode && !isUntimed){
-    const _fl = typeof boardFlipped !== 'undefined' && boardFlipped;
+    const _fl = boardViewFlipped();
     const ct = document.getElementById('proClockTop');
     const cb = document.getElementById('proClockBottom');
     if(ct){ ct.textContent = clockFmtTime(_fl ? clockTimeW : clockTimeB);
@@ -5455,6 +5471,22 @@ function _pgnResultToken(){
   return '*';
 }
 
+// Where a move list starts counting, read off the position it starts from:
+// the FEN's move number, and whether Black moves first. A game from a set
+// position (a Lichess "From Position" game, say, at move 30 with Black to
+// move) is numbered "30... h6 31. g3"; without one it is "1. e4".
+function moveNumberStart(fen){
+  if(!fen) return { num: 1, black: false };
+  const f = String(fen).trim().split(/\s+/);
+  return { num: Math.max(1, parseInt(f[5], 10) || 1), black: f[1] === 'b' };
+}
+// The start the PGN's [FEN] tag names: a game begun from a bare position.
+// One begun with moves before it ("Play from here") is written from move 1.
+function _pgnSetupFen(){
+  return (typeof _gameStartFen!=='undefined' && _gameStartFen &&
+          (!_gameStartSans || !_gameStartSans.length)) ? _gameStartFen : null;
+}
+
 function buildPgnText(){
   // PGN standard requires YYYY.MM.DD — dashes cause Lichess import to fail.
   const isoDate = new Date().toISOString().split('T')[0];
@@ -5467,16 +5499,16 @@ function buildPgnText(){
   if(typeof chess960!=='undefined' && chess960) pgn += '[Variant "Chess960"]\n';
   // Games started from a bare position (no SAN prefix) need SetUp/FEN tags so
   // the PGN reloads correctly; games with a SAN prefix are complete from move 1.
-  if(typeof _gameStartFen!=='undefined' && _gameStartFen &&
-     (!_gameStartSans || !_gameStartSans.length)){
-    pgn += '[SetUp "1"]\n[FEN "' + _gameStartFen + '"]\n';
-  }
+  const setup = _pgnSetupFen();
+  if(setup) pgn += '[SetUp "1"]\n[FEN "' + setup + '"]\n';
   pgn += '\n';
   if(gameMovesAlgebraic.length === 0){ pgn += result + '\n'; }
   else{
+    const st = moveNumberStart(setup);
     let line = '';
     for(let i=0;i<gameMovesAlgebraic.length;i++){
-      const token = (i%2===0 ? (Math.floor(i/2)+1) + '. ' : '') + gameMovesAlgebraic[i];
+      const ply = i + (st.black ? 1 : 0), num = st.num + Math.floor(ply/2);
+      const token = (ply%2===0 ? num + '. ' : i===0 ? num + '... ' : '') + gameMovesAlgebraic[i];
       if(line && line.length + 1 + token.length > 79){ pgn += line + '\n'; line = ''; }
       line += (line ? ' ' : '') + token;
     }

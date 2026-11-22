@@ -39,6 +39,10 @@ const LB_DEFAULTS = {
   // Chess960 challenges too (off until asked for: how Maia plays it has not
   // been measured). Standard chess is always accepted.
   chess960: false,
+  // Games from a set position (Lichess's "From Position"): standard chess from
+  // whatever position the challenger set up, so an ending can be played out
+  // again. On unless turned off: the engines play it as they play any position.
+  fromPosition: true,
 };
 // Lichess's own order, fastest first — a refusal says which way a speed missed.
 const LB_SPEED_ORDER = ['ultraBullet', 'bullet', 'blitz', 'rapid', 'classical', 'correspondence'];
@@ -48,6 +52,7 @@ const LB_REASON_TEXT = {
   timeControl: 'needs a clock', casual: 'casual games only',
   standard: 'standard start position only', variant: 'standard chess only',
   variant960: 'standard chess and Chess960 only',
+  setPosition: 'set position not valid',
   noBot: 'not playing bots', generic: 'declined',
 };
 const LB_STATUS_TEXT = {
@@ -471,9 +476,15 @@ function _lbDeclineReason(c) {
   if (lbGame || lbAccepting || lbStarting) return 'later';
   if (!_lbEnginesReady()) { _lbWarmEngines(); return 'loading'; }
   const v = c.variant && c.variant.key;
-  if (v === 'fromPosition') return 'standard';
+  if (v === 'fromPosition') {
+    if (!s.fromPosition) return 'standard';
+    // Lichess checks the position before it sends the challenge; this checks
+    // the board can set it up too. Lichess has no reason for a bad one, so
+    // the challenger hears "standard" (start position only) for it.
+    if (!_lbSetPositionOk(c.initialFen)) return 'setPosition';
+  }
   if (v === 'chess960' && !s.chess960) return 'variant';
-  if (v !== 'standard' && v !== 'chess960') return 'variant';
+  if (v !== 'standard' && v !== 'chess960' && v !== 'fromPosition') return 'variant';
   if (!c.timeControl || c.timeControl.type !== 'clock') return 'timeControl';
   if (c.speed === 'ultraBullet') return 'tooFast';
   if (!s.speeds[c.speed]) {
@@ -487,6 +498,37 @@ function _lbDeclineReason(c) {
   return null;
 }
 
+// Can the board set up this position? Read here without parseFen, which would
+// set the live game's turn and castling rights: eight full ranks, one king a
+// side, no pawn on a back rank, standard castling letters, and the side not to
+// move not in check.
+function _lbSetPositionOk(fen) {
+  if (typeof fen !== 'string') return false;
+  const f = fen.trim().split(/\s+/);
+  if (f.length < 2 || !/^[wb]$/.test(f[1])) return false;
+  if (f[2] && !/^(-|K?Q?k?q?)$/.test(f[2])) return false;
+  const rows = f[0].split('/');
+  if (rows.length !== 8) return false;
+  const b = {};
+  let wk = 0, bk = 0;
+  for (let r = 0; r < 8; r++) {
+    let c = 0;
+    for (const ch of rows[r]) {
+      if (/[1-8]/.test(ch)) { c += +ch; continue; }
+      if (!/[pnbrqkPNBRQK]/.test(ch) || c > 7) return false;
+      const piece = ch.toUpperCase(), color = ch === piece ? 'w' : 'b';
+      if (piece === 'P' && (r === 0 || r === 7)) return false;
+      if (piece === 'K') { if (color === 'w') wk++; else bk++; }
+      b[r * 8 + c] = { piece, color };
+      c++;
+    }
+    if (c !== 8) return false;
+  }
+  if (wk !== 1 || bk !== 1) return false;
+  try { if (typeof inCheck === 'function' && inCheck(b, f[1] === 'w' ? 'b' : 'w')) return false; } catch (e) { return false; }
+  return true;
+}
+
 async function _lbOnChallenge(c) {
   if (!c || !c.id) return;
   // Our own outgoing challenges come down the same stream.
@@ -498,7 +540,9 @@ async function _lbOnChallenge(c) {
     const why = (reason === 'variant' && lbSettings.chess960) ? 'variant960' : reason;
     lbLog('Declined ' + what + ': ' + (LB_REASON_TEXT[why] || reason));
     // Lichess has no "still loading" reason; "later" is the true answer to them.
-    await _lbPost('/api/challenge/' + c.id + '/decline', 'reason=' + (reason === 'loading' ? 'later' : reason));
+    // Nor one for a position the board can't set up: "standard" is the nearest.
+    const sent = reason === 'loading' ? 'later' : reason === 'setPosition' ? 'standard' : reason;
+    await _lbPost('/api/challenge/' + c.id + '/decline', 'reason=' + sent);
     return;
   }
   lbAccepting = c.id;
@@ -554,6 +598,7 @@ function _lbNewGame(id) {
     claimPending: -1, claimRule: '',   // a draw claim waiting on the bot's turn (_lbCheckClaims)
     oppDrawOpen: false, // the opponent's draw offer is standing
     drawAnswered: false, drawAccepted: false,   // the bot's answer to it
+    viewSet: false,     // the board has been turned to the bot's side for this game
     greeted: false, chatAt: 0,   // the opening line is said; when the last command was answered
     chatHeld: null, chatTimer: null,   // a command that came inside the cooldown, and its timer
     goneTimer: null,
@@ -616,14 +661,24 @@ function _lbOnGameFull(g, full) {
   // A Chess960 game starts from the position Lichess dealt (initialFen), and
   // writes its castles king takes rook — as the board does in Chess960.
   g.chess960 = !!(full.variant && full.variant.key === 'chess960');
+  const setFen = (full.initialFen && full.initialFen !== 'startpos' && full.initialFen !== START) ? full.initialFen : null;
+  g.startFen = null;
   if (g.chess960) {
-    g.startFen = (full.initialFen && full.initialFen !== 'startpos') ? full.initialFen : START;
+    g.startFen = setFen || START;
     const n = (typeof chess960NumberOf === 'function') ? chess960NumberOf(g.startFen) : -1;
     if (!g.boardReady) lbLog('Chess960' + (n >= 0 ? ', position ' + n : ''));
-  } else if (full.initialFen && full.initialFen !== 'startpos' && full.initialFen !== START) {
-    lbLog('This game starts from a set position, which the bridge does not play — aborting');
-    _lbPost('/api/bot/game/' + g.id + '/abort');
-    return;
+  } else if (setFen) {
+    // A set position (From Position): standard chess from there on. The
+    // challenge was only accepted with the setting on, so this is the last
+    // word on a game started some other way.
+    if (!lbSettings.fromPosition || !_lbSetPositionOk(setFen)) {
+      lbLog('This game starts from a set position, which ' +
+        (lbSettings.fromPosition ? 'the board cannot set up' : 'this bot does not play') + ' — aborting');
+      _lbPost('/api/bot/game/' + g.id + '/abort');
+      return;
+    }
+    g.startFen = setFen;
+    if (!g.boardReady) lbLog('From a set position: ' + setFen);
   }
   const moves = _lbMoves(full.state), st = full.state || {};
   // The game's first line on this page: set the board up now.
@@ -1273,10 +1328,18 @@ function _lbBeginLocalGame(g, moves) {
   }
   g.greeted = true;
   lbStarting = true;
-  // The game's start: Lichess's Chess960 position, or the standard one. A
-  // position staged on this page ("Play from here") is not the game's.
+  // The game's start: Lichess's Chess960 position, the challenger's set
+  // position, or the standard one. A position staged on this page ("Play from
+  // here") is not the game's.
   const savedPending = window._pendingStartPos;
-  window._pendingStartPos = g.chess960 ? { fen: g.startFen, sans: [], chess960: true } : null;
+  window._pendingStartPos = !g.startFen ? null
+    : g.chess960 ? { fen: g.startFen, sans: [], chess960: true }
+    : { fen: g.startFen, sans: [] };
+  // Which way round the host's board is drawn. botStart() seats the opponent,
+  // as the page's "human", and resets the view; the host watches from the
+  // bot's side instead, its pieces at the bottom. Once a game: a flip made
+  // during it (either board's ⇅) is kept through a rebuild.
+  const drawn = g.viewSet && typeof boardViewFlipped === 'function' ? boardViewFlipped() : g.color === 'black';
   try {
     botColorPref = humanColor;
     botSelectedTC = g.clock ? 'lichess' : 'untimed';
@@ -1287,6 +1350,8 @@ function _lbBeginLocalGame(g, moves) {
     botSelectedTC = savedTC;
     window._pendingStartPos = savedPending;
   }
+  _lbSetView(drawn);
+  g.viewSet = true;
   g.local = [];
   g.boardReady = true;
   if (moves.length) _lbReplay(g, moves);
@@ -1294,6 +1359,20 @@ function _lbBeginLocalGame(g, moves) {
   const st = document.getElementById('botStatus');
   if (st) st.textContent = 'Lichess · vs ' + _lbWho(g.opponent);
   lbRender();
+}
+
+// Draw the board flipped (Black at the bottom) or not, whatever the seat: the
+// view flip is the difference. Only the view — the seat, whose clock is whose
+// and the colour the bot plays are botStart's and stay as they are.
+function _lbSetView(flipped) {
+  if (typeof boardViewFlipped !== 'function') return;
+  viewFlip = false;
+  viewFlip = boardViewFlipped() !== !!flipped;
+  if (typeof syncBoardOrientation === 'function') syncBoardOrientation();
+  if (typeof syncCommitChipMount === 'function') syncCommitChipMount();
+  if (typeof resizeBoard === 'function') resizeBoard();
+  if (typeof render === 'function') render();
+  if (typeof proSync === 'function') proSync();
 }
 
 // Play the server's moves onto the board without the bot answering them:
@@ -1793,7 +1872,8 @@ function _lbBuildPanel() {
       <label><input type="checkbox" id="lbSp-rapid" onchange="lichessSetSpeed('rapid',this.checked)">Rapid</label>
       <label><input type="checkbox" id="lbSp-classical" onchange="lichessSetSpeed('classical',this.checked)">Classical</label></div>
     <div class="lb-row">
-      <label><input type="checkbox" id="lb960" onchange="lichessSetOpt('chess960',this.checked)">Chess960 too</label></div>
+      <label><input type="checkbox" id="lb960" onchange="lichessSetOpt('chess960',this.checked)">Chess960 too</label>
+      <label><input type="checkbox" id="lbFromPos" onchange="lichessSetOpt('fromPosition',this.checked)">Set positions too</label></div>
     <div class="lb-row"><label><input type="checkbox" id="lbAuto" onchange="lichessSetOpt('auto',this.checked)">Reconnect when this page opens</label></div>
   </div>
   <div class="lb-log" id="lbLog"></div>
@@ -1817,6 +1897,7 @@ function _lbRulesText() {
   const speeds = ['bullet', 'blitz', 'rapid', 'classical'].filter(k => s.speeds[k]);
   if (!speeds.length) return 'nothing — every challenge is declined';
   return 'casual only · ' + speeds.join(', ') + (s.chess960 ? ' · Chess960 too' : '') +
+    (s.fromPosition ? ' · set positions too' : '') +
     (s.bots ? ' · bots too' : ' · no bots');
 }
 
@@ -1872,6 +1953,7 @@ function lbRender() {
   $('lbEditBtn').textContent = p.dataset.edit === '1' ? 'done' : 'edit';
   $('lbBots').checked = !!lbSettings.bots;
   $('lb960').checked = !!lbSettings.chess960;
+  $('lbFromPos').checked = !!lbSettings.fromPosition;
   $('lbAuto').checked = !!lbSettings.auto;
   ['bullet', 'blitz', 'rapid', 'classical'].forEach(k => { $('lbSp-' + k).checked = !!lbSettings.speeds[k]; });
   // Not connected, the panel is only up to show why connecting failed: try
@@ -1939,7 +2021,7 @@ function lichessBuilderState() {
     playing: !!g, opponent: g && g.opponent ? _lbWho(g.opponent) : null,
     nextPending: !!lbNextConfig,
     localGame: !lbWantConnected && typeof _isLiveGame === 'function' && _isLiveGame(),
-    settings: { bots: !!s.bots, chess960: !!s.chess960, speeds: Object.assign({}, s.speeds) },
+    settings: { bots: !!s.bots, chess960: !!s.chess960, fromPosition: !!s.fromPosition, speeds: Object.assign({}, s.speeds) },
   };
 }
 // Tell an open builder, so its Lichess pill and Start button say what is true.
@@ -2011,6 +2093,7 @@ function lichessConnectFromBuilder(o) {
   const st = o.settings || {};
   if ('bots' in st) lbSettings.bots = !!st.bots;
   if ('chess960' in st) lbSettings.chess960 = !!st.chess960;
+  if ('fromPosition' in st) lbSettings.fromPosition = !!st.fromPosition;
   if (st.speeds) Object.keys(lbSettings.speeds).forEach(k => { if (k in st.speeds) lbSettings.speeds[k] = !!st.speeds[k]; });
   if (o.token) lbSettings.token = String(o.token).trim();
   _lbSaveSettings();

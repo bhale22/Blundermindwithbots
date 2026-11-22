@@ -84,6 +84,7 @@ function newChallenge(o) {
     timeControl: o.tc || { type: 'clock', limit: 180, increment: 2 },
     color: o.color || 'random',
   };
+  if (o.initialFen) c.initialFen = o.initialFen;   // From Position: the challenger's setup
   M.challenges[id] = { c, opts: o.opts || {}, declined: null, accepted: false };
   sendEvent({ type: 'challenge', challenge: c });
   return id;
@@ -93,17 +94,19 @@ function newGame(ch) {
   const id = ('gm' + (++seq) + 'abcdefgh').slice(0, 8);
   // A Chess960 challenge is dealt its position here, as Lichess does.
   const is960 = ch.c.variant && ch.c.variant.key === 'chess960';
-  const startFen = is960 ? core.chess960StartFen(ch.opts.sp != null ? ch.opts.sp : Math.floor(Math.random() * 960)) : START;
+  const fromPos = !!(ch.c.variant && ch.c.variant.key === 'fromPosition' && ch.c.initialFen);
+  const startFen = is960 ? core.chess960StartFen(ch.opts.sp != null ? ch.opts.sp : Math.floor(Math.random() * 960))
+    : fromPos ? ch.c.initialFen : START;
   useRules({ chess960: is960, startFen });
-  const bd = core.parseFen(startFen);
+  const bd = core.parseFen(startFen);   // sets the core's turn, castling and ep for it
   const botWhite = ch.c.color === 'black' ? true : ch.c.color === 'white' ? false : Math.random() < 0.5;
   const tc = ch.c.timeControl;
   const g = {
     id, botWhite, rated: ch.c.rated, speed: ch.c.speed, opts: ch.opts, opp: ch.c.challenger || HUMAN,
     clock: { initial: tc.limit * 1000, increment: tc.increment * 1000 },
     wtime: tc.limit * 1000, btime: tc.limit * 1000, lastAt: Date.now(),
-    bd, turn: 'w', cst: { wK: true, wQ: true, bK: true, bQ: true }, ep: -1,
-    chess960: is960, startFen, castles: [],
+    bd, turn: core.turn || 'w', cst: { ...core.castling }, ep: core.epSq,
+    chess960: is960, fromPos, startFen, castles: [],
     moves: [], status: 'started', winner: null,
     wdraw: false, bdraw: false, wtakeback: false, btakeback: false,
     streams: new Set(), oppBusy: false, rejected: false, dropped: false,
@@ -123,9 +126,9 @@ function state(g) {
   return st;
 }
 function full(g) {
-  return { type: 'gameFull', id: g.id, variant: { key: g.chess960 ? 'chess960' : 'standard' }, speed: g.speed, rated: g.rated,
+  return { type: 'gameFull', id: g.id, variant: { key: g.chess960 ? 'chess960' : g.fromPos ? 'fromPosition' : 'standard' }, speed: g.speed, rated: g.rated,
     white: g.botWhite ? BOT : g.opp, black: g.botWhite ? g.opp : BOT,
-    initialFen: g.chess960 ? g.startFen : 'startpos', clock: g.clock, state: state(g) };
+    initialFen: g.chess960 || g.fromPos ? g.startFen : 'startpos', clock: g.clock, state: state(g) };
 }
 function broadcast(g) {
   const st = state(g);
@@ -178,7 +181,7 @@ function play(g, uci) {
 function rebuildTo(g, keep) {
   const wt = g.wtime, bt = g.btime, last = g.lastAt;
   useRules(g);
-  g.bd = core.parseFen(g.startFen || START); g.turn = 'w'; g.cst = { ...core.castling }; g.ep = -1; g.moves = [];
+  g.bd = core.parseFen(g.startFen || START); g.turn = core.turn || 'w'; g.cst = { ...core.castling }; g.ep = core.epSq; g.moves = [];
   for (const u of keep) {
     const from = sqOf(u.slice(0, 2)), to = sqOf(u.slice(2, 4)), p = g.bd[from];
     const ne = core.computeEP(from, to, g.bd);
@@ -618,7 +621,7 @@ const oldSet = await page.evaluate(() => {
 check(!oldSet.rated && !oldSet.casual, 'an old saved rated/casual setting is dropped on load', oldSet);
 const cases = [
   [{ variant: 'chess960' }, 'variant'],
-  [{ variant: 'fromPosition' }, 'standard'],
+  [{ variant: 'fromPosition' }, 'standard'],   // no position given: nothing the board can set up
   [{ speed: 'correspondence', tc: { type: 'correspondence', daysPerTurn: 3 } }, 'timeControl'],
   [{ rated: true }, 'casual'],
   [{ challenger: { id: 'somebot', name: 'SomeBot', title: 'BOT', rating: 2000 } }, 'noBot'],
@@ -656,6 +659,20 @@ await until(() => M.challenges[busy].declined, 5000);
 check(M.challenges[busy].declined === 'later', 'a second challenge mid-game is declined "later"', M.challenges[busy].declined);
 check((await page.evaluate(() => [document.querySelector('#playerBoxW .player-name').textContent, document.querySelector('#playerBoxB .player-name').textContent])).join('|').includes('TestHuman'),
   'the opponent\'s Lichess name is in the human\'s seat');
+// The host watches from the bot's side: the bot plays Black, so Black is at
+// the bottom, its box below the board, the opponent's above.
+const sideOf = () => page.evaluate(() => {
+  const r = id => document.getElementById(id).getBoundingClientRect().top;
+  return { flipped: boardViewFlipped(), botBoxBelow: r('playerBoxB') > r('playerBoxW'),
+    a1AtTop: sqXY(fileRankToSq('a1')).y < SQ * 4, seat: botPlayerColor };
+});
+const side1 = await sideOf();
+check(side1.flipped && side1.botBoxBelow && side1.a1AtTop && side1.seat === 'white',
+  'drawn from the bot\'s side: Black at the bottom with the bot\'s box, the opponent still seated as White', side1);
+// The board's Flip turns it round, and a rebuild (the refused move, the
+// dropped stream, both still to come) keeps the turn.
+await page.evaluate(() => flipPerspective());
+check(!(await page.evaluate(() => boardViewFlipped())), 'the board\'s Flip turns it round while hosting');
 // The board does not take clicks: both sides' moves come from elsewhere.
 await page.evaluate(() => {
   const cv = document.getElementById('cv'), r = cv.getBoundingClientRect();
@@ -685,6 +702,7 @@ check(g1.draws.length >= 1 && ['yes', 'no'].includes(g1.draws[0]), 'answered the
 check(g1.rejected && g1.refused.length >= 1, 'the refused move happened', g1.refused);
 check(g1.dropped, 'the dropped game stream was survived', { dropped: g1.dropped, plies: g1.moves.length });
 check(g1.refused.length === 1, 'nothing but the simulated refusal was refused', g1.refused);
+check(!(await page.evaluate(() => boardViewFlipped())), 'and the rebuilds after it kept the board the way it was turned');
 const pb1 = await pageBoard();
 check(pb1 === placement(g1.bd), 'board matches the server at the end (' + g1.moves.length + ' plies)');
 check(await page.evaluate(() => gameOver), 'page game is over');
@@ -699,6 +717,9 @@ await until(() => M.challenges[c2].gameId, 5000);
 const g2 = M.games[M.challenges[c2].gameId];
 await until(() => g2.moves.length >= 1, 30000, 'first move');
 check(g2.moves.length >= 1 && g2.botPosts[0] === g2.moves[0], 'bot made the first move', g2.moves);
+const side2 = await sideOf();
+check(!side2.flipped && !side2.botBoxBelow && side2.seat === 'black',
+  'a new game starts on the bot\'s side again: it plays White, White at the bottom', side2);
 await until(() => g2.status !== 'started' || (g2.moves.length >= 7 && g2.turn !== botLetter(g2)), 90000);
 await sleep(2000);   // the opponent's clock has run out on the page; the server has not ruled yet
 if (g2.status === 'started') check(await page.evaluate(() => !gameOver), 'the page does not flag the opponent itself');
@@ -712,6 +733,8 @@ console.log('\n5. Game 3: opponent walks away — claim victory');
 const c3 = newChallenge({ color: 'white', opts: { goneAtPly: 4 } });
 await until(() => M.challenges[c3].gameId, 5000);
 const g3 = M.games[M.challenges[c3].gameId];
+await until(() => g3.moves.length >= 1, 30000, 'game 3 under way');
+check((await sideOf()).flipped, 'the bot playing Black again: Black at the bottom again');
 await until(() => g3.status !== 'started', 90000, 'claim');
 check(g3.claims === 1 && g3.status === 'timeout', 'claimed the win', { claims: g3.claims, status: g3.status });
 
@@ -763,6 +786,45 @@ console.log('\n6c. Chess960: accepted only when ticked; Lichess\'s position, cas
   await page.evaluate(() => lichessSetOpt('chess960', false));
   await until(async () => (await lbState()) === 'waiting', 5000);
   // The next game is standard again: section 6t's games check the board against the server.
+}
+
+console.log('\n6p. Set positions: played from the challenger\'s position while ticked');
+{
+  check(await page.evaluate(() => lbSettings.fromPosition === true), 'accepted by default (the setting starts on)');
+  check(/set positions too/.test(await page.textContent('#lbRules')), 'and the panel\'s accept rules say so', await page.textContent('#lbRules'));
+  // A back-rank position, Black (the bot) to move at move 30.
+  const FEN = '6k1/5ppp/8/8/8/8/5PPP/3R2K1 b - - 0 30';
+  const c = newChallenge({ variant: 'fromPosition', initialFen: FEN, color: 'white', opts: { resignAtPly: 12 } });
+  await until(() => M.challenges[c].gameId || M.challenges[c].declined, 5000);
+  check(!!M.challenges[c].gameId, 'a From Position challenge is accepted', M.challenges[c].declined);
+  const g = M.games[M.challenges[c].gameId];
+  await until(() => g && g.moves.length >= 1, 30000, 'the bot\'s first move');
+  check(g.botPosts[0] === g.moves[0], 'Black to move, so the bot moved first, from the set position', { moves: g.moves, posts: g.botPosts });
+  const pp = await page.evaluate(() => ({ start: _gameStartFen, c960: chess960, flipped: boardViewFlipped(),
+    log: lbLogLines.filter(l => /set position/.test(l)).slice(-1)[0] || '' }));
+  check(pp.start === FEN && !pp.c960, 'the page plays standard chess from the challenger\'s FEN', pp);
+  check(pp.flipped, 'drawn from the bot\'s side (Black at the bottom)', pp);
+  check(pp.log.includes(FEN), 'the log names the position', pp.log);
+  await until(() => g.status !== 'started', 120000, 'the set-position game to finish');
+  await sleep(800);
+  check(await pageBoard() === placement(g.bd), 'board matches the server at the end (' + g.moves.length + ' plies)');
+  check(g.refused.length === 0, 'no move of the bot\'s refused', g.refused);
+  const pgn = await page.evaluate(() => buildPgnText().pgn);
+  check(pgn.includes('[SetUp "1"]') && pgn.includes('[FEN "' + FEN + '"]') && /\b30\.\.\./.test(pgn),
+    'its PGN gives the position, numbered from move 30', pgn.slice(0, 400));
+  // A position the board can't set up (two white kings) is declined.
+  const bad = newChallenge({ variant: 'fromPosition', initialFen: '6k1/8/8/8/8/8/8/K5K1 w - - 0 1' });
+  await until(() => M.challenges[bad].declined, 5000);
+  check(M.challenges[bad].declined === 'standard', 'a position the board can\'t set up is declined "standard"', M.challenges[bad].declined);
+  // Unticked, a set position is declined, and the log says why.
+  await page.evaluate(() => lichessSetOpt('fromPosition', false));
+  const off = newChallenge({ variant: 'fromPosition', initialFen: FEN });
+  await until(() => M.challenges[off].declined, 5000);
+  const offLog = await page.evaluate(() => lbLogLines[lbLogLines.length - 1]);
+  check(M.challenges[off].declined === 'standard' && /standard start position only$/.test(offLog),
+    'unticked, it is declined "standard": start position only', { declined: M.challenges[off].declined, log: offLog });
+  await page.evaluate(() => lichessSetOpt('fromPosition', true));
+  await until(async () => (await lbState()) === 'waiting', 5000);
 }
 
 console.log('\n6t. Takebacks: the builder\'s limit answers the opponent');

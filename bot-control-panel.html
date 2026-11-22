@@ -11836,7 +11836,7 @@ function _lbcRender(){
 
   _lbcView = 'connect';
   title.textContent = 'Play on Lichess';
-  const set = s.settings || { bots: false, speeds: { blitz: true, rapid: true, classical: true } };
+  const set = s.settings || { bots: false, fromPosition: true, speeds: { blitz: true, rapid: true, classical: true } };
   const cb = (id, label, on) => '<label><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '>' + label + '</label>';
   const saved = s.tokenSaved && !_lbcNewToken;
   const tokenHtml = saved
@@ -11858,7 +11858,10 @@ function _lbcRender(){
     '<div class="lbc-note" style="margin-top:0;">Casual games only — rated challenges are declined. ' +
       'A bot’s strength can be adjusted from game to game, so it has no rating of its own.</div>' +
     '<div class="lbc-checks">' + cb('lbc-bots', 'From other bots', set.bots) +
-      cb('lbc-960', 'Chess960 too', set.chess960) + '</div>' +
+      cb('lbc-960', 'Chess960 too', set.chess960) +
+      cb('lbc-frompos', 'Set positions too', set.fromPosition !== false) + '</div>' +
+    '<div class="lbc-note">Set positions: the challenger sets up a position on Lichess (an ending, say) ' +
+      'and the game is played from there.</div>' +
     '<div class="lbc-checks">' + ['bullet', 'blitz', 'rapid', 'classical'].map(k =>
       cb('lbc-' + k, k[0].toUpperCase() + k.slice(1), set.speeds && set.speeds[k])).join('') + '</div>' +
     (s.localGame ? '<div class="lbc-warn">The game on the board now will end.</div>' : '') +
@@ -11890,6 +11893,7 @@ function _lbcReadSettings(){
   return {
     bots: on('lbc-bots'),
     chess960: on('lbc-960'),
+    fromPosition: on('lbc-frompos'),
     speeds: { bullet: on('lbc-bullet'), blitz: on('lbc-blitz'), rapid: on('lbc-rapid'), classical: on('lbc-classical') },
   };
 }

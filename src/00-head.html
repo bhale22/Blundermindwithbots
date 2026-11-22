@@ -2618,9 +2618,11 @@ body.pz-eval-on #pzEval{display:block;}
   /* Save is already on the game bar under the board, and Training Tips is one
      tap away in the board-vision panel — so on a phone these two were a second
      copy and a stray, costing ~54px of the height the overlay strip needed for
-     its second row. Desktop keeps both: it has the column to spare. */
+     its second row. Desktop keeps both: it has the column to spare. Flip is
+     on the game bar too (pbFlip). */
   body:not(.pro-mode) #btnTips,
-  body:not(.pro-mode) #btnSavePgn{display:none !important;}
+  body:not(.pro-mode) #btnSavePgn,
+  body:not(.pro-mode) #btnFlip{display:none !important;}
 
   /* -- The pinned strip ---------------------------------------------------
      One line, scrolled horizontally rather than wrapped: a second row would
@@ -4340,6 +4342,10 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <button class="ctrl-btn util-btn" id="btnLoadPgn" onclick="document.getElementById('pgnFileInput').click()">▶ Load</button>
         <input type="file" id="pgnFileInput" accept=".pgn" style="display:none" onchange="loadPgnFile(event)">
         <button class="ctrl-btn util-btn" id="btnSavePgn" onclick="savePgn()">↓ Save</button>
+        <!-- The phone's game bar has had one all along (pbFlip); the Expert
+             board has its own ⇅. Only the view turns: not the colour you play. -->
+        <button class="ctrl-btn util-btn" id="btnFlip" onclick="flipPerspective()"
+                title="Turn the board round. Does not change which colour you are playing.">⇅ Flip</button>
       </div>
       <div class="util-row" style="display:none;"></div>
     </div>

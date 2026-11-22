@@ -85,7 +85,9 @@ function probe() {
 }
 
 // ── Bot files ───────────────────────────────────────────────────────────────
-// { account, bot, saved, site, lichess: { token, bots, speeds, chess960 }, lastBot }
+// { account, bot, saved, site, lichess: { token, bots, speeds, chess960, fromPosition }, lastBot }
+// A file without fromPosition (saved before there was one) takes the page's
+// default, on.
 // lastBot is the page's own record of the bot it plays (bm_lastBot), copied
 // whole, so it restores the way a reload of a desktop host tab does.
 //
@@ -379,7 +381,8 @@ async function setup(name) {
     if (!lichess || !lichess.token || !lastBot || !lastBot.cfg) continue;
     const out = {
       account: s.account, bot: s.bot, saved: new Date().toISOString(), site: SITE,
-      lichess: { token: lichess.token, bots: !!lichess.bots, speeds: lichess.speeds || {}, chess960: !!lichess.chess960 },
+      lichess: { token: lichess.token, bots: !!lichess.bots, speeds: lichess.speeds || {}, chess960: !!lichess.chess960,
+        fromPosition: lichess.fromPosition !== false },
       lastBot,
     };
     const key = JSON.stringify([out.account, out.lichess, out.lastBot]);
