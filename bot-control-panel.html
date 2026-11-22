@@ -3976,6 +3976,22 @@ body.fj .picon{font-weight:500;}
                 <div class="dual-range-labels"><span>← Rare, less-expected moves</span><span>Mainstream, most-expected moves →</span></div>
                 <div class="ctrl-hint" style="margin-top:6px;">The slice of Maia's move distribution the bot may pick from — popularity at this rating, not move quality. Click <span class="hint-link" onclick="openInfoPop('distrange')">ⓘ for details</span>.</div>
                 </div><!-- /move-quality-range -->
+                <!-- Moves checked per turn: a setting of THIS DEVICE, not of the bot
+                     (sfCheckCap in the page, localStorage bm_checkCap; a bot file
+                     carries no part of it). The personality's checks score its
+                     candidates with Stockfish each turn; on a slow computer fewer is
+                     quicker. The engine's measured speed, what checks cost here and
+                     the recommendation come from the page (sfSpeedReport). -->
+                <div id="check-cap-wrap" style="margin-top:12px;">
+                  <div class="dlbl"><span>Moves checked per turn · this device</span></div>
+                  <div class="ctrl" style="flex-wrap:wrap;gap:6px 10px;">
+                    <span class="ctrl-lbl" style="min-width:80px;">Check at most</span>
+                    <select id="sel-check-cap" class="cc-field cc-select" style="width:auto;flex:0 1 190px;order:2;" onchange="onCheckCap(+this.value)"></select>
+                    <button type="button" class="cc-add-btn" id="btn-check-cap-rec" style="display:none;margin-top:0;order:3;" onclick="useRecommendedCheckCap()"></button>
+                  </div>
+                  <div class="ctrl-hint" id="check-cap-speed"></div>
+                  <div class="ctrl-hint">Each turn the personality has Stockfish score its candidate moves: up to 16 for the Budget check, every move the Move Distribution Range lets through under Blind conviction. Fewer is quicker on a slow computer; favorites past the limit are not considered. Saved on this device only, not in the bot. Flounder always checks every legal move.</div>
+                </div>
               </div>
 
             </div>
@@ -11989,6 +12005,70 @@ function _lbcFinish(token, settings){
   host.lichessConnectFromBuilder({ token: token, settings: settings, config: getBotConfig() });
   lbcRefresh();
 }
+// ── Moves checked per turn (this device) ─────────────────────────────────
+// The page owns the setting and the engine's speed (sfCheckCap, sfSpeedReport);
+// this row shows them and sets the one. Kept live while it is on screen: the
+// speed is re-read from every search, and the last check's time with it.
+function _ccapPage() {
+  try {
+    const p = window.parent;
+    return (p && p !== window && typeof p.sfSpeedReport === 'function') ? p : null;
+  } catch (e) { return null; }
+}
+function _ccapSecs(ms) { return ms < 95 ? (ms / 1000).toFixed(2) : (ms / 1000).toFixed(1); }
+let _ccapAsked = false;
+function renderCheckCap() {
+  const sel = document.getElementById('sel-check-cap');
+  if (!sel) return;
+  const p = _ccapPage();
+  const r = p ? p.sfSpeedReport() : null;
+  const lbl = n => n ? n + ' moves' : 'All candidates';
+  const opts = [0].concat((r ? r.choices : [2, 3, 4, 6, 8, 12, 16, 24]).slice().reverse());
+  const cap = r ? r.cap : 0, rec = r ? r.recommended : null;
+  const html = opts.map(n => '<option value="' + n + '"' + (n === cap ? ' selected' : '') + '>' +
+    lbl(n) + (rec === n ? ' (recommended)' : '') + '</option>').join('');
+  if (sel.dataset.html !== html) { sel.innerHTML = html; sel.dataset.html = html; }
+  const btn = document.getElementById('btn-check-cap-rec');
+  if (btn) {
+    const show = rec != null && rec !== cap;
+    btn.style.display = show ? '' : 'none';
+    if (show) btn.textContent = 'Use recommended: ' + (rec ? 'at most ' + rec : 'all');
+  }
+  const sp = document.getElementById('check-cap-speed');
+  if (!sp) return;
+  if (!r || !r.measured) {
+    // Start the engine so its speed is known: any game needs it anyway.
+    if (p && !_ccapAsked && typeof p.sfInit === 'function') {
+      _ccapAsked = true;
+      try { p.sfInit().then(renderCheckCap).catch(() => {}); } catch (e) {}
+    }
+    sp.textContent = p ? 'Measuring this device’s engine speed…' : '';
+    return;
+  }
+  sp.textContent = r.text + '. A check here takes about ' +
+    r.expected.map(e => _ccapSecs(e.ms)).join(' / ') + ' s for ' +
+    r.expected.map(e => e.n).join(' / ') + ' moves.' +
+    (rec == null ? '' : rec ? ' Recommended: at most ' + rec + ', the most it checks inside a desktop’s time limit.'
+                            : ' Recommended: all of them.') +
+    (r.last ? ' Last check: ' + r.last.n + ' moves in ' + _ccapSecs(r.last.ms) + ' s' +
+      (r.last.cut ? ', stopped at its ' + _ccapSecs(r.last.limitMs) + ' s limit.' : '.') : '');
+}
+function onCheckCap(n) {
+  const p = _ccapPage();
+  if (p && typeof p.sfSetCheckCap === 'function') p.sfSetCheckCap(n);
+  renderCheckCap();
+}
+function useRecommendedCheckCap() {
+  const p = _ccapPage(), r = p && p.sfSpeedReport();
+  if (r && r.recommended != null) onCheckCap(r.recommended);
+}
+document.addEventListener('DOMContentLoaded', () => {
+  renderCheckCap();
+  setInterval(() => {
+    const w = document.getElementById('check-cap-wrap');
+    if (w && w.offsetParent) renderCheckCap();
+  }, 2000);
+});
 document.addEventListener('DOMContentLoaded', () => lbcRefresh());
 
 /* ══════════════════════════════════════════════════════════════

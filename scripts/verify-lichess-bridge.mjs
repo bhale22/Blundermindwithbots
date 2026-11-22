@@ -653,6 +653,13 @@ check(!!M.challenges[c1].gameId, 'accepted a casual blitz challenge');
 const g1 = M.games[M.challenges[c1].gameId];
 await until(async () => (await lbState()) === 'playing', 5000);
 check(await lbState() === 'playing', 'panel says playing');
+// The engine's measured speed, and what that means for its checks, in the log
+// as the game starts (sfSpeedLogLine).
+{
+  const sp = await page.evaluate(() => { const i = lbLogLines.findIndex(l => /Game started/.test(l)); return lbLogLines.slice(i, i + 3).join(' | '); });
+  check(/Game started.*\| \d\d:\d\d  Engine speed [\d.]+ ?[Mk]? positions\/s.*Checking 4 \/ 8 \/ 16 \/ 32 moves ≈ .* s here\. Moves checked a turn: all/.test(sp),
+    'the log gives the engine\'s speed as the game starts, and what its checks cost', sp);
+}
 await until(() => g1.moves.length >= 4, 60000, 'four plies');
 const busy = newChallenge({});
 await until(() => M.challenges[busy].declined, 5000);

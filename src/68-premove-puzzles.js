@@ -266,7 +266,8 @@ function pzStart(i, show) {
   const fromMid = same && pzMid && show && (show.mode === 'followup' || show.mode === 'followupAnswer');
   if (!fromMid) { pzFirst = null; pzMid = null; }
   const startFen = fromMid ? pzMid.fen : pzCur.fen;
-  window._pendingStartPos = { fen: startFen, sans: fromMid ? pzMid.sans.slice() : [] };
+  window._pendingStartPos = { fen: startFen, sans: fromMid ? pzMid.sans.slice() : [],
+                              base: fromMid ? pzMid.base : null };
   window._pzStarting = true;
   try { botStart(); } finally { window._pzStarting = false; }
   // botStart can decline — a tab hosting the Lichess bot never starts games
@@ -433,7 +434,7 @@ function pzAfterMove() {
   }
   // The position the follow-up is played from, for Try again.
   if (pzPhase === 'followup' && !pzMid && !humanMoved && !gameOver) {
-    pzMid = { fen: pzFen(), sans: gameMovesAlgebraic.slice() };
+    pzMid = { fen: pzFen(), sans: gameMovesAlgebraic.slice(), base: _pgnSetupFen() };
   }
   if (pzVerdict && !pzVerdict.shown) {
     pzVerdict.shown = true;

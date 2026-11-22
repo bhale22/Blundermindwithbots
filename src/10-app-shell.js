@@ -6,8 +6,11 @@ let replayBaseFen   = null; // FEN the current replay starts from (null = standa
 let _replayHalfmove = 0;    // halfmove clock reconstructed at the current replay position
 let _gameStartFen   = null; // custom starting FEN of the live game (null = standard)
 let _gameStartSans  = [];   // SAN move prefix that led to _gameStartFen (for full-PGN saves)
+let _gameStartBase  = null; // where that prefix starts (null = standard start): a set
+                            // position or a Chess960 deal reviewed, then "Play from here"
 let mpStartFen      = null; // agreed custom start position for the current MP room
 let mpStartSans     = [];
+let mpStartBase     = null;
 let mpChess960      = false; // the room plays Chess960 (mpStartFen is its position)
 
 // ── Bot & SF state — declared first to avoid TDZ errors ─────────────────────
@@ -3664,6 +3667,7 @@ function mpApplyResume(msg) {
   }
   mpStartFen  = (typeof msg.startFen === 'string' && msg.startFen) ? msg.startFen : null;
   mpStartSans = Array.isArray(msg.startSans) ? msg.startSans : [];
+  mpStartBase = (typeof msg.startBase === 'string' && msg.startBase) ? msg.startBase : null;
   mpChess960  = !!msg.chess960 && !!mpStartFen;
 
   mpSetMode('ingame');
@@ -3809,6 +3813,7 @@ function mpHandleMessage(msg) {
       // Custom start position from the host (a "play from here" invite)
       mpStartFen  = (typeof msg.startFen === 'string' && msg.startFen) ? msg.startFen : null;
       mpStartSans = Array.isArray(msg.startSans) ? msg.startSans : [];
+      mpStartBase = (typeof msg.startBase === 'string' && msg.startBase) ? msg.startBase : null;
       mpChess960  = !!msg.chess960 && !!mpStartFen;
       mpSetMode('ingame');
       mpShowStatus('✓ Joined as ' + (msg.role === 'white' ? 'White ♔' : 'Black ♚') + '. Starting…');
@@ -3829,6 +3834,7 @@ function mpHandleMessage(msg) {
       if (typeof msg.startFen === 'string' && msg.startFen) {
         mpStartFen  = msg.startFen;
         mpStartSans = Array.isArray(msg.startSans) ? msg.startSans : [];
+        mpStartBase = (typeof msg.startBase === 'string' && msg.startBase) ? msg.startBase : null;
         mpChess960  = !!msg.chess960;
       }
       mpSetMode('ingame');
@@ -3974,7 +3980,7 @@ function mpPostChallenge() {
   // plays the same one (and a rematch does too, colours swapped).
   mpChess960  = mpVariant === 'chess960';
   mpStartFen  = mpChess960 ? chess960StartFen(chess960RandomNumber()) : null;
-  mpStartSans = [];
+  mpStartSans = []; mpStartBase = null;
   mpConnect(() => {
     if (mpWs && mpWs.readyState === WebSocket.OPEN) {
       const payload = {
@@ -4108,10 +4114,11 @@ function mpCreatePrivate() {
   if (typeof _mpRefreshStartPosBanner === 'function') _mpRefreshStartPosBanner();
   mpStartFen  = sp && sp.fen ? sp.fen : null;
   mpStartSans = sp && sp.sans ? sp.sans.slice() : [];
+  mpStartBase = sp && sp.base && mpStartSans.length ? sp.base : null;
   // A position from a Chess960 game stays one. Otherwise the Variant pill
   // decides, and Chess960 deals a fresh position for the room.
   mpChess960  = sp ? !!sp.chess960 : mpVariant === 'chess960';
-  if (!sp && mpChess960) { mpStartFen = chess960StartFen(chess960RandomNumber()); mpStartSans = []; }
+  if (!sp && mpChess960) { mpStartFen = chess960StartFen(chess960RandomNumber()); mpStartSans = []; mpStartBase = null; }
   mpConnect(() => {
     if (mpWs && mpWs.readyState === WebSocket.OPEN) {
       const payload = {
@@ -4120,7 +4127,10 @@ function mpCreatePrivate() {
         tcBaseMin: mpBaseMin, tcIncSec: mpIncSec,
         hostColor: mpHostColor
       };
-      if (mpStartFen) { payload.startFen = mpStartFen; payload.startSans = mpStartSans; }
+      if (mpStartFen) {
+        payload.startFen = mpStartFen; payload.startSans = mpStartSans;
+        if (mpStartBase) payload.startBase = mpStartBase;
+      }
       if (mpChess960) payload.chess960 = true;
       mpWs.send(JSON.stringify(payload));
     }
@@ -4260,7 +4270,7 @@ function mpLeave(keepBoard) {
   mpRoomId = null; mpRole = null; mpConnected = false;
   mpSeatToken = null;
   mpOriginalRole = null; mpGameCount = 0;
-  mpStartFen = null; mpStartSans = [];   // don't leak a from-position start into the next room
+  mpStartFen = null; mpStartSans = []; mpStartBase = null;   // don't leak a from-position start into the next room
   mpChess960 = false;
   clearInterval(mpLobbyRefreshTimer);
   chatShow(false);
@@ -4297,7 +4307,7 @@ function mpStartGame(tcKey) {
   // From-position room: both clients set up the agreed position (rematches
   // restart from the same position too, with colors swapped as usual)
   if (mpChess960) setChess960(true);
-  if (mpStartFen) applyStartPosition(mpStartFen, mpStartSans);
+  if (mpStartFen) applyStartPosition(mpStartFen, mpStartSans, mpStartBase);
   chatShow(true);
   boardFlipped = (mpRole === 'black');
   viewFlip = false;   // a new seat; "turned round" no longer means anything
@@ -5487,11 +5497,16 @@ function moveNumberStart(fen){
   const f = String(fen).trim().split(/\s+/);
   return { num: Math.max(1, parseInt(f[5], 10) || 1), black: f[1] === 'b' };
 }
-// The start the PGN's [FEN] tag names: a game begun from a bare position.
-// One begun with moves before it ("Play from here") is written from move 1.
+// Where the game's whole move list starts, and so the start the PGN's [FEN]
+// tag names and the review replays from (null = the standard start). A game
+// begun from a bare position starts there. One begun with moves before it
+// ("Play from here") starts where those moves do: move 1 of a normal game, or
+// the set position or Chess960 deal the reviewed game began from. Replaying
+// the earlier moves from the position after them broke the review.
 function _pgnSetupFen(){
-  return (typeof _gameStartFen!=='undefined' && _gameStartFen &&
-          (!_gameStartSans || !_gameStartSans.length)) ? _gameStartFen : null;
+  if(typeof _gameStartFen==='undefined' || !_gameStartFen) return null;
+  if(_gameStartSans && _gameStartSans.length) return _gameStartBase || null;
+  return _gameStartFen;
 }
 
 function buildPgnText(){
@@ -5884,7 +5899,9 @@ function startReplayOfCurrentGame(){
   const liveMp=(typeof mpRoomId!=='undefined'&&mpRoomId&&typeof mpMode!=='undefined'&&mpMode==='ingame'&&!gameOver);
   if(liveBot||liveMp) return;              // only once the game is over
   const moves=gameMovesAlgebraic.slice();
-  const baseFen=_gameStartFen||null;       // from-position games replay from their FEN
+  // From-position games replay from their FEN; "Play from here" games from
+  // where the moves before that point began (_pgnSetupFen).
+  const baseFen=_pgnSetupFen();
   // Read the bot context BEFORE botStop() clears it — the Maia odds panel wants
   // the opponent's own rating and which side the reviewer sat on.
   if(typeof distSetReviewCtx==='function'){
@@ -5930,14 +5947,16 @@ function startReplayOfCurrentGame(){
 // ── Apply a custom starting position to the live game ────────────────────────
 // Shared by bot games and MP games started "from here". Sets the board, the
 // SAN prefix (so notation shows the loaded game so far), and records the
-// start FEN for PGN saves and post-game review.
-function applyStartPosition(fen, sans){
+// start FEN for PGN saves and post-game review. `base` is where the SAN prefix
+// starts (null = the standard start); it means nothing without a prefix.
+function applyStartPosition(fen, sans, base){
   try{
     board=parseFen(fen);                 // sets turn/castling/epSq globals
     halfmoveClock=parseInt(fen.split(' ')[4])||0;
     gameMovesAlgebraic=(sans||[]).slice();
     _gameStartFen=fen;
     _gameStartSans=gameMovesAlgebraic.slice();
+    _gameStartBase=(_gameStartSans.length&&base)?base:null;
     lastMoveFrom=-1;lastMoveTo=-1;
     selSq=-1;legalMoves=[];clearPreview();
     atkMap=buildAtk(board);
@@ -5952,11 +5971,16 @@ function applyStartPosition(fen, sans){
 }
 
 // ── Play from the current replay position ────────────────────────────────────
+// `base`: where the moves before it start, the replay's own start (null = the
+// standard start). The move number counts on from that start's, so a game
+// loaded from move 30 carries on from move 30 plus however far it has got.
 function _replayCurrentPos(){
-  const fullmove=Math.floor(replayIdx/2)+1;
+  const st=moveNumberStart(replayBaseFen);
+  const fullmove=st.num+Math.floor((replayIdx+(st.black?1:0))/2);
   return {
     fen: boardToFen(board,turn,castling,epSq,_replayHalfmove,fullmove),
     sans: replayMoves.slice(0,replayIdx),
+    base: replayBaseFen||null,
     chess960: !!chess960
   };
 }

@@ -822,6 +822,8 @@ async function botStart() {
   // not on every single move (which would actively hurt its play quality).
   if (sfWorker && sfReady) {
     sfWorker.postMessage('ucinewgame');
+    // Clearing it is timed as part of the next search: not a speed reading.
+    if (typeof _sfAfterNewGame !== 'undefined') _sfAfterNewGame = true;
   }
   sfCurrentSkillLevel = -1; // force skill-level to be (re)sent on first move
 
@@ -855,7 +857,7 @@ async function botStart() {
     // A position from a Chess960 game (its review, or a Lichess Chess960
     // game's deal) is played as Chess960: that decides which rooks castle.
     if (sp.chess960) setChess960(true);
-    _customStart = applyStartPosition(sp.fen, sp.sans);
+    _customStart = applyStartPosition(sp.fen, sp.sans, sp.base);
   } else if (botVariantPref === 'chess960' && !window._pzStarting &&
              !(typeof lichessStartingGame === 'function' && lichessStartingGame())) {
     // Chess960: a fresh start position every game, as on Lichess.
@@ -2635,6 +2637,7 @@ function bmSessionSave() {
       startFen: (typeof _gameStartFen !== 'undefined') ? _gameStartFen : null,
       chess960: !!chess960,
       startSans: (typeof _gameStartSans !== 'undefined' && _gameStartSans) ? _gameStartSans.slice() : [],
+      startBase: (typeof _gameStartBase !== 'undefined') ? _gameStartBase : null,
       halfmoveClock: halfmoveClock,
       positionCounts: Object.assign({}, positionCounts),
       flipped: !!boardFlipped,
@@ -2738,6 +2741,7 @@ function bmSessionRestore() {
     lastMoveTo         = (snap.lastMoveTo   != null) ? snap.lastMoveTo   : -1;
     _gameStartFen      = snap.startFen  || null;
     _gameStartSans     = Array.isArray(snap.startSans) ? snap.startSans.slice() : [];
+    _gameStartBase     = (_gameStartSans.length && snap.startBase) || null;
     gameOver = false; gameOverMsg = '';
     promotionPending = null; premoveQueue = [];
     selSq = -1; legalMoves = []; dragFrom = -1; dragMoved = false; hoverSq = -1;

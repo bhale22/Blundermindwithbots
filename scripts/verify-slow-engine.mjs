@@ -74,14 +74,16 @@ async function openPage(sim) {
 }
 
 // Play `n` human moves against a Flounder bot; report each reply's source.
-async function playFlounder(page, n, waitMs) {
-  await page.evaluate(() => {
+// `tc`: a time-control key (TIME_CONTROLS) for a timed game; untimed otherwise.
+async function playFlounder(page, n, waitMs, tc) {
+  await page.evaluate((tc) => {
     botSetTab('sf');
     const el = document.getElementById('flounderElo');
     if (el) el.value = 1200;
     botSetPlayerColor('white');
+    if (tc) botSelectedTC = tc;
     quickBotStart();
-  });
+  }, tc || null);
   await page.waitForTimeout(1500);
   const out = [];
   const script = [['e2','e4'], ['g1','f3'], ['b1','c3'], ['d2','d4'], ['f1','e2']];
@@ -126,17 +128,35 @@ console.log('\n1   Normal speed: nothing changes');
   await ctx.close();
 }
 
-console.log('\n2   A slow engine: the probe runs out of time, Flounder plays from a shallower depth');
+console.log('\n2   A slow engine, untimed: its speed is measured and the probe given the time to finish');
 {
-  // At 25 ms a line the full depth-8 probe of an opening position takes 4-6 s:
-  // inside the old 7 s cap (the code before this fix coped, slowly), but past
-  // the turn's think time, which is now where the probe is cut.
+  // At 25 ms a line the full depth-8 probe of an opening position takes 4-6 s,
+  // past the turn's think time, where the probe used to be cut (to a depth of
+  // 5-7). The engine's start-up search is paced too, so the page measures it
+  // as slow (sfSpeed) and stretches the probe's floor (sfLimitMs): the probe
+  // now finishes, at the depth the ladder was measured at.
   const { page, ctx, errs } = await openPage({ lineMs: 25 });
   const r = await playFlounder(page, 3, 30000);
+  const sp = await page.evaluate(() => ({ text: sfSpeedText(), stretch: sfTimeStretch() }));
+  console.log('       ' + fmt(r) + '  |  ' + sp.text);
+  ok('the bot replied every move', r.every(x => x.replied), fmt(r));
+  ok('the engine is measured as slow, and its limits stretched', sp.stretch > 2, sp.text);
+  ok('the moves are Flounder\'s, at full depth', r.every(x => x.replied && x.src === 'Flounder' && x.depth === null), fmt(r));
+  ok('and fit inside the probe deadline plus think time', r.every(x => x.ms < 12000), fmt(r));
+  ok('no page errors', errs.length === 0, errs.slice(0, 2).join(' | '));
+  await ctx.close();
+}
+
+console.log('\n2b  A slow engine on a 1+0 clock: the stretch stops at the flag ceiling, Flounder plays from a shallower depth');
+{
+  // At 40 ms a line the probe takes ~7-10 s. A tenth of a one-minute clock is
+  // 6 s, so the stretched deadline stops there and the probe is cut.
+  const { page, ctx, errs } = await openPage({ lineMs: 40 });
+  const r = await playFlounder(page, 3, 30000, 'bullet');
   console.log('       ' + fmt(r));
   ok('the bot replied every move', r.every(x => x.replied), fmt(r));
   ok('the moves are still Flounder\'s, from a partial probe', r.every(x => x.replied && x.src === 'Flounder' && x.depth >= 1 && x.depth < 8), fmt(r));
-  ok('and fit inside the probe deadline plus think time', r.every(x => x.ms < 12000), fmt(r));
+  ok('and none took much past a tenth of the clock', r.every(x => x.ms < 8000), fmt(r));
   ok('no page errors', errs.length === 0, errs.slice(0, 2).join(' | '));
   await ctx.close();
 }

@@ -456,7 +456,12 @@ function _lbEnginesReady() {
   return !!sfReady && (!_lbNeedsMaia() || !!_maiaReady);
 }
 function _lbWarmEngines() {
-  try { if (!sfReady) sfInit().catch(() => {}); } catch (e) {}
+  // The engine measures its speed as it starts; the log says what it found.
+  try {
+    if (!sfReady) sfInit().then(() => {
+      if (typeof sfSpeedLogLine === 'function') lbLog(sfSpeedLogLine());
+    }).catch(() => {});
+  } catch (e) {}
   if (_lbNeedsMaia() && !_maiaReady && _maiaStatus !== 'downloading' && _maiaStatus !== 'loading') {
     try { maiaDownloadModel(); } catch (e) {}
   }
@@ -579,6 +584,8 @@ function _lbOnGameStart(g) {
   lbGame = _lbNewGame(id);
   _lbSetState('playing');
   lbLog('Game started: ' + _lbApiBase() + '/' + id);
+  // The engine's speed as it stands now (it is re-read through every game).
+  if (typeof sfSpeedLogLine === 'function' && sfReady) lbLog(sfSpeedLogLine());
   _lbGameLoop(lbGame);
 }
 

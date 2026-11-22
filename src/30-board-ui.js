@@ -2038,7 +2038,7 @@ function resetGame(){
   // restore the game the user just abandoned.
   if(typeof bmSessionClear==='function') bmSessionClear();
   cancelResign();cancelDrawOffer();showRematchBtn(false);clockStop();clockInit(clockControl);
-  lastMoveFrom=-1;lastMoveTo=-1;_gameStartFen=null;_gameStartSans=[];
+  lastMoveFrom=-1;lastMoveTo=-1;_gameStartFen=null;_gameStartSans=[];_gameStartBase=null;
   // Every game starts as standard chess; a Chess960 start turns it back on
   // (setChess960) before applying its position.
   setChess960(false);
@@ -2185,8 +2185,10 @@ function matAdvString(lead, pieces, oppPieces){
 let _variantTagCache = { fen: null, n: -1 };
 function variantTagText(){
   if(typeof chess960==='undefined'||!chess960) return '';
+  // A live game's deal is where its moves start: the position after any moves
+  // a "Play from here" game was given has no number.
   const fen=(typeof inReplay!=='undefined'&&inReplay&&typeof replayBaseFen!=='undefined'&&replayBaseFen)
-    ? replayBaseFen : _gameStartFen;
+    ? replayBaseFen : (_pgnSetupFen()||_gameStartFen);
   if(fen!==_variantTagCache.fen) _variantTagCache={ fen, n: fen ? chess960NumberOf(fen) : -1 };
   return 'Chess960' + (_variantTagCache.n>=0 ? ' · #' + _variantTagCache.n : '');
 }

@@ -916,6 +916,7 @@ function roomStatePayload(room, role) {
     tcIncSec: room.tcIncSec,
     startFen: room.startFen || undefined,
     startSans: room.startSans || undefined,
+    startBase: room.startBase || undefined,
     chess960: room.chess960 || undefined,
     moves: room.moves || [],
     timeW: (typeof room.timeW === 'number') ? room.timeW : undefined,
@@ -1069,6 +1070,11 @@ wss.on('connection', (ws, req) => {
       const startSans = (startFen && Array.isArray(msg.startSans))
         ? msg.startSans.slice(0, 600).map(s => String(s).slice(0, 12))
         : null;
+      // Where those moves start, when not the standard start: a set position
+      // or Chess960 deal the host reviewed before "Play from here".
+      const startBase = (startSans && startSans.length && typeof msg.startBase === 'string' &&
+                         msg.startBase.length <= 120 && /^[\w\/\- ]+$/.test(msg.startBase))
+        ? msg.startBase : null;
       // Host colour preference: white / black / random (resolved here so the
       // assignment is authoritative for both clients).
       const hostRole = msg.hostColor === 'black' ? 'black'
@@ -1089,7 +1095,7 @@ wss.on('connection', (ws, req) => {
         lobby: isLobby,
         tc: msg.tc || 'untimed',
         tcBaseMin, tcIncSec,
-        startFen, startSans,
+        startFen, startSans, startBase,
         // Chess960 only with a position to play it from.
         chess960: chess960 && !!startFen,
         // Authoritative game state, so a reconnecting client can be rebuilt.
@@ -1147,11 +1153,13 @@ wss.on('connection', (ws, req) => {
       ws.send(JSON.stringify({ type: 'joined', code, role: openRole, token: joinToken,
         tc: room.tc, tcBaseMin: room.tcBaseMin, tcIncSec: room.tcIncSec,
         startFen: room.startFen || undefined, startSans: room.startSans || undefined,
+        startBase: room.startBase || undefined,
         chess960: room.chess960 || undefined }));
       if (host && host.readyState === 1) {
         host.send(JSON.stringify({ type: 'opponent_joined',
           tc: room.tc, tcBaseMin: room.tcBaseMin, tcIncSec: room.tcIncSec,
           startFen: room.startFen || undefined, startSans: room.startSans || undefined,
+          startBase: room.startBase || undefined,
           chess960: room.chess960 || undefined }));
       }
 
