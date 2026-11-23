@@ -220,7 +220,7 @@ test('a bot saved before the command list greets as it did, with mirror beside t
 
 test('every greeting fits Lichess\'s 140-character chat line, whatever the bot takes', () => {
   const c = makeCtx();
-  const names = ['cp', 'think', 'temp', 'degrade'];
+  const names = ['cp', 'think', 'temp', 'degrade', 'book'];
   const kinds = [
     { botTab: 'maia3', personality: false },
     { botTab: 'maia3', personality: true },
@@ -228,7 +228,7 @@ test('every greeting fits Lichess\'s 140-character chat line, whatever the bot t
   ];
   const long = { setting: 2400, cp: 300, est: 2775, edge: 'high', think: 15.5, temp: 9.9 };
   let seen = 0;
-  for (let mask = 0; mask < 16; mask++) {
+  for (let mask = 0; mask < 32; mask++) {
     const cmds = names.filter((_, i) => mask & (1 << i));
     for (const k of kinds) {
       c.botTab = k.botTab;
@@ -240,4 +240,63 @@ test('every greeting fits Lichess\'s 140-character chat line, whatever the bot t
     }
   }
   assert.ok(seen > 100);
+});
+
+// ── book: the opening book (Nov 22) ──────────────────────────────────────────
+// Where a bot takes it, the chat decides the bot's book on Lichess: until the
+// opponent asks, on in a Chess960 game (the most common move) and off in a
+// standard one (on, each move as often as it was played).
+
+const M3B = Object.assign({}, M3, { lichessCommands: ['think', 'temp', 'degrade', 'book'] });
+
+test('book on / off / auto, alone or with the rest', () => {
+  const c = makeCtx();
+  assert.deepStrictEqual(parse(c, 'book on'), { book: 'on' });
+  assert.deepStrictEqual(parse(c, 'Book OFF'), { book: 'off' });
+  assert.deepStrictEqual(parse(c, '"book auto"'), { book: 'auto' });
+  assert.strictEqual(parse(c, 'book'), null);
+  assert.strictEqual(parse(c, 'bookworm'), null);
+  assert.deepStrictEqual(parse(c, 'ELO1800 book on think5s'), { elo: 1800, book: 'on', think: 5 });
+  assert.strictEqual(parse(c, 'book on book off'), null, 'one of each per line');
+});
+
+test('book: on in Chess960 and off in standard until asked, only on a bot that takes it', () => {
+  const c = makeCtx();
+  const opp = { id: 'someone' };
+  const run = (cfg, g, choice) => {
+    c.window._lastAppliedBotConfig = cfg;
+    vm.runInContext(choice == null ? 'lbBookChoices.clear()' : 'lbBookChoices.set("someone", ' + choice + ')', c);
+    const asked = c._lbApplyBookChoice(opp, g);
+    return { asked, book: vm.runInContext('botChatBook', c) };
+  };
+  assert.deepStrictEqual(run(M3B, { chess960: true }, null), { asked: undefined, book: true }, 'Chess960: on');
+  assert.deepStrictEqual(run(M3B, { chess960: false }, null), { asked: undefined, book: false }, 'standard: off');
+  assert.deepStrictEqual(run(M3B, { chess960: true }, false), { asked: false, book: false }, 'book off in Chess960');
+  assert.deepStrictEqual(run(M3B, { chess960: false }, true), { asked: true, book: true }, 'book on in standard');
+  assert.deepStrictEqual(run(M3, { chess960: true }, true), { asked: undefined, book: null }, 'a bot without book plays its own');
+  assert.deepStrictEqual(run(M3B, null, true), { asked: undefined, book: null }, 'no game: its own');
+});
+
+test('book in the greeting: what it is now, and that it can be typed', () => {
+  const c = makeCtx();
+  c.window._lastAppliedBotConfig = M3B;
+  vm.runInContext('lbBookChoices.clear()', c);
+  c._lbApplyBookChoice({ id: 'x' }, { chess960: true });
+  const lines = greet(c, M3B, { setting: 1500, cp: 100, est: 1500, edge: null });
+  assert.strictEqual(lines[0], 'ELO set to 1,500 (using Maia 1500), think auto, temp 1, degrade off, book on');
+  assert.ok(lines.some(l => /opening book \(book\)/.test(l)), lines.join(' | '));
+  assert.ok(lines.some(l => /book on\/off/.test(l)), lines.join(' | '));
+  for (const l of lines) assert.ok(l.length <= 140, l.length + ': ' + l);
+  c._lbApplyBookChoice({ id: 'x' }, { chess960: false });
+  assert.match(c._lbStateLine({ setting: 1500, cp: 100, est: 1500, edge: null }), /, book off$/);
+});
+
+test('book in a reply says what on means in this game', () => {
+  const c = makeCtx();
+  const word = g => vm.runInContext('_lbBookWord(' + JSON.stringify(g) + ')', c);
+  c.botChatBook = true;
+  assert.strictEqual(word({ chess960: true }), 'on (the most common Lichess move)');
+  assert.strictEqual(word({ chess960: false }), 'on (Lichess moves, as often as played)');
+  c.botChatBook = false;
+  assert.strictEqual(word({ chess960: true }), 'off');
 });

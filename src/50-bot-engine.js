@@ -2174,6 +2174,28 @@ function sampleFromProbs(moveProbs, temperature) {
 var botChatMaiaTemp = null;
 const CHAT_MAIA_TEMP_MAX = 2;
 
+// The opening book asked for in a Lichess game's chat (book on / off), on a
+// bot that takes it (the bridge's _lbApplyBookChoice): true plays the Lichess
+// opening explorer, false no book, null the bot's own book as built. On, a
+// Chess960 game plays the most common move there, which stays in book longest,
+// and a standard game each move as often as Lichess players chose it (Ben,
+// Nov 22): botBook960Mode and botChatBookStandard. Never part of a bot.
+var botChatBook = null;
+// Is the chat's book on in a standard game?
+function botChatBookStandard() {
+  return botChatBook === true && !(typeof chess960 !== 'undefined' && chess960);
+}
+// A book the chat changed, put into effect on the game under way: the bot's
+// next move asks the explorer (or no longer does). Out of book it finds nothing
+// there and stops again, as a book always does.
+function botApplyChatBookNow() {
+  if (botChatBook == null || typeof botActive === 'undefined' || !botActive ||
+      (typeof gameOver !== 'undefined' && gameOver)) return;
+  const is960 = typeof chess960 !== 'undefined' && !!chess960;
+  mainLineActive = is960 ? botBook960Mode() !== 'off' : botChatBook;
+  if (!preferredOpeningActive) botOpeningMode = mainLineActive ? 'mainline' : 'none';
+}
+
 // Does the personality weigh one move against another? Blind Conviction, a
 // trait that scores moves, a piece value or a custom control. Four traits never
 // score a move, which is why applyMoveAttractors keeps them out of the Budget:
@@ -3890,7 +3912,8 @@ async function botMakeMove() {
         const _od = await openingExplorerFetch(botMoveHistory);
         const _m960 = botBook960Mode();
         lastBotMoveDetail = (_m960 === 'top' ? 'Chess960 book (most common move)'
-                           : _m960 === 'sample' ? 'Chess960 book (sampled)' : 'Book') +
+                           : _m960 === 'sample' ? 'Chess960 book (sampled)'
+                           : botChatBookStandard() ? 'Book (Lichess, sampled)' : 'Book') +
           (_od && _od.opening && _od.opening.name ? ': ' + _od.opening.name : '');
         _explorerConfidence = explorerConfidenceFromData(_od);
         document.getElementById('botStatus').textContent = botOpeningStatusText(_od);

@@ -11506,8 +11506,10 @@ var lbcStrength = [];           // measured [setting, plays like] pairs, setting
 var lbcStrengthText = '';       // ...as typed, kept while it doesn't read
 // The chat commands a matching bot takes besides the rating (the bridge's
 // _lbCommands). A bot saved before there was a choice takes cp, think and temp.
+// "book" (Nov 22): ticked, the chat decides the bot's opening book on Lichess
+// instead of Opening Behavior (the note under the ticks says how).
 var LBC_COMMANDS = [['cp', 'CP Budget (cp)'], ['think', 'Think time (think)'], ['temp', 'Temp (temp)'],
-  ['degrade', 'Time-pressure degradation (degrade)']];
+  ['degrade', 'Time-pressure degradation (degrade)'], ['book', 'Opening book (book)']];
 var LBC_COMMANDS_DEFAULT = ['cp', 'think', 'temp'];
 var lbcCommands = LBC_COMMANDS_DEFAULT.slice();
 let _lbcHelpOpen = false;       // the matching "?" is open (kept across redraws)
@@ -11670,6 +11672,10 @@ function _lbcMatchHtml(){
         '<div class="lbc-checks" id="lbc-cmds">' + LBC_COMMANDS.map(([k, label]) =>
           '<label><input type="checkbox" data-cmd="' + k + '" onchange="lbcCommandsChange()"' +
           (lbcCommands.includes(k) ? ' checked' : '') + '>' + label + '</label>').join('') + '</div>' +
+        '<div class="lbc-note" id="lbc-book-note"' + (lbcCommands.includes('book') ? '' : ' hidden') + '>' +
+          'Opening book: the Lichess opening explorer at the bot’s rating, in place of its Opening Behavior. ' +
+          'Until the challenger types book on or off it is on in Chess960 games (the most common move, which stays in book longest) ' +
+          'and off in standard ones (on, each move as often as it was played).</div>' +
         '<label class="lbc-label" for="lbc-strength">Measured strength (optional)</label>' +
         '<input id="lbc-strength" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. 600=850, 2000=1775, 2600 cp50=2775"' +
           ' value="' + _ccEsc(lbcStrengthText) + '" oninput="lbcStrengthChange()">' +
@@ -11780,6 +11786,8 @@ function lbcHelpToggle(){
 function lbcCommandsChange(){
   lbcCommands = LBC_COMMANDS.map(c => c[0])
     .filter(k => document.querySelector('#lbc-cmds input[data-cmd="' + k + '"]')?.checked);
+  const bn = document.getElementById('lbc-book-note');
+  if (bn) bn.hidden = !lbcCommands.includes('book');
   _lbcRefreshSummary();
 }
 

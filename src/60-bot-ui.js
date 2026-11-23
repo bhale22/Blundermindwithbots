@@ -918,6 +918,15 @@ async function botStart() {
   if (_customStart) preferredOpeningActive = false;
   // No opening sequence is the whole sequence: the Main Line sits it out too.
   mainLineActive = _mlOn && !_noOpening;
+  // A Lichess opponent's "book", on a bot that takes it (botChatBook), is the
+  // Main Line's stage instead: the Lichess explorer, each move as often as it
+  // was played, or no book. The repertoire is the bot's own and stays.
+  if (typeof botChatBook !== 'undefined' && botChatBook != null && !chess960) {
+    mainLineActive = botChatBook;
+    if (!preferredOpeningActive) botOpeningMode = mainLineActive ? 'mainline' : 'none';
+    if (mainLineActive) console.log('[Opening] Book from the Lichess chat: Lichess games at ' +
+      lcRatingParam(botBookRatingElo()) + ', each move as often as played, until fewer than ' + bookMinGames() + ' games');
+  }
   // The engine's book is part of the engine, not of Opening Behavior: the
   // lcsf / maia tabs are "explorer, then engine" by definition, and a blend
   // asks via botEngineBook.
@@ -2312,6 +2321,7 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
   // So is a Maia temperature asked for there.
   botBlendTemp = null;
   botChatMaiaTemp = null;
+  botChatBook = null;
 
   // Draw behaviour + stalemate seeking (desperation)
   // Draws: accept unless more than 200 cp ahead, by default. A config from

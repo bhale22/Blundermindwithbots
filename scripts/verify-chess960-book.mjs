@@ -195,7 +195,19 @@ await f.evaluate(() => applyBotConfig({ type: 'botConfig' }));
 const ui1 = await f.evaluate(() => ({ v: getBotConfig().opening960, sel: document.querySelector('#op-960 .seg-btn.sel').dataset.b960 }));
 ok('a config without the setting shows Off', ui1.v === 'off' && ui1.sel === 'off', { ui0, ui1 });
 await f.evaluate(() => toggleSec('opening'));
-await f.click('#op-960 .seg-btn[data-b960="sample"]');
+// The section expands over 0.45 s and then scrolls itself into view. Playwright's
+// click, which scrolls again on every retry, kept meeting a section header over
+// the button and never landed (Nov 22, with this builder and the one before
+// it). So: wait until the button is what is under its centre, where a person
+// would click it, and click it there.
+await f.waitForFunction(() => {
+  const b = document.querySelector('#op-960 .seg-btn[data-b960="sample"]');
+  b.scrollIntoView({ block: 'center' });
+  const r = b.getBoundingClientRect();
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === b;
+  if (hit) b.click();
+  return hit;
+}, null, { timeout: 5000 });
 const ui2 = await f.evaluate(() => ({
   v: getBotConfig().opening960, aria: document.querySelector('#op-960 [data-b960="sample"]').getAttribute('aria-checked'),
   others: [...document.querySelectorAll('#op-960 .seg-btn.sel')].length, st: document.getElementById('st-opening').textContent,
