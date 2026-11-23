@@ -1130,17 +1130,24 @@ const matchCfg = await fr.evaluate(() => { const c = getBotConfig(); return { on
 check(matchCfg.on === true && matchCfg.off === -200 && /matches each challenger −200 · 1500 if they have none/.test(matchCfg.row),
   'ticking it puts it in the bot config, and the summary says so', matchCfg);
 // The chat commands it takes besides the rating are ticks: cp, think and temp
-// to start (as every bot took before there was a choice), degrade not.
+// to start (as every bot took before there was a choice), degrade and book not.
+// The book's note shows only while book is ticked.
 const cmdsCfg = await fr.evaluate(() => {
   const box = k => document.querySelector('#lbc-cmds input[data-cmd="' + k + '"]');
   const boxes = [...document.querySelectorAll('#lbc-cmds input[data-cmd]')].map(b => b.dataset.cmd + (b.checked ? '+' : '-'));
   const before = getBotConfig().lichessCommands.join();
+  const note = () => !document.getElementById('lbc-book-note').hidden;
+  const noteBefore = note();
+  box('book').click();
+  const noteTicked = note();
+  box('book').click();
   box('degrade').click(); box('cp').click();
   const ticked = getBotConfig().lichessCommands.join(), row = _lbcSummary();
   box('degrade').click(); box('cp').click();
-  return { boxes: boxes.join(' '), before, ticked, row, after: getBotConfig().lichessCommands.join() };
+  return { boxes: boxes.join(' '), before, ticked, row, after: getBotConfig().lichessCommands.join(), noteBefore, noteTicked, noteAfter: note() };
 });
-check(cmdsCfg.boxes === 'cp+ think+ temp+ degrade-' && cmdsCfg.before === 'cp,think,temp' && cmdsCfg.ticked === 'think,temp,degrade' &&
+check(cmdsCfg.boxes === 'cp+ think+ temp+ degrade- book-' && cmdsCfg.before === 'cp,think,temp' && cmdsCfg.ticked === 'think,temp,degrade' &&
+  !cmdsCfg.noteBefore && cmdsCfg.noteTicked && !cmdsCfg.noteAfter &&
   /Chat commands<\/dt><dd>ELO, think, temp, degrade</.test(cmdsCfg.row) && cmdsCfg.after === 'cp,think,temp',
   'the chat commands it takes are ticks in the popup (cp, think and temp to start), and the config and summary follow them', cmdsCfg);
 // Takebacks: 10 a game is one of the builder's own buttons (Blundermind-M3's).
@@ -1638,6 +1645,49 @@ kn = await knobs();
 check(greetOf(ug3) === m3Greet(1100, 'auto', SAYS.maiaTemp, 'off') && kn.chatTemp === null && kn.a === null &&
   kn.mode === 'complexity' && kn.blink === true, 'the next player gets M3 as built', { chat: ug3.chat, kn });
 await endGame(ug3);
+// ── book (Nov 22): the opening book, from the chat ──────────────────────────
+// Ticked, the chat decides the bot's book: until asked, on in a Chess960 game
+// (the explorer's most common move) and off in a standard one (on, each move
+// as often as it was played). Only what is set is checked here: this server's
+// explorer may have no token to ask Lichess with.
+await p2.evaluate(() => { window._lastAppliedBotConfig.lichessCommands = ['think', 'temp', 'degrade', 'book']; });
+const bookNow = () => p2.evaluate(() => ({ book: botChatBook, ml: mainLineActive, m960: botBook960Mode(), std: botChatBookStandard() }));
+const chatOf = g => (g.chat || []).map(l => typeof l === 'string' ? l : l.text);
+const bkUser = { id: 'bookuser', name: 'BookUser', rating: 1700 };
+const bk = await openGame(bkUser);
+await until(() => bk.chat.length >= 4, 8000, 'the greeting');
+let bn = await bookNow();
+const bkGreet = chatOf(bk).slice(0, 4);
+check(/, book off$/.test(bkGreet[0]) && bkGreet.some(l => /opening book \(book\)/.test(l)) && bkGreet.some(l => /book on\/off/.test(l)) &&
+  bkGreet.every(l => l.length <= 140) && bn.book === false && bn.ml === false,
+  'book: a standard game starts without one; the greeting says so, and how to change it', { bkGreet, bn });
+await command(bk, 'book on');
+bn = await bookNow();
+check(lastSaid(bk) === 'Opening book on (Lichess moves, as often as played)' && bn.book === true && bn.std === true,
+  'book on: the Lichess explorer, each move as often as it was played', { said: lastSaid(bk), bn });
+check(await p2.evaluate(() => lbLogLines.some(l => /BookUser \(1700\) asked for book on in the chat: Lichess explorer at .*, each move as often as played, until fewer than \d+ games/.test(l))),
+  'and the host\'s log says what it asks the explorer for');
+await pastCooldown();
+await command(bk, 'book auto');
+bn = await bookNow();
+check(lastSaid(bk) === 'Opening book back to its own, off' && bn.book === false && bn.ml === false,
+  'book auto: back to none, in a standard game', { said: lastSaid(bk), bn });
+await endGame(bk);
+const was960 = await p2.evaluate(() => !!lbSettings.chess960);
+await p2.evaluate(() => lichessSetOpt('chess960', true));
+const bkC9 = newChallenge({ variant: 'chess960', color: 'black', challenger: bkUser, opts: { sp: 3, oppDelayMs: 1500, avoidMateInOne: true } });
+await until(() => M.challenges[bkC9].gameId || M.challenges[bkC9].declined, 5000, 'the Chess960 challenge answered');
+const bk9 = M.games[M.challenges[bkC9].gameId];
+await until(() => bk9 && bk9.moves.length >= 1 && bk9.chat.length >= 4, 60000, 'the Chess960 game under way, greeted');
+bn = await bookNow();
+check(/, book on$/.test(chatOf(bk9)[0]) && bn.book === true && bn.m960 === 'top',
+  'a Chess960 game starts with the book on: the most common move', { greet: chatOf(bk9)[0], bn });
+await command(bk9, 'book off');
+bn = await bookNow();
+check(lastSaid(bk9) === 'Opening book off' && bn.m960 === 'off' && bn.ml === false,
+  'book off: no book from the bot\'s next move', { said: lastSaid(bk9), bn });
+await endGame(bk9);
+await p2.evaluate(w => lichessSetOpt('chess960', w), was960);
 await p2.evaluate(w => { const c = window._lastAppliedBotConfig;
   c.lichessCommands = w.cmds; c.pressureOffA = w.offA; c.behavBlink = w.blink; }, builtM3);
 

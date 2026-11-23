@@ -2263,9 +2263,12 @@ function botBookRatingElo() {
 const EXPLORER_START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 // The Chess960 book (Opening Behavior's Chess960 row): 'off' | 'top' | 'sample',
-// or 'off' in a standard game. See botOpeningConfig.book960.
+// or 'off' in a standard game. See botOpeningConfig.book960. A Lichess
+// opponent's "book" (botChatBook) decides instead where the bot takes it: on is
+// the most common move, which stays in book longest.
 function botBook960Mode() {
   if (typeof chess960 === 'undefined' || !chess960) return 'off';
+  if (typeof botChatBook !== 'undefined' && botChatBook != null) return botChatBook ? 'top' : 'off';
   const m = (typeof botOpeningConfig !== 'undefined' && botOpeningConfig) ? botOpeningConfig.book960 : null;
   return (m === 'top' || m === 'sample') ? m : 'off';
 }
@@ -2273,12 +2276,16 @@ function botBook960Mode() {
 // In a Chess960 game the book is Lichess's 960 games from this game's start
 // position, at the bot's rating: Masters holds no 960 games, and Modern (2020+)
 // is left out, as 960 has too few games to cut by date.
+//
+// A standard game's book asked for in a Lichess chat (botChatBookStandard) is
+// the Lichess explorer too, all years, whatever the Main Line was built with.
 function _openingBookQuery() {
   const cfgBook = (typeof botOpeningConfig !== 'undefined' && botOpeningConfig) || {};
   const is960 = typeof chess960 !== 'undefined' && !!chess960;
+  const chat = typeof botChatBookStandard === 'function' && botChatBookStandard();
   return {
-    src:     (is960 || cfgBook.source === 'lichess') ? 'lichess' : 'masters',
-    since:   is960 ? null : (cfgBook.since || null),       // 'YYYY-MM'
+    src:     (is960 || chat || cfgBook.source === 'lichess') ? 'lichess' : 'masters',
+    since:   (is960 || chat) ? null : (cfgBook.since || null),   // 'YYYY-MM'
     ratings: lcRatingParam(botBookRatingElo()),
     minGames: bookMinGames(),
     startFen: _gameStartFen || EXPLORER_START_FEN,
@@ -2322,10 +2329,12 @@ async function openingExplorerFetch(moveHistory) {
   async function fetchLichess() {
     // Proxied, never called direct — see the /api/lichess route in server.js.
     // 960 asks for the proxy's most moves (20), as a sampled book can play any
-    // of them and the distribution is drawn over what comes back.
+    // of them and the distribution is drawn over what comes back; so does a
+    // standard book sampled for a Lichess chat.
+    const wide = _is960 || (typeof botChatBookStandard === 'function' && botChatBookStandard());
     const url = '/api/lichess?' + (_is960 ? 'variant=chess960&' : '') + where +
                 '&speeds=blitz,rapid,classical&ratings=' + encodeURIComponent(ratings) +
-                '&moves=' + (_is960 ? 20 : 10) + (since ? '&since=' + since : '');
+                '&moves=' + (wide ? 20 : 10) + (since ? '&since=' + since : '');
     const resp = await bookFetch(url);
     if (!resp.ok) throw new Error('lichess explorer ' + resp.status);
     return resp.json();
@@ -2384,8 +2393,11 @@ async function botGetOpeningMove(moveHistory) {
 
   const data = await openingExplorerFetch(moveHistory);
   if (!data || !data.moves || !data.moves.length) return null;
-  // Chess960 "Follow the distribution": each move in proportion to its games.
-  if (mode960 === 'sample') return bookSampleMove(data.moves).uci;
+  // Chess960 "Follow the distribution", or a standard book asked for in a
+  // Lichess chat: each move in proportion to its games.
+  if (mode960 === 'sample' || (typeof botChatBookStandard === 'function' && botChatBookStandard())) {
+    return bookSampleMove(data.moves).uci;
+  }
   return data.moves[0].uci;   // highest game count (openingExplorerFetch sorts)
 }
 

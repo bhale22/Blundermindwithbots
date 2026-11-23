@@ -99,11 +99,18 @@ const lbTempChoices = new Map();
 // touched: degrade moves the rating only (Ben, Nov 20). The curve follows the
 // think time, so with a fixed one it does nothing (_timePressureApplies).
 const lbDegradeChoices = new Map();
+// Opponent id → the opening book (book on / off), kept the same way. Where a
+// bot takes it, the chat decides its book instead of the builder: until they
+// ask, on in a Chess960 game and off in a standard one (Ben, Nov 22). On is the
+// Lichess opening explorer at the bot's rating: in Chess960 the most common
+// move, which stays in book longest; in standard chess each move as often as
+// it was played. "book auto" gives that default back. botChatBook in the engine.
+const lbBookChoices = new Map();
 // The commands a bot takes besides the rating: its own list, ticked in the
 // builder's Lichess popup (cfg.lichessCommands). A bot saved before there was
 // a list takes the three there were then, so Blundermind-01 is as it was.
 // Blundermind-M3, plain Maia (Nov 20): think, temp and degrade.
-const LB_COMMANDS = ['cp', 'think', 'temp', 'degrade'];
+const LB_COMMANDS = ['cp', 'think', 'temp', 'degrade', 'book'];
 const LB_COMMANDS_DEFAULT = ['cp', 'think', 'temp'];
 const LB_CHAT_COOLDOWN_MS = 3000;
 let lbAccepting = null;       // challenge id accepted, its gameStart not yet here
@@ -862,7 +869,7 @@ function _lbReganCurveA(clock, setting, t) {
 // doesn't match.
 function _lbApplyMatchedRating(g) {
   // A bot that doesn't match takes no chat commands, Temp among them.
-  if (!_lbMatching()) { botBlendTemp = null; botChatMaiaTemp = null; return null; }
+  if (!_lbMatching()) { botBlendTemp = null; botChatMaiaTemp = null; botChatBook = null; return null; }
   const cfg = window._lastAppliedBotConfig;
   const { flounder } = _lbEloRange();
   const t = _lbStrengthTable();
@@ -901,8 +908,10 @@ function _lbApplyMatchedRating(g) {
   at.think = _lbApplyThinkChoice(opp);
   at.temp = _lbApplyTempChoice(opp);
   at.degrade = _lbOffers('degrade') && opp && opp.id ? lbDegradeChoices.get(opp.id) : undefined;
+  at.book = _lbApplyBookChoice(opp, g);
   if (opp && !g.matchLogged) {
     g.matchLogged = true;
+    if (at.book != null) lbLog('Opening book ' + (at.book ? 'on' : 'off') + ': ' + opp.name + ' asked for it in the chat');
     if (at.think != null) lbLog('Think time ' + _lbThinkWord(at.think) + ': ' + opp.name + ' asked for it in the chat');
     if (at.temp != null) lbLog('Temp ' + at.temp + ': ' + opp.name + ' asked for it in the chat');
     if (at.degrade != null) lbLog('Time-pressure degradation ' + (at.degrade ? 'on' : 'off') + ': ' + opp.name + ' asked for it in the chat');
@@ -994,6 +1003,24 @@ function _lbTempCaveat(text) {
   return text.length + more.length <= LB_CHAT_MAX ? text + more : text;
 }
 
+// ── The opening book ─────────────────────────────────────────────────────────
+// The book this opponent asked for, or this game's default where the bot takes
+// "book": on in a Chess960 game, off in a standard one. Read from the game
+// itself, as it runs before botStart has set the board's variant. A bot that
+// doesn't take it, or no game, plays its book as built (null). Returns what
+// they asked for, or undefined.
+function _lbApplyBookChoice(opp, g) {
+  botChatBook = null;
+  if (!g || !_lbOffers('book')) return undefined;
+  const asked = opp && opp.id ? lbBookChoices.get(opp.id) : undefined;
+  botChatBook = asked != null ? asked : !!g.chess960;
+  return asked;
+}
+// What the book does, in a reply: "on (the most common Lichess move)".
+const _lbBookWord = g => botChatBook
+  ? 'on (' + (g && g.chess960 ? 'the most common Lichess move' : 'Lichess moves, as often as played') + ')'
+  : 'off';
+
 // ── Time-pressure degradation ────────────────────────────────────────────────
 // Does Curve A run for this opponent? As the opponent asked (degrade), on a
 // bot that takes it, or as the bot was built: its switch on and a curve drawn.
@@ -1069,6 +1096,7 @@ function _lbGreet(g, at) {
 }
 const LB_COMMAND_NAMES = {
   cp: 'centipawn budget (cp)', think: 'Move timing (think)', degrade: 'time-pressure degradation (degrade)',
+  book: 'opening book (book)',
 };
 function _lbGreetLines(at) {
   const { lo, hi } = _lbPerfRange();
@@ -1079,6 +1107,7 @@ function _lbGreetLines(at) {
   if (cmds.includes('cp')) ranges.push('cp ' + LB_CP_MIN + '-' + LB_CP_MAX);
   if (cmds.includes('think')) ranges.push('think 0-' + LB_THINK_MAX_S + 's or auto or mirror');
   if (cmds.includes('degrade')) ranges.push('degrade on/off');
+  if (cmds.includes('book')) ranges.push('book on/off');
   if (cmds.includes('temp')) ranges.push(_lbTempIsMaia()
     ? 'temp 0-' + CHAT_MAIA_TEMP_MAX + ': 0 = Maia\'s top move, 1 = matches Maia\'s odds, ' + CHAT_MAIA_TEMP_MAX + ' = wild'
     : 'Temp 0 (' + _lbTempEngine() + ' top move) - ' + BLEND_TEMP_MAX + ' (personality driven)');
@@ -1119,6 +1148,7 @@ function _lbStateLine(at) {
     s += ', temp ' + (at.temp != null ? at.temp : botBlindConviction ? BLEND_TEMP_MAX : _lbTempIsMaia() ? _lbBuiltMaiaTemp() : 'auto');
   }
   if (cmds.includes('degrade')) s += ', degrade ' + (_lbDegradeOn() ? 'on' : 'off');
+  if (cmds.includes('book')) s += ', book ' + (botChatBook ? 'on' : 'off');
   return s;
 }
 // Posted the instant Lichess started the game, the greeting's first line could
@@ -1161,7 +1191,7 @@ function _lbParseCommand(text) {
   const num = '(\\d{1,2},\\d{3}|\\d{1,5})';
   const part = new RegExp('^(?:elo\\s*' + num + '|' + num + '\\s*elo|cp\\s*(\\d{1,5})|(\\d{1,5})\\s*cp' +
     '|think\\s*(\\d{1,5}(?:\\.\\d+)?)\\s*(?:seconds?|secs?|s)?|think\\s*(auto|mirror)' +
-    '|temp\\s*(\\d{1,5}(?:\\.\\d+)?|\\.\\d+)|temp\\s*(auto)|degrade\\s*(on|off|auto))(?:[\\s,]+|$|(?=[a-z]))', 'i');
+    '|temp\\s*(\\d{1,5}(?:\\.\\d+)?|\\.\\d+)|temp\\s*(auto)|degrade\\s*(on|off|auto)|book\\s*(on|off|auto))(?:[\\s,]+|$|(?=[a-z]))', 'i');
   // The greeting shows each command in quotes ("ELOXXXX"), so quotes typed
   // around one are dropped rather than making it unreadable.
   let rest = String(text || '').replace(/["'“”‘’]/g, '').trim();
@@ -1181,13 +1211,17 @@ function _lbParseCommand(text) {
     } else if (m[9] != null) {
       if (cmd.degrade != null) return null;
       cmd.degrade = m[9].toLowerCase();
+    } else if (m[10] != null) {
+      if (cmd.book != null) return null;
+      cmd.book = m[10].toLowerCase();
     } else {
       if (cmd.temp != null) return null;
       cmd.temp = m[8] ? 'auto' : +m[7];
     }
     rest = rest.slice(m[0].length);
   }
-  return cmd.elo != null || cmd.cp != null || cmd.think != null || cmd.temp != null || cmd.degrade != null ? cmd : null;
+  return cmd.elo != null || cmd.cp != null || cmd.think != null || cmd.temp != null || cmd.degrade != null ||
+    cmd.book != null ? cmd : null;
 }
 function _lbOnChatLine(g, m) {
   const opp = g.opponent;
@@ -1204,7 +1238,8 @@ function _lbOnChatLine(g, m) {
     g.chatHeld = { elo: cmd.elo != null ? cmd.elo : held.elo, cp: cmd.cp != null ? cmd.cp : held.cp,
                    think: cmd.think != null ? cmd.think : held.think,
                    temp: cmd.temp != null ? cmd.temp : held.temp,
-                   degrade: cmd.degrade != null ? cmd.degrade : held.degrade };
+                   degrade: cmd.degrade != null ? cmd.degrade : held.degrade,
+                   book: cmd.book != null ? cmd.book : held.book };
     if (!g.chatTimer) g.chatTimer = setTimeout(() => {
       const w = g.chatHeld;
       g.chatTimer = null; g.chatHeld = null;
@@ -1215,13 +1250,14 @@ function _lbOnChatLine(g, m) {
   _lbChatCommand(g, cmd);
 }
 // What a bot that can't change something says (and its name in a list).
-const LB_CANT = { elo: 'rating', cp: 'CP budget', think: 'think time', temp: 'temp', degrade: 'time-pressure degradation' };
+const LB_CANT = { elo: 'rating', cp: 'CP budget', think: 'think time', temp: 'temp', degrade: 'time-pressure degradation',
+                  book: 'opening book' };
 const _lbCantText = ks => 'This bot\'s ' + ks.map(k => LB_CANT[k]).join(' and ') + ' can\'t be changed.';
 function _lbChatCommand(g, cmd) {
   const opp = g.opponent;
   g.chatAt = Date.now();
   if (!_lbMatching()) {
-    _lbSay(g, _lbCantText([['elo', 'cp', 'think', 'temp', 'degrade'].find(k => cmd[k] != null)]));
+    _lbSay(g, _lbCantText([['elo', 'cp', 'think', 'temp', 'degrade', 'book'].find(k => cmd[k] != null)]));
     return;
   }
   // What this bot doesn't take is left out; the reply says so.
@@ -1246,6 +1282,8 @@ function _lbChatCommand(g, cmd) {
   }
   if (cmd.degrade === 'auto') lbDegradeChoices.delete(opp.id);
   else if (cmd.degrade != null) lbDegradeChoices.set(opp.id, cmd.degrade === 'on');
+  if (cmd.book === 'auto') lbBookChoices.delete(opp.id);
+  else if (cmd.book != null) lbBookChoices.set(opp.id, cmd.book === 'on');
   let cp = null, cpEdge = null;
   if (cmd.elo != null) {
     lbRatingChoices.set(opp.id, cmd.elo);
@@ -1295,6 +1333,17 @@ function _lbChatCommand(g, cmd) {
     lbLog(_lbWho(opp) + ' asked for degrade ' + cmd.degrade + ' in the chat: Curve A ' +
       (botPressureCurveA ? 'on, Regan model for this clock' : 'off') + (note ? ', but the think time is fixed' : ''));
     said = said ? said + ', degrade ' + word + note : 'Time-pressure degradation ' + word + note;
+  }
+  if (cmd.book != null) {
+    // This game too, from the bot's next move: a book is only ever its
+    // opening, so a choice kept for the next game would come too late.
+    botApplyChatBookNow();
+    const word = cmd.book === 'auto' ? 'back to its own, ' + _lbBookWord(g) : _lbBookWord(g);
+    lbLog(_lbWho(opp) + ' asked for book ' + cmd.book + ' in the chat: ' + (botChatBook
+      ? 'Lichess explorer at ' + lcRatingParam(botBookRatingElo()) + ', ' +
+        (g.chess960 ? 'the most common move' : 'each move as often as played') + ', until fewer than ' + bookMinGames() + ' games'
+      : 'no opening book'));
+    said = said ? said + ', book ' + word : 'Opening book ' + word;
   }
   // Both chats: what the bot plays at is for spectators too. A reply that
   // gives a rating or a Temp says when the rating wasn't measured at this Temp.
