@@ -295,6 +295,51 @@ logBoost += v &times; scale &times; tanh( (volatility(move) &minus; average vola
   </div>
 
   <div class="a">
+    <h3>Confounder &middot; Simplifier</h3>
+    <p class="poles">&minus;5 Simplifier &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Confounder +5</p>
+    <p>
+      Scores a move by how hard it makes the opponent's next choice: how many replies look
+      playable to them, as Maia sees the position from their side at the bot's rating. In a
+      study of Lichess games (Nov 2026) Maia's entropy tracked how long people thought better
+      than anything else measured before the move; they also slip more when many moves look
+      alike. A Confounder heads for those positions; a Simplifier leaves one obvious reply.
+    </p>
+    <span class="f">entropy(after) = &minus;&Sigma; p &middot; ln p over Maia's moves for the opponent
+
+logBoost += v &times; scale &times; tanh( (entropy(after) &minus; average over the candidates) / 0.5 )</span>
+    <p class="when">
+      <b>Applies to:</b> every move of the bot's own, on any engine, when the Maia 3 model is
+      loaded (a premove scores it neutral). One batched Maia look at the positions the most
+      popular candidates leave &mdash; until 90% of the distribution, at most 8 &mdash; costs about
+      0.1&nbsp;s a position on a desktop. The others, and moves that end the game, score neutral.
+    </p>
+  </div>
+
+  <div class="a">
+    <h3>Sharp &middot; Drawish</h3>
+    <p class="poles">&minus;5 Drawish &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Sharp +5</p>
+    <p>
+      Scores a move by Maia's chance that the game ends drawn from the position it leaves.
+      Maia's value head predicts how games between players of this rating turn out: draws are
+      rare in a club middlegame (2&ndash;5%) and common in a level ending, and likelier the higher
+      the rating. A Sharp bot heads for lines unlikely to be drawn; a Drawish one for lines
+      that peter out.
+    </p>
+    <span class="f">logit(d) = ln( d / (1 &minus; d) ), d = Maia's draw chance after the move
+
+logBoost += v &times; scale &times; tanh( (average logit over the candidates &minus; logit(after)) / 0.1 )</span>
+    <p class="note" style="margin:9px 0 0">
+      Between the moves of one position the draw chance differs only a little &mdash; about 7%
+      of itself (2.3% against 2.5%) &mdash; which is why it is compared as log-odds and scaled to
+      that gap. So it steers gently, move after move: which exchanges to make, which endings to
+      head for. Measured Nov 2026 on ten positions at four ratings.
+    </p>
+    <p class="when">
+      <b>Applies to:</b> as Confounder, from the same Maia look.
+    </p>
+  </div>
+
+  <div class="a">
     <h3>Pawn grabber &middot; Principled</h3>
     <p class="poles">&minus;5 Principled &nbsp;&larr;&nbsp; 0 &nbsp;&rarr;&nbsp; Pawn grabber +5</p>
     <p>
@@ -408,7 +453,7 @@ between the two, it does nothing</span>
     <span class="f">thinkTime &times;= ( 1 &minus; v &times; 0.15 )</span>
     <p class="when">
       <b>Applies to:</b> the clock, not the move. At +5 the bot moves in a quarter of its
-      normal time; at &minus;5 it takes nearly twice as long. <b>Complexity-scaled timing
+      normal time; at &minus;5 it takes nearly twice as long. <b>Entropy-scaled timing
       only</b> &mdash; Fixed interval, Mirror user and Instantaneous set the pace themselves,
       and the builder greys this control out under them.
     </p>
@@ -460,7 +505,7 @@ multiplier = 1 + 0.3 &times; v     for v &gt; 0   (+5 &rarr; 2.5)
 
 temperature = base + fraction &times; multiplier &times; (ceiling &minus; base)</span>
     <p class="when">
-      <b>Applies to:</b> timed games where think time can really run short &mdash; Complexity-scaled
+      <b>Applies to:</b> timed games where think time can really run short &mdash; Entropy-scaled
       timing, which budgets from the clock, or Mirror user, which plays at your pace and so
       speeds up (and cracks) when you do &mdash; with the temperature curve switched on. Under a
       Fixed or Instantaneous pace there is no time pressure and it does nothing. It takes no

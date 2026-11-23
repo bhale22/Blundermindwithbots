@@ -123,7 +123,7 @@ console.log('\nOverview on the landing');
   ok('and nothing onto the bare pro board', !shown.gos.some(g => /Go to Build-A-Bot pro board/.test(g)),
      JSON.stringify(shown.gos));
   ok('and a tour of each board', shown.tours.length === 2 &&
-     /tour of Blundermind visualizations/i.test(shown.tours[0]) && /tour of the pro board/i.test(shown.tours[1]),
+     /tour of Blundermind visualizations/i.test(shown.tours[0]) && /tour of the Plain board/i.test(shown.tours[1]),
      JSON.stringify(shown.tours));
 
   await page.click('.bmo-back');
@@ -251,7 +251,7 @@ console.log('\nBoard tour outro → offers the bot tour');
   ok('step panel is swapped out', o.panel === 'none', o.panel);
   ok('it offers the bot builder', /bot builder/i.test(o.bot), o.bot);
   // Finished the Visualization tour, so the board on offer is the Expert one.
-  ok('it also offers the OTHER board', /expert board/i.test(o.board), o.board);
+  ok('it also offers the OTHER board', /plain board/i.test(o.board), o.board);
 
   // Restarting must restore the step panel, not leave the outro up.
   await page.evaluate(() => startTour());
@@ -307,7 +307,7 @@ console.log('\nBot tour outro → hands back across the frame');
   ok('its step panel is swapped out', o.panel === 'none', o.panel);
   ok('it offers BOTH boards', o.ctas.length === 2, JSON.stringify(o.ctas));
   ok('one is Visualization', /visualization/i.test(o.ctas.join(' ')), JSON.stringify(o.ctas));
-  ok('one is Expert', /expert/i.test(o.ctas.join(' ')), JSON.stringify(o.ctas));
+  ok('one is Plain (once Expert, Nov 2026)', /plain/i.test(o.ctas.join(' ')), JSON.stringify(o.ctas));
 
   // Take the Expert one — it has to switch shells, or its steps get filtered out.
   await f.click('#btOutro .bt-next:nth-of-type(2)');

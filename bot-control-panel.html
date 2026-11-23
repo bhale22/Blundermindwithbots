@@ -3418,7 +3418,7 @@ body.fj .picon{font-weight:500;}
         </button>
         <button type="button" class="qsd-opt" data-tm="complexity" onclick="qsTimingPick('complexity')">
           <span class="qsd-dot"></span>
-          <span class="qsd-text"><span class="qsd-name">Complexity scaled</span><span class="qsd-desc">Quick on easy moves, longer on hard ones</span></span>
+          <span class="qsd-text"><span class="qsd-name">Entropy scaled</span><span class="qsd-desc">Thinks like a person: quick on obvious moves, longer when many look playable</span></span>
         </button>
         <button type="button" class="qsd-more" onclick="qsOpenSection('timing')">Open time control &amp; premove panel ▸</button>
       </div>
@@ -4224,16 +4224,16 @@ body.fj .picon{font-weight:500;}
               </div>
             </div>
 
-            <!-- Complexity scaled — the biggest drawer, last in the stack so
+            <!-- Entropy scaled — the biggest drawer, last in the stack so
                  opening it pushes nothing down -->
             <div class="mode-block" id="tb-complexity">
-              <div class="mcard" data-g="timing" data-v="Complexity-scaled" onclick="selMode(this,'st-timing');showTimingCtrl('complexity')"><div class="mdot"></div><div class="mname">Complexity scaled</div><div class="mdesc">Scales with position complexity</div></div>
+              <div class="mcard" data-g="timing" data-v="Entropy-scaled" onclick="selMode(this,'st-timing');showTimingCtrl('complexity')"><div class="mdot"></div><div class="mname">Entropy scaled</div><div class="mdesc">Thinks the way people do</div></div>
               <div class="mode-ctrl drawer" id="timing-complexity-ctrl">
                 <!-- Where the AVERAGE comes from. The clock is the default: the
                      bot budgets like a player does, time left over moves left,
                      so time pressure is real rather than a fixed pace mistaken
                      for it. Fixed seconds is the older behaviour. -->
-                <div class="ctrl-lbl" style="margin-bottom:5px;">Average think time</div>
+                <div class="ctrl-lbl" style="margin-bottom:5px;">Typical think time</div>
                 <div class="seg-row" id="cplx-base-mode" style="margin-bottom:8px;">
                   <div class="seg-btn sel" data-v="clock" onclick="setCplxBaseMode('clock')">From the clock</div>
                   <div class="seg-btn"     data-v="fixed" onclick="setCplxBaseMode('fixed')">Fixed seconds</div>
@@ -4250,19 +4250,18 @@ body.fj .picon{font-weight:500;}
                     <input type="range" id="r-cplx-base" min="0.5" max="15" value="3" step="0.5" oninput="sv(this,'v-cplx-base',v=>v+'s');updateQsThinkTime()">
                     <span class="ctrl-val" id="v-cplx-base">3s</span>
                   </div>
-                  <div class="ctrl-hint" id="cplx-fixed-hint" style="margin-bottom:8px;">Think time for a position of average complexity. Simple = faster; complex = slower.</div>
+                  <div class="ctrl-hint" id="cplx-fixed-hint" style="margin-bottom:8px;">A typical think, for a position with an average number of playable moves. Fewer playable moves = faster; more = slower.</div>
                 </div>
+                <!-- One dial for the whole mode: how the bot's thinks sit against a
+                     typical person's (botThinkPace, × 2^(−pace)). Everything else in
+                     the mode is fitted to people's own think times (BOT_ENTROPY_FIT in
+                     src/50-bot-engine.js), so there are no multipliers to set. -->
                 <div class="ctrl">
-                  <span class="ctrl-lbl">Min multiplier</span>
-                  <input type="range" id="r-cplx-min" min="0.1" max="1" value="0.4" step="0.1" oninput="sv(this,'v-cplx-min',v=>v+'×')">
-                  <span class="ctrl-val" id="v-cplx-min">0.4×</span>
+                  <span class="ctrl-lbl">Pace</span>
+                  <input type="range" id="r-think-pace" min="-1" max="1" value="0" step="0.1" aria-label="Pace: slower to the left, faster to the right" oninput="syncThinkPace(this.value)">
+                  <span class="ctrl-val" id="v-think-pace">Typical</span>
                 </div>
-                <div class="ctrl">
-                  <span class="ctrl-lbl">Max multiplier</span>
-                  <input type="range" id="r-cplx-max" min="1" max="6" value="2.5" step="0.5" oninput="sv(this,'v-cplx-max',v=>v+'×')">
-                  <span class="ctrl-val" id="v-cplx-max">2.5×</span>
-                </div>
-                <div class="ctrl-hint">Multipliers on the average: <strong>Min</strong> for obvious moves, <strong>1×</strong> for a typical position, <strong>Max</strong> for highly complex ones.</div>
+                <div class="ctrl-hint">Slower ◂ ▸ Faster: from twice as long as a typical person to half as long. Each think still follows the game the way people's do: longer when more moves look playable, longer over a move the bot was less likely to choose, most of the clock spent around moves 15–25 — and as uneven from one move to the next as a person's.</div>
               </div>
             </div>
 
@@ -4519,7 +4518,7 @@ body.fj .picon{font-weight:500;}
             <span style="color:var(--amber);">▸ ELO reduction</span> — Full credit to Professor Regan for his work, full blame to me for extrapolating his data-based findings based on full games under different time controls to this unsubstantiated estimation of ELO drop for individual moves under different time constraints.  
             Maia is called at a lower ELO as think time shrinks under time pressure: full ELO at the time control’s nominal pace (base/60 + increment seconds per move), degrading below it following the curve shown above. Every point is draggable if you want a shape different from the formula, and <strong>Match Regan model</strong> puts them all back on it — the Max ELO drop slider caps how deep the curve goes, so at its default the curve stops short of the model in faster time controls<br>
             <span style="color:#5dade2;">▸ Temperature escalation</span> — ELO stays fixed but sampling temperature rises as think time shrinks, flattening Maia's move probabilities toward uniform without ever reordering them: a near-forced move stays the near-certain pick, while a genuine toss-up becomes far less predictable (instinctive, less creative play — typical of a strong player with no time to calculate). A quick engine check ensures a degraded pick never improves on Maia's top choice. How far up the curve the bot actually goes is set by <strong>Calm ↔ Panicky</strong> in Personality: at 0 it follows the curve as drawn (mild by default — Max temp 2), toward Calm it rises less, fully Calm leaves the temperature untouched, and fully Panicky rises 2.5× as fast.<br>
-            <span style="color:var(--amber);">▸ Only when time is really short</span> — both curves describe a bot being forced to move faster than it would like. With <strong>Fixed interval</strong> or <strong>Instantaneous</strong> timing the pace is a number you set, not something the clock forced, so neither curve runs. <strong>Complexity scaled</strong> (From the clock) budgets from the clock and uses them; so does <strong>Mirror user</strong>, which plays at your pace — when you speed up under time pressure it speeds up with you, and degrades the way you do. Premoves are worked out while the opponent thinks, and play at the rating and temperature these curves give for 5 s.<br>
+            <span style="color:var(--amber);">▸ Only when time is really short</span> — both curves describe a bot being forced to move faster than it would like. With <strong>Fixed interval</strong> or <strong>Instantaneous</strong> timing the pace is a number you set, not something the clock forced, so neither curve runs. <strong>Entropy scaled</strong> (From the clock) budgets from the clock and uses them; so does <strong>Mirror user</strong>, which plays at your pace — when you speed up under time pressure it speeds up with you, and degrades the way you do. Premoves are worked out while the opponent thinks, and play at the rating and temperature these curves give for 5 s.<br>
             Each curve has its own <strong>ON/OFF</strong> toggle next to its title, so you can run either mechanism alone, both together, or switch both off for constant strength regardless of clock.
           </div>
         </div>
@@ -4557,7 +4556,7 @@ body.fj .picon{font-weight:500;}
               </div>
               <div style="padding:0 0 12px 8px;">
                 <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">THINK TIME — calculated first, drives everything downstream</div>
-                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Think time per move is computed before the engine is queried. It combines the timing mode (pace, complexity-scaled, fixed, mirror), the <span style="color:var(--amber);">Hustle</span> attractor (fast +5 → slow −5 multiplier on base time), clock-pressure shortcuts (weaponizer, clock-mirror), and a ±20% jitter. This produces an <em>actual think time in seconds</em> that is then fed into both degradation curves — not a clock average. A hustler thinking 0.3 s sees heavy degradation; an overthinker thinking 12 s sees almost none.</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Think time per move is computed before the engine is queried. It combines the timing mode (pace, entropy-scaled, fixed, mirror), the <span style="color:var(--amber);">Hustle</span> attractor (fast +5 → slow −5 multiplier on base time), clock-pressure shortcuts (weaponizer, clock-mirror), and a ±20% jitter (under Entropy scaled, the spread measured in people's own think times instead). This produces an <em>actual think time in seconds</em> that is then fed into both degradation curves — not a clock average. A hustler thinking 0.3 s sees heavy degradation; an overthinker thinking 12 s sees almost none.</div>
               </div>
             </div>
 
@@ -4663,7 +4662,7 @@ body.fj .picon{font-weight:500;}
               <div><span style="color:var(--amber);">2 · Instantaneous mode</span> — returns 0.</div>
               <div><span style="color:var(--amber);">3 · Time Weaponizer</span> — opponent under the trigger: play at the minimum move time.</div>
               <div><span style="color:var(--amber);">4 · Move blink</span> — near-forced position (entropy &lt; 0.5): 200–500&nbsp;ms.</div>
-              <div><span style="color:var(--amber);">5 · Timing mode</span> — fixed / mirror / complexity-scaled / pace, then the human modifiers, familiarity decay and jitter.</div>
+              <div><span style="color:var(--amber);">5 · Timing mode</span> — fixed / mirror / entropy-scaled / pace, then the human modifiers, familiarity decay and jitter.</div>
             </div>
             <div style="margin-top:8px;">Because blink sits <em>above</em> the mode, leaving it on with <strong>Fixed interval</strong> would let obvious recaptures ignore the duration you set — so selecting Fixed switches blink off and marks the row. You can switch it back on if you want that behaviour.</div>
           </div>
@@ -4862,6 +4861,8 @@ const TEMP_PRESETS = [
 // mechanism that is not running is worse than none.
 const ATTRACTOR_DESCS = {
   tension:    `How much contact there is between the two armies — every piece counted once per enemy attacker bearing on it — in the position the move leaves behind. <code>tanh((tension(after) − tension(before)) / 4)</code>. Tension seeker tangles the board; Defuser untangles it.`,
+  entropy:    `How many replies the opponent has to choose between after the move, as Maia sees it at the bot's rating: its entropy there, against the other candidates. <code>tanh((entropy(after) − average) / 0.5 nats)</code>. People think longer, and slip more, when many moves look playable. Confounder leaves them a hard choice; Simplifier leaves one obvious reply. Reads the Maia 3 model whatever the engine, about 0.1 s a candidate on a desktop, for the most popular candidates up to 8.`,
+  sharpness:  `Maia's chance that the game ends in a draw from the position the move leaves, against the other candidates, as log-odds. <code>tanh((average − logit(draw after)) / 0.1)</code>. Between the moves of one position Maia's draw chance differs only a little, so this steers gently, move after move — most in endings and at higher ratings, where draws are likelier. Sharp heads for lines unlikely to be drawn; Drawish for ones that peter out. Reads the Maia 3 model, as Confounder does (one look serves both).`,
   complexity: `Whether the position after the move is hard to judge: how much the engine keeps changing its mind about that move as it searches deeper, against the other candidates. <code>tanh((volatility(move) − average) / 25)</code>. Chaos agent heads for murky positions; Clarity for clear ones.`,
   compwin:    `Consulted only once the game has a direction (engine eval beyond ±50 cp), and it adjusts temperature rather than scoring moves. Front-runner complicates when ahead and plays safe when behind; Swindler converts cleanly when ahead and muddies the water when behind. <code>T × exp(±v × 0.08 × tanh((complexity − 0.5) × 4))</code>. Takes no share of the CP Budget.`,
   spacecadet: `A weak square is an empty square the bot attacks zero times; the centre and the squares in front of a castled king count 1.5×. <code>tanh((weak(before) − weak(after)) / 4)</code>. Space cadet takes squares over; Space waster cedes them for other priorities.`,
@@ -4869,9 +4870,9 @@ const ATTRACTOR_DESCS = {
   gambito:    `Opening only (first 20 plies). Boosts the next move of a known gambit line (an ECO name containing “gambit”); without the ECO data, a pawn pushed to a square the opponent attacks and the bot does not defend. Gambit shy suppresses the same moves.`,
   trade:      `Captures, and moves that attack enemy pieces — never more for a threat than for a capture — leaning harder into exchanges when ahead on material and warier when behind: <code>context = 1 + 0.6 × tanh(material balance / 4)</code>. Trade seeker exchanges; Trade avoider keeps the pieces on.`,
   structure:  `The bot's pawn formation as a penalty count — islands + doubled + isolated + unconnected pawns — scored on its own pawn moves. <code>tanh(penalty(before) − penalty(after))</code>. Rigid keeps the pawns holding hands; Loose breaks formation.`,
-  hustle:     `Pure tempo: how long the bot sits before moving, <code>think × (1 − v × 0.15)</code>. Only Complexity-scaled timing reads it — Fixed, Mirror and Instantaneous set the pace themselves. Takes no share of the CP Budget.`,
+  hustle:     `Pure tempo: how long the bot sits before moving, <code>think × (1 − v × 0.15)</code>. Only Entropy-scaled timing reads it — Fixed, Mirror and Instantaneous set the pace themselves. Takes no share of the CP Budget.`,
   luck:       `Slides the Move Distribution Range band by <code>v × 4</code> percentage points. Bad day (positive) works from further down the popularity list; Good day (negative) stays near the top. Popularity distributions only — Maia and the opening book. Takes no share of the CP Budget.`,
-  pressure:   `How far the temperature curve in Time Pressure climbs as think time runs out. Fully Calm leaves temperature untouched by time pressure, 0 follows the curve as drawn, fully Panicky climbs 2.5× as fast. Only when time can really run short — Complexity-scaled or Mirror user timing, not a Fixed or Instantaneous pace. Takes no share of the CP Budget.`,
+  pressure:   `How far the temperature curve in Time Pressure climbs as think time runs out. Fully Calm leaves temperature untouched by time pressure, 0 follows the curve as drawn, fully Panicky climbs 2.5× as fast. Only when time can really run short — Entropy-scaled or Mirror user timing, not a Fixed or Instantaneous pace. Takes no share of the CP Budget.`,
   attacker:   `Captures first, then attacks. Every capture outranks every quiet move; among quiet moves, the one that adds the most attacks on enemy pieces wins. Capture: <code>0.75 + 0.25 × tanh(Δattacks / 2)</code>; quiet move: <code>0.5 × tanh(Δattacks / 2)</code> — a capture keeps credit for the attacks on the piece it took. Attacker takes and threatens; Peacemaker avoids both (for calm that still trades, use Tension → Defuser).`,
   grabber:    `Materialism weighted by what is won, and drawn to the capture it probably shouldn't make — landing on a square the opponent still attacks. <code>tanh((captured value + 2 × poisoned) / 3)</code>. Still capped by the CP Budget.`,
   kingsafety: `Enemy attacks on the nine squares around the bot's own king, before and after the move. <code>tanh(danger(before) − danger(after))</code>. King safety keeps the king tucked up; Bravado leaves it airy.`,
@@ -4890,6 +4891,8 @@ const PIECE_DESCS = {
 const ATTRACTORS = [
   { id:'tension',    labelLeft:'Defuser',             labelRight:'Tension seeker',        default:0 },
   { id:'complexity', labelLeft:'Clarity',             labelRight:'Chaos agent',           default:0 },
+  { id:'entropy',    labelLeft:'Simplifier',          labelRight:'Confounder',            default:0 },
+  { id:'sharpness',  labelLeft:'Drawish',             labelRight:'Sharp',                 default:0 },
   { id:'compwin',    labelLeft:'Swindler',            labelRight:'Front-runner',          default:0 },
   { id:'spacecadet', labelLeft:'Space waster',  labelRight:'Space cadet', default:0 },
   { id:'fortkx',     labelLeft:'Glass cannon',  labelRight:'Fort Knox',   default:0 },
@@ -5044,15 +5047,14 @@ const BOT_PRESETS = {
     repSlots: {"white":[{"fam":"Danish Gambit","code":"C21","name":"Danish Gambit","pct":18,"lines":[{"code":"C21","name":"Danish Gambit","moves":"e4 e5 d4 exd4 c3"}],"fork":{}},{"fam":"Italian Game","code":"C57","name":"Italian Game","pct":18,"lines":[{"code":"C57","name":"Italian Game: Two Knights Defense, Fried Liver Attack","moves":"e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5 d5 exd5 Nxd5 Nxf7"}],"fork":{}},{"fam":"Sicilian Defense","code":"B21","name":"Sicilian Defense","pct":17,"lines":[{"code":"B21","name":"Sicilian Defense: Smith-Morra Gambit","moves":"e4 c5 d4"},{"code":"B21","name":"Sicilian Defense: Smith-Morra Gambit","moves":"e4 c5 d4 cxd4 c3"}],"fork":{}},{"fam":"Blackmar-Diemer Gambit","code":"D00","name":"Blackmar-Diemer Gambit","pct":17,"lines":[{"code":"D00","name":"Blackmar-Diemer Gambit","moves":"d4 d5 e4"},{"code":"D00","name":"Blackmar-Diemer Gambit","moves":"d4 d5 e4 dxe4 Nc3 Nf6"}],"fork":{}},{"code":"","name":"No opening sequence","pct":30,"none":true}],"black":[{"fam":"Sicilian Defense","code":"B27","name":"Sicilian Defense","pct":36,"lines":[{"code":"B27","name":"Sicilian Defense: Hyperaccelerated Pterodactyl, Exchange Variation","moves":"e4 c5 Nf3 g6 d4 Bg7 dxc5 Qa5+ Nc3 Bxc3+ bxc3 Qxc3+"},{"code":"B90","name":"Sicilian Defense: Najdorf Variation","moves":"e4 c5 Nf3 d6 d4 cxd4 Nxd4 Nf6 Nc3 a6"}],"fork":{"e4 c5 Nf3":{"g6":50,"d6":50}}},{"fam":"Indian Defense","code":"A51","name":"Indian Defense","pct":17,"lines":[{"code":"A51","name":"Indian Defense: Budapest Defense","moves":"d4 Nf6 c4 e5"}],"fork":{}},{"fam":"Benko Gambit","code":"A57","name":"Benko Gambit","pct":17,"lines":[{"code":"A57","name":"Benko Gambit","moves":"d4 Nf6 c4 c5 d5 b5"}],"fork":{}},{"code":"","name":"No opening sequence","pct":30,"none":true}]},
     dayLower: 1,
     dayUpper: 100,
-    attractorValues: {"tension":2,"complexity":1,"compwin":0,"spacecadet":0,"fortkx":0,"gambito":0,"trade":0,"structure":0,"hustle":0,"luck":0,"pressure":0,"attacker":0,"grabber":0,"kingsafety":0,"prophylaxis":0},
+    attractorValues: {"tension":2,"complexity":1,"entropy":0,"sharpness":0,"compwin":0,"spacecadet":0,"fortkx":0,"gambito":0,"trade":0,"structure":0,"hustle":0,"luck":0,"pressure":0,"attacker":0,"grabber":0,"kingsafety":0,"prophylaxis":0},
     pieceValues: {"pawn":0,"knight":0,"bishop":0,"rook":0,"queen":0,"king":0},
     customControls: [{"id":"cckingzone01","name":"Enemy king pressure","metric":"kingZoneAttackers","phase":"all","result":"any","pressure":"any","value":5},{"id":"ccattacked01","name":"Enemy pieces attacked","metric":"attackedPieces","phase":"all","result":"any","pressure":"any","value":5}],
     timingMode: "complexity",
     fixedDelayMs: 2000,
     mirrorOffsetPct: 0,
     cplxBase: 3,
-    cplxMin: 0.4,
-    cplxMax: 2.5,
+    thinkPace: 0,
     cplxBaseMode: "clock",
     behavReconsider: true,
     behavBlink: true,
@@ -10109,7 +10111,7 @@ const _TIMING_MODE_BY_V = {
   'Instantaneous':     'instant',
   'Fixed interval':    'fixed',
   'Mirror user':       'mirror',
-  'Complexity-scaled': 'complexity'
+  'Entropy-scaled':    'complexity'
 };
 function _getTimingMode(){
   const sel = document.querySelector('#timing-mode-grid .mcard.sel');
@@ -10180,8 +10182,7 @@ function getBotConfig(){
     fixedDelayMs:      parseInt(document.getElementById('r-fixed')?.value     || '5') * 1000,
     mirrorOffsetPct:   parseInt(document.getElementById('r-mirror')?.value    || '0'),
     cplxBase:          parseFloat(document.getElementById('r-cplx-base')?.value || '3'),
-    cplxMin:           parseFloat(document.getElementById('r-cplx-min')?.value  || '0.4'),
-    cplxMax:           parseFloat(document.getElementById('r-cplx-max')?.value  || '2.5'),
+    thinkPace:         parseFloat(document.getElementById('r-think-pace')?.value || '0'),   // Entropy scaled: −1 slower … +1 faster
     cplxBaseMode:      cplxBaseMode,        // 'clock' | 'fixed'
     behavReconsider:   document.getElementById('cb-reconsidered')?.checked !== false,
     behavBlink:        document.getElementById('cb-blink')?.checked        !== false,
@@ -10489,8 +10490,9 @@ function applyBotConfig(cfg){
     _setRange('r-fixed',     cfg.fixedDelayMs != null ? Math.round(cfg.fixedDelayMs / 1000) : null);
     _setRange('r-mirror',    cfg.mirrorOffsetPct);
     _setRange('r-cplx-base', cfg.cplxBase);
-    _setRange('r-cplx-min',  cfg.cplxMin);
-    _setRange('r-cplx-max',  cfg.cplxMax);
+    // Entropy scaled's Slower–Faster slider; a bot saved before it existed is
+    // typical. Its old Min / Max multipliers are not read any more.
+    _setRange('r-think-pace', cfg.thinkPace != null ? cfg.thinkPace : 0);
     // A bot saved before the clock-based average existed used the Base time
     // slider, so an absent field restores that — the bot plays as it did.
     setCplxBaseMode(cfg.cplxBaseMode === 'clock' ? 'clock' : 'fixed');
@@ -10992,7 +10994,7 @@ function _renderAppearancePop(){
   let html = '';
   html += '<div class="ap-sec">Board experience</div><div class="ap-row">' +
     '<button class="ap-btn' + (_appAppearance.shell === 'amateur' ? ' active' : '') + '" onclick="_sendAppearance({shell:\'amateur\'})" title="Full training board — all vision overlays">Training</button>' +
-    '<button class="ap-btn' + (_appAppearance.shell === 'pro' ? ' active' : '') + '" onclick="_sendAppearance({shell:\'pro\'})" title="Clean tournament look — no overlays">Expert</button></div>';
+    '<button class="ap-btn' + (_appAppearance.shell === 'pro' ? ' active' : '') + '" onclick="_sendAppearance({shell:\'pro\'})" title="Clean tournament look — no overlays">Plain</button></div>';
   html += '<div class="ap-sec">Format</div><div class="ap-row">' +
     ['carbon','journal'].map(f =>
       '<button class="ap-btn' + (_panelFormat === f ? ' active' : '') + '" onclick="setPanelFormat(\'' + f + '\')">' +
@@ -11190,7 +11192,7 @@ const BOT_TOUR = [
     body:'Give White and Black <i>separate</i> openings, played in order: a <b>Repertoire</b> of opening lines you tick, each opening weighted by percentage, then the <b>Main Line</b> — the most popular database move — through a move you choose, then the engine. Use either stage, both, or neither: the Italian, then the main line to move 20.' },
 
   { stage:'Timing', open:'timing', sel:'#timing-mode-grid', title:'4 · Move timing',
-    body:'How the bot spends its clock between moves — <b>instant</b>, a <b>fixed</b> pause, <b>scaled to position complexity</b>, or <b>mirroring your own pace</b>. The mode you pick opens its own settings right under it. The little things that make it feel human.' },
+    body:'How the bot spends its clock between moves — <b>instant</b>, a <b>fixed</b> pause, <b>scaled the way people think</b> (longer when more moves look playable), or <b>mirroring your own pace</b>. The mode you pick opens its own settings right under it. The little things that make it feel human.' },
 
   { stage:'Timing', open:'timing', sel:'#row-blink', title:'Human timing habits',
     body:'Layered on top of the mode: <b>reconsideration pauses</b>, <b>move blink</b> on forced replies, and <b>playing fast once you’re in time trouble</b> (under 30 s, or 15 s with an increment). Note that blink fires <i>before</i> the timing mode is consulted, so choosing <b>Fixed interval</b> switches it off and tells you why — otherwise a "22-second" bot would still snap out obvious recaptures instantly.' },
@@ -12384,6 +12386,9 @@ const _TIMING_WHY = {
   mirror:  'Mirror user copies your pace move for move, so this is never consulted.',
   instant: 'Instantaneous has no think time for this to change.',
 };
+// Entropy scaled draws each think from the spread measured in people's own
+// think times, so their hesitations are already in it (botThinkTime).
+const _RECONSIDER_ENTROPY_WHY = 'Entropy scaled already varies its thinks the way people\'s vary, long hesitations included, so this is not used.';
 const _HUSTLE_WHY = {
   fixed:   'Hustle only changes how long the bot thinks, and Fixed interval plays every move at its set duration.',
   mirror:  'Hustle only changes how long the bot thinks, and Mirror user copies your pace instead.',
@@ -12500,9 +12505,10 @@ function syncControlGating(){
 
   // ── Timing ────────────────────────────────────────────────────────────────
   // botThinkTime returns before these under Fixed, Mirror (once it has seen a
-  // human move) and Instantaneous; only Complexity-scaled consults them.
+  // human move) and Instantaneous; only Entropy scaled consults them — and
+  // not Reconsideration, which its measured spread replaces.
   const tWhy = _TIMING_WHY[g.mode] || '';
-  _setTogWhy('cb-reconsidered', tWhy);
+  _setTogWhy('cb-reconsidered', g.mode === 'complexity' ? _RECONSIDER_ENTROPY_WHY : tWhy);
   const mirrorWhy = !g.timed ? _UNTIMED_WHY : tWhy;
   _setTogWhy('cb-clock-mirror', mirrorWhy);
   _setTogWhy('cb-clock-mirror-2', mirrorWhy);
@@ -14770,10 +14776,10 @@ function updateQsThinkTime(){
   const sel  = document.querySelector('#timing-mode-grid .mcard.sel');
   const mode = sel?.dataset.v || 'Fixed interval';
   if(mode === 'Instantaneous')    { pill.textContent = 'Instant';       return; }
-  if(mode === 'Complexity-scaled'){
+  if(mode === 'Entropy-scaled'){
     pill.textContent = (typeof cplxBaseMode !== 'undefined' && cplxBaseMode === 'clock' && isTimedGame())
-      ? 'Clock · ~' + _fmtSec(_cplxStartAvgSec())
-      : 'By complexity';
+      ? 'Clock · ~' + _fmtSec(_entropyTypicalStartSec())
+      : 'By entropy';
     return;
   }
   if(mode === 'Mirror user')      { pill.textContent = 'Mirrors you';   return; }
@@ -14870,7 +14876,7 @@ function qsSyncEngine(){
 // row of its own: it is the Fixed interval slider at 0.
 const QS_TIMING_CARD = {
   instant: 'Instantaneous', fixed: 'Fixed interval',
-  mirror: 'Mirror user', complexity: 'Complexity-scaled',
+  mirror: 'Mirror user', complexity: 'Entropy-scaled',
 };
 function _qsSetTimingMode(mode){
   const card = document.querySelector('#timing-mode-grid .mcard[data-v="' + QS_TIMING_CARD[mode] + '"]');
@@ -15139,7 +15145,7 @@ const PERS_CONFIRMS = {
     'Blind Conviction: its favorite move 60% of the time, its 2nd, 3rd and 4th 20%, 15% and 5%',
     'Attacking traits: Enemy king pressure 5, Enemy pieces attacked 5, Tension 2, Complexity 1 (Budget 150 cp, Hard Floor 250)',
     'Openings → gambits as White (Danish, Fried Liver, Smith-Morra, Blackmar-Diemer); Pterodactyl, Najdorf, Budapest and Benko as Black; no set opening in 30% of games',
-    'Move timing → Complexity scaled from the clock (a 60-move game); premoves on',
+    'Move timing → Entropy scaled from the clock; premoves on',
   ]},
 };
 let _bdPendingId = null;
@@ -15182,7 +15188,7 @@ const INFO_POPS = {
       'forced: a bot told to move every 2 seconds is not short of time in a 15-minute game. ' +
       'Read as time pressure, that pace would take a couple of hundred ELO off every move. ' +
       'So neither curve is consulted, and premoves play at the bot’s own rating.</p>' +
-      '<p><b>To use them, choose Complexity scaled</b> in Move Timing — on its default ' +
+      '<p><b>To use them, choose Entropy scaled</b> in Move Timing — on its default ' +
       '<b>From the clock</b> setting the bot budgets its own time from the clock and the ' +
       'moves left, and these curves take over as that budget runs down — or ' +
       '<b>Mirror user</b>, which plays at your pace and degrades as you speed up under ' +
@@ -16390,7 +16396,7 @@ function applyBlinkSuppression(mode){
     _blinkPreFixed = null;
   }
 }
-// ── Complexity scaled: where the average comes from ──────────────────────────
+// ── Entropy scaled: where the typical think comes from ───────────────────────
 // 'clock' (default): the bot budgets like a player — (time left + increment
 // still to come) ÷ moves left in a game of _cplxMovesPerGame() moves, recomputed
 // every move, quick while in book. See botClockPlanSec in 50-bot-engine.js.
@@ -16427,6 +16433,45 @@ function _panelBookRangeSec(){
   const f = Math.max(0, Math.min(1, (size - 8) / (20 - 8)));
   return [0.4 + f * (5 - 0.4), 1.2 + f * (15 - 1.2)];
 }
+// The Slower–Faster slider's readout: −1 is twice as long as a typical person,
+// +1 half as long. MIRRORS botThinkPaceMult in src/50-bot-engine.js.
+function _thinkPaceMult(){
+  const v = Math.max(-1, Math.min(1, +(document.getElementById('r-think-pace')?.value || 0)));
+  return Math.pow(2, -v);
+}
+function syncThinkPace(v){
+  v = Math.max(-1, Math.min(1, +v || 0));
+  const el = document.getElementById('v-think-pace');
+  if(el) el.textContent = Math.abs(v) < 0.05 ? 'Typical'
+    : v < 0 ? Math.pow(2, -v).toFixed(1) + '× slower' : Math.pow(2, v).toFixed(1) + '× faster';
+  if(typeof _syncCplxBaseUi === 'function') _syncCplxBaseUi();
+}
+// A typical think around move 15 with the clock still full, for this time
+// control: what the drawer quotes. MIRRORS botEntropyTypicalMs, botEntropyBlend
+// and botEntropyLevel in src/50-bot-engine.js (average position, no spread) —
+// keep the stage values, game sizes and level points in step with
+// BOT_ENTROPY_FIT.
+const _ENTROPY_LEVEL = {
+  noInc: [[30, 1], [60, 1.67], [180, 0.94], [300, 0.78], [600, 0.59]],
+  inc:   [[160, 1.24], [260, 1.03], [420, 0.90], [800, 0.76], [1300, 0.66], [3000, 1.08], [4500, 1.14]],
+};
+function _entropyLevel(size, inc){
+  const pts = inc > 0 ? _ENTROPY_LEVEL.inc : _ENTROPY_LEVEL.noInc, x = Math.log(size);
+  if(x <= Math.log(pts[0][0])) return pts[0][1];
+  for(let i = 1; i < pts.length; i++){
+    const x1 = Math.log(pts[i][0]);
+    if(x <= x1){ const x0 = Math.log(pts[i - 1][0]); return pts[i - 1][1] + (x - x0) / (x1 - x0) * (pts[i][1] - pts[i - 1][1]); }
+  }
+  return pts[pts.length - 1][1];
+}
+function _entropyTypicalStartSec(){
+  const base = (+tcTime || 0) * 60, inc = +tcInc || 0;
+  if(!(base > 0)) return null;
+  const t = Math.max(0, Math.min(1, Math.log((base + 40 * inc) / 420) / Math.log(3000 / 420)));
+  const leg = (n, stage15) => { const left = n - 14; return Math.log((base + left * inc) / left * stage15); };
+  // stage at move 15: blitz 0.5942, league 0.7629 (between the bands' middles, 13 and 18)
+  return Math.exp((1 - t) * leg(40, 0.5942) + t * leg(60, 0.7629)) * _entropyLevel(base + 40 * inc, inc) * _thinkPaceMult();
+}
 function _syncCplxBaseUi(){
   const timed = isTimedGame();
   const clockOn = cplxBaseMode === 'clock';
@@ -16440,10 +16485,12 @@ function _syncCplxBaseUi(){
   const bookTxt = (Math.round(bLo * 10) / 10) + '–' + (Math.round(bHi * 10) / 10) + ' s';
   if(hint) hint.textContent = !timed
     ? 'No clock in an Untimed game, so there is nothing to budget from — the Base time below is used instead.'
-    : 'Averages about ' + _fmtSec(_cplxStartAvgSec()) + ' a move at the start of this ' + tcTime + '+' + tcInc +
-      ' game: (clock + ' + _cplxMovesPerGame() + ' × increment) ÷ ' + _cplxMovesPerGame() +
-      ' moves, recomputed from the clock every move — a 60-move game from 10 minutes up (base + 40 × increment),' +
-      ' 40 below. No one move takes more than a tenth of the clock' +
+    : 'A typical move takes about ' + _fmtSec(_entropyTypicalStartSec()) + ' around move 15 of this ' + tcTime + '+' + tcInc +
+      ' game, from the time left and the moves still to come, recomputed every move. Like people it spends' +
+      ' most around moves 15–25 and less after move 30; obvious moves go faster, ones with many playable' +
+      ' replies slower. Fitted to people\'s own think times in 3+0 to 5+3 blitz and in 30+30 and 45+45' +
+      ' league games; a game between them is planned between the two, and the overall pace is set to what' +
+      ' people showed in a check on bullet and rapid games (1+0 to 15+10). No one move takes more than a tenth of the clock' +
       ' plus the increment, so it does not flag. Book moves take ' + bookTxt +
       ' here — quick in bullet and blitz, 5–15 s from 20-minute games up, where a good player' +
       ' still decides which of the lines they know to go into.';
@@ -17053,7 +17100,7 @@ function _syncPressureOffUi(fromGating){
     note.innerHTML = paced
       ? '<div class="tp-gate-t">Time pressure is off for this bot</div>' +
         '<div class="tp-gate-b"><strong>' + (_PACE_NAME[m] || 'This timing mode') + '</strong> in Move Timing sets the bot’s pace, so it is never short of time, and neither curve below is used (premoves play at its own rating too). ' +
-        'To turn time pressure on, choose <strong>Complexity scaled</strong> to have it budget from the clock, or <strong>Mirror user</strong> to have it play — and crack — at your pace.</div>' +
+        'To turn time pressure on, choose <strong>Entropy scaled</strong> to have it budget from the clock, or <strong>Mirror user</strong> to have it play — and crack — at your pace.</div>' +
         '<button type="button" class="tp-gate-go" onclick="jumpToTimingForPressure()">Change Move Timing ▸</button>'
       : '';
   }
@@ -17497,10 +17544,10 @@ document.addEventListener('DOMContentLoaded', ()=>{
   <div id="btOutro" style="display:none;">
     <div class="bt-count">Tour complete</div>
     <div class="bt-title">That's the bot builder</div>
-    <div class="bt-body">The board itself comes in two views, each with its own tour: <b>Visualization</b> marks threats, pins and hanging pieces as you play; <b>Expert</b> is a clean tournament view without overlays.</div>
+    <div class="bt-body">The board itself comes in two views, each with its own tour: <b>Visualization</b> marks threats, pins and hanging pieces as you play; <b>Plain</b> is a clean tournament view without overlays.</div>
     <div class="bt-actions bt-actions-stack">
       <button class="bt-btn bt-next" onclick="btGoBoardTour('amateur')">Tour the Visualization board →</button>
-      <button class="bt-btn bt-next" onclick="btGoBoardTour('pro')">Tour the Expert board →</button>
+      <button class="bt-btn bt-next" onclick="btGoBoardTour('pro')">Tour the Plain board →</button>
       <button class="bt-skip" onclick="btOutroClose()">Done</button>
     </div>
   </div>

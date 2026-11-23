@@ -31,7 +31,7 @@ function makeCtx(overrides = {}) {
 
     // Timing state, at documented defaults.
     botTimeBehavior: 'complexity',
-    botCplxBase: 3, botCplxMin: 0.4, botCplxMax: 2.5,
+    botCplxBase: 3, botThinkPace: 0,
     botFixedDelayMs: 5000, botMirrorOffsetPct: 0, botUserMoveTimestamps: [],
     botBehavBlink: false,        // off: we are testing clock response, not blink
     botBehavReconsider: false,   // off: random 1.5-2.5x would swamp the signal
@@ -122,11 +122,14 @@ test('pressure is relative to the time control, not a fixed 30 seconds', () => {
   const pClassical = classical.botBudgetPressure(30000, 3000);
   // Budget depends only on clock and moves left, so these are equal — the
   // difference must come from the emergency backstop being relative.
-  const tBullet = think(bullet, 30000);
-  const tClassical = think(classical, 30000);
-  assert.ok(tClassical <= tBullet + 1,
+  // Entropy scaled plans a different typical think for each time control (fitted
+  // to people's own), so urgency is each game's think at 30 s as a share of its
+  // think on a full clock.
+  const tBullet = think(bullet, 30000) / think(bullet, 60000);
+  const tClassical = think(classical, 30000) / think(classical, 90 * 60 * 1000);
+  assert.ok(tClassical <= tBullet + 1e-9,
     'classical at 30 s should be at least as urgent as bullet at 30 s: ' +
-    Math.round(tBullet) + ' vs ' + Math.round(tClassical));
+    tBullet.toFixed(3) + ' vs ' + tClassical.toFixed(3) + ' of the calm pace');
   assert.ok(pBullet >= 0 && pClassical >= 0);
 });
 
@@ -154,9 +157,10 @@ test('clock mirroring waits for real time trouble, not a clock lead', () => {
   };
   const calm = at(null, 0).t;
   // 5+3, Nov 2026: the opponent at 3 minutes against the bot's 5 had it moving
-  // at a third of its pace. Behind is not trouble.
+  // at a third of its pace. Behind is not trouble. (Compared with the same
+  // increment: Entropy scaled's typical think depends on the time control.)
   assert.strictEqual(at(180000, 3).trouble, false, '3:00 against 5:00 is not trouble');
-  assert.strictEqual(at(180000, 3).t, calm, 'and the bot keeps its pace');
+  assert.strictEqual(at(180000, 3).t, at(null, 3).t, 'and the bot keeps its pace');
   // No increment: trouble under 30 s. With one: under 15 s.
   assert.strictEqual(at(31000, 0).trouble, false, '31 s, no increment');
   assert.strictEqual(at(29000, 0).trouble, true, '29 s, no increment');
@@ -335,12 +339,14 @@ const boostLeft = ctx => vm.runInContext('_explorerSurpriseBoost', ctx);
 test('novelty pause: scales the real think time, once', () => {
   const ctx = makeCtx();
   const plain = think(ctx, 600000);
+  // Equal to the last rounding: the measured spread is a multiplier like any other.
+  const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, msg + ': ' + a + ' vs ' + b);
   surprise(ctx, 1);
-  assert.strictEqual(think(ctx, 600000), plain * 2.5, 'full boost');
+  near(think(ctx, 600000), plain * 2.5, 'full boost');
   assert.strictEqual(boostLeft(ctx), 0, 'spent');
   assert.strictEqual(think(ctx, 600000), plain, 'and gone on the next move');
   surprise(ctx, 0.5);
-  assert.strictEqual(think(ctx, 600000), plain * 1.75, 'partial boost');
+  near(think(ctx, 600000), plain * 1.75, 'partial boost');
 });
 
 test('novelty pause: the rough estimate neither spends it nor reads it', () => {
@@ -376,4 +382,163 @@ test('novelty pause: book moves take it too, inside the clock caps', () => {
   assert.strictEqual(ctx.botThinkTime(null, 1800000, { book: true }), ctx.botBookMoveDelayMs(1800000, 2.5),
     'the clock plan\'s book path');
   assert.strictEqual(boostLeft(ctx), 0, 'and it is spent');
+});
+
+
+// ── Entropy scaled (the builder's name for 'complexity') ──────────────────────
+// Fitted to people's own think times: Lichess blitz 3+0 to 5+3 and league games
+// at 30+30 and 45+45 (BOT_ENTROPY_FIT). On the clock, at plies = 28 (move 15).
+const uniform = (n) => { const p = {}; for (let i = 0; i < n; i++) p['m' + i] = 1 / n; return p; };
+function entropyCtx(o = {}) {
+  const ctx = makeCtx(Object.assign({ botCplxBaseMode: 'clock' }, o));
+  ctx.gameMovesAlgebraic = new Array(o.plies != null ? o.plies : 28).fill('e4');
+  return ctx;
+}
+
+test('entropy scaled: a typical move matches what people take (move 15, full clock)', () => {
+  // The studies' medians at moves 11-20: about 3-4 s at 3+0, about 80 s at 45+45.
+  // An average position is 1.39 nats, which is what no distribution stands for.
+  const blitz = entropyCtx({ botStartClockMs: 180000, clockInc: 0 });
+  const league = entropyCtx({ botStartClockMs: 2700000, clockInc: 45 });
+  const b = blitz.botEntropyTypicalMs(1.39, 180000) / 1000;
+  const l = league.botEntropyTypicalMs(1.39, 2700000) / 1000;
+  assert.ok(b > 3 && b < 5, '3+0 typical ' + b.toFixed(2) + ' s');
+  assert.ok(l > 65 && l < 95, '45+45 typical ' + l.toFixed(1) + ' s');
+});
+
+test('entropy scaled: more playable moves, a longer think', () => {
+  const ctx = entropyCtx({ botStartClockMs: 180000 });
+  const few = ctx.botThinkTime(uniform(2), 170000);
+  const many = ctx.botThinkTime(uniform(12), 170000);
+  assert.ok(many > few, few + ' vs ' + many);
+  // blitz: e^(0.331 × (ln 12 − ln 2)) = 1.81
+  assert.ok(Math.abs(many / few - Math.exp(0.331 * Math.log(6))) < 0.01, 'ratio ' + (many / few).toFixed(3));
+});
+
+test('entropy scaled: the game stage — most around moves 15-25, less and less after 30', () => {
+  const ctx = entropyCtx();
+  for (const fit of ['blitz', 'league']) {
+    const st = vm.runInContext('BOT_ENTROPY_FIT', ctx)[fit].stage;   // a const, not a global property
+    const at = m => ctx._entropyStageAt(st, m);
+    assert.ok(at(18) > at(13) && at(18) > at(30) && at(30) > at(40) && at(40) > at(55) && at(55) > at(70),
+      fit + ': ' + [13, 18, 30, 40, 55, 70].map(m => at(m).toFixed(2)).join(' '));
+    assert.strictEqual(at(5), at(13), fit + ': flat before move 13');
+    assert.strictEqual(at(90), at(70), fit + ': flat after move 70');
+  }
+});
+
+test('entropy scaled: rapid is planned between the blitz and league fits', () => {
+  const t = (base, inc) => entropyCtx({ botStartClockMs: base * 1000, clockInc: inc }).botEntropyBlend();
+  assert.strictEqual(t(60, 0), 0, 'bullet uses blitz');
+  assert.strictEqual(t(180, 0), 0, '3+0 uses blitz');
+  assert.strictEqual(t(300, 3), 0, '5+3 uses blitz');
+  assert.ok(t(600, 0) > 0.1 && t(600, 0) < 0.3, '10+0: ' + t(600, 0).toFixed(2));
+  assert.ok(t(900, 10) > 0.5 && t(900, 10) < 0.7, '15+10: ' + t(900, 10).toFixed(2));
+  assert.strictEqual(t(1800, 30), 1, '30+30 uses league');
+  assert.strictEqual(entropyCtx({ botStartClockMs: null }).botEntropyBlend(), 1, 'untimed uses league');
+});
+
+test('entropy scaled: the level is set to what people showed at each control (Nov 23 check)', () => {
+  const lv = (base, inc) => entropyCtx({ botStartClockMs: base * 1000, clockInc: inc }).botEntropyLevel();
+  const near = (a, b, label) => assert.ok(Math.abs(a - b) < 1e-9, label + ': ' + a + ' vs ' + b);
+  // The measured points, without and with an increment.
+  near(lv(60, 0), 1.67, '1+0'); near(lv(180, 0), 0.94, '3+0'); near(lv(300, 0), 0.78, '5+0'); near(lv(600, 0), 0.59, '10+0');
+  near(lv(120, 1), 1.24, '2+1'); near(lv(180, 2), 1.03, '3+2'); near(lv(300, 3), 0.90, '5+3'); near(lv(600, 5), 0.76, '10+5');
+  near(lv(900, 10), 0.66, '15+10'); near(lv(1800, 30), 1.08, '30+30'); near(lv(2700, 45), 1.14, '45+45');
+  // Between points, a straight line on a log scale of base + 40 × increment:
+  // 3+1 (220 s) lies between 2+1 (160) and 3+2 (260).
+  const f = Math.log(220 / 160) / Math.log(260 / 160);
+  near(lv(180, 1), 1.24 + f * (1.03 - 1.24), '3+1');
+  // Below 1+0 (not measured) phased out by ½+0, where 1.67 flagged the bot.
+  near(lv(30, 0), 1, '½+0'); near(lv(15, 0), 1, '¼+0');
+  near(lv(45, 0), 1 + Math.log(45 / 30) / Math.log(2) * 0.67, '¾+0');
+  // Held past the other ends; none with no clock.
+  near(lv(1800, 0), 0.59, '30+0'); near(lv(5400, 60), 1.14, '90+60');
+  assert.strictEqual(entropyCtx({ botStartClockMs: null }).botEntropyLevel(), 1, 'untimed');
+  // The typical think carries it on the clock; Fixed seconds sets its own.
+  const typ = (o, flat) => {
+    const ctx = entropyCtx(o);
+    if (flat) vm.runInContext('BOT_ENTROPY_FIT.level.noInc = [[60, 1]]', ctx);
+    return ctx.botEntropyTypicalMs(1.39, o.botStartClockMs);
+  };
+  const clock10 = { botStartClockMs: 600000, clockInc: 0 };
+  near(typ(clock10) / typ(clock10, true), 0.59, '10+0 typical ÷ uncorrected');
+  const fixed10 = { botStartClockMs: 600000, clockInc: 0, botCplxBaseMode: 'fixed', botCplxBase: 5 };
+  near(typ(fixed10) / typ(fixed10, true), 1, 'Fixed seconds: no level');
+});
+
+test('entropy scaled: the measured spread — centred, as wide as people, held at the 1st and 99th percentiles', () => {
+  const blitz = entropyCtx({ botStartClockMs: 180000 });
+  const league = entropyCtx({ botStartClockMs: 2700000, clockInc: 45 });
+  for (const [ctx, sd, mean] of [[blitz, 0.71, 1.30], [league, 1.09, 1.79]]) {
+    assert.ok(Math.abs(Math.log(ctx.botEntropySpreadMult(0.5))) < 0.05, 'median about 1');
+    assert.strictEqual(ctx.botEntropySpreadMult(0.001), ctx.botEntropySpreadMult(0.01), 'held at 1%');
+    assert.strictEqual(ctx.botEntropySpreadMult(0.999), ctx.botEntropySpreadMult(0.99), 'held at 99%');
+    let prev = 0, sum = 0, sum2 = 0, n = 0;
+    for (let u = 0.0005; u < 1; u += 0.001) {
+      const m = ctx.botEntropySpreadMult(u);
+      assert.ok(m >= prev, 'rises with u'); prev = m;
+      sum += m; sum2 += Math.log(m) ** 2; n++;
+    }
+    assert.ok(Math.abs(Math.sqrt(sum2 / n) - sd) < 0.08, 'spread SD ' + Math.sqrt(sum2 / n).toFixed(2) + ' vs ' + sd);
+    assert.ok(Math.abs(sum / n - mean) < 0.12, 'mean ' + (sum / n).toFixed(2) + ' vs ' + mean);
+  }
+});
+
+test('entropy scaled: Slower-Faster runs from twice a typical think to half', () => {
+  const at = (pace) => entropyCtx({ botStartClockMs: 900000, botThinkPace: pace }).botThinkTime(uniform(5), 800000);
+  const typical = at(0);
+  assert.ok(Math.abs(at(-1) / typical - 2) < 1e-9, 'slowest x2: ' + (at(-1) / typical));
+  assert.ok(Math.abs(at(1) / typical - 0.5) < 1e-9, 'fastest x1/2: ' + (at(1) / typical));
+  assert.ok(Math.abs(at(-0.5) / typical - Math.SQRT2) < 1e-9, 'halfway: x1.41');
+});
+
+test('entropy scaled: a less likely move takes longer, once it is chosen', () => {
+  const ctx = entropyCtx({ botStartClockMs: 900000 });
+  const probs = { a: 0.7, b: 0.2, c: 0.1 };
+  const base = ctx.botThinkTime(probs, 800000);
+  const likely = ctx.botEntropyMoveThinkMs(base, probs, 'a', 800000);
+  ctx.botThinkTime(probs, 800000);
+  const unlikely = ctx.botEntropyMoveThinkMs(base, probs, 'c', 800000);
+  assert.ok(likely < base && unlikely > base, likely + ' < ' + base + ' < ' + unlikely);
+  assert.strictEqual(ctx.botEntropyMoveThinkMs(base, probs, 'c', 800000), base, 'one-shot');
+  // Not for a book move, the rough estimate, or another timing mode.
+  const book = ctx.botThinkTime(probs, 800000, { book: true });
+  assert.strictEqual(ctx.botEntropyMoveThinkMs(book, probs, 'c', 800000), book, 'book');
+  const rough = ctx.botThinkTime(probs, 800000, { rough: true });
+  assert.strictEqual(ctx.botEntropyMoveThinkMs(rough, probs, 'c', 800000), rough, 'rough');
+  const fixed = makeCtx({ botTimeBehavior: 'fixed' });
+  const f = fixed.botThinkTime(probs, 800000);
+  assert.strictEqual(fixed.botEntropyMoveThinkMs(f, probs, 'c', 800000), f, 'fixed');
+});
+
+test('entropy scaled: reconsideration pauses are not added (the spread has them)', () => {
+  const at = (rec) => {
+    const ctx = entropyCtx({ botStartClockMs: 900000, botBehavReconsider: rec });
+    ctx.Math.random = () => 0.1;   // would trigger a reconsideration pause
+    return ctx.botThinkTime(uniform(5), 800000);
+  };
+  assert.strictEqual(at(true), at(false));
+});
+
+test('entropy scaled: no plan ceiling — a long think can run past 2.5x the plan, never past the flag ceiling', () => {
+  const ctx = entropyCtx({ botStartClockMs: 180000 });
+  ctx.Math.random = () => 0.995;                 // the top of the spread
+  const clock = 170000;
+  const t = ctx.botThinkTime(uniform(40), clock); // many playable moves
+  const plan = ctx.botClockPlanSec(clock) * 1000;
+  assert.ok(t > 2.5 * plan, t + ' vs plan ' + plan);
+  assert.ok(t <= (clock / 10) * 1.2 + 1 && t <= clock / 2, 'flag ceiling: ' + t);
+});
+
+
+test('entropy scaled: opening familiarity only before move 11 (the stage curve has it after)', () => {
+  // A 2600 bot is "in its book" to about move 22; a 600 bot to about move 4.
+  const at = (elo, plies) => {
+    const ctx = entropyCtx({ botStartClockMs: 900000, maia3SelectedRating: elo, plies });
+    ctx.botMoveHistory = new Array(plies).fill('e2e4');
+    return ctx.botThinkTime(uniform(5), 850000);
+  };
+  assert.strictEqual(at(2600, 24), at(600, 24), 'move 13: rating does not change the think');
+  assert.ok(at(2600, 12) < at(600, 12), 'move 7: the stronger bot still plays what it knows faster');
 });

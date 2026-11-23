@@ -368,7 +368,7 @@ argmax (Top move): always picks the single highest-probability move (determinist
     <tbody>
       <tr><td>Fixed interval</td><td>Constant pause between all moves. Set the delay in seconds. Simplest and most predictable.</td></tr>
       <tr><td>Instantaneous</td><td>Responds at engine speed (effectively 0 delay). Useful for analysis or speed variants.</td></tr>
-      <tr><td>Complexity scaled</td><td>Think time scales with position complexity (measured as the spread of Stockfish's top evaluations). Tactical positions get more time; forced sequences get less. Mimics human time allocation.</td></tr>
+      <tr><td>Entropy scaled</td><td>Thinks the way people do, fitted to their own think times in blitz and league games: longer when more moves look playable (Maia's entropy), longer over a move it was less likely to choose, most of the clock spent around moves 15–25, and as uneven from move to move as a person; its overall pace at each time control is set to what people showed in bullet, blitz, rapid and league games. One Slower–Faster slider sets it from twice a typical person's think to half.</td></tr>
       <tr><td>Mirror user</td><td>Bot matches the human's move rhythm ± a configurable offset. If you played fast the bot plays fast; if you took 30 seconds it will too. Creates a psychologically realistic feel.</td></tr>
     </tbody>
   </table>

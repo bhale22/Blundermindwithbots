@@ -1247,6 +1247,15 @@ async function flounderChooseMove(fen, elo, depth, effTemp, opts) {
     // returns k unchanged, so this file's behaviour is untouched by default.
     // `decided` tells it d is in plain pawns, so the Budget band is too.
     let styled = false;
+    // Confounder / Sharp read Maia after the moves nearest this turn's cost,
+    // the band the personality chooses within (botMaiaChildProbe). The bot's
+    // own turn only, as for the desperation scoring above: it is read against
+    // the live board.
+    if (opts && opts.staleSeek && typeof botUsesMaiaChild === 'function' && botUsesMaiaChild()) {
+      const near = scored.map((m, i) => i)
+        .sort((a, b) => Math.abs(d[a] - d[k]) - Math.abs(d[b] - d[k])).map(i => scored[i]);
+      await botMaiaChildProbe(fen, near, elo);
+    }
     if (typeof flounderApplyPersonality === 'function') {
       const alt = flounderApplyPersonality(scored, d, tau, k, FLOUNDER_OVERSHOOT_MARGIN,
         flounderTargetMean(s, cEff), decided);
@@ -1389,7 +1398,9 @@ function _computeCplxScore(lines) {
 // Returns true if the complexity probe is worth running this move
 function _needsComplexity() {
   const av = window._bcpAttractorValues || {};
-  if ((av['compwin'] || 0) !== 0 || botTimeBehavior === 'complexity') {
+  // (Entropy-scaled timing no longer reads the probe: it runs on Maia's entropy,
+  // which every Maia path already has.)
+  if ((av['compwin'] || 0) !== 0) {
     return true;
   }
   // Stalemate seeking needs the eval to know when desperation kicks in
@@ -1933,6 +1944,83 @@ async function maia3GetMoveProbs(fen, elo) {
     return _maiaProcess(fen, result.logitsMove, result.logitsValue, legalMask);
   } catch(e) {
     console.warn('Maia3 inference error:', e);
+    return null;
+  }
+}
+
+// ── What Maia sees after each candidate move (Nov 2026) ─────────────────────
+// Two personality traits score a move by the position it leaves the opponent,
+// read by Maia from their side of the board: Confounder by Maia's entropy
+// there (how many replies look playable to them, in nats), Sharp by Maia's
+// draw chance (its value head, [loss, draw, win] for the side to move, which
+// _maiaProcess otherwise sets aside). One batched inference for all of them.
+// A move that ends the game is not asked: mate is decisive with no reply to
+// find, stalemate a certain draw.
+//
+// Returns { uci: { h, draw, oppLoss, oppWin, terminal? } }, or null without Maia. Reads the FEN, never the
+// live board, so a premove's hypothetical position is safe to ask about.
+async function maia3ChildStats(fen, ucis, elo) {
+  if (!_maiaReady || !_maiaWorker || !ucis || !ucis.length) return null;
+  if (!_maia3MoveIndex && !(await _maiaLoadMappings())) return null;
+  try {
+    const parts = String(fen).split(' ');
+    const bd = {};
+    const rows = parts[0].split('/');
+    for (let r = 0; r < 8; r++) {
+      let c = 0;
+      for (const ch of rows[r]) {
+        if ('12345678'.includes(ch)) c += +ch;
+        else { bd[r * 8 + c] = { piece: ch.toUpperCase(), color: ch === ch.toUpperCase() ? 'w' : 'b' }; c++; }
+      }
+    }
+    const tn = parts[1] || 'w', nt = tn === 'w' ? 'b' : 'w';
+    const cst = parseCastlingField(parts[2] || '-', bd).cst;
+    const ep = (parts[3] && parts[3] !== '-') ? fileRankToSq(parts[3]) : -1;
+    const out = {}, kids = [];
+    for (const u of ucis) {
+      const mv = uciToSq(u);
+      const p = mv && bd[mv.from];
+      if (!p || p.color !== tn) continue;
+      const nb = applyMove(mv.from, mv.to, bd, ep, mv.promo || 'Q');
+      const ncst = updateCastling(mv.from, mv.to, p, cst);
+      const nep = computeEP(mv.from, mv.to, bd);
+      if (!allLegalMoves(nb, nt, nep, ncst).length) {
+        const mate = inCheck(nb, nt);
+        out[u] = { h: 0, draw: mate ? 0 : 1, oppLoss: mate ? 1 : 0, oppWin: 0, terminal: true };
+        continue;
+      }
+      const cfen = boardToFen(nb, nt, ncst, nep);
+      const mask = _maiaLegalMask(cfen);
+      if (mask) kids.push({ u, cfen, mask });
+    }
+    if (!kids.length) return out;
+    const n = kids.length, PER = 64 * 12;
+    const tokens = new Float32Array(n * PER);
+    kids.forEach((k, i) => tokens.set(_maiaEncode(k.cfen).tokens, i * PER));
+    const e = parseInt(elo != null ? elo : lcSelectedRating) || 1200;
+    const id = _maiaNextId++;
+    const result = await new Promise(function(resolve, reject) {
+      _maiaPendingInferences.set(id, { resolve, reject });
+      _maiaWorker.postMessage({
+        type: 'inference', id, tokens: tokens.buffer,
+        eloSelfs: new Float32Array(n).fill(e).buffer, eloOppos: new Float32Array(n).fill(e).buffer, batchSize: n,
+      }, [tokens.buffer]);
+    });
+    const NM = result.logitsMove.length / n, NV = result.logitsValue.length / n;
+    kids.forEach((k, i) => {
+      const probs = _maiaProcess(k.cfen, result.logitsMove.subarray(i * NM, (i + 1) * NM), null, k.mask);
+      let h = 0;
+      if (probs) for (const q of Object.values(probs)) if (q > 0) h -= q * Math.log(q);
+      const v = result.logitsValue.subarray(i * NV, i * NV + 3);
+      const mx = Math.max(v[0], v[1], v[2]);
+      const ex = [0, 1, 2].map(j => Math.exp(v[j] - mx));
+      const z = ex[0] + ex[1] + ex[2];
+      // For the side to move there, the opponent: [loss, draw, win].
+      out[k.u] = { h, draw: ex[1] / z, oppLoss: ex[0] / z, oppWin: ex[2] / z };
+    });
+    return out;
+  } catch (err) {
+    console.warn('Maia3 child stats error:', err);
     return null;
   }
 }

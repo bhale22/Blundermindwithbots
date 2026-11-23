@@ -116,7 +116,7 @@ function _tempPressureMult() {
 // speeds up under time pressure the bot's think time falls with it and the
 // curves degrade it the way the clock is degrading them — a bot built to match
 // its user should crack under time pressure the same way its user does.
-// Complexity-scaled (and the legacy entropy pace) budget from the clock and
+// Entropy scaled (and the legacy entropy pace) budget from the clock and
 // consult the curves too. The panel greys both curves out for Fixed and
 // Instantaneous, and says why; this is the half that makes that true of what
 // actually runs.
@@ -1477,6 +1477,60 @@ function _distributionBand(moveProbs, luckVal) {
   return Object.keys(kept).length ? kept : moveProbs;
 }
 
+// ── Confounder and Sharp: Maia on the position each move leaves (Nov 2026) ──
+// Two traits read Maia's view of the position after each candidate move
+// (maia3ChildStats in 40-engines.js): the opponent's entropy there — how many
+// replies look playable to them — and Maia's chance the game is drawn. A
+// batched Maia call costs about 0.1 s a position on a desktop (measured Nov
+// 23; batching saves nothing), so only the moves that matter are asked: the
+// most popular first, until 90% of the distribution or MAIA_CHILD_MAX moves.
+// The rest score neutral, as do moves that end the game.
+//
+// The probe runs before the pick (botMaiaChildProbe, awaited by the pick's
+// caller); applyMoveAttractors, which is synchronous, reads what it found for
+// the position on the board (_maiaChildNow), so a premove's hypothetical
+// position, never probed, scores these two traits neutral.
+const MAIA_CHILD_MAX = 8;
+let _maiaChild = null;   // { key, stats } for the position last asked about
+const _maiaChildKey = fen => String(fen).split(' ').slice(0, 4).join(' ');
+function botUsesMaiaChild() {
+  const av = window._bcpAttractorValues || {};
+  return !!(+av.entropy || +av.sharpness);
+}
+// Candidates in the order to ask about them: by popularity, until 90% of the
+// weight or MAIA_CHILD_MAX moves.
+function _maiaChildOrder(probs) {
+  const ent = Object.entries(probs || {}).sort((a, b) => b[1] - a[1]);
+  const total = ent.reduce((t, [, p]) => t + p, 0);
+  const out = [];
+  let cum = 0;
+  for (const [m, p] of ent) {
+    out.push(m);
+    cum += p;
+    if (out.length >= MAIA_CHILD_MAX || cum >= 0.9 * total) break;
+  }
+  return out;
+}
+async function botMaiaChildProbe(fen, order, elo) {
+  if (!botUsesMaiaChild() || typeof maia3ChildStats !== 'function' || !order || !order.length) return;
+  const key = _maiaChildKey(fen);
+  if (_maiaChild && _maiaChild.key === key) return;   // already asked about this position
+  _maiaChild = null;
+  const t0 = Date.now();
+  const stats = await maia3ChildStats(fen, order.slice(0, MAIA_CHILD_MAX), elo);
+  if (!stats) {
+    console.log('[Confounder/Sharp] Maia 3 is not loaded, so these traits sit out this move');
+    return;
+  }
+  _maiaChild = { key, stats };
+  console.log('[Confounder/Sharp] Maia read ' + Object.keys(stats).length + ' positions after the candidates in ' + (Date.now() - t0) + ' ms');
+}
+function _maiaChildNow() {
+  if (!_maiaChild || typeof boardToFen !== 'function') return null;
+  return _maiaChild.key === _maiaChildKey(boardToFen(board, turn, castling, epSq)) ? _maiaChild.stats : null;
+}
+const _drawLogit = d => { const x = Math.min(0.999, Math.max(0.001, d)); return Math.log(x / (1 - x)); };
+
 // opts.rawWeights — the caller is not handing us a popularity distribution.
 // Flounder passes a uniform weight over a band of candidate moves and wants
 // back nothing but the attractor scoring, so the three stages that read a
@@ -1533,6 +1587,8 @@ function applyMoveAttractors(moveProbs, opts) {
   const grabberVal    = attrVals['grabber']    || 0;
   const kingSafetyVal = attrVals['kingsafety'] || 0;
   const prophylaxVal  = attrVals['prophylaxis']|| 0;
+  const entropyVal    = attrVals['entropy']    || 0;
+  const sharpVal      = attrVals['sharpness']  || 0;
   const hasPiece   = Object.values(pieceVals).some(v => v !== 0);
   const hasTrade   = tradeVal      !== 0;
   const hasSpace   = spaceCadetVal !== 0;
@@ -1600,10 +1656,22 @@ function applyMoveAttractors(moveProbs, opts) {
   }
 
   // ── Per-move reweighting ──────────────────────────────────────────────────
+  // Confounder / Sharp: what Maia read after each candidate it was asked about
+  // (botMaiaChildProbe), scored against the average of those candidates, as
+  // Complexity is. Draw chances are compared as log-odds: between the moves
+  // of one position they differ by only about 7% (2.3% against 2.5% in a club
+  // middlegame), while from one position to the next they run from 2% to 25%.
+  const mChild = (entropyVal || sharpVal) ? _maiaChildNow() : null;
+  const childIn = mChild ? Object.keys(filtered).map(m => mChild[m]).filter(c => c && !c.terminal) : [];
+  const hasEntropy = entropyVal !== 0 && childIn.length >= 2;
+  const hasSharp   = sharpVal   !== 0 && childIn.length >= 2;
+  const meanChildH  = childIn.length ? childIn.reduce((t, c) => t + c.h, 0) / childIn.length : 0;
+  const meanChildDL = childIn.length ? childIn.reduce((t, c) => t + _drawLogit(c.draw), 0) / childIn.length : 0;
+
   const needsPerMove = scale > 0 &&
     (hasPiece || hasTrade || hasSpace || hasFortkx || hasGambito || hasAttacker ||
      hasStructure || hasTension || hasCplx || hasGrabber || hasKingSafe ||
-     hasProphylax || hasCustom);
+     hasProphylax || hasCustom || hasEntropy || hasSharp);
   if (!needsPerMove) return _maybeStaleSeek(filtered);
 
   const PIECE_MAP   = { p:'pawn', n:'knight', b:'bishop', r:'rook', q:'queen', k:'king' };
@@ -2001,6 +2069,24 @@ function applyMoveAttractors(moveProbs, opts) {
     if (hasCplx && moveCplx[uciMove] != null) {
       logBoost += complexityVal * scale *
         Math.tanh((moveCplx[uciMove] - meanCplx) / 25);
+    }
+
+    // ── Confounder / Simplifier ───────────────────────────────────────────────
+    // How many replies the opponent has to choose between, as Maia sees it at
+    // this rating: its entropy in the position the move leaves, against the
+    // other candidates (within one position it varies by about 0.45 nats).
+    // Players think longer, and slip more, when many moves look playable
+    // (the think-time study, Nov 2026). Confounder heads there; Simplifier
+    // leaves them one obvious reply.
+    const _mc = (hasEntropy || hasSharp) ? mChild[uciMove] : null;
+    if (_mc && !_mc.terminal) {
+      if (hasEntropy) logBoost += entropyVal * scale * Math.tanh((_mc.h - meanChildH) / 0.5);
+      // ── Sharp / Drawish ─────────────────────────────────────────────────────
+      // Maia's chance that the game ends drawn from the position the move
+      // leaves, against the other candidates, as log-odds (0.1 ≈ one typical
+      // gap between them). Sharp heads for lines a draw is unlikely to end;
+      // Drawish for the ones that peter out.
+      if (hasSharp) logBoost += sharpVal * scale * Math.tanh((meanChildDL - _drawLogit(_mc.draw)) / 0.1);
     }
 
     // ── Pawn grabber / Principled ─────────────────────────────────────────────
@@ -2478,6 +2564,11 @@ async function botPickFromProbs(fen, rawProbs, temperature) {
     others => _botPickFromProbsOnce(fen, others, temperature));
 }
 async function _botPickFromProbsOnce(fen, rawProbs, temperature) {
+  // Confounder / Sharp read Maia after each candidate first (botMaiaChildProbe).
+  if (botUsesMaiaChild()) {
+    const luck = (window._bcpAttractorValues || {}).luck || 0;
+    await botMaiaChildProbe(fen, _maiaChildOrder(_distributionBand(_minProbFloor(rawProbs), luck)));
+  }
   if (_blindPicks()) return blindConvictionMove(fen, rawProbs);
   const shaped = applyMoveAttractors(rawProbs);
   let uci = pickFromProbs(shaped, temperature);
@@ -2667,7 +2758,7 @@ async function botFlounderTurn(fen, clockMs, startMs, baseElo) {
 
   // The complexity probe, on the same terms as the Maia paths: only when
   // something reads it (Front-runner/Swindler, stalemate-seeking, a custom
-  // control gated on winning/losing, Complexity-scaled timing).
+  // control gated on winning/losing). Entropy-scaled timing does not need it.
   if (_needsComplexity()) {
     const cr = await sfGetComplexity(fen);
     sfCplxScore = cr ? cr.cplx : null;
@@ -2714,8 +2805,10 @@ async function botFlounderTurn(fen, clockMs, startMs, baseElo) {
     // The think time is read off Flounder's own selection distribution — how
     // likely this bot is to play each move here — which is what Maia's
     // probabilities are to the Maia paths. That is what lets move blink work on
-    // this engine: a forced reply is one the bot is all but certain of.
+    // this engine: a forced reply is one the bot is all but certain of. Under
+    // Entropy scaled the chosen move's own surprise is read off it too.
     delay = botThinkTime(pick.dist || null, clockMs);
+    delay = botEntropyMoveThinkMs(delay, pick.dist || null, uci, clockMs);
   } else {
     const lvl = Math.max(SF_LEVEL_MIN, Math.min(SF_LEVEL_MAX,
       Math.round(1 + (elo - 650) * 19 / 1950)));
@@ -2850,13 +2943,16 @@ function botRecordMove(uciMove, sanMove) {
 //   'fixed'      — botFixedDelayMs
 //   'mirror'     — median of the human's last 6 move times, at most the game's
 //                  time ÷ 60 (botMirrorCapMs), × (1 + botMirrorOffsetPct/100)
-//   'complexity' — average × botComplexityMult(complexity), the average being
-//                  the clock plan (botClockPlanSec, the builder's default) or
-//                  botCplxBase; book moves on the clock plan are quick
+//   'complexity' — the builder's Entropy scaled: a person's typical think from
+//                  the clock and game stage (or botCplxBase) and Maia's entropy,
+//                  the measured spread, the Slower–Faster slider, then the
+//                  chosen move's surprise once it is picked (BOT_ENTROPY_FIT,
+//                  botWaitOutThink); book moves on the clock plan are quick
 //   'pace'       — original botPace slider entropy calculation
 // Human behaviour flags applied to complexity/pace/mirror paths:
 //   botBehavBlink       — near-instant for forced moves (entropy < 0.5, Maia3 only)
-//   botBehavReconsider  — 15% chance of 1.5-2.5× pause (hesitation)
+//   botBehavReconsider  — 15% chance of 1.5-2.5× pause (hesitation); not under
+//                         Entropy scaled, whose measured spread already has them
 //   botBehavClockMirror — 0.3× while the opponent is in time trouble (botOppInTimeTrouble)
 //   botCanFlag          — if false, always keep ≥3 s on clock
 // Hustle attractor (window._bcpAttractorValues.hustle, −5..+5) scales think time.
@@ -2932,15 +3028,15 @@ function openingFamiliarity(plies) {
 // and not others.
 //
 // `planSec` is the clock-based plan's average (botClockPlanSec) when that is
-// what set this move's time. The plan already IS a per-move budget, so the
-// Fischer-40 budget cap would only fight it — for a 40-move plan the two are the
-// same number, and every complex move would be clipped back to the average. The
-// plan's own ceiling is its most-complex move instead: average × max multiplier.
+// what set this move's time (Entropy scaled from the clock). The plan already
+// IS a per-move budget, so the Fischer-40 budget cap would only fight it — for a
+// 40-move plan the two are the same number, and every hard move would be
+// clipped back to the average. Nor is there a plan ceiling any more: the old
+// one was average × the Max multiplier, and the measured spread that replaced
+// the multipliers already stops at what people showed (its 99th percentile).
 // The flag ceiling and the can't-flag rule hold in every mode.
 function botApplyClockCaps(thinkMs, clockMs, planSec) {
-  if (planSec != null) {
-    thinkMs = Math.min(thinkMs, planSec * Math.max(1, botCplxMax) * 1000);
-  } else {
+  if (planSec == null) {
     const budgetSec = botTimeBudgetSec(clockMs);
     if (budgetSec !== null) thinkMs = Math.min(thinkMs, budgetSec * 1000);
   }
@@ -2998,7 +3094,7 @@ function botMedian(xs) {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
-// ── The clock-based plan (Complexity-scaled, "From the clock") ──────────────
+// ── The clock-based plan (Entropy scaled, "From the clock") ─────────────────
 // What a player budgeting a game of N moves can afford per move: the time left
 // plus the increment still to come, over the moves still to play.
 //
@@ -3125,15 +3221,226 @@ function botNoteBookReply(data) {
   _explorerSurpriseBoost = freq < 0.05 ? 1.0 : freq < 0.15 ? (0.15 - freq) / 0.10 : 0;
 }
 
-// Complexity → multiplier, centred so a typical position (0.5) costs exactly
-// the average: simple positions shade down toward Min, complex ones up toward
-// Max. The straight line from Min to Max this replaced put a typical position
-// at 1.45× the Base time — the slider's hint ("average-complexity think time")
-// was never true — and on the clock-based plan it would overspend every move.
-function botComplexityMult(cplx) {
-  const c  = Math.max(0, Math.min(1, cplx));
-  const lo = Math.min(botCplxMin, 1), hi = Math.max(botCplxMax, 1);
-  return c <= 0.5 ? lo + (1 - lo) * (c / 0.5) : 1 + (hi - 1) * ((c - 0.5) / 0.5);
+// ── Entropy scaled (botTimeBehavior 'complexity') ────────────────────────────
+// Think time fitted to people's own (the Nov 2026 think-time study): rated
+// Lichess blitz at 3+0, 3+2, 5+0 and 5+3 (7,005 games, ratings 800–2399) and
+// league games, Lichess4545 45+45 and LoneWolf 30+30 (6,748 games), five moves a
+// game from move 11, time-trouble and decided positions left out.
+//
+//   think = plan × stage(move) × e^(a·(H − H̄)) × e^(b·(S − S̄)) × spread × pace
+//
+//   plan    what each study was measured against: (clock + moves left ×
+//           increment) ÷ moves left, moves left = max(10, N − moves played),
+//           N = 40 for the blitz fit and 60 for the league fit
+//   stage   the typical think ÷ plan through the game: people spend most of it
+//           around moves 15–25 and less and less after move 30
+//   H       Maia's entropy here in nats (positionEntropy is in bits): the more
+//           moves that are plausible, the longer people think. The site's
+//           Complexity score this mode used to read tracked think time a third
+//           as well (rank correlation within a game 0.11 against entropy's 0.35)
+//   S       the surprise of the move chosen, −ln p: people take longer over
+//           moves they were less likely to play. Known once the move is picked,
+//           so it is applied then (botEntropyMoveThinkMs)
+//   spread  how much one person's thinks vary from move to move beyond all of
+//           that, drawn from the measured spread rather than an assumed bell:
+//           about ×2 for one standard deviation in blitz, ×3 in league games.
+//           It replaces the ±20% jitter and the Reconsideration pause here
+//   level   a correction to the whole level for the time control, measured
+//           (botEntropyLevel; a stopgap, see BOT_ENTROPY_FIT.level)
+//   pace    the Slower–Faster slider, ×2 … ×½ (botThinkPaceMult)
+//
+// a and b were fitted together, so b's share is not counted in a twice. With
+// no move to judge (the rough estimate, a path that never picks) S = S̄.
+//
+// Rapid was not fitted. Between the two — a game of base + 40 × increment from
+// 7 to 50 minutes — the blitz and league predictions are blended on a log scale
+// of that size (botEntropyBlend); bullet uses the blitz fit, 30+30 and up the
+// league fit, and an untimed game the league fit (nobody is short of time).
+// Bullet and rapid were then checked against real games, and the level
+// corrected to what they showed (level, below).
+const BOT_ENTROPY_FIT = {
+  stageMoves: [13, 18, 23, 28, 35.5, 50.5, 70],       // the middle of each band of moves
+  spreadP: [0.01, 0.025, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5,
+            0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.975, 0.99],
+  blitz: {
+    n: 40, a: 0.331, b: 0.1206, hMean: 1.4224, sMean: 1.4035,
+    stage: [0.5616, 0.6431, 0.6364, 0.5126, 0.3659, 0.2933, 0.2122],
+    spread: [-1.6025, -1.3554, -1.1497, -0.9068, -0.7349, -0.5994, -0.4868, -0.3774, -0.2812, -0.1896,
+             -0.1030, -0.0136, 0.0760, 0.1682, 0.2619, 0.3650, 0.4766, 0.5974, 0.7343, 0.9185,
+             1.1821, 1.4257, 1.7332],
+  },
+  league: {
+    n: 60, a: 0.6683, b: 0.2134, hMean: 1.3377, sMean: 1.3870,
+    stage: [0.7251, 0.8196, 0.7450, 0.5733, 0.3473, 0.1482, 0.0880],
+    spread: [-2.7479, -2.2609, -1.8761, -1.4041, -1.1130, -0.8795, -0.6891, -0.5201, -0.3614, -0.2195,
+             -0.0859, 0.0423, 0.1717, 0.3007, 0.4348, 0.5710, 0.7218, 0.8906, 1.0827, 1.3335,
+             1.7183, 2.0744, 2.5211],
+  },
+  blitzGameSec: 420,     // 5+3, the largest blitz control measured (base + 40 × increment)
+  leagueGameSec: 3000,   // 30+30, the smallest league control measured
+  hMax: 3.0,             // nats; past the 99th percentile in both studies (2.5–2.6)
+  sMax: 5.6,             // nats; the 99th percentile in both studies
+  // People's median think ÷ this formula's, at each control measured, by the
+  // game's size base + 40 × increment in seconds (botEntropyLevel). A STOPGAP
+  // (Nov 23 2026), until a full bullet and rapid study: a quick check on 722
+  // bullet and rapid games found the formula's shape held at every control —
+  // spread, entropy, surprise, which moves run long — but not its level.
+  // Bullet players take longer than the blitz fit says (1+0: 1.67×), rapid
+  // players less than either fit (10+0: 0.59×). The blitz and league points
+  // are the fitted games, measured the same way. Games with an increment run
+  // about a quarter longer than games of the same size without one, so each
+  // has its own line; straight lines between points on a log scale of the
+  // size, held flat past the ends. Except below 1+0, which was not measured:
+  // the correction is phased out by ½+0 (the [30, 1]), as 1+0's 1.67 held
+  // there flagged the bot in 93 of 200 simulated 60-move games (0 without).
+  level: {
+    noInc: [[30, 1], [60, 1.67], [180, 0.94], [300, 0.78], [600, 0.59]],        // (½+0) 1+0 3+0 5+0 10+0
+    inc:   [[160, 1.24], [260, 1.03], [420, 0.90], [800, 0.76], [1300, 0.66],   // 2+1 3+2 5+3 10+5 15+10
+            [3000, 1.08], [4500, 1.14]],                                         // 30+30 45+45 (league)
+  },
+};
+
+// 0 = the blitz fit, 1 = the league fit, between them for rapid. By the game's
+// size, base + 40 × increment, on a log scale. Read from the time control, like
+// botPlanGameMoves, so a game resumed mid-way is still the game it was.
+function botEntropyBlend() {
+  const gm = _entropyGame();
+  if (!gm) return 1;
+  const F = BOT_ENTROPY_FIT;
+  const t = Math.log(gm.size / F.blitzGameSec) / Math.log(F.leagueGameSec / F.blitzGameSec);
+  return Math.max(0, Math.min(1, t));
+}
+// The game on the clock: its size, base + 40 × increment in seconds, and its
+// increment. null with no clock.
+function _entropyGame() {
+  const tc = (typeof TIME_CONTROLS !== 'undefined' && typeof clockControl !== 'undefined')
+    ? TIME_CONTROLS[clockControl] : null;
+  const base = (tc && tc.time > 0) ? tc.time
+    : (typeof botStartClockMs === 'number' && botStartClockMs > 0) ? botStartClockMs / 1000 : 0;
+  if (!(base > 0)) return null;
+  const inc = (typeof clockInc === 'number') ? clockInc : 0;
+  return { size: base + 40 * inc, inc };
+}
+// The level correction for this game's clock (BOT_ENTROPY_FIT.level); 1 with
+// no clock, where the Base time is the typical think.
+function botEntropyLevel() {
+  const gm = _entropyGame();
+  if (!gm) return 1;
+  const pts = gm.inc > 0 ? BOT_ENTROPY_FIT.level.inc : BOT_ENTROPY_FIT.level.noInc;
+  const x = Math.log(gm.size);
+  if (x <= Math.log(pts[0][0])) return pts[0][1];
+  for (let i = 1; i < pts.length; i++) {
+    const x1 = Math.log(pts[i][0]);
+    if (x <= x1) {
+      const x0 = Math.log(pts[i - 1][0]);
+      return pts[i - 1][1] + (x - x0) / (x1 - x0) * (pts[i][1] - pts[i - 1][1]);
+    }
+  }
+  return pts[pts.length - 1][1];
+}
+const _entropyMix = (t, k) => (1 - t) * BOT_ENTROPY_FIT.blitz[k] + t * BOT_ENTROPY_FIT.league[k];
+
+// The stage multiplier at this move: straight lines between the bands' middles,
+// flat before move 13 and after move 70. Before move 11 people are mostly in
+// book, which openingFamiliarity and the book timing already handle.
+function _entropyStageAt(stage, moveNo) {
+  const xs = BOT_ENTROPY_FIT.stageMoves;
+  if (moveNo <= xs[0]) return stage[0];
+  for (let i = 1; i < xs.length; i++) {
+    if (moveNo <= xs[i]) {
+      const f = (moveNo - xs[i - 1]) / (xs[i] - xs[i - 1]);
+      return stage[i - 1] + f * (stage[i] - stage[i - 1]);
+    }
+  }
+  return stage[stage.length - 1];
+}
+
+// The typical think in ms (no spread, no own-move surprise), before the human
+// modifiers. entropyNats: Maia's entropy at this position, in nats.
+function botEntropyTypicalMs(entropyNats, clockMs) {
+  const F = BOT_ENTROPY_FIT, t = botEntropyBlend();
+  const H = Math.max(0, Math.min(F.hMax, entropyNats));
+  const plies = (typeof gameMovesAlgebraic !== 'undefined') ? gameMovesAlgebraic.length : 0;
+  const played = Math.floor(plies / 2), moveNo = played + 1;
+  const inc = (typeof clockInc === 'number') ? clockInc : 0;
+  const fromClock = typeof botCplxBaseMode !== 'undefined' && botCplxBaseMode === 'clock' &&
+                    clockMs !== null && clockMs !== undefined;
+  // One study's prediction, as a log. On the clock it is that study's own plan
+  // shaped by the game stage; with Fixed seconds (or no clock) the Base time
+  // is the typical think and only the position changes it.
+  const logThink = (fit) => {
+    let sec;
+    if (fromClock) {
+      const left = Math.max(BOT_PLAN_MIN_MOVES_LEFT, fit.n - played);
+      sec = (clockMs / 1000 + left * inc) / left * _entropyStageAt(fit.stage, moveNo);
+    } else {
+      sec = botCplxBase;
+    }
+    return Math.log(Math.max(0.05, sec)) + fit.a * (H - fit.hMean);
+  };
+  // The measured level for this clock: on the clock only, as Fixed seconds
+  // sets the typical think itself.
+  const level = fromClock ? botEntropyLevel() : 1;
+  return Math.exp((1 - t) * logThink(F.blitz) + t * logThink(F.league)) * level * 1000;
+}
+
+// One draw from the measured spread, as a multiplier. u in [0, 1): inverse of
+// the measured distribution, straight lines between its quantiles, held at the
+// 1st and 99th percentiles (so no single draw runs past what people showed).
+function botEntropySpreadMult(u) {
+  const F = BOT_ENTROPY_FIT, t = botEntropyBlend(), P = F.spreadP;
+  const at = i => (1 - t) * F.blitz.spread[i] + t * F.league.spread[i];
+  let v;
+  if (u <= P[0]) v = at(0);
+  else if (u >= P[P.length - 1]) v = at(P.length - 1);
+  else {
+    let i = 1;
+    while (u > P[i]) i++;
+    const f = (u - P[i - 1]) / (P[i] - P[i - 1]);
+    v = at(i - 1) + f * (at(i) - at(i - 1));
+  }
+  return Math.exp(v);
+}
+
+// The Slower–Faster slider: −1 → twice a typical person's think, +1 → half.
+function botThinkPaceMult() {
+  const p = (typeof botThinkPace === 'number') ? Math.max(-1, Math.min(1, botThinkPace)) : 0;
+  return Math.pow(2, -p);
+}
+
+// Set by botThinkTime when Entropy scaled set this move's time (and was not
+// the rough estimate), so the own-move surprise can be added once the move is
+// picked; null otherwise. Carries the busted-premove stall, which is not a
+// thought and so is not scaled.
+let _entropyThinkPending = null;
+
+// Once the move is chosen: people take longer over a move they were less
+// likely to play (S = −ln p of the chosen move, under the same distribution the
+// entropy came from). Returns the delay to use; unchanged unless the last
+// botThinkTime call was an Entropy-scaled thought. One-shot, like the stall.
+function botEntropyMoveThinkMs(delayMs, moveProbs, uci, clockMs) {
+  const pend = _entropyThinkPending;
+  _entropyThinkPending = null;
+  if (!pend || !moveProbs || !uci) return delayMs;
+  const F = BOT_ENTROPY_FIT, t = botEntropyBlend();
+  const p = moveProbs[uci];
+  const S = Math.min(F.sMax, -Math.log(Math.max(1e-6, p || 0)));
+  const thought = Math.max(0, delayMs - pend.bustTax) * Math.exp(_entropyMix(t, 'b') * (S - _entropyMix(t, 'sMean')));
+  const planSec = botClockPlanSec(clockMs);
+  let ms = botApplyClockCaps(thought, clockMs, planSec);
+  if (planSec === null) ms = Math.min(ms, botThinkCapMs());
+  return Math.max(200, ms + pend.bustTax);
+}
+
+// Every Maia path: pick first, then wait out what is left of the think, so the
+// think can follow the move that was chosen (the Flounder turn already worked
+// this way). Picking inside the think also stops a slow pick running the move
+// long. startMs: when this turn began. Returns the wait, for the log.
+async function botWaitOutThink(targetDelayMs, moveProbs, uci, clockMs, startMs) {
+  const total = botEntropyMoveThinkMs(targetDelayMs, moveProbs, uci, clockMs);
+  const wait = Math.max(0, total - (Date.now() - startMs));
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  return wait;
 }
 
 // opts.rough marks an ESTIMATE — the pre-inference guess every engine path
@@ -3152,6 +3459,7 @@ function botComplexityMult(cplx) {
 // they know — so the clock is spent where the game actually starts.
 function botThinkTime(moveProbs, clockMs, opts) {
   opts = opts || {};
+  _entropyThinkPending = null;   // set again below only for an Entropy-scaled thought
   const entropy = moveProbs ? positionEntropy(moveProbs) : 2;
   const bustTax = opts.rough ? 0 : botPremoveBustTaxMs();
   const surprise = opts.rough ? 1 : botSurpriseMult();
@@ -3201,20 +3509,22 @@ function botThinkTime(moveProbs, clockMs, opts) {
     // No human moves yet — fall through to complexity/pace
   }
 
-  // ── Complexity: the average (from the clock, or the Base time slider),
-  //    scaled by how complex this position is ──────────────────────────────
+  // ── Entropy scaled: the typical think a person would take here — from the
+  //    clock and the game stage, or the Base time — by Maia's entropy ─────────
   let thinkMs;
   let planSec = null;
-  if (botTimeBehavior === 'complexity') {
+  const entropyScaled = botTimeBehavior === 'complexity';
+  if (entropyScaled) {
     planSec = botClockPlanSec(clockMs);
     // In book on the clock-based plan: scaled to the time control, like every
-    // other book path (botBookMoveDelayMs).
+    // other book path (botBookMoveDelayMs), and by the Slower–Faster slider.
     if (planSec !== null && opts.book) {
-      return withTax(botBookMoveDelayMs(clockMs, surprise));
+      return withTax(botBookMoveDelayMs(clockMs, surprise * botThinkPaceMult()));
     }
-    // Prefer sfCplxScore (MultiPV probe) over entropy fallback when available
-    const cplx = (sfCplxScore !== null) ? sfCplxScore : Math.min(1, entropy / 4.0);
-    thinkMs = (planSec !== null ? planSec : botCplxBase) * botComplexityMult(cplx) * 1000;
+    // positionEntropy is in bits; the fit is in nats. With no distribution to
+    // hand (the rough estimate) entropy is 2 bits, 1.39 nats — about the
+    // average position in both studies.
+    thinkMs = botEntropyTypicalMs(entropy * Math.LN2, clockMs);
   } else {
     // ── Pace (default): original entropy-based delay ──────────────────────
     const pace = parseInt(document.getElementById('botPace').value) || 40;
@@ -3247,20 +3557,33 @@ function botThinkTime(moveProbs, clockMs, opts) {
   // with ELO: a 600-rated bot knows ~4 moves; a 2600 bot knows ~22.
   // Explorer confidence extends or compresses the familiarity zone.
   // Multiplier: familiarity=1 → 15% of normal pace; familiarity=0 → unchanged.
-  const _fam = openingFamiliarity(botMoveHistory.length);
+  // Entropy scaled only before move 11: from there its game-stage curve was
+  // measured on people's own moves, so how fast they play what they know is
+  // already in it, and applying both counted it twice.
+  const _fam = (entropyScaled && Math.floor(botMoveHistory.length / 2) + 1 >= 11)
+    ? 0 : openingFamiliarity(botMoveHistory.length);
   if (_fam > 0.02) thinkMs *= (0.15 + 0.85 * (1 - _fam));
 
   // ── Novelty pause (botSurpriseMult) ──────────────────────────────────────
   // Applied after familiarity so it partially overrides the speed savings.
   thinkMs *= surprise;
 
-  // ── Reconsideration pause: occasional extended hesitation ────────────────
-  if (botBehavReconsider && Math.random() < 0.15) {
-    thinkMs *= 1.5 + Math.random();
-  }
+  if (entropyScaled) {
+    // ── The measured spread, then the Slower–Faster slider ─────────────────
+    // In place of the reconsideration pause and the ±20% jitter: people's long
+    // and short thinks come from this spread, as often as they really do. The
+    // rough estimate is the typical think, with no draw.
+    if (!opts.rough) thinkMs *= botEntropySpreadMult(Math.random());
+    thinkMs *= botThinkPaceMult();
+  } else {
+    // ── Reconsideration pause: occasional extended hesitation ──────────────
+    if (botBehavReconsider && Math.random() < 0.15) {
+      thinkMs *= 1.5 + Math.random();
+    }
 
-  // ── Base ±20% jitter ─────────────────────────────────────────────────────
-  thinkMs *= 0.8 + Math.random() * 0.4;
+    // ── Base ±20% jitter ───────────────────────────────────────────────────
+    thinkMs *= 0.8 + Math.random() * 0.4;
+  }
 
   // ── Busted-premove tax ────────────────────────────────────────────────────
   // The bot committed to a reply, the human's move made it illegal, and now it
@@ -3302,7 +3625,10 @@ function botThinkTime(moveProbs, clockMs, opts) {
   // the plan is its own ceiling, or a classical game could never spend more
   // than 45 s on its hardest move.
   const ceiling = (planSec !== null) ? Infinity : botThinkCapMs();
-  return Math.max(200, Math.min(ceiling + bustTax, thinkMs));
+  const outMs = Math.max(200, Math.min(ceiling + bustTax, thinkMs));
+  // The own-move surprise is added once the move is picked (botWaitOutThink).
+  if (entropyScaled && !opts.rough) _entropyThinkPending = { bustTax };
+  return outMs;
 }
 
 // Consumes the pending bust flag and returns the extra think time it earns.
@@ -4014,14 +4340,14 @@ async function botMakeMove() {
         const preciseThinkSecM3 = targetDelay / 1000;
         const m3EffTemp = timePressureTempByThink(m3Temp, preciseThinkSecM3);
         const inferenceMs = Date.now() - _botMoveStartMs;
-        const delay = Math.max(0, targetDelay - inferenceMs);
-        if (delay > 0) await new Promise(r => setTimeout(r, delay));
         _botMoveClockMs = clockMs; // clock fallback for the ctrlB cutoff
         _botMoveThinkSec = preciseThinkSecM3; // actual think drives curve B
         const adjTemp = complexityAdjustedTemp(m3EffTemp);
         await _ensureMoveComplexity(fen, m3Probs);
         uciMove = await botPickFromProbs(fen, m3Probs, adjTemp);
         _botMoveThinkSec = null;
+        // Pick first, then wait out the rest: the think follows the chosen move.
+        const delay = await botWaitOutThink(targetDelay, m3Probs, uciMove, clockMs, _botMoveStartMs);
         console.log('[Maia3 FULL] chose:', uciMove, '| temp:', adjTemp.toFixed(2), '(base:', m3EffTemp.toFixed(2), ')| inf:', inferenceMs, 'ms | extra wait:', delay, 'ms');
       } else {
         // Maia3 not downloaded — Flounder at the rating Maia was asked for.
@@ -4083,14 +4409,13 @@ async function botMakeMove() {
         const preciseThinkSec = targetDelay / 1000;
         // Step 4: pressure curves keyed on actual think time, not clock average
         const effectiveTemp = timePressureTempByThink(baseTemp, preciseThinkSec);
-        const inferenceMs = Date.now() - _botMoveStartMs;
-        const delay = Math.max(0, targetDelay - inferenceMs);
-        if (delay > 0) await new Promise(r => setTimeout(r, delay));
         _botMoveClockMs = clockMs;
         _botMoveThinkSec = preciseThinkSec;
         await _ensureMoveComplexity(fen, probs);
         uciMove = await botPickFromProbs(fen, probs, complexityAdjustedTemp(effectiveTemp));
         _botMoveThinkSec = null;
+        // Pick first, then wait out the rest: the think follows the chosen move.
+        await botWaitOutThink(targetDelay, probs, uciMove, clockMs, _botMoveStartMs);
       } else {
         // Off book with no Maia model to hand over to: Flounder at the rating
         // on the dial, the same substitution the pure Maia 3 path makes.
@@ -4111,8 +4436,8 @@ async function botMakeMove() {
           : (parseFloat(document.getElementById('maiaTemp')?.value) || 1.0);
       const roughThinkSecLcsf = botThinkTime(null, clockMs, { rough: true }) / 1000;
       // SF probe in parallel with the explorer fetch — needed here for
-      // stalemate-seek and complexity-scaled timing (both live outside the
-      // personality section, which is greyed for LC+SF).
+      // stalemate-seek (which lives outside the personality section, greyed
+      // for LC+SF).
       if (_needsComplexity() && !sfReady) sfInit().catch(() => {});
       const cplxPromiseLcsf = (_needsComplexity() && sfReady) ? sfGetComplexity(fen) : null;
       let lcsfProbs = null;
@@ -4172,7 +4497,7 @@ async function botMakeMove() {
           lastBotMoveDetail = 'Opening explorer';
           // The complexity probe every other distribution path runs, for the
           // same readers: Front-runner/Swindler, stalemate-seeking, custom
-          // controls gated on winning/losing, Complexity-scaled timing. This
+          // controls gated on winning/losing. This
           // path had none, so those read whatever an earlier move left behind.
           if (_needsComplexity()) {
             if (!sfReady) { try { await sfInit(); } catch (e) {} }
@@ -4224,7 +4549,7 @@ async function botMakeMove() {
           const slotElo = chosen.elo || (chosen.level ? chosen.level * 200 : maia3SelectedRating);
           // Same think-time plumbing as the other Maia paths: rough estimate
           // drives the slot's curve-A drop; the SF probe (chaos/compwin temp,
-          // stalemate-seek, result-gated custom controls, complexity timing)
+          // stalemate-seek, result-gated custom controls)
           // runs in parallel with the inference. sfInit() ran just above.
           const hybRoughThinkSec = botThinkTime(null, clockMs, { rough: true }) / 1000;
           const cplxPromiseHyb = (_needsComplexity() && sfReady) ? sfGetComplexity(fen) : null;
@@ -4251,14 +4576,13 @@ async function botMakeMove() {
             const preciseThinkSecHyb = targetDelay / 1000;
             const effectiveTemp = complexityAdjustedTemp(
               timePressureTempByThink(m3Temp, preciseThinkSecHyb));
-            const inferenceMs = Date.now() - _botMoveStartMs;
-            const delay = Math.max(0, targetDelay - inferenceMs);
-            if (delay > 0) await new Promise(res => setTimeout(res, delay));
             _botMoveClockMs = clockMs;
             _botMoveThinkSec = preciseThinkSecHyb;
             await _ensureMoveComplexity(fen, probs);
             uciMove = await botPickFromProbs(fen, probs, effectiveTemp);
             _botMoveThinkSec = null;
+            // Pick first, then wait out the rest: the think follows the chosen move.
+            await botWaitOutThink(targetDelay, probs, uciMove, clockMs, _botMoveStartMs);
           } else {
             // Maia3 not downloaded or failed — Flounder at the slot's own ELO,
             // which keeps the blend's identity intact instead of replacing one
