@@ -17195,14 +17195,30 @@ function syncThinkPace(v){
   if(typeof _syncCplxBaseUi === 'function') _syncCplxBaseUi();
 }
 // A typical think around move 15 with the clock still full, for this time
-// control: what the drawer quotes. MIRRORS botEntropyTypicalMs, botEntropyBlend
-// and botEntropyLevel in src/50-bot-engine.js (average position, no spread) —
-// keep the stage values, game sizes and level points in step with
-// BOT_ENTROPY_FIT.
+// control: what the drawer quotes. MIRRORS botEntropyTypicalMs,
+// botEntropyWeights and botEntropyLevel in src/50-bot-engine.js (average
+// position, no spread) — keep the stage values, game sizes and level points in
+// step with BOT_ENTROPY_FIT.
 const _ENTROPY_LEVEL = {
-  noInc: [[30, 1], [60, 1.67], [180, 0.94], [300, 0.78], [600, 0.59]],
-  inc:   [[160, 1.24], [260, 1.03], [420, 0.90], [800, 0.76], [1300, 0.66], [3000, 1.08], [4500, 1.14]],
+  noInc: [[30, 1], [60, 1.67], [180, 0.94], [300, 0.78], [600, 0.93]],
+  inc:   [[160, 1.24], [260, 1.03], [420, 0.90], [800, 0.94], [1300, 0.99], [3000, 1.08], [4500, 1.14]],
 };
+// One row per fit, as BOT_ENTROPY_FIT.sizes: [smallest, largest game size,
+// plan N, stage at move 15 (between the stage points at moves 13 and 18)] for
+// blitz, rapid 10+0/10+5, rapid 15+10 and league.
+const _ENTROPY_SIZES = [[0, 420, 40, 0.5942], [600, 800, 60, 0.6359], [1300, 1300, 60, 0.5808], [3000, Infinity, 60, 0.7629]];
+function _entropyWeights(size){
+  const S = _ENTROPY_SIZES, w = S.map(() => 0);
+  for(let i = 0; i < S.length; i++){
+    if(size > S[i][1]) continue;
+    if(i === 0 || size >= S[i][0]){ w[i] = 1; return w; }
+    const t = Math.log(size / S[i - 1][1]) / Math.log(S[i][0] / S[i - 1][1]);
+    w[i - 1] = 1 - t; w[i] = t;
+    return w;
+  }
+  w[S.length - 1] = 1;
+  return w;
+}
 function _entropyLevel(size, inc){
   const pts = inc > 0 ? _ENTROPY_LEVEL.inc : _ENTROPY_LEVEL.noInc, x = Math.log(size);
   if(x <= Math.log(pts[0][0])) return pts[0][1];
@@ -17215,10 +17231,10 @@ function _entropyLevel(size, inc){
 function _entropyTypicalStartSec(){
   const base = (+tcTime || 0) * 60, inc = +tcInc || 0;
   if(!(base > 0)) return null;
-  const t = Math.max(0, Math.min(1, Math.log((base + 40 * inc) / 420) / Math.log(3000 / 420)));
+  const size = base + 40 * inc, w = _entropyWeights(size);
   const leg = (n, stage15) => { const left = n - 14; return Math.log((base + left * inc) / left * stage15); };
-  // stage at move 15: blitz 0.5942, league 0.7629 (between the bands' middles, 13 and 18)
-  return Math.exp((1 - t) * leg(40, 0.5942) + t * leg(60, 0.7629)) * _entropyLevel(base + 40 * inc, inc) * _thinkPaceMult();
+  const logMix = _ENTROPY_SIZES.reduce((s, f, i) => w[i] ? s + w[i] * leg(f[2], f[3]) : s, 0);
+  return Math.exp(logMix) * _entropyLevel(size, inc) * _thinkPaceMult();
 }
 function _syncCplxBaseUi(){
   const timed = isTimedGame();
@@ -17236,9 +17252,9 @@ function _syncCplxBaseUi(){
     : 'A typical move takes about ' + _fmtSec(_entropyTypicalStartSec()) + ' around move 15 of this ' + tcTime + '+' + tcInc +
       ' game, from the time left and the moves still to come, recomputed every move. Like people it spends' +
       ' most around moves 15–25 and less after move 30; obvious moves go faster, ones with many playable' +
-      ' replies slower. Fitted to people\'s own think times in 3+0 to 5+3 blitz and in 30+30 and 45+45' +
-      ' league games; a game between them is planned between the two, and the overall pace is set to what' +
-      ' people showed in a check on bullet and rapid games (1+0 to 15+10). No one move takes more than a tenth of the clock' +
+      ' replies slower. Fitted to people\'s own think times in 3+0 to 5+3 blitz, 10+0 to 15+10 rapid, and' +
+      ' 30+30 and 45+45 league games; a game between those is planned between the nearest two, and bullet\'s' +
+      ' overall pace is set to what people showed in a check on 1+0 and 2+1 games. No one move takes more than a tenth of the clock' +
       ' plus the increment, so it does not flag. Book moves take ' + bookTxt +
       ' here — quick in bullet and blitz, 5–15 s from 20-minute games up, where a good player' +
       ' still decides which of the lines they know to go into.';

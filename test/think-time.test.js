@@ -386,8 +386,9 @@ test('novelty pause: book moves take it too, inside the clock caps', () => {
 
 
 // ── Entropy scaled (the builder's name for 'complexity') ──────────────────────
-// Fitted to people's own think times: Lichess blitz 3+0 to 5+3 and league games
-// at 30+30 and 45+45 (BOT_ENTROPY_FIT). On the clock, at plies = 28 (move 15).
+// Fitted to people's own think times: Lichess blitz 3+0 to 5+3, Lichess rapid
+// 10+0 to 15+10 and league games at 30+30 and 45+45 (BOT_ENTROPY_FIT). On the
+// clock, at plies = 28 (move 15).
 const uniform = (n) => { const p = {}; for (let i = 0; i < n; i++) p['m' + i] = 1 / n; return p; };
 function entropyCtx(o = {}) {
   const ctx = makeCtx(Object.assign({ botCplxBaseMode: 'clock' }, o));
@@ -396,13 +397,15 @@ function entropyCtx(o = {}) {
 }
 
 test('entropy scaled: a typical move matches what people take (move 15, full clock)', () => {
-  // The studies' medians at moves 11-20: about 3-4 s at 3+0, about 80 s at 45+45.
+  // The studies' medians at moves 11-20: about 3-4 s at 3+0, 6.9 s at 10+0,
+  // 16.6 s at 15+10, about 80 s at 45+45 (with the clock no longer full).
   // An average position is 1.39 nats, which is what no distribution stands for.
-  const blitz = entropyCtx({ botStartClockMs: 180000, clockInc: 0 });
-  const league = entropyCtx({ botStartClockMs: 2700000, clockInc: 45 });
-  const b = blitz.botEntropyTypicalMs(1.39, 180000) / 1000;
-  const l = league.botEntropyTypicalMs(1.39, 2700000) / 1000;
+  const at = (base, inc) => entropyCtx({ botStartClockMs: base * 1000, clockInc: inc })
+    .botEntropyTypicalMs(1.39, base * 1000) / 1000;
+  const b = at(180, 0), r10 = at(600, 0), r15 = at(900, 10), l = at(2700, 45);
   assert.ok(b > 3 && b < 5, '3+0 typical ' + b.toFixed(2) + ' s');
+  assert.ok(r10 > 6 && r10 < 9, '10+0 typical ' + r10.toFixed(2) + ' s');
+  assert.ok(r15 > 14 && r15 < 20, '15+10 typical ' + r15.toFixed(2) + ' s');
   assert.ok(l > 65 && l < 95, '45+45 typical ' + l.toFixed(1) + ' s');
 });
 
@@ -417,7 +420,7 @@ test('entropy scaled: more playable moves, a longer think', () => {
 
 test('entropy scaled: the game stage — most around moves 15-25, less and less after 30', () => {
   const ctx = entropyCtx();
-  for (const fit of ['blitz', 'league']) {
+  for (const fit of ['blitz', 'rapid10', 'rapid15', 'league']) {
     const st = vm.runInContext('BOT_ENTROPY_FIT', ctx)[fit].stage;   // a const, not a global property
     const at = m => ctx._entropyStageAt(st, m);
     assert.ok(at(18) > at(13) && at(18) > at(30) && at(30) > at(40) && at(40) > at(55) && at(55) > at(70),
@@ -427,24 +430,37 @@ test('entropy scaled: the game stage — most around moves 15-25, less and less 
   }
 });
 
-test('entropy scaled: rapid is planned between the blitz and league fits', () => {
-  const t = (base, inc) => entropyCtx({ botStartClockMs: base * 1000, clockInc: inc }).botEntropyBlend();
-  assert.strictEqual(t(60, 0), 0, 'bullet uses blitz');
-  assert.strictEqual(t(180, 0), 0, '3+0 uses blitz');
-  assert.strictEqual(t(300, 3), 0, '5+3 uses blitz');
-  assert.ok(t(600, 0) > 0.1 && t(600, 0) < 0.3, '10+0: ' + t(600, 0).toFixed(2));
-  assert.ok(t(900, 10) > 0.5 && t(900, 10) < 0.7, '15+10: ' + t(900, 10).toFixed(2));
-  assert.strictEqual(t(1800, 30), 1, '30+30 uses league');
-  assert.strictEqual(entropyCtx({ botStartClockMs: null }).botEntropyBlend(), 1, 'untimed uses league');
+test('entropy scaled: each fit on the controls it was measured on, neighbours blended between', () => {
+  // Weights per fit: blitz, rapid 10+0/10+5, rapid 15+10, league.
+  const w = (base, inc) => [...entropyCtx({ botStartClockMs: base * 1000, clockInc: inc }).botEntropyWeights()];
+  const alone = (base, inc, i, label) => {
+    const v = w(base, inc);
+    assert.deepStrictEqual(v, [0, 1, 2, 3].map(j => j === i ? 1 : 0), label + ': ' + v.join(' '));
+  };
+  alone(60, 0, 0, 'bullet uses blitz'); alone(180, 0, 0, '3+0'); alone(300, 3, 0, '5+3'); alone(420, 0, 0, '7+0');
+  alone(600, 0, 1, '10+0'); alone(600, 5, 1, '10+5');
+  alone(900, 10, 2, '15+10');
+  alone(1800, 30, 3, '30+30'); alone(2700, 45, 3, '45+45'); alone(5400, 30, 3, '90+30');
+  assert.deepStrictEqual([...entropyCtx({ botStartClockMs: null }).botEntropyWeights()], [0, 0, 0, 1], 'untimed uses league');
+  // Between, on a log scale of base + 40 × increment, and always summing to 1.
+  const near = (a, b, label) => assert.ok(Math.abs(a - b) < 1e-9, label + ': ' + a + ' vs ' + b);
+  near(w(480, 0)[1], Math.log(480 / 420) / Math.log(600 / 420), '8+0, blitz to rapid');
+  near(w(720, 5)[2], Math.log(920 / 800) / Math.log(1300 / 800), '12+5, rapid to 15+10');
+  near(w(1200, 10)[3], Math.log(1600 / 1300) / Math.log(3000 / 1300), '20+10, 15+10 to league');
+  for (const [b, i] of [[480, 0], [720, 5], [900, 0], [1200, 10], [1800, 0]]) {
+    const v = w(b, i);
+    near(v.reduce((s, x) => s + x, 0), 1, b + '+' + i + ' sums to 1');
+    assert.ok(v.filter(x => x > 0).length <= 2, 'at most two fits at once');
+  }
 });
 
-test('entropy scaled: the level is set to what people showed at each control (Nov 23 check)', () => {
+test('entropy scaled: the level is set to what people showed at each control (the fits, the Nov 23 bullet check)', () => {
   const lv = (base, inc) => entropyCtx({ botStartClockMs: base * 1000, clockInc: inc }).botEntropyLevel();
   const near = (a, b, label) => assert.ok(Math.abs(a - b) < 1e-9, label + ': ' + a + ' vs ' + b);
   // The measured points, without and with an increment.
-  near(lv(60, 0), 1.67, '1+0'); near(lv(180, 0), 0.94, '3+0'); near(lv(300, 0), 0.78, '5+0'); near(lv(600, 0), 0.59, '10+0');
-  near(lv(120, 1), 1.24, '2+1'); near(lv(180, 2), 1.03, '3+2'); near(lv(300, 3), 0.90, '5+3'); near(lv(600, 5), 0.76, '10+5');
-  near(lv(900, 10), 0.66, '15+10'); near(lv(1800, 30), 1.08, '30+30'); near(lv(2700, 45), 1.14, '45+45');
+  near(lv(60, 0), 1.67, '1+0'); near(lv(180, 0), 0.94, '3+0'); near(lv(300, 0), 0.78, '5+0'); near(lv(600, 0), 0.93, '10+0');
+  near(lv(120, 1), 1.24, '2+1'); near(lv(180, 2), 1.03, '3+2'); near(lv(300, 3), 0.90, '5+3'); near(lv(600, 5), 0.94, '10+5');
+  near(lv(900, 10), 0.99, '15+10'); near(lv(1800, 30), 1.08, '30+30'); near(lv(2700, 45), 1.14, '45+45');
   // Between points, a straight line on a log scale of base + 40 × increment:
   // 3+1 (220 s) lies between 2+1 (160) and 3+2 (260).
   const f = Math.log(220 / 160) / Math.log(260 / 160);
@@ -453,7 +469,7 @@ test('entropy scaled: the level is set to what people showed at each control (No
   near(lv(30, 0), 1, '½+0'); near(lv(15, 0), 1, '¼+0');
   near(lv(45, 0), 1 + Math.log(45 / 30) / Math.log(2) * 0.67, '¾+0');
   // Held past the other ends; none with no clock.
-  near(lv(1800, 0), 0.59, '30+0'); near(lv(5400, 60), 1.14, '90+60');
+  near(lv(1800, 0), 0.93, '30+0'); near(lv(5400, 60), 1.14, '90+60');
   assert.strictEqual(entropyCtx({ botStartClockMs: null }).botEntropyLevel(), 1, 'untimed');
   // The typical think carries it on the clock; Fixed seconds sets its own.
   const typ = (o, flat) => {
@@ -462,15 +478,17 @@ test('entropy scaled: the level is set to what people showed at each control (No
     return ctx.botEntropyTypicalMs(1.39, o.botStartClockMs);
   };
   const clock10 = { botStartClockMs: 600000, clockInc: 0 };
-  near(typ(clock10) / typ(clock10, true), 0.59, '10+0 typical ÷ uncorrected');
+  near(typ(clock10) / typ(clock10, true), 0.93, '10+0 typical ÷ uncorrected');
   const fixed10 = { botStartClockMs: 600000, clockInc: 0, botCplxBaseMode: 'fixed', botCplxBase: 5 };
   near(typ(fixed10) / typ(fixed10, true), 1, 'Fixed seconds: no level');
 });
 
 test('entropy scaled: the measured spread — centred, as wide as people, held at the 1st and 99th percentiles', () => {
   const blitz = entropyCtx({ botStartClockMs: 180000 });
+  const rapid10 = entropyCtx({ botStartClockMs: 600000, clockInc: 5 });
+  const rapid15 = entropyCtx({ botStartClockMs: 900000, clockInc: 10 });
   const league = entropyCtx({ botStartClockMs: 2700000, clockInc: 45 });
-  for (const [ctx, sd, mean] of [[blitz, 0.71, 1.30], [league, 1.09, 1.79]]) {
+  for (const [ctx, sd, mean] of [[blitz, 0.71, 1.30], [rapid10, 0.87, 1.48], [rapid15, 0.92, 1.52], [league, 1.09, 1.79]]) {
     assert.ok(Math.abs(Math.log(ctx.botEntropySpreadMult(0.5))) < 0.05, 'median about 1');
     assert.strictEqual(ctx.botEntropySpreadMult(0.001), ctx.botEntropySpreadMult(0.01), 'held at 1%');
     assert.strictEqual(ctx.botEntropySpreadMult(0.999), ctx.botEntropySpreadMult(0.99), 'held at 99%');

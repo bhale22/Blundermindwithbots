@@ -3438,15 +3438,16 @@ function botNoteBookReply(data) {
 
 // ── Entropy scaled (botTimeBehavior 'complexity') ────────────────────────────
 // Think time fitted to people's own (the Nov 2026 think-time study): rated
-// Lichess blitz at 3+0, 3+2, 5+0 and 5+3 (7,005 games, ratings 800–2399) and
-// league games, Lichess4545 45+45 and LoneWolf 30+30 (6,748 games), five moves a
-// game from move 11, time-trouble and decided positions left out.
+// Lichess blitz at 3+0, 3+2, 5+0 and 5+3 (7,005 games, ratings 800–2399),
+// rated Lichess rapid at 10+0, 10+5 and 15+10 (5,246 games, the same ratings)
+// and league games, Lichess4545 45+45 and LoneWolf 30+30 (6,748 games), five
+// moves a game from move 11, time-trouble and decided positions left out.
 //
-//   think = plan × stage(move) × e^(a·(H − H̄)) × e^(b·(S − S̄)) × spread × pace
+//   think = plan × stage(move) × e^(a·(H − H̄)) × e^(b·(S − S̄)) × spread × level × pace
 //
 //   plan    what each study was measured against: (clock + moves left ×
 //           increment) ÷ moves left, moves left = max(10, N − moves played),
-//           N = 40 for the blitz fit and 60 for the league fit
+//           N = 40 for the blitz fit and 60 for the rapid and league fits
 //   stage   the typical think ÷ plan through the game: people spend most of it
 //           around moves 15–25 and less and less after move 30
 //   H       Maia's entropy here in nats (positionEntropy is in bits): the more
@@ -3458,21 +3459,24 @@ function botNoteBookReply(data) {
 //           so it is applied then (botEntropyMoveThinkMs)
 //   spread  how much one person's thinks vary from move to move beyond all of
 //           that, drawn from the measured spread rather than an assumed bell:
-//           about ×2 for one standard deviation in blitz, ×3 in league games.
-//           It replaces the ±20% jitter and the Reconsideration pause here
+//           about ×2 for one standard deviation in blitz and rapid, ×3 in
+//           league games. It replaces the ±20% jitter and the Reconsideration
+//           pause here
 //   level   a correction to the whole level for the time control, measured
-//           (botEntropyLevel; a stopgap, see BOT_ENTROPY_FIT.level)
+//           (botEntropyLevel; see BOT_ENTROPY_FIT.level)
 //   pace    the Slower–Faster slider, ×2 … ×½ (botThinkPaceMult)
 //
 // a and b were fitted together, so b's share is not counted in a twice. With
 // no move to judge (the rough estimate, a path that never picks) S = S̄.
 //
-// Rapid was not fitted. Between the two — a game of base + 40 × increment from
-// 7 to 50 minutes — the blitz and league predictions are blended on a log scale
-// of that size (botEntropyBlend); bullet uses the blitz fit, 30+30 and up the
-// league fit, and an untimed game the league fit (nobody is short of time).
-// Bullet and rapid were then checked against real games, and the level
-// corrected to what they showed (level, below).
+// Each fit is used alone on the controls it was measured on, by the game's
+// size, base + 40 × increment (BOT_ENTROPY_FIT.sizes): blitz up to 7 minutes
+// (5+3), one rapid fit for 10+0 and 10+5 (10 and 13⅓ minutes), another for
+// 15+10 (21⅔), league from 50 minutes (30+30) up, and league for an untimed
+// game (nobody is short of time). Between them the two neighbouring fits'
+// predictions are blended on a log scale of the size (botEntropyWeights).
+// Bullet uses the blitz fit; a check on real bullet games then set its level
+// (level, below).
 const BOT_ENTROPY_FIT = {
   stageMoves: [13, 18, 23, 28, 35.5, 50.5, 70],       // the middle of each band of moves
   spreadP: [0.01, 0.025, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5,
@@ -3484,6 +3488,29 @@ const BOT_ENTROPY_FIT = {
              -0.1030, -0.0136, 0.0760, 0.1682, 0.2619, 0.3650, 0.4766, 0.5974, 0.7343, 0.9185,
              1.1821, 1.4257, 1.7332],
   },
+  // Rapid: 10+0 and 10+5 together, 15+10 alone — at 15+10 people spend less
+  // of the plan from move 30 on (0.32 against 0.49 around move 35, in both
+  // halves of the players). Fitted as the straight lines between the stage
+  // points that _entropyStageAt draws, so the curve is the one the bot follows
+  // (the blitz and league curves are one average per band of moves, placed at
+  // the band's middle, which runs long early in a band where the curve falls).
+  // The rapid spread is measured against this formula's own prediction, so the
+  // bot's move-to-move variety is people's (SD 0.87 and 0.92); the blitz and
+  // league spreads come from the fit, which squeezes short thinks a little.
+  rapid10: {
+    n: 60, a: 0.3987, b: 0.1429, hMean: 1.3897, sMean: 1.4125,
+    stage: [0.5697, 0.7353, 0.7120, 0.6862, 0.4890, 0.1793, 0.0907],
+    spread: [-2.0835, -1.7494, -1.4429, -1.1188, -0.9023, -0.7256, -0.5742, -0.4450, -0.3217, -0.2092,
+             -0.1023, 0.0096, 0.1184, 0.2311, 0.3467, 0.4622, 0.5759, 0.7167, 0.8856, 1.0953,
+             1.4150, 1.7068, 2.0390],
+  },
+  rapid15: {
+    n: 60, a: 0.4147, b: 0.1643, hMean: 1.4022, sMean: 1.4515,
+    stage: [0.5405, 0.6413, 0.6634, 0.5153, 0.3172, 0.1140, 0.0800],
+    spread: [-2.2263, -1.8785, -1.5276, -1.1704, -0.9456, -0.7603, -0.6016, -0.4638, -0.3399, -0.2144,
+             -0.0970, 0.0203, 0.1301, 0.2470, 0.3640, 0.4738, 0.6127, 0.7617, 0.9353, 1.1488,
+             1.4874, 1.7804, 2.1237],
+  },
   league: {
     n: 60, a: 0.6683, b: 0.2134, hMean: 1.3377, sMean: 1.3870,
     stage: [0.7251, 0.8196, 0.7450, 0.5733, 0.3473, 0.1482, 0.0880],
@@ -3491,39 +3518,55 @@ const BOT_ENTROPY_FIT = {
              -0.0859, 0.0423, 0.1717, 0.3007, 0.4348, 0.5710, 0.7218, 0.8906, 1.0827, 1.3335,
              1.7183, 2.0744, 2.5211],
   },
-  blitzGameSec: 420,     // 5+3, the largest blitz control measured (base + 40 × increment)
-  leagueGameSec: 3000,   // 30+30, the smallest league control measured
-  hMax: 3.0,             // nats; past the 99th percentile in both studies (2.5–2.6)
-  sMax: 5.6,             // nats; the 99th percentile in both studies
+  // Which fit at which game size, base + 40 × increment in seconds: each alone
+  // over the controls it was measured on, [fit, smallest, largest]; between one
+  // and the next both are blended (botEntropyWeights).
+  sizes: [['blitz', 0, 420],          // up to 5+3
+          ['rapid10', 600, 800],      // 10+0, 10+5
+          ['rapid15', 1300, 1300],    // 15+10
+          ['league', 3000, Infinity]],// 30+30 up
+  hMax: 3.0,             // nats; past the 99th percentile in all four fits (2.5–2.6)
+  sMax: 5.6,             // nats; about the 99th percentile in all four (5.6–5.7)
   // People's median think ÷ this formula's, at each control measured, by the
-  // game's size base + 40 × increment in seconds (botEntropyLevel). A STOPGAP
-  // (Nov 23 2026), until a full bullet and rapid study: a quick check on 722
-  // bullet and rapid games found the formula's shape held at every control —
-  // spread, entropy, surprise, which moves run long — but not its level.
-  // Bullet players take longer than the blitz fit says (1+0: 1.67×), rapid
-  // players less than either fit (10+0: 0.59×). The blitz and league points
-  // are the fitted games, measured the same way. Games with an increment run
-  // about a quarter longer than games of the same size without one, so each
-  // has its own line; straight lines between points on a log scale of the
-  // size, held flat past the ends. Except below 1+0, which was not measured:
-  // the correction is phased out by ½+0 (the [30, 1]), as 1+0's 1.67 held
-  // there flagged the bot in 93 of 200 simulated 60-move games (0 without).
+  // game's size base + 40 × increment in seconds (botEntropyLevel). The blitz,
+  // rapid and league points are the fitted games themselves: each fit pools
+  // its controls, and this is what is left over at each one (Nov 24 2026, for
+  // rapid). The bullet points, 1+0 and 2+1, are a STOPGAP from a quick check on
+  // bullet games (Nov 23 2026), until a full bullet study: the formula's shape
+  // held there — spread, entropy, surprise, which moves run long — but bullet
+  // players take longer than the blitz fit says (1+0: 1.67×). In bullet and
+  // blitz, games with an increment ran about a quarter longer than games of
+  // the same size without one (not in rapid), so each has its own line;
+  // straight lines between points on a log scale of the size, held flat past
+  // the ends. Except below 1+0, which was not measured: the correction is
+  // phased out by ½+0 (the [30, 1]), as 1+0's 1.67 held there flagged the bot
+  // in 93 of 200 simulated 60-move games (0 without).
   level: {
-    noInc: [[30, 1], [60, 1.67], [180, 0.94], [300, 0.78], [600, 0.59]],        // (½+0) 1+0 3+0 5+0 10+0
-    inc:   [[160, 1.24], [260, 1.03], [420, 0.90], [800, 0.76], [1300, 0.66],   // 2+1 3+2 5+3 10+5 15+10
+    noInc: [[30, 1], [60, 1.67], [180, 0.94], [300, 0.78], [600, 0.93]],        // (½+0) 1+0 3+0 5+0 10+0
+    inc:   [[160, 1.24], [260, 1.03], [420, 0.90], [800, 0.94], [1300, 0.99],   // 2+1 3+2 5+3 10+5 15+10
             [3000, 1.08], [4500, 1.14]],                                         // 30+30 45+45 (league)
   },
 };
 
-// 0 = the blitz fit, 1 = the league fit, between them for rapid. By the game's
-// size, base + 40 × increment, on a log scale. Read from the time control, like
-// botPlanGameMoves, so a game resumed mid-way is still the game it was.
-function botEntropyBlend() {
+// How much of each fit this game uses, one weight per row of
+// BOT_ENTROPY_FIT.sizes, summing to 1: one fit alone on the controls it was
+// measured on, the two neighbours blended between them, by the game's size,
+// base + 40 × increment, on a log scale. Read from the time control, like
+// botPlanGameMoves, so a game resumed mid-way is still the game it was. An
+// untimed game uses the league fit.
+function botEntropyWeights() {
+  const S = BOT_ENTROPY_FIT.sizes, w = S.map(() => 0);
   const gm = _entropyGame();
-  if (!gm) return 1;
-  const F = BOT_ENTROPY_FIT;
-  const t = Math.log(gm.size / F.blitzGameSec) / Math.log(F.leagueGameSec / F.blitzGameSec);
-  return Math.max(0, Math.min(1, t));
+  if (!gm) { w[S.length - 1] = 1; return w; }
+  for (let i = 0; i < S.length; i++) {
+    if (gm.size > S[i][2]) continue;
+    if (i === 0 || gm.size >= S[i][1]) { w[i] = 1; return w; }
+    const t = Math.log(gm.size / S[i - 1][2]) / Math.log(S[i][1] / S[i - 1][2]);
+    w[i - 1] = 1 - t; w[i] = t;
+    return w;
+  }
+  w[S.length - 1] = 1;
+  return w;
 }
 // The game on the clock: its size, base + 40 × increment in seconds, and its
 // increment. null with no clock.
@@ -3553,7 +3596,10 @@ function botEntropyLevel() {
   }
   return pts[pts.length - 1][1];
 }
-const _entropyMix = (t, k) => (1 - t) * BOT_ENTROPY_FIT.blitz[k] + t * BOT_ENTROPY_FIT.league[k];
+// The fits weighted by w (botEntropyWeights): f(fit) summed over them.
+const _entropySum = (w, f) =>
+  BOT_ENTROPY_FIT.sizes.reduce((s, row, i) => w[i] ? s + w[i] * f(BOT_ENTROPY_FIT[row[0]]) : s, 0);
+const _entropyMix = (w, k) => _entropySum(w, fit => fit[k]);
 
 // The stage multiplier at this move: straight lines between the bands' middles,
 // flat before move 13 and after move 70. Before move 11 people are mostly in
@@ -3573,7 +3619,7 @@ function _entropyStageAt(stage, moveNo) {
 // The typical think in ms (no spread, no own-move surprise), before the human
 // modifiers. entropyNats: Maia's entropy at this position, in nats.
 function botEntropyTypicalMs(entropyNats, clockMs) {
-  const F = BOT_ENTROPY_FIT, t = botEntropyBlend();
+  const F = BOT_ENTROPY_FIT, w = botEntropyWeights();
   const H = Math.max(0, Math.min(F.hMax, entropyNats));
   const plies = (typeof gameMovesAlgebraic !== 'undefined') ? gameMovesAlgebraic.length : 0;
   const played = Math.floor(plies / 2), moveNo = played + 1;
@@ -3596,15 +3642,15 @@ function botEntropyTypicalMs(entropyNats, clockMs) {
   // The measured level for this clock: on the clock only, as Fixed seconds
   // sets the typical think itself.
   const level = fromClock ? botEntropyLevel() : 1;
-  return Math.exp((1 - t) * logThink(F.blitz) + t * logThink(F.league)) * level * 1000;
+  return Math.exp(_entropySum(w, logThink)) * level * 1000;
 }
 
 // One draw from the measured spread, as a multiplier. u in [0, 1): inverse of
 // the measured distribution, straight lines between its quantiles, held at the
 // 1st and 99th percentiles (so no single draw runs past what people showed).
 function botEntropySpreadMult(u) {
-  const F = BOT_ENTROPY_FIT, t = botEntropyBlend(), P = F.spreadP;
-  const at = i => (1 - t) * F.blitz.spread[i] + t * F.league.spread[i];
+  const F = BOT_ENTROPY_FIT, w = botEntropyWeights(), P = F.spreadP;
+  const at = i => _entropySum(w, fit => fit.spread[i]);
   let v;
   if (u <= P[0]) v = at(0);
   else if (u >= P[P.length - 1]) v = at(P.length - 1);
@@ -3637,10 +3683,10 @@ function botEntropyMoveThinkMs(delayMs, moveProbs, uci, clockMs) {
   const pend = _entropyThinkPending;
   _entropyThinkPending = null;
   if (!pend || !moveProbs || !uci) return delayMs;
-  const F = BOT_ENTROPY_FIT, t = botEntropyBlend();
+  const F = BOT_ENTROPY_FIT, w = botEntropyWeights();
   const p = moveProbs[uci];
   const S = Math.min(F.sMax, -Math.log(Math.max(1e-6, p || 0)));
-  const thought = Math.max(0, delayMs - pend.bustTax) * Math.exp(_entropyMix(t, 'b') * (S - _entropyMix(t, 'sMean')));
+  const thought = Math.max(0, delayMs - pend.bustTax) * Math.exp(_entropyMix(w, 'b') * (S - _entropyMix(w, 'sMean')));
   const planSec = botClockPlanSec(clockMs);
   let ms = botApplyClockCaps(thought, clockMs, planSec);
   if (planSec === null) ms = Math.min(ms, botThinkCapMs());
