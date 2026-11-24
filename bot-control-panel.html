@@ -956,6 +956,20 @@ canvas{display:block;background:transparent;}
 .ru-wname.open{color:var(--amber-bright);}
 .ru-wcond{font-family:var(--font-m);font-size:8px;font-weight:400;color:var(--text-secondary);}
 .ru-wval{flex:none;font-family:var(--font-m);font-size:9.5px;color:var(--amber-bright);white-space:nowrap;}
+/* The hover explanation: placed beside the control by ruTipShow, never over
+   it, and never in the way of a click. */
+.ru-tip{position:fixed;z-index:1000;max-width:300px;padding:7px 10px;pointer-events:none;
+  background:var(--carbon-light);border:0.5px solid var(--border-amber);border-radius:var(--r);
+  box-shadow:0 8px 20px rgba(0,0,0,0.35);font-family:var(--font-m);font-size:8.5px;line-height:1.6;color:var(--text-secondary);}
+.ru-tip[hidden]{display:none;}
+.ru-tip-name{font-family:var(--font-d);font-size:11px;font-weight:600;color:var(--text-primary);margin-bottom:2px;}
+.ru-tip code,.ru-desc code{font-family:var(--font-m);font-size:0.95em;color:var(--amber-bright);letter-spacing:0.02em;}
+.ru-desc{display:none;font-family:var(--font-m);font-size:9px;line-height:1.6;color:var(--text-secondary);}
+@media (hover:none){ .ru-desc{display:block;} }
+body.fj .ru-tip,body.fj .ru-desc{font-size:13px;}
+body.fj .ru-tip{max-width:340px;}
+body.fj .ru-tip-name{font-size:15px;}
+body.rs-highvis:not(.fj) .ru-tip,body.rs-highvis:not(.fj) .ru-desc{font-size:11px;}
 .radar-legend{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 14px;margin:2px 0 4px;font-family:var(--font-m);font-size:8px;color:var(--text-secondary);}
 .radar-legend span{display:inline-flex;align-items:center;gap:5px;}
 .radar-legend svg{width:22px;height:6px;flex:none;}
@@ -14278,13 +14292,17 @@ function onPieceChange(id, val){
 const RU_TRAIT = 'trait:', RU_PIECE = 'piece:', RU_STRENGTH = 'strength:';
 const RU_STRENGTH_DEFS = [
   { id:'cpBudget',   name:'CP Budget',        min:'0 cp', max:'300 cp', lo:0, hi:300, step:5,
-    fmt:v => Math.round(v) + ' cp', base:c => c.cpBudget, fallback:100 },
+    fmt:v => Math.round(v) + ' cp', base:c => c.cpBudget, fallback:100,
+    desc:'The personality’s style allowance: how many centipawns it may give up, against the engine’s own choice, to play a move it likes. Shared among the rules in force at the time. 0 plays the engine’s choice.' },
   { id:'maiaTemp',   name:'Maia temperature', min:'0 · top move', max:'2 · wild', lo:0, hi:2, step:0.1,
-    fmt:v => (Math.round(v * 10) / 10).toFixed(1), base:c => c.maia3Temp, fallback:1 },
+    fmt:v => (Math.round(v * 10) / 10).toFixed(1), base:c => c.maia3Temp, fallback:1,
+    desc:'How closely a Maia bot follows Maia’s odds. 0 always plays Maia’s top move, 1 plays each move as often as Maia expects a player of this rating to, 2 is wild.' },
   { id:'conviction', name:'Conviction',       min:'0% · Maia’s odds', max:'100% · always its pick', lo:0, hi:100, step:5,
-    fmt:v => Math.round(v) + '%', base:c => c.convictionPct, fallback:0 },
+    fmt:v => Math.round(v) + '%', base:c => c.convictionPct, fallback:0,
+    desc:'How often the bot plays its favourite move outright. The rest of the time it chooses among Maia’s moves by its personality.' },
   { id:'hardFloor',  name:'Hard Floor',       min:'0 cp', max:'Off', lo:0, hi:1000, step:10,
-    fmt:v => v >= 1000 ? 'Off' : Math.round(v) + ' cp', base:c => c.hardFloorCp, fallback:1000 },
+    fmt:v => v >= 1000 ? 'Off' : Math.round(v) + ' cp', base:c => c.hardFloorCp, fallback:1000,
+    desc:'The cap on how much any move may lose, whatever the personality wants. Never under the Budget; at the top it is off.' },
 ];
 const RU_PHASES  = [['all','All game'],['opening','Opening'],['middlegame','Middlegame'],['endgame','Endgame']];
 const RU_RESULTS = [['any','Any'],['winning','Winning'],['losing','Losing'],['equal','Equal']];
@@ -14318,25 +14336,29 @@ function ruMeta(ctl){
     return { kind:'trait', id, name:both, min:a.labelLeft, max:a.labelRight, lo:-5, hi:5, step:1, def:0,
       slot: id === 'luck' ? null : 'a', fmt:_ruSigned,
       title:v => v === 0 ? both : (v > 0 ? a.labelRight : a.labelLeft),
-      where: id === 'luck' ? 'all game: Move Distribution Range' : '' };
+      where: id === 'luck' ? 'all game: Move Distribution Range' : '',
+      desc: ATTRACTOR_DESCS[id] || '' };
   }
   if(ctl.startsWith(RU_PIECE)){
     const id = ctl.slice(RU_PIECE.length), p = PIECE_TYPES.find(x => x.id === id);
     if(!p) return null;
     return { kind:'piece', id, name:p.name + ' moves', min:'Avoid', max:'Seek', lo:-5, hi:5, step:1, def:0,
       slot:'p', fmt:_ruSigned,
-      title:v => v === 0 ? p.name + ' moves' : (v > 0 ? 'Seek ' : 'Avoid ') + p.name.toLowerCase() + ' moves', where:'' };
+      title:v => v === 0 ? p.name + ' moves' : (v > 0 ? 'Seek ' : 'Avoid ') + p.name.toLowerCase() + ' moves', where:'',
+      desc: PIECE_DESCS[id] || '' };
   }
   if(ctl.startsWith(RU_STRENGTH)){
     const s = RU_STRENGTH_DEFS.find(x => x.id === ctl.slice(RU_STRENGTH.length));
     if(!s) return null;
     return { kind:'strength', id:s.id, name:s.name, min:s.min, max:s.max, lo:s.lo, hi:s.hi, step:s.step, def:s.fallback,
-      slot:null, fmt:s.fmt, title:() => s.name, where:'all game: Move Quality tab', def0:s };
+      slot:null, fmt:s.fmt, title:() => s.name, where:'all game: Move Quality tab', def0:s,
+      desc: _ccEsc(s.desc) };
   }
   const m = CUSTOM_METRICS.find(x => x.id === ctl);
   if(!m) return null;
   return { kind:'feature', id:m.id, name:m.name, min:m.min, max:m.max, lo:-5, hi:5, step:1, def:0, slot:null,
-    fmt:_ruSigned, title:v => v === 0 ? m.name : (v > 0 ? m.max : m.min), where:'' };
+    fmt:_ruSigned, title:v => v === 0 ? m.name : (v > 0 ? m.max : m.min), where:'',
+    desc: _ccEsc(m.desc || '') };
 }
 
 // The Add rule list. Grouped by what a control is about, not where it used to
@@ -14565,6 +14587,8 @@ function ruResetView(order){
 function ruRender(){
   const list = document.getElementById('ru-list');
   if(!list) return;
+  // The element a tip belongs to is about to be replaced.
+  if(typeof ruTipHide === 'function') ruTipHide();
   const rules = ruRules();
   const pill = document.getElementById('ru-add');
   if(pill){
@@ -14615,7 +14639,7 @@ function _ruRenderGroups(){
     return head + g.items.map(ctl => {
       const m = ruMeta(ctl), n = rules.filter(r => r.ctl === ctl).length;
       const hint = n ? (n === 1 ? '1 rule' : n + ' rules') : m.where;
-      return '<button type="button" class="ru-item" onclick="ruAdd(\'' + ctl + '\')"><span>' + _ccEsc(m.name) + '</span>' +
+      return '<button type="button" class="ru-item" data-ru-tip="' + ctl + '" onclick="ruAdd(\'' + ctl + '\')"><span>' + _ccEsc(m.name) + '</span>' +
         (hint ? '<span class="ru-ihint' + (n ? ' used' : '') + '">' + _ccEsc(hint) + '</span>' : '') + '</button>';
     }).join('');
   }).join('');
@@ -14623,7 +14647,7 @@ function _ruRenderGroups(){
 function _ruLineHtml(r){
   const m = ruMeta(r.ctl), open = ruOpenKey === r.key, dom = _ruDom(r.key);
   return '<div class="ru-rule" id="ru-r-' + dom + '">' +
-    '<button type="button" class="ru-line" aria-expanded="' + open + '" onclick="ruToggle(\'' + r.key + '\')">' +
+    '<button type="button" class="ru-line" data-ru-tip="' + r.ctl + '" aria-expanded="' + open + '" onclick="ruToggle(\'' + r.key + '\')">' +
       '<span class="ru-name" id="ru-n-' + dom + '">' + _ccEsc(m.title(r.value)) + '</span>' +
       '<span class="ru-when">' + _ccEsc(_ruWhenText(r)) + '</span>' +
       '<span class="ru-val" id="ru-v-' + dom + '">' + _ccEsc(_ruValText(m, r.value)) + '</span>' +
@@ -14638,8 +14662,10 @@ function _ruEditHtml(r, m){
   const why = m.kind === 'trait' && typeof _radarAxisWhy === 'function' ? _radarAxisWhy(m.id) : '';
   return '<div class="ru-edit">' +
     '<div class="ru-slide"><input class="attr-slider" type="range" min="' + m.lo + '" max="' + m.hi + '" step="' + m.step + '" ' +
-      'value="' + r.value + '" aria-label="' + _ccEsc(m.name) + '" oninput="ruSetValue(\'' + r.key + '\',this.value)">' +
+      'value="' + r.value + '" aria-label="' + _ccEsc(m.name) + '" data-ru-tip="' + r.ctl + '" oninput="ruSetValue(\'' + r.key + '\',this.value)">' +
       '<div class="ru-ends"><span>' + _ccEsc(m.min) + '</span><span>' + _ccEsc(m.max) + '</span></div></div>' +
+    // Where there is no hover (a phone), the explanation sits in the open rule.
+    (m.desc ? '<div class="ru-desc">' + m.desc + '</div>' : '') +
     (why ? '<div class="ru-why">' + _ccEsc(why) + '</div>' : '') +
     '<div class="ru-crow"><span class="ru-clbl">Phase</span>' + chips('phase', RU_PHASES) + '</div>' +
     '<div class="ru-crow"><span class="ru-clbl">When</span>' + chips('result', RU_RESULTS) + '</div>' +
@@ -14725,6 +14751,77 @@ function _renderRadarLegend(){
   el.innerHTML = _radarPhaseStyles().map(s => '<span>' + _radarPhaseSwatch(s.phase) + s.label + '</span>').join('') +
     '<span><svg viewBox="0 0 22 6" aria-hidden="true"><circle cx="11" cy="3" r="2.6" fill="var(--radar-node-fill)"/></svg>All game (drag)</span>';
 }
+
+// ── Hover explanations ──
+// Each control's short explanation, as the old slider rows showed on hover:
+// over a rule's line, an item in the Add rule list, or an open rule's slider
+// (anything carrying data-ru-tip, keyboard focus too). One floating tip, put
+// BESIDE the thing pointed at, never on it: to its right if there is room,
+// else its left, else below, else above. The pointer is inside that thing, so
+// the tip can't cover the pointer either, and it takes no clicks
+// (pointer-events:none). Devices without hover get the text in the open rule.
+function _ruTipEl(){
+  let tip = document.getElementById('ru-tip');
+  if(!tip){
+    tip = document.createElement('div');
+    tip.id = 'ru-tip';
+    tip.className = 'ru-tip';
+    tip.setAttribute('role', 'tooltip');
+    tip.hidden = true;
+    document.body.appendChild(tip);
+  }
+  return tip;
+}
+var _ruTipFor = null;
+function ruTipShow(el){
+  const meta = ruMeta(el.getAttribute('data-ru-tip'));
+  if(!meta || !meta.desc) return ruTipHide();
+  const tip = _ruTipEl();
+  tip.innerHTML = '<div class="ru-tip-name">' + _ccEsc(meta.name) + '</div>' + meta.desc;
+  tip.style.left = '0px';
+  tip.style.top = '0px';
+  tip.hidden = false;
+  const r = el.getBoundingClientRect();
+  const vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
+  const gap = 10, pad = 6, tw = tip.offsetWidth, th = tip.offsetHeight;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  let x, y;
+  if(vw - r.right >= tw + gap + pad){              // right of it
+    x = r.right + gap; y = clamp(r.top, pad, vh - th - pad);
+  } else if(r.left >= tw + gap + pad){             // left of it
+    x = r.left - gap - tw; y = clamp(r.top, pad, vh - th - pad);
+  } else if(vh - r.bottom >= th + gap + pad){      // below it
+    y = r.bottom + gap; x = clamp(r.left, pad, vw - tw - pad);
+  } else {                                         // above it
+    y = Math.max(pad, r.top - gap - th); x = clamp(r.left, pad, vw - tw - pad);
+  }
+  tip.style.left = Math.round(x) + 'px';
+  tip.style.top = Math.round(y) + 'px';
+  if(_ruTipFor && _ruTipFor !== el) _ruTipFor.removeAttribute('aria-describedby');
+  _ruTipFor = el;
+  el.setAttribute('aria-describedby', 'ru-tip');
+}
+function ruTipHide(){
+  const tip = document.getElementById('ru-tip');
+  if(tip) tip.hidden = true;
+  if(_ruTipFor){ _ruTipFor.removeAttribute('aria-describedby'); _ruTipFor = null; }
+}
+(function(){
+  const hover = () => window.matchMedia('(hover: hover)').matches;
+  const target = e => e.target && e.target.closest ? e.target.closest('[data-ru-tip]') : null;
+  document.addEventListener('mouseover', e => {
+    if(!hover()) return;
+    const el = target(e);
+    if(el){ if(el !== _ruTipFor) ruTipShow(el); }
+    else if(_ruTipFor) ruTipHide();
+  });
+  document.addEventListener('focusin', e => { const el = target(e); if(el) ruTipShow(el); });
+  document.addEventListener('focusout', e => { if(target(e) === _ruTipFor) ruTipHide(); });
+  // The tip is pinned to where the control was: it goes when that moves.
+  document.addEventListener('scroll', () => ruTipHide(), true);
+  window.addEventListener('resize', () => ruTipHide());
+  document.addEventListener('keydown', e => { if(e.key === 'Escape') ruTipHide(); });
+})();
 
 /* ── Custom controls ── */
 function _ccMeta(metricId){ return CUSTOM_METRICS.find(m => m.id === metricId) || CUSTOM_METRICS[0]; }
