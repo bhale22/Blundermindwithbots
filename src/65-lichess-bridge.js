@@ -934,7 +934,7 @@ function _lbReganCurveA(clock, setting, t) {
 // doesn't match.
 function _lbApplyMatchedRating(g) {
   // A bot that doesn't match takes no chat commands, Temp among them.
-  if (!_lbMatching()) { botBlendTemp = null; botChatMaiaTemp = null; botChatBook = null; return null; }
+  if (!_lbMatching()) { botBlendTemp = null; botChatMaiaTemp = null; botChatBook = null; window._bcpCpFromChat = false; return null; }
   const cfg = window._lastAppliedBotConfig;
   const { flounder } = _lbEloRange();
   const t = _lbStrengthTable();
@@ -969,6 +969,9 @@ function _lbApplyMatchedRating(g) {
   const floor = cfg.hardFloorCp != null ? cfg.hardFloorCp : cfg.cpBudget;
   window._bcpCpBudget = cp;
   window._bcpCpHardFloor = cp != null && floor != null ? Math.max(+floor, cp) : floor;
+  // Rules for the CP Budget (botRulesInstall) leave a Budget asked for in the
+  // chat alone.
+  window._bcpCpFromChat = asked != null;
   at.cp = cp;
   at.think = _lbApplyThinkChoice(opp);
   at.temp = _lbApplyTempChoice(opp);

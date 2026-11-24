@@ -112,6 +112,126 @@ test('_botGamePhase: opening vs endgame by material + ply', () => {
   assert.equal(ctx._botGamePhase(), 'endgame');
 });
 
+// Lichess's division (scalachess Divider), not a move number (Nov 2026).
+test('_botGamePhase: a developed back rank is the middlegame at any move number', () => {
+  ctx.gameMovesAlgebraic = [];   // ply 0: the old rule called this the opening
+  // White has three pieces left on its first rank: under Lichess's four.
+  ctx.board = pos('r1bqkb1r/pppppppp/2n2n2/8/8/2NBBN2/PPPQPPPP/R4RK1 w kq - 0 1');
+  assert.equal(ctx._botGamePhase(), 'middlegame');
+  // Ten pieces besides kings and pawns is the middlegame too, even undeveloped.
+  ctx.board = pos('rn1qk1nr/pppppppp/8/8/8/8/PPPPPPPP/RN1QK1NR w KQkq - 0 1');
+  assert.equal(ctx.botPhaseFeatures(ctx.board).majMin, 10);
+  assert.equal(ctx._botGamePhase(), 'middlegame');
+  // Seven is still the middlegame; six is the endgame.
+  ctx.board = pos('3qk3/pppppppp/8/8/8/8/PPPPPPPP/R1BQKB1R w - - 0 1');
+  assert.equal(ctx.botPhaseFeatures(ctx.board).majMin, 6);
+  assert.equal(ctx._botGamePhase(), 'endgame');
+});
+
+test('_botGamePhase: once the game has reached a phase, it does not go back', () => {
+  const developed = pos('r1bqkb1r/pppppppp/2n2n2/8/8/2NBBN2/PPPQPPPP/R4RK1 w kq - 0 1');
+  ctx.positionCounts = {};
+  ctx.positionCounts[ctx.positionKey(developed, 'w', { wK: false, wQ: false, bK: true, bQ: true }, -1)] = 1;
+  // The pieces went home again: on its own this board reads as the opening.
+  ctx.board = pos('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w - - 0 1');
+  assert.equal(ctx.botPhaseOfPositions([ctx.botPhaseFeatures(ctx.board)]), 'opening');
+  assert.equal(ctx._botGamePhase(), 'middlegame');
+  delete ctx.positionCounts;
+  assert.equal(ctx._botGamePhase(), 'opening');
+});
+
+test('mixed armies (Lichess mixedness over 150) are the middlegame', () => {
+  // Every piece still on the board and both back ranks full, but the pawns
+  // are all through each other (not a legal game, only the test's input).
+  // Two such ranks score 133 (worked by hand from Lichess's table too); four, 245.
+  assert.equal(ctx.botPhaseFeatures(pos('rnbqkbnr/8/8/pPpPpPpP/PpPpPpPp/8/8/RNBQKBNR w - - 0 1')).mixedness, 133);
+  const f = ctx.botPhaseFeatures(pos('rnbqkbnr/8/pPpPpPpP/PpPpPpPp/pPpPpPpP/PpPpPpPp/8/RNBQKBNR w - - 0 1'));
+  assert.equal(f.majMin, 14);
+  assert.equal(f.backrankSparse, false);
+  assert.ok(f.mixedness > 150, 'mixedness ' + f.mixedness);
+  assert.equal(ctx.botPhaseOfPositions([f]), 'middlegame');
+  // The start position is not mixed at all.
+  assert.ok(ctx.botPhaseFeatures(pos('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w - - 0 1')).mixedness <= 150);
+});
+
+// ── Rules: which one runs (Nov 2026) ────────────────────────────────────────
+
+test('botRuleWinners: the narrowest rule that holds wins, then the higher one', () => {
+  const rules = [
+    { id: 'a', metric: 'trait:attacker', phase: 'all',     result: 'any',     pressure: 'any', value: 2 },
+    { id: 'b', metric: 'trait:attacker', phase: 'endgame', result: 'any',     pressure: 'any', value: 0 },
+    { id: 'c', metric: 'trait:attacker', phase: 'endgame', result: 'winning', pressure: 'any', value: 4 },
+    { id: 'd', metric: 'trait:sharpness', phase: 'endgame', result: 'any',    pressure: 'any', value: 3 },
+    { id: 'e', metric: 'trait:sharpness', phase: 'endgame', result: 'any',    pressure: 'any', value: 1 },
+  ];
+  let w = ctx.botRuleWinners(rules, 'opening', null, null, null);
+  assert.equal(w['trait:attacker'].rule.id, 'a');
+  assert.equal(w['trait:sharpness'], undefined);
+  w = ctx.botRuleWinners(rules, 'endgame', null, null, null);
+  assert.equal(w['trait:attacker'].rule.id, 'b');     // Endgame beats All game
+  assert.equal(w['trait:sharpness'].rule.id, 'd');    // equally narrow: the higher one
+  w = ctx.botRuleWinners(rules, 'endgame', 200, null, null);
+  assert.equal(w['trait:attacker'].rule.id, 'c');     // Endgame + winning beats Endgame
+});
+
+test('botRulesInstall puts the rules that hold in for one move, then puts the bot back', async () => {
+  ctx.gameMovesAlgebraic = [];
+  ctx.board = pos('3qk3/pppppppp/8/8/8/8/PPPPPPPP/R1BQKB1R w - - 0 1');   // endgame
+  const av = { attacker: 2, entropy: 1 }, pv = { pawn: 1 };
+  ctx.window._bcpAttractorValues = av;
+  ctx.window._bcpPieceValues = pv;
+  ctx.window._bcpCpBudget = 100;
+  ctx.window._bcpCpHardFloor = 150;
+  ctx.window._bcpCpFromChat = false;
+  ctx.window._bcpCustomControls = [
+    { id: 'r1', metric: 'trait:entropy',     phase: 'opening', result: 'any', pressure: 'any', value: 4 },
+    { id: 'r2', metric: 'trait:sharpness',   phase: 'endgame', result: 'any', pressure: 'any', value: 4 },
+    { id: 'r3', metric: 'trait:attacker',    phase: 'endgame', result: 'any', pressure: 'any', value: 0 },
+    { id: 'r4', metric: 'piece:pawn',        phase: 'endgame', result: 'any', pressure: 'any', value: 3 },
+    { id: 'r5', metric: 'strength:cpBudget', phase: 'endgame', result: 'any', pressure: 'any', value: 200 },
+  ];
+  const restore = await ctx.botRulesInstall('3qk3/pppppppp/8/8/8/8/PPPPPPPP/R1BQKB1R w - - 0 1');
+  const inAv = ctx.window._bcpAttractorValues;
+  assert.equal(inAv.sharpness, 4);
+  assert.equal(inAv.attacker, 0);      // a rule at 0 switches the trait off
+  assert.equal(inAv.entropy, 1);       // its rule is for the opening: the slider value runs
+  assert.equal(ctx.window._bcpPieceValues.pawn, 3);
+  assert.equal(ctx.window._bcpCpBudget, 200);
+  assert.equal(ctx.window._bcpCpHardFloor, 200);   // never under the Budget
+  restore();
+  assert.equal(ctx.window._bcpAttractorValues, av);
+  assert.equal(ctx.window._bcpPieceValues, pv);
+  assert.equal(ctx.window._bcpCpBudget, 100);
+  assert.equal(ctx.window._bcpCpHardFloor, 150);
+  // A Budget the opponent asked for in the chat is left alone.
+  ctx.window._bcpCpFromChat = true;
+  const restore2 = await ctx.botRulesInstall('x');
+  assert.equal(ctx.window._bcpCpBudget, 100);
+  restore2();
+  ctx.window._bcpCpFromChat = false;
+  ctx.window._bcpCustomControls = [];
+});
+
+test('board-feature rules: a narrower rule at 0 switches a broader one off', () => {
+  reweightSetup([
+    { id: 'n', name: 'Push', metric: 'pawnAdvance', phase: 'opening', result: 'any', pressure: 'any', value: 0 },
+    { id: 'b', name: 'Push', metric: 'pawnAdvance', phase: 'all',     result: 'any', pressure: 'any', value: 5 },
+  ]);
+  const out = ctx.applyMoveAttractors({ e2e4: 0.5, g1f3: 0.5 });
+  assert.equal(out.e2e4, out.g1f3);
+});
+
+test('botWeighsMoves: a Strength rule alone is not a personality', () => {
+  ctx.botBlindConviction = false;
+  ctx.window._bcpAttractorValues = {};
+  ctx.window._bcpPieceValues = {};
+  ctx.window._bcpCustomControls = [{ id: 's', metric: 'strength:cpBudget', phase: 'endgame', result: 'any', pressure: 'any', value: 40 }];
+  assert.equal(ctx.botWeighsMoves(), false);
+  ctx.window._bcpCustomControls.push({ id: 't', metric: 'trait:sharpness', phase: 'endgame', result: 'any', pressure: 'any', value: 3 });
+  assert.equal(ctx.botWeighsMoves(), true);
+  ctx.window._bcpCustomControls = [];
+});
+
 test('_ccPhaseMatch and _ccResultMatch', () => {
   assert.equal(ctx._ccPhaseMatch('all', 'opening'), true);
   assert.equal(ctx._ccPhaseMatch('endgame', 'opening'), false);

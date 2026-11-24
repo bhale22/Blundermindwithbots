@@ -1297,20 +1297,116 @@ const _ccMetrics = {
   }
 };
 
-// Current game phase from material + ply. Mirrors the opening gate used elsewhere
-// (gameMovesAlgebraic.length < 20) and an endgame material heuristic (≤6 non-king,
-// non-pawn pieces left on the board, both colours).
-function _botGamePhase() {
-  let majMin = 0;
-  for (let sq = 0; sq < 64; sq++) {
-    const p = board[sq];
-    if (!p || p.piece === 'K' || p.piece === 'P') continue;
-    majMin++;
+// ── Game phase, divided the way Lichess divides a game (Nov 2026) ───────────
+// Ported from scalachess Divider.scala, which splits every Lichess game into
+// the opening, middlegame and endgame its analysis shows. Positional, not a
+// move number: this used to call moves 1–10 the opening whatever the board
+// looked like (Ben asked why the middlegame started at move 11).
+//   Middlegame: the first position with 10 or fewer pieces besides kings and
+//     pawns (both sides together), or either side with under 4 pieces on its
+//     own back rank (developed), or the armies mixed (mixedness over 150).
+//   Endgame: the first position with 6 or fewer pieces besides kings and pawns.
+// Lichess takes the first position in the game that meets each test, so a
+// phase never comes back once left. Here that is every position this game has
+// reached (positionCounts, which a new game and a takeback rebuild) plus the
+// one on the board: the middlegame has begun if any of them passes its test,
+// the endgame likewise.
+function _phaseMixScore(y, w, b) {
+  switch (w) {
+    case 0:
+      if (b === 1) return 1 + y;
+      if (b === 2) return y < 6 ? 2 + (6 - y) : 0;
+      if (b === 3 || b === 4) return y < 7 ? 3 + (7 - y) : 0;
+      return 0;
+    case 1:
+      if (b === 0) return 1 + (8 - y);
+      if (b === 1) return 5 + Math.abs(4 - y);
+      if (b === 2) return 4 + (7 - y);
+      if (b === 3) return 5 + (7 - y);
+      return 0;
+    case 2:
+      if (b === 0) return y > 2 ? 2 + (y - 2) : 0;
+      if (b === 1) return 4 + (y - 1);
+      if (b === 2) return 7;
+      return 0;
+    case 3:
+      if (b === 0) return y > 1 ? 3 + (y - 1) : 0;
+      if (b === 1) return 5 + (y - 1);
+      return 0;
+    case 4:
+      if (b === 0) return y > 1 ? 3 + (y - 1) : 0;
+      return 0;
+    default:
+      return 0;
   }
-  if (majMin <= 6) return 'endgame';
-  const ply = (typeof gameMovesAlgebraic !== 'undefined') ? gameMovesAlgebraic.length : 0;
-  if (ply < 20) return 'opening';
-  return 'middlegame';
+}
+// The three numbers Lichess's test reads, for one position: a board array, or
+// a positionKey string (its last 64 characters are the squares in board order,
+// '.' empty, White upper case). Rank index 0 is White's first rank; the board
+// is laid out from rank 8 down (rcSq).
+function botPhaseFeatures(pos) {
+  let cell;
+  if (typeof pos === 'string') {
+    const sqs = pos.slice(-64);
+    cell = sq => {
+      const ch = sqs[sq];
+      if (!ch || ch === '.') return null;
+      const up = ch.toUpperCase();
+      return { color: ch === up ? 'w' : 'b', piece: up };
+    };
+  } else {
+    cell = sq => pos[sq] || null;
+  }
+  const col = [];   // col[rank][file] = 'w' | 'b' | null
+  let majMin = 0, wBack = 0, bBack = 0;
+  for (let rank = 0; rank < 8; rank++) {
+    col.push([]);
+    for (let file = 0; file < 8; file++) {
+      const p = cell(rcSq(7 - rank, file));
+      col[rank].push(p ? p.color : null);
+      if (!p) continue;
+      if (p.piece !== 'K' && p.piece !== 'P') majMin++;
+      if (rank === 0 && p.color === 'w') wBack++;
+      if (rank === 7 && p.color === 'b') bBack++;
+    }
+  }
+  let mixedness = 0;
+  for (let y = 0; y < 7; y++) {
+    for (let x = 0; x < 7; x++) {
+      let w = 0, b = 0;
+      for (const [dy, dx] of [[0, 0], [0, 1], [1, 0], [1, 1]]) {
+        const c = col[y + dy][x + dx];
+        if (c === 'w') w++; else if (c === 'b') b++;
+      }
+      mixedness += _phaseMixScore(y + 1, w, b);
+    }
+  }
+  return { majMin, backrankSparse: wBack < 4 || bBack < 4, mixedness };
+}
+const _botPhaseMemo = new Map();   // positionKey → features (a few hundred a game)
+function _botPhaseOf(key) {
+  let f = _botPhaseMemo.get(key);
+  if (!f) {
+    if (_botPhaseMemo.size > 4000) _botPhaseMemo.clear();
+    f = botPhaseFeatures(key);
+    _botPhaseMemo.set(key, f);
+  }
+  return f;
+}
+function botPhaseOfPositions(featureList) {
+  let mid = false, end = false;
+  for (const f of featureList) {
+    if (f.majMin <= 10 || f.backrankSparse || f.mixedness > 150) mid = true;
+    if (f.majMin <= 6) end = true;   // 6 or fewer is also 10 or fewer: mid too
+  }
+  return end ? 'endgame' : mid ? 'middlegame' : 'opening';
+}
+function _botGamePhase() {
+  const list = [botPhaseFeatures(board)];
+  if (typeof positionCounts !== 'undefined' && positionCounts) {
+    for (const k in positionCounts) list.push(_botPhaseOf(k));
+  }
+  return botPhaseOfPositions(list);
 }
 
 function _ccPhaseMatch(phase, current) {
@@ -1344,6 +1440,114 @@ function _ccPressureMatch(cond, botClock, oppClock) {
   if (cond === 'opp')    return oppP;
   if (cond === 'either') return meP || oppP;
   return true;
+}
+
+// ── Rules: any control, for part of the game (Nov 2026) ─────────────────────
+// The builder's "Strategy & custom controls" tab makes every setting a rule.
+// A trait or piece with no phase or condition is its slider value, kept where
+// it always was (attractorValues / pieceValues), so saved bots, presets and
+// the Lichess bots load unchanged. Every other rule is a custom control:
+// board features by their _ccMetrics id, and these three kinds by a prefixed
+// id the engine never scores directly:
+//   trait:<attractor id>   piece:<piece id>   strength:<cpBudget|maiaTemp|conviction|hardFloor>
+// A version of the site from before this change sees the prefixed ids as
+// unknown metrics and skips them.
+//
+// Which rule runs: of the rules whose phase, result and clock all hold, the
+// narrowest (most conditions set) wins; between equally narrow rules, the
+// higher in the list (earlier in the array). A rule at 0 still wins: it is how
+// a trait is switched off for part of the game.
+const RULE_TRAIT = 'trait:', RULE_PIECE = 'piece:', RULE_STRENGTH = 'strength:';
+function botRuleIsOverride(c) {
+  const m = c && typeof c.metric === 'string' ? c.metric : '';
+  return m.startsWith(RULE_TRAIT) || m.startsWith(RULE_PIECE) || m.startsWith(RULE_STRENGTH);
+}
+function botRuleNarrowness(c) {
+  return (c.phase && c.phase !== 'all' ? 1 : 0) + (c.result && c.result !== 'any' ? 1 : 0) +
+         (c.pressure && c.pressure !== 'any' ? 1 : 0);
+}
+// metric → the rule that runs, of the rules given that hold in this state.
+function botRuleWinners(rules, phase, evalCp, botClk, oppClk) {
+  const win = {};
+  (rules || []).forEach(c => {
+    if (!c || !c.metric) return;
+    if (!_ccPhaseMatch(c.phase, phase) || !_ccResultMatch(c.result, evalCp) ||
+        !_ccPressureMatch(c.pressure, botClk, oppClk)) return;
+    const n = botRuleNarrowness(c);
+    if (!win[c.metric] || n > win[c.metric].n) win[c.metric] = { n, rule: c };
+  });
+  return win;
+}
+
+// Puts this move's rules into effect: the values every reader of the
+// personality already uses (window._bcpAttractorValues and the rest) are
+// swapped for the ones that hold now, for the length of one bot move. Returns
+// the function that puts the bot's own values back. A value something else
+// changed in the meantime (a new config from the builder, a chat command) is
+// left alone. Only one move's rules are in at a time.
+let _botRulesIn = false;
+async function botRulesInstall(fen) {
+  const none = () => {};
+  if (_botRulesIn) return none;
+  const rules = (window._bcpCustomControls || []).filter(botRuleIsOverride);
+  if (!rules.length) return none;
+  const phase  = _botGamePhase();
+  const botClk = (typeof botClockMs === 'function') ? botClockMs() : null;
+  const oppClk = (typeof botOppClockMs !== 'undefined') ? botOppClockMs : null;
+  // A winning/losing/equal rule needs the eval. The same depth-12 probe the
+  // board-feature rules read, on the same FEN, so the engine path's own call
+  // later this move is answered from its cache.
+  let evalCp = null;
+  if (rules.some(c => c.result && c.result !== 'any') &&
+      typeof sfGetComplexity === 'function' && typeof sfReady !== 'undefined' && sfReady) {
+    try { const cr = await sfGetComplexity(fen); evalCp = cr ? cr.eval : null; } catch (e) {}
+  }
+  if (_botRulesIn) return none;
+  const win = botRuleWinners(rules, phase, evalCp, botClk, oppClk);
+  const keys = Object.keys(win);
+  if (!keys.length) return none;
+
+  const baseAv = window._bcpAttractorValues, basePv = window._bcpPieceValues;
+  const av = Object.assign({}, baseAv || {}), pv = Object.assign({}, basePv || {});
+  const sets = [];   // [read, write, mine, theirs] for each plain value swapped
+  const swap = (read, write, v) => { const was = read(); write(v); sets.push([read, write, v, was]); };
+  const strength = {};
+  keys.forEach(m => {
+    const v = +win[m].rule.value || 0;
+    if (m.startsWith(RULE_TRAIT)) av[m.slice(RULE_TRAIT.length)] = v;
+    else if (m.startsWith(RULE_PIECE)) pv[m.slice(RULE_PIECE.length)] = v;
+    else strength[m.slice(RULE_STRENGTH.length)] = v;
+  });
+  window._bcpAttractorValues = av;
+  window._bcpPieceValues = pv;
+  // A Budget the opponent asked for in the chat is theirs: rules leave it,
+  // and the Floor that goes with it, alone.
+  const chatCp = !!window._bcpCpFromChat;
+  if (!chatCp && strength.cpBudget != null) {
+    swap(() => window._bcpCpBudget, v => { window._bcpCpBudget = v; }, strength.cpBudget);
+  }
+  if (!chatCp && (strength.hardFloor != null || strength.cpBudget != null)) {
+    // The builder's own rule: the Floor is never under the Budget.
+    const floor = strength.hardFloor != null ? strength.hardFloor : window._bcpCpHardFloor;
+    const budget = window._bcpCpBudget;
+    if (floor != null) swap(() => window._bcpCpHardFloor, v => { window._bcpCpHardFloor = v; },
+      budget != null ? Math.max(+floor, +budget) : +floor);
+  }
+  if (strength.conviction != null) {
+    swap(() => botConvictionPct, v => { botConvictionPct = v; }, strength.conviction);
+  }
+  if (strength.maiaTemp != null) {
+    swap(() => botMaiaTempValue, v => { botMaiaTempValue = v; }, strength.maiaTemp);
+  }
+  _botRulesIn = true;
+  console.log('[Rules] ' + phase + (evalCp != null ? ', eval ' + evalCp : '') + ': ' +
+    keys.map(m => m + ' ' + win[m].rule.value).join(', '));
+  return () => {
+    _botRulesIn = false;
+    if (window._bcpAttractorValues === av) window._bcpAttractorValues = baseAv;
+    if (window._bcpPieceValues === pv) window._bcpPieceValues = basePv;
+    sets.reverse().forEach(([read, write, mine, theirs]) => { if (read() === mine) write(theirs); });
+  };
 }
 
 // ── Flounder personality: the band around the sampled cost ───────────────────
@@ -1548,19 +1752,21 @@ function applyMoveAttractors(moveProbs, opts) {
   const cpBudget  = (opts && opts.budgetCp != null) ? opts.budgetCp
     : window._bcpCpBudget != null ? window._bcpCpBudget : 100;
 
-  // Custom controls (user-defined attractors): keep ones with a non-zero value
-  // and a known metric, then gate by current game phase. Phase depends only on
-  // the board, so it can be resolved here before colour strings are set up.
+  // Board-feature rules (custom controls with a _ccMetrics id): of the ones
+  // whose phase, result and clock hold, one per feature runs, the narrowest
+  // (botRuleWinners), and only if its value isn't 0. A narrower rule at 0
+  // switches a broader one off. (Two rules for one feature used to add up.)
+  // Trait, piece and Strength rules are not scored here: botRulesInstall has
+  // already put them into the values read below.
   const customControls = (window._bcpCustomControls || [])
-    .filter(c => c && c.value && _ccMetrics[c.metric]);
+    .filter(c => c && _ccMetrics[c.metric]);
   const _ccPhase  = customControls.length ? _botGamePhase() : null;
   const _ccEval   = (typeof sfCplxEval !== 'undefined') ? sfCplxEval : null;
   const _ccBotClk = (typeof botClockMs === 'function') ? botClockMs() : null;
   const _ccOppClk = (typeof botOppClockMs !== 'undefined') ? botOppClockMs : null;
+  const _ccWin    = botRuleWinners(customControls, _ccPhase, _ccEval, _ccBotClk, _ccOppClk);
   const activeCC  = customControls.filter(c =>
-    _ccPhaseMatch(c.phase, _ccPhase) &&
-    _ccResultMatch(c.result, _ccEval) &&
-    _ccPressureMatch(c.pressure, _ccBotClk, _ccOppClk));
+    _ccWin[c.metric] && _ccWin[c.metric].rule === c && +c.value);
   const hasCustom = activeCC.length > 0;
 
   const luckVal       = attrVals['luck']       || 0;
@@ -2292,7 +2498,16 @@ function botWeighsMoves() {
   const av = window._bcpAttractorValues || {}, pv = window._bcpPieceValues || {};
   for (const k in av) if (!BOT_UNSCORED_TRAITS.includes(k) && +av[k]) return true;
   for (const k in pv) if (+pv[k]) return true;
-  return (window._bcpCustomControls || []).some(c => c && +c.value);
+  // Rules count when they score moves: a Strength rule changes how much the
+  // personality may spend, not what it likes, and the four unscored traits
+  // never weigh a move whatever phase they are set for.
+  return (window._bcpCustomControls || []).some(c => {
+    if (!c || !+c.value) return false;
+    const m = String(c.metric || '');
+    if (m.startsWith(RULE_STRENGTH)) return false;
+    if (m.startsWith(RULE_TRAIT) && BOT_UNSCORED_TRAITS.includes(m.slice(RULE_TRAIT.length))) return false;
+    return true;
+  });
 }
 
 // Base Maia temperature as the panel defines it: Hustler phase override, then
@@ -4072,7 +4287,27 @@ function botRepPrepared(slots, ecoRows) {
   return _botRepCache.R;
 }
 
+// The bot's move, with this move's rules in effect (botRulesInstall) for the
+// whole of it, think time included, and the bot's own values back afterwards.
 async function botMakeMove() {
+  let restore = null;
+  try {
+    const botColor = botPlayerColor === 'white' ? 'b' : 'w';
+    if (botActive && !botThinking && !gameOver && turn === botColor) {
+      // The FEN exactly as the move below builds it, so the eval probe a
+      // result rule asks for is the one the engine path finds in the cache.
+      const fullmove = Math.floor((typeof gameMovesAlgebraic !== 'undefined' ? gameMovesAlgebraic.length : 0) / 2) + 1;
+      restore = await botRulesInstall(boardToFen(board, turn, castling, epSq, halfmoveClock, fullmove));
+    }
+  } catch (e) { console.warn('[Rules] not applied this move:', e); }
+  try {
+    return await _botMakeMoveRun();
+  } finally {
+    if (restore) restore();
+  }
+}
+
+async function _botMakeMoveRun() {
   // A premove still being worked out for this turn goes first: it either fires
   // (and this call then finds the turn already played) or gives way. Bounded,
   // so a stuck inference can never hold the bot's move hostage.

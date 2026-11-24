@@ -1405,9 +1405,12 @@ function _needsComplexity() {
   }
   // Stalemate seeking needs the eval to know when desperation kicks in
   if (typeof botStaleSeek !== 'undefined' && botStaleSeek) return true;
-  // A custom control with a winning/losing/equal condition needs the eval probe.
+  // A rule with a winning/losing/equal condition needs the eval probe: a
+  // board-feature rule with a value, or any trait, piece or Strength rule (one
+  // at 0 still switches its control off when it holds).
   const cc = window._bcpCustomControls || [];
-  return cc.some(c => c && c.value && c.result && c.result !== 'any');
+  return cc.some(c => c && c.result && c.result !== 'any' &&
+    (+c.value || (typeof botRuleIsOverride === 'function' && botRuleIsOverride(c))));
 }
 
 // Scales base Maia temperature up/down based on position complexity + attractor values

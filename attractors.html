@@ -620,7 +620,11 @@ temperature = base + fraction &times; multiplier &times; (ceiling &minus; base)<
   <p class="note">
     A custom control can also be gated on game phase, on whether the bot is winning or losing,
     and on time pressure &mdash; in which case it only takes a share of the budget on the moves
-    where its condition actually holds.
+    where its condition actually holds. Any named slider above can be gated the same way (Nov
+    2026): the rule's value replaces the slider's on the moves where it holds. Of several rules
+    for one control, the narrowest that holds runs. Phases follow Lichess's division of a game:
+    the middlegame from the first position with a back rank under 4 pieces, 10 or fewer pieces
+    besides kings and pawns, or mixed armies; the endgame at 6 or fewer.
   </p>
 </div>
 
