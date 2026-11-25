@@ -1686,7 +1686,9 @@ function _lbOnTakebackAsk(g, st) {
   const serverPly = _lbMoves(st).length;
   const oppLetter = g.colorLetter === 'w' ? 'b' : 'w';
   // The opponent on move: the bot has replied, so two plies go; else one.
-  const k = (serverPly % 2 === 0 ? 'w' : 'b') === oppLetter ? 2 : 1;
+  // (By the position, not the move count: a set position can start with
+  // Black to move, and read by the count every takeback in it went wrong.)
+  const k = _lbToMove(g, serverPly) === oppLetter ? 2 : 1;
   if (!(left > 0) || serverPly < k) {
     lbLog('Takeback request declined' + (limit === 0 ? ' (this bot never takes moves back)'
       : serverPly < k ? '' : ' (all ' + limit + ' used)'));
@@ -1872,12 +1874,16 @@ async function lichessClaimFirst() {
 // claimed against them (_lbOnOpponentGone).
 let LB_NO_START_MS = 180000;   // 3 minutes (Ben, Nov 23)
 let LB_NO_START_WARN_MS = 20000;
+// Whose move it is after `ply` moves of this game, by the server: a set
+// position can start with Black to move, so an even count is not White's.
+function _lbToMove(g, ply) {
+  const first = g.startFen && g.startFen.split(/\s+/)[1] === 'b' ? 'b' : 'w';
+  return ply % 2 === 0 ? first : (first === 'w' ? 'b' : 'w');
+}
 function _lbWatchStart(g, st) {
   const ply = _lbMoves(st).length;
   const over = st.status && st.status !== 'started' && st.status !== 'created';
-  // Whose move, by the server: a set position can start with Black to move.
-  const first = g.startFen && g.startFen.split(/\s+/)[1] === 'b' ? 'b' : 'w';
-  const toMove = ply % 2 === 0 ? first : (first === 'w' ? 'b' : 'w');
+  const toMove = _lbToMove(g, ply);
   if (over || ply >= 2 || toMove === g.colorLetter) { _lbStopStartWatch(g); return; }
   if (g.startWatch && g.startWatch.ply === ply) return;   // already counting for this move
   _lbStopStartWatch(g);

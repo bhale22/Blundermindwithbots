@@ -944,9 +944,9 @@ console.log('\n6t. Takebacks: the builder\'s limit answers the opponent');
 {
   const tbLog = id => page.evaluate(id => { const i = lbLogLines.findIndex(l => l.includes(id)); return i < 0 ? [] : lbLogLines.slice(i); }, id);
   const keep = await page.evaluate(() => ({ tb: botTimeBehavior, ms: botFixedDelayMs, limit: botTakebackLimit }));
-  const playTb = async (limit, opts, fixedMs) => {
+  const playTb = async (limit, opts, fixedMs, ch) => {
     await page.evaluate(([l, ms]) => { botTakebackLimit = l; if (ms) { botTimeBehavior = 'fixed'; botFixedDelayMs = ms; } }, [limit, fixedMs || 0]);
-    const c = newChallenge({ color: 'white', opts });
+    const c = newChallenge(Object.assign({ color: 'white', opts }, ch));
     await until(() => M.challenges[c].gameId, 5000);
     const g = M.games[M.challenges[c].gameId];
     await until(() => g.status !== 'started', 180000, 'takeback game to finish');
@@ -977,6 +977,23 @@ console.log('\n6t. Takebacks: the builder\'s limit answers the opponent');
   const tn = await playTb(0, { takebackAtPly: 4, resignAtPly: 10 });
   check(tn.tbAnswers.join() === 'no' && tn.tbTaken === 0, 'never: declined', tn.tbAnswers);
   check(tn.chat.some(c => /I don’t take moves back/.test(c.text)), 'with a word in the chat', tn.chat.map(c => c.text));
+
+  // From a set position with Black to move (Nov 25): whose move it is comes
+  // from the position, not from an even or odd move count. Read the wrong way,
+  // the bot expected one ply back where Lichess took two (and two where it
+  // took one), fell out of step with the server and rebuilt, or played its
+  // move on a board Lichess had already rewound.
+  const FENb = 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1';
+  const tb = await playTb(-1, { takebackAtPly: 4, takebackTimes: 2, takebackMidThinkAt: 9, midThinkDelayMs: 500, resignAtPly: 16 }, 2500,
+    { variant: 'fromPosition', initialFen: FENb, color: 'black' });
+  const lb = await tbLog(tb.id);
+  check(tb.botWhite && tb.startFen === FENb, 'set position, Black (the opponent) to move first', { botWhite: tb.botWhite, fen: tb.startFen });
+  check(tb.tbTaken === 3 && tb.tbAnswers.every(a => a === 'yes'), 'black to move first: all three requests accepted', tb.tbAnswers);
+  check(lb.filter(l => /Took back 2 moves/.test(l)).length === 2 && lb.some(l => /Took back 1 move$/.test(l)),
+    'two plies after the bot\'s reply, one while it was thinking', lb.filter(l => /Took back|Takeback/.test(l)));
+  check(tb.refused.length === 0 && !lb.some(l => /rebuilding/.test(l)), 'no move refused, no rebuild: the board rewound in place',
+    { refused: tb.refused, log: lb.filter(l => /rebuild|refused/i.test(l)) });
+  check(await pageBoard() === placement(tb.bd), 'board matches the server at the end (' + tb.moves.length + ' plies)');
   await page.evaluate(k => { botTimeBehavior = k.tb; botFixedDelayMs = k.ms; botTakebackLimit = k.limit; }, keep);
 }
 
