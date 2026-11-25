@@ -103,7 +103,7 @@ console.log('\n1    The board switch is in the header, on both boards');
      JSON.stringify(a.litVis));
   ok('one click goes to the Expert board', a.pro);
   ok('and it is still on screen there', a.visibleOnPro);
-  ok('where the lit half says Expert', a.litPro.length === 1 && /Expert/.test(a.litPro[0]), JSON.stringify(a.litPro));
+  ok('where the lit half says Plain', a.litPro.length === 1 && /Plain/.test(a.litPro[0]), JSON.stringify(a.litPro));
   ok('aria-pressed follows the board', a.pressedVis === 'false' && a.pressedPro === 'true');
   ok('the choice is remembered', a.saved === 'pro');
   ok('and a second click comes back', a.back);
@@ -127,8 +127,9 @@ console.log('\n1    The board switch is in the header, on both boards');
 
 console.log('\n2    The overlays are one block; Board settings comes after them');
 {
-  // Tall: the ghosts stacked over Board settings, with a heading and caption.
-  // 900px and under: the two share one row.
+  // The ghosts and Board settings share one row at every height, with no
+  // heading or caption round the ghosts (Ben, Nov 2026). Tall screens used to
+  // stack them under a "One move deeper" heading.
   const order = (page) => page.evaluate(() => {
     const top = el => el.getBoundingClientRect().top;
     const grids = [...document.querySelectorAll('#sidebar .ind-grid')];
@@ -138,7 +139,6 @@ console.log('\n2    The overlays are one block; Board settings comes after them'
     const ghost = document.getElementById('ib-ghost');
     const utils = document.querySelector('.ind-utils');
     const g = ghost.getBoundingClientRect(), b = bs.getBoundingClientRect();
-    const cap = document.querySelector('.ghost-cap');
     return {
       grids: grids.length,
       bsBetween: between(bs), keyBetween: between(key),
@@ -150,7 +150,7 @@ console.log('\n2    The overlays are one block; Board settings comes after them'
       label: ghost.querySelector('.ib-lbl').textContent.trim(),
       labelFits: (() => { const l = ghost.querySelector('.ib-lbl'); return l.scrollWidth <= l.clientWidth + 1; })(),
       depthShown: !!document.getElementById('soloGhostDepth').offsetParent,
-      caption: cap && cap.offsetParent ? cap.textContent : '',
+      headOrCaption: !!document.querySelector('#sidebar .ghost-head, #sidebar .ghost-cap'),
       ghostLeftPanel: !document.getElementById('boardSettingsPanel').contains(document.getElementById('soloGhostDepth')),
     };
   });
@@ -162,8 +162,8 @@ console.log('\n2    The overlays are one block; Board settings comes after them'
   ok('the state key follows both grids', s.keyAfter);
   ok('ghost replies are on screen without opening anything', s.ghostShown);
   ok('under the overlay utilities', s.ghostAfterUtils);
-  ok('tall screen: with a line saying what they do', /repl/i.test(s.caption), s.caption);
-  ok('tall screen: Board settings under them', s.stacked);
+  ok('tall screen: ghosts and Board settings share a row', s.sideBySide);
+  ok('with no heading or caption round the ghosts', !s.headOrCaption);
   ok('the ghost control has left the Board settings panel', s.ghostLeftPanel);
   ok('no page errors', errors.length === 0, errors.join('; '));
   await ctx.close();

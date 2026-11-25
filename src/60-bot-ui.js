@@ -2266,9 +2266,11 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
   botFixedDelayMs    = cfg.fixedDelayMs    || 5000;
   botMirrorOffsetPct = cfg.mirrorOffsetPct || 0;
   botCplxBase = cfg.cplxBase || 3;
-  botCplxMin  = cfg.cplxMin  || 0.4;
-  botCplxMax  = cfg.cplxMax  || 2.5;
-  // Where Complexity-scaled timing gets its average: the clock ('clock', the
+  // Entropy scaled's Slower–Faster slider (−1 … +1, 0 = a typical person). A
+  // config from before it existed has none: typical. Its old cplxMin / cplxMax
+  // multipliers are no longer read — the fitted entropy curve replaced them.
+  botThinkPace = Math.max(-1, Math.min(1, +cfg.thinkPace || 0));
+  // Where Entropy-scaled timing gets its average: the clock ('clock', the
   // builder's default — time left ÷ moves left in a 40- or 60-move game, by
   // the time control), or the Base time slider ('fixed'). A config from before
   // the choice existed used the slider, so that is what an absent field means.
@@ -2486,6 +2488,12 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
   // Attractor + piece values — used live by applyMoveAttractors()
   window._bcpAttractorValues  = cfg.attractorValues || {};
   window._bcpPieceValues      = cfg.pieceValues     || {};
+  // Confounder and Sharp read Maia whatever the engine (botMaiaChildProbe):
+  // start its worker, which loads the model if this browser has it.
+  if (typeof botUsesMaiaChild === 'function' && botUsesMaiaChild() &&
+      typeof _maiaWorker !== 'undefined' && !_maiaWorker && typeof maiaInit === 'function') {
+    try { maiaInit(); if (typeof _maiaLoadMappings === 'function') _maiaLoadMappings(); } catch (e) {}
+  }
   window._bcpCpBudget         = cfg.cpBudget;
   // Hard Floor: the absolute backstop on picks from ANY mechanism
   // (applyHardFloorBackstop). Budget remains the personality's own ceiling,
@@ -2915,6 +2923,9 @@ function botCheckShareUrl() {
 function _botConfigNeedsMaia(cfg) {
   if (!cfg) return false;
   if (cfg.engine === 'maia3' || cfg.engine === 'lcmaia') return true;
+  // Confounder and Sharp read Maia on any engine.
+  const av = cfg.attractorValues || {};
+  if (+av.entropy || +av.sharpness) return true;
   return cfg.engine === 'hybrid' && Array.isArray(cfg.hybridSlots) &&
          cfg.hybridSlots.some(function (s) { return s && s.type === 'maia' && (+s.pct || 0) > 0; });
 }

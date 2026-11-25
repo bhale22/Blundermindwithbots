@@ -449,7 +449,7 @@ console.log('\n11   Board settings');
   ok('Board & background names the theme', g.theme.length > 1, g.theme);
 
   const sw = await page.evaluate(() => { bsToggleShell(); const v = document.getElementById('bsBoardVal').textContent; bsToggleShell(); return v; });
-  ok('the Board row switches shells', /Expert Board/.test(sw), sw);
+  ok('the Board row switches shells', /Plain Board/.test(sw), sw);
   ok('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
   await ctx.close();
 }
@@ -600,7 +600,7 @@ for (const [w, h, label] of [[412, 915, 'phone'], [1440, 900, 'desktop']]) {
     !st.checks.some(c => /influence/i.test(c)), JSON.stringify(st.checks));
   ok(label + ': Appearance names the board, pieces and theme',
     st.rows.slice(0, 3).join('|') === 'Board|Piece style|Board & background', JSON.stringify(st.rows));
-  ok(label + ': and it says which board you are on', /Expert Board/.test(st.board), st.board);
+  ok(label + ': and it says which board you are on', /Plain Board/.test(st.board), st.board);
   // The tour is a button at the top of every page, so a second copy inside a
   // settings panel was one more thing to read past.
   ok(label + ': the tour is not duplicated here', !st.rows.some(r => /tour/i.test(r)), JSON.stringify(st.rows));

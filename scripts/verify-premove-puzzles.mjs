@@ -129,8 +129,8 @@ const rows = await page.evaluate(() => {
   const toPz = [...document.querySelectorAll('[onclick]')].filter(el => /pzOpen/.test(el.getAttribute('onclick'))).length;
   return { rows: r, proNext: gear && gear.nextElementSibling ? gear.nextElementSibling.id || 'unnamed' : null, toPz };
 });
-ok(JSON.stringify(rows.rows) === JSON.stringify([['btnTips', 'btnLoadPgn', 'btnSavePgn']]),
-   'floor: Training Tips · Load · Save, the one row it has on main');
+ok(JSON.stringify(rows.rows) === JSON.stringify([['btnTips', 'btnLoadPgn', 'btnSavePgn', 'btnFlip']]),
+   'floor: Training Tips · Load · Save · Flip, the one row it has on main ' + JSON.stringify(rows.rows));
 ok(rows.proNext === null && rows.toPz === 0, 'no Premove Puzzles button on either board');
 await page.evaluate(() => pzOpen());
 await page.waitForTimeout(600);

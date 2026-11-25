@@ -296,10 +296,16 @@ argmax (Top move): always picks the single highest-probability move (determinist
   </div>
 
   <!-- 5 -->
-  <h2 id="custom">5 · Custom Controls — Build Your Own Rule</h2>
-  <p>Custom controls let you write board-feature rules not covered by the fixed attractors. Each control selects a
-  metric, optionally gates on game phase, advantage state, and time pressure, then applies a continuous bias to move
-  candidates that increase (or decrease) that metric.</p>
+  <h2 id="custom">5 · Strategy &amp; Custom Controls — Every Setting Is a Rule</h2>
+  <p>On the Strategy &amp; Custom Controls tab every style setting is a rule: any personality trait above, any piece,
+  any board feature below, or a Strength setting (CP Budget, Maia temperature, Conviction, Hard Floor). A rule with no
+  phase or condition runs all game, which is what a trait's slider used to be. Give it a game phase, an advantage
+  state or a time-pressure condition and it applies only then: a confusing opening and a sharp endgame is two rules.
+  A board-feature rule applies a continuous bias to move candidates that increase (or decrease) that metric.</p>
+  <p>When two rules for one control both apply, the narrower one wins (each phase or condition set counts once), and
+  between two equally narrow rules, the one higher in the list. A rule at 0 still wins, so it can switch a trait off
+  for part of the game. The radar on Move Quality &amp; Strategy draws what runs in each phase: opening green (solid),
+  middlegame yellow (dashed), endgame red (dotted).</p>
 
   <h3>Available Metrics (30+)</h3>
   <div class="wide">
@@ -341,12 +347,13 @@ argmax (Top move): always picks the single highest-probability move (determinist
 
   <h3>Gates — When the Rule Fires</h3>
   <div class="grid g3">
-    <div class="card"><h4>Game Phase</h4><p>Any — fires every move<br>Opening — first ~20 moves<br>Middlegame — pieces on board<br>Endgame — few pieces remain</p></div>
+    <div class="card"><h4>Game Phase</h4><p>Divided as Lichess divides a game:<br>Opening — until the middlegame starts<br>Middlegame — from the first position where a side has under 4 pieces on its back rank, 10 or fewer pieces besides kings and pawns remain, or the armies have mixed<br>Endgame — 6 or fewer pieces besides kings and pawns<br>A phase never comes back once the game leaves it.</p></div>
     <div class="card"><h4>Advantage State</h4><p>Any result — always active<br>When winning — eval ≥ +100 cp<br>When losing — eval ≤ −100 cp<br>When equal — |eval| &lt; 100 cp</p></div>
     <div class="card"><h4>Time Pressure</h4><p>Any clock — always active<br>Bot pressured — bot &lt; 30 s or &lt; 15%<br>Opp pressured — opponent in time trouble<br>Either side — either clock low</p></div>
   </div>
-  <p class="note">Custom controls can be stacked. All active controls score candidates simultaneously; the scores are
-  summed with the attractor scores before selection.</p>
+  <p class="note">Rules for different controls stack: every board feature with a rule that holds scores candidates
+  at once, alongside the traits, and the scores are summed before selection. For any one control, only its winning
+  rule runs.</p>
 
   <!-- 6 -->
   <h2 id="openings">6 · Openings</h2>
@@ -368,7 +375,7 @@ argmax (Top move): always picks the single highest-probability move (determinist
     <tbody>
       <tr><td>Fixed interval</td><td>Constant pause between all moves. Set the delay in seconds. Simplest and most predictable.</td></tr>
       <tr><td>Instantaneous</td><td>Responds at engine speed (effectively 0 delay). Useful for analysis or speed variants.</td></tr>
-      <tr><td>Complexity scaled</td><td>Think time scales with position complexity (measured as the spread of Stockfish's top evaluations). Tactical positions get more time; forced sequences get less. Mimics human time allocation.</td></tr>
+      <tr><td>Entropy scaled</td><td>Thinks the way people do, fitted to their own think times in blitz, rapid and league games: longer when more moves look playable (Maia's entropy), longer over a move it was less likely to choose, most of the clock spent around moves 15–25, and as uneven from move to move as a person; its overall pace at each time control is set to what people showed in bullet, blitz, rapid and league games. One Slower–Faster slider sets it from twice a typical person's think to half.</td></tr>
       <tr><td>Mirror user</td><td>Bot matches the human's move rhythm ± a configurable offset. If you played fast the bot plays fast; if you took 30 seconds it will too. Creates a psychologically realistic feel.</td></tr>
     </tbody>
   </table>

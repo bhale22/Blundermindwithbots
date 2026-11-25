@@ -59,7 +59,7 @@ ok(s.opA !== '1' && s.opB !== '1', `both charts greyed under a set pace (${s.opA
 ok(/sets the pace/i.test(s.label), 'label: "' + s.label + '"');
 
 console.log('\ntimed (5+0), Complexity scaled:');
-await page.evaluate(() => document.querySelector('#timing-mode-grid .mcard[data-v="Complexity-scaled"]').click());
+await page.evaluate(() => document.querySelector('#timing-mode-grid .mcard[data-v="Entropy-scaled"]').click());
 await page.waitForTimeout(250);
 s = await state();
 ok(s.A > 50, `ELO curve slopes (spread ${s.A})`);

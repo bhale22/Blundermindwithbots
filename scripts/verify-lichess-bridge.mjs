@@ -48,10 +48,13 @@ const sqOf = s => core.fileRankToSq(s);
 const nameOf = i => core.sqName(i);
 function placement(bd) { let s = ''; for (let i = 0; i < 64; i++) s += bd[i] ? bd[i].color + bd[i].piece : '..'; return s; }
 // The core's rules are global (standard or Chess960, and which rooks castle):
-// set them for a game before working on its position.
+// set them for a game before working on its position. Lichess plays a set
+// position (From Position) by Chess960's castling rule and writes its castles
+// king takes rook, ordinary castling included, so the stand-in does too.
 function useRules(g) {
-  core.setChess960(!!g.chess960);
-  if (g.chess960) core.parseFen(g.startFen);
+  const k960 = !!(g.chess960 || g.fromPos);
+  core.setChess960(k960);
+  if (k960) core.parseFen(g.startFen);
 }
 
 // ── The stand-in Lichess ────────────────────────────────────────────────────
@@ -97,7 +100,7 @@ function newGame(ch) {
   const fromPos = !!(ch.c.variant && ch.c.variant.key === 'fromPosition' && ch.c.initialFen);
   const startFen = is960 ? core.chess960StartFen(ch.opts.sp != null ? ch.opts.sp : Math.floor(Math.random() * 960))
     : fromPos ? ch.c.initialFen : START;
-  useRules({ chess960: is960, startFen });
+  useRules({ chess960: is960, fromPos, startFen });
   const bd = core.parseFen(startFen);   // sets the core's turn, castling and ep for it
   const botWhite = ch.c.color === 'black' ? true : ch.c.color === 'white' ? false : Math.random() < 0.5;
   const tc = ch.c.timeControl;
@@ -148,9 +151,21 @@ function finish(g, status, winner) {
 // Apply a UCI move to the stand-in's position; returns false if illegal.
 function play(g, uci) {
   useRules(g);
-  const from = sqOf(uci.slice(0, 2)), to = sqOf(uci.slice(2, 4));
+  const from = sqOf(uci.slice(0, 2));
+  let to = sqOf(uci.slice(2, 4));
   const p = g.bd[from];
   if (!p || p.color !== g.turn) return false;
+  // A set position on Lichess: a castle may also be sent as the king's two
+  // squares (e1g1), but only from e1 with the rook in its corner (scalachess
+  // Position.castle); it is written down king takes rook all the same.
+  if (g.fromPos) {
+    const kxr = core.chess960CastleAlias(g.bd, from, to, g.ep, g.cst);
+    if (kxr !== to) {
+      if (from % 8 !== 4 || (kxr % 8 !== 0 && kxr % 8 !== 7)) return false;
+      to = kxr;
+      uci = nameOf(from) + nameOf(to);
+    }
+  }
   if (!core.legalMovesFor(from, g.bd, g.ep, g.cst).includes(to)) return false;
   const now = Date.now();
   if (g.moves.length >= 2) {
@@ -229,6 +244,7 @@ function opponentTurn(g) {
   setTimeout(async () => {
     try {
       if (g.status !== 'started') return;
+      if (o.silentFromPly != null && ply >= o.silentFromPly) return;   // walked away: never moves again
       if (o.resignAtPly != null && ply >= o.resignAtPly) { finish(g, 'resign', g.botWhite ? 'white' : 'black'); return; }
       if (o.flagAtPly != null && ply >= o.flagAtPly) {
         // Our clock is nearly gone and we never move: Lichess flags us.
@@ -834,6 +850,96 @@ console.log('\n6p. Set positions: played from the challenger\'s position while t
   await until(async () => (await lbState()) === 'waiting', 5000);
 }
 
+console.log('\n6q. Set positions castle as on Lichess: king takes rook, and as Chess960 away from e1');
+{
+  const gameLog = id => page.evaluate(id => { const i = lbLogLines.findIndex(l => l.includes(id)); return i < 0 ? [] : lbLogLines.slice(i); }, id);
+  // The tester's game (Nov 2026): a Chess960 set-up through From Position,
+  // king d1, rook e1. White (the opponent) castles at once: d1e1. The board
+  // used to play it as standard chess, refused the castle and lost the game's
+  // thread ("Unexpected move d1e1 from Lichess — rebuilding", then a fallback).
+  const FEN960 = 'r2kr3/pppppppp/8/8/8/8/PPPPPPPP/3KR3 w Kkq - 0 1';
+  const c = newChallenge({ variant: 'fromPosition', initialFen: FEN960, color: 'white', opts: { preferCastle: true, resignAtPly: 16 } });
+  await until(() => M.challenges[c].gameId || M.challenges[c].declined, 5000);
+  check(!!M.challenges[c].gameId, 'a set position castling from d1 is accepted', M.challenges[c].declined);
+  const g = M.games[M.challenges[c].gameId];
+  await until(() => g && g.moves.length >= 2, 30000, 'two plies');
+  check(g.castles[0] === 'w:d1e1', 'the opponent castled at once, king takes rook (d1e1)', g.castles);
+  const pp = await page.evaluate(() => ({ c960: chess960, log: lbLogLines.filter(l => /set position/.test(l)).slice(-1)[0] || '' }));
+  check(pp.c960 && /castling as in Chess960/.test(pp.log), 'the page plays it with Chess960 castling, and says so', pp);
+  await until(() => g.status !== 'started', 120000, 'the set-up Chess960 game to finish');
+  await sleep(800);
+  check(await pageBoard() === placement(g.bd), 'board matches the server at the end (' + g.moves.length + ' plies, castles ' + g.castles.join(' ') + ')');
+  check(g.refused.length === 0, 'no move of the bot\'s refused', g.refused);
+  const lg = await gameLog(g.id);
+  check(!lg.some(l => /Unexpected move|rebuilding|wouldn/.test(l)), 'no unexpected move, rebuild or fallback in its log', lg.filter(l => /Unexpected|rebuild|wouldn/.test(l)));
+
+  // An ordinary set-up, king e1 and corner rooks: Lichess still writes the
+  // castle e1h1, which the board plays as standard chess's e1g1; the bot's own
+  // castle goes to Lichess, and into the move list, as e8h8.
+  const FENstd = 'r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1';
+  const keep = await page.evaluate(() => ({ tb: botTimeBehavior, ms: botFixedDelayMs }));
+  await page.evaluate(() => { botTimeBehavior = 'fixed'; botFixedDelayMs = 4000; });
+  const c2 = newChallenge({ variant: 'fromPosition', initialFen: FENstd, color: 'white', opts: { preferCastle: true, resignAtPly: 12 } });
+  await until(() => M.challenges[c2].gameId || M.challenges[c2].declined, 5000);
+  const g2 = M.games[M.challenges[c2].gameId];
+  await until(() => g2 && g2.moves.length >= 1, 30000, 'the opponent\'s castle');
+  check(/^w:e1[ha]1$/.test(g2.castles[0] || ''), 'the opponent castled, written king takes rook (' + g2.castles[0] + ')', g2.castles);
+  await sleep(600);
+  const p2 = await page.evaluate(() => ({ c960: chess960, hist: botMoveHistory.slice(), local: lbGame ? lbGame.local.slice() : null }));
+  check(!p2.c960, 'the page plays this one as standard chess', p2);
+  check(/^e1[gc]1$/.test(p2.hist[0] || ''), 'the bot\'s memory of the game has it as e1g1/e1c1 (' + p2.hist[0] + ')', p2.hist);
+  check(p2.local && p2.local[0] === g2.moves[0], 'the board\'s move list matches the server\'s', { local: p2.local, server: g2.moves });
+  // The bot castles: in place of the move it was thinking about.
+  const sent = await page.evaluate(() => {
+    _lbCancelBotTurn();
+    const legal = legalMovesFor(4, board, epSq, castling);
+    if (!legal.includes(6)) return 'not legal: ' + legal.join(',');
+    executeMove(4, 6);
+    return lbGame.local[lbGame.local.length - 1];
+  });
+  check(sent === 'e8h8', 'the bot\'s castle is spelled e8h8 for Lichess', sent);
+  await until(() => g2.moves.length >= 3 || g2.refused.length, 10000, 'the bot\'s castle on the server');
+  check(g2.moves[1] === 'e8h8' && g2.refused.length === 0, 'Lichess takes it', { moves: g2.moves, refused: g2.refused });
+  await page.evaluate(k => { botTimeBehavior = k.tb; botFixedDelayMs = k.ms; }, keep);
+  await until(() => g2.status !== 'started', 120000, 'the ordinary set-up game to finish');
+  await sleep(800);
+  check(await pageBoard() === placement(g2.bd), 'board matches the server at the end (' + g2.moves.length + ' plies)');
+  const lg2 = await gameLog(g2.id);
+  check(!lg2.some(l => /Unexpected move|rebuilding/.test(l)), 'no unexpected move or rebuild in its log', lg2.filter(l => /Unexpected|rebuild/.test(l)));
+  await until(async () => (await lbState()) === 'waiting', 5000);
+}
+
+console.log('\n6s. A game nobody starts is aborted');
+{
+  await page.evaluate(() => { LB_NO_START_MS = 3000; LB_NO_START_WARN_MS = 1500; });
+  // The opponent is White and never moves.
+  const c = newChallenge({ color: 'white', opts: { silentFromPly: 0 } });
+  await until(() => M.challenges[c].gameId, 5000);
+  const g = M.games[M.challenges[c].gameId];
+  await until(() => g.status !== 'started', 10000, 'the abort');
+  check(g.status === 'aborted' && g.moves.length === 0, 'no first move from White: the bot aborts (' + g.status + ')', g.moves);
+  check(g.chat.some(l => /No move yet: this game will be aborted in 2 seconds/.test(l.text)), 'after a warning in the chat', g.chat);
+  const lg = await page.evaluate(() => lbLogLines.slice(-6).join(' | '));
+  check(/made no first move in 3 s/.test(lg) && /Game aborted/.test(lg), 'the log says why', lg);
+  await until(async () => (await lbState()) === 'waiting', 5000);
+  check((await lbState()) === 'waiting', 'and the bot is free for the next challenge');
+  // The bot is White: it moves, the opponent never replies.
+  const c2 = newChallenge({ color: 'black', opts: { silentFromPly: 1 } });
+  await until(() => M.challenges[c2].gameId, 5000);
+  const g2 = M.games[M.challenges[c2].gameId];
+  await until(() => g2.status !== 'started', 30000, 'the abort after the bot\'s move');
+  check(g2.status === 'aborted' && g2.moves.length === 1, 'no reply to the bot\'s first move: aborted (' + g2.moves.join(' ') + ')', g2.status);
+  await until(async () => (await lbState()) === 'waiting', 5000);
+  // A slow first move, inside the limit, starts the game as usual.
+  const c3 = newChallenge({ color: 'white', opts: { oppDelayMs: 1800, resignAtPly: 4 } });
+  await until(() => M.challenges[c3].gameId, 5000);
+  const g3 = M.games[M.challenges[c3].gameId];
+  await until(() => g3.status !== 'started', 60000, 'the slow-starting game');
+  check(g3.status === 'resign' && g3.moves.length >= 4, 'a first move inside the limit is played on (' + g3.status + ', ' + g3.moves.length + ' plies)', g3.moves);
+  await page.evaluate(() => { LB_NO_START_MS = 180000; LB_NO_START_WARN_MS = 20000; });
+  await until(async () => (await lbState()) === 'waiting', 5000);
+}
+
 console.log('\n6t. Takebacks: the builder\'s limit answers the opponent');
 {
   const tbLog = id => page.evaluate(id => { const i = lbLogLines.findIndex(l => l.includes(id)); return i < 0 ? [] : lbLogLines.slice(i); }, id);
@@ -1037,7 +1143,7 @@ const tpRows = await fr.evaluate(() => {
   const sum = () => document.querySelector('.lbc-sum').textContent;
   const reopen = () => { lbcClose(); lbcOpen(); };
   const out = { fixed: sum() };
-  document.querySelector('#timing-mode-grid .mcard[data-v="Complexity-scaled"]').click();
+  document.querySelector('#timing-mode-grid .mcard[data-v="Entropy-scaled"]').click();
   reopen(); out.both = sum();
   const a = document.getElementById('pressure-off-a'), b = document.getElementById('pressure-off-b');
   a.checked = false; a.onchange && a.onchange();
@@ -1053,7 +1159,7 @@ const tpRows = await fr.evaluate(() => {
 check(/CP Budget/.test(tpRows.fixed) && !/Hard Floor/.test(tpRows.fixed) && !/Time pressure/.test(tpRows.fixed),
   'the summary shows CP Budget (no Hard Floor), and no time-pressure line on a fixed pace', tpRows.fixed.slice(0, 160));
 check(/Time pressure\s*on.*rating drops, choices widen/.test(tpRows.both) && /Time pressure\s*on.*\(choices widen\)/.test(tpRows.bOnly)
-  && /Time pressure\s*off/.test(tpRows.none), 'complexity timing: the time-pressure line says on (and which) or off',
+  && /Time pressure\s*off/.test(tpRows.none), 'entropy timing: the time-pressure line says on (and which) or off',
   { both: tpRows.both.slice(-120), bOnly: tpRows.bOnly.slice(-120), none: tpRows.none.slice(-120) });
 
 await fr.fill('#lbc-token', 'lip_wrong');
@@ -1307,7 +1413,7 @@ await until(() => p2.evaluate(() => _maiaReady), 180000, 'Maia to load');
 await fr.evaluate(() => {
   selEngineMode(document.querySelector('#engine-mode-grid .mcard[data-engine="maia3"]'));
   setElo(2200);
-  document.querySelector('#timing-mode-grid .mcard[data-v="Complexity-scaled"]').click();
+  document.querySelector('#timing-mode-grid .mcard[data-v="Entropy-scaled"]').click();
   startGame();
 });
 await until(() => p2.evaluate(() => window._lastAppliedBotConfig.elo === 2200 && _lbEnginesReady()), 60000, 'the Maia update');

@@ -71,7 +71,7 @@ await page.evaluate(() => toggleSec('pressure'));
 await page.waitForTimeout(700);
 // The curves only run on a clock-driven pace; the default Fixed interval greys
 // them (see verify-untimed-curves). Test them where they are live.
-await page.evaluate(() => document.querySelector('#timing-mode-grid .mcard[data-v="Complexity-scaled"]').click());
+await page.evaluate(() => document.querySelector('#timing-mode-grid .mcard[data-v="Entropy-scaled"]').click());
 await page.waitForTimeout(200);
 await page.evaluate(() => { const cb = document.getElementById('pressure-off-a'); cb.checked = false; cb.onchange(); });
 await page.waitForTimeout(150);

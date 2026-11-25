@@ -872,6 +872,130 @@ canvas{display:block;background:transparent;}
 .cc-del:hover{border-color:var(--amber);color:var(--amber);}
 .cc-add-btn{display:inline-block;margin-top:8px;padding:6px 14px;font-family:var(--font-u);font-size:9px;letter-spacing:0.06em;background:var(--carbon-surface);border:0.5px dashed var(--amber-dim);border-radius:2px;color:var(--amber);cursor:pointer;transition:all 0.15s;}
 .cc-add-btn:hover{background:var(--carbon-raise);border-color:var(--amber);}
+
+/* ── Strategy & Custom Controls: every setting is a rule (Nov 2026) ──────────
+   One line per rule, no boxes: what it does, when (only if set), its value.
+   Click a line to edit it in place. The green pill adds one from a list of
+   collapsed groups, laid out like the openings List. All colours come from
+   the theme, so it reads the same on Cool blue, Clay or the dark palettes. */
+.ru-store{display:none !important;}
+.ru-intro{font-family:var(--font-m);font-size:9px;line-height:1.5;color:var(--text-secondary);max-width:660px;margin:0 0 12px;}
+.ru-cols{display:flex;gap:22px;align-items:flex-start;}
+.ru-main{flex:1 1 0;min-width:0;max-width:620px;display:flex;flex-direction:column;}
+.ru-side{flex:0 1 340px;min-width:0;}
+.ru-addpill{width:100%;min-height:40px;display:flex;align-items:center;justify-content:center;gap:8px;border:none;border-radius:999px;
+  background:#2fa35a;color:#08160d;font-family:var(--font-u);font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;
+  cursor:pointer;transition:background 0.15s;}
+.ru-addpill:hover{background:#38b866;}
+.ru-addpill:focus-visible{outline:2px solid var(--text-primary);outline-offset:2px;}
+.ru-addpill[aria-expanded="true"]{background:rgba(47,163,90,0.16);color:var(--text-primary);box-shadow:inset 0 0 0 1.5px #2fa35a;}
+.ru-addpill svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2.4;stroke-linecap:round;}
+.ru-picker{margin-top:8px;background:var(--carbon-raise);border:0.5px solid var(--border-amber);border-radius:var(--r);}
+.ru-pbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 8px 5px 12px;border-bottom:0.5px solid var(--border-amber);
+  font-family:var(--font-m);font-size:9px;color:var(--text-secondary);}
+.ru-filter{display:block;width:calc(100% - 24px);margin:8px 12px;box-sizing:border-box;padding:6px 8px;background:var(--carbon-mid);
+  border:0.5px solid var(--border);border-radius:2px;color:var(--text-primary);font-family:var(--font-m);font-size:9px;outline:none;}
+.ru-filter:focus{border-color:var(--amber);}
+.ru-groups{max-height:min(440px,60vh);overflow-y:auto;border-top:0.5px solid var(--border);}
+.ru-grp{display:flex;align-items:center;gap:8px;width:100%;padding:8px 12px;background:none;border:none;border-bottom:0.5px solid var(--border);
+  color:var(--text-primary);font-family:var(--font-m);font-size:9px;text-align:left;cursor:pointer;}
+.ru-grp:hover{background:var(--carbon-light);}
+.ru-grp .ru-chev{color:var(--amber);display:inline-block;width:9px;transition:transform 0.15s;}
+.ru-grp[aria-expanded="true"]{color:var(--amber-bright);}
+.ru-grp[aria-expanded="true"] .ru-chev{transform:rotate(90deg);}
+.ru-gname{flex:1;min-width:0;}
+.ru-guse{color:var(--amber-bright);font-size:8px;white-space:nowrap;}
+.ru-gcount{color:var(--text-dim);font-size:8px;white-space:nowrap;min-width:64px;text-align:right;}
+.ru-item{display:flex;align-items:center;gap:8px;width:100%;padding:6px 12px 6px 30px;background:var(--carbon-mid);border:none;
+  border-bottom:0.5px solid var(--border);color:var(--text-secondary);font-family:var(--font-m);font-size:9px;text-align:left;cursor:pointer;}
+.ru-item:hover{background:var(--amber-glow);color:var(--text-primary);}
+.ru-ihint{margin-left:auto;font-size:8px;color:var(--text-dim);white-space:nowrap;}
+.ru-ihint.used{color:var(--amber-bright);}
+.ru-empty{padding:10px 12px;font-family:var(--font-m);font-size:9px;color:var(--text-dim);}
+.ru-listhead{display:flex;align-items:center;gap:8px;margin:16px 0 2px;font-family:var(--font-u);font-size:9px;letter-spacing:0.12em;
+  text-transform:uppercase;color:var(--text-dim);}
+.ru-listhead::after{content:'';flex:1;height:0.5px;background:var(--border);}
+.ru-count{color:var(--amber);letter-spacing:0;}
+.ru-line{display:flex;align-items:center;gap:12px;width:100%;min-height:38px;padding:6px;background:none;border:none;
+  border-bottom:0.5px solid var(--border);color:var(--text-primary);text-align:left;cursor:pointer;font-family:var(--font-d);}
+.ru-line:hover{background:var(--carbon-light);}
+.ru-line[aria-expanded="true"]{background:var(--amber-glow);border-bottom-color:transparent;}
+.ru-name{flex:0 1 auto;min-width:0;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ru-line[aria-expanded="true"] .ru-name{color:var(--amber-bright);}
+.ru-when{flex:1 1 auto;min-width:0;font-family:var(--font-m);font-size:8.5px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ru-val{flex:none;font-family:var(--font-m);font-size:10px;color:var(--amber-bright);white-space:nowrap;}
+.ru-caret{flex:none;width:10px;height:10px;stroke:var(--text-dim);fill:none;stroke-width:2;transition:transform 0.15s;}
+.ru-line[aria-expanded="true"] .ru-caret{transform:rotate(180deg);stroke:var(--amber);}
+.ru-edit{display:flex;flex-direction:column;gap:7px;padding:8px 10px 10px;background:var(--amber-glow);border-bottom:0.5px solid var(--border);}
+.ru-slide{display:flex;flex-direction:column;gap:2px;}
+.ru-slide .attr-slider{width:100%;}
+.ru-ends{display:flex;justify-content:space-between;gap:8px;font-family:var(--font-m);font-size:8px;color:var(--text-dim);}
+.ru-crow{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 14px;}
+.ru-clbl{width:52px;flex:none;font-family:var(--font-u);font-size:8px;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-dim);}
+.ru-chip{background:none;border:none;border-bottom:1.5px solid transparent;padding:3px 1px;color:var(--text-secondary);
+  font-family:var(--font-m);font-size:10px;font-weight:500;cursor:pointer;}
+.ru-chip:hover{color:var(--text-primary);}
+.ru-chip[aria-pressed="true"]{color:var(--amber-bright);border-bottom-color:var(--amber);}
+.ru-acts{display:flex;align-items:center;gap:16px;margin-top:2px;}
+.ru-act{background:none;border:none;padding:4px 0;color:var(--text-secondary);font-family:var(--font-m);font-size:9.5px;font-weight:500;cursor:pointer;}
+.ru-act:hover{color:var(--text-primary);}
+.ru-act.done{margin-left:auto;color:var(--amber-bright);}
+.ru-why{font-family:var(--font-m);font-size:8px;line-height:1.4;color:var(--amber);}
+.ru-none{padding:10px 6px;font-family:var(--font-m);font-size:9px;color:var(--text-dim);}
+.ru-note{margin-top:8px;font-family:var(--font-m);font-size:8px;line-height:1.5;color:var(--text-dim);}
+.ru-card{display:flex;flex-direction:column;gap:10px;padding:12px;background:var(--carbon-mid);border:0.5px solid var(--border);border-radius:var(--r);}
+.ru-cardhead{font-family:var(--font-u);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-dim);}
+.ru-cardfoot{margin-top:0;padding-top:8px;border-top:0.5px solid var(--border);}
+.ru-ph{display:flex;flex-direction:column;gap:2px;}
+.ru-phhead{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
+.ru-phname{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-d);font-size:14px;font-weight:600;color:var(--text-primary);}
+.ru-phname svg{width:20px;height:6px;flex:none;}
+.ru-phdef{font-family:var(--font-m);font-size:8px;color:var(--text-dim);text-align:right;}
+.ru-wl{display:flex;align-items:baseline;gap:8px;min-width:0;}
+.ru-wname{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--font-d);font-size:12.5px;font-weight:600;color:var(--text-primary);}
+.ru-wname.open{color:var(--amber-bright);}
+.ru-wcond{font-family:var(--font-m);font-size:8px;font-weight:400;color:var(--text-secondary);}
+.ru-wval{flex:none;font-family:var(--font-m);font-size:9.5px;color:var(--amber-bright);white-space:nowrap;}
+/* The hover explanation: placed beside the control by ruTipShow, never over
+   it, and never in the way of a click. */
+.ru-tip{position:fixed;z-index:1000;max-width:300px;padding:7px 10px;pointer-events:none;
+  background:var(--carbon-light);border:0.5px solid var(--border-amber);border-radius:var(--r);
+  box-shadow:0 8px 20px rgba(0,0,0,0.35);font-family:var(--font-m);font-size:8.5px;line-height:1.6;color:var(--text-secondary);}
+.ru-tip[hidden]{display:none;}
+.ru-tip-name{font-family:var(--font-d);font-size:11px;font-weight:600;color:var(--text-primary);margin-bottom:2px;}
+.ru-tip code,.ru-desc code{font-family:var(--font-m);font-size:0.95em;color:var(--amber-bright);letter-spacing:0.02em;}
+.ru-desc{display:none;font-family:var(--font-m);font-size:9px;line-height:1.6;color:var(--text-secondary);}
+@media (hover:none){ .ru-desc{display:block;} }
+body.fj .ru-tip,body.fj .ru-desc{font-size:13px;}
+body.fj .ru-tip{max-width:340px;}
+body.fj .ru-tip-name{font-size:15px;}
+body.rs-highvis:not(.fj) .ru-tip,body.rs-highvis:not(.fj) .ru-desc{font-size:11px;}
+.radar-legend{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 14px;margin:2px 0 4px;font-family:var(--font-m);font-size:8px;color:var(--text-secondary);}
+.radar-legend span{display:inline-flex;align-items:center;gap:5px;}
+.radar-legend svg{width:22px;height:6px;flex:none;}
+@media (max-width:760px){
+  .ru-cols{flex-direction:column;gap:14px;}
+  .ru-main{max-width:none;width:100%;}
+  .ru-side{flex-basis:auto;width:100%;}
+  .ru-line{min-height:44px;}
+  .ru-chip,.ru-act{min-height:32px;}
+}
+body.fj .ru-intro,body.fj .ru-when,body.fj .ru-filter,body.fj .ru-pbar,body.fj .ru-empty,body.fj .ru-none,body.fj .ru-item,body.fj .ru-act{font-size:13.5px;}
+body.fj .ru-note,body.fj .ru-ends,body.fj .ru-phdef,body.fj .ru-gcount,body.fj .ru-guse,body.fj .ru-ihint,body.fj .ru-why,
+body.fj .ru-wcond,body.fj .radar-legend,body.fj .ru-listhead,body.fj .ru-cardhead,body.fj .ru-clbl{font-size:12px;}
+body.fj .ru-listhead,body.fj .ru-cardhead,body.fj .ru-clbl{letter-spacing:0.04em;}
+body.fj .ru-name,body.fj .ru-phname{font-size:16.5px;}
+body.fj .ru-val,body.fj .ru-chip,body.fj .ru-grp,body.fj .ru-wname{font-size:15px;}
+body.fj .ru-wval{font-size:13.5px;}
+body.fj .ru-addpill{font-size:14px;letter-spacing:0.03em;text-transform:none;}
+body.rs-highvis:not(.fj) .ru-note,body.rs-highvis:not(.fj) .ru-ends,body.rs-highvis:not(.fj) .ru-phdef,
+body.rs-highvis:not(.fj) .ru-gcount,body.rs-highvis:not(.fj) .ru-guse,body.rs-highvis:not(.fj) .ru-ihint,
+body.rs-highvis:not(.fj) .ru-why,body.rs-highvis:not(.fj) .ru-wcond,body.rs-highvis:not(.fj) .ru-when,
+body.rs-highvis:not(.fj) .radar-legend,body.rs-highvis:not(.fj) .ru-listhead,body.rs-highvis:not(.fj) .ru-cardhead,
+body.rs-highvis:not(.fj) .ru-clbl,body.rs-highvis:not(.fj) .ru-intro,body.rs-highvis:not(.fj) .ru-item,
+body.rs-highvis:not(.fj) .ru-grp,body.rs-highvis:not(.fj) .ru-filter,body.rs-highvis:not(.fj) .ru-pbar{font-size:11px;}
+body.rs-highvis:not(.fj) .ru-name{font-size:15px;}
+body.rs-highvis:not(.fj) .ru-val,body.rs-highvis:not(.fj) .ru-chip,body.rs-highvis:not(.fj) .ru-wname{font-size:13px;}
 /* Keep all Personality inner-tab panes the same height so switching doesn't resize */
 #sec-attract .itab-pane{min-height:460px;}
 /* Personality controls only do something when the engine yields a move
@@ -3418,7 +3542,7 @@ body.fj .picon{font-weight:500;}
         </button>
         <button type="button" class="qsd-opt" data-tm="complexity" onclick="qsTimingPick('complexity')">
           <span class="qsd-dot"></span>
-          <span class="qsd-text"><span class="qsd-name">Complexity scaled</span><span class="qsd-desc">Quick on easy moves, longer on hard ones</span></span>
+          <span class="qsd-text"><span class="qsd-name">Entropy scaled</span><span class="qsd-desc">Thinks like a person: quick on obvious moves, longer when many look playable</span></span>
         </button>
         <button type="button" class="qsd-more" onclick="qsOpenSection('timing')">Open time control &amp; premove panel ▸</button>
       </div>
@@ -3888,8 +4012,7 @@ body.fj .picon{font-weight:500;}
       <div class="pr" id="attract-personality-body" style="margin-top:0;">
         <div class="itab-strip">
           <button class="itab active" onclick="switchItab('attract','quality')">Move Quality &amp; Strategy</button>
-          <button class="itab" onclick="switchItab('attract','custom')">Custom Controls</button>
-          <button class="itab" onclick="switchItab('attract','pieces')">Strategy &amp; Piece Focus</button>
+          <button class="itab" onclick="switchItab('attract','custom')">Strategy &amp; Custom Controls</button>
           <button class="itab" onclick="switchItab('attract','presets')">Preset Personalities</button>
           <button class="itab" onclick="switchItab('attract','draws')">Draws &amp; Takebacks</button>
         </div>
@@ -4001,7 +4124,8 @@ body.fj .picon{font-weight:500;}
               <div class="dlbl"><span>Personality fingerprint</span></div>
               <div class="radar-wrap">
                 <canvas id="radar-canvas" width="320" height="260"></canvas>
-                <div class="radar-hint"><span class="radar-hint-desk">drag nodes or click axis to set value</span><span class="radar-hint-phone">tap an axis to open its control</span></div>
+                <div class="radar-legend" id="radar-legend" aria-label="Radar outlines by game phase"></div>
+                <div class="radar-hint"><span class="radar-hint-desk">drag nodes to set the whole-game value · outlines: each phase</span><span class="radar-hint-phone">tap an axis to open its control</span></div>
               </div>
 
               <!-- Clock tactics — synced with the same switches in Move Timing -->
@@ -4015,28 +4139,50 @@ body.fj .picon{font-weight:500;}
                 <label class="tog"><input type="checkbox" id="cb-clock-mirror-2" checked onchange="syncClockMirror(this.checked,'cb-clock-mirror-2')"><div class="tog-track"><div class="tog-thumb"></div></div></label>
               </div>
 
-              <!-- Custom-control entry — the full builder lives on its own tab -->
-              <div class="dlbl" style="margin-top:14px;"><span>Custom controls</span></div>
+              <!-- Rules entry — the list lives on Strategy & Custom Controls -->
+              <div class="dlbl" style="margin-top:14px;"><span>Strategy &amp; custom controls</span></div>
               <div style="display:flex;align-items:center;gap:10px;">
-                <button type="button" class="cc-add-btn" style="flex-shrink:0;" onclick="addCustomControlAndGo()">+ Add custom control</button>
-                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);">Build your own attractor — pick a board feature, a phase, and a direction. Opens the Custom Controls tab.</div>
+                <button type="button" class="cc-add-btn" style="flex-shrink:0;" onclick="addCustomControlAndGo()">+ Add rule</button>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);">Set any trait, piece, board feature or Strength setting, for the whole game or one phase. Opens the Strategy &amp; Custom Controls tab.</div>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- TAB: Custom Controls (user-built attractors) -->
+        <!-- TAB: Strategy & Custom Controls — every setting is a rule (Nov 2026).
+             Strategy & Piece Focus and Custom Controls used to be two tabs; a
+             trait's whole-game value lived on one and its conditions on the
+             other. A rule with no phase or condition is the old slider. -->
         <div class="itab-pane" id="itab-attract-custom">
-          <div class="dlbl"><span>Custom controls</span></div>
-          <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-bottom:8px;max-width:440px;">Build your own attractor: pick a board feature, the game phase it applies in, and a direction. Each attactor re-ranks the engine's candidate moves. The centipawn budget is shared only among controls currently active, so full cp budget is available for every move.</div>
-          <div class="cc-wrap">
-            <div id="custom-control-rows"></div>
-            <button type="button" class="cc-add-btn" onclick="addCustomControlAndPick()">+ Add custom control</button>
+          <div id="ru-root">
+            <div class="dlbl"><span>Strategy &amp; custom controls</span></div>
+            <div class="ru-intro">Every style setting is a rule: a personality trait, a piece, a board feature or a Strength setting. A rule with no phase or condition runs all game. Give it a phase or a condition to change a control for part of the game. Click a rule to change it.</div>
+            <div class="ru-cols">
+              <div class="ru-main">
+                <button type="button" class="ru-addpill" id="ru-add" onclick="ruTogglePicker()" aria-expanded="false" aria-controls="ru-picker"></button>
+                <div class="ru-picker" id="ru-picker" hidden></div>
+                <div class="ru-listhead"><span>Active rules</span><span class="ru-count" id="ru-count"></span></div>
+                <div id="ru-list"></div>
+                <div class="ru-note">New rules go to the top. When two rules for one control both apply, the narrower one wins: a phase or a condition beats All game. Between two equally narrow rules, the higher one wins.</div>
+              </div>
+              <div class="ru-side">
+                <div class="ru-card">
+                  <div class="ru-cardhead">What runs when</div>
+                  <div id="ru-when"></div>
+                  <div class="ru-note ru-cardfoot">Phases follow Lichess: the middlegame starts once a side has developed (under 4 pieces left on its back rank), 10 or fewer pieces besides kings and pawns remain, or the armies have mixed; the endgame, at 6 or fewer. A phase never comes back.</div>
+                </div>
+              </div>
+            </div>
+            <!-- The pre-rules list, kept so its renderers have somewhere to
+                 write; never shown. -->
+            <div id="custom-control-rows" hidden></div>
           </div>
         </div>
 
-        <!-- TAB: Strategy & Piece Focus -->
-        <div class="itab-pane" id="itab-attract-pieces">
+        <!-- The sliders that hold each trait's and piece's whole-game value.
+             Not shown: the rule list above edits them (ruSetSlot), and presets,
+             the radar and saved bots still write and read them as before. -->
+        <div class="itab-pane ru-store" id="itab-attract-pieces" aria-hidden="true">
           <div class="panel-2col panel-2col-wide">
             <!-- LEFT: Strategic preference sliders (more prominent) -->
             <div>
@@ -4224,16 +4370,16 @@ body.fj .picon{font-weight:500;}
               </div>
             </div>
 
-            <!-- Complexity scaled — the biggest drawer, last in the stack so
+            <!-- Entropy scaled — the biggest drawer, last in the stack so
                  opening it pushes nothing down -->
             <div class="mode-block" id="tb-complexity">
-              <div class="mcard" data-g="timing" data-v="Complexity-scaled" onclick="selMode(this,'st-timing');showTimingCtrl('complexity')"><div class="mdot"></div><div class="mname">Complexity scaled</div><div class="mdesc">Scales with position complexity</div></div>
+              <div class="mcard" data-g="timing" data-v="Entropy-scaled" onclick="selMode(this,'st-timing');showTimingCtrl('complexity')"><div class="mdot"></div><div class="mname">Entropy scaled</div><div class="mdesc">Thinks the way people do</div></div>
               <div class="mode-ctrl drawer" id="timing-complexity-ctrl">
                 <!-- Where the AVERAGE comes from. The clock is the default: the
                      bot budgets like a player does, time left over moves left,
                      so time pressure is real rather than a fixed pace mistaken
                      for it. Fixed seconds is the older behaviour. -->
-                <div class="ctrl-lbl" style="margin-bottom:5px;">Average think time</div>
+                <div class="ctrl-lbl" style="margin-bottom:5px;">Typical think time</div>
                 <div class="seg-row" id="cplx-base-mode" style="margin-bottom:8px;">
                   <div class="seg-btn sel" data-v="clock" onclick="setCplxBaseMode('clock')">From the clock</div>
                   <div class="seg-btn"     data-v="fixed" onclick="setCplxBaseMode('fixed')">Fixed seconds</div>
@@ -4250,19 +4396,18 @@ body.fj .picon{font-weight:500;}
                     <input type="range" id="r-cplx-base" min="0.5" max="15" value="3" step="0.5" oninput="sv(this,'v-cplx-base',v=>v+'s');updateQsThinkTime()">
                     <span class="ctrl-val" id="v-cplx-base">3s</span>
                   </div>
-                  <div class="ctrl-hint" id="cplx-fixed-hint" style="margin-bottom:8px;">Think time for a position of average complexity. Simple = faster; complex = slower.</div>
+                  <div class="ctrl-hint" id="cplx-fixed-hint" style="margin-bottom:8px;">A typical think, for a position with an average number of playable moves. Fewer playable moves = faster; more = slower.</div>
                 </div>
+                <!-- One dial for the whole mode: how the bot's thinks sit against a
+                     typical person's (botThinkPace, × 2^(−pace)). Everything else in
+                     the mode is fitted to people's own think times (BOT_ENTROPY_FIT in
+                     src/50-bot-engine.js), so there are no multipliers to set. -->
                 <div class="ctrl">
-                  <span class="ctrl-lbl">Min multiplier</span>
-                  <input type="range" id="r-cplx-min" min="0.1" max="1" value="0.4" step="0.1" oninput="sv(this,'v-cplx-min',v=>v+'×')">
-                  <span class="ctrl-val" id="v-cplx-min">0.4×</span>
+                  <span class="ctrl-lbl">Pace</span>
+                  <input type="range" id="r-think-pace" min="-1" max="1" value="0" step="0.1" aria-label="Pace: slower to the left, faster to the right" oninput="syncThinkPace(this.value)">
+                  <span class="ctrl-val" id="v-think-pace">Typical</span>
                 </div>
-                <div class="ctrl">
-                  <span class="ctrl-lbl">Max multiplier</span>
-                  <input type="range" id="r-cplx-max" min="1" max="6" value="2.5" step="0.5" oninput="sv(this,'v-cplx-max',v=>v+'×')">
-                  <span class="ctrl-val" id="v-cplx-max">2.5×</span>
-                </div>
-                <div class="ctrl-hint">Multipliers on the average: <strong>Min</strong> for obvious moves, <strong>1×</strong> for a typical position, <strong>Max</strong> for highly complex ones.</div>
+                <div class="ctrl-hint">Slower ◂ ▸ Faster: from twice as long as a typical person to half as long. Each think still follows the game the way people's do: longer when more moves look playable, longer over a move the bot was less likely to choose, most of the clock spent around moves 15–25 — and as uneven from one move to the next as a person's.</div>
               </div>
             </div>
 
@@ -4519,7 +4664,7 @@ body.fj .picon{font-weight:500;}
             <span style="color:var(--amber);">▸ ELO reduction</span> — Full credit to Professor Regan for his work, full blame to me for extrapolating his data-based findings based on full games under different time controls to this unsubstantiated estimation of ELO drop for individual moves under different time constraints.  
             Maia is called at a lower ELO as think time shrinks under time pressure: full ELO at the time control’s nominal pace (base/60 + increment seconds per move), degrading below it following the curve shown above. Every point is draggable if you want a shape different from the formula, and <strong>Match Regan model</strong> puts them all back on it — the Max ELO drop slider caps how deep the curve goes, so at its default the curve stops short of the model in faster time controls<br>
             <span style="color:#5dade2;">▸ Temperature escalation</span> — ELO stays fixed but sampling temperature rises as think time shrinks, flattening Maia's move probabilities toward uniform without ever reordering them: a near-forced move stays the near-certain pick, while a genuine toss-up becomes far less predictable (instinctive, less creative play — typical of a strong player with no time to calculate). A quick engine check ensures a degraded pick never improves on Maia's top choice. How far up the curve the bot actually goes is set by <strong>Calm ↔ Panicky</strong> in Personality: at 0 it follows the curve as drawn (mild by default — Max temp 2), toward Calm it rises less, fully Calm leaves the temperature untouched, and fully Panicky rises 2.5× as fast.<br>
-            <span style="color:var(--amber);">▸ Only when time is really short</span> — both curves describe a bot being forced to move faster than it would like. With <strong>Fixed interval</strong> or <strong>Instantaneous</strong> timing the pace is a number you set, not something the clock forced, so neither curve runs. <strong>Complexity scaled</strong> (From the clock) budgets from the clock and uses them; so does <strong>Mirror user</strong>, which plays at your pace — when you speed up under time pressure it speeds up with you, and degrades the way you do. Premoves are worked out while the opponent thinks, and play at the rating and temperature these curves give for 5 s.<br>
+            <span style="color:var(--amber);">▸ Only when time is really short</span> — both curves describe a bot being forced to move faster than it would like. With <strong>Fixed interval</strong> or <strong>Instantaneous</strong> timing the pace is a number you set, not something the clock forced, so neither curve runs. <strong>Entropy scaled</strong> (From the clock) budgets from the clock and uses them; so does <strong>Mirror user</strong>, which plays at your pace — when you speed up under time pressure it speeds up with you, and degrades the way you do. Premoves are worked out while the opponent thinks, and play at the rating and temperature these curves give for 5 s.<br>
             Each curve has its own <strong>ON/OFF</strong> toggle next to its title, so you can run either mechanism alone, both together, or switch both off for constant strength regardless of clock.
           </div>
         </div>
@@ -4557,7 +4702,7 @@ body.fj .picon{font-weight:500;}
               </div>
               <div style="padding:0 0 12px 8px;">
                 <div style="font-family:var(--font-u);font-size:9px;font-weight:500;color:var(--text-primary);letter-spacing:0.05em;">THINK TIME — calculated first, drives everything downstream</div>
-                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Think time per move is computed before the engine is queried. It combines the timing mode (pace, complexity-scaled, fixed, mirror), the <span style="color:var(--amber);">Hustle</span> attractor (fast +5 → slow −5 multiplier on base time), clock-pressure shortcuts (weaponizer, clock-mirror), and a ±20% jitter. This produces an <em>actual think time in seconds</em> that is then fed into both degradation curves — not a clock average. A hustler thinking 0.3 s sees heavy degradation; an overthinker thinking 12 s sees almost none.</div>
+                <div style="font-family:var(--font-m);font-size:8px;color:var(--text-dim);margin-top:3px;line-height:1.6;">Think time per move is computed before the engine is queried. It combines the timing mode (pace, entropy-scaled, fixed, mirror), the <span style="color:var(--amber);">Hustle</span> attractor (fast +5 → slow −5 multiplier on base time), clock-pressure shortcuts (weaponizer, clock-mirror), and a ±20% jitter (under Entropy scaled, the spread measured in people's own think times instead). This produces an <em>actual think time in seconds</em> that is then fed into both degradation curves — not a clock average. A hustler thinking 0.3 s sees heavy degradation; an overthinker thinking 12 s sees almost none.</div>
               </div>
             </div>
 
@@ -4663,7 +4808,7 @@ body.fj .picon{font-weight:500;}
               <div><span style="color:var(--amber);">2 · Instantaneous mode</span> — returns 0.</div>
               <div><span style="color:var(--amber);">3 · Time Weaponizer</span> — opponent under the trigger: play at the minimum move time.</div>
               <div><span style="color:var(--amber);">4 · Move blink</span> — near-forced position (entropy &lt; 0.5): 200–500&nbsp;ms.</div>
-              <div><span style="color:var(--amber);">5 · Timing mode</span> — fixed / mirror / complexity-scaled / pace, then the human modifiers, familiarity decay and jitter.</div>
+              <div><span style="color:var(--amber);">5 · Timing mode</span> — fixed / mirror / entropy-scaled / pace, then the human modifiers, familiarity decay and jitter.</div>
             </div>
             <div style="margin-top:8px;">Because blink sits <em>above</em> the mode, leaving it on with <strong>Fixed interval</strong> would let obvious recaptures ignore the duration you set — so selecting Fixed switches blink off and marks the row. You can switch it back on if you want that behaviour.</div>
           </div>
@@ -4862,6 +5007,8 @@ const TEMP_PRESETS = [
 // mechanism that is not running is worse than none.
 const ATTRACTOR_DESCS = {
   tension:    `How much contact there is between the two armies — every piece counted once per enemy attacker bearing on it — in the position the move leaves behind. <code>tanh((tension(after) − tension(before)) / 4)</code>. Tension seeker tangles the board; Defuser untangles it.`,
+  entropy:    `How many replies the opponent has to choose between after the move, as Maia sees it at the bot's rating: its entropy there, against the other candidates. <code>tanh((entropy(after) − average) / 0.5 nats)</code>. People think longer, and slip more, when many moves look playable. Confounder leaves them a hard choice; Simplifier leaves one obvious reply. Reads the Maia 3 model whatever the engine, about 0.1 s a candidate on a desktop, for the most popular candidates up to 8.`,
+  sharpness:  `Maia's chance that the game ends in a draw from the position the move leaves, against the other candidates, as log-odds. <code>tanh((average − logit(draw after)) / 0.1)</code>. Between the moves of one position Maia's draw chance differs only a little, so this steers gently, move after move — most in endings and at higher ratings, where draws are likelier. Sharp heads for lines unlikely to be drawn; Drawish for ones that peter out. Reads the Maia 3 model, as Confounder does (one look serves both).`,
   complexity: `Whether the position after the move is hard to judge: how much the engine keeps changing its mind about that move as it searches deeper, against the other candidates. <code>tanh((volatility(move) − average) / 25)</code>. Chaos agent heads for murky positions; Clarity for clear ones.`,
   compwin:    `Consulted only once the game has a direction (engine eval beyond ±50 cp), and it adjusts temperature rather than scoring moves. Front-runner complicates when ahead and plays safe when behind; Swindler converts cleanly when ahead and muddies the water when behind. <code>T × exp(±v × 0.08 × tanh((complexity − 0.5) × 4))</code>. Takes no share of the CP Budget.`,
   spacecadet: `A weak square is an empty square the bot attacks zero times; the centre and the squares in front of a castled king count 1.5×. <code>tanh((weak(before) − weak(after)) / 4)</code>. Space cadet takes squares over; Space waster cedes them for other priorities.`,
@@ -4869,9 +5016,9 @@ const ATTRACTOR_DESCS = {
   gambito:    `Opening only (first 20 plies). Boosts the next move of a known gambit line (an ECO name containing “gambit”); without the ECO data, a pawn pushed to a square the opponent attacks and the bot does not defend. Gambit shy suppresses the same moves.`,
   trade:      `Captures, and moves that attack enemy pieces — never more for a threat than for a capture — leaning harder into exchanges when ahead on material and warier when behind: <code>context = 1 + 0.6 × tanh(material balance / 4)</code>. Trade seeker exchanges; Trade avoider keeps the pieces on.`,
   structure:  `The bot's pawn formation as a penalty count — islands + doubled + isolated + unconnected pawns — scored on its own pawn moves. <code>tanh(penalty(before) − penalty(after))</code>. Rigid keeps the pawns holding hands; Loose breaks formation.`,
-  hustle:     `Pure tempo: how long the bot sits before moving, <code>think × (1 − v × 0.15)</code>. Only Complexity-scaled timing reads it — Fixed, Mirror and Instantaneous set the pace themselves. Takes no share of the CP Budget.`,
+  hustle:     `Pure tempo: how long the bot sits before moving, <code>think × (1 − v × 0.15)</code>. Only Entropy-scaled timing reads it — Fixed, Mirror and Instantaneous set the pace themselves. Takes no share of the CP Budget.`,
   luck:       `Slides the Move Distribution Range band by <code>v × 4</code> percentage points. Bad day (positive) works from further down the popularity list; Good day (negative) stays near the top. Popularity distributions only — Maia and the opening book. Takes no share of the CP Budget.`,
-  pressure:   `How far the temperature curve in Time Pressure climbs as think time runs out. Fully Calm leaves temperature untouched by time pressure, 0 follows the curve as drawn, fully Panicky climbs 2.5× as fast. Only when time can really run short — Complexity-scaled or Mirror user timing, not a Fixed or Instantaneous pace. Takes no share of the CP Budget.`,
+  pressure:   `How far the temperature curve in Time Pressure climbs as think time runs out. Fully Calm leaves temperature untouched by time pressure, 0 follows the curve as drawn, fully Panicky climbs 2.5× as fast. Only when time can really run short — Entropy-scaled or Mirror user timing, not a Fixed or Instantaneous pace. Takes no share of the CP Budget.`,
   attacker:   `Captures first, then attacks. Every capture outranks every quiet move; among quiet moves, the one that adds the most attacks on enemy pieces wins. Capture: <code>0.75 + 0.25 × tanh(Δattacks / 2)</code>; quiet move: <code>0.5 × tanh(Δattacks / 2)</code> — a capture keeps credit for the attacks on the piece it took. Attacker takes and threatens; Peacemaker avoids both (for calm that still trades, use Tension → Defuser).`,
   grabber:    `Materialism weighted by what is won, and drawn to the capture it probably shouldn't make — landing on a square the opponent still attacks. <code>tanh((captured value + 2 × poisoned) / 3)</code>. Still capped by the CP Budget.`,
   kingsafety: `Enemy attacks on the nine squares around the bot's own king, before and after the move. <code>tanh(danger(before) − danger(after))</code>. King safety keeps the king tucked up; Bravado leaves it airy.`,
@@ -4890,6 +5037,8 @@ const PIECE_DESCS = {
 const ATTRACTORS = [
   { id:'tension',    labelLeft:'Defuser',             labelRight:'Tension seeker',        default:0 },
   { id:'complexity', labelLeft:'Clarity',             labelRight:'Chaos agent',           default:0 },
+  { id:'entropy',    labelLeft:'Simplifier',          labelRight:'Confounder',            default:0 },
+  { id:'sharpness',  labelLeft:'Drawish',             labelRight:'Sharp',                 default:0 },
   { id:'compwin',    labelLeft:'Swindler',            labelRight:'Front-runner',          default:0 },
   { id:'spacecadet', labelLeft:'Space waster',  labelRight:'Space cadet', default:0 },
   { id:'fortkx',     labelLeft:'Glass cannon',  labelRight:'Fort Knox',   default:0 },
@@ -5044,15 +5193,14 @@ const BOT_PRESETS = {
     repSlots: {"white":[{"fam":"Danish Gambit","code":"C21","name":"Danish Gambit","pct":18,"lines":[{"code":"C21","name":"Danish Gambit","moves":"e4 e5 d4 exd4 c3"}],"fork":{}},{"fam":"Italian Game","code":"C57","name":"Italian Game","pct":18,"lines":[{"code":"C57","name":"Italian Game: Two Knights Defense, Fried Liver Attack","moves":"e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5 d5 exd5 Nxd5 Nxf7"}],"fork":{}},{"fam":"Sicilian Defense","code":"B21","name":"Sicilian Defense","pct":17,"lines":[{"code":"B21","name":"Sicilian Defense: Smith-Morra Gambit","moves":"e4 c5 d4"},{"code":"B21","name":"Sicilian Defense: Smith-Morra Gambit","moves":"e4 c5 d4 cxd4 c3"}],"fork":{}},{"fam":"Blackmar-Diemer Gambit","code":"D00","name":"Blackmar-Diemer Gambit","pct":17,"lines":[{"code":"D00","name":"Blackmar-Diemer Gambit","moves":"d4 d5 e4"},{"code":"D00","name":"Blackmar-Diemer Gambit","moves":"d4 d5 e4 dxe4 Nc3 Nf6"}],"fork":{}},{"code":"","name":"No opening sequence","pct":30,"none":true}],"black":[{"fam":"Sicilian Defense","code":"B27","name":"Sicilian Defense","pct":36,"lines":[{"code":"B27","name":"Sicilian Defense: Hyperaccelerated Pterodactyl, Exchange Variation","moves":"e4 c5 Nf3 g6 d4 Bg7 dxc5 Qa5+ Nc3 Bxc3+ bxc3 Qxc3+"},{"code":"B90","name":"Sicilian Defense: Najdorf Variation","moves":"e4 c5 Nf3 d6 d4 cxd4 Nxd4 Nf6 Nc3 a6"}],"fork":{"e4 c5 Nf3":{"g6":50,"d6":50}}},{"fam":"Indian Defense","code":"A51","name":"Indian Defense","pct":17,"lines":[{"code":"A51","name":"Indian Defense: Budapest Defense","moves":"d4 Nf6 c4 e5"}],"fork":{}},{"fam":"Benko Gambit","code":"A57","name":"Benko Gambit","pct":17,"lines":[{"code":"A57","name":"Benko Gambit","moves":"d4 Nf6 c4 c5 d5 b5"}],"fork":{}},{"code":"","name":"No opening sequence","pct":30,"none":true}]},
     dayLower: 1,
     dayUpper: 100,
-    attractorValues: {"tension":2,"complexity":1,"compwin":0,"spacecadet":0,"fortkx":0,"gambito":0,"trade":0,"structure":0,"hustle":0,"luck":0,"pressure":0,"attacker":0,"grabber":0,"kingsafety":0,"prophylaxis":0},
+    attractorValues: {"tension":2,"complexity":1,"entropy":0,"sharpness":0,"compwin":0,"spacecadet":0,"fortkx":0,"gambito":0,"trade":0,"structure":0,"hustle":0,"luck":0,"pressure":0,"attacker":0,"grabber":0,"kingsafety":0,"prophylaxis":0},
     pieceValues: {"pawn":0,"knight":0,"bishop":0,"rook":0,"queen":0,"king":0},
     customControls: [{"id":"cckingzone01","name":"Enemy king pressure","metric":"kingZoneAttackers","phase":"all","result":"any","pressure":"any","value":5},{"id":"ccattacked01","name":"Enemy pieces attacked","metric":"attackedPieces","phase":"all","result":"any","pressure":"any","value":5}],
     timingMode: "complexity",
     fixedDelayMs: 2000,
     mirrorOffsetPct: 0,
     cplxBase: 3,
-    cplxMin: 0.4,
-    cplxMax: 2.5,
+    thinkPace: 0,
     cplxBaseMode: "clock",
     behavReconsider: true,
     behavBlink: true,
@@ -9219,7 +9367,12 @@ function updateAttrCpDisplays(){
     ...ATTRACTORS.filter(a => !BUDGETLESS_ATTRACTORS.includes(a.id))
       .map(a => ({ absVal: Math.abs(attractorValues[a.id] ?? 0), domId: 'attrval-' + a.id, phase: null })),
     ...PIECE_TYPES.map(p => ({ absVal: Math.abs(pieceValues[p.id] ?? 0), domId: 'pieceval-' + p.id, phase: null })),
-    ...customControls.map(c => ({ absVal: Math.abs(c.value ?? 0), domId: 'ccval-' + c.id, phase: c.phase || 'all' })),
+    // Rules for a Strength setting, or for a trait that never scores a move,
+    // take no share: a CP Budget rule's 30 is centipawns, not a weight.
+    ...customControls.filter(c => {
+      const m = String(c.metric || '');
+      return !m.startsWith('strength:') && !(m.startsWith('trait:') && BUDGETLESS_ATTRACTORS.includes(m.slice(6)));
+    }).map(c => ({ absVal: Math.abs(c.value ?? 0), domId: 'ccval-' + c.id, phase: c.phase || 'all' })),
   ];
   // Two custom controls only compete for the budget if they can be active at the
   // same time. Controls locked to different game phases never co-fire, so the
@@ -10109,7 +10262,7 @@ const _TIMING_MODE_BY_V = {
   'Instantaneous':     'instant',
   'Fixed interval':    'fixed',
   'Mirror user':       'mirror',
-  'Complexity-scaled': 'complexity'
+  'Entropy-scaled':    'complexity'
 };
 function _getTimingMode(){
   const sel = document.querySelector('#timing-mode-grid .mcard.sel');
@@ -10176,12 +10329,14 @@ function getBotConfig(){
     attractorValues: {...attractorValues},
     pieceValues:     {...pieceValues},
     customControls:  customControls.map(c => ({ id:c.id, name:c.name, metric:c.metric, phase:c.phase, result:c.result||'any', pressure:c.pressure||'any', value:c.value })),
+    // The Strategy & Custom Controls list's order (display only: the engine
+    // reads precedence from customControls, which is kept in the same order).
+    ruleOrder:       (ruOrder || []).slice(),
     timingMode:        _getTimingMode(),
     fixedDelayMs:      parseInt(document.getElementById('r-fixed')?.value     || '5') * 1000,
     mirrorOffsetPct:   parseInt(document.getElementById('r-mirror')?.value    || '0'),
     cplxBase:          parseFloat(document.getElementById('r-cplx-base')?.value || '3'),
-    cplxMin:           parseFloat(document.getElementById('r-cplx-min')?.value  || '0.4'),
-    cplxMax:           parseFloat(document.getElementById('r-cplx-max')?.value  || '2.5'),
+    thinkPace:         parseFloat(document.getElementById('r-think-pace')?.value || '0'),   // Entropy scaled: −1 slower … +1 faster
     cplxBaseMode:      cplxBaseMode,        // 'clock' | 'fixed'
     behavReconsider:   document.getElementById('cb-reconsidered')?.checked !== false,
     behavBlink:        document.getElementById('cb-blink')?.checked        !== false,
@@ -10427,12 +10582,13 @@ function applyBotConfig(cfg){
     drawRadar(); updateAttractorStatus(); updateAttrCpDisplays();
   });
   grp(() => {
+    // Board features, and the trait / piece / Strength rules (ruMeta knows both).
     customControls = Array.isArray(cfg.customControls)
       ? cfg.customControls
-          .filter(c => c && _ccMeta && CUSTOM_METRICS.some(m => m.id === c.metric))
+          .filter(c => c && ruMeta(c.metric))
           .map(c => ({
             id:       c.id || ('cc' + Date.now().toString(36) + (++_ccSeq)),
-            name:     c.name || _ccMeta(c.metric).name,
+            name:     c.name || ruMeta(c.metric).name,
             metric:   c.metric,
             phase:    c.phase || 'all',
             result:   c.result || 'any',
@@ -10440,6 +10596,9 @@ function applyBotConfig(cfg){
             value:    +c.value || 0
           }))
       : [];
+    // The list's order; a bot saved before rules has none, and lists its
+    // rules first and its sliders after, as they were on the two old tabs.
+    ruResetView(cfg.ruleOrder);
     renderCustomControls();
   });
   // Calm ↔ Panicky. A bot saved before the continuous scale (no
@@ -10489,8 +10648,9 @@ function applyBotConfig(cfg){
     _setRange('r-fixed',     cfg.fixedDelayMs != null ? Math.round(cfg.fixedDelayMs / 1000) : null);
     _setRange('r-mirror',    cfg.mirrorOffsetPct);
     _setRange('r-cplx-base', cfg.cplxBase);
-    _setRange('r-cplx-min',  cfg.cplxMin);
-    _setRange('r-cplx-max',  cfg.cplxMax);
+    // Entropy scaled's Slower–Faster slider; a bot saved before it existed is
+    // typical. Its old Min / Max multipliers are not read any more.
+    _setRange('r-think-pace', cfg.thinkPace != null ? cfg.thinkPace : 0);
     // A bot saved before the clock-based average existed used the Base time
     // slider, so an absent field restores that — the bot plays as it did.
     setCplxBaseMode(cfg.cplxBaseMode === 'clock' ? 'clock' : 'fixed');
@@ -10992,7 +11152,7 @@ function _renderAppearancePop(){
   let html = '';
   html += '<div class="ap-sec">Board experience</div><div class="ap-row">' +
     '<button class="ap-btn' + (_appAppearance.shell === 'amateur' ? ' active' : '') + '" onclick="_sendAppearance({shell:\'amateur\'})" title="Full training board — all vision overlays">Training</button>' +
-    '<button class="ap-btn' + (_appAppearance.shell === 'pro' ? ' active' : '') + '" onclick="_sendAppearance({shell:\'pro\'})" title="Clean tournament look — no overlays">Expert</button></div>';
+    '<button class="ap-btn' + (_appAppearance.shell === 'pro' ? ' active' : '') + '" onclick="_sendAppearance({shell:\'pro\'})" title="Clean tournament look — no overlays">Plain</button></div>';
   html += '<div class="ap-sec">Format</div><div class="ap-row">' +
     ['carbon','journal'].map(f =>
       '<button class="ap-btn' + (_panelFormat === f ? ' active' : '') + '" onclick="setPanelFormat(\'' + f + '\')">' +
@@ -11121,6 +11281,10 @@ window.addEventListener('message', function(e){
 // A demo custom control is added (only when the list is empty) so the tour can
 // show the real builder, then removed when the tour ends.
 let _btDemoId = null;
+// The tour's Add rule step shows the list of controls open.
+function _btShowAddRule(){
+  if(typeof ruPick !== 'undefined' && !ruPick.open && typeof ruTogglePicker === 'function') ruTogglePicker();
+}
 function _btAddDemo(){
   if(typeof customControls !== 'undefined' && typeof addCustomControl === 'function' && !customControls.length){
     addCustomControl();
@@ -11176,11 +11340,11 @@ const BOT_TOUR = [
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#move-quality-range', title:'Move Distribution Range',
     body:'Set the probability band the bot draws from — from only its most-expected, mainstream moves (think top crowd-sourced move) down into the rare, low-popularity tail. That tail isn\'t "bad" moves — sharp tactics and unconventional ideas likely hide here along with errors and blunders. (Probability = how often players at that rating choose a move, not engine quality.)' },
   { stage:'Personality', open:'attract', tab:['attract','quality'], sel:'#radar-canvas', title:'Personality fingerprint',
-    body:'Drag the radar nodes (or the sliders) to sculpt the bot’s style — the fingerprint updates live as you go.' },
-  { stage:'Personality', open:'attract', tab:['attract','pieces'], sel:'#attractor-rows', title:'Strategic preferences',
-    body:'Bias the bot toward chaos or order, attacking or trading, tight or loose pawns, piece activity and more — all sharing the centipawn budget above.' },
-  { stage:'Personality', open:'attract', tab:['attract','custom'], action:_btAddDemo, sel:'#custom-control-rows', title:'★ Custom controls — write your own rule',
-    body:'Build a rule from <b>30+ board features</b> (passed pawns, king safety, outposts, mobility, hanging pieces…), then <b>restrict when it fires</b>: by <b>game phase</b> (opening / middlegame / endgame), by <b>advantage</b> (only when winning or losing), or by <b>time pressure</b> (yours or the opponent’s). Stack several and the bot follows them all at once.' },
+    body:'Drag the radar nodes to sculpt the bot’s style for the whole game. The <b>green</b>, <b>yellow</b> and <b>red</b> outlines show what it plays like in the <b>opening</b>, <b>middlegame</b> and <b>endgame</b> once you give a trait a phase.' },
+  { stage:'Personality', open:'attract', tab:['attract','custom'], sel:'#ru-list', title:'Strategy & custom controls',
+    body:'Every style setting is a rule: chaos or order, attacking or trading, tight or loose pawns, piece focus and more, all sharing the centipawn budget. Each line says what the rule does, when it applies, and its value. Click one to change it.' },
+  { stage:'Personality', open:'attract', tab:['attract','custom'], action:_btShowAddRule, sel:'#ru-add', title:'★ Add a rule — any control, any part of the game',
+    body:'Pick a trait, a piece, one of <b>30 board features</b> (passed pawns, king safety, outposts, hanging pieces…) or a <b>Strength</b> setting, then say <b>when</b> it applies: by <b>game phase</b> (opening / middlegame / endgame, as Lichess divides a game), by <b>advantage</b> (winning or losing), or by <b>time pressure</b>. A confounder in the opening and a sharp endgame is two rules.' },
   { stage:'Personality', open:'attract', tab:['attract','presets'], sel:'#persona-grid', title:'One-click personalities',
     body:'In a hurry? Start from a ready-made character — then tweak any of the dials above.' },
   { stage:'Personality', open:'attract', tab:['attract','draws'], sel:'#itab-attract-draws', title:'Takebacks, draws & desperation',
@@ -11190,7 +11354,7 @@ const BOT_TOUR = [
     body:'Give White and Black <i>separate</i> openings, played in order: a <b>Repertoire</b> of opening lines you tick, each opening weighted by percentage, then the <b>Main Line</b> — the most popular database move — through a move you choose, then the engine. Use either stage, both, or neither: the Italian, then the main line to move 20.' },
 
   { stage:'Timing', open:'timing', sel:'#timing-mode-grid', title:'4 · Move timing',
-    body:'How the bot spends its clock between moves — <b>instant</b>, a <b>fixed</b> pause, <b>scaled to position complexity</b>, or <b>mirroring your own pace</b>. The mode you pick opens its own settings right under it. The little things that make it feel human.' },
+    body:'How the bot spends its clock between moves — <b>instant</b>, a <b>fixed</b> pause, <b>scaled the way people think</b> (longer when more moves look playable), or <b>mirroring your own pace</b>. The mode you pick opens its own settings right under it. The little things that make it feel human.' },
 
   { stage:'Timing', open:'timing', sel:'#row-blink', title:'Human timing habits',
     body:'Layered on top of the mode: <b>reconsideration pauses</b>, <b>move blink</b> on forced replies, and <b>playing fast once you’re in time trouble</b> (under 30 s, or 15 s with an increment). Note that blink fires <i>before</i> the timing mode is consulted, so choosing <b>Fixed interval</b> switches it off and tells you why — otherwise a "22-second" bot would still snap out obvious recaptures instantly.' },
@@ -12384,6 +12548,9 @@ const _TIMING_WHY = {
   mirror:  'Mirror user copies your pace move for move, so this is never consulted.',
   instant: 'Instantaneous has no think time for this to change.',
 };
+// Entropy scaled draws each think from the spread measured in people's own
+// think times, so their hesitations are already in it (botThinkTime).
+const _RECONSIDER_ENTROPY_WHY = 'Entropy scaled already varies its thinks the way people\'s vary, long hesitations included, so this is not used.';
 const _HUSTLE_WHY = {
   fixed:   'Hustle only changes how long the bot thinks, and Fixed interval plays every move at its set duration.',
   mirror:  'Hustle only changes how long the bot thinks, and Mirror user copies your pace instead.',
@@ -12500,9 +12667,10 @@ function syncControlGating(){
 
   // ── Timing ────────────────────────────────────────────────────────────────
   // botThinkTime returns before these under Fixed, Mirror (once it has seen a
-  // human move) and Instantaneous; only Complexity-scaled consults them.
+  // human move) and Instantaneous; only Entropy scaled consults them — and
+  // not Reconsideration, which its measured spread replaces.
   const tWhy = _TIMING_WHY[g.mode] || '';
-  _setTogWhy('cb-reconsidered', tWhy);
+  _setTogWhy('cb-reconsidered', g.mode === 'complexity' ? _RECONSIDER_ENTROPY_WHY : tWhy);
   const mirrorWhy = !g.timed ? _UNTIMED_WHY : tWhy;
   _setTogWhy('cb-clock-mirror', mirrorWhy);
   _setTogWhy('cb-clock-mirror-2', mirrorWhy);
@@ -14022,6 +14190,7 @@ function onAttractorChange(id, val){
   updateQsPersonality();
   updateQsCpBudget();
   maybePersHybridAlert();
+  _ruExternalChange();
 }
 
 function onCalmPanickyChange(val){
@@ -14034,6 +14203,7 @@ function onCalmPanickyChange(val){
   updateAttrCpDisplays();
   drawRadar();
   maybePersHybridAlert();
+  _ruExternalChange();
 }
 
 /* The old version averaged |value| across all 11 attractors against fixed
@@ -14095,7 +14265,563 @@ function onPieceChange(id, val){
   updateQsPersonality();
   updateQsCpBudget();
   maybePersHybridAlert();
+  _ruExternalChange();
 }
+
+/* ══════════════════════════════════════════════════════════════
+   STRATEGY & CUSTOM CONTROLS — every setting is a rule (Nov 2026)
+   ──────────────────────────────────────────────────────────────
+   Ben merged the Strategy & Piece Focus tab into Custom Controls: one list,
+   where a rule with no phase or condition is what a slider used to be.
+
+   Storage is what it always was, so saved bots, presets and the Lichess bots
+   load unchanged:
+     • a trait's or piece's rule with no phase or condition is its slider
+       value (attractorValues / pieceValues, through the hidden sliders, so
+       every existing hook still fires: preset deselection, radar, cp split);
+     • every other rule is a customControls entry: a board feature by its
+       CUSTOM_METRICS id, the rest as 'trait:<id>', 'piece:<id>' and
+       'strength:<id>' (botRulesInstall in the engine reads those).
+   Luck and the Strength settings have no slider here (Luck's whole-game value
+   is the Move Distribution Range, Strength's the Move Quality tab), so all
+   their rules are entries.
+
+   Which rule runs: the narrowest that holds, then the higher in the list.
+   customControls is kept in list order so the engine sees the same order.
+══════════════════════════════════════════════════════════════ */
+const RU_TRAIT = 'trait:', RU_PIECE = 'piece:', RU_STRENGTH = 'strength:';
+const RU_STRENGTH_DEFS = [
+  { id:'cpBudget',   name:'CP Budget',        min:'0 cp', max:'300 cp', lo:0, hi:300, step:5,
+    fmt:v => Math.round(v) + ' cp', base:c => c.cpBudget, fallback:100,
+    desc:'The personality’s style allowance: how many centipawns it may give up, against the engine’s own choice, to play a move it likes. Shared among the rules in force at the time. 0 plays the engine’s choice.' },
+  { id:'maiaTemp',   name:'Maia temperature', min:'0 · top move', max:'2 · wild', lo:0, hi:2, step:0.1,
+    fmt:v => (Math.round(v * 10) / 10).toFixed(1), base:c => c.maia3Temp, fallback:1,
+    desc:'How closely a Maia bot follows Maia’s odds. 0 always plays Maia’s top move, 1 plays each move as often as Maia expects a player of this rating to, 2 is wild.' },
+  { id:'conviction', name:'Conviction',       min:'0% · Maia’s odds', max:'100% · always its pick', lo:0, hi:100, step:5,
+    fmt:v => Math.round(v) + '%', base:c => c.convictionPct, fallback:0,
+    desc:'How often the bot plays its favourite move outright. The rest of the time it chooses among Maia’s moves by its personality.' },
+  { id:'hardFloor',  name:'Hard Floor',       min:'0 cp', max:'Off', lo:0, hi:1000, step:10,
+    fmt:v => v >= 1000 ? 'Off' : Math.round(v) + ' cp', base:c => c.hardFloorCp, fallback:1000,
+    desc:'The cap on how much any move may lose, whatever the personality wants. Never under the Budget; at the top it is off.' },
+];
+const RU_PHASES  = [['all','All game'],['opening','Opening'],['middlegame','Middlegame'],['endgame','Endgame']];
+const RU_RESULTS = [['any','Any'],['winning','Winning'],['losing','Losing'],['equal','Equal']];
+const RU_CLOCKS  = [['any','Any'],['self','Bot short of time'],['opp','Opponent short'],['either','Either short']];
+const RU_PHASE_TXT  = { opening:'Opening', middlegame:'Middlegame', endgame:'Endgame' };
+const RU_RESULT_TXT = { winning:'when winning', losing:'when losing', equal:'when equal' };
+const RU_CLOCK_TXT  = { self:'bot short of time', opp:'opponent short of time', either:'either short of time' };
+// What runs when: Lichess's division, in a few words (the card's foot says it in full).
+const RU_PHASE_ROWS = [
+  ['opening',    'Opening',    'until a side develops'],
+  ['middlegame', 'Middlegame', 'developed, or ≤10 pieces'],
+  ['endgame',    'Endgame',    '≤6 pieces besides K, P'],
+];
+
+// var, not let: config loading can reach these before this point of the file runs.
+var ruOrder = [];             // list order: 'a:<trait>', 'p:<piece>', 'c:<custom control id>'
+var ruShown = new Set();      // whole-game trait/piece rules kept in the list at 0
+var ruOpenKey = null;         // the rule open for editing
+var ruPick = { open:false, replace:null, q:'', groups:{} };
+
+const _ruSigned = v => v === 0 ? '0' : (v > 0 ? '+' + v : '−' + Math.abs(v));
+const _ruDom = key => String(key).replace(/[^A-Za-z0-9]/g, '-');
+
+// Everything the list needs to know about one control, by its rule id.
+function ruMeta(ctl){
+  ctl = String(ctl || '');
+  if(ctl.startsWith(RU_TRAIT)){
+    const id = ctl.slice(RU_TRAIT.length), a = ATTRACTORS.find(x => x.id === id);
+    if(!a) return null;
+    const both = a.labelLeft + ' ↔ ' + a.labelRight;
+    return { kind:'trait', id, name:both, min:a.labelLeft, max:a.labelRight, lo:-5, hi:5, step:1, def:0,
+      slot: id === 'luck' ? null : 'a', fmt:_ruSigned,
+      title:v => v === 0 ? both : (v > 0 ? a.labelRight : a.labelLeft),
+      where: id === 'luck' ? 'all game: Move Distribution Range' : '',
+      desc: ATTRACTOR_DESCS[id] || '' };
+  }
+  if(ctl.startsWith(RU_PIECE)){
+    const id = ctl.slice(RU_PIECE.length), p = PIECE_TYPES.find(x => x.id === id);
+    if(!p) return null;
+    return { kind:'piece', id, name:p.name + ' moves', min:'Avoid', max:'Seek', lo:-5, hi:5, step:1, def:0,
+      slot:'p', fmt:_ruSigned,
+      title:v => v === 0 ? p.name + ' moves' : (v > 0 ? 'Seek ' : 'Avoid ') + p.name.toLowerCase() + ' moves', where:'',
+      desc: PIECE_DESCS[id] || '' };
+  }
+  if(ctl.startsWith(RU_STRENGTH)){
+    const s = RU_STRENGTH_DEFS.find(x => x.id === ctl.slice(RU_STRENGTH.length));
+    if(!s) return null;
+    return { kind:'strength', id:s.id, name:s.name, min:s.min, max:s.max, lo:s.lo, hi:s.hi, step:s.step, def:s.fallback,
+      slot:null, fmt:s.fmt, title:() => s.name, where:'all game: Move Quality tab', def0:s,
+      desc: _ccEsc(s.desc) };
+  }
+  const m = CUSTOM_METRICS.find(x => x.id === ctl);
+  if(!m) return null;
+  return { kind:'feature', id:m.id, name:m.name, min:m.min, max:m.max, lo:-5, hi:5, step:1, def:0, slot:null,
+    fmt:_ruSigned, title:v => v === 0 ? m.name : (v > 0 ? m.max : m.min), where:'',
+    desc: _ccEsc(m.desc || '') };
+}
+
+// The Add rule list. Grouped by what a control is about, not where it used to
+// live, so the Structure trait sits with the pawn features. The two board
+// features that only ever existed to give Structure and Fort Knox a phase
+// (pawnStructure, pieceDefense) are left out: the traits take rules now.
+// Any feature added to CUSTOM_METRICS later lands in "More board features".
+function _ruGroups(){
+  const g = [
+    ['Complexity & risk',    ['trait:tension','trait:complexity','trait:entropy','trait:sharpness','trait:gambito','trait:compwin']],
+    ['Attack & king safety', ['trait:attacker','trait:kingsafety','kingZoneAttackers','kingDanger','kingShield','givesCheck']],
+    ['Defence & threats',    ['trait:fortkx','trait:prophylaxis','attackedPieces','enemyHanging','hangingPieces','defendedPieces']],
+    ['Material & trades',    ['trait:trade','trait:grabber','material','pieceCount','queens']],
+    ['Pawn structure',       ['trait:structure','passedPawns','pawnAdvance','doubledPawns','isolatedPawns','pawnIslands','connectedPawns']],
+    ['Piece activity',       ['centralization','outpost','mobility','bishopPair','rooksOpenFiles','rooksSeventh','developedPieces']],
+    ['Space & squares',      ['trait:spacecadet','centerControl','spaceControl','weakSquares','enemyWeakSquares']],
+    ['Piece focus',          PIECE_TYPES.map(p => RU_PIECE + p.id)],
+    ['Mood & clock',         ['trait:hustle','trait:luck','trait:pressure']],
+    ['Strength',             RU_STRENGTH_DEFS.map(s => RU_STRENGTH + s.id)],
+  ].map(([t, ids]) => [t, ids.filter(id => ruMeta(id))]);
+  const listed = new Set(g.flatMap(x => x[1]).concat(['pawnStructure', 'pieceDefense']));
+  const more = CUSTOM_METRICS.map(m => m.id).filter(id => !listed.has(id));
+  if(more.length) g.push(['More board features', more]);
+  return g.filter(x => x[1].length);
+}
+
+// The rules, in list order: [{ key, ctl, phase, result, pressure, value, cc }].
+function ruRules(){
+  if(!(ruShown instanceof Set)) ruShown = new Set();
+  const all = [];
+  customControls.forEach(c => all.push({ key:'c:' + c.id, ctl:c.metric, phase:c.phase || 'all',
+    result:c.result || 'any', pressure:c.pressure || 'any', value:+c.value || 0, cc:c }));
+  ATTRACTORS.forEach(a => {
+    if(a.id === 'luck') return;
+    const key = 'a:' + a.id, v = +(attractorValues[a.id] || 0);
+    if(v !== 0 || ruShown.has(key)) all.push({ key, ctl:RU_TRAIT + a.id, phase:'all', result:'any', pressure:'any', value:v });
+  });
+  PIECE_TYPES.forEach(p => {
+    const key = 'p:' + p.id, v = +(pieceValues[p.id] || 0);
+    if(v !== 0 || ruShown.has(key)) all.push({ key, ctl:RU_PIECE + p.id, phase:'all', result:'any', pressure:'any', value:v });
+  });
+  const byKey = new Map(all.filter(r => ruMeta(r.ctl)).map(r => [r.key, r]));
+  const order = (ruOrder || []).filter(k => byKey.has(k));
+  byKey.forEach((r, k) => { if(!order.includes(k)) order.push(k); });
+  ruOrder = order;
+  return order.map(k => byKey.get(k));
+}
+// customControls follows the list, so "the higher one wins" means the same
+// thing to the engine as it does on screen.
+function _ruSyncCcOrder(){
+  const at = k => { const i = ruOrder.indexOf('c:' + k); return i < 0 ? 1e9 : i; };
+  customControls.sort((a, b) => at(a.id) - at(b.id));
+}
+// A whole-game trait or piece value, through its hidden slider when it has one.
+// _ruWriting tells the change hooks the list is doing this itself, so they
+// don't redraw it under the slider being dragged.
+var _ruWriting = false;
+function ruSetSlot(kind, id, v){
+  v = Math.max(-5, Math.min(5, Math.round(+v || 0)));
+  const inputId = (kind === 'a' ? 'attr-' : 'piece-') + id;
+  _ruWriting = true;
+  try {
+    if(document.getElementById(inputId)) attrSetValue(inputId, v);
+    else if(kind === 'a') onAttractorChange(id, v);
+    else onPieceChange(id, v);
+  } finally { _ruWriting = false; }
+}
+// A trait or piece changed from outside the list (the radar, a stepper, Calm ↔
+// Panicky in Time Pressure): show it.
+function _ruExternalChange(){
+  if(_ruWriting || typeof ruRender !== 'function') return;
+  if(!document.getElementById('ru-list')) return;
+  ruRender();
+}
+function _ruChanged(){
+  _ccDirty();
+  updateAttrCpDisplays();
+  updateAttractorStatus();
+  drawRadar();
+}
+function _ruDrop(key){
+  if(!key) return;
+  if(key.startsWith('c:')){ const id = key.slice(2); customControls = customControls.filter(c => c.id !== id); }
+  else { ruShown.delete(key); ruSetSlot(key[0], key.slice(2), 0); }
+}
+function _ruStore(spec){
+  const m = ruMeta(spec.ctl);
+  if(m.slot && spec.phase === 'all' && spec.result === 'any' && spec.pressure === 'any'){
+    // One whole-game rule per trait or piece: it is the slider.
+    const key = m.slot + ':' + m.id;
+    ruShown.add(key);
+    ruSetSlot(m.slot, m.id, spec.value);
+    return key;
+  }
+  const c = { id:'cc' + Date.now().toString(36) + (++_ccSeq), name:m.name, metric:spec.ctl,
+    phase:spec.phase, result:spec.result, pressure:spec.pressure, value:+spec.value || 0 };
+  customControls.unshift(c);
+  return 'c:' + c.id;
+}
+// Replaces one rule (or, with no key, adds one at the top) and returns the
+// rule's key, which changes when it moves between slider and entry.
+function ruWrite(oldKey, spec){
+  const pos = oldKey ? ruOrder.indexOf(oldKey) : -1;
+  _ruDrop(oldKey);
+  const key = _ruStore(spec);
+  ruOrder = ruOrder.filter(k => k !== oldKey && k !== key);
+  ruOrder.splice(pos >= 0 ? Math.min(pos, ruOrder.length) : 0, 0, key);
+  _ruSyncCcOrder();
+  _ruChanged();
+  return key;
+}
+function _ruFind(key){ return ruRules().find(r => r.key === key) || null; }
+function _ruSpec(r){ return { ctl:r.ctl, phase:r.phase, result:r.result, pressure:r.pressure, value:r.value }; }
+function _ruValText(m, v){ return m.kind === 'strength' ? m.fmt(v) : _ruSigned(v); }
+function _ruConds(r){
+  const out = [];
+  if(r.result !== 'any') out.push(RU_RESULT_TXT[r.result]);
+  if(r.pressure !== 'any') out.push(RU_CLOCK_TXT[r.pressure]);
+  return out;
+}
+function _ruWhenText(r){
+  return [r.phase !== 'all' ? RU_PHASE_TXT[r.phase] : null].concat(_ruConds(r)).filter(Boolean).join(' · ');
+}
+// A Strength rule starts at the bot's own value, which is what it would be anyway.
+function _ruDefault(m){
+  if(m.kind !== 'strength') return m.def;
+  try {
+    const v = m.def0.base(getBotConfig());
+    return v != null && isFinite(+v) ? +v : m.def;
+  } catch(e){ return m.def; }
+}
+
+// ── Actions ──
+function ruTogglePicker(){
+  const opening = !ruPick.open;
+  ruPick = { open:opening, replace:null, q:'', groups:{} };
+  if(opening) ruOpenKey = null;
+  ruRender();
+  if(opening) setTimeout(() => { try { document.getElementById('ru-filter').focus({ preventScroll:true }); } catch(e){} }, 0);
+}
+function ruClosePicker(){ ruPick = { open:false, replace:null, q:'', groups:{} }; ruRender(); }
+function ruToggleGroup(i){ ruPick.groups[i] = !ruPick.groups[i]; _ruRenderGroups(); }
+function ruFilter(q){ ruPick.q = String(q || ''); _ruRenderGroups(); }
+function ruAdd(ctl){
+  const m = ruMeta(ctl);
+  if(!m) return;
+  const rules = ruRules();
+  let key;
+  const old = ruPick.replace ? rules.find(r => r.key === ruPick.replace) : null;
+  if(old){
+    // Change control: the same phase and conditions, the new control's start value.
+    key = ruWrite(old.key, { ctl, phase:old.phase, result:old.result, pressure:old.pressure, value:_ruDefault(m) });
+  } else {
+    // A trait or piece that already has its whole-game rule gets a second rule
+    // for part of the game, starting at the Opening; its chips change that.
+    const has = m.slot && rules.some(r => r.key === m.slot + ':' + m.id);
+    key = ruWrite(null, { ctl, phase:has ? 'opening' : 'all', result:'any', pressure:'any', value:_ruDefault(m) });
+  }
+  ruPick = { open:false, replace:null, q:'', groups:{} };
+  ruOpenKey = key;
+  ruRender();
+  const el = document.getElementById('ru-r-' + _ruDom(key));
+  if(el) el.scrollIntoView({ block:'nearest', behavior:'smooth' });
+}
+function ruToggle(key){
+  ruOpenKey = ruOpenKey === key ? null : key;
+  if(ruOpenKey && !key.startsWith('c:')) ruShown.add(key);
+  ruRender();
+}
+// Dragging: repaint this rule's line and the summary in place, so the slider
+// being dragged keeps hold of the pointer.
+function ruSetValue(key, raw){
+  const r = _ruFind(key);
+  if(!r) return;
+  const m = ruMeta(r.ctl), v = +raw;
+  if(r.cc){ r.cc.value = v; _ruChanged(); }
+  else { ruShown.add(key); ruSetSlot(key[0], key.slice(2), v); }
+  const dom = _ruDom(key);
+  const n = document.getElementById('ru-n-' + dom), val = document.getElementById('ru-v-' + dom);
+  if(n) n.textContent = m.title(v);
+  if(val) val.textContent = _ruValText(m, v);
+  _ruRenderWhen();
+}
+function ruSetField(key, field, val){
+  const r = _ruFind(key);
+  if(!r || r[field] === val) return;
+  const spec = _ruSpec(r);
+  spec[field] = val;
+  ruOpenKey = ruWrite(key, spec);
+  ruRender();
+}
+function ruRemove(key){
+  _ruDrop(key);
+  ruOrder = ruOrder.filter(k => k !== key);
+  if(ruOpenKey === key) ruOpenKey = null;
+  _ruChanged();
+  ruRender();
+}
+function ruChange(key){
+  ruPick = { open:true, replace:key, q:'', groups:{} };
+  ruOpenKey = null;
+  ruRender();
+  const p = document.getElementById('ru-add');
+  if(p) p.scrollIntoView({ block:'nearest', behavior:'smooth' });
+}
+// The radar's phone tap: open this trait's whole-game rule (adding it at 0).
+function ruFocusTrait(id){
+  const key = 'a:' + id;
+  if(!ruMeta(RU_TRAIT + id) || id === 'luck') return;
+  if(!ruRules().some(r => r.key === key)){ ruShown.add(key); ruOrder = [key].concat(ruOrder.filter(k => k !== key)); }
+  ruOpenKey = key;
+  ruPick = { open:false, replace:null, q:'', groups:{} };
+  ruRender();
+  const el = document.getElementById('ru-r-' + _ruDom(key));
+  if(el) el.scrollIntoView({ behavior:'smooth', block:'center' });
+}
+// A new bot or preset: the list starts again from what it holds.
+function ruResetView(order){
+  ruOrder = Array.isArray(order) ? order.filter(k => typeof k === 'string') : [];
+  ruShown = new Set();
+  ruOpenKey = null;
+  ruPick = { open:false, replace:null, q:'', groups:{} };
+}
+
+// ── Rendering ──
+function ruRender(){
+  const list = document.getElementById('ru-list');
+  if(!list) return;
+  // The element a tip belongs to is about to be replaced.
+  if(typeof ruTipHide === 'function') ruTipHide();
+  const rules = ruRules();
+  const pill = document.getElementById('ru-add');
+  if(pill){
+    pill.setAttribute('aria-expanded', ruPick.open ? 'true' : 'false');
+    pill.innerHTML = ruPick.open
+      ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg><span>Close list</span>'
+      : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Add rule</span>';
+  }
+  const picker = document.getElementById('ru-picker');
+  if(picker){
+    picker.hidden = !ruPick.open;
+    if(ruPick.open){
+      picker.innerHTML =
+        '<div class="ru-pbar"><span>' + (ruPick.replace ? 'Pick a new control for this rule' : 'Pick a control to add a rule for it') + '</span>' +
+          '<button type="button" class="rep-done" onclick="ruClosePicker()">Done</button></div>' +
+        '<input type="text" class="ru-filter" id="ru-filter" placeholder="Filter controls" aria-label="Filter controls" ' +
+          'value="' + _ccEsc(ruPick.q) + '" oninput="ruFilter(this.value)">' +
+        '<div class="ru-groups" id="ru-groups"></div>';
+      _ruRenderGroups();
+    } else {
+      picker.innerHTML = '';
+    }
+  }
+  const count = document.getElementById('ru-count');
+  if(count) count.textContent = String(rules.length);
+  list.innerHTML = rules.length
+    ? rules.map(_ruLineHtml).join('')
+    : '<div class="ru-none">No rules yet. With none, the bot has no style of its own: it plays its engine\'s moves as they come.</div>';
+  _ruRenderWhen();
+}
+function _ruRenderGroups(){
+  const box = document.getElementById('ru-groups');
+  if(!box) return;
+  const q = ruPick.q.trim().toLowerCase();
+  const rules = ruRules();
+  const groups = _ruGroups().map(([title, ctls], i) => {
+    const items = ctls.filter(ctl => !q || ruMeta(ctl).name.toLowerCase().includes(q) || title.toLowerCase().includes(q));
+    return { i, title, ctls, items, inUse:rules.filter(r => ctls.includes(r.ctl)).length };
+  }).filter(g => !q || g.items.length);
+  if(!groups.length){ box.innerHTML = '<div class="ru-empty">No control matches.</div>'; return; }
+  box.innerHTML = groups.map(g => {
+    const open = q ? true : !!ruPick.groups[g.i];
+    const head = '<button type="button" class="ru-grp" aria-expanded="' + open + '" onclick="ruToggleGroup(' + g.i + ')">' +
+      '<span class="ru-chev" aria-hidden="true">›</span><span class="ru-gname">' + _ccEsc(g.title) + '</span>' +
+      (g.inUse ? '<span class="ru-guse">' + g.inUse + ' in use</span>' : '') +
+      '<span class="ru-gcount">' + g.ctls.length + ' control' + (g.ctls.length === 1 ? '' : 's') + '</span></button>';
+    if(!open) return head;
+    return head + g.items.map(ctl => {
+      const m = ruMeta(ctl), n = rules.filter(r => r.ctl === ctl).length;
+      const hint = n ? (n === 1 ? '1 rule' : n + ' rules') : m.where;
+      return '<button type="button" class="ru-item" data-ru-tip="' + ctl + '" onclick="ruAdd(\'' + ctl + '\')"><span>' + _ccEsc(m.name) + '</span>' +
+        (hint ? '<span class="ru-ihint' + (n ? ' used' : '') + '">' + _ccEsc(hint) + '</span>' : '') + '</button>';
+    }).join('');
+  }).join('');
+}
+function _ruLineHtml(r){
+  const m = ruMeta(r.ctl), open = ruOpenKey === r.key, dom = _ruDom(r.key);
+  return '<div class="ru-rule" id="ru-r-' + dom + '">' +
+    '<button type="button" class="ru-line" data-ru-tip="' + r.ctl + '" aria-expanded="' + open + '" onclick="ruToggle(\'' + r.key + '\')">' +
+      '<span class="ru-name" id="ru-n-' + dom + '">' + _ccEsc(m.title(r.value)) + '</span>' +
+      '<span class="ru-when">' + _ccEsc(_ruWhenText(r)) + '</span>' +
+      '<span class="ru-val" id="ru-v-' + dom + '">' + _ccEsc(_ruValText(m, r.value)) + '</span>' +
+      '<svg class="ru-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>' +
+    '</button>' + (open ? _ruEditHtml(r, m) : '') + '</div>';
+}
+function _ruEditHtml(r, m){
+  const chips = (field, list) => list.map(([v, l]) =>
+    '<button type="button" class="ru-chip" aria-pressed="' + (r[field] === v) + '" ' +
+    'onclick="ruSetField(\'' + r.key + '\',\'' + field + '\',\'' + v + '\')">' + l + '</button>').join('');
+  // A trait the bot won't consult as configured says why, as its slider did.
+  const why = m.kind === 'trait' && typeof _radarAxisWhy === 'function' ? _radarAxisWhy(m.id) : '';
+  return '<div class="ru-edit">' +
+    '<div class="ru-slide"><input class="attr-slider" type="range" min="' + m.lo + '" max="' + m.hi + '" step="' + m.step + '" ' +
+      'value="' + r.value + '" aria-label="' + _ccEsc(m.name) + '" data-ru-tip="' + r.ctl + '" oninput="ruSetValue(\'' + r.key + '\',this.value)">' +
+      '<div class="ru-ends"><span>' + _ccEsc(m.min) + '</span><span>' + _ccEsc(m.max) + '</span></div></div>' +
+    // Where there is no hover (a phone), the explanation sits in the open rule.
+    (m.desc ? '<div class="ru-desc">' + m.desc + '</div>' : '') +
+    (why ? '<div class="ru-why">' + _ccEsc(why) + '</div>' : '') +
+    '<div class="ru-crow"><span class="ru-clbl">Phase</span>' + chips('phase', RU_PHASES) + '</div>' +
+    '<div class="ru-crow"><span class="ru-clbl">When</span>' + chips('result', RU_RESULTS) + '</div>' +
+    '<div class="ru-crow"><span class="ru-clbl">Clock</span>' + chips('pressure', RU_CLOCKS) + '</div>' +
+    '<div class="ru-acts">' +
+      '<button type="button" class="ru-act" onclick="ruChange(\'' + r.key + '\')">Change control…</button>' +
+      '<button type="button" class="ru-act" onclick="ruRemove(\'' + r.key + '\')">Remove rule</button>' +
+      '<button type="button" class="ru-act done" onclick="ruToggle(\'' + r.key + '\')">Done</button>' +
+    '</div></div>';
+}
+// What runs in each phase: every rule that applies there, at any value, so a
+// line never drops out while its slider passes through 0. For each control
+// and condition only the rule that wins is listed: a phase rule takes over
+// from a whole-game one, and between equals the higher one.
+function _ruRenderWhen(){
+  const box = document.getElementById('ru-when');
+  if(!box) return;
+  const rules = ruRules();
+  box.innerHTML = RU_PHASE_ROWS.map(([p, label, def]) => {
+    const applies = rules.filter(r => r.phase === 'all' || r.phase === p);
+    const ranked = applies.filter(r => r.phase !== 'all').concat(applies.filter(r => r.phase === 'all'));
+    const seen = new Set(), winners = new Set();
+    ranked.forEach(r => {
+      const k = r.ctl + '|' + r.result + '|' + r.pressure;
+      if(!seen.has(k)){ seen.add(k); winners.add(r.key); }
+    });
+    const lines = rules.filter(r => winners.has(r.key)).map(r => {
+      const m = ruMeta(r.ctl), conds = _ruConds(r).join(', ');
+      return '<div class="ru-wl"><span class="ru-wname' + (ruOpenKey === r.key ? ' open' : '') + '">' + _ccEsc(m.title(r.value)) +
+        (conds ? ' <span class="ru-wcond">' + _ccEsc(conds) + '</span>' : '') + '</span>' +
+        '<span class="ru-wval">' + _ccEsc(_ruValText(m, r.value)) + '</span></div>';
+    }).join('');
+    return '<div class="ru-ph"><div class="ru-phhead"><span class="ru-phname">' + _radarPhaseSwatch(p) + label + '</span>' +
+      '<span class="ru-phdef">' + def + '</span></div>' +
+      (lines || '<div class="ru-none" style="padding:2px 0;">No rules in this phase.</div>') + '</div>';
+  }).join('');
+}
+
+// ── The radar's three phase outlines ──
+// Opening green, middlegame yellow, endgame red (Ben, Nov 2026). Each also has
+// its own line (solid, dashed, dotted) so they stay apart for anyone who can't
+// tell red from green, and where they lie on top of each other. Darker shades
+// on a light background, brighter on a dark one.
+function _radarPhaseStyles(){
+  let light = false;
+  try {
+    const c = getComputedStyle(document.body).backgroundColor || '';
+    const n = c.match(/\d+(\.\d+)?/g);
+    if(n && n.length >= 3) light = (0.2126 * n[0] + 0.7152 * n[1] + 0.0722 * n[2]) / 255 > 0.5;
+  } catch(e){}
+  return [
+    { phase:'opening',    label:'Opening',    color: light ? '#2b8a3e' : '#51cf66', dash:[],        width:2 },
+    { phase:'middlegame', label:'Middlegame', color: light ? '#9c7a00' : '#fcc419', dash:[7, 4],    width:2 },
+    { phase:'endgame',    label:'Endgame',    color: light ? '#c92a2a' : '#ff6b6b', dash:[1.5, 4],  width:2.4 },
+  ];
+}
+function _radarPhaseSwatch(phase){
+  const s = _radarPhaseStyles().find(x => x.phase === phase);
+  if(!s) return '';
+  const dash = s.dash.length ? ' stroke-dasharray="' + s.dash.join(' ') + '"' : '';
+  return '<svg viewBox="0 0 22 6" aria-hidden="true"><line x1="1" y1="3" x2="21" y2="3" stroke="' + s.color + '" ' +
+    'stroke-width="' + s.width + '" stroke-linecap="round"' + dash + '/></svg>';
+}
+// Each trait's value in a phase when nothing else is in question: its rule for
+// that phase, else its whole-game rule. Rules that wait on the result or the
+// clock can't be drawn as a phase, so they are left off the radar.
+function ruPhaseTraitValues(phase){
+  const vals = Object.assign({}, attractorValues), best = {};
+  (customControls || []).forEach(c => {
+    const m = String(c.metric || '');
+    if(!m.startsWith(RU_TRAIT) || (c.result || 'any') !== 'any' || (c.pressure || 'any') !== 'any') return;
+    const ph = c.phase || 'all';
+    if(ph !== 'all' && ph !== phase) return;
+    const id = m.slice(RU_TRAIT.length), n = ph === 'all' ? 0 : 1;
+    if(!best[id] || n > best[id].n) best[id] = { n, v:+c.value || 0 };
+  });
+  Object.keys(best).forEach(id => { vals[id] = best[id].v; });
+  return vals;
+}
+function _renderRadarLegend(){
+  const el = document.getElementById('radar-legend');
+  if(!el) return;
+  el.innerHTML = _radarPhaseStyles().map(s => '<span>' + _radarPhaseSwatch(s.phase) + s.label + '</span>').join('') +
+    '<span><svg viewBox="0 0 22 6" aria-hidden="true"><circle cx="11" cy="3" r="2.6" fill="var(--radar-node-fill)"/></svg>All game (drag)</span>';
+}
+
+// ── Hover explanations ──
+// Each control's short explanation, as the old slider rows showed on hover:
+// over a rule's line, an item in the Add rule list, or an open rule's slider
+// (anything carrying data-ru-tip, keyboard focus too). One floating tip, put
+// BESIDE the thing pointed at, never on it: to its right if there is room,
+// else its left, else below, else above. The pointer is inside that thing, so
+// the tip can't cover the pointer either, and it takes no clicks
+// (pointer-events:none). Devices without hover get the text in the open rule.
+function _ruTipEl(){
+  let tip = document.getElementById('ru-tip');
+  if(!tip){
+    tip = document.createElement('div');
+    tip.id = 'ru-tip';
+    tip.className = 'ru-tip';
+    tip.setAttribute('role', 'tooltip');
+    tip.hidden = true;
+    document.body.appendChild(tip);
+  }
+  return tip;
+}
+var _ruTipFor = null;
+function ruTipShow(el){
+  const meta = ruMeta(el.getAttribute('data-ru-tip'));
+  if(!meta || !meta.desc) return ruTipHide();
+  const tip = _ruTipEl();
+  tip.innerHTML = '<div class="ru-tip-name">' + _ccEsc(meta.name) + '</div>' + meta.desc;
+  tip.style.left = '0px';
+  tip.style.top = '0px';
+  tip.hidden = false;
+  const r = el.getBoundingClientRect();
+  const vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
+  const gap = 10, pad = 6, tw = tip.offsetWidth, th = tip.offsetHeight;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  let x, y;
+  if(vw - r.right >= tw + gap + pad){              // right of it
+    x = r.right + gap; y = clamp(r.top, pad, vh - th - pad);
+  } else if(r.left >= tw + gap + pad){             // left of it
+    x = r.left - gap - tw; y = clamp(r.top, pad, vh - th - pad);
+  } else if(vh - r.bottom >= th + gap + pad){      // below it
+    y = r.bottom + gap; x = clamp(r.left, pad, vw - tw - pad);
+  } else {                                         // above it
+    y = Math.max(pad, r.top - gap - th); x = clamp(r.left, pad, vw - tw - pad);
+  }
+  tip.style.left = Math.round(x) + 'px';
+  tip.style.top = Math.round(y) + 'px';
+  if(_ruTipFor && _ruTipFor !== el) _ruTipFor.removeAttribute('aria-describedby');
+  _ruTipFor = el;
+  el.setAttribute('aria-describedby', 'ru-tip');
+}
+function ruTipHide(){
+  const tip = document.getElementById('ru-tip');
+  if(tip) tip.hidden = true;
+  if(_ruTipFor){ _ruTipFor.removeAttribute('aria-describedby'); _ruTipFor = null; }
+}
+(function(){
+  const hover = () => window.matchMedia('(hover: hover)').matches;
+  const target = e => e.target && e.target.closest ? e.target.closest('[data-ru-tip]') : null;
+  document.addEventListener('mouseover', e => {
+    if(!hover()) return;
+    const el = target(e);
+    if(el){ if(el !== _ruTipFor) ruTipShow(el); }
+    else if(_ruTipFor) ruTipHide();
+  });
+  document.addEventListener('focusin', e => { const el = target(e); if(el) ruTipShow(el); });
+  document.addEventListener('focusout', e => { if(target(e) === _ruTipFor) ruTipHide(); });
+  // The tip is pinned to where the control was: it goes when that moves.
+  document.addEventListener('scroll', () => ruTipHide(), true);
+  window.addEventListener('resize', () => ruTipHide());
+  document.addEventListener('keydown', e => { if(e.key === 'Escape') ruTipHide(); });
+})();
 
 /* ── Custom controls ── */
 function _ccMeta(metricId){ return CUSTOM_METRICS.find(m => m.id === metricId) || CUSTOM_METRICS[0]; }
@@ -14117,6 +14843,14 @@ function _ccDirty(){
 }
 
 function renderCustomControls(){
+  // Custom controls are rules now (Strategy & Custom Controls, ruRender). This
+  // name stays the one every caller uses: config loading, presets, the tour.
+  ruRender();
+  updateAttrCpDisplays();
+}
+// The pre-rules card list, no longer called. Kept only until its helpers below
+// (syncCcHead, toggleCcRow) go too.
+function _renderCustomControlCards(){
   const container = document.getElementById('custom-control-rows');
   if(!container) return;
   if(!customControls.length){
@@ -14325,6 +15059,12 @@ function addCustomControl(){
    so programmatic callers (bot loading, tests) don't inherit the UI side
    effects. */
 function addCustomControlAndPick(){
+  // The rule list's Add rule, opened (Strategy & Custom Controls).
+  if(!ruPick.open) ruTogglePicker();
+  const pill = document.getElementById('ru-add');
+  if(pill) pill.scrollIntoView({ block:'center', behavior:'instant' });
+}
+function _addCustomControlCardAndPick(){
   const id = addCustomControl();
   const grp = document.getElementById('ccg-' + id);
   if(!grp) return;
@@ -14393,6 +15133,11 @@ function onCustomControlName(id, val){
 ══════════════════════════════════════════════════════════════ */
 const RADAR_AXES = [
   { label:'Chaos',     key:'complexity' },
+  // Confounder and Sharp (Nov 2026): the traits a phase rule most often
+  // changes (a confusing opening, a sharp endgame), so the phase outlines
+  // would not show the very rules they exist for without them.
+  { label:'Confounder', key:'entropy' },
+  { label:'Sharp',     key:'sharpness' },
   { label:'Captures',  key:'trade' },
   { label:'Attacker',  key:'attacker' },
   { label:'Space',     key:'spacecadet' },
@@ -14476,22 +15221,37 @@ function drawRadar(){
     ctx.globalAlpha = 1;
   });
 
-  // Data polygon (fill + stroke)
-  ctx.beginPath();
-  RADAR_AXES.forEach((ax,i)=>{
-    const val = attractorValues[ax.key] ?? 0;
-    const frac = (val + 5) / 10;
-    const ang=(i/N)*2*Math.PI - Math.PI/2;
-    const r = R * Math.max(0.02, frac);
-    const x=CX+r*Math.cos(ang), y=CY+r*Math.sin(ang);
-    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
-  });
-  ctx.closePath();
+  // The whole-game values: a fill under the nodes that drag them.
+  const tracePath = vals => {
+    ctx.beginPath();
+    RADAR_AXES.forEach((ax,i)=>{
+      const val = vals[ax.key] ?? 0;
+      const frac = (val + 5) / 10;
+      const ang=(i/N)*2*Math.PI - Math.PI/2;
+      const r = R * Math.max(0.02, frac);
+      const x=CX+r*Math.cos(ang), y=CY+r*Math.sin(ang);
+      i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    });
+    ctx.closePath();
+  };
+  tracePath(attractorValues);
   ctx.fillStyle='rgba(200,146,42,0.18)';
   ctx.fill();
-  ctx.strokeStyle=amberColor;
-  ctx.lineWidth=1.5;
-  ctx.stroke();
+
+  // What runs in each phase, rules included: opening green (solid), middlegame
+  // yellow (dashed), endgame red (dotted). With no phase rules all three lie
+  // on the whole-game outline, drawn over each other.
+  _radarPhaseStyles().forEach(s => {
+    tracePath(typeof ruPhaseTraitValues === 'function' ? ruPhaseTraitValues(s.phase) : attractorValues);
+    ctx.setLineDash(s.dash);
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = s.width;
+    ctx.stroke();
+  });
+  ctx.setLineDash([]);
+  ctx.lineCap = 'butt';
+  _renderRadarLegend();
 
   // Data nodes + value badge on active node
   ctx.shadowBlur = 0;
@@ -14621,18 +15381,9 @@ function _radarNavigate(axIdx){
     }, 90);
     return;
   }
-  const inputId = 'attr-' + ax.key;
-  switchItab('attract', 'pieces');
-  setTimeout(() => {
-    const grp = document.getElementById('attrg-' + inputId);
-    if(!grp) return;
-    // The row may be folded away as "not in use" — reveal its list first.
-    const list = grp.parentElement;
-    if(list && !grp.classList.contains('is-set')) list.classList.add('show-all');
-    _repartitionAttrList(list);
-    if(!grp.classList.contains('open')) toggleAttrRow(inputId);
-    grp.scrollIntoView({ behavior:'smooth', block:'center' });
-  }, 90);
+  // The trait's whole-game rule, on Strategy & Custom Controls.
+  switchItab('attract', 'custom');
+  setTimeout(() => ruFocusTrait(ax.key), 90);
 }
 
 function initRadarInteraction(){
@@ -14770,10 +15521,10 @@ function updateQsThinkTime(){
   const sel  = document.querySelector('#timing-mode-grid .mcard.sel');
   const mode = sel?.dataset.v || 'Fixed interval';
   if(mode === 'Instantaneous')    { pill.textContent = 'Instant';       return; }
-  if(mode === 'Complexity-scaled'){
+  if(mode === 'Entropy-scaled'){
     pill.textContent = (typeof cplxBaseMode !== 'undefined' && cplxBaseMode === 'clock' && isTimedGame())
-      ? 'Clock · ~' + _fmtSec(_cplxStartAvgSec())
-      : 'By complexity';
+      ? 'Clock · ~' + _fmtSec(_entropyTypicalStartSec())
+      : 'By entropy';
     return;
   }
   if(mode === 'Mirror user')      { pill.textContent = 'Mirrors you';   return; }
@@ -14870,7 +15621,7 @@ function qsSyncEngine(){
 // row of its own: it is the Fixed interval slider at 0.
 const QS_TIMING_CARD = {
   instant: 'Instantaneous', fixed: 'Fixed interval',
-  mirror: 'Mirror user', complexity: 'Complexity-scaled',
+  mirror: 'Mirror user', complexity: 'Entropy-scaled',
 };
 function _qsSetTimingMode(mode){
   const card = document.querySelector('#timing-mode-grid .mcard[data-v="' + QS_TIMING_CARD[mode] + '"]');
@@ -15139,7 +15890,7 @@ const PERS_CONFIRMS = {
     'Blind Conviction: its favorite move 60% of the time, its 2nd, 3rd and 4th 20%, 15% and 5%',
     'Attacking traits: Enemy king pressure 5, Enemy pieces attacked 5, Tension 2, Complexity 1 (Budget 150 cp, Hard Floor 250)',
     'Openings → gambits as White (Danish, Fried Liver, Smith-Morra, Blackmar-Diemer); Pterodactyl, Najdorf, Budapest and Benko as Black; no set opening in 30% of games',
-    'Move timing → Complexity scaled from the clock (a 60-move game); premoves on',
+    'Move timing → Entropy scaled from the clock; premoves on',
   ]},
 };
 let _bdPendingId = null;
@@ -15182,7 +15933,7 @@ const INFO_POPS = {
       'forced: a bot told to move every 2 seconds is not short of time in a 15-minute game. ' +
       'Read as time pressure, that pace would take a couple of hundred ELO off every move. ' +
       'So neither curve is consulted, and premoves play at the bot’s own rating.</p>' +
-      '<p><b>To use them, choose Complexity scaled</b> in Move Timing — on its default ' +
+      '<p><b>To use them, choose Entropy scaled</b> in Move Timing — on its default ' +
       '<b>From the clock</b> setting the bot budgets its own time from the clock and the ' +
       'moves left, and these curves take over as that budget runs down — or ' +
       '<b>Mirror user</b>, which plays at your pace and degrades as you speed up under ' +
@@ -15416,6 +16167,9 @@ function _applyPersonality(id, confirmed){
   });
   drawRadar();
   updateAttrCpDisplays();   // → syncAttrHeads + updateAttractorStatus (shows the preset name)
+  // The rule list shows the preset's traits (rules at 0 from before go).
+  ruResetView(ruOrder);
+  ruRender();
 }
 
 // A preset that is a whole bot (BOT_PRESETS): loaded as My Bots loads one, with
@@ -16390,7 +17144,7 @@ function applyBlinkSuppression(mode){
     _blinkPreFixed = null;
   }
 }
-// ── Complexity scaled: where the average comes from ──────────────────────────
+// ── Entropy scaled: where the typical think comes from ───────────────────────
 // 'clock' (default): the bot budgets like a player — (time left + increment
 // still to come) ÷ moves left in a game of _cplxMovesPerGame() moves, recomputed
 // every move, quick while in book. See botClockPlanSec in 50-bot-engine.js.
@@ -16427,6 +17181,61 @@ function _panelBookRangeSec(){
   const f = Math.max(0, Math.min(1, (size - 8) / (20 - 8)));
   return [0.4 + f * (5 - 0.4), 1.2 + f * (15 - 1.2)];
 }
+// The Slower–Faster slider's readout: −1 is twice as long as a typical person,
+// +1 half as long. MIRRORS botThinkPaceMult in src/50-bot-engine.js.
+function _thinkPaceMult(){
+  const v = Math.max(-1, Math.min(1, +(document.getElementById('r-think-pace')?.value || 0)));
+  return Math.pow(2, -v);
+}
+function syncThinkPace(v){
+  v = Math.max(-1, Math.min(1, +v || 0));
+  const el = document.getElementById('v-think-pace');
+  if(el) el.textContent = Math.abs(v) < 0.05 ? 'Typical'
+    : v < 0 ? Math.pow(2, -v).toFixed(1) + '× slower' : Math.pow(2, v).toFixed(1) + '× faster';
+  if(typeof _syncCplxBaseUi === 'function') _syncCplxBaseUi();
+}
+// A typical think around move 15 with the clock still full, for this time
+// control: what the drawer quotes. MIRRORS botEntropyTypicalMs,
+// botEntropyWeights and botEntropyLevel in src/50-bot-engine.js (average
+// position, no spread) — keep the stage values, game sizes and level points in
+// step with BOT_ENTROPY_FIT.
+const _ENTROPY_LEVEL = {
+  noInc: [[30, 1], [60, 1.67], [180, 0.94], [300, 0.78], [600, 0.93]],
+  inc:   [[160, 1.24], [260, 1.03], [420, 0.90], [800, 0.94], [1300, 0.99], [3000, 1.08], [4500, 1.14]],
+};
+// One row per fit, as BOT_ENTROPY_FIT.sizes: [smallest, largest game size,
+// plan N, stage at move 15 (between the stage points at moves 13 and 18)] for
+// blitz, rapid 10+0/10+5, rapid 15+10 and league.
+const _ENTROPY_SIZES = [[0, 420, 40, 0.5942], [600, 800, 60, 0.6359], [1300, 1300, 60, 0.5808], [3000, Infinity, 60, 0.7629]];
+function _entropyWeights(size){
+  const S = _ENTROPY_SIZES, w = S.map(() => 0);
+  for(let i = 0; i < S.length; i++){
+    if(size > S[i][1]) continue;
+    if(i === 0 || size >= S[i][0]){ w[i] = 1; return w; }
+    const t = Math.log(size / S[i - 1][1]) / Math.log(S[i][0] / S[i - 1][1]);
+    w[i - 1] = 1 - t; w[i] = t;
+    return w;
+  }
+  w[S.length - 1] = 1;
+  return w;
+}
+function _entropyLevel(size, inc){
+  const pts = inc > 0 ? _ENTROPY_LEVEL.inc : _ENTROPY_LEVEL.noInc, x = Math.log(size);
+  if(x <= Math.log(pts[0][0])) return pts[0][1];
+  for(let i = 1; i < pts.length; i++){
+    const x1 = Math.log(pts[i][0]);
+    if(x <= x1){ const x0 = Math.log(pts[i - 1][0]); return pts[i - 1][1] + (x - x0) / (x1 - x0) * (pts[i][1] - pts[i - 1][1]); }
+  }
+  return pts[pts.length - 1][1];
+}
+function _entropyTypicalStartSec(){
+  const base = (+tcTime || 0) * 60, inc = +tcInc || 0;
+  if(!(base > 0)) return null;
+  const size = base + 40 * inc, w = _entropyWeights(size);
+  const leg = (n, stage15) => { const left = n - 14; return Math.log((base + left * inc) / left * stage15); };
+  const logMix = _ENTROPY_SIZES.reduce((s, f, i) => w[i] ? s + w[i] * leg(f[2], f[3]) : s, 0);
+  return Math.exp(logMix) * _entropyLevel(size, inc) * _thinkPaceMult();
+}
 function _syncCplxBaseUi(){
   const timed = isTimedGame();
   const clockOn = cplxBaseMode === 'clock';
@@ -16440,10 +17249,12 @@ function _syncCplxBaseUi(){
   const bookTxt = (Math.round(bLo * 10) / 10) + '–' + (Math.round(bHi * 10) / 10) + ' s';
   if(hint) hint.textContent = !timed
     ? 'No clock in an Untimed game, so there is nothing to budget from — the Base time below is used instead.'
-    : 'Averages about ' + _fmtSec(_cplxStartAvgSec()) + ' a move at the start of this ' + tcTime + '+' + tcInc +
-      ' game: (clock + ' + _cplxMovesPerGame() + ' × increment) ÷ ' + _cplxMovesPerGame() +
-      ' moves, recomputed from the clock every move — a 60-move game from 10 minutes up (base + 40 × increment),' +
-      ' 40 below. No one move takes more than a tenth of the clock' +
+    : 'A typical move takes about ' + _fmtSec(_entropyTypicalStartSec()) + ' around move 15 of this ' + tcTime + '+' + tcInc +
+      ' game, from the time left and the moves still to come, recomputed every move. Like people it spends' +
+      ' most around moves 15–25 and less after move 30; obvious moves go faster, ones with many playable' +
+      ' replies slower. Fitted to people\'s own think times in 3+0 to 5+3 blitz, 10+0 to 15+10 rapid, and' +
+      ' 30+30 and 45+45 league games; a game between those is planned between the nearest two, and bullet\'s' +
+      ' overall pace is set to what people showed in a check on 1+0 and 2+1 games. No one move takes more than a tenth of the clock' +
       ' plus the increment, so it does not flag. Book moves take ' + bookTxt +
       ' here — quick in bullet and blitz, 5–15 s from 20-minute games up, where a good player' +
       ' still decides which of the lines they know to go into.';
@@ -17053,7 +17864,7 @@ function _syncPressureOffUi(fromGating){
     note.innerHTML = paced
       ? '<div class="tp-gate-t">Time pressure is off for this bot</div>' +
         '<div class="tp-gate-b"><strong>' + (_PACE_NAME[m] || 'This timing mode') + '</strong> in Move Timing sets the bot’s pace, so it is never short of time, and neither curve below is used (premoves play at its own rating too). ' +
-        'To turn time pressure on, choose <strong>Complexity scaled</strong> to have it budget from the clock, or <strong>Mirror user</strong> to have it play — and crack — at your pace.</div>' +
+        'To turn time pressure on, choose <strong>Entropy scaled</strong> to have it budget from the clock, or <strong>Mirror user</strong> to have it play — and crack — at your pace.</div>' +
         '<button type="button" class="tp-gate-go" onclick="jumpToTimingForPressure()">Change Move Timing ▸</button>'
       : '';
   }
@@ -17497,10 +18308,10 @@ document.addEventListener('DOMContentLoaded', ()=>{
   <div id="btOutro" style="display:none;">
     <div class="bt-count">Tour complete</div>
     <div class="bt-title">That's the bot builder</div>
-    <div class="bt-body">The board itself comes in two views, each with its own tour: <b>Visualization</b> marks threats, pins and hanging pieces as you play; <b>Expert</b> is a clean tournament view without overlays.</div>
+    <div class="bt-body">The board itself comes in two views, each with its own tour: <b>Visualization</b> marks threats, pins and hanging pieces as you play; <b>Plain</b> is a clean tournament view without overlays.</div>
     <div class="bt-actions bt-actions-stack">
       <button class="bt-btn bt-next" onclick="btGoBoardTour('amateur')">Tour the Visualization board →</button>
-      <button class="bt-btn bt-next" onclick="btGoBoardTour('pro')">Tour the Expert board →</button>
+      <button class="bt-btn bt-next" onclick="btGoBoardTour('pro')">Tour the Plain board →</button>
       <button class="bt-skip" onclick="btOutroClose()">Done</button>
     </div>
   </div>

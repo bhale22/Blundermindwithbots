@@ -160,12 +160,16 @@ let botOppClockMs = null;
 let botTimeBehavior = 'pace'; // 'pace' | 'instant' | 'mirror' | 'fixed'
 let botFixedDelayMs = 5000;        // ms for 'fixed' timing mode (default 5 s)
 let botMirrorOffsetPct = 0;        // % speed offset for 'mirror' mode (-100..+100)
-let botCplxBase = 3;               // complexity mode: base think time (s)
-let botCplxMin  = 0.4;             // complexity mode: min multiplier (simple moves)
-let botCplxMax  = 2.5;             // complexity mode: max multiplier (complex moves)
-// complexity mode: where the average think time comes from — 'clock' (time left
-// ÷ moves left in a 40- or 60-move game, botClockPlanSec) or 'fixed' (botCplxBase).
+// 'complexity' is the builder's Entropy scaled mode (the internal name stays so
+// saved bots keep working): think time from Maia's entropy, the game stage and
+// the clock, fitted to people's own think times (botEntropyTypicalMs).
+let botCplxBase = 3;               // Entropy scaled: typical think time (s) with Fixed seconds
+// Entropy scaled: where the typical think time comes from — 'clock' (time left
+// ÷ moves left, shaped by the game stage) or 'fixed' (botCplxBase).
 let botCplxBaseMode     = 'fixed';
+// Entropy scaled: the Slower–Faster slider, −1 … +1. Think time × 2^(−pace):
+// −1 is twice as long as a typical person, +1 half as long (botThinkPaceMult).
+let botThinkPace        = 0;
 let botBehavReconsider  = true;    // human behaviour: reconsideration pauses
 let botBehavBlink       = true;    // human behaviour: instant play on forced moves
 let botBehavClockMirror = true;    // human behaviour: speed up when the opponent is in time trouble
@@ -1750,7 +1754,7 @@ function bsToggleShell(){
 // board am I on, which pieces am I using" without opening anything further.
 function bsSyncAppearance(){
   const b = document.getElementById('bsBoardVal');
-  if(b) b.textContent = (typeof proMode !== 'undefined' && proMode) ? 'Expert Board' : 'Visualization Board';
+  if(b) b.textContent = (typeof proMode !== 'undefined' && proMode) ? 'Plain Board' : 'Visualization Board';
   const p = document.getElementById('bsPieceVal');
   if(p) p.textContent = PIECE_SET_NAMES[typeof currentPieceSet !== 'undefined' ? currentPieceSet : ''] || '—';
   const t = document.getElementById('bsThemeVal');
@@ -2416,9 +2420,9 @@ const TOURS = {
       body:'Everything else here shows you the position <i>before</i> you commit. This closes the loop <i>after</i>: expand <b>📊 Maia move odds</b> and it shows the move just played, from the position it was played in, against how a real human pool weighted the options there — one tall bar means the move was near-forced, several close bars mean it was a genuine decision. Playing a Maia bot reads the odds at <b>that bot’s rating</b>, so it is your actual opponent’s judgement, not a generic one. <b>Collapsed by default</b>; it reviews the move behind you rather than helping with the one in front of you.' },
     // #pbSettings is the phone bar's ⚙, which opens the same panel.
     { sel:'#bs-open', selPhone:'#pbSettings', title:'Board settings & appearance',
-      body:'Sound, legal-move dots and the two rules that decide what counts as a threat live here — and so does <b>Theme & pieces</b>: colors, piece sets, Carbon vs Journal format, and the switch between this Training board and the clean Expert board.' },
+      body:'Sound, legal-move dots and the two rules that decide what counts as a threat live here — and so does <b>Theme & pieces</b>: colors, piece sets, Carbon vs Journal format, and the switch between this Visualization board and the clean Plain board.' },
     { sel:'#site-name', title:'Home',
-      body:'Click the Blundermind logo anytime to return Home and switch between the Beginner and Expert boards.' },
+      body:'Click the Blundermind logo anytime to return Home and switch between the Visualization and Plain boards.' },
   ],
   pro: [
     // selPhone: the same step, aimed at something that HAS a box at phone
@@ -2428,7 +2432,7 @@ const TOURS = {
     // Expert tour came to be one step long on a phone: of its four targets,
     // #proSide and #proMoves had no box and .pro-actions resolved to the
     // hidden idle row, leaving only the commit chip.
-    { sel:'#proSide', selPhone:'#proPlayerTop', title:'The Expert board',
+    { sel:'#proSide', selPhone:'#proPlayerTop', title:'The Plain board',
       body:'A clean tournament view — minimal chrome, live notation, and no coaching overlays.' },
     { sel:'#commitModeChip', title:'How your moves get played',
       body:'Under your clock: <b>✋ Release to move</b> plays the move as soon as you let go. <b>👆 Tap to confirm</b> parks the piece on the square first, so you can sit with the position for a moment — and take your finger off a touchscreen — before a second tap commits it. Tapping a different square moves the parked piece there instead. Worth having on for phone play and in time scrambles, where a mis-drop costs a game. Tap the chip to switch, even mid-game.' },
@@ -2673,7 +2677,7 @@ function _tourGhostDemoStop(){
 // rather than living in TOURS, because it only makes sense on that entry path.
 const _TOUR_LANDING_STEP = {
   landing: true, sel:'.landing-shell-pick', title:'Two boards, one site',
-  body:'Start by picking how the board looks. <b>Visualization</b> marks threats, pins and hanging pieces while you play — the one to choose while you are still building board vision. <b>Expert</b> is a clean tournament view for players who would rather not have overlays. Either can be switched at any time, so this is not a decision you are stuck with.'
+  body:'Start by picking how the board looks. <b>Visualization</b> marks threats, pins and hanging pieces while you play — the one to choose while you are still building board vision. <b>Plain</b> is a clean tournament view for players who would rather not have overlays. Either can be switched at any time, so this is not a decision you are stuck with.'
 };
 
 function startTour(opts){
@@ -2717,9 +2721,9 @@ function _tourShowOutro(){
   // board option is whichever board this run wasn't — and taking it switches
   // shells, because TOURS.pro points at chrome that only exists in pro mode.
   const other = (_tourShell === 'pro') ? 'amateur' : 'pro';
-  const otherName = (other === 'pro') ? 'Expert board' : 'Visualization board';
+  const otherName = (other === 'pro') ? 'Plain board' : 'Visualization board';
   const t = document.getElementById('tourOutroTitle');
-  if(t) t.textContent = (_tourShell === 'pro') ? "That's the Expert board" : "That's the Visualization board";
+  if(t) t.textContent = (_tourShell === 'pro') ? "That's the Plain board" : "That's the Visualization board";
   const b = document.getElementById('tourOutroBody');
   if(b) b.textContent = 'Two more to try: the ' + otherName.toLowerCase()
     + ', and the bot builder, where you shape an opponent’s personality before playing it.';

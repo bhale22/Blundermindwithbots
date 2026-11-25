@@ -2084,29 +2084,20 @@ body.pro-mode .bs-vision{ display:none !important; }
 .tour-shot .ghost-one .ib-main{height:auto;min-height:40px;}
 .tour-shot .ghost-one select{width:100%;margin-top:4px;}
 
-/* The column's last row: ghost replies, then Board settings. Tall screens
-   stack them, the ghosts under a heading with a line saying what they do. */
-.sb-tail{display:flex;flex-direction:column;flex-shrink:0;}
-.ghost-sec{display:flex;flex-direction:column;min-width:0;}
-.ghost-cap{
-  font-size:9.5px;line-height:1.35;color:var(--text-dim);
-  padding:3px 2px 0;
-}
-/* 900px and under there is no height to spare (a 1366x768 laptop had 4px of
-   spacer left), so the two share one row as half-width cards. Two lines each:
-   the ghosts' label over their depth, Board settings' name over its caption —
-   the same height Board settings took on its own. */
-@media (min-width:761px) and (max-height:900px){
-  .sb-tail{flex-direction:row;gap:3px;align-items:stretch;}
-  .sb-tail .ghost-head,.sb-tail .ghost-cap{display:none;}
-  .sb-tail .ghost-sec{flex:1 1 0;}
-  .sb-tail #bs-open{flex:1 1 0;min-width:0;width:auto;padding:4px 8px;gap:6px;}
-  .sb-tail .ghost-one{flex-direction:column;flex:1 1 auto;margin:3px 0;}
-  .sb-tail .ghost-one .ib-main{flex:1 1 auto;height:auto;min-height:18px;min-width:0;gap:5px;padding:0 6px;}
-  .sb-tail .ghost-one .ib-lbl{font-size:11px;}
-  .sb-tail #soloGhostDepth{flex:0 0 auto;min-width:0;border-left:0;border-top:0.5px solid var(--border2);padding:2px 5px;}
-  .ghost-one.on #soloGhostDepth{border-top-color:var(--st-on-bd,rgba(34,168,90,0.45));}
-}
+/* The column's last row: ghost replies and Board settings side by side, as
+   half-width cards, at every height. Two lines each: the ghosts' label over
+   their depth, Board settings' name over its caption. Tall screens used to
+   stack them, the ghosts under a "One move deeper" heading with a caption;
+   Ben dropped both (Nov 2026) — ghosts can be a feature people find for
+   themselves. (The phone hides this row; its ghosts are in #visPanel.) */
+.sb-tail{display:flex;flex-direction:row;gap:3px;align-items:stretch;flex-shrink:0;}
+.sb-tail .ghost-sec{display:flex;flex-direction:column;flex:1 1 0;min-width:0;}
+.sb-tail #bs-open{flex:1 1 0;min-width:0;width:auto;padding:4px 8px;gap:6px;}
+.sb-tail .ghost-one{flex-direction:column;flex:1 1 auto;margin:3px 0;}
+.sb-tail .ghost-one .ib-main{flex:1 1 auto;height:auto;min-height:18px;min-width:0;gap:5px;padding:0 6px;}
+.sb-tail .ghost-one .ib-lbl{font-size:11px;}
+.sb-tail #soloGhostDepth{flex:0 0 auto;min-width:0;border-left:0;border-top:0.5px solid var(--border2);padding:2px 5px;}
+.sb-tail .ghost-one.on #soloGhostDepth{border-top-color:var(--st-on-bd,rgba(34,168,90,0.45));}
 
 /* ── Board settings launcher ────────────────────────────────────────────────
    It has sat at the top of the column (where it read as the overlays'
@@ -2318,11 +2309,21 @@ body.pz-eval-on #pzEval{display:block;}
   #pzEvalLbl.them{right:5px;}
   body.pz-eval-on #board-canvas-wrap{margin-bottom:18px;}
 }
+/* The floor: Training Tips, Load, Save, Flip. It was 10px dim text, the
+   quietest thing in the column; Ben wanted Save and Flip bigger (Nov 2026),
+   so it reads at 12px everywhere. Over 900px tall the row also takes the Play
+   button's height, paid for by the ghosts and Board settings now sharing a
+   row. At 900px and under that row was already shared, and there is no
+   height to give (the column is over the fold at 1366x660 as it is), so the
+   row keeps its old height there. */
 .secondary-row{display:flex;gap:3px;margin-top:3px;flex-shrink:0;}
 .secondary-row .ctrl-btn{
-  flex:1;text-align:center;font-size:10px;font-weight:600;padding:0 2px;
-  height:var(--sec-h);min-height:0;
-  background:transparent;color:var(--text-dim);
+  flex:1 1 auto;text-align:center;font-size:12px;font-weight:600;padding:0 4px;
+  height:var(--sec-h);min-height:0;white-space:nowrap;
+  background:transparent;color:var(--text-secondary);
+}
+@media (min-height:901px){
+  .secondary-row .ctrl-btn{height:var(--play-h);}
 }
 .secondary-row .ctrl-btn:hover{background:var(--bg-panel);color:var(--text-secondary);}
 
@@ -2361,7 +2362,6 @@ body.pz-eval-on #pzEval{display:block;}
   .ind-grid{gap:2px;}
   .bv-head{padding-top:0;margin-top:0;}
   .hold-note{display:none;}
-  .ghost-cap{display:none;}
   /* The state key's heading goes here rather than at tier 2: its line pays
      for the ghost/Board-settings row being two lines tall. One line each,
      side by side, did not fit — a half-width row cannot hold a name and a
@@ -3465,7 +3465,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <span class="ls-dot" aria-hidden="true"></span>
         <span class="ls-txt">
           <span class="ls-brand">Build-A-Bot</span>
-          <span class="ls-name">Expert Board</span>
+          <span class="ls-name">Plain Board</span>
           <span class="ls-desc">Clean tournament view — no overlays.</span>
         </span>
       </button>
@@ -3498,7 +3498,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
       </a>
       <a class="wn-link" href="https://buildabotchess.com" target="_blank" rel="noopener">
         <span class="wn-name">&#9822; Buildabotchess.com</span>
-        <span class="wn-desc">Expert board &amp; bot builder</span>
+        <span class="wn-desc">Plain board &amp; bot builder</span>
       </a>
     </div>
   </div>
@@ -3649,7 +3649,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <p>Then shape it: a personality that pulls toward the moves it likes within
           a centipawn budget, an opening repertoire, how long it thinks, and how it
           cracks under time pressure. Name it, save it, share it, and play it on
-          the pro board, a clean tournament view with no visualization aids.</p>
+          the Plain board, a clean tournament view with no visualization aids.</p>
         <!-- No way onto the bare pro board from here: on its own it is a plain
              board that explains nothing. Someone after Build-A-Bot goes
              straight into the builder (which runs its own tour the first time
@@ -3657,9 +3657,9 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         <div class="bmo-acts">
           <button type="button" class="bmo-go" onclick="bmOverviewGo('builder')">
             <span class="bmo-go-t">Go to the Bot Builder</span>
-            <span class="bmo-go-s">build an opponent, then play it on the pro board</span>
+            <span class="bmo-go-s">build an opponent, then play it on the Plain board</span>
           </button>
-          <button type="button" class="bmo-tour" onclick="bmOverviewGo('tour-pro')">&#127891; Start tour of the pro board</button>
+          <button type="button" class="bmo-tour" onclick="bmOverviewGo('tour-pro')">&#127891; Start tour of the Plain board</button>
         </div>
       </section>
     </div>
@@ -3768,9 +3768,9 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
          other. The lit half is CSS off body.pro-mode, so it cannot disagree
          with the board, however the switch was made. -->
     <button type="button" id="shellToggle" onclick="bsToggleShell()" aria-pressed="false"
-      aria-label="Expert board — clean view, no overlays"
-      title="Visualization board: threats, pins and forks drawn on the board. Expert board: a clean tournament view, no overlays. Click to switch.">
-      <span class="st-seg st-vis">👁 Visualization</span><span class="st-seg st-pro">♟ Expert</span>
+      aria-label="Plain board — clean view, no overlays"
+      title="Visualization board: threats, pins and forks drawn on the board. Plain board: a clean tournament view, no overlays. Click to switch.">
+      <span class="st-seg st-vis">👁 Visualization</span><span class="st-seg st-pro">♟ Plain</span>
     </button>
     <button id="tourBtn" onclick="startTour()"
       style="font-size:10px;padding:4px 12px;background:transparent;
@@ -4250,13 +4250,12 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
          So it sits under the overlays rather than in their grid. On a phone
          the same control is a row in the board-vision panel (visGhostRow).
 
-         .sb-tail is the column's last row of controls. On a tall screen the
-         ghosts get a heading and a caption over Board settings; at 900px and
-         under the two share one row, because the column had no height left
-         to give — a 1366x768 laptop had exactly 4px of spacer before this. -->
+         .sb-tail is the column's last row of controls: the ghosts and Board
+         settings side by side, at every height, with no heading or caption
+         round the ghosts (Ben, Nov 2026: they can be found by those who
+         look). Its tooltip still says what they do. -->
     <div class="sb-tail">
       <div class="ghost-sec" id="ghostSec">
-        <div class="bv-head sub ghost-head">One move deeper</div>
         <div class="ib ghost-one" id="ib-ghost">
             <button class="ib-main" onclick="ghostToggle()"
                     title="Ghost replies: the bot’s likeliest replies, drawn faintly while you explore a move">
@@ -4270,7 +4269,6 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
             <option value="maia">Maia (2600 + 1500)</option>
           </select>
         </div>
-        <div class="ghost-cap">The bot’s likeliest replies, drawn faintly while you explore a move.</div>
       </div>
 
       <!-- Preferences, not overlays, so they come after everything that draws
@@ -4535,7 +4533,7 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
         </a>
         <a class="wn-link" href="https://buildabotchess.com" target="_blank" rel="noopener">
           <span class="wn-name">&#9822; Buildabotchess.com</span>
-          <span class="wn-desc">Expert board &amp; bot builder</span>
+          <span class="wn-desc">Plain board &amp; bot builder</span>
         </a>
       </div>
     </div>
@@ -4561,6 +4559,21 @@ body.pro-mode #chatBox #chatInput{ color:var(--pt1); }
     <p>I struggle with &#8220;getting a grip on the board&#8221; (to steal a useful phrase from the <a href="https://www.youtube.com/watch?v=3jiJn8bjtYk" target="_blank" rel="noopener" style="color:var(--accent);">Chess Dojo</a>), so while my intent was to blundercheck moves so that I would see if I were hanging my queen, I&#8217;m finding that it is showing discovered attacks and potential forks that I didn&#8217;t see at all (you can probably infer my rating at this point). I think this site could be a useful learning tool if the visualization aids are set to provide immediate feedback after careful assessment and calculation, not as a blunder avoider that just circles some hanging pieces while potential moves are explored by dragging the pieces around. Admittedly, I have found the latter to be interesting as well.</p>
     <p>Also included in my numerous struggles is the ability to predict my opponent&#8217;s response, so I added a feature to show two potential responses by making two engine calls. I would caution that this feature should only be turned on if you have already actively calculated your opponent&#8217;s likely next move.</p>
     <p>The site does not include any engine analysis or indicators to show if a move is &#8220;good or bad&#8221; during game play or exploration. Each game can be downloaded and analyzed in <a href="https://lichess.org/paste" target="_blank" rel="noopener" style="color:var(--accent);">Lichess</a> or a website of your choice. Similarly, the PGN of any game can be uploaded and explored or played out here.</p>
+
+    <!-- Behind the scenes: links to the lab-notes pages (claude.ai artifacts,
+         source in Documents\blundermind-lab-notes). Each page must be shared as
+         "anyone with the link" from its Share menu, or visitors can't open it. -->
+    <h3>Behind the scenes</h3>
+    <p>Making bots that feel human turned into a lot of measuring: how strong each setting really plays, what makes people stop and think, how play should fall apart as the clock runs down, and whether Maia 3 can handle Chess960. The tests, the charts and the things that didn&#8217;t work are collected in the <a href="https://claude.ai/artifact/SLgL7Sir7MgtkdBGRY8VXz" target="_blank" rel="noopener" style="color:var(--accent);">Blundermind Lab Notes</a>.</p>
+    <ul style="margin:0 0 8px;padding-left:16px;line-height:1.7;">
+      <li><a href="https://claude.ai/artifact/11Zyj4QiZojv37LEpd4Vx5" target="_blank" rel="noopener" style="color:var(--accent);">Calibrating Flounder</a></li>
+      <li><a href="https://claude.ai/artifact/Pu8MQnr7L8BHXopkdu9F3S" target="_blank" rel="noopener" style="color:var(--accent);">Measuring Bot Strength</a></li>
+      <li><a href="https://claude.ai/artifact/5cGYNcnReeTpJSkiGft3YV" target="_blank" rel="noopener" style="color:var(--accent);">How Bots Pick Moves</a></li>
+      <li><a href="https://claude.ai/artifact/N9V8tN8DVWsBFhkFnFCbiY" target="_blank" rel="noopener" style="color:var(--accent);">Time-Pressure Degradation</a></li>
+      <li><a href="https://claude.ai/artifact/9V6X2Z44KfuqAdm8KSqetF" target="_blank" rel="noopener" style="color:var(--accent);">Predicting Think Time</a></li>
+      <li><a href="https://claude.ai/artifact/6k3AS6zVzRJtfPmHewy1nd" target="_blank" rel="noopener" style="color:var(--accent);">Think Time by Time Control</a></li>
+      <li><a href="https://claude.ai/artifact/RYamm9AhDLQ5tAmamXeGkK" target="_blank" rel="noopener" style="color:var(--accent);">Chess960 with Maia 3</a></li>
+    </ul>
 
     <hr>
     <h3>Privacy</h3>

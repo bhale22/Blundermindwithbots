@@ -97,12 +97,12 @@ ok(layout.blocks === 4, 'four mode blocks (' + layout.blocks + ')');
 ok(layout.rails === 3, 'three modes own a control rail; Instantaneous has none (' + layout.rails + ')');
 ok(layout.drawers === 3, 'all three rails are opening drawers (' + layout.drawers + ')');
 ok(layout.oneLine, 'each mode card is a single line (dot · name · description)');
-ok(layout.order.join('|') === 'Instantaneous|Fixed interval|Mirror user|Complexity-scaled',
-   'order is Instantaneous → Fixed → Mirror → Complexity: ' + layout.order.join(' → '));
+ok(layout.order.join('|') === 'Instantaneous|Fixed interval|Mirror user|Entropy-scaled',
+   'order is Instantaneous → Fixed → Mirror → Entropy: ' + layout.order.join(' → '));
 
 // Selecting a mode attaches exactly one rail and shows only that rail; the
 // hidden ones are disabled too, so none can be tabbed into.
-for (const [v, id] of [['Complexity-scaled','tb-complexity'], ['Instantaneous','tb-instant'],
+for (const [v, id] of [['Entropy-scaled','tb-complexity'], ['Instantaneous','tb-instant'],
                        ['Mirror user','tb-mirror'], ['Fixed interval','tb-fixed']]) {
   await page.evaluate((val) => {
     document.querySelector(`[data-v="${val}"]`).click();
@@ -116,7 +116,7 @@ for (const [v, id] of [['Complexity-scaled','tb-complexity'], ['Instantaneous','
   }));
   ok(st.attached.length === 1 && st.attached[0] === id,
      v + ' attaches only its own rail (' + st.attached.join(',') + ')');
-  const own = { 'Fixed interval':'fixed', 'Mirror user':'mirror', 'Complexity-scaled':'complexity' }[v];
+  const own = { 'Fixed interval':'fixed', 'Mirror user':'mirror', 'Entropy-scaled':'complexity' }[v];
   ok(st.shown.join(',') === (own || ''),
      v + ': only its own drawer is open (' + (st.shown.join(',') || 'none') + ')');
   ok(st.inertDisabled, v + ': unselected rails are disabled, not just dimmed');
@@ -157,7 +157,7 @@ ok(blinkOverride.on && !blinkOverride.marked,
 // the mode was inferred from which rail was visible rather than from the
 // selected card, and every mode silently saved as "complexity".
 for (const [v, expected] of [['Instantaneous','instant'], ['Fixed interval','fixed'],
-                             ['Mirror user','mirror'], ['Complexity-scaled','complexity']]) {
+                             ['Mirror user','mirror'], ['Entropy-scaled','complexity']]) {
   await page.evaluate((val) => document.querySelector(`[data-v="${val}"]`).click(), v);
   await page.waitForTimeout(120);
   const got = await page.evaluate(() => getBotConfig().timingMode);

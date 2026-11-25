@@ -160,7 +160,13 @@ function lichessOnLocalMove(from, to, promo, piece) {
   const g = lbGame;
   if (!g || !g.boardReady || g.ended) return;
   const isPromo = !!piece && piece.piece === 'P' && (to < 8 || to >= 56);
-  const uci = sqToUci(from, to, isPromo ? String(promo || 'Q').toLowerCase() : '');
+  let uci = sqToUci(from, to, isPromo ? String(promo || 'Q').toLowerCase() : '');
+  // A castle in a set position, as Lichess writes it: king takes rook (e1h1,
+  // not the board's e1g1). The board's moves are compared with the server's
+  // one by one, and Lichess takes this spelling there too.
+  if (g.kxrCastles && piece && piece.piece === 'K' &&
+      Math.floor(from / 8) === Math.floor(to / 8) && Math.abs(to - from) === 2)
+    uci = sqToUci(from, Math.floor(from / 8) * 8 + (to > from ? 7 : 0), '');
   g.local.push(uci);
   if (lbReplaying) return;
   // The opponent's moves came from the server; only the bot's go back, and not
@@ -398,6 +404,7 @@ function lichessDisconnect() {
     lbGame.ended = true;
     if (lbGame.abort) { try { lbGame.abort.abort(); } catch (e) {} }
     clearTimeout(lbGame.goneTimer);
+    _lbStopStartWatch(lbGame);
     lbGame = null;
   }
   lbAccepting = null;
@@ -457,7 +464,9 @@ async function _lbEventLoop() {
 // ── Engines ─────────────────────────────────────────────────────────────────
 // Stockfish always; Maia when the configured bot plays through it.
 function _lbNeedsMaia() {
-  return ['maia3', 'maia', 'lcmaia', 'hybrid'].includes(botTab);
+  return ['maia3', 'maia', 'lcmaia', 'hybrid'].includes(botTab) ||
+    // Confounder and Sharp read Maia on any engine (botMaiaChildProbe).
+    (typeof botUsesMaiaChild === 'function' && botUsesMaiaChild());
 }
 function _lbEnginesReady() {
   return !!sfReady && (!_lbNeedsMaia() || !!_maiaReady);
@@ -510,35 +519,68 @@ function _lbDeclineReason(c) {
   return null;
 }
 
-// Can the board set up this position? Read here without parseFen, which would
-// set the live game's turn and castling rights: eight full ranks, one king a
-// side, no pawn on a back rank, standard castling letters, and the side not to
-// move not in check.
-function _lbSetPositionOk(fen) {
-  if (typeof fen !== 'string') return false;
+// A FEN's board, read here without parseFen, which would set the live game's
+// turn and castling rights: { bd, side, castles }, or null unless it is eight
+// full ranks of pieces the board knows.
+function _lbFenBoard(fen) {
+  if (typeof fen !== 'string') return null;
   const f = fen.trim().split(/\s+/);
-  if (f.length < 2 || !/^[wb]$/.test(f[1])) return false;
-  if (f[2] && !/^(-|K?Q?k?q?)$/.test(f[2])) return false;
+  if (f.length < 2 || !/^[wb]$/.test(f[1])) return null;
   const rows = f[0].split('/');
-  if (rows.length !== 8) return false;
-  const b = {};
-  let wk = 0, bk = 0;
+  if (rows.length !== 8) return null;
+  const bd = {};
   for (let r = 0; r < 8; r++) {
     let c = 0;
     for (const ch of rows[r]) {
       if (/[1-8]/.test(ch)) { c += +ch; continue; }
-      if (!/[pnbrqkPNBRQK]/.test(ch) || c > 7) return false;
-      const piece = ch.toUpperCase(), color = ch === piece ? 'w' : 'b';
-      if (piece === 'P' && (r === 0 || r === 7)) return false;
-      if (piece === 'K') { if (color === 'w') wk++; else bk++; }
-      b[r * 8 + c] = { piece, color };
+      if (!/[pnbrqkPNBRQK]/.test(ch) || c > 7) return null;
+      const piece = ch.toUpperCase();
+      bd[r * 8 + c] = { piece, color: ch === piece ? 'w' : 'b' };
       c++;
     }
-    if (c !== 8) return false;
+    if (c !== 8) return null;
+  }
+  return { bd, side: f[1], castles: f[2] || '-' };
+}
+
+// Can the board set up this position? Eight full ranks, one king a side, no
+// pawn on a back rank, castling rights as KQkq or as rook files (which Lichess
+// writes for a rook that is not the outermost on its side), and the side not
+// to move not in check.
+function _lbSetPositionOk(fen) {
+  const p = _lbFenBoard(fen);
+  if (!p || !/^(-|[KQkqA-Ha-h]{1,4})$/.test(p.castles)) return false;
+  let wk = 0, bk = 0;
+  for (const sq in p.bd) {
+    const { piece, color } = p.bd[sq], r = Math.floor(sq / 8);
+    if (piece === 'P' && (r === 0 || r === 7)) return false;
+    if (piece === 'K') { if (color === 'w') wk++; else bk++; }
   }
   if (wk !== 1 || bk !== 1) return false;
-  try { if (typeof inCheck === 'function' && inCheck(b, f[1] === 'w' ? 'b' : 'w')) return false; } catch (e) { return false; }
+  try { if (typeof inCheck === 'function' && inCheck(p.bd, p.side === 'w' ? 'b' : 'w')) return false; } catch (e) { return false; }
   return true;
+}
+
+// Lichess plays every set position by Chess960's castling rule: the king goes
+// to g1 or c1 and the rook beside it, from wherever the two started, as long
+// as neither has moved. With the king on e1 and the rook in its corner that is
+// ordinary castling. Does any right here castle from anywhere else? Then the
+// board plays the game as Chess960. A tester set up a Chess960 position this
+// way (Nov 2026): the board, playing it as standard chess, refused the castle
+// d1e1 (king takes rook) and lost track of the game.
+function _lbCastles960(fen) {
+  const p = _lbFenBoard(fen);
+  if (!p || typeof parseCastlingField !== 'function') return false;
+  const { cst, files } = parseCastlingField(p.castles, p.bd);
+  for (const k of ['wK', 'wQ', 'bK', 'bQ']) {
+    if (!cst[k]) continue;
+    const r = k[0] === 'w' ? 7 : 0;
+    let kf = -1;
+    for (let c = 0; c < 8; c++) { const q = p.bd[r * 8 + c]; if (q && q.piece === 'K' && q.color === k[0]) kf = c; }
+    if (kf < 0) continue;   // no king at home: a right that cannot be used
+    if (kf !== 4 || files[k] !== (k[1] === 'K' ? 7 : 0)) return true;
+  }
+  return false;
 }
 
 async function _lbOnChallenge(c) {
@@ -616,6 +658,7 @@ function _lbNewGame(id) {
     greeted: false, chatAt: 0,   // the opening line is said; when the last command was answered
     chatHeld: null, chatTimer: null,   // a command that came inside the cooldown, and its timer
     goneTimer: null,
+    startWatch: null,   // waiting for the opponent's first move: { ply, warn, abort } (_lbWatchStart)
     rebuild: null,      // a rebuild waiting to run: { moves, st, timer } (_lbRequestRebuild)
     resyncNow: false,   // the stream was closed to resync: reopen it at once
     fromServer: false,  // the bot's move being played is the server's, not to be sent back
@@ -675,6 +718,12 @@ function _lbOnGameFull(g, full) {
   // A Chess960 game starts from the position Lichess dealt (initialFen), and
   // writes its castles king takes rook — as the board does in Chess960.
   g.chess960 = !!(full.variant && full.variant.key === 'chess960');
+  // Lichess writes castles king takes rook (e1h1) in every game but a standard
+  // one: a set position's too, ordinary castling included (scalachess UciDump;
+  // the bot API's e1g1 is for standard chess only). In a set position played
+  // as standard chess, the board's castles are spelled that way for Lichess
+  // (lichessOnLocalMove) and Lichess's read back (_lbMoveOnBoard).
+  g.kxrCastles = false;
   const setFen = (full.initialFen && full.initialFen !== 'startpos' && full.initialFen !== START) ? full.initialFen : null;
   g.startFen = null;
   if (g.chess960) {
@@ -692,7 +741,11 @@ function _lbOnGameFull(g, full) {
       return;
     }
     g.startFen = setFen;
-    if (!g.boardReady) lbLog('From a set position: ' + setFen);
+    // Castling from anywhere but e1 and the corners: played as Chess960, which
+    // castles as Lichess does here (_lbCastles960).
+    if (_lbCastles960(setFen)) g.chess960 = true;
+    else g.kxrCastles = true;
+    if (!g.boardReady) lbLog('From a set position' + (g.chess960 ? ', castling as in Chess960' : '') + ': ' + setFen);
   }
   const moves = _lbMoves(full.state), st = full.state || {};
   // The game's first line on this page: set the board up now.
@@ -707,11 +760,23 @@ function _lbOnGameFull(g, full) {
 
 // A move from Lichess as this board plays it. In Chess960 Lichess writes a
 // castle king takes rook, as the board does; a castle written the standard way
-// (king onto g1/c1) is taken too, as long as it can only mean the castle.
+// (king onto g1/c1) is taken too, as long as it can only mean the castle. In a
+// set position played as standard chess Lichess writes it king takes rook too
+// (e1h1), which the board plays as the king's two squares (e1g1): a king never
+// takes its own rook otherwise.
 function _lbMoveOnBoard(u) {
   const mv = uciToSq(u);
-  if (mv && typeof chess960CastleAlias === 'function')
-    mv.to = chess960CastleAlias(board, mv.from, mv.to, epSq, castling);
+  if (!mv) return mv;
+  if (typeof chess960 !== 'undefined' && chess960) {
+    if (typeof chess960CastleAlias === 'function')
+      mv.to = chess960CastleAlias(board, mv.from, mv.to, epSq, castling);
+  } else {
+    const p = board[mv.from], t = board[mv.to];
+    const home = p ? (p.color === 'w' ? 56 : 0) : -1;   // a1 or a8
+    if (p && p.piece === 'K' && t && t.piece === 'R' && t.color === p.color &&
+        mv.from === home + 4 && (mv.to === home + 7 || mv.to === home))
+      mv.to = mv.to === home + 7 ? home + 6 : home + 2;
+  }
   return mv;
 }
 
@@ -869,7 +934,7 @@ function _lbReganCurveA(clock, setting, t) {
 // doesn't match.
 function _lbApplyMatchedRating(g) {
   // A bot that doesn't match takes no chat commands, Temp among them.
-  if (!_lbMatching()) { botBlendTemp = null; botChatMaiaTemp = null; botChatBook = null; return null; }
+  if (!_lbMatching()) { botBlendTemp = null; botChatMaiaTemp = null; botChatBook = null; window._bcpCpFromChat = false; return null; }
   const cfg = window._lastAppliedBotConfig;
   const { flounder } = _lbEloRange();
   const t = _lbStrengthTable();
@@ -904,6 +969,9 @@ function _lbApplyMatchedRating(g) {
   const floor = cfg.hardFloorCp != null ? cfg.hardFloorCp : cfg.cpBudget;
   window._bcpCpBudget = cp;
   window._bcpCpHardFloor = cp != null && floor != null ? Math.max(+floor, cp) : floor;
+  // Rules for the CP Budget (botRulesInstall) leave a Budget asked for in the
+  // chat alone.
+  window._bcpCpFromChat = asked != null;
   at.cp = cp;
   at.think = _lbApplyThinkChoice(opp);
   at.temp = _lbApplyTempChoice(opp);
@@ -1439,10 +1507,12 @@ function _lbReplay(g, moves) {
   botActive = false;
   lbReplaying = true;
   quietMoves = true;
+  const played = [];   // as the board writes them (a set position's castle: e1g1)
   try {
     for (const u of moves) {
       const mv = _lbMoveOnBoard(u);
       if (!mv || !board[mv.from]) { lbLog('Could not replay ' + u); break; }
+      played.push(sqToUci(mv.from, mv.to, u.slice(4)));
       executeMove(mv.from, mv.to, mv.promo);
     }
   } finally {
@@ -1452,7 +1522,7 @@ function _lbReplay(g, moves) {
   }
   quietMovesDone();
   // The bot's memory of the game (opening book, explorer) is the move list.
-  botMoveHistory = g.local.slice();
+  botMoveHistory = played;
   botSanHistory  = gameMovesAlgebraic.slice();
   if (!gameOver) {
     if (turn === g.colorLetter) setTimeout(botMakeMove, 100);
@@ -1516,7 +1586,7 @@ function _lbApplyServerBotMove(g, u, mv) {
   }
   // As botMakeMove records its own.
   const san = (typeof gameMovesAlgebraic !== 'undefined' && gameMovesAlgebraic[gameMovesAlgebraic.length - 1]) || u;
-  if (typeof botRecordMove === 'function') botRecordMove(u, san);
+  if (typeof botRecordMove === 'function') botRecordMove(sqToUci(mv.from, mv.to, u.slice(4)), san);
   const ply = g.local.length;
   lbLog(Math.ceil(ply / 2) + (ply % 2 ? '. ' : '... ') + san + '  played for the bot elsewhere');
 }
@@ -1572,6 +1642,7 @@ function _lbFlushRebuild(g) {
 
 function _lbAfterState(g, st) {
   if (lbGame !== g || g.ended) return;
+  _lbWatchStart(g, st);
   _lbSyncClock(st);
   const ply = _lbMoves(st).length;
   const wasAccepted = g.drawAccepted;
@@ -1790,6 +1861,46 @@ async function lichessClaimFirst() {
   return lbGame !== g || g.ended;
 }
 
+// ── A game nobody starts (Nov 2026) ─────────────────────────────────────────
+// Lichess aborts a game from the lobby whose first moves never come, but not
+// a challenge. Ben challenged his bot one night, never moved, and the bot sat
+// in that game until morning, turning everyone else away as busy. So the bot
+// aborts it itself: LB_NO_START_MS after the opponent's first move fell due,
+// with a word in the chat LB_NO_START_WARN_MS before. Lichess allows an abort
+// only until both sides have moved, which is as long as it is needed: from
+// then the clocks run, and a player who leaves loses on time or has the win
+// claimed against them (_lbOnOpponentGone).
+let LB_NO_START_MS = 180000;   // 3 minutes (Ben, Nov 23)
+let LB_NO_START_WARN_MS = 20000;
+function _lbWatchStart(g, st) {
+  const ply = _lbMoves(st).length;
+  const over = st.status && st.status !== 'started' && st.status !== 'created';
+  // Whose move, by the server: a set position can start with Black to move.
+  const first = g.startFen && g.startFen.split(/\s+/)[1] === 'b' ? 'b' : 'w';
+  const toMove = ply % 2 === 0 ? first : (first === 'w' ? 'b' : 'w');
+  if (over || ply >= 2 || toMove === g.colorLetter) { _lbStopStartWatch(g); return; }
+  if (g.startWatch && g.startWatch.ply === ply) return;   // already counting for this move
+  _lbStopStartWatch(g);
+  const w = g.startWatch = { ply, warn: null, abort: null };
+  const live = () => lbGame === g && !g.ended && g.startWatch === w;
+  w.warn = setTimeout(() => {
+    if (live()) _lbSay(g, 'No move yet: this game will be aborted in ' + Math.round(LB_NO_START_WARN_MS / 1000) +
+      ' seconds, so that others can play.');
+  }, Math.max(0, LB_NO_START_MS - LB_NO_START_WARN_MS));
+  w.abort = setTimeout(() => {
+    if (!live()) return;
+    lbLog(_lbWho(g.opponent) + ' made no first move in ' + Math.round(LB_NO_START_MS / 1000) +
+      ' s — aborting the game, so that others can play');
+    _lbPost('/api/bot/game/' + g.id + '/abort').then(r => { if (!r.ok) lbLog('Abort refused: ' + _lbErr(r)); });
+  }, LB_NO_START_MS);
+}
+function _lbStopStartWatch(g) {
+  if (!g || !g.startWatch) return;
+  clearTimeout(g.startWatch.warn);
+  clearTimeout(g.startWatch.abort);
+  g.startWatch = null;
+}
+
 function _lbOnOpponentGone(g, m) {
   clearTimeout(g.goneTimer);
   if (!m.gone) { lbLog(_lbWho(g.opponent) + ' is back'); return; }
@@ -1805,6 +1916,7 @@ function _lbFinishGame(g, st) {
   if (g.ended) return;
   g.ended = true;
   clearTimeout(g.goneTimer);
+  _lbStopStartWatch(g);
   const msg = _lbResultText(g, st);
   if (g.boardReady) {
     gameOver = true;
