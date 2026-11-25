@@ -152,15 +152,19 @@ describe('web cross-links', { concurrency: 1 }, () => {
     await ctx.close();
   });
 
+  // These stub maiaInit, so they null the worker first: 30-board-ui.js starts it
+  // 200ms after load for a cache check, and with a worker up the prefetch takes
+  // the direct-download path instead (covered further down, and end to end).
   test('in the app the model prefetch arms and starts', async () => {
     const { ctx, page } = await openPage({ query: '?app=1' });
     const r = await page.evaluate(() => {
       let called = false;
-      const real = window.maiaInit;
+      const real = window.maiaInit, realW = _maiaWorker;
       maiaInit = () => { called = true; };
+      _maiaWorker = null;
       _maiaPrefetchTried = false;          // reset: the load hook may have run
       maiaMaybePrefetch();
-      maiaInit = real;
+      maiaInit = real; _maiaWorker = realW;
       return { called, armed: _maiaPrefetchArmed };
     });
     assert.strictEqual(r.called, true, 'installing is the commitment — fetch it');
@@ -172,17 +176,47 @@ describe('web cross-links', { concurrency: 1 }, () => {
     const { ctx, page } = await openPage({ query: '?app=1' });
     const calls = await page.evaluate(() => {
       let n = 0;
-      const real = window.maiaInit;
+      const real = window.maiaInit, realW = _maiaWorker;
       maiaInit = () => { n++; };
+      _maiaWorker = null;
       _maiaPrefetchTried = false;
       maiaMaybePrefetch();
       maiaMaybePrefetch();
       maiaMaybePrefetch();
-      maiaInit = real;
+      maiaInit = real; _maiaWorker = realW;
       return n;
     });
     assert.strictEqual(calls, 1, 'repeat calls must be no-ops');
     await ctx.close();
+  });
+
+  // End to end, no stubs. The stubbed tests above passed for months while the
+  // real launch prefetch did nothing: the 200ms cache-check worker answered
+  // 'no-cache' before the prefetch armed at load+2.5s, and the prefetch's own
+  // maiaInit() then no-oped on the worker that already existed.
+  test('the launch prefetch really requests the model — in the app only', async () => {
+    const run = async (query, bearer) => {
+      const ctx = await H.phoneContext(browser);
+      const page = await ctx.newPage();
+      page.on('pageerror', (e) => errs.push(e.message));
+      if (bearer) {
+        await page.addInitScript((type) => {
+          const t = new EventTarget();
+          Object.assign(t, { type, effectiveType: '4g', saveData: false });
+          Object.defineProperty(navigator, 'connection', { value: t, configurable: true });
+        }, bearer);
+      }
+      const reqs = [];
+      await page.route('**/models/**', (r) => { reqs.push(r.request().url()); r.abort(); });
+      await page.goto(server.baseUrl + query, { waitUntil: 'load' });
+      await page.waitForTimeout(4500);
+      await ctx.close();
+      return reqs.length;
+    };
+    assert.ok((await run('?app=1')) >= 1, 'the app should fetch the model after launch');
+    assert.ok((await run('?app=1', 'wifi')) >= 1, '...including on a phone that reports Wi-Fi');
+    assert.strictEqual(await run('?app=1', 'cellular'), 0, 'but not on mobile data');
+    assert.strictEqual(await run(''), 0, 'the website must not');
   });
 
   test('the prefetch respects Save-Data', async () => {
@@ -201,6 +235,103 @@ describe('web cross-links', { concurrency: 1 }, () => {
     });
     assert.strictEqual(called, false, 'Save-Data means do not pull 44MB unasked');
     await ctx.close();
+  });
+
+  // A fake NetworkInformation that can change: Chrome on Android reports the
+  // bearer in `type`, desktop Chromium does not report it at all.
+  const fakeConnection = (type) => {
+    const t = new EventTarget();
+    Object.assign(t, { type, effectiveType: '4g', saveData: false });
+    Object.defineProperty(navigator, 'connection', { value: t, configurable: true });
+    return t;
+  };
+
+  test('on cellular the prefetch waits, and starts once on Wi-Fi', async () => {
+    const { ctx, page } = await openPage({ query: '?app=1' });
+    const r = await page.evaluate((fakeSrc) => {
+      const fake = eval(fakeSrc);
+      let n = 0;
+      const real = window.maiaInit, realW = _maiaWorker;
+      maiaInit = () => { n++; };
+      _maiaWorker = null;
+      const conn = fake('cellular');          // LTE: effectiveType still says '4g'
+      _maiaPrefetchTried = false; _maiaPrefetchWaiting = false;
+      maiaMaybePrefetch();
+      const onCell = n;
+      conn.type = 'none';                      // tunnel: still not a time to fetch
+      conn.dispatchEvent(new Event('change'));
+      const onNone = n;
+      conn.type = 'wifi';
+      conn.dispatchEvent(new Event('change'));
+      const onWifi = n;
+      conn.dispatchEvent(new Event('change')); // a later change must not re-fire
+      maiaInit = real; _maiaWorker = realW;
+      return { onCell, onNone, onWifi, after: n };
+    }, '(' + fakeConnection.toString() + ')');
+    assert.strictEqual(r.onCell, 0, 'no 44MB on mobile data');
+    assert.strictEqual(r.onNone, 0, 'offline is not Wi-Fi');
+    assert.strictEqual(r.onWifi, 1, 'Wi-Fi should start the parked prefetch');
+    assert.strictEqual(r.after, 1, 'and only once');
+    await ctx.close();
+  });
+
+  test('a worker already up from the Bot Builder still gets the download', async () => {
+    // Opening the builder starts the worker for a cache check. Its 'no-cache'
+    // answer then arrives unarmed, so a prefetch after that must start the
+    // download itself rather than calling a maiaInit() that no-ops.
+    const { ctx, page } = await openPage({ query: '?app=1' });
+    const msgs = await page.evaluate(() => {
+      const realW = _maiaWorker, realS = _maiaStatus;
+      const sent = [];
+      _maiaWorker = { postMessage: (m) => sent.push(m) };
+      _maiaStatus = 'no-cache';
+      _maiaPrefetchTried = false; _maiaPrefetchWaiting = false;
+      try { Object.defineProperty(navigator, 'connection', { value: undefined, configurable: true }); } catch (e) {}
+      maiaMaybePrefetch();
+      _maiaWorker = realW; _maiaStatus = realS;
+      return sent;
+    });
+    assert.deepStrictEqual(msgs, [{ type: 'download' }]);
+    await ctx.close();
+  });
+
+  // ── Ko-fi ───────────────────────────────────────────────────────────
+  // Play's Payments policy bars steering users to a non-Play payment method
+  // from inside the app; the website keeps its Support button.
+  const donateState = (page) => page.evaluate(() => ({
+    btn: getComputedStyle(document.getElementById('donateBtn')).display,
+    panel: getComputedStyle(document.getElementById('donatePanel')).display,
+    cls: document.documentElement.classList.contains('bm-app'),
+    app: bmIsAppContext(),
+  }));
+
+  test('the Ko-fi button stays on the website', async () => {
+    const { ctx, page } = await openPage();
+    const s = await donateState(page);
+    assert.notStrictEqual(s.btn, 'none', 'web keeps Support');
+    assert.strictEqual(s.cls, false);
+    await ctx.close();
+  });
+
+  test('the Ko-fi button and panel are gone in the app', async () => {
+    const { ctx, page } = await openPage({ query: '?app=1' });
+    await page.evaluate(() => openPanel('donatePanel'));   // even if something opens it
+    await page.waitForTimeout(200);
+    const s = await donateState(page);
+    assert.strictEqual(s.btn, 'none', 'no Support button in the app');
+    assert.strictEqual(s.panel, 'none', 'no Ko-fi panel in the app');
+    await ctx.close();
+  });
+
+  test('the pre-paint .bm-app class agrees with bmIsAppContext()', async () => {
+    // Two copies of the same four tests (inline bootstrap, before paint; and
+    // the function). This is what keeps them in step.
+    for (const query of ['', '?app=1']) {
+      const { ctx, page } = await openPage({ query });
+      const s = await donateState(page);
+      assert.strictEqual(s.cls, s.app, 'class and function disagree for "' + query + '"');
+      await ctx.close();
+    }
   });
 
   test('no page errors were raised throughout', () => {
