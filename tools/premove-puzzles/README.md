@@ -60,3 +60,21 @@ move), and sorts by that: the most forced-looking first move is the easiest puzz
 The October 2026 run: 1,968 games, 15,704 premoves, 491 puzzles from 420 games before the Maia
 filter, 4 after it. Only about 1 puzzle in 120 passes both 80% tests, so a useful set needs far
 more games.
+
+## Measuring the candidates
+
+`scripts/premove-puzzle-stats.mjs` runs the same Maia as the rank script but drops nothing. For
+every candidate it records the rank gate's numbers, `q` (the chance the premover would answer
+*whatever* the solver plays with this premove, summed over every solver move), uniqueness gaps,
+risk in centipawns as well as win%, the game clocks and premove streak, and how often the same
+position and premove recur. `stats.json` is the October run. To reproduce it (server on :3100):
+
+```sh
+python fetch_games.py ids.txt games.ndjson 1000      # ids.txt: the puzzles' game IDs, one per line
+node scripts/premove-puzzle-stats.mjs tools/premove-puzzles/puzzles.json tools/premove-puzzles/stats.json games.ndjson
+node scripts/premove-puzzle-stats.mjs --summary tools/premove-puzzles/stats.json   # reprint, no Maia
+```
+
+About 3 s a puzzle. Of the 491, the rank gate rejects 422 on its first test (one solver move
+≥ 80%); only 69 candidates have such a move at all. `q ≥ 0.64` (the same joint level as 80% × 80%)
+keeps 24 with the trap beating the best honest move by 20 win% points, against the gate's 4.

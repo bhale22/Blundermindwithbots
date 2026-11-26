@@ -2350,6 +2350,106 @@ function bmRevealWebNotes(){
 }
 document.addEventListener('DOMContentLoaded', bmRevealWebNotes);
 
+// ── Android back gesture ─────────────────────────────────────────────────
+// In the Play app (a Trusted Web Activity) and an installed PWA, the system
+// back gesture is browser history. The page never pushed any — the URL work it
+// does is all replaceState — so back from an open panel or the Bot Builder had
+// nowhere to go but out of the app. On Android, back closes what is on top.
+//
+// So while any layer below is open there is exactly ONE extra history entry,
+// and a back press spends it closing the topmost layer (re-arming if another is
+// still open underneath). A layer closed from inside — ✕, Esc, a swipe, a
+// choice — gives the entry back with history.back(), so the next press leaves
+// the app instead of doing nothing visible.
+//
+// Open/close is observed on the layers' own attributes rather than hooked into
+// each open function: there are many ways in and out of these (postMessage from
+// the builder iframe, tours, share links), and an observer catches all of them.
+//
+// App context only. In a browser tab, back leaving the page is what a visitor
+// expects, and changing that on the website is a separate decision.
+//
+// Listed topmost first (z-index order). isOpen() must read "closing" as
+// closed: the landing and the vis panel animate out, and a layer that still
+// counted as open while it faded would re-arm the entry back had just spent.
+// #bmWelcome is deliberately absent: it is the first-visit front door, and
+// back from a front door should leave.
+function _bmShown(id){
+  const el = document.getElementById(id);
+  return !!el && !el.hidden && getComputedStyle(el).display !== 'none';
+}
+const BM_BACK_LAYERS = [
+  { ids: ['botModal'],
+    isOpen: () => _bmShown('botModal'),
+    close:  () => closeBotModal() },
+  { ids: ['bmOverview'],
+    isOpen: () => _bmShown('bmOverview'),
+    close:  () => bmOverviewClose() },
+  { ids: ['tourOverlay', 'tourOutro'],
+    isOpen: () => _bmShown('tourOverlay'),
+    close:  () => { if(_bmShown('tourOutro')) tourOutroClose(); else endTour(false); } },
+  { ids: ['landingOverlay'],
+    isOpen: () => _bmShown('landingOverlay') &&
+                  !document.getElementById('landingOverlay').classList.contains('fade-out'),
+    close:  () => landingDismiss() },
+  { ids: ['visPanel'],
+    isOpen: () => _bmShown('visPanel') && document.getElementById('visPanel').classList.contains('in'),
+    close:  () => visPanelClose() },
+  { sel: '.slide-panel',
+    isOpen: () => !!document.querySelector('.slide-panel.open'),
+    close:  () => closeAllPanels() },
+  { ids: ['pzPop'],                       // same as its ✕ and Esc: close, play on
+    isOpen: () => _bmShown('pzPop'),
+    close:  () => pzAct('play') },
+];
+const _bmBack = { on: false, armed: false, giving: false };
+
+function _bmBackTop(){
+  return BM_BACK_LAYERS.find(l => { try{ return l.isOpen(); }catch(e){ return false; } });
+}
+
+function _bmBackSync(){
+  // A give-back is in flight: its popstate re-syncs. Pushing now would race
+  // the traversal it queued.
+  if(!_bmBack.on || _bmBack.giving) return;
+  const open = !!_bmBackTop();
+  if(open && !_bmBack.armed){
+    try{
+      history.pushState(Object.assign({}, history.state, { bmBack: 1 }), '');
+      _bmBack.armed = true;
+    }catch(e){}
+  }else if(!open && _bmBack.armed){
+    _bmBack.armed = false;
+    _bmBack.giving = true;
+    history.back();
+    // A traversal that never reports back must not leave back handling dead.
+    setTimeout(() => { if(_bmBack.giving){ _bmBack.giving = false; _bmBackSync(); } }, 1000);
+  }
+}
+
+window.addEventListener('popstate', () => {
+  if(!_bmBack.on) return;
+  if(_bmBack.giving){ _bmBack.giving = false; _bmBackSync(); return; }
+  if(!_bmBack.armed) return;
+  _bmBack.armed = false;
+  const top = _bmBackTop();
+  if(top){ try{ top.close(); }catch(e){ console.warn('back', e); } }
+  _bmBackSync();                          // another layer still open: arm for it
+});
+
+function bmBackInit(){
+  if(!bmIsAppContext()) return;
+  _bmBack.on = true;
+  const mo = new MutationObserver(_bmBackSync);
+  const opts = { attributes: true, attributeFilter: ['class', 'style', 'hidden'] };
+  BM_BACK_LAYERS.forEach(l => {
+    (l.ids || []).forEach(id => { const el = document.getElementById(id); if(el) mo.observe(el, opts); });
+    if(l.sel) document.querySelectorAll(l.sel).forEach(el => mo.observe(el, opts));
+  });
+  _bmBackSync();                          // something may already be up (landing, tour)
+}
+document.addEventListener('DOMContentLoaded', bmBackInit);
+
 // Start pulling the Maia model in the background on app launch, so a fresh
 // install can play a Maia bot without first hunting for a download button.
 // Deferred past load so it never competes with first paint or the engines the
@@ -5410,11 +5510,41 @@ function mpDeclineDraw() {
 }
 
 // ── Feedback ──────────────────────────────────────────────────────────
-function sendFeedback(){
+// What a bug report needs and a tester cannot easily give: which deploy, which
+// board, which screen, which phone. "It froze on the bot screen" is a guess
+// without these; the build id alone answers "was this already fixed?". Nothing
+// here identifies a person — no stored ids, no position, no settings — and the
+// panel says what is attached (privacy.html too). The UA string is reduced on
+// Chrome, so the phone model comes from UA Client Hints where offered.
+async function _feedbackContext(){
+  const ctx = {
+    build:  window.__BM_BUILD || 'unknown',
+    where:  (typeof bmIsAppContext === 'function' && bmIsAppContext()) ? 'app' : 'web',
+    shell:  (typeof proMode !== 'undefined' && proMode) ? 'plain' : 'visualization',   // the Plain Board (proMode)
+    screen: innerWidth + 'x' + innerHeight + ' @' + (window.devicePixelRatio || 1) + 'x',
+    browser: navigator.userAgent,
+  };
+  try{
+    const d = navigator.userAgentData;
+    if(d && typeof d.getHighEntropyValues === 'function'){
+      const h = await Promise.race([
+        d.getHighEntropyValues(['model', 'platformVersion']),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 800)),
+      ]);
+      const dev = [h.platform, h.platformVersion, h.model].filter(Boolean).join(' ');
+      if(dev) ctx.device = dev;
+    }
+  }catch(e){}
+  return ctx;
+}
+
+async function sendFeedback(){
   const text=document.getElementById('feedbackText').value.trim();
   if(!text) return;
   const ACTION_URL='https://formspree.io/f/mojrdakw';
-  fetch(ACTION_URL,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({message:text,_subject:'Blundermind Feedback'})})
+  let extra = {};
+  try{ extra = await _feedbackContext(); }catch(e){}
+  fetch(ACTION_URL,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(Object.assign({message:text,_subject:'Blundermind Feedback'}, extra))})
     .then(r=>{
       if(r.ok){
         document.getElementById('feedbackText').value='';
