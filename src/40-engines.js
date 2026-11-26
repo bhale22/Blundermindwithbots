@@ -1758,6 +1758,7 @@ async function maiaEloTest() {
 // expensive to serve.
 var _maiaPrefetchArmed = false;
 var _maiaPrefetchTried = false;
+var _maiaPrefetchWaiting = false;   // parked until the phone is off cellular
 
 function maiaMaybePrefetch() {
   if (_maiaPrefetchTried) return;
@@ -1766,9 +1767,36 @@ function maiaMaybePrefetch() {
   try {
     var c = navigator.connection;
     if (c && (c.saveData || /^(slow-)?2g$/.test(c.effectiveType || ''))) return;
+    // effectiveType is a SPEED estimate, so LTE reads '4g' exactly like Wi-Fi
+    // and the test above waves it through. `type` is the bearer, and Chrome on
+    // Android reports it. 44MB of someone's data plan on first launch is not
+    // ours to spend: park until the connection changes to something that is
+    // not cellular and is actually up. An explicit download from the bot panel
+    // is still the user's call and is not affected.
+    if (c && (c.type === 'cellular' || c.type === 'none')) {
+      if (!_maiaPrefetchWaiting && typeof c.addEventListener === 'function') {
+        _maiaPrefetchWaiting = true;
+        c.addEventListener('change', function onConn() {
+          if (c.type === 'cellular' || c.type === 'none') return;
+          c.removeEventListener('change', onConn);
+          _maiaPrefetchWaiting = false;
+          maiaMaybePrefetch();
+        });
+      }
+      return;
+    }
   } catch (e) {}
   _maiaPrefetchTried = true;
   _maiaPrefetchArmed = true;
+  // The worker may already be up — opening the Bot Builder starts it for a
+  // cache check, and with the wait above that can easily come first. Its
+  // 'no-cache' answer has then been and gone, so maiaInit() below would no-op
+  // and the prefetch would silently never happen. Start the download directly.
+  if (_maiaWorker && _maiaStatus === 'no-cache') {
+    _maiaPrefetchArmed = false;
+    try { _maiaWorker.postMessage({ type: 'download' }); } catch (e) {}
+    return;
+  }
   // maiaInit's cache check answers 'ready' (already have it) or 'no-cache',
   // and the status handler starts the fetch on the latter.
   maiaInit();

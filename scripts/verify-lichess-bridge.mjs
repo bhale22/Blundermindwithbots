@@ -663,7 +663,7 @@ await until(async () => /^Waiting for challenges/.test(await lbStatusText()), 30
 check(/^Waiting for challenges/.test(await lbStatusText()), 'when they finish, the panel updates by itself', await lbStatusText());
 
 console.log('\n3. Game 1: bot is Black — draw offer, takeback, refused move, dropped stream, resignation');
-const c1 = newChallenge({ color: 'white', opts: { takebackAtPly: 4, rejectAtPly: 7, dropStreamAtPly: 10, drawOfferAtPly: 14, resignAtPly: 22 } });
+const c1 = newChallenge({ color: 'white', opts: { takebackAtPly: 4, rejectAtPly: 7, dropStreamAtPly: 10, drawOfferAtPly: 14, resignAtPly: 22, avoidMateInOne: true } });   // a quick mate ended it before the draw offer (Nov 25)
 await until(() => M.challenges[c1].gameId, 5000);
 check(!!M.challenges[c1].gameId, 'accepted a casual blitz challenge');
 const g1 = M.games[M.challenges[c1].gameId];
@@ -955,7 +955,7 @@ console.log('\n6t. Takebacks: the builder\'s limit answers the opponent');
   };
 
   // Every one: after the bot's reply (two plies), and twice; then while it thinks (one ply).
-  const ta = await playTb(-1, { takebackAtPly: 4, takebackTimes: 2, takebackMidThinkAt: 9, midThinkDelayMs: 500, resignAtPly: 16 }, 2500);
+  const ta = await playTb(-1, { takebackAtPly: 4, takebackTimes: 2, takebackMidThinkAt: 9, midThinkDelayMs: 500, resignAtPly: 16, avoidMateInOne: true }, 2500);   // a quick mate ended it at ply 8 (Nov 25)
   const la = await tbLog(ta.id);
   check(ta.tbTaken === 3 && ta.tbAnswers.every(a => a === 'yes'), 'every one: all three requests accepted', ta.tbAnswers);
   check(la.filter(l => /Took back 2 moves/.test(l)).length === 2 && la.some(l => /Took back 1 move$/.test(l)),
@@ -984,7 +984,9 @@ console.log('\n6t. Takebacks: the builder\'s limit answers the opponent');
   // took one), fell out of step with the server and rebuilt, or played its
   // move on a board Lichess had already rewound.
   const FENb = 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1';
-  const tb = await playTb(-1, { takebackAtPly: 4, takebackTimes: 2, takebackMidThinkAt: 9, midThinkDelayMs: 500, resignAtPly: 16 }, 2500,
+  // avoidMateInOne: after 1.e4 a random mover is easily mated before ply 9
+  // (one run ended at ply 6), and the mid-think request never came.
+  const tb = await playTb(-1, { takebackAtPly: 4, takebackTimes: 2, takebackMidThinkAt: 9, midThinkDelayMs: 500, resignAtPly: 16, avoidMateInOne: true }, 2500,
     { variant: 'fromPosition', initialFen: FENb, color: 'black' });
   const lb = await tbLog(tb.id);
   check(tb.botWhite && tb.startFen === FENb, 'set position, Black (the opponent) to move first', { botWhite: tb.botWhite, fen: tb.startFen });

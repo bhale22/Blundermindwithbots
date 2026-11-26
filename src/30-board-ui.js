@@ -514,7 +514,11 @@ cv.addEventListener('mousedown',e=>{
   // Picking up one of our own pieces extends the chain; ANY other click clears
   // it (as does right-click — see the contextmenu handler). Adding a link is the
   // only thing that leaves the queue intact, so it cannot grow by accident.
-  if(hasPremove()&&!(waiting&&inpBoard[sq]&&inpBoard[sq].color===myCol)){cancelPremove();return;}
+  // A tap on a square the piece in hand can reach is adding a link too: on
+  // touch it is the only way to add one without dragging (Nov 2026).
+  const _inHand=(selSq>=0)?selSq:premoveFrom;
+  const addsLink=waiting&&_inHand>=0&&sq!==_inHand&&legalMoves.includes(sq);
+  if(hasPremove()&&!(waiting&&inpBoard[sq]&&inpBoard[sq].color===myCol)&&!addsLink){cancelPremove();return;}
   // While waiting for opponent: clicking own pieces shows legal moves for preview/premove.
   // Clicking opponent pieces still shows exploration (opponent-move preview) as before.
   // Committing a move from own piece during opponent's turn will queue a premove.
@@ -591,6 +595,14 @@ cv.addEventListener('mousedown',e=>{
     // Confirm mode never commits from here — only the tap on the parked
     // square does, and that is handled above. Anything else clears.
     if(!isConfirmMode()&&previewBoard&&premoveFrom>=0&&premoveTo>=0){tryCommit(premoveFrom,premoveTo);}
+    // Tap the piece, then its square. With a mouse the pointer crossing the
+    // board on its way has already previewed the move (above); a finger has
+    // no hover, so nothing set it up, and this tap used to put the piece down
+    // instead (Ben, Nov 25). A square the piece in hand can reach plays it.
+    else if(!isConfirmMode()&&selSq>=0&&sq!==selSq&&legalMoves.includes(sq)){
+      const f=selSq;selSq=-1;dragFrom=-1;dragMoved=false;
+      if(!tryCommit(f,sq)){legalMoves=[];clearPreview();atkMap=buildAtk(board);render();}
+    }
     else{selSq=-1;legalMoves=[];clearPreview();atkMap=buildAtk(board);dragFrom=-1;dragMoved=false;render();}
   }
 });
@@ -702,9 +714,69 @@ cv.addEventListener('contextmenu',e=>{
   cancelPremove();
 });
 
-cv.addEventListener('touchstart',e=>{e.preventDefault();const t=e.touches[0];cv.dispatchEvent(new MouseEvent('mousedown',{clientX:t.clientX,clientY:t.clientY,bubbles:true}));},{passive:false});
-cv.addEventListener('touchmove',e=>{e.preventDefault();const t=e.touches[0];cv.dispatchEvent(new MouseEvent('mousemove',{clientX:t.clientX,clientY:t.clientY,bubbles:true}));},{passive:false});
-cv.addEventListener('touchend',e=>{e.preventDefault();const t=e.changedTouches[0];cv.dispatchEvent(new MouseEvent('mouseup',{clientX:t.clientX,clientY:t.clientY,bubbles:true}));},{passive:false});
+// ── Touch: the board's, or the page's (Nov 2026) ───────────────────────────
+// A finger on the board used to be the board's wherever it landed, and on a
+// phone the board is most of the screen, so the page could hardly be scrolled
+// (Ben, Nov 25). Now the board decides when the finger lands, the only moment
+// a page can still leave a touch to the browser's own scrolling:
+//  • on a piece the board would pick up, with a piece already in hand (picked
+//    up, or parked for its confirming tap), or with a promotion to choose: the
+//    board's, exactly as before;
+//  • anywhere else (an empty square, a piece that can't move now, a finished
+//    or Lichess-locked board): the page's. A swipe scrolls it, with the
+//    browser's own momentum; a tap is still a tap, handed to the board as the
+//    finger lifts.
+// Only a touch on a piece the board would pick up can begin a drag (see
+// mousedown above), so the board loses nothing. Telling a scroll by the
+// swipe's direction can't work on a piece: a rook pushed up its file and a
+// swipe up the page are the same gesture. #cv is touch-action:pan-y for this.
+const TOUCH_TAP_SLOP=10;   // px a finger may wander and still be a tap
+let _cvTouch=null;          // the touch in progress: { claimed, x, y, moved }
+function _touchBoardClaims(t){
+  if(promotionPending) return true;
+  if(selSq>=0||dragFrom>=0||premoveFrom>=0||awaitingConfirm) return true;   // a piece in hand
+  if(gameOver) return false;
+  if(typeof lichessBoardLocked==='function'&&lichessBoardLocked()) return false;
+  const sq=getSq(getEvtPos(t));
+  if(sq<0) return true;
+  // As mousedown reads "own": the side to move, or ours while we wait (on the
+  // board our premoves will have left).
+  const waiting=isWaitingTurn();
+  const spec=waiting?premoveSpecState():null;
+  const p=(spec?spec.board:board)[sq];
+  return !!p&&(p.color===turn||(waiting&&p.color===playerColor()));
+}
+function _cvMouse(type,t){cv.dispatchEvent(new MouseEvent(type,{clientX:t.clientX,clientY:t.clientY,bubbles:true}));}
+cv.addEventListener('touchstart',e=>{
+  const t=e.touches[0];
+  // A second finger belongs to whatever the first began.
+  if(_cvTouch&&e.touches.length>1){ if(_cvTouch.claimed) e.preventDefault(); else _cvTouch.moved=true; return; }
+  _cvTouch={claimed:_touchBoardClaims(t),x:t.clientX,y:t.clientY,moved:false};
+  if(!_cvTouch.claimed) return;   // left to the browser, which may scroll with it
+  e.preventDefault();
+  _cvMouse('mousedown',t);
+},{passive:false});
+cv.addEventListener('touchmove',e=>{
+  const t=e.touches[0];
+  if(!_cvTouch||_cvTouch.claimed){e.preventDefault();_cvMouse('mousemove',t);return;}
+  const dx=t.clientX-_cvTouch.x,dy=t.clientY-_cvTouch.y;
+  if(Math.abs(dx)>TOUCH_TAP_SLOP||Math.abs(dy)>TOUCH_TAP_SLOP) _cvTouch.moved=true;
+  // Pulled down with the page already at its top: there is nothing to scroll,
+  // and on Android that pull reloads the page (pull-to-refresh), mid-game.
+  const se=document.scrollingElement||document.documentElement;
+  if(dy>0&&se.scrollTop<=0&&e.cancelable) e.preventDefault();
+},{passive:false});
+cv.addEventListener('touchend',e=>{
+  const t=e.changedTouches[0];
+  const c=_cvTouch;
+  if(e.touches.length===0) _cvTouch=null;
+  if(!c||c.claimed){e.preventDefault();_cvMouse('mouseup',t);return;}
+  // The page's touch. No emulated mouse events or click after it: a tap is
+  // handed to the board here, once; a swipe was a scroll and is nothing.
+  if(e.cancelable) e.preventDefault();
+  if(!c.moved&&e.touches.length===0){_cvMouse('mousedown',t);_cvMouse('mouseup',t);}
+},{passive:false});
+cv.addEventListener('touchcancel',e=>{if(e.touches.length===0)_cvTouch=null;});
 
 // ---- Rendering ----
 

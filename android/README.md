@@ -177,7 +177,13 @@ Install the APK on a real phone and verify:
 - [ ] **no address bar** — that is domain verification passing
 - [ ] airplane mode → the app still opens and plays a game
 - [ ] the 44MB Maia model survives a force-quit and relaunch
-- [ ] back gesture behaves (leaves the app at the start URL, doesn't strand you)
+- [ ] back gesture behaves: with a panel, the Bot Builder, Home or a tour open,
+      back closes that one layer and stays in the app; with nothing open, back
+      leaves the app (one press, not two). See `bmBackInit()` in
+      `src/10-app-shell.js` and `test/browser/back-gesture.spec.js`
+- [ ] on mobile data, the Maia model does **not** download by itself; join
+      Wi-Fi and it starts (About panel → Maia status, or the Bot Builder)
+- [ ] no Ko-fi "Support" button anywhere in the app (it stays on the website)
 
 ## Notes
 
