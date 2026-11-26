@@ -943,7 +943,7 @@ async function botStart() {
     botOpeningMode = mainLineActive ? 'mainline' : 'none';
     if (mainLineActive) console.log('[Opening] Chess960 book: ' +
       (botBook960Mode() === 'top' ? 'the most common move' : 'moves in proportion to their games') +
-      ', Lichess 960 games at ' + lcRatingParam(botBookRatingElo()) + ', until fewer than ' + bookMinGames() + ' games');
+      ', Lichess 960 games at ' + _openingBookQuery().ratings + ', until fewer than ' + bookMinGames() + ' games');
   }
   // A new game: no takebacks used, and the opening state as it starts, which
   // a takeback all the way back restores.
@@ -2442,6 +2442,10 @@ function botApplyPanelConfig(cfg, applyOnly, opts) {
   botOpeningConfig.minGames     = cfg.openingMinGames || 4;
   // Chess960 opening: a bot saved before the setting plays 960 from move 1, as it did.
   botOpeningConfig.book960      = (cfg.opening960 === 'top' || cfg.opening960 === 'sample') ? cfg.opening960 : 'off';
+  // Its rating band: a bot saved before the setting asks for its own group, as it did.
+  const _b960 = v => (v != null && v !== '' && LC_RATING_BUCKETS.includes(+v)) ? +v : null;
+  botOpeningConfig.book960From  = _b960(cfg.opening960RatingFrom);
+  botOpeningConfig.book960To    = _b960(cfg.opening960RatingTo);
   botOpeningConfig.strictness   = 0.8;
   if (cfg.modernOnly) botOpeningConfig.since = '2020-01'; else delete botOpeningConfig.since;
   botOpeningConfig.repWhite      = _stW.rep;

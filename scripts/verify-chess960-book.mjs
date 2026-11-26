@@ -131,6 +131,13 @@ const cfgRead = await P.page.evaluate(base => {
 }, CFG);
 ok('opening960 reaches the app (top, sample)', cfgRead.top === 'top' && cfgRead.sample === 'sample', cfgRead);
 ok('a config without it, or with nonsense, reads Off', cfgRead.none === 'off' && cfgRead.junk === 'off', cfgRead);
+// Ratings (Nov 26): each end a Lichess group, or the engine's own (null).
+const bandRead = await P.page.evaluate(base => {
+  const read = extra => { botApplyPanelConfig(Object.assign({}, base, extra), true); return [botOpeningConfig.book960From, botOpeningConfig.book960To]; };
+  return { set: read({ opening960RatingFrom: 1000, opening960RatingTo: 2500 }), none: read({}), junk: read({ opening960RatingFrom: 1500, opening960RatingTo: 'high' }) };
+}, CFG);
+ok('Ratings reach the app; a config without them, or with ratings that are not groups, asks for the engine\'s group',
+  bandRead.set.join() === '1000,2500' && bandRead.none.join() === ',' && bandRead.junk.join() === ',', bandRead);
 
 console.log('\n3. Off');
 let r = await botFirstMove(P.page, { opening960: 'off' });
@@ -147,6 +154,14 @@ ok('asked as variant=chess960 from the game\'s start FEN', q && q.searchParams.g
 ok('at the bot\'s rating, 20 moves, no Modern date cut', q && q.searchParams.get('ratings') === '1200' && q.searchParams.get('moves') === '20' && !q.searchParams.has('since'), q && String(q));
 ok('played the most common move (b3, 90 of 100)', r.hist[0] === 'b2b3' && r.src === 'Book', r);
 ok('the move log names the 960 book', /^Chess960 book \(most common move\)/.test(r.detail), r.detail);
+P.reqs.length = 0;
+r = await botFirstMove(P.page, { opening960: 'top', opening960RatingFrom: 1000, opening960RatingTo: 2500 });
+ok('Ratings 1000 to 2500+: every group between asked for', P.reqs[0] && P.reqs[0].searchParams.get('ratings') === '1000,1200,1400,1600,1800,2000,2200,2500' && r.src === 'Book',
+  P.reqs[0] && String(P.reqs[0]));
+P.reqs.length = 0;
+r = await botFirstMove(P.page, { opening960: 'top', opening960RatingTo: 1600 });
+ok('only a highest end (1600): from the engine\'s group (1200) up to it', P.reqs[0] && P.reqs[0].searchParams.get('ratings') === '1200,1400,1600',
+  P.reqs[0] && String(P.reqs[0]));
 
 console.log('\n5. Follow the distribution');
 const dist = await P.page.evaluate(() => {
@@ -222,6 +237,35 @@ const ui3 = await f.evaluate(() => ({
 ok('loading a bot with "top" selects Most common move, its Min games in the row (7)', ui3.v === 'top' && ui3.sel === 'top' && ui3.min === '7' && /960: Most common$/.test(ui3.st), ui3);
 await f.evaluate(() => { const i = document.querySelector('#op-ml-white .book-min-input'); i.value = '9'; onBookMinGamesInput(i); });
 ok('Min games is one setting: typed in the Main Line, the 960 row shows it', await f.evaluate(() => document.querySelector('#op-960 .book-min-input').value === '9' && getBotConfig().openingMinGames === 9));
+// Ratings: two lists of the Lichess groups, the engine's own first; the note
+// says what is asked for; saved and loaded with the bot.
+const band0 = await f.evaluate(() => ({
+  opts: [...document.querySelectorAll('#b960-from option')].map(o => o.value + ':' + o.textContent).join(' | '),
+  toN: document.querySelectorAll('#b960-to option').length,
+  v: [getBotConfig().opening960RatingFrom, getBotConfig().opening960RatingTo], note: document.getElementById('b960-band-note').textContent,
+}));
+ok('the Ratings lists: the engine\'s group, then 0–999 to 2500+', /^:The engine’s group \| 0:0–999 \| 1000:1000–1199 .*\| 2200:2200–2499 \| 2500:2500\+$/.test(band0.opts) && band0.toN === 10, band0.opts);
+ok('to start, the engine\'s group alone, and the note names it', band0.v[0] === null && band0.v[1] === null && /^Asks for Lichess games rated (\d+–\d+|under 1000|2500\+): the group the engine’s \d+ is in\.$/.test(band0.note), band0);
+const band1 = await f.evaluate(() => {
+  setElo(1500);
+  document.getElementById('b960-from').value = '1000';
+  document.getElementById('b960-to').value = '2500';
+  onBook960BandChange();
+  const a = { v: [getBotConfig().opening960RatingFrom, getBotConfig().opening960RatingTo], note: document.getElementById('b960-band-note').textContent };
+  document.getElementById('b960-from').value = '';
+  onBook960BandChange();
+  a.oneEnd = document.getElementById('b960-band-note').textContent;
+  applyBotConfig({ type: 'botConfig', opening960: 'top', opening960RatingFrom: 1800, opening960RatingTo: 2200 });
+  a.loaded = [document.getElementById('b960-from').value, document.getElementById('b960-to').value, document.getElementById('b960-band-note').textContent];
+  applyBotConfig({ type: 'botConfig', opening960: 'top' });
+  a.old = [document.getElementById('b960-from').value, document.getElementById('b960-to').value];
+  return a;
+});
+ok('picking 1000 to 2500+ saves the two groups, and the note says 1000 and up (both ends set: the engine\'s rating has no say)',
+  band1.v.join() === '1000,2500' && band1.note === 'Asks for Lichess games rated 1000 and up.', band1);
+ok('with only the highest end set, the engine\'s group is the lowest', band1.oneEnd === 'Asks for Lichess games rated 1400 and up (the engine plays at 1500).', band1.oneEnd);
+ok('a bot saved with Ratings loads them; one saved before them shows the engine\'s group', band1.loaded[0] === '1800' && band1.loaded[1] === '2200' &&
+  band1.loaded[2] === 'Asks for Lichess games rated 1800–2499.' && band1.old.join() === ',', band1);
 const vis = await f.evaluate(() => { const b = document.getElementById('op-960').getBoundingClientRect(); return b.width > 0 && b.height > 0; });
 ok('the row is on screen in the open section', vis);
 ok('no page errors', P.errs.length === 0, P.errs);

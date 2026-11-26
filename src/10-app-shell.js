@@ -117,6 +117,11 @@ let botOpeningConfig = {
   //   'sample' — a move drawn in proportion to its games (temperature 1)
   // Played on the Main Line's path (botGetOpeningMove), so Min games ends it.
   book960: 'off',
+  // ...from Lichess games in this band of the explorer's rating groups: each
+  // end a group's floor (0, 1000 … 2500), or null for the group the engine's
+  // rating is in (lcRatingBandParam). Both null: that one group.
+  book960From: null,
+  book960To: null,
   strictness: 0.8,
 };
 // Configs and sessions saved before the stages were separate carry one mode per

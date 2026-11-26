@@ -106,11 +106,20 @@ const lbDegradeChoices = new Map();
 // move, which stays in book longest; in standard chess each move as often as
 // it was played. "book auto" gives that default back. botChatBook in the engine.
 const lbBookChoices = new Map();
+// Opponent id → the takebacks they allow themselves (takebacks on / off / 3),
+// kept the same way: -1 every one, 0 none, N the first N of each game, as the
+// builder's Draws & Takebacks row counts them (botTakebackLimit). "takebacks
+// auto" gives the bot's own back. Asked mid-game, the moves already taken back
+// count. Lichess still greys out their button unless both accounts allow
+// takebacks in their preferences (lila Takebacker.isAllowedByPrefs).
+const lbTakebackChoices = new Map();
+const LB_TAKEBACK_MAX = 99;
+const LB_TAKEBACK_PREF_NOTE = 'Lichess greys the button out unless both players’ preferences allow takebacks.';
 // The commands a bot takes besides the rating: its own list, ticked in the
 // builder's Lichess popup (cfg.lichessCommands). A bot saved before there was
 // a list takes the three there were then, so Blundermind-01 is as it was.
 // Blundermind-M3, plain Maia (Nov 20): think, temp and degrade.
-const LB_COMMANDS = ['cp', 'think', 'temp', 'degrade', 'book'];
+const LB_COMMANDS = ['cp', 'think', 'temp', 'degrade', 'book', 'takeback'];
 const LB_COMMANDS_DEFAULT = ['cp', 'think', 'temp'];
 const LB_CHAT_COOLDOWN_MS = 3000;
 let lbAccepting = null;       // challenge id accepted, its gameStart not yet here
@@ -977,9 +986,13 @@ function _lbApplyMatchedRating(g) {
   at.temp = _lbApplyTempChoice(opp);
   at.degrade = _lbOffers('degrade') && opp && opp.id ? lbDegradeChoices.get(opp.id) : undefined;
   at.book = _lbApplyBookChoice(opp, g);
+  at.takebacks = _lbTakebackLimit(g);
   if (opp && !g.matchLogged) {
     g.matchLogged = true;
     if (at.book != null) lbLog('Opening book ' + (at.book ? 'on' : 'off') + ': ' + opp.name + ' asked for it in the chat');
+    if (_lbOffers('takeback') && opp.id && lbTakebackChoices.has(opp.id)) {
+      lbLog('Takebacks ' + _lbTakebackWord(at.takebacks) + ': ' + opp.name + ' asked for it in the chat');
+    }
     if (at.think != null) lbLog('Think time ' + _lbThinkWord(at.think) + ': ' + opp.name + ' asked for it in the chat');
     if (at.temp != null) lbLog('Temp ' + at.temp + ': ' + opp.name + ' asked for it in the chat');
     if (at.degrade != null) lbLog('Time-pressure degradation ' + (at.degrade ? 'on' : 'off') + ': ' + opp.name + ' asked for it in the chat');
@@ -1089,6 +1102,19 @@ const _lbBookWord = g => botChatBook
   ? 'on (' + (g && g.chess960 ? 'the most common Lichess move' : 'Lichess moves, as often as played') + ')'
   : 'off';
 
+// ── Takebacks ────────────────────────────────────────────────────────────────
+// The takebacks this game allows: as the opponent asked (takebacks on / off /
+// N), on a matching bot that takes it, or else the builder's setting
+// (botTakebackLimit). -1 every one, 0 none, N the first N of the game.
+function _lbTakebackLimit(g) {
+  const opp = g && g.opponent;
+  const asked = _lbMatching() && _lbOffers('takeback') && opp && opp.id ? lbTakebackChoices.get(opp.id) : undefined;
+  if (asked != null) return asked;
+  return (typeof botTakebackLimit !== 'undefined') ? botTakebackLimit : 0;
+}
+// "on", "off" or "3 a game", in the state line and the replies.
+const _lbTakebackWord = n => n < 0 ? 'on' : n === 0 ? 'off' : n + ' a game';
+
 // ── Time-pressure degradation ────────────────────────────────────────────────
 // Does Curve A run for this opponent? As the opponent asked (degrade), on a
 // bot that takes it, or as the bot was built: its switch on and a curve drawn.
@@ -1164,7 +1190,7 @@ function _lbGreet(g, at) {
 }
 const LB_COMMAND_NAMES = {
   cp: 'centipawn budget (cp)', think: 'Move timing (think)', degrade: 'time-pressure degradation (degrade)',
-  book: 'opening book (book)',
+  book: 'opening book (book)', takeback: 'takebacks allowed (takebacks)',
 };
 function _lbGreetLines(at) {
   const { lo, hi } = _lbPerfRange();
@@ -1176,6 +1202,7 @@ function _lbGreetLines(at) {
   if (cmds.includes('think')) ranges.push('think 0-' + LB_THINK_MAX_S + 's or auto or mirror');
   if (cmds.includes('degrade')) ranges.push('degrade on/off');
   if (cmds.includes('book')) ranges.push('book on/off');
+  if (cmds.includes('takeback')) ranges.push('takebacks on/off or 1-' + LB_TAKEBACK_MAX);
   if (cmds.includes('temp')) ranges.push(_lbTempIsMaia()
     ? 'temp 0-' + CHAT_MAIA_TEMP_MAX + ': 0 = Maia\'s top move, 1 = matches Maia\'s odds, ' + CHAT_MAIA_TEMP_MAX + ' = wild'
     : 'Temp 0 (' + _lbTempEngine() + ' top move) - ' + BLEND_TEMP_MAX + ' (personality driven)');
@@ -1217,6 +1244,10 @@ function _lbStateLine(at) {
   }
   if (cmds.includes('degrade')) s += ', degrade ' + (_lbDegradeOn() ? 'on' : 'off');
   if (cmds.includes('book')) s += ', book ' + (botChatBook ? 'on' : 'off');
+  if (cmds.includes('takeback')) {
+    s += ', takebacks ' + _lbTakebackWord(at.takebacks != null ? at.takebacks
+      : (typeof botTakebackLimit !== 'undefined' ? botTakebackLimit : 0));
+  }
   return s;
 }
 // Posted the instant Lichess started the game, the greeting's first line could
@@ -1246,7 +1277,9 @@ const LB_GREET_DELAY_MS = 2000;
 // rather than popularity picks among the moves the Budget allows (see
 // botBlendTemp), or on a Maia bot with no personality Maia's own temperature,
 // 0 to 2 — or temp auto for the bot's own pick again. Combines and is kept
-// the same way. So do think mirror (their pace) and degrade on / off / auto.
+// the same way. So do think mirror (their pace) and degrade on / off / auto,
+// book on / off / auto, and takebacks on / off / auto or a number (takeback
+// works too), the takebacks accepted a game: 0 to 99, on is every one.
 //
 // A bot takes only the commands ticked for it (_lbCommands): the rest of a
 // line is still done, and the reply says what this bot can't change.
@@ -1259,7 +1292,8 @@ function _lbParseCommand(text) {
   const num = '(\\d{1,2},\\d{3}|\\d{1,5})';
   const part = new RegExp('^(?:elo\\s*' + num + '|' + num + '\\s*elo|cp\\s*(\\d{1,5})|(\\d{1,5})\\s*cp' +
     '|think\\s*(\\d{1,5}(?:\\.\\d+)?)\\s*(?:seconds?|secs?|s)?|think\\s*(auto|mirror)' +
-    '|temp\\s*(\\d{1,5}(?:\\.\\d+)?|\\.\\d+)|temp\\s*(auto)|degrade\\s*(on|off|auto)|book\\s*(on|off|auto))(?:[\\s,]+|$|(?=[a-z]))', 'i');
+    '|temp\\s*(\\d{1,5}(?:\\.\\d+)?|\\.\\d+)|temp\\s*(auto)|degrade\\s*(on|off|auto)|book\\s*(on|off|auto)' +
+    '|takebacks?\\s*(on|off|auto|\\d{1,2}))(?:[\\s,]+|$|(?=[a-z]))', 'i');
   // The greeting shows each command in quotes ("ELOXXXX"), so quotes typed
   // around one are dropped rather than making it unreadable.
   let rest = String(text || '').replace(/["'“”‘’]/g, '').trim();
@@ -1282,6 +1316,9 @@ function _lbParseCommand(text) {
     } else if (m[10] != null) {
       if (cmd.book != null) return null;
       cmd.book = m[10].toLowerCase();
+    } else if (m[11] != null) {
+      if (cmd.takeback != null) return null;
+      cmd.takeback = /^\d+$/.test(m[11]) ? +m[11] : m[11].toLowerCase();
     } else {
       if (cmd.temp != null) return null;
       cmd.temp = m[8] ? 'auto' : +m[7];
@@ -1289,7 +1326,7 @@ function _lbParseCommand(text) {
     rest = rest.slice(m[0].length);
   }
   return cmd.elo != null || cmd.cp != null || cmd.think != null || cmd.temp != null || cmd.degrade != null ||
-    cmd.book != null ? cmd : null;
+    cmd.book != null || cmd.takeback != null ? cmd : null;
 }
 function _lbOnChatLine(g, m) {
   const opp = g.opponent;
@@ -1307,7 +1344,8 @@ function _lbOnChatLine(g, m) {
                    think: cmd.think != null ? cmd.think : held.think,
                    temp: cmd.temp != null ? cmd.temp : held.temp,
                    degrade: cmd.degrade != null ? cmd.degrade : held.degrade,
-                   book: cmd.book != null ? cmd.book : held.book };
+                   book: cmd.book != null ? cmd.book : held.book,
+                   takeback: cmd.takeback != null ? cmd.takeback : held.takeback };
     if (!g.chatTimer) g.chatTimer = setTimeout(() => {
       const w = g.chatHeld;
       g.chatTimer = null; g.chatHeld = null;
@@ -1319,13 +1357,13 @@ function _lbOnChatLine(g, m) {
 }
 // What a bot that can't change something says (and its name in a list).
 const LB_CANT = { elo: 'rating', cp: 'CP budget', think: 'think time', temp: 'temp', degrade: 'time-pressure degradation',
-                  book: 'opening book' };
+                  book: 'opening book', takeback: 'takebacks' };
 const _lbCantText = ks => 'This bot\'s ' + ks.map(k => LB_CANT[k]).join(' and ') + ' can\'t be changed.';
 function _lbChatCommand(g, cmd) {
   const opp = g.opponent;
   g.chatAt = Date.now();
   if (!_lbMatching()) {
-    _lbSay(g, _lbCantText([['elo', 'cp', 'think', 'temp', 'degrade', 'book'].find(k => cmd[k] != null)]));
+    _lbSay(g, _lbCantText([['elo', 'cp', 'think', 'temp', 'degrade', 'book', 'takeback'].find(k => cmd[k] != null)]));
     return;
   }
   // What this bot doesn't take is left out; the reply says so.
@@ -1352,6 +1390,11 @@ function _lbChatCommand(g, cmd) {
   else if (cmd.degrade != null) lbDegradeChoices.set(opp.id, cmd.degrade === 'on');
   if (cmd.book === 'auto') lbBookChoices.delete(opp.id);
   else if (cmd.book != null) lbBookChoices.set(opp.id, cmd.book === 'on');
+  if (cmd.takeback === 'auto') lbTakebackChoices.delete(opp.id);
+  else if (cmd.takeback != null) {
+    lbTakebackChoices.set(opp.id, cmd.takeback === 'on' ? -1 : cmd.takeback === 'off' ? 0
+      : Math.max(0, Math.min(LB_TAKEBACK_MAX, cmd.takeback)));
+  }
   let cp = null, cpEdge = null;
   if (cmd.elo != null) {
     lbRatingChoices.set(opp.id, cmd.elo);
@@ -1408,10 +1451,22 @@ function _lbChatCommand(g, cmd) {
     botApplyChatBookNow();
     const word = cmd.book === 'auto' ? 'back to its own, ' + _lbBookWord(g) : _lbBookWord(g);
     lbLog(_lbWho(opp) + ' asked for book ' + cmd.book + ' in the chat: ' + (botChatBook
-      ? 'Lichess explorer at ' + lcRatingParam(botBookRatingElo()) + ', ' +
+      ? 'Lichess explorer at ' + _openingBookQuery().ratings + ', ' +
         (g.chess960 ? 'the most common move' : 'each move as often as played') + ', until fewer than ' + bookMinGames() + ' games'
       : 'no opening book'));
     said = said ? said + ', book ' + word : 'Opening book ' + word;
+  }
+  if (cmd.takeback != null) {
+    // This game too: the takebacks already used count against a new number.
+    const limit = _lbTakebackLimit(g);
+    const used = limit > 0 && g.takebacksUsed ? ' (' + g.takebacksUsed + ' used)' : '';
+    const word = (cmd.takeback === 'auto' ? 'back to its own, ' : '') + _lbTakebackWord(limit) + used;
+    // A decline under the new terms says so again.
+    g.takebackSaid = false;
+    lbLog(_lbWho(opp) + ' asked for takebacks ' + cmd.takeback + ' in the chat: ' +
+      (limit < 0 ? 'every one accepted' : limit === 0 ? 'none accepted' : 'the first ' + limit + ' of the game accepted') + used);
+    said = said ? said + ', takebacks ' + word
+      : 'Takebacks ' + (typeof cmd.takeback === 'number' && cmd.takeback > 0 ? 'set to ' : '') + word;
   }
   // Both chats: what the bot plays at is for spectators too. A reply that
   // gives a rating or a Temp says when the rating wasn't measured at this Temp.
@@ -1420,6 +1475,12 @@ function _lbChatCommand(g, cmd) {
   if (refused.length) {
     const cant = (said.endsWith('.') ? ' ' : '. ') + _lbCantText(refused);
     if ((said + cant).length <= LB_CHAT_MAX) said += cant;
+  }
+  // Takebacks they can now ask for may still be out of reach: Lichess greys
+  // the button out unless both accounts' preferences allow them.
+  if (cmd.takeback != null && _lbTakebackLimit(g) !== 0) {
+    const pref = (said.endsWith('.') ? ' ' : '. ') + LB_TAKEBACK_PREF_NOTE;
+    if ((said + pref).length <= LB_CHAT_MAX) said += pref;
   }
   _lbTell(g, said);
   if (typeof botUpdatePlayerNames === 'function') botUpdatePlayerNames(botPlayerColor);
@@ -1681,7 +1742,8 @@ function _lbAfterState(g, st) {
 // takeback will leave, so the shorter move list that follows is read as the
 // takeback and not as the server trailing the bot's own move.
 function _lbOnTakebackAsk(g, st) {
-  const limit = (typeof botTakebackLimit !== 'undefined') ? botTakebackLimit : 0;
+  // The builder's setting, or what this opponent asked for in the chat.
+  const limit = _lbTakebackLimit(g);
   const left = limit < 0 ? Infinity : Math.max(0, limit - g.takebacksUsed);
   const serverPly = _lbMoves(st).length;
   const oppLetter = g.colorLetter === 'w' ? 'b' : 'w';
@@ -1695,8 +1757,11 @@ function _lbOnTakebackAsk(g, st) {
     _lbPost('/api/bot/game/' + g.id + '/takeback/no');
     if (serverPly >= k && !g.takebackSaid) {
       g.takebackSaid = true;
-      _lbSay(g, limit === 0 ? 'Sorry, I don’t take moves back.'
-        : 'No more takebacks this game: I allow ' + limit + (limit === 1 ? '.' : ' a game.'));
+      // A bot that lets them choose says how.
+      const can = _lbMatching() && _lbOffers('takeback');
+      _lbSay(g, limit === 0 ? 'Sorry, I don’t take moves back' + (can ? ' (type takebacks on to change that).' : '.')
+        : 'No more takebacks this game: I allow ' + limit + (limit === 1 ? '' : ' a game') +
+          (can ? ' (type takebacks on, or a number, to change that).' : '.'));
     }
     return;
   }
@@ -1738,7 +1803,7 @@ function _lbApplyTakeback(g, moves, st) {
   if (typeof botRestorePlyState === 'function') botRestorePlyState(gameMovesAlgebraic.length);
   g.takebacksUsed++;
   g.claimPly = -1; g.claimPending = -1;
-  const limit = (typeof botTakebackLimit !== 'undefined') ? botTakebackLimit : -1;
+  const limit = _lbTakebackLimit(g);
   lbLog('Took back ' + k + ' move' + (k === 1 ? '' : 's') + (limit > 0 ? ' (' + g.takebacksUsed + ' of ' + limit + ' this game)' : ''));
   const s = document.getElementById('botStatus');
   if (s) s.textContent = 'Lichess · took back ' + k + ' move' + (k === 1 ? '' : 's');
