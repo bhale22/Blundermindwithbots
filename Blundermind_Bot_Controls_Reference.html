@@ -502,7 +502,10 @@ argmax (Top move): always picks the single highest-probability move (determinist
       <strong>Take back</strong> — off until you turn on "Take-back button" in Board settings; never in 2-player games.
       It undoes your last move, and the bot's reply if it has made one. The bot accepts as many a
       game as its setting allows (Personality → Draws &amp; Takebacks: never, 1, 2, 3, 5, 10 or every one; every one by default).
-      The clocks are not rewound. On Lichess the same setting answers the opponent's takeback requests.<br>
+      The clocks are not rewound. On Lichess the same setting answers the opponent's takeback requests, unless the
+      bot's Lichess popup lets the challenger choose (the Takebacks tick: they type takebacks on, off or a number in the
+      chat). Lichess greys the opponent's button out until both sides have moved, for a while after each decline, and
+      always unless both accounts allow takebacks in their Lichess preferences.<br>
       <strong>Draw offer</strong> — handled by the bot's draw behaviour (Personality → Draws &amp; Takebacks): it can
       accept and offer draws judged at its <em>own</em> rating's blurred evaluation, and seek stalemate swindles when
       lost — or leave it all off for a bot that always plays on.<br>

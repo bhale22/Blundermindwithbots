@@ -1271,10 +1271,25 @@ const cmdsCfg = await fr.evaluate(() => {
   box('degrade').click(); box('cp').click();
   return { boxes: boxes.join(' '), before, ticked, row, after: getBotConfig().lichessCommands.join(), noteBefore, noteTicked, noteAfter: note() };
 });
-check(cmdsCfg.boxes === 'cp+ think+ temp+ degrade- book-' && cmdsCfg.before === 'cp,think,temp' && cmdsCfg.ticked === 'think,temp,degrade' &&
+check(cmdsCfg.boxes === 'cp+ think+ temp+ degrade- book- takeback-' && cmdsCfg.before === 'cp,think,temp' && cmdsCfg.ticked === 'think,temp,degrade' &&
   !cmdsCfg.noteBefore && cmdsCfg.noteTicked && !cmdsCfg.noteAfter &&
   /Chat commands<\/dt><dd>ELO, think, temp, degrade</.test(cmdsCfg.row) && cmdsCfg.after === 'cp,think,temp',
   'the chat commands it takes are ticks in the popup (cp, think and temp to start), and the config and summary follow them', cmdsCfg);
+// A saved bot keeps every tick when it is loaded again (book was dropped on
+// load until Nov 26), and the summary's Takebacks row says a challenger can
+// change it.
+const cmdsReload = await fr.evaluate(() => {
+  const cfg = getBotConfig(), was = cfg.lichessCommands.slice(), wasMatch = lbcMatchOn;
+  applyBotConfig(Object.assign({}, cfg, { lichessCommands: ['think', 'book', 'takeback'] }));
+  const got = getBotConfig().lichessCommands.join();
+  lbcMatchOn = true;
+  const row = _lbcSummary();
+  lbcMatchOn = wasMatch;
+  applyBotConfig(Object.assign({}, cfg, { lichessCommands: was }));
+  return { got, row: (/Takebacks<\/dt><dd>[^<]*/.exec(row) || [''])[0], back: getBotConfig().lichessCommands.join() === was.join() };
+});
+check(cmdsReload.got === 'think,book,takeback' && /a challenger can change it with takebacks on\/off or a number/.test(cmdsReload.row) && cmdsReload.back,
+  'a bot saved with book and takebacks ticked keeps them when loaded, and the summary says the challenger sets takebacks', cmdsReload);
 // Takebacks: 10 a game is one of the builder's own buttons (Blundermind-M3's).
 const tb10 = await fr.evaluate(() => {
   const was = getBotConfig().takebackLimit;
@@ -1813,6 +1828,52 @@ check(lastSaid(bk9) === 'Opening book off' && bn.m960 === 'off' && bn.ml === fal
   'book off: no book from the bot\'s next move', { said: lastSaid(bk9), bn });
 await endGame(bk9);
 await p2.evaluate(w => lichessSetOpt('chess960', w), was960);
+
+// Takebacks (Nov 26): where a bot takes it, the challenger sets how many it
+// accepts, in place of the builder's; a decline says how to change it, and a
+// reply that allows some says Lichess's preferences must allow them too.
+await p2.evaluate(() => { window._lastAppliedBotConfig.lichessCommands = ['think', 'temp', 'degrade', 'takeback']; });
+const keepTbLimit = await p2.evaluate(() => botTakebackLimit);
+await p2.evaluate(() => { botTakebackLimit = 0; });
+const tkg = await openGame({ id: 'tbuser', name: 'TbUser', rating: 1700 });
+await until(() => tkg.chat.length >= 4, 8000, 'the greeting');
+const tkgGreet = chatOf(tkg).slice(0, 4);
+check(/, takebacks off$/.test(tkgGreet[0]) && tkgGreet.some(l => /takebacks allowed \(takebacks\)/.test(l)) &&
+  tkgGreet.some(l => /takebacks on\/off or 1-99/.test(l)) && tkgGreet.every(l => l.length <= 140),
+  'takebacks: the greeting says what it allows (the builder\'s Never) and how to change it', tkgGreet);
+// The opponent (Black here) asks, at a moment it isn't about to move: a move
+// of its own would clear the request, as on Lichess.
+const askTb = async g => {
+  const n = g.tbAnswers.length;
+  await until(() => g.moves.length >= 4 && !g.oppBusy, 30000, 'moves to take back');
+  g.tbAsked++;
+  g.btakeback = true;
+  broadcast(g);
+  await until(() => g.tbAnswers.length > n, 8000, 'the bot to answer the takeback');
+  await sleep(700);
+  return g.tbAnswers[g.tbAnswers.length - 1];
+};
+const tbSaid = (g, re) => chatOf(g).filter(l => re.test(l)).length;
+check(await askTb(tkg) === 'no' && tbSaid(tkg, /^Sorry, I don’t take moves back \(type takebacks on to change that\)\.$/) === 1,
+  'the builder\'s Never: declined, and the chat says how to change it', chatOf(tkg).slice(-2));
+await pastCooldown();
+await command(tkg, 'takebacks 1');
+check(lastSaid(tkg) === 'Takebacks set to 1 a game. Lichess greys the button out unless both players’ preferences allow takebacks.',
+  'takebacks 1: one a game, and the reply says Lichess\'s preferences must allow it', lastSaid(tkg));
+check(await p2.evaluate(() => lbLogLines.some(l => /TbUser \(1700\) asked for takebacks 1 in the chat: the first 1 of the game accepted/.test(l))),
+  'and the host\'s log says so');
+check(await askTb(tkg) === 'yes' && tkg.tbTaken === 1, 'the next request is accepted', tkg.tbAnswers);
+check(await askTb(tkg) === 'no' && tbSaid(tkg, /^No more takebacks this game: I allow 1 \(type takebacks on, or a number, to change that\)\.$/) === 1,
+  'the one after it is declined, and the chat says so', chatOf(tkg).slice(-2));
+await pastCooldown();
+await command(tkg, 'takebacks on');
+check(/^Takebacks on\. Lichess greys/.test(lastSaid(tkg)), 'takebacks on: every one', lastSaid(tkg));
+check(await askTb(tkg) === 'yes' && tkg.tbTaken === 2, 'so the next is accepted, with one already used', tkg.tbAnswers);
+check(!(await p2.evaluate(id => { const i = lbLogLines.findIndex(l => l.includes(id)); return lbLogLines.slice(i).some(l => /rebuilding/.test(l)); }, tkg.id)),
+  'no rebuild: each takeback rewound the board in place');
+await endGame(tkg);
+await p2.evaluate(l => { botTakebackLimit = l; }, keepTbLimit);
+
 await p2.evaluate(w => { const c = window._lastAppliedBotConfig;
   c.lichessCommands = w.cmds; c.pressureOffA = w.offA; c.behavBlink = w.blink; }, builtM3);
 

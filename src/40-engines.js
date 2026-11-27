@@ -2082,6 +2082,26 @@ function lcRatingParam(elo) {
   return b === 2200 ? '2200,2500' : String(b);
 }
 
+// A band of the explorer's rating groups, lowest to highest, as the Chess960
+// book's Ratings row sets it (Nov 2026, a tester: at one group the 960 book
+// ran out within a move or two). `from` and `to` are group floors from
+// LC_RATING_BUCKETS, or null for the group the engine's rating is in, as
+// lcRatingParam gives it (2200+ is 2200 and 2500). A fixed end is always kept:
+// the engine's group stretches to meet it, so "from 1800" with an engine at
+// 1500 asks for 1800 alone, and "to 2500+" asks for 1400 up to 2500+. Both
+// null is lcRatingParam exactly.
+function lcRatingBandParam(elo, from, to) {
+  const own = lcRatingParam(elo).split(',').map(Number);
+  const ok = v => v != null && v !== '' && LC_RATING_BUCKETS.includes(+v);
+  const f = ok(from) ? +from : null, t = ok(to) ? +to : null;
+  let lo = f != null ? f : own[0];
+  let hi = t != null ? t : own[own.length - 1];
+  if (f != null && t == null) hi = Math.max(hi, lo);
+  if (t != null && f == null) lo = Math.min(lo, hi);
+  if (lo > hi) { const x = lo; lo = hi; hi = x; }
+  return LC_RATING_BUCKETS.filter(b => b >= lo && b <= hi).join(',');
+}
+
 // Default SF fallback levels for each LC rating band
 var LC_FALLBACK_MAP = {
   '400':  1, '1000': 2, '1200': 2,
@@ -2394,7 +2414,9 @@ function botBook960Mode() {
 
 // In a Chess960 game the book is Lichess's 960 games from this game's start
 // position, at the bot's rating: Masters holds no 960 games, and Modern (2020+)
-// is left out, as 960 has too few games to cut by date.
+// is left out, as 960 has too few games to cut by date. The 960 row's Ratings
+// can widen that to a band of groups (book960From / book960To, see
+// lcRatingBandParam), as one group alone runs out within a move or two.
 //
 // A standard game's book asked for in a Lichess chat (botChatBookStandard) is
 // the Lichess explorer too, all years, whatever the Main Line was built with.
@@ -2405,7 +2427,8 @@ function _openingBookQuery() {
   return {
     src:     (is960 || chat || cfgBook.source === 'lichess') ? 'lichess' : 'masters',
     since:   (is960 || chat) ? null : (cfgBook.since || null),   // 'YYYY-MM'
-    ratings: lcRatingParam(botBookRatingElo()),
+    ratings: is960 ? lcRatingBandParam(botBookRatingElo(), cfgBook.book960From, cfgBook.book960To)
+                   : lcRatingParam(botBookRatingElo()),
     minGames: bookMinGames(),
     startFen: _gameStartFen || EXPLORER_START_FEN,
     variant: is960 ? 'chess960' : 'standard',

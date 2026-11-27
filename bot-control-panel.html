@@ -4221,7 +4221,7 @@ body.fj .picon{font-weight:500;}
               <button type="button" class="seg-btn sel" role="radio" data-tb="-1" onclick="setTakebackLimit(-1)">Every one</button>
             </div>
           </div>
-          <div class="ctrl-hint" id="tb-hint">Takebacks per game. The <strong>↶ Take back</strong> button is off until the player turns it on in Board settings; then it sits beside Offer draw and Resign and undoes your last move, and the bot's reply if it has made one. The clocks carry on as they are. Set to Never, the button doesn't appear. On Lichess the same setting answers the opponent's takeback requests; once they are used up, it declines and says so in the chat.</div>
+          <div class="ctrl-hint" id="tb-hint">Takebacks per game. The <strong>↶ Take back</strong> button is off until the player turns it on in Board settings; then it sits beside Offer draw and Resign and undoes your last move, and the bot's reply if it has made one. The clocks carry on as they are. Set to Never, the button doesn't appear. On Lichess the same setting answers the opponent's takeback requests; once they are used up, it declines and says so in the chat. Lichess itself greys the opponent's button out until both sides have moved, for a while after each decline, and in every game unless both accounts, the bot's and theirs, allow takebacks in their Lichess preferences.</div>
           <!-- Draw behaviour + desperation -->
           <div class="dlbl"><span>Draws &amp; desperation</span></div>
           <div class="tog-row">
@@ -4312,10 +4312,21 @@ body.fj .picon{font-weight:500;}
             <input type="number" inputmode="numeric" min="1" max="10000" step="1" value="4" class="book-min-input"
                    oninput="onBookMinGamesInput(this)" onchange="onBookMinGamesCommit(this)" aria-label="Fewest games a Chess960 position needs to stay in book">
           </span>
+          <!-- Ratings (Nov 26 2026, a tester): one rating group alone ran out
+               within a move or two. Each end is a Lichess explorer group, or
+               the engine's own group (blank value); lcRatingBandParam in
+               src/40-engines.js reads them the same way. -->
+          <span class="ml-depth b960-band" title="The Lichess rating groups the Chess960 book asks for, lowest to highest. The engine's group is the one the rating it plays at falls in.">
+            <span class="ml-depth-lbl">Ratings</span>
+            <select id="b960-from" class="cc-field cc-select" style="width:auto;" onchange="onBook960BandChange()" aria-label="Lowest rating group the Chess960 book asks for"></select>
+            <span class="ml-depth-lbl">to</span>
+            <select id="b960-to" class="cc-field cc-select" style="width:auto;" onchange="onBook960BandChange()" aria-label="Highest rating group the Chess960 book asks for"></select>
+          </span>
         </div>
-        <div class="tog-desc" style="margin-top:6px;">A Chess960 game skips the repertoire and main line above, which are standard chess. This is its opening instead, as White and as Black: Lichess Chess960 games from the same start position, at the rating the engine plays at.</div>
+        <div class="tog-desc" id="b960-band-note" style="margin-top:6px;"></div>
+        <div class="tog-desc">A Chess960 game skips the repertoire and main line above, which are standard chess. This is its opening instead, as White and as Black: Lichess Chess960 games from the same start position, at the rating the engine plays at, or the ratings set beside Min games.</div>
         <div class="tog-desc"><strong>Most common move</strong> plays what those players chose most. <strong>Follow the distribution</strong> plays each move as often as they chose it. Either way a personality has no say until the book ends.</div>
-        <div class="tog-desc">It ends at the first position with fewer games than Min games. Each start position has about 30,000 Lichess games across all ratings, and far fewer at any one, so that usually comes within a few moves.</div>
+        <div class="tog-desc">It ends at the first position with fewer games than Min games. Each start position has about 30,000 Lichess games across all ratings, and far fewer at any one, so that usually comes within a few moves. Widen <strong>Ratings</strong> to stay in book longer. A group you pick stays where it is; the engine's group moves with the rating it plays at (on Lichess, each challenger's, when it matches them).</div>
       </div>
 
     </div>
@@ -5272,6 +5283,10 @@ const BOOK_MIN_GAMES_MAX = 10000;
 // Chess960 opening, both colours: 'off' | 'top' (most common move) | 'sample'
 // (follow the distribution). Saved as opening960; see the Opening Behavior row.
 let book960 = 'off';
+// ...and the band of Lichess rating groups it asks for: each end a group's
+// floor, or null for the group the engine's rating is in. Saved as
+// opening960RatingFrom / opening960RatingTo; both null asks for that one group.
+let book960From = null, book960To = null;
 let selectedTempPresetId = 'neutral'; // tracks active temperature preset
 
 // Initialize attractor state
@@ -10323,6 +10338,8 @@ function getBotConfig(){
     openingMinGames: bookMinGames,
     modernOnly:      bookModern,
     opening960:      book960,
+    opening960RatingFrom: book960From,
+    opening960RatingTo:   book960To,
     repSlots:        { white: _repSlotsForConfig('white'), black: _repSlotsForConfig('black') },
     dayLower:        dayLower,
     dayUpper:        dayUpper,
@@ -10712,8 +10729,10 @@ function applyBotConfig(cfg){
     bookMinGames = cfg.openingMinGames || 4;
     _syncBookMinGames();
     bookModern = !!cfg.modernOnly;
-    // A bot saved before the setting plays Chess960 from move 1, as it did.
+    // A bot saved before the setting plays Chess960 from move 1, as it did,
+    // and one saved before Ratings asks for its own group.
     setBook960(cfg.opening960);
+    setBook960Band(cfg.opening960RatingFrom, cfg.opening960RatingTo);
     repSlots.white.length = 0;
     repSlots.black.length = 0;
     // Older configs carry one ECO code + name per slot; _repNormalizeSlots
@@ -10772,8 +10791,10 @@ function applyBotConfig(cfg){
     lbcStrength = t || [];
     lbcStrengthText = _lbcStrengthText(lbcStrength);
     // A bot saved before there was a choice takes the three there were then.
+    // Every name the popup has a tick for: this list used to stop at degrade,
+    // so a bot saved with book ticked lost it on its next load.
     lbcCommands = Array.isArray(cfg.lichessCommands)
-      ? ['cp', 'think', 'temp', 'degrade'].filter(k => cfg.lichessCommands.includes(k)) : ['cp', 'think', 'temp'];
+      ? LBC_COMMANDS.map(c => c[0]).filter(k => cfg.lichessCommands.includes(k)) : LBC_COMMANDS_DEFAULT.slice();
   });
 
   grp(() => _updateEnginePanelHeader());
@@ -11672,8 +11693,10 @@ var lbcStrengthText = '';       // ...as typed, kept while it doesn't read
 // _lbCommands). A bot saved before there was a choice takes cp, think and temp.
 // "book" (Nov 22): ticked, the chat decides the bot's opening book on Lichess
 // instead of Opening Behavior (the note under the ticks says how).
+// "takeback" (Nov 26): ticked, the challenger sets how many takebacks the bot
+// accepts (takebacks on / off / 3) in place of Draws & Takebacks' setting.
 var LBC_COMMANDS = [['cp', 'CP Budget (cp)'], ['think', 'Think time (think)'], ['temp', 'Temp (temp)'],
-  ['degrade', 'Time-pressure degradation (degrade)'], ['book', 'Opening book (book)']];
+  ['degrade', 'Time-pressure degradation (degrade)'], ['book', 'Opening book (book)'], ['takeback', 'Takebacks (takebacks)']];
 var LBC_COMMANDS_DEFAULT = ['cp', 'think', 'temp'];
 var lbcCommands = LBC_COMMANDS_DEFAULT.slice();
 let _lbcHelpOpen = false;       // the matching "?" is open (kept across redraws)
@@ -11796,8 +11819,10 @@ function _lbcSummary(){
       ? 'on · rate ' + c.premoveRatePct + '% · min confidence ' + c.premoveMinPct + '%' : 'off'],
     ['Draws', (c.acceptDraws ? 'accepts unless more than ' + c.drawAcceptMarginCp + ' cp ahead' : 'never accepts')
       + (c.offerDraws ? ' · offers draws' : '')],
-    ['Takebacks', c.takebackLimit === 0 ? 'declines every request'
-      : c.takebackLimit > 0 ? 'accepts ' + c.takebackLimit + ' a game, then declines' : 'accepts every request']
+    ['Takebacks', (c.takebackLimit === 0 ? 'declines every request'
+      : c.takebackLimit > 0 ? 'accepts ' + c.takebackLimit + ' a game, then declines' : 'accepts every request') +
+      (matching && (c.lichessCommands || []).includes('takeback')
+        ? ' · a challenger can change it with takebacks on/off or a number' : '')]
   );
   return rows.map(([k, v]) => '<dt>' + _ccEsc(k) + '</dt><dd>' + _ccEsc(v) + '</dd>').join('');
 }
@@ -11815,7 +11840,9 @@ function _lbcMatchHtml(){
     'think mirror for their own pace, think auto for this bot’s own — only its own timing blinks on forced moves); ' +
     'its temp (on a bot with no personality, Maia’s own temperature: temp0 is her top move, temp1 her odds, ' +
     'temp2 wild; with a personality, how far it picks over popularity, 0 to 10); and time-pressure degradation ' +
-    '(degrade on drops the rating Maia is called with on the Regan model for the game’s clock, and never with a fixed think time). ' +
+    '(degrade on drops the rating Maia is called with on the Regan model for the game’s clock, and never with a fixed think time); ' +
+    'and how many takebacks it accepts (takebacks on, takebacks off, or takebacks 3 for three a game, in place of the Draws & Takebacks setting; ' +
+    'Lichess greys their button out unless both accounts allow takebacks in their Lichess preferences). ' +
     'If your bot plays stronger or weaker than its engine setting, enter what ' +
     'it was measured to play like under Measured strength: every rating is then a playing strength, and the ' +
     'bot is set to whatever plays at it. A row measured at another CP Budget (2600 cp50=2775) takes it past ' +
@@ -13142,6 +13169,7 @@ function setElo(elo){
   currentElo = elo;
   updateSpeedo(elo);
   syncBookEloFromElometer(elo);
+  _syncB960Note();   // the Chess960 Ratings note names the engine's group
   if(!_eloTyping) document.getElementById('elo-input').value = elo;   // see onEloInputChange
   const _nm = (typeof engineStatusName === 'function') ? engineStatusName() : `Maia 3 · ${elo}`;
   document.getElementById('st-engine').textContent = _nm;
@@ -16347,6 +16375,70 @@ function setBook960(v){
   updateOpStatus();
 }
 
+// The Chess960 row's Ratings: two ends, each a Lichess explorer rating group
+// (a floor: 1400 is 1400–1599) or the engine's own group (null). The app reads
+// them in lcRatingBandParam (src/40-engines.js); _b960Band below is the same
+// rule, for the note under the row.
+const B960_GROUPS = [0, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2500];
+const _b960GroupText = g => g === 2500 ? '2500+' : g + '–' + (B960_GROUPS[B960_GROUPS.indexOf(g) + 1] - 1);
+const _b960Pick = v => (v != null && v !== '' && B960_GROUPS.includes(+v)) ? +v : null;
+// The groups asked for at this engine rating, lowest first.
+function _b960Band(elo, from, to){
+  let own = B960_GROUPS[0];
+  B960_GROUPS.forEach(g => { if(elo >= g) own = g; });
+  const ownHi = own === 2200 ? 2500 : own;   // the top group is 2200+ (lcRatingParam)
+  let lo = from != null ? from : own, hi = to != null ? to : ownHi;
+  if(from != null && to == null) hi = Math.max(hi, lo);
+  if(to != null && from == null) lo = Math.min(lo, hi);
+  if(lo > hi){ const x = lo; lo = hi; hi = x; }
+  return B960_GROUPS.filter(g => g >= lo && g <= hi);
+}
+// "1400–1599", "1400 and up", "under 1600", "every rating".
+function _b960RangeText(groups){
+  const lo = groups[0], hi = groups[groups.length - 1];
+  if(hi === 2500) return lo === 0 ? 'every rating' : lo === 2500 ? '2500+' : lo + ' and up';
+  const top = B960_GROUPS[B960_GROUPS.indexOf(hi) + 1] - 1;
+  return lo === 0 ? 'under ' + (top + 1) : lo + '–' + top;
+}
+function setBook960Band(from, to){
+  book960From = _b960Pick(from);
+  book960To = _b960Pick(to);
+  [['b960-from', book960From], ['b960-to', book960To]].forEach(([id, v]) => {
+    const sel = document.getElementById(id);
+    if(!sel) return;
+    if(!sel.options.length){
+      sel.innerHTML = '<option value="">The engine’s group</option>' +
+        B960_GROUPS.map(g => '<option value="' + g + '">' + _b960GroupText(g) + '</option>').join('');
+    }
+    sel.value = v == null ? '' : String(v);
+  });
+  _syncB960Note();
+}
+function onBook960BandChange(){
+  setBook960Band(document.getElementById('b960-from')?.value, document.getElementById('b960-to')?.value);
+}
+// What the row asks for now, at the Elometer's rating. A blend asks at its
+// slots' average, which the builder doesn't show, so it says so instead.
+function _syncB960Note(){
+  const el = document.getElementById('b960-band-note');
+  if(!el || !el.isConnected) return;
+  // setElo can run before the script has reached book960From's declaration.
+  try { book960From; } catch(e) { return; }
+  const blend = typeof baseEngine !== 'undefined' && baseEngine === 'hybrid';
+  const own = book960From == null || book960To == null;
+  if(blend && own){
+    el.textContent = 'A blend asks at its slots’ average rating' +
+      (book960From != null ? ', from ' + _b960GroupText(book960From) + ' up.'
+        : book960To != null ? ', up to ' + _b960GroupText(book960To) + '.' : ': its group alone.');
+    return;
+  }
+  const elo = typeof currentElo !== 'undefined' ? currentElo : 1500;
+  const band = _b960Band(elo, book960From, book960To);
+  el.textContent = 'Asks for Lichess games rated ' + _b960RangeText(band) +
+    (book960From == null && book960To == null ? ': the group the engine’s ' + elo + ' is in.'
+      : own ? ' (the engine plays at ' + elo + ').' : '.');
+}
+
 /* ── Opening Repertoire: ticked lines under each opening ─────────────────────
    Nov 2026 (Ben). The search and the List work as before, but every named line
    they show has a tick box, and the results stay open while ticking, so typing
@@ -18176,6 +18268,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   onDaySlider(); // init dual-range fill
   _updateEnginePanelHeader();
   _initBookEloPin();         // restore the book pin, then seed the box from the Elometer
+  setBook960Band(book960From, book960To);   // the Chess960 row's Ratings lists, and its note
   _syncPressureOffUi();      // grey the curves out if the restored clock is Untimed
   _syncCplxBaseUi();         // Complexity: clock-plan example for the selected time control
   updatePersonalityGating(); // reflect the initial engine in the personality section

@@ -220,7 +220,7 @@ test('a bot saved before the command list greets as it did, with mirror beside t
 
 test('every greeting fits Lichess\'s 140-character chat line, whatever the bot takes', () => {
   const c = makeCtx();
-  const names = ['cp', 'think', 'temp', 'degrade', 'book'];
+  const names = ['cp', 'think', 'temp', 'degrade', 'book', 'takeback'];
   const kinds = [
     { botTab: 'maia3', personality: false },
     { botTab: 'maia3', personality: true },
@@ -228,7 +228,7 @@ test('every greeting fits Lichess\'s 140-character chat line, whatever the bot t
   ];
   const long = { setting: 2400, cp: 300, est: 2775, edge: 'high', think: 15.5, temp: 9.9 };
   let seen = 0;
-  for (let mask = 0; mask < 32; mask++) {
+  for (let mask = 0; mask < (1 << names.length); mask++) {
     const cmds = names.filter((_, i) => mask & (1 << i));
     for (const k of kinds) {
       c.botTab = k.botTab;
@@ -299,4 +299,59 @@ test('book in a reply says what on means in this game', () => {
   assert.strictEqual(word({ chess960: false }), 'on (Lichess moves, as often as played)');
   c.botChatBook = false;
   assert.strictEqual(word({ chess960: true }), 'off');
+});
+
+// ── takebacks: how many the bot accepts (Nov 26) ─────────────────────────────
+// Where a bot takes it, the challenger sets the takebacks it accepts in place
+// of the builder's Draws & Takebacks row: on (every one), off, or the first N
+// of each game; auto gives the bot's own back.
+
+const M3T = Object.assign({}, M3, { lichessCommands: ['think', 'temp', 'degrade', 'takeback'] });
+
+test('takebacks on / off / auto / a number, alone or with the rest', () => {
+  const c = makeCtx();
+  assert.deepStrictEqual(parse(c, 'takebacks on'), { takeback: 'on' });
+  assert.deepStrictEqual(parse(c, 'Takeback OFF'), { takeback: 'off' });
+  assert.deepStrictEqual(parse(c, '"takebacks auto"'), { takeback: 'auto' });
+  assert.deepStrictEqual(parse(c, 'takebacks 3'), { takeback: 3 });
+  assert.deepStrictEqual(parse(c, 'takebacks0'), { takeback: 0 });
+  assert.deepStrictEqual(parse(c, 'takebacks 99'), { takeback: 99 });
+  assert.strictEqual(parse(c, 'takebacks 100'), null, 'two digits at most');
+  assert.strictEqual(parse(c, 'takebacks'), null);
+  assert.strictEqual(parse(c, 'takeback please'), null, 'a request in words is not a command');
+  assert.deepStrictEqual(parse(c, 'ELO1500 takebacks 2 think5s'), { elo: 1500, takeback: 2, think: 5 });
+  assert.strictEqual(parse(c, 'takebacks on takebacks off'), null, 'one of each per line');
+});
+
+test('takebacks: the challenger\'s choice on a matching bot that takes it, else the builder\'s', () => {
+  const c = makeCtx();
+  c.botTakebackLimit = 3;
+  const g = { opponent: { id: 'someone' } };
+  const run = (cfg, choice) => {
+    c.window._lastAppliedBotConfig = cfg;
+    vm.runInContext(choice == null ? 'lbTakebackChoices.clear()' : 'lbTakebackChoices.set("someone", ' + choice + ')', c);
+    return c._lbTakebackLimit(g);
+  };
+  assert.strictEqual(run(M3T, null), 3, 'nothing asked: the builder\'s');
+  assert.strictEqual(run(M3T, -1), -1, 'on: every one');
+  assert.strictEqual(run(M3T, 0), 0, 'off: none');
+  assert.strictEqual(run(M3T, 5), 5);
+  assert.strictEqual(run(M3, 0), 3, 'a bot without the tick keeps the builder\'s');
+  assert.strictEqual(run(Object.assign({}, M3T, { lichessMatchRating: false }), 0), 3, 'nor does a bot that doesn\'t match');
+  assert.strictEqual(c._lbTakebackLimit(null), 3, 'no game: the builder\'s');
+});
+
+test('takebacks in the greeting: what it is now, and what can be typed', () => {
+  const c = makeCtx();
+  c.botTakebackLimit = -1;
+  const lines = greet(c, M3T, { setting: 1500, cp: 100, est: 1500, edge: null });
+  assert.strictEqual(lines[0], 'ELO set to 1,500 (using Maia 1500), think auto, temp 1, degrade off, takebacks on');
+  assert.ok(lines.some(l => /takebacks allowed \(takebacks\)/.test(l)), lines.join(' | '));
+  assert.ok(lines.some(l => /takebacks on\/off or 1-99/.test(l)), lines.join(' | '));
+  for (const l of lines) assert.ok(l.length <= 140, l.length + ': ' + l);
+  const state = at => c._lbStateLine(Object.assign({ setting: 1500, cp: 100, est: 1500, edge: null }, at));
+  assert.match(state({ takebacks: 0 }), /, takebacks off$/);
+  assert.match(state({ takebacks: 3 }), /, takebacks 3 a game$/);
+  c.window._lastAppliedBotConfig = M3;
+  assert.doesNotMatch(state({ takebacks: 3 }), /takebacks/, 'not on a bot that doesn\'t take it');
 });
